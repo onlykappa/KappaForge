@@ -12,10 +12,20 @@
 .top{position:sticky;top:0;z-index:4}
 }
 @media(max-width:700px) and (prefers-color-scheme:dark){.mobile-nav{background:#22222b;border-color:#3b3b47}.mobile-nav button{color:#a6a6b8}.mobile-nav button.active{background:#373755;color:#ceceff}}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.stat{border:1px solid #dddde6;border-radius:14px;padding:12px}.stat b{display:block;font-size:23px}.stat small,.worksmall{font-size:12px;color:#898998}.workitem{padding:13px 0;border-bottom:1px solid #dddde6}.workitem strong{display:block;margin-bottom:5px}.worklinks{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}.worklinks a{border-radius:10px;background:#ececf5;padding:8px 10px;font-size:13px}@media(prefers-color-scheme:dark){.worklinks a{background:#373755;color:#e1e1ff}.stat,.workitem{border-color:#3b3b47}}</style></head><body><div class="layout">
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.stat{border:1px solid #dddde6;border-radius:14px;padding:12px}.stat b{display:block;font-size:23px}.stat small,.worksmall{font-size:12px;color:#898998}.workitem{padding:13px 0;border-bottom:1px solid #dddde6}.workitem strong{display:block;margin-bottom:5px}.worklinks{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}.worklinks a{border-radius:10px;background:#ececf5;padding:8px 10px;font-size:13px}@media(prefers-color-scheme:dark){.worklinks a{background:#373755;color:#e1e1ff}.stat,.workitem{border-color:#3b3b47}}
+.task-overlay{position:fixed;inset:0;z-index:50;background:#090914a8;display:flex;align-items:center;justify-content:center;padding:18px}
+.task-overlay[hidden]{display:none}
+.task-sheet{background:#fff;color:#22222a;width:min(100%,480px);max-height:90dvh;overflow:auto;border-radius:22px;padding:22px;box-shadow:0 20px 60px #0004}
+.task-sheet h2{font-size:21px;margin:0 0 8px}.task-sheet p{font-size:13px;color:#696978;line-height:1.5}
+.task-field{display:block;margin:17px 0;font-size:13px;font-weight:650}
+.task-field select{display:block;margin-top:8px;width:100%;border:1px solid #c9c9d5;border-radius:13px;background:#f6f6fa;color:#20202a;padding:14px;font-size:16px}
+.task-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:17px}
+.task-error{color:#a12b2b!important;min-height:1em}
+@media(prefers-color-scheme:dark){.task-sheet{background:#292930;color:#f7f7fa}.task-field select{background:#393943;color:#fff;border-color:#545463}.task-sheet p{color:#b8b8c7}}
+</style></head><body><div class="layout">
 <aside id="sidebar" class="sidebar"><div class="brand">✦ KappaForge</div><button class="btn" id="new" style="width:100%">＋ New chat</button><div class="navlink"><button data-page="chat" class="active">◉ Chat</button><button data-page="home">⌂ Dashboard</button><button data-page="projects">▤ Projects</button><button data-page="tasks">☑ Tasks</button><button data-page="reviews">⇄ Reviews</button></div><p class="muted" style="padding-left:10px;margin-top:28px">Recent chats</p><div id="history"></div><p class="muted" style="padding:10px;font-size:12px">Chats are stored in this browser. Connect AI to enable genuine responses.</p></aside>
 <section class="main"><div class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open conversations">☰</button><div><strong id="heading">KappaForge Chat</strong><div><span>Private Gemini chat · Connect AI to begin</span></div></div><button class="iconbtn" id="connect" title="Connect private AI backend">⚙ Connect AI</button><button class="iconbtn" id="refresh">↻</button></div><div class="content" id="content"></div>
-<div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" required></textarea><div class="controls"><button class="btn secondary" type="button" id="task">Make a task</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">AI responds when connected. No automatic code edits or GitHub writes.</div></div></section></div><nav class="mobile-nav" aria-label="Primary navigation"><button data-page="chat" class="active"><span>◉</span>Chat</button><button data-page="home"><span>⌂</span>Dashboard</button><button data-page="projects"><span>▤</span>Projects</button><button data-page="tasks"><span>☑</span>Tasks</button><button data-page="reviews"><span>⇄</span>Reviews</button></nav>
+<div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" required></textarea><div class="controls"><button class="btn secondary" type="button" id="task">Make a task</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">AI responds when connected. No automatic code edits or GitHub writes.</div></div></section></div><nav class="mobile-nav" aria-label="Primary navigation"><button data-page="chat" class="active"><span>◉</span>Chat</button><button data-page="home"><span>⌂</span>Dashboard</button><button data-page="projects"><span>▤</span>Projects</button><button data-page="tasks"><span>☑</span>Tasks</button><button data-page="reviews"><span>⇄</span>Reviews</button></nav><div id="taskoverlay" class="task-overlay" hidden><section class="task-sheet" role="dialog" aria-modal="true" aria-labelledby="tasktitle"><h2 id="tasktitle">Create a KappaForge task</h2><p>Select a repository and what you want the agent to do. You will review the request before it launches.</p><label class="task-field" for="taskrepo">Repository<select id="taskrepo"><option value="onlykappa/KappaForge">KappaForge</option><option value="onlykappa/OmniPC">OmniPC</option><option value="onlykappa/Apk-revival">APK Revival</option></select></label><label class="task-field" for="taskmode">Task type<select id="taskmode"><option value="audit">Audit · read-only inspection</option><option value="code">Code · isolated sandbox prototype</option><option value="repair">Repair · draft fix for KappaForge</option><option value="continuous">Continuous audit · checkpoint and resume</option><option value="continuous-code">Continuous coding · staged draft PRs</option><option value="watch">Watch · report workflow failures</option></select></label><p id="taskhint">Audits can inspect any of the three repositories. Other modes are limited to KappaForge.</p><p id="taskerror" class="task-error" role="alert"></p><div class="task-actions"><button type="button" class="btn secondary" id="taskcancel">Cancel</button><button type="button" class="btn" id="tasknext">Review task →</button></div></section></div>
 <script>
 const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let pendingJob=null;let recentJob=null;let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
@@ -84,23 +94,61 @@ async function launchJob(){
  }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};}
  render();
 }
+let taskDraft="",taskFocus=null;
 function prepareJob(message){
  const text=(message||"").trim();
- if(!text){alert("Write a task in the chat first.");return}
- const title=text.split("\n")[0].slice(0,105);
- const repoChoice=prompt("Repository: KappaForge, OmniPC, or Apk-revival","KappaForge");
- if(repoChoice===null)return;
- const repoMap={"kappaforge":"onlykappa/KappaForge","omnipc":"onlykappa/OmniPC","apk-revival":"onlykappa/Apk-revival"};
- const repo=repoMap[repoChoice.trim().toLowerCase()];
- if(!repo){alert("Choose one of the three authorized repositories.");return}
- const mode=(prompt("Task mode: audit, code, repair, continuous, continuous-code, or watch","audit")||"").toLowerCase();
- if(!["audit","code","repair","continuous","continuous-code","watch"].includes(mode)){alert("Use audit, code, repair, continuous, continuous-code, or watch.");return}
- if(["code","repair","continuous","continuous-code","watch"].includes(mode)&&repo!=="onlykappa/KappaForge"){alert("Coding and repair tasks are only authorized in KappaForge.");return}
- let instructions=text.length>=10?text:text+" Please inspect and provide a detailed report.";
- if(mode==="repair"&&!/^Repair files:\s*.+$/im.test(instructions)){alert("For repair mode, include a line like: Repair files: chat-backend/src/index.js\nOnly specifically named source files can be repaired.");return}
- pendingJob={title:title.length>=5?title:"KappaForge task",instructions,repo,mode};
- view="chat";render();
+ if(!text){alert("Write a task first, then tap Make a task.");return}
+ taskDraft=text;taskFocus=document.activeElement;
+ const overlay=document.getElementById("taskoverlay");
+ document.getElementById("taskerror").textContent="";
+ document.getElementById("taskrepo").value="onlykappa/KappaForge";
+ document.getElementById("taskmode").value="audit";
+ overlay.hidden=false;updateTaskChoices();
+ document.getElementById("taskrepo").focus();
 }
+function closeTaskSheet(){
+ document.getElementById("taskoverlay").hidden=true;
+ if(taskFocus?.focus)taskFocus.focus();
+}
+function updateTaskChoices(){
+ const repo=document.getElementById("taskrepo").value;
+ const mode=document.getElementById("taskmode");
+ const restricted=repo!=="onlykappa/KappaForge";
+ for(const option of mode.options)option.disabled=restricted&&option.value!=="audit";
+ if(restricted)mode.value="audit";
+ document.getElementById("taskhint").textContent=restricted
+  ?"Only read-only audits are authorized for this repository."
+  :"Repair, coding, continuous work, and failure monitoring are available for KappaForge.";
+ document.getElementById("taskerror").textContent="";
+}
+function confirmTaskChoices(){
+ const repo=document.getElementById("taskrepo").value;
+ const mode=document.getElementById("taskmode").value;
+ const text=taskDraft;
+ const error=document.getElementById("taskerror");
+ const allowed=["onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"];
+ if(!allowed.includes(repo)||!["audit","code","repair","continuous","continuous-code","watch"].includes(mode)){
+   error.textContent="Select a valid repository and task type.";return
+ }
+ if(mode!=="audit"&&repo!=="onlykappa/KappaForge"){
+   error.textContent="Only audits can target other repositories.";return
+ }
+ if(mode==="repair"&&!/^Repair files:\s*.+$/im.test(text)){
+   error.textContent="Repair mode needs a line such as: Repair files: chat-backend/src/index.js";return
+ }
+ if(mode==="continuous-code"&&!/^Step 1:\s*.{15,}$/im.test(text)){
+   error.textContent="Continuous coding needs numbered lines starting with Step 1: (15+ characters).";return
+ }
+ pendingJob={title:text.split("\n")[0].slice(0,105)||"KappaForge task",
+             instructions:text.length>=10?text:text+" Please inspect and provide a detailed report.",
+             repo,mode};
+ closeTaskSheet();view="chat";render();
+}
+document.getElementById("taskrepo").addEventListener("change",updateTaskChoices);
+document.getElementById("taskcancel").addEventListener("click",closeTaskSheet);
+document.getElementById("tasknext").addEventListener("click",confirmTaskChoices);
+document.getElementById("taskoverlay").addEventListener("click",e=>{if(e.target.id==="taskoverlay")closeTaskSheet()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!document.getElementById("taskoverlay").hidden)closeTaskSheet()});
 function activityPanel(){
  const entries=activity.runs.slice(0,6).map(r=>{
    const dot=r.status!=="completed"?"🔄":r.conclusion==="success"?"✅":r.conclusion==="failure"?"❌":"◯";
