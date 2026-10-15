@@ -25,13 +25,13 @@
 
 .control-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.control-head h3{margin:0}.control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.control-tile{border:1px solid #dedee8;border-radius:14px;padding:12px;min-width:0}.control-tile strong{display:block;font-size:13px}.control-tile small{display:block;color:#858596;margin-top:5px}.status-good{color:#26835d}.status-bad{color:#cd6554}.status-pending{color:#8985d0}.review-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.review-tools a,.review-tools button{border:1px solid #8888b055;border-radius:10px;background:#ececf6;color:#4443a2;padding:8px 12px;font-size:12px;text-decoration:none;cursor:pointer}.control-message{padding:10px;border-radius:11px;background:#5456b913;margin-top:10px;font-size:13px;overflow-wrap:anywhere}
 @media(prefers-color-scheme:dark){.control-tile{border-color:#41414e}.review-tools a,.review-tools button{background:#393954;color:#dad9ff}}
-</style></head><body><div class="layout">
+.diff-view{margin-top:12px;border:1px solid #dddde8;border-radius:12px;padding:12px}.diff-view strong,.diff-view small{display:block}.diff-view pre{font:11px/1.55 ui-monospace,SFMono-Regular,monospace;background:#12121a;color:#f4f4f9;border-radius:9px;padding:10px;max-height:290px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:14px}@media(prefers-color-scheme:dark){.diff-view{border-color:#41414e}}</style></head><body><div class="layout">
 <aside id="sidebar" class="sidebar"><div class="brand">✦ KappaForge</div><button class="btn" id="new" style="width:100%">＋ New chat</button><div class="navlink"><button data-page="chat" class="active">◉ Chat</button><button data-page="home">⌂ Dashboard</button><button data-page="projects">▤ Projects</button><button data-page="tasks">☑ Tasks</button><button data-page="reviews">⇄ Reviews</button></div><p class="muted" style="padding-left:10px;margin-top:28px">Recent chats</p><div id="history"></div><p class="muted" style="padding:10px;font-size:12px">Chats are stored in this browser. Connect AI to enable genuine responses.</p></aside>
 <section class="main"><div class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open conversations">☰</button><div><strong id="heading">KappaForge Chat</strong><div><span>Private Gemini chat · Connect AI to begin</span></div></div><button class="iconbtn" id="connect" title="Connect private AI backend">⚙ Connect AI</button><button class="iconbtn" id="refresh">↻</button></div><div class="content" id="content"></div>
 <div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" required></textarea><div class="controls"><button class="btn secondary" type="button" id="task">Plan task automatically</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">Development requests become reviewable task proposals. GitHub jobs launch only after your approval.</div></div></section></div><nav class="mobile-nav" aria-label="Primary navigation"><button data-page="chat" class="active"><span>◉</span>Chat</button><button data-page="home"><span>⌂</span>Dashboard</button><button data-page="projects"><span>▤</span>Projects</button><button data-page="tasks"><span>☑</span>Tasks</button><button data-page="reviews"><span>⇄</span>Reviews</button></nav><div id="taskoverlay" class="task-overlay" hidden><section class="task-sheet" role="dialog" aria-modal="true" aria-labelledby="tasktitle"><h2 id="tasktitle">Create a KappaForge task</h2><p>Select a repository and what you want the agent to do. You will review the request before it launches.</p><label class="task-field" for="taskrepo">Repository<select id="taskrepo"><option value="onlykappa/KappaForge">KappaForge</option><option value="onlykappa/OmniPC">OmniPC</option><option value="onlykappa/Apk-revival">APK Revival</option></select></label><label class="task-field" for="taskmode">Task type<select id="taskmode"><option value="audit">Audit · read-only inspection</option><option value="code">Code · isolated sandbox prototype</option><option value="repair">Repair · draft fix for KappaForge</option><option value="continuous">Continuous audit · checkpoint and resume</option><option value="continuous-code">Continuous coding · staged draft PRs</option><option value="watch">Watch · report workflow failures</option></select></label><p id="taskhint">Audits can inspect any of the three repositories. Other modes are limited to KappaForge.</p><p id="taskerror" class="task-error" role="alert"></p><div class="task-actions"><button type="button" class="btn secondary" id="taskcancel">Cancel</button><button type="button" class="btn" id="tasknext">Review task →</button></div></section></div>
 <script>
 const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let pendingJob=null;let recentJob=null;let jobTrackingBusy=false;try{recentJob=JSON.parse(localStorage.getItem("kappaforge.latest.job")||"null")}catch(e){}let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
+let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let pendingJob=null;let recentJob=null;let diffOpen=null;let diffCache={};let jobTrackingBusy=false;try{recentJob=JSON.parse(localStorage.getItem("kappaforge.latest.job")||"null")}catch(e){}let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);let current=chats[0]?.id||null,view="chat",data={repos:[],issues:[],prs:[],runs:[],error:"",loaded:false};
 function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}}
 function fresh(){const c={id:uid(),title:"New conversation",messages:[],at:Date.now()};chats.unshift(c);current=c.id;save();view="chat";render();document.getElementById("message").focus()}
@@ -50,6 +50,26 @@ function repairItem(p){
  const instructions=safe?'<div class="worksmall">In GitHub, tap Run workflow on main and enter branch: <strong>'+esc(branch)+'</strong>. Review the result before merging.</div>':"";
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><div class="worksmall">PR #'+esc(p.number)+' · '+esc(branch)+' · '+(p.draft?'Draft awaiting review':'Open')+'</div><div class="worklinks">'+link+validate+'</div>'+instructions+'</div>';
 }
+function inlineDiff(p){
+ const d=diffCache[p.number];
+ if(diffOpen!==p.number)return "";
+ if(!d)return '<p class="worksmall">Loading code differences…</p>';
+ if(d.error)return '<p class="status-bad">'+esc(d.error)+'</p>';
+ return '<div class="diff-view">'+d.files.slice(0,5).map(file=>
+  '<strong>'+esc(file.filename)+'</strong><small> +'+esc(file.additions)+' / -'+esc(file.deletions)+'</small>'+
+  '<pre>'+esc((file.patch||"Binary or large change. Open GitHub to review.").slice(0,5000))+'</pre>'
+ ).join("")+'</div>';
+}
+async function toggleDiff(number){
+ diffOpen=diffOpen===number?null:number;
+ if(diffOpen!==null&&!diffCache[number]){
+  try{
+   const files=await api("KappaForge/pulls/"+number+"/files?per_page=20");
+   diffCache[number]={files};
+  }catch(e){diffCache[number]={error:"Diff preview unavailable: "+e.message}}
+ }
+ render();
+}
 function controlCenter(){
  const runs=data.runs||[],prs=(data.prs||[]).filter(p=>p.repo==="KappaForge");
  const active=runs.filter(r=>r.status!=="completed");
@@ -63,7 +83,11 @@ function controlCenter(){
   '<div class="control-tile"><strong>Latest tests</strong><small>'+esc(lastTest?(lastTest.conclusion||lastTest.status):"Not available")+'</small></div>'+
   '<div class="control-tile"><strong>Latest deployment</strong><small>'+esc(latestDeploy?(latestDeploy.conclusion||latestDeploy.status):"Not available")+'</small></div></div>';
  const failures=failing.length?'<p class="control-message">⚠ '+failing.length+' recent workflow(s) need attention. Open the run for actual logs.</p>':"";
- const review=prs.slice(0,8).map(p=>'<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(p.draft?"Draft, approval needed":"Open")+'</span><div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/files">View code changes ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/checks">Check tests ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'">Review PR ↗</a></div></div>').join("");
+ const review=prs.slice(0,8).map(p=>{
+ const run=runs.find(r=>r.head_branch===p.head?.ref&&/tests/i.test(r.name||""));
+ const test=run?(run.conclusion||run.status):"No recent test run";
+ return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(p.draft?"Draft, approval needed":"Open")+' · Tests: '+esc(test)+'</span><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">'+(diffOpen===p.number?"Hide changes":"Preview code diff")+'</button><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/files">Full diff ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/checks">All checks ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'">Review PR ↗</a></div>'+inlineDiff(p)+'</div>'
+ }).join("");
  const runRows=runs.slice(0,8).map(r=>row(r.name||"Workflow",(r.conclusion||r.status)+" · "+(r.head_branch||"main"),r.html_url)).join("");
  return card("Control Center",'<div class="control-head"><h3>Live GitHub overview</h3><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open KappaForge pull requests.</p>')+card("Tests & deployments",runRows||'<p class="muted">No recent workflow results.</p>');
 }
@@ -75,7 +99,7 @@ function dashboardSummary(){
  const summary=card("Development overview",stats+'<p class="worksmall">Public GitHub data. Tap ↻ to refresh.</p>');
  const repairsPanel=card("Self-repair reviews",repairs.map(repairItem).join("")||'<p class="muted">No open repair proposals.</p>');
  const runs=card("Recent workflow results",data.runs.slice(0,6).map(x=>row(x.name||"Workflow",(x.conclusion||x.status)+" · "+(x.head_branch||"main"),x.html_url)).join("")||'<p class="muted">No workflow data loaded.</p>');
- return controlCenter()+summary+repairsPanel+activityPanel();
+ return controlCenter()+activityPanel();
 }
 function render(){
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
@@ -93,6 +117,7 @@ if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaFor
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
+document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff))));
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load();refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
