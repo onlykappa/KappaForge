@@ -1,0 +1,34 @@
+name: KappaForge continuous agent
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Optional owner-approved task issue number (blank scans eligible tasks)"
+        required: false
+        type: string
+  schedule:
+    - cron: '43 */6 * * *'
+permissions:
+  contents: read
+  issues: write
+  actions: read
+concurrency:
+  group: kappaforge-continuous
+  cancel-in-progress: false
+jobs:
+  continue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resume approved task or diagnose failures
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CONTINUOUS_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: python -m engine.continuous
