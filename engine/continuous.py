@@ -92,6 +92,11 @@ def main():
                     if authorized:
                         issues.append(authorized)
                         break
+    if not number:
+        # Only scheduled scans repair previously approved sandbox draft PRs.
+        from engine.repair_loop import scan_failures
+        outcomes = scan_failures(token, key, github)
+        print("Bounded independent-test repair scan:", outcomes[:4])
     if not issues:
         print("No owner-authorized continuous/watch issues pending")
         return
