@@ -46,3 +46,27 @@ def change_summary(previous,current):
     return {"status":"unchanged" if previous.get("commit")==current["commit"] else "updated",
             "previous_commit":previous["commit"],"commit":current["commit"],
             "added_paths":sorted(after-before)[:30],"removed_paths":sorted(before-after)[:30]}
+
+
+def recent_repo_memory(repo, github, token, current_issue=None, max_issues=12):
+    """Find the latest verified repository snapshot across bounded owner tasks."""
+    if repo not in ("onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"):
+        raise ValueError("Repository not authorized")
+    from engine.runner import ROOT
+    issues=github(f"repos/{ROOT}/issues?state=all&labels=kappa-task&per_page={max_issues}&sort=updated&direction=desc",token)
+    for issue in issues[:max_issues]:
+        if "pull_request" in issue or issue.get("user",{}).get("login","").lower()!="onlykappa":
+            continue
+        number=issue.get("number")
+        if not isinstance(number,int) or number==current_issue:
+            continue
+        body=issue.get("body") or ""
+        if not re.search(r"^Repository:\s*"+re.escape(repo)+r"\s*$",body,re.I|re.M):
+            continue
+        if not re.search(r"^Mode:\s*project-map\s*$",body,re.I|re.M):
+            continue
+        comments=github(f"repos/{ROOT}/issues/{number}/comments?per_page=100",token)
+        value=extract_latest(comments,repo)
+        if value:
+            return value
+    return None
