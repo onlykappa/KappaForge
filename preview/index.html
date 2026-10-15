@@ -93,9 +93,9 @@ function prepareJob(message){
  const repoMap={"kappaforge":"onlykappa/KappaForge","omnipc":"onlykappa/OmniPC","apk-revival":"onlykappa/Apk-revival"};
  const repo=repoMap[repoChoice.trim().toLowerCase()];
  if(!repo){alert("Choose one of the three authorized repositories.");return}
- const mode=(prompt("Task mode: audit, code, or repair (repair only KappaForge)","audit")||"").toLowerCase();
- if(!["audit","code","repair"].includes(mode)){alert("Use audit, code, or repair.");return}
- if((mode==="code"||mode==="repair")&&repo!=="onlykappa/KappaForge"){alert("Coding and repair tasks are only authorized in KappaForge.");return}
+ const mode=(prompt("Task mode: audit, code, repair, continuous, or watch","audit")||"").toLowerCase();
+ if(!["audit","code","repair","continuous","watch"].includes(mode)){alert("Use audit, code, repair, continuous, or watch.");return}
+ if(["code","repair","continuous","watch"].includes(mode)&&repo!=="onlykappa/KappaForge"){alert("Coding and repair tasks are only authorized in KappaForge.");return}
  let instructions=text.length>=10?text:text+" Please inspect and provide a detailed report.";
  if(mode==="repair"&&!/^Repair files:\s*.+$/im.test(instructions)){alert("For repair mode, include a line like: Repair files: chat-backend/src/index.js\nOnly specifically named source files can be repaired.");return}
  pendingJob={title:title.length>=5?title:"KappaForge task",instructions,repo,mode};
