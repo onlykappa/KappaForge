@@ -3,14 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "KappaForge generated branch (kappa/issue-N or kappa/repair-N)"
+        description: "KappaForge generated branch (kappa/issue-N, kappa/repair-N, or kappa/cont-N-M)"
         required: true
         type: string
 permissions:
   contents: read
 jobs:
   verify:
-    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-')
+    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
