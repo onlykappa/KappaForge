@@ -175,6 +175,19 @@ def main():
         url = produce_draft_pr(issue, os.environ["GEMINI_API_KEY"], token)
         print("Draft pull request created: " + url)
         return
+    if re.search(r"^Mode:\\s*project-map\\s*$", body_text, re.I | re.M):
+        match = TARGET_RE.search(body_text)
+        if not match or match.group(1) not in CONFIG["allowed"]:
+            raise ValueError("Invalid project map target")
+        from engine.project_index import index_repository
+        report = index_repository(match.group(1), token, github, content)
+        # The index is deliberately capped; no source code is passed to Gemini.
+        payload = json.dumps(report, indent=2)
+        github(f"repos/{ROOT}/issues/{issue['number']}/comments", token,
+               {"body": "### KappaForge project map complete\\n\\nRead-only indexed architecture, symbols and imports.\\n\\n" +
+                "```json\\n" + payload[:52000] + "\\n```"})
+        print(f"Indexed {report['total_indexed']} project files")
+        return
     if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):
         from engine.full_reader import inspect_batch
         match = TARGET_RE.search(body_text)
