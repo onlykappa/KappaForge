@@ -84,7 +84,7 @@ def main():
             issues = [selected]
     else:
         candidates = github(f"repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=40", token)
-        for desired_mode in ("watch", "continuous"):
+        for desired_mode in ("watch", "continuous", "continuous-code"):
             for candidate in candidates:
                 if re.search(r"^Mode:\s*" + desired_mode + r"\s*$",
                              candidate.get("body") or "", re.I | re.M):
@@ -105,6 +105,10 @@ def main():
             continuous_audit(issue, token, key)
         elif re.search(r"^Mode:\s*watch\s*$", body, re.I | re.M):
             monitor_failures(issue, token, key)
+        elif re.search(r"^Mode:\s*continuous-code\s*$", body, re.I | re.M):
+            from engine.continuous_code import code_one_step
+            outcome = code_one_step(issue, key, token)
+            print("Continuous coding: " + outcome["status"])
         else:
             raise ValueError("Issue must explicitly authorize Mode: continuous or Mode: watch")
 
