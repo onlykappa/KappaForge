@@ -105,3 +105,11 @@ Step 3: Build a standalone JSON settings validator CLI with unit tests
 ```
 
 Each step is intentionally independent, branching from main, and produces a separate draft PR. Steps do not inherit unmerged code from previous steps. Stop future work by removing the `kappa-task` label or closing the issue. Branches without a completed PR require human recovery; the agent will never silently overwrite a partial branch. Unattended processing can be delayed by GitHub scheduling, model quota, and Actions limits. This is bounded asynchronous coding, **not yet a general multi-iteration bug-fixing agent with autonomous test repair**.
+
+## Mobile Control Center and build verification
+
+KappaForge's mobile Dashboard now shows recent agent activity, open draft PRs, review/approval links, test runs and recent Cloudflare/GitHub Pages deployments. It previews short code patches from public KappaForge PRs; full diff and merge controls remain in GitHub. Recent status refreshes while Dashboard is visible, subject to GitHub API limits.
+
+Chat remembers the latest launched issue number in browser storage, reads public issue comments, and shows checkpoint/draft PR updates and a review link.
+
+Sandbox coding checks generated path scope and Python syntax before opening a draft PR and attempts one correction for invalid AI output. It then dispatches independent sandbox tests. **There is not yet an automatic post-test bug-fixing loop.** Failed independent tests require a separate approved task. KappaForge does not auto-merge, approve, or deploy generated PRs.
