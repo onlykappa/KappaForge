@@ -22,6 +22,18 @@ def candidate(run):
 def revision_count(comments,branch):
     return sum(MARKER+branch+":" in (c.get("body") or "") for c in comments)
 
+
+def failure_evidence(jobs):
+    """Bounded, non-secret workflow step metadata; never fetch raw runner logs."""
+    evidence=[]
+    for job in jobs[:20]:
+        for step in job.get("steps",[])[:35]:
+            if step.get("conclusion")=="failure":
+                evidence.append({"job":str(job.get("name",""))[:100],
+                                 "step":str(step.get("name",""))[:120],
+                                 "conclusion":"failure"})
+    return evidence[:8]
+
 def revise_failed_run(run,token,key):
     branch=candidate(run)
     if not branch:return {"status":"ignored"}
@@ -51,13 +63,12 @@ def revise_failed_run(run,token,key):
         raw=base64.b64decode(item["content"]).decode("utf-8")
         source.append({"path":p,"content":raw[:18000]})
     jobs=gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30",token).get("jobs",[])
-    errors=[step.get("name","") for job in jobs for step in job.get("steps",[])
-            if step.get("conclusion")=="failure"][:6]
+    errors=failure_evidence(jobs)
     prompt=("An independent secret-free test workflow failed. Repair only the listed preexisting "
             "sandbox source files. No new files. Do not access secrets, modify CI or add network calls. "
             "Return strict JSON with exactly the same paths in files[]. "
             "A failed step name does not identify the root cause; make minimal evidence-based corrections. "
-            "Failed steps: "+json.dumps(errors)+"\n"
+            "Failed job and step metadata (not full logs): "+json.dumps(errors)+"\n"
             "Original owner-approved sandbox files: "+json.dumps(source)[:42000])
     model, answer=run_model(key,prompt,max_output_tokens=8192)
     try:
