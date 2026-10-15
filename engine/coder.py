@@ -120,9 +120,16 @@ def produce_draft_pr(issue, api_key, token):
         )
         pr = gh(f"repos/{ROOT}/pulls", token, {"title": f"Draft: KappaForge task #{number}",
                    "head": branch, "base": "main", "body": description, "draft": True})
+        validation = "Independent validation requires manual dispatch."
+        try:
+            gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches", token,
+               {"ref": "main", "inputs": {"branch": branch}})
+            validation = "Independent validation dispatched. Check the test run before merging."
+        except urllib.error.HTTPError as exc:
+            validation = f"Validation dispatch failed (HTTP {exc.code}); manual dispatch required."
         gh(f"repos/{ROOT}/issues/{number}/comments", token,
            {"body": f"KappaForge generated a draft PR: {pr['html_url']}\n"
-                    f"Model: `{model}`. CI and manual review required."})
+                    f"Model: `{model}`. {validation} Manual review required."})
         return pr["html_url"]
     except Exception:
         # Preserve the branch as a checkpoint rather than deleting it on failure.
