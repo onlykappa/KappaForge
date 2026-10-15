@@ -30,3 +30,24 @@ class ProjectMemoryTests(unittest.TestCase):
     def test_skips_invalid_saved_state(self):
         old=[{"body":'<!-- KAPPA_PROJECT_MEMORY_V1 repo=onlykappa/KappaForge sha=bad -->\n\`\`\`json\n{"repo":"onlykappa/KappaForge","commit":"bad"}\n\`\`\`'}]
         self.assertIsNone(extract_latest(old,"onlykappa/KappaForge"))
+
+
+    def test_reuses_prior_owner_approved_project_maps_only(self):
+        from engine.project_memory import recent_repo_memory
+        valid={"number":17,"user":{"login":"onlykappa"},
+               "body":"Repository: onlykappa/KappaForge\nMode: project-map"}
+        forged={"number":18,"user":{"login":"someone_else"},
+               "body":"Repository: onlykappa/KappaForge\nMode: project-map"}
+        calls=[]
+        def gh(path,token):
+            calls.append(path)
+            if "/issues?" in path:return [forged,valid]
+            return [{"body":snapshot(self.report("a"*40))}]
+        result=recent_repo_memory("onlykappa/KappaForge",gh,"token",current_issue=19)
+        self.assertEqual(result["commit"],"a"*40)
+        self.assertTrue(all("/issues/18/" not in p for p in calls))
+
+    def test_cross_issue_memory_rejects_unknown_repo(self):
+        from engine.project_memory import recent_repo_memory
+        with self.assertRaises(ValueError):
+            recent_repo_memory("unknown/repo",lambda *args:[],"token")
