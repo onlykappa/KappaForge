@@ -109,7 +109,7 @@ def select_models(available):
     """Use a small explicit allowlist so discovery cannot route to billable Pro models."""
     return [name for name in PREFERRED_MODELS if name in available]
 
-def run_model(api_key, prompt):
+def run_model(api_key, prompt, max_output_tokens=2000):
     available = discover_models(api_key)
     candidates = select_models(available)
     if not candidates:
@@ -120,7 +120,7 @@ def run_model(api_key, prompt):
     for model in candidates:
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
-                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}}
+                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens}}
         try:
             headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
             req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
