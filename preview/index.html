@@ -22,6 +22,9 @@
 .task-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:17px}
 .task-error{color:#a12b2b!important;min-height:1em}
 @media(prefers-color-scheme:dark){.task-sheet{background:#292930;color:#f7f7fa}.task-field select{background:#393943;color:#fff;border-color:#545463}.task-sheet p{color:#b8b8c7}}
+
+.control-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.control-head h3{margin:0}.control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.control-tile{border:1px solid #dedee8;border-radius:14px;padding:12px;min-width:0}.control-tile strong{display:block;font-size:13px}.control-tile small{display:block;color:#858596;margin-top:5px}.status-good{color:#26835d}.status-bad{color:#cd6554}.status-pending{color:#8985d0}.review-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.review-tools a,.review-tools button{border:1px solid #8888b055;border-radius:10px;background:#ececf6;color:#4443a2;padding:8px 12px;font-size:12px;text-decoration:none;cursor:pointer}.control-message{padding:10px;border-radius:11px;background:#5456b913;margin-top:10px;font-size:13px;overflow-wrap:anywhere}
+@media(prefers-color-scheme:dark){.control-tile{border-color:#41414e}.review-tools a,.review-tools button{background:#393954;color:#dad9ff}}
 </style></head><body><div class="layout">
 <aside id="sidebar" class="sidebar"><div class="brand">✦ KappaForge</div><button class="btn" id="new" style="width:100%">＋ New chat</button><div class="navlink"><button data-page="chat" class="active">◉ Chat</button><button data-page="home">⌂ Dashboard</button><button data-page="projects">▤ Projects</button><button data-page="tasks">☑ Tasks</button><button data-page="reviews">⇄ Reviews</button></div><p class="muted" style="padding-left:10px;margin-top:28px">Recent chats</p><div id="history"></div><p class="muted" style="padding:10px;font-size:12px">Chats are stored in this browser. Connect AI to enable genuine responses.</p></aside>
 <section class="main"><div class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open conversations">☰</button><div><strong id="heading">KappaForge Chat</strong><div><span>Private Gemini chat · Connect AI to begin</span></div></div><button class="iconbtn" id="connect" title="Connect private AI backend">⚙ Connect AI</button><button class="iconbtn" id="refresh">↻</button></div><div class="content" id="content"></div>
@@ -47,6 +50,23 @@ function repairItem(p){
  const instructions=safe?'<div class="worksmall">In GitHub, tap Run workflow on main and enter branch: <strong>'+esc(branch)+'</strong>. Review the result before merging.</div>':"";
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><div class="worksmall">PR #'+esc(p.number)+' · '+esc(branch)+' · '+(p.draft?'Draft awaiting review':'Open')+'</div><div class="worklinks">'+link+validate+'</div>'+instructions+'</div>';
 }
+function controlCenter(){
+ const runs=data.runs||[],prs=(data.prs||[]).filter(p=>p.repo==="KappaForge");
+ const active=runs.filter(r=>r.status!=="completed");
+ const failing=runs.filter(r=>r.conclusion==="failure"||r.conclusion==="action_required");
+ const deployments=runs.filter(r=>/Deploy KappaForge Chat|Publish KappaForge Preview/.test(r.name||""));
+ const latestDeploy=deployments[0];
+ const lastTest=runs.find(r=>/Sandbox branch tests|KappaForge tests/.test(r.name||""));
+ const tiles='<div class="control-grid">'+
+  '<div class="control-tile"><strong>Agent progress</strong><small>'+esc(active.length?active.length+" workflow(s) active":"No active workflows in recent results")+'</small></div>'+
+  '<div class="control-tile"><strong>Reviews needed</strong><small>'+esc(prs.filter(p=>p.draft).length)+" draft pull requests</small></div>"+
+  '<div class="control-tile"><strong>Latest tests</strong><small>'+esc(lastTest?(lastTest.conclusion||lastTest.status):"Not available")+'</small></div>'+
+  '<div class="control-tile"><strong>Latest deployment</strong><small>'+esc(latestDeploy?(latestDeploy.conclusion||latestDeploy.status):"Not available")+'</small></div></div>';
+ const failures=failing.length?'<p class="control-message">⚠ '+failing.length+' recent workflow(s) need attention. Open the run for actual logs.</p>':"";
+ const review=prs.slice(0,8).map(p=>'<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(p.draft?"Draft, approval needed":"Open")+'</span><div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/files">View code changes ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'/checks">Check tests ↗</a><a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'">Review PR ↗</a></div></div>').join("");
+ const runRows=runs.slice(0,8).map(r=>row(r.name||"Workflow",(r.conclusion||r.status)+" · "+(r.head_branch||"main"),r.html_url)).join("");
+ return card("Control Center",'<div class="control-head"><h3>Live GitHub overview</h3><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open KappaForge pull requests.</p>')+card("Tests & deployments",runRows||'<p class="muted">No recent workflow results.</p>');
+}
 function dashboardSummary(){
  const prs=data.prs.filter(x=>x.repo==="KappaForge");
  const repairs=prs.filter(x=>x.head?.ref?.startsWith("kappa/repair-"));
@@ -55,7 +75,7 @@ function dashboardSummary(){
  const summary=card("Development overview",stats+'<p class="worksmall">Public GitHub data. Tap ↻ to refresh.</p>');
  const repairsPanel=card("Self-repair reviews",repairs.map(repairItem).join("")||'<p class="muted">No open repair proposals.</p>');
  const runs=card("Recent workflow results",data.runs.slice(0,6).map(x=>row(x.name||"Workflow",(x.conclusion||x.status)+" · "+(x.head_branch||"main"),x.html_url)).join("")||'<p class="muted">No workflow data loaded.</p>');
- return summary+repairsPanel+runs+activityPanel();
+ return controlCenter()+summary+repairsPanel+activityPanel();
 }
 function render(){
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
@@ -73,6 +93,7 @@ if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaFor
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
+document.getElementById("controlrefresh")?.addEventListener("click",()=>{load();refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
 }
 
