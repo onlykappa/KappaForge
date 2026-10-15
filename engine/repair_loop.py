@@ -80,7 +80,7 @@ def revise_failed_run(run,token,key):
             "message":f"fix: bounded sandbox validation retry for PR #{pr['number']}",
             "content":base64.b64encode(body.encode()).decode()},method="PUT")
     gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches",token,
-       {"ref":"main","inputs":{"branch":branch}})
+       {"ref":"main","inputs":{"branch":branch,"candidate_sha":gh(f"repos/{ROOT}/git/ref/heads/{branch}",token)["object"]["sha"]}})
     return {"status":"revised","branch":branch}
 
 def scan_failures(token,key,github):
