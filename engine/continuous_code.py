@@ -59,7 +59,7 @@ def code_one_step(issue, key, token):
         note = f"### Continuous coding milestone {n}/{len(tasks)}\nDraft PR: {pr['html_url']}\n"
         try:
             gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches", token,
-               {"ref": "main", "inputs": {"branch": branch}})
+               {"ref": "main", "inputs": {"branch": branch, "candidate_sha": gh(f"repos/{ROOT}/git/ref/heads/{branch}", token)["object"]["sha"]}})
             note += "Independent validation dispatched. Check GitHub Actions."
         except urllib.error.HTTPError as err:
             note += f"Validation dispatch HTTP {err.code}. Run validation manually."
