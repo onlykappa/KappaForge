@@ -95,10 +95,10 @@ export default {
       const mode = input.mode, repo = input.repo;
       const title = typeof input.title === "string" ? input.title.trim() : "";
       const instructions = typeof input.instructions === "string" ? input.instructions.trim() : "";
-      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "continuous-code", "watch"].includes(mode) ||
+      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) ||
           title.length < 5 || title.length > 120 || instructions.length < 10 || instructions.length > 3500)
         return json({ error: "Job must be valid and explicitly approved." }, 400, cors);
-      if (["code", "repair", "continuous", "continuous-code", "watch"].includes(mode) && repo !== "onlykappa/KappaForge")
+      if (["code", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) && repo !== "onlykappa/KappaForge")
         return json({ error: "Coding jobs are restricted to KappaForge's sandbox." }, 400, cors);
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
@@ -175,7 +175,7 @@ export default {
       " Only audit is permitted for OmniPC and Apk-revival. Default to KappaForge when unspecified. " +
       " Modes: audit (inspection), code (isolated sandbox coding), repair (explicit source file repair), " +
       " continuous (long read-only audit), continuous-code (explicit numbered independent steps), watch (workflow failures). " +
-      " Select repair ONLY with explicit Repair files: line naming source. Select continuous-code ONLY if prompt has Step 1: line and independent numbered steps. " +
+      " For requests to understand codebase structure, map dependencies or architecture choose project-map (read-only, allowed for all three repositories). Select repair ONLY with explicit Repair files: line naming source. Select continuous-code ONLY if prompt has Step 1: line and independent numbered steps. " +
       " Never claim work has started. Preserve user's actual instructions. This is a draft that requires owner approval.";
     const payload = planning ? {
       systemInstruction: { parts: [{ text: plannerInstruction }] },
@@ -231,7 +231,7 @@ export default {
           try { proposal = JSON.parse(answer); }
           catch { return json({ error: "Planner returned invalid JSON." }, 502, cors); }
           const repos = ["onlykappa/KappaForge", "onlykappa/OmniPC", "onlykappa/Apk-revival"];
-          const modes = ["audit", "code", "repair", "continuous", "continuous-code", "watch"];
+          const modes = ["audit", "code", "repair", "continuous", "continuous-code", "watch", "project-map"];
           if (!proposal || typeof proposal.isTask !== "boolean") return json({ error: "Invalid planner response." }, 502, cors);
           if (!proposal.isTask) return json({ isTask: false }, 200, cors);
           if (!repos.includes(proposal.repo) || !modes.includes(proposal.mode) ||
