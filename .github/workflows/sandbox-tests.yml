@@ -1,11 +1,15 @@
 name: Sandbox branch tests
-run-name: Sandbox validation ${{ inputs.branch }}
+run-name: Sandbox validation ${{ inputs.branch }} @ ${{ inputs.candidate_sha }}
 on:
   workflow_dispatch:
     inputs:
       branch:
         description: "KappaForge generated branch (kappa/issue-N, kappa/repair-N, or kappa/cont-N-M)"
         required: true
+        type: string
+      candidate_sha:
+        description: "Exact generated branch SHA for automatic repair eligibility"
+        required: false
         type: string
 permissions:
   contents: read
