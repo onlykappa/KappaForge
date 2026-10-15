@@ -9,9 +9,10 @@ on:
   schedule:
     - cron: '43 */6 * * *'
 permissions:
-  contents: read
+  contents: write
   issues: write
-  actions: read
+  pull-requests: write
+  actions: write
 concurrency:
   group: kappaforge-continuous
   cancel-in-progress: false
