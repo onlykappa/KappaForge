@@ -92,3 +92,16 @@ to this issue, and suggest targeted investigations. Do not edit code.
 ```
 
 For live results, open the authorized issue's comments or Dashboard's workflow feed. Stop continuous work by closing the issue or removing the `kappa-task` label. To change code, submit a separate explicit owner-approved `repair` or sandbox `code` task and review its draft PR. GitHub token renewal is not yet automatic.
+
+### Owner-approved continuous coding milestones (experimental)
+
+Use KappaForge Chat **Make a task**, select repository **KappaForge**, mode **continuous-code**, and approve a task containing numbered independent steps. Each invocation prepares at most **one** draft PR for a standalone milestone in KappaForge's isolated `projects/`, `tests/projects/`, or `docs/generated/` sandbox. It dispatches `Sandbox branch tests` separately without AI secrets. The six-hour scheduled workflow resumes later steps; you can also manually rerun the workflow. **Nothing is auto-merged or deployed.**
+
+Example task:
+```text
+Step 1: Build a standard-library-only Python calculator CLI with unit tests
+Step 2: Build a standalone notes organizer CLI with unit tests
+Step 3: Build a standalone JSON settings validator CLI with unit tests
+```
+
+Each step is intentionally independent, branching from main, and produces a separate draft PR. Steps do not inherit unmerged code from previous steps. Stop future work by removing the `kappa-task` label or closing the issue. Branches without a completed PR require human recovery; the agent will never silently overwrite a partial branch. Unattended processing can be delayed by GitHub scheduling, model quota, and Actions limits. This is bounded asynchronous coding, **not yet a general multi-iteration bug-fixing agent with autonomous test repair**.
