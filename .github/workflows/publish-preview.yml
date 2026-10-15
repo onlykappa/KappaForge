@@ -21,6 +21,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate preview JavaScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path("preview/index.html").read_text()
+          if html.count("<script>") != 1 or html.count("</script>") != 1:
+              raise SystemExit("Expected one inline script in preview")
+          js = html.split("<script>", 1)[1].split("</script>", 1)[0]
+          Path("/tmp/kappaforge-preview.js").write_text(js)
+          PY
+          node --check /tmp/kappaforge-preview.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
