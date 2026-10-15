@@ -36,11 +36,11 @@ export default {
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
     const length = Number(request.headers.get("Content-Length") || 0);
-    if (length > 20000) return json({ error: "Request too large" }, 413, cors);
+    if (length > 4500000) return json({ error: "Request too large" }, 413, cors);
     let input;
     try {
       const raw = await request.text();
-      if (raw.length > 20000) return json({ error: "Request too large" }, 413, cors);
+      if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
     if (new URL(request.url).pathname === "/decisions") {
@@ -151,7 +151,21 @@ export default {
       for (const m of input.messages) {
         if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim() || m.text.length > 3500)
           return json({ error: "Invalid message" }, 400, cors);
-        messages.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.text }] });
+        const parts = [{ text: m.text }];
+        if (m.role === "user" && Array.isArray(m.attachments)) {
+          if (m.attachments.length > 3) return json({error:"Limit: 3 attachments per message."},400,cors);
+          for (const file of m.attachments) {
+            if (!file || typeof file.name !== "string" || file.name.length > 120 ||
+                typeof file.data !== "string" || file.data.length > 1500000 ||
+                !["image/png","image/jpeg","image/webp","application/pdf","text/plain"].includes(file.mime))
+              return json({error:"Unsupported or oversized attachment."},400,cors);
+            if (file.mime === "text/plain") {
+              return json({error:"Text files must be sent as extracted text."},400,cors);
+            }
+            parts.push({inlineData:{mimeType:file.mime,data:file.data}});
+          }
+        }
+        messages.push({ role: m.role === "assistant" ? "model" : "user", parts });
       }
       if (messages.at(-1).role !== "user") return json({ error: "Last message must be user" }, 400, cors);
     }
@@ -196,7 +210,7 @@ export default {
       let lastStatus = 0;
       for (const model of candidates) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
+        const timeout = setTimeout(() => controller.abort(), 4500000);
         let response;
         try {
           response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
