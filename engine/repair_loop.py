@@ -14,7 +14,7 @@ MAX_REVISIONS = 2
 MARKER = "<!-- KAPPA_AUTOFIX:"
 
 def candidate(run):
-    match = re.search(r"Sandbox validation (kappa/[A-Za-z0-9/-]+)", run.get("display_title",""))
+    match = re.search(r"Sandbox validation (kappa/[A-Za-z0-9/-]+) @ ([a-f0-9]{40})", run.get("display_title",""))
     branch = match.group(1) if match else ""
     return branch if (run.get("name")=="Sandbox branch tests" and
                       run.get("conclusion")=="failure" and BRANCH.fullmatch(branch)) else None
@@ -31,7 +31,8 @@ def revise_failed_run(run,token,key):
     pr=prs[0]
     # Never overwrite a branch whose head changed since the failed run.
     current=gh(f"repos/{ROOT}/git/ref/heads/{branch}",token)["object"]["sha"]
-    if current!=run.get("head_sha"):
+    match = re.search(r" @ ([a-f0-9]{40})", run.get("display_title",""))
+    if not match or current!=match.group(1):
         return {"status":"superseded"}
     comments=gh(f"repos/{ROOT}/issues/{pr['number']}/comments?per_page=100",token)
     if any(MARKER+branch+":"+str(run["id"]) in (c.get("body") or "") for c in comments):
