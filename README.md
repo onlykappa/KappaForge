@@ -135,3 +135,13 @@ The mobile Chat interface now uses a smaller header, composer, action controls, 
 Read-only `project-map` reports now include a bounded, **SHA-qualified architecture memory snapshot** and a comparison with the preceding snapshot on **the same approved issue**. Memory is stored in GitHub issue comments rather than in generated code or privileged secrets. The snapshot records paths, file summaries, symbols, and imports from the project index. It cannot claim to remember details never indexed, and this is not yet cross-project, cross-task semantic memory.
 
 The sandbox debugging engine now passes bounded, structured failed-job and failed-step metadata to Gemini rather than only a list of step names. Full log inspection and verified root-cause identification remain future work; failed-step metadata can be incomplete or misleading. All sandbox path, exact-SHA, retry-cap, review, and no-auto-merge restrictions remain in force.
+
+## Installable iPhone web app, update check (v0.5.0)
+
+KappaForge now includes a web-app manifest, a same-origin SVG icon, and a network-first service worker that **does not cache private chat traffic or bearer credentials**. On iPhone, open KappaForge in Safari, tap Share, then **Add to Home Screen** and choose **Open as Web App** when offered. It launches from an icon in a standalone window, without Safari's tab/navigation chrome. This is a home-screen web app (PWA), **not yet a native iOS binary**.
+
+The top **⇩ Check updates** button fetches `preview/version.json` without browser caching. When the remote version differs from the version bundled in the loaded page, it offers **Apply update and restart**, which reloads the app and checks for a new service worker. The app checks on startup and when returning to the foreground. Deployments must bump **both** `APP_VERSION` in `preview/index.html` and `version` in `preview/version.json` for update prompts to work. It cannot restart the whole iOS process or silently update an App Store app.
+
+## Project memory across tasks
+
+Authorized project-map tasks can find the most recent SHA-verified architecture snapshot in the same task, or in one of the latest 12 authorized owner-authored project-map issues targeting the **same repository**. A new snapshot and bounded added/removed path comparison are then posted in the active task's issue comments. This is a structured memory of scanned files, symbols, and imports, not a full semantic search engine and not a source of unverified historical claims.
