@@ -64,3 +64,31 @@ Do not weaken authentication, authorization, or production safeguards.
 The owner explicitly approves the task. The agent reads the named source, asks Gemini for a bounded replacement, validates allowed paths, creates a **new repair branch and draft pull request**, and posts its link to the issue. It never auto-merges, approves itself, or deploys the repair. Review the diff and run independent tests before merging. The self-repair agent has no permission to change CI workflows, secrets, deployment configurations, or other repositories. It may fail on oversized files, model-output limits, or cases where the necessary repair spans unauthorized files. Repairs are not guaranteed correct.
 
 **Recovery if Chat is down:** Create a GitHub issue in KappaForge manually with `Repository: onlykappa/KappaForge`, `Mode: repair`, and `Repair files: <allowed path>`, label it `kappa-task`, then manually dispatch **Actions → KappaForge agent → Run workflow** with that issue number. The scheduled six-hour run does not apply repairs; explicit launch is required.
+
+## Continuous agent and failure watch (experimental)
+
+KappaForge Chat now accepts **continuous** and **watch** task modes, each requiring an explicit **Approve & Launch** by the owner. Both operate on KappaForge's existing owner-authored `kappa-task` issues. Neither may auto-merge, change production, or access secrets through the model.
+
+- **Mode: continuous**: Resume a read-only repository audit with up to three bounded file batches per GitHub Actions run, storing each checkpoint and findings in issue comments. A completion marker prevents repeat processing. This is a resumable audit workflow, **not yet an unattended code-edit-and-test loop**.
+- **Mode: watch**: Inspect the latest 12 GitHub Actions runs for failed, allowlisted workflows on `main`, deduplicate reports by run ID, and post preliminary diagnostic advice on the approved issue. Failure reports **do not** establish a root cause, and repair branches are not created without a separate approved `repair` task.
+- **Schedule**: `.github/workflows/continuous.yml` runs every six hours and finds one approved watch issue and one incomplete continuous issue per pass. GitHub schedule timing can be delayed. Manual dispatch can target a particular issue at any time.
+
+Example continuous task:
+```text
+Repository: onlykappa/KappaForge
+Mode: continuous
+
+Inspect the repository in checkpoints, identify verifiable bugs,
+and continue the read-only audit across scheduled runs.
+```
+
+Example failure-watch task:
+```text
+Repository: onlykappa/KappaForge
+Mode: watch
+
+Track GitHub Actions workflow failures on main, report new failures
+to this issue, and suggest targeted investigations. Do not edit code.
+```
+
+For live results, open the authorized issue's comments or Dashboard's workflow feed. Stop continuous work by closing the issue or removing the `kappa-task` label. To change code, submit a separate explicit owner-approved `repair` or sandbox `code` task and review its draft PR. GitHub token renewal is not yet automatic.
