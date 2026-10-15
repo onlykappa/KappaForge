@@ -68,7 +68,7 @@ function prepareJob(message){
  if(!["audit","code","repair"].includes(mode)){alert("Use audit, code, or repair.");return}
  if((mode==="code"||mode==="repair")&&repo!=="onlykappa/KappaForge"){alert("Coding and repair tasks are only authorized in KappaForge.");return}
  let instructions=text.length>=10?text:text+" Please inspect and provide a detailed report.";
- if(mode==="repair"&&!/^Repair files:\\s*.+$/im.test(instructions)){alert("For repair mode, include a line like: Repair files: preview/index.html\\nOnly specifically named source files can be repaired.");return}
+ if(mode==="repair"&&!/^Repair files:\s*.+$/im.test(instructions)){alert("For repair mode, include a line like: Repair files: chat-backend/src/index.js\nOnly specifically named source files can be repaired.");return}
  pendingJob={title:title.length>=5?title:"KappaForge task",instructions,repo,mode};
  view="chat";render();
 }
