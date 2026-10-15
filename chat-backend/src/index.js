@@ -56,17 +56,32 @@ export default {
         return json({ error: "Coding jobs are restricted to KappaForge's sandbox." }, 400, cors);
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28" };
+        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
       const issueBody = "Repository: " + repo + "\nMode: " + mode +
           "\n\n" + instructions + "\n\nApproved from KappaForge Chat.";
       try {
+        // Before a write, check the token identity and its access without mutating GitHub.
+        const identityResponse = await fetch("https://api.github.com/user", { headers });
+        const identity = await identityResponse.json().catch(() => ({}));
+        if (!identityResponse.ok || identity.login?.toLowerCase() !== "onlykappa") {
+          const reason = typeof identity.message === "string" ? identity.message.slice(0, 160) : "Token identity could not be verified";
+          return json({ error: "GitHub token validation failed (HTTP " + identityResponse.status +
+            "): " + reason + ". The token must authenticate as onlykappa. Check that the full token was saved as the GITHUB_JOB_TOKEN Worker secret." }, 502, cors);
+        }
+        const repoResponse = await fetch(endpoint, { headers });
+        if (!repoResponse.ok) {
+          const info = await repoResponse.json().catch(() => ({}));
+          return json({ error: "Token authenticated as onlykappa, but KappaForge repository access returned HTTP " +
+            repoResponse.status + ": " + String(info.message || "Access denied").slice(0, 160) }, 502, cors);
+        }
         const created = await fetch(endpoint + "/issues", { method: "POST", headers,
           body: JSON.stringify({ title, body: issueBody, labels: ["kappa-Task"] }) });
         if (!created.ok) {
           const details = await created.json().catch(() => ({}));
           const reason = typeof details.message === "string" ? details.message.slice(0, 180) : "Permission denied";
-          return json({ error: "Could not create issue (GitHub HTTP " + created.status + "): " + reason + ". Check fine-grained token repository access and Issues: read/write permission." }, 502, cors);
+          const required = created.headers.get("x-accepted-github-permissions") || "not provided";
+          return json({ error: "Could not create issue (GitHub HTTP " + created.status + "): " + reason + ". GitHub accepted permissions: " + required + ". Check token activation, authorization, and Issues: read/write." }, 502, cors);
         }
         const issue = await created.json();
         // KappaForge's agent accepts issues authored by onlykappa. Require an owner-authored
