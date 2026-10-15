@@ -7,12 +7,12 @@
 <div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" required></textarea><div class="controls"><button class="btn secondary" type="button" id="task">Make a task</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">AI responds when connected. No automatic code edits or GitHub writes.</div></div></section></div>
 <script>
 const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
+let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let pendingJob=null;let recentJob=null;let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);let current=chats[0]?.id||null,view="chat",data={repos:[],issues:[],prs:[],runs:[],error:"",loaded:false};
 function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}}
 function fresh(){const c={id:uid(),title:"New conversation",messages:[],at:Date.now()};chats.unshift(c);current=c.id;save();view="chat";render();document.getElementById("message").focus()}
 function active(){return chats.find(c=>c.id===current)}
-function navigate(v){view=v;document.getElementById("sidebar").classList.remove("open");render()}
+function navigate(v){view=v;document.getElementById("sidebar").classList.remove("open");render();if(v==="home")refreshActivity(true)}
 function history(){document.getElementById("history").innerHTML=chats.map(c=>'<button class="history '+(c.id===current&&view==="chat"?"active":"")+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")}
 const card=(title,body)=>'<div class="panel"><h3>'+esc(title)+'</h3>'+body+'</div>';
 const row=(name,subtitle,url)=>'<div class="row"><div><strong>'+esc(name)+'</strong><div class="muted">'+esc(subtitle)+'</div></div><a href="'+esc(url)+'" target="_blank" rel="noopener">↗</a></div>';
@@ -24,18 +24,53 @@ document.getElementById("heading").textContent=({chat:"KappaForge Chat",home:"Da
 document.getElementById("composer").classList.toggle("hide",view!=="chat");
 let html="";const c=active();
 if(view==="chat"){html=c?.messages.length?c.messages.map(m=>'<div class="bubble '+(m.role==="user"?"user":"assistant")+'">'+esc(m.text)+'</div>').join(""):'<div class="welcome"><div style="font-size:42px;color:#5758ac">✦</div><h1>What should we build today?</h1><p class="muted">Draft an idea, explore a plan, or prepare a new development task.</p><span class="pill">Connect AI to activate live responses</span></div>';}
-if(view==="chat")html=activityPanel()+html;
-if(view==="home")html=card("Cloud status",'<p class="muted">Public read-only GitHub data · '+(data.loaded?"Connected":"Loading or unavailable")+'</p>')+card("Recent agent runs",(data.runs||[]).map(x=>row(x.name||"Workflow",x.status+" · "+(x.conclusion||"pending"),x.html_url)).join("")||'<p class="muted">No activity loaded.</p>');
+
+if(view==="chat"&&pendingJob)html+=jobApproval();
+if(view==="chat"&&recentJob)html+=jobResult();
+if(view==="home")html=activityPanel()+card("Cloud status",'<p class="muted">Public read-only GitHub data · '+(data.loaded?"Connected":"Loading or unavailable")+'</p>')+card("Recent agent runs",(data.runs||[]).map(x=>row(x.name||"Workflow",x.status+" · "+(x.conclusion||"pending"),x.html_url)).join("")||'<p class="muted">No activity loaded.</p>');
 if(view==="projects")html=card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
-document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));
+document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
 }
 
-function activityPanel(){
+
+function jobApproval(){
+ return '<div class="panel" style="border:2px solid #5456b9"><span class="pill">Approval required</span><h3>Launch KappaForge job?</h3><p><strong>'+esc(pendingJob.title)+'</strong></p><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p style="white-space:pre-wrap">'+esc(pendingJob.instructions)+'</p><button class="btn" id="approvejob">Approve & Launch</button> <button class="btn secondary" id="canceljob">Cancel</button><p class="muted">Only KappaForge sandbox coding or read-only audits are supported. This will create a GitHub issue and attempt workflow dispatch.</p></div>';
+}
+function jobResult(){
+ return '<div class="panel"><h3>Latest job</h3><p>'+esc(recentJob.message)+'</p>'+(recentJob.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(recentJob.url)+'">Open GitHub issue ↗</a>':'')+'</div>';
+}
+async function launchJob(){
+ if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
+ const job=pendingJob;pendingJob=null;recentJob={message:"Submitting approved job…"};render();
+ try{
+ const response=await fetch(backend+"/jobs",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({...job,approved:true})});
+ const data=await response.json();
+ if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
+ recentJob={message:"Job #"+data.issueNumber+" dispatched. Follow progress in Dashboard.",url:data.issueUrl,number:data.issueNumber};
+ }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};}
+ render();
+}
+function prepareJob(message){
+ const text=(message||"").trim();
+ if(!text){alert("Write a task in the chat first.");return}
+ const title=text.split("\n")[0].slice(0,105);
+ const repoChoice=prompt("Repository: KappaForge, OmniPC, or Apk-revival","KappaForge");
+ if(repoChoice===null)return;
+ const repoMap={"kappaforge":"onlykappa/KappaForge","omnipc":"onlykappa/OmniPC","apk-revival":"onlykappa/Apk-revival"};
+ const repo=repoMap[repoChoice.trim().toLowerCase()];
+ if(!repo){alert("Choose one of the three authorized repositories.");return}
+ const mode=(prompt("Task mode: audit or code (code restricted to KappaForge sandbox)","audit")||"").toLowerCase();
+ if(!["audit","code"].includes(mode)){alert("Use audit or code.");return}
+ if(mode==="code"&&repo!=="onlykappa/KappaForge"){alert("Code tasks are only authorized in KappaForge.");return}
+ pendingJob={title:title.length>=5?title:"KappaForge task",instructions:text.length>=10?text:text+" Please inspect and provide a detailed report.",repo,mode};
+ view="chat";render();
+}
+\nfunction activityPanel(){
  const entries=activity.runs.slice(0,6).map(r=>{
    const dot=r.status!=="completed"?"🔄":r.conclusion==="success"?"✅":r.conclusion==="failure"?"❌":"◯";
    const detail=r.status==="completed"?(r.conclusion||"finished"):r.status;
@@ -44,7 +79,7 @@ function activityPanel(){
  return '<section class="feed" aria-label="Live GitHub activity"><div class="feed-head"><div><strong>◉ Agent activity</strong><div><small>'+esc(activity.last?"Checked "+activity.last.toLocaleTimeString():"Checking GitHub…")+' · refreshes every 90s</small></div></div><div class="feed-tools"><button type="button" id="feedrefresh" '+(activity.busy?"disabled":"")+' aria-label="Refresh agent activity">↻ Refresh</button></div></div><div class="feed-list">'+(entries||'<div class="feed-empty">No GitHub runs loaded yet.</div>')+'</div>'+(activity.error?'<div class="feed-error">'+esc(activity.error)+'</div>':'')+'</section>';
 }
 async function refreshActivity(force=false){
- if(activity.busy||document.hidden||(!force&&view!=="chat"))return;
+ if(activity.busy||document.hidden||(!force&&view!=="home"))return;
  activity.busy=true;
  try {
   const response=await fetch("https://api.github.com/repos/onlykappa/KappaForge/actions/runs?per_page=12",{headers:{"Accept":"application/vnd.github+json"}});
@@ -53,12 +88,12 @@ async function refreshActivity(force=false){
   activity.runs=(result.workflow_runs||[]).filter(r=>r&&typeof r.html_url==="string"&&r.html_url.startsWith("https://github.com/onlykappa/KappaForge/actions/runs/"));
   activity.last=new Date();activity.error="";
  }catch(e){activity.error=e.message;}
- finally {activity.busy=false;if(view==="chat")render()}
+ finally {activity.busy=false;if(view==="home")render()}
 }
 
 function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge development task").slice(0,110),body="Repository: onlykappa/KappaForge\nMode: audit\n\n"+text+"\n\nReview before creating. This browser preview cannot authorize a coding run.";const url="https://github.com/onlykappa/KappaForge/issues/new?"+new URLSearchParams({title,body});window.open(url,"_blank","noopener")}
 document.getElementById("form").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;const input=document.getElementById("message"),text=input.value.trim();if(!text)return;if(!active())fresh();const c=active();c.messages.push({role:"user",text});if(c.messages.length===1)c.title=text.slice(0,50);c.at=Date.now();chats=[c,...chats.filter(x=>x.id!==c.id)];save();input.value="";render();if(!backend||!access){c.messages.push({role:"assistant",text:"Your message is saved locally. Tap Connect AI at the top and enter your deployed backend address plus your private access token to receive real responses."});save();render();return}sending=true;const button=document.querySelector("#form button[type=submit]");if(button)button.disabled=true;try{const messages=c.messages.slice(-16).filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role,text:m.text}));const response=await fetch(backend+"/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({messages})});const data=await response.json();if(!response.ok)throw Error(data.error||"Service unavailable");c.messages.push({role:"assistant",text:data.reply});}catch(err){c.messages.push({role:"assistant",text:"Connection error: "+err.message+" (tap Connect AI to review settings)"});}finally{sending=false;save();render()}});
-document.getElementById("task").addEventListener("click",()=>{const typed=document.getElementById("message").value.trim();const msg=typed||[...(active()?.messages||[])].reverse().find(m=>m.role==="user")?.text||"";openTask(msg)});
+document.getElementById("task").addEventListener("click",()=>{const typed=document.getElementById("message").value.trim();const msg=typed||[...(active()?.messages||[])].reverse().find(m=>m.role==="user")?.text||"";prepareJob(msg)});
 document.getElementById("connect").addEventListener("click",()=>{if(backend&&access){if(confirm("AI is configured to reconnect automatically on this device. Disconnect and delete the saved access token?")){backend="";access="";localStorage.removeItem("kappaforge.backend");localStorage.removeItem("kappaforge.access");sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();}return;}const url=prompt("Private KappaForge Worker URL (https://...workers.dev)",backend);if(url===null)return;let parsed;try{parsed=new URL(url);if(parsed.protocol!=="https:"||!parsed.hostname.endsWith(".workers.dev"))throw Error("invalid")}catch{alert("Enter your HTTPS workers.dev URL.");return}const token=prompt("Private chat access token (saved on this device for automatic reconnection)","");if(token===null||!token.trim())return;backend=parsed.origin;access=token.trim();localStorage.setItem("kappaforge.backend",backend);localStorage.setItem("kappaforge.access",access);sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();alert("Connected settings saved. KappaForge will remember this device. Do not use this on shared devices.");});
 function updateConnection(){document.getElementById("connect").textContent=backend&&access?"✓ AI Connected":"⚙ Connect AI";}
 document.getElementById("new").addEventListener("click",fresh);document.getElementById("menubtn").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));document.getElementById("refresh").addEventListener("click",load);
