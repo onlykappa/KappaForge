@@ -29,7 +29,7 @@ class HandoffTests(unittest.TestCase):
         self.assertIn("abcdef0123456789", data["evidence"])
         self.assertIn("src/controller.ts", data["evidence"])
         self.assertTrue(data["handoff_found"])
-        self.assertIn("sha=feat%2Fcontroller-fix", seen)
+        self.assertTrue(any("sha=feat%2Fcontroller-fix" in path for path in seen))
 
 if __name__ == "__main__":
     unittest.main()
