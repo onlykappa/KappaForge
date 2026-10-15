@@ -235,7 +235,7 @@ export default {
           if (!proposal || typeof proposal.isTask !== "boolean") return json({ error: "Invalid planner response." }, 502, cors);
           if (!proposal.isTask) return json({ isTask: false }, 200, cors);
           if (!repos.includes(proposal.repo) || !modes.includes(proposal.mode) ||
-              (proposal.mode !== "audit" && proposal.repo !== "onlykappa/KappaForge") ||
+              (!["audit","project-map"].includes(proposal.mode) && proposal.repo !== "onlykappa/KappaForge") ||
               typeof proposal.instructions !== "string" || proposal.instructions.trim().length < 10 ||
               proposal.instructions.length > 3500 || typeof proposal.title !== "string")
             return json({ error: "Planner suggestion needs manual task setup." }, 422, cors);
