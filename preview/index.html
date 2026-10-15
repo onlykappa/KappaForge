@@ -138,7 +138,7 @@ if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+e
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
 document.querySelectorAll("[data-review]").forEach(b=>b.addEventListener("click",()=>submitReviewDecision(Number(b.dataset.review),b.dataset.decision)));
-document.querySelectorAll("[data-hide]").forEach(b=>b.addEventListener("click",()=>hideReview(Number(b.dataset.hide)));
+document.querySelectorAll("[data-hide]").forEach(b=>b.addEventListener("click",()=>hideReview(Number(b.dataset.hide))));
 document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff))));
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load();refreshActivity(true)});
