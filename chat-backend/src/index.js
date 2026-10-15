@@ -1,5 +1,5 @@
 const ORIGIN = "https://onlykappa.github.io";
-const MODEL = "gemini-2.5-flash-lite";
+const PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
 function json(data, status = 200, cors = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -58,19 +58,49 @@ export default {
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 }
     };
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 22000);
-      let response;
-      try {
-        response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent", {
-          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-          body: JSON.stringify(payload), signal: controller.signal
-        });
-      } finally { clearTimeout(timeout); }
-      if (!response.ok) return json({ error: "Gemini temporarily unavailable (" + response.status + ")" }, 502, cors);
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
-      return text ? json({ reply: text }, 200, cors) : json({ error: "Gemini returned no text" }, 502, cors);
-    } catch { return json({ error: "AI request timed out or failed" }, 502, cors); }
+      // Discover which explicitly approved Flash models this API key can call.
+      const available = new Set();
+      let pageToken = "";
+      for (let page = 0; page < 5; page++) {
+        const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+        url.searchParams.set("pageSize", "100");
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
+        const listing = await fetch(url, { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
+        if (!listing.ok) return json({ error: "Gemini model discovery failed (HTTP " + listing.status + ")" }, 502, cors);
+        const data = await listing.json();
+        for (const item of data.models || []) {
+          if (item.supportedGenerationMethods?.includes("generateContent"))
+            available.add(item.name.replace(/^models\//, ""));
+        }
+        pageToken = data.nextPageToken || "";
+        if (!pageToken) break;
+      }
+      const candidates = PREFERRED_MODELS.filter(m => available.has(m));
+      if (!candidates.length)
+        return json({ error: "No approved Flash model available for this Gemini API key." }, 502, cors);
+      let lastStatus = 0;
+      for (const model of candidates) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        let response;
+        try {
+          response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+            method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+            body: JSON.stringify(payload), signal: controller.signal
+          });
+        } finally { clearTimeout(timeout); }
+        lastStatus = response.status;
+        if (!response.ok) {
+          if ([404, 429, 500, 502, 503].includes(response.status)) continue;
+          return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
+        }
+        const result = await response.json();
+        const answer = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
+        if (answer) return json({ reply: answer, model }, 200, cors);
+      }
+      return json({ error: "All approved Gemini routes unavailable (last HTTP " + lastStatus + ")." }, 502, cors);
+    } catch {
+      return json({ error: "AI request timed out or failed" }, 502, cors);
+    }
   }
 };
