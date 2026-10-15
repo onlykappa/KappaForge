@@ -1,0 +1,31 @@
+name: KappaForge agent
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "KappaForge issue number (blank = next labeled task)"
+        required: false
+        type: string
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: kappaforge-agent
+  cancel-in-progress: false
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Analyze authorized KappaForge issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: python -m engine.runner
