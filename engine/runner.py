@@ -155,6 +155,15 @@ def main():
     if not os.getenv("GEMINI_API_KEY"):
         print("GEMINI_API_KEY missing; task left queued.")
         return
+    body_text = issue.get("body") or ""
+    if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
+        if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
+            print("Coding mode requires explicit manual workflow dispatch; task remains queued.")
+            return
+        from engine.coder import produce_draft_pr
+        url = produce_draft_pr(issue, os.environ["GEMINI_API_KEY"], token)
+        print("Draft pull request created: " + url)
+        return
     task = (issue.get("title", "") + "\n" + (issue.get("body") or ""))[:6000]
     match = TARGET_RE.search(issue.get("body") or "")
     if not match or match.group(1) not in CONFIG["allowed"]:
