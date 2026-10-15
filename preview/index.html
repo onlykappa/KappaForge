@@ -70,7 +70,7 @@ function prepareJob(message){
  pendingJob={title:title.length>=5?title:"KappaForge task",instructions:text.length>=10?text:text+" Please inspect and provide a detailed report.",repo,mode};
  view="chat";render();
 }
-\nfunction activityPanel(){
+function activityPanel(){
  const entries=activity.runs.slice(0,6).map(r=>{
    const dot=r.status!=="completed"?"🔄":r.conclusion==="success"?"✅":r.conclusion==="failure"?"❌":"◯";
    const detail=r.status==="completed"?(r.conclusion||"finished"):r.status;
