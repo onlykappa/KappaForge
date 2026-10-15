@@ -181,9 +181,11 @@ def main():
             raise ValueError("Invalid project map target")
         from engine.project_index import index_repository
         report = index_repository(match.group(1), token, github, content)
-        from engine.project_memory import snapshot, extract_latest, change_summary
+        from engine.project_memory import snapshot, extract_latest, change_summary, recent_repo_memory
         comments = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
         previous = extract_latest(comments, report["repo"])
+        if previous is None:
+            previous = recent_repo_memory(report["repo"], github, token, current_issue=issue["number"])
         difference = change_summary(previous, report)
         # Persistent, SHA-qualified read-only architecture memory, scoped to this task.
         memory_note = snapshot(report)
