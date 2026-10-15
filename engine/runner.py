@@ -28,7 +28,10 @@ def request(url, payload=None, token=None, method=None):
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=35) as response:
-        return json.loads(response.read())
+        body = response.read()
+        if not body.strip():
+            return {}  # GitHub workflow dispatch returns HTTP 204 with an empty body.
+        return json.loads(body)
 
 def github(path, token=None, payload=None):
     return request("https://api.github.com/" + path, payload, token)
