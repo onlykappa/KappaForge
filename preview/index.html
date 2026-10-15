@@ -40,8 +40,44 @@ function navigate(v){view=v;document.getElementById("sidebar").classList.remove(
 function history(){document.getElementById("history").innerHTML=chats.map(c=>'<button class="history '+(c.id===current&&view==="chat"?"active":"")+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")}
 const card=(title,body)=>'<div class="panel"><h3>'+esc(title)+'</h3>'+body+'</div>';
 const row=(name,subtitle,url)=>'<div class="row"><div><strong>'+esc(name)+'</strong><div class="muted">'+esc(subtitle)+'</div></div><a href="'+esc(url)+'" target="_blank" rel="noopener">↗</a></div>';
-const api=async p=>{const r=await fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw Error("GitHub HTTP "+r.status);return r.json()};
-async function load(){try{const names=["KappaForge","OmniPC","Apk-revival"];const [r,i,p,w]=await Promise.all([Promise.all(names.map(api)),Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30").then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),Promise.all(names.map(n=>api(n+"/pulls?state=open&per_page=30").then(x=>x.map(v=>({...v,repo:n}))))),api("KappaForge/actions/runs?per_page=10")]);data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};}catch(e){data.error=e.message}render()}
+const requestCache=new Map();
+const api=async (p,force=false)=>{
+ const now=Date.now(),hit=requestCache.get(p);
+ if(hit?.promise)return hit.promise;
+ if(!force&&hit&&now-hit.time<300000)return hit.value;
+ const promise=(async()=>{
+  const r=await fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});
+  if(r.status===403||r.status===429){
+   const reset=Number(r.headers.get("x-ratelimit-reset")||0)*1000;
+   const remain=r.headers.get("x-ratelimit-remaining");
+   if(remain==="0")throw Error("GitHub public API limit reached. Cached information remains available. Try again after "+(reset?new Date(reset).toLocaleTimeString():"the limit resets")+".");
+  }
+  if(!r.ok)throw Error("GitHub HTTP "+r.status);
+  const value=await r.json();requestCache.set(p,{value,time:Date.now()});return value;
+ })();
+ requestCache.set(p,{...hit,promise});
+ try{return await promise}catch(err){if(hit?.value){requestCache.set(p,hit);return hit.value}requestCache.delete(p);throw err}
+};
+let lastDashboardFetch=0, dashboardLoading=null;
+async function load(force=false){
+ if(dashboardLoading)return dashboardLoading;
+ if(!force&&data.loaded&&Date.now()-lastDashboardFetch<300000){render();return}
+ dashboardLoading=(async()=>{
+  try{
+   const names=["KappaForge","OmniPC","Apk-revival"];
+   const [r,i,p,w]=await Promise.all([
+    Promise.all(names.map(n=>api(n,force))),
+    Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30",force).then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),
+    Promise.all(names.map(n=>api(n+"/pulls?state=open&per_page=30",force).then(x=>x.map(v=>({...v,repo:n}))))),
+    api("KappaForge/actions/runs?per_page=10",force)
+   ]);
+   data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};
+   lastDashboardFetch=Date.now();
+  }catch(e){data.error=e.message}
+  finally{render();dashboardLoading=null}
+ })();
+ return dashboardLoading;
+}
 
 function repairItem(p){
  const branch=p.head?.ref||"",safe=/^kappa\/repair-[0-9]+$/.test(branch);
@@ -166,7 +202,7 @@ document.querySelectorAll("[data-review]").forEach(b=>b.addEventListener("click"
 document.querySelectorAll("[data-hide]").forEach(b=>b.addEventListener("click",()=>hideReview(Number(b.dataset.hide))));
 document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b)));
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
-document.getElementById("controlrefresh")?.addEventListener("click",()=>{load();refreshActivity(true)});
+document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
 }
 
@@ -307,5 +343,5 @@ document.getElementById("new").addEventListener("click",fresh);document.getEleme
 document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.target.closest("[data-page]");if(page)navigate(page.dataset.page)});
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
-updateConnection();render();load();refreshActivity(true);if(recentJob?.number)checkJobResult();setInterval(()=>{refreshActivity();if(view==="home")load();if(view==="chat")checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshActivity()});
+updateConnection();render();load();refreshActivity(true);if(recentJob?.number)checkJobResult();setInterval(()=>{if(document.hidden)return;refreshActivity();if(view==="home")load();if(view==="chat")checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshActivity()});
 </script></body></html>
