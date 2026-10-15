@@ -113,3 +113,9 @@ KappaForge's mobile Dashboard now shows recent agent activity, open draft PRs, r
 Chat remembers the latest launched issue number in browser storage, reads public issue comments, and shows checkpoint/draft PR updates and a review link.
 
 Sandbox coding checks generated path scope and Python syntax before opening a draft PR and attempts one correction for invalid AI output. It then dispatches independent sandbox tests. **There is not yet an automatic post-test bug-fixing loop.** Failed independent tests require a separate approved task. KappaForge does not auto-merge, approve, or deploy generated PRs.
+
+## Folder and archive import (experimental)
+
+KappaForge Chat has a **Folder** picker for directory trees and a **Files** picker for large artifacts. The initial implementation inventories up to **500 files / 300 MB** locally on the user's device and sends a capped manifest plus a few short text excerpts to Gemini. ZIP-compatible formats (ZIP, APK, JAR, IPA and AAB) can be indexed via their ZIP central directory without executing or extracting binaries. Other binary/archive formats provide metadata only. Direct inline PDF and image limits remain **1 MB each**, three attachments total.
+
+**Important limitations:** This is not a multi-gigabyte cloud upload service, a full recursive archive extractor, or an autonomous reverse-engineering environment. The large artifacts do not leave the browser; the model receives only the curated file manifest/excerpts. Some compressed/ZIP64/encrypted archives cannot be indexed. Full deep analysis of executables, app behavior and large projects requires a separate isolated worker, object storage and user-approved resource budgets. Never execute unknown uploads on the privileged GitHub Actions runner.
