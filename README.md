@@ -127,3 +127,11 @@ KappaForge now has a **bounded follow-up repair loop** for generated sandbox dra
 ## Repository project maps (experimental)
 
 A new `project-map` task mode inventories up to 300 text/source paths and inspects up to 20 selected files from one of the three authorized public repositories, extracting Python symbols, imports and other code structure. It posts a report back to the approved GitHub issue. The Chat AI planner can select this mode when asked to understand project architecture. It does **not yet build a searchable index over an entire uploaded archive**, infer runtime behavior, or reverse engineer binaries. The import inventory for browser-uploaded files remains a separate limited feature.
+
+## Compact iPhone Chat and project memory
+
+The mobile Chat interface now uses a smaller header, composer, action controls, chat bubbles, and bottom navigation so conversations occupy more screen space. The attachment and folder controls remain available.
+
+Read-only `project-map` reports now include a bounded, **SHA-qualified architecture memory snapshot** and a comparison with the preceding snapshot on **the same approved issue**. Memory is stored in GitHub issue comments rather than in generated code or privileged secrets. The snapshot records paths, file summaries, symbols, and imports from the project index. It cannot claim to remember details never indexed, and this is not yet cross-project, cross-task semantic memory.
+
+The sandbox debugging engine now passes bounded, structured failed-job and failed-step metadata to Gemini rather than only a list of step names. Full log inspection and verified root-cause identification remain future work; failed-step metadata can be incomplete or misleading. All sandbox path, exact-SHA, retry-cap, review, and no-auto-merge restrictions remain in force.
