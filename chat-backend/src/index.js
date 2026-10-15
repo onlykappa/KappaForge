@@ -49,10 +49,10 @@ export default {
       const mode = input.mode, repo = input.repo;
       const title = typeof input.title === "string" ? input.title.trim() : "";
       const instructions = typeof input.instructions === "string" ? input.instructions.trim() : "";
-      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "watch"].includes(mode) ||
+      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "continuous-code", "watch"].includes(mode) ||
           title.length < 5 || title.length > 120 || instructions.length < 10 || instructions.length > 3500)
         return json({ error: "Job must be valid and explicitly approved." }, 400, cors);
-      if (["code", "repair", "continuous", "watch"].includes(mode) && repo !== "onlykappa/KappaForge")
+      if (["code", "repair", "continuous", "continuous-code", "watch"].includes(mode) && repo !== "onlykappa/KappaForge")
         return json({ error: "Coding jobs are restricted to KappaForge's sandbox." }, 400, cors);
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
@@ -88,7 +88,7 @@ export default {
         // issue rather than weakening its authorization policy for bot identities.
         if (issue.user?.login?.toLowerCase() !== "onlykappa")
           return json({ error: "Issue #" + issue.number + " was created, but its author is not the authorized repository owner. Agent was not launched.", issueUrl: issue.html_url }, 409, cors);
-        const workflowName = (mode === "continuous" || mode === "watch") ? "continuous.yml" : "agent.yml";
+        const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
         const dispatched = await fetch(endpoint + "/actions/workflows/" + workflowName + "/dispatches",
           { method: "POST", headers, body: JSON.stringify({ ref: "main", inputs: { issue_number: String(issue.number) } }) });
         if (!dispatched.ok) return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);
