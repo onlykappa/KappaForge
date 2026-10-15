@@ -71,7 +71,12 @@ export default {
           const closed = await fetch(base + "/pulls/" + number, {
             method:"PATCH",headers,body:JSON.stringify({state:"closed"})
           });
-          if (!closed.ok) return json({error:"GitHub could not close PR (HTTP "+closed.status+"). Check Pull requests: read/write token permission."},502,cors);
+          if (!closed.ok) {
+            const info = await closed.json().catch(() => ({}));
+            const detail = typeof info.message === "string" ? info.message.slice(0, 180) : "Permission denied";
+            const required = closed.headers.get("x-accepted-github-permissions") || "unavailable";
+            return json({error:"GitHub refused to close PR (HTTP "+closed.status+"): "+detail+". Required permissions: "+required+". Verify the Cloudflare token has Pull requests: read/write; updating GitHub token settings may require replacing the saved Worker secret."},502,cors);
+          }
           return json({status:"closed",prNumber:number},200,cors);
         }
         const message = decision === "approve"
