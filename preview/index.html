@@ -400,21 +400,50 @@ document.getElementById("folderinput").addEventListener("change",async e=>{
  e.target.value="";
 });
 document.getElementById("attachbtn").addEventListener("click",()=>document.getElementById("attachinput").click());
+async function optimizedImage(file){
+ const bitmap=await createImageBitmap(file);
+ try{
+  let width=bitmap.width,height=bitmap.height;
+  const scale=Math.min(1,1800/Math.max(width,height));
+  width=Math.max(1,Math.round(width*scale));height=Math.max(1,Math.round(height*scale));
+  for(let attempt=0;attempt<5;attempt++){
+   const canvas=document.createElement("canvas");
+   canvas.width=width;canvas.height=height;
+   const ctx=canvas.getContext("2d");
+   if(!ctx)throw Error("Image processing is unavailable");
+   ctx.drawImage(bitmap,0,0,width,height);
+   const quality=Math.max(.45,.88-attempt*.1);
+   const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",quality));
+   if(!blob)throw Error("Image conversion failed");
+   if(blob.size<=950000)return {name:file.name.replace(/\.[^.]+$/,"")+".jpg",mime:"image/jpeg",data:await loadBase64(blob)};
+   width=Math.max(400,Math.round(width*.8));height=Math.max(400,Math.round(height*.8));
+  }
+  throw Error("Image could not be optimized within the attachment limit.");
+ }finally{bitmap.close?.()}
+}
 document.getElementById("attachinput").addEventListener("change",async e=>{
- for(const file of Array.from(e.target.files||[])){
-  if(queuedAttachments.length>=3){alert("Maximum 3 files per message.");break}
-  const mime=file.type||"";
-  if(file.size>1050000 && !/\.(zip|apk|jar|ipa|aab|7z|tar|gz|exe|dll|so)$/i.test(file.name)){alert(file.name+" exceeds the 1 MB direct-attachment limit. Larger files need project inspection.");continue}
-  if(/\.(zip|apk|jar|ipa|aab|7z|tar|gz|exe|dll|so)$/i.test(file.name)){try{await queueProject([file],file.name+" inspection")}catch(err){alert(err.message)}continue}
-  if(mime.startsWith("image/")||mime==="application/pdf"){
-   if(!["image/png","image/jpeg","image/webp","application/pdf"].includes(mime)){alert("Unsupported image format");continue}
-   queuedAttachments.push({name:file.name,mime,data:await loadBase64(file)});
-  }else if(/\.(txt|log|json|csv|md)$/i.test(file.name)){
-   const contents=await file.text();
-   queuedAttachments.push({name:file.name,mime:"text/plain",text:contents.slice(0,12000)});
-  }else alert("Supported: PNG, JPG, WebP, PDF, TXT, LOG, JSON, CSV, and MD.");
+ const selected=Array.from(e.target.files||[]);
+ e.target.value="";
+ for(const file of selected){
+  if(queuedAttachments.length>=3){alert("Maximum 3 attachments per message.");break}
+  try{
+   const mime=file.type||"";
+   if(mime.startsWith("image/")||/\.(jpg|jpeg|png|webp|heic|heif)$/i.test(file.name)){
+    if(file.size>40*1024*1024)throw Error("Photo exceeds 40 MB. Choose a smaller version.");
+    const result=await optimizedImage(file);
+    queuedAttachments.push(result);
+   }else if(mime==="application/pdf"&&file.size<=1050000){
+    queuedAttachments.push({name:file.name,mime,data:await loadBase64(file)});
+   }else if(/\.(zip|apk|jar|ipa|aab|7z|tar|gz|exe|dll|so)$/i.test(file.name)||file.size>1050000){
+    await queueProject([file],file.name+" inspection");
+   }else if(projectText.test(file.name)||/\.(csv)$/i.test(file.name)){
+    queuedAttachments.push({name:file.name,mime:"text/plain",text:(await file.text()).slice(0,12000)});
+   }else{
+    await queueProject([file],file.name+" inspection");
+   }
+  }catch(err){alert(file.name+": "+err.message)}
+  refreshAttachList();
  }
- e.target.value="";refreshAttachList();
 });
 document.getElementById("form").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;const input=document.getElementById("message"),text=input.value.trim();if(!text&&!queuedAttachments.length)return;const attachments=queuedAttachments.splice(0);refreshAttachList();const fileText=attachments.filter(x=>x.mime==="text/plain").map(x=>"\nFile "+x.name+":\n"+x.text).join("");const outgoing=(text||"Please analyze the attached files.")+fileText.slice(0,2900);if(!active())fresh();const c=active();c.messages.push({role:"user",text:outgoing.slice(0,3200)+(attachments.length?"\n[Attached: "+attachments.map(x=>x.name).join(", ")+"]":"")});if(c.messages.length===1)c.title=outgoing.slice(0,50);c.at=Date.now();chats=[c,...chats.filter(x=>x.id!==c.id)];save();input.value="";render();if(!backend||!access){c.messages.push({role:"assistant",text:"Your message is saved locally. Tap Connect AI at the top and enter your deployed backend address plus your private access token to receive real responses."});save();render();return}sending=true;const button=document.querySelector("#form button[type=submit]");if(button)button.disabled=true;try{const messages=c.messages.slice(-16).filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role,text:m.text}));if(attachments.length){messages[messages.length-1].text=outgoing.slice(0,3500);messages[messages.length-1].attachments=attachments.filter(x=>x.data).map(x=>({name:x.name,mime:x.mime,data:x.data}))}const response=await fetch(backend+"/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({messages})});const data=await response.json();if(!response.ok)throw Error(data.error||"Service unavailable");c.messages.push({role:"assistant",text:data.reply});if(!attachments.length)await proposeTaskAutomatically(text,false);}catch(err){c.messages.push({role:"assistant",text:"Connection error: "+err.message+" (tap Connect AI to review settings)"});}finally{sending=false;save();render()}});
 document.getElementById("task").addEventListener("click",async()=>{const typed=document.getElementById("message").value.trim();const msg=typed||[...(active()?.messages||[])].reverse().find(m=>m.role==="user")?.text||"";if(!msg)return alert("Describe your task first.");const planned=await proposeTaskAutomatically(msg,true);if(!planned)prepareJob(msg)});
