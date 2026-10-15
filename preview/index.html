@@ -235,5 +235,5 @@ document.getElementById("new").addEventListener("click",fresh);document.getEleme
 document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.target.closest("[data-page]");if(page)navigate(page.dataset.page)});
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
-updateConnection();render();load();refreshActivity(true);if(recentJob?.number)checkJobResult();setInterval(()=>{refreshActivity();if(view==="chat")checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshActivity()});
+updateConnection();render();load();refreshActivity(true);if(recentJob?.number)checkJobResult();setInterval(()=>{refreshActivity();if(view==="home")load();if(view==="chat")checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshActivity()});
 </script></body></html>
