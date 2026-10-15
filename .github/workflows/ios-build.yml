@@ -1,0 +1,30 @@
+name: iOS simulator build
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to validate, for example kappa/issue-4"
+        required: true
+        default: "kappa/issue-4"
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    if: startsWith(inputs.branch, 'kappa/issue-')
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: projects/kappaforge_ios
+        run: xcodegen generate
+      - name: Compile iOS Simulator app without signing
+        working-directory: projects/kappaforge_ios
+        run: |
+          xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
