@@ -181,11 +181,17 @@ def main():
             raise ValueError("Invalid project map target")
         from engine.project_index import index_repository
         report = index_repository(match.group(1), token, github, content)
-        # The index is deliberately capped; no source code is passed to Gemini.
-        payload = json.dumps(report, indent=2)
+        from engine.project_memory import snapshot, extract_latest, change_summary
+        comments = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
+        previous = extract_latest(comments, report["repo"])
+        difference = change_summary(previous, report)
+        # Persistent, SHA-qualified read-only architecture memory, scoped to this task.
+        memory_note = snapshot(report)
+        payload = json.dumps(difference, indent=2)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token,
-               {"body": "### KappaForge project map complete\\n\\nRead-only indexed architecture, symbols and imports.\\n\\n" +
-                "```json\\n" + payload[:52000] + "\\n```"})
+               {"body": "### KappaForge project map complete\n\n" +
+                "Read-only structure and import analysis. No source modified.\n\n" +
+                "Changes since previous task snapshot:\n```json\n" + payload + "\n```\n\n" + memory_note})
         print(f"Indexed {report['total_indexed']} project files")
         return
     if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):
