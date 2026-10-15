@@ -3,12 +3,11 @@
 The privileged agent never executes generated patches. Review and CI are separate.
 """
 import re
-from engine.coder import gh, parse_proposal
-from engine.runner import run_model, content as read_content
+from engine.coder import gh
+from engine.runner import run_model
 
 ROOT = "onlykappa/KappaForge"
 REPAIR_PATHS = (
-    "preview/index.html",
     "chat-backend/src/index.js",
     "engine/runner.py",
     "engine/coder.py",
@@ -29,10 +28,14 @@ def repair_proposal(api_key, issue):
         raise ValueError("Repair files must name one or two distinct allowlisted paths")
     snapshots = {}
     for path in paths:
-        snapshots[path] = read_content(ROOT, path)
+        import base64
+        blob = gh(f"repos/{ROOT}/contents/{path}?ref=main", None)
+        if blob.get("encoding") != "base64" or blob.get("truncated"):
+            raise ValueError("Full source unavailable: " + path)
+        snapshots[path] = base64.b64decode(blob["content"]).decode("utf-8")
         if not snapshots[path]:
             raise ValueError("Could not read requested source: " + path)
-        if len(snapshots[path]) >= 30000:
+        if len(snapshots[path]) > 14000:
             raise ValueError("Source too large for reliable full-file repair: " + path)
     task = (issue.get("title") or "") + "\n" + body
     prompt = (
