@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f7"><title>KappaForge Preview</title>
+<style>
+:root{font:16px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;color:#18181b;background:#f5f5f7}*{box-sizing:border-box}body{margin:0}button,a{font:inherit}button{cursor:pointer}a{color:#5356cb;text-decoration:none}
+.shell{max-width:940px;margin:auto;padding:28px 20px 110px}.eyebrow{font-size:13px;font-weight:600;letter-spacing:.04em;color:#747480}.title{font-size:35px;letter-spacing:-.035em;margin:5px 0 20px}.hero{display:flex;justify-content:space-between;align-items:center}.logo{background:#e7e7fb;color:#5254ad;padding:14px;border-radius:17px;font-size:24px}.card{background:#fff;border:1px solid #e9e9ed;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 3px 20px #15151d06}.card h3{margin:0 0 6px;font-size:17px}.muted{color:#73737d;font-size:14px}.pill{background:#f2f2f7;border-radius:20px;padding:5px 10px;font-size:12px;color:#656572;display:inline-block}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.stats strong{font-size:32px;display:block;margin:9px 0 1px}.item{padding:13px 0;border-bottom:1px solid #efeff2;display:flex;justify-content:space-between;gap:12px;align-items:center}.item:last-child{border-bottom:0}.item strong{font-size:15px}.item small{display:block;margin-top:5px;color:#85858c}.list{padding-top:6px}.nav{position:fixed;bottom:0;left:0;right:0;background:#fffc;backdrop-filter:blur(22px);border-top:1px solid #e6e6ea;display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}.tabs{width:min(940px,100%);display:grid;grid-template-columns:repeat(5,1fr)}.tab{border:0;background:transparent;padding:12px 2px;color:#82828c;font-size:11px;display:flex;align-items:center;flex-direction:column;gap:3px}.tab b{font-size:20px;font-weight:500}.tab.active{color:#5356cb}.button{border:0;background:#5356cb;color:white;padding:10px 15px;border-radius:11px;font-size:14px;font-weight:600}.status{font-size:13px;color:#777784;min-height:18px}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.alert{color:#a34b13;background:#fff5e8;border-radius:12px;padding:12px;font-size:13px}.loading{opacity:.65}@media(min-width:700px){.stats{grid-template-columns:repeat(3,1fr)}.shell{padding-top:48px}}@media(prefers-color-scheme:dark){:root{background:#121216;color:#f9f9fb}.card{background:#202026;border-color:#313139}.nav{background:#202027e9;border-color:#34343b}.pill{background:#303038;color:#c7c7d0}.item{border-color:#34343c}.logo{background:#292944;color:#c7c8ff}.alert{background:#3b2819;color:#ffc78f}}</style></head>
+<body><main class="shell"><div class="hero"><div><div class="eyebrow">YOUR DEVELOPMENT STUDIO</div><h1 class="title" id="title">KappaForge</h1></div><div class="logo">✦</div></div><div class="toolbar"><span class="status" id="status">Public read-only GitHub preview</span><button class="button" id="refresh">Refresh</button></div><div id="content" style="margin-top:22px"></div></main>
+<nav class="nav"><div class="tabs" id="tabs"></div></nav>
+<script>
+const repos=["KappaForge","OmniPC","Apk-revival"], base="https://api.github.com/repos/onlykappa/";
+const screens=[["Home","⌂"],["Projects","▤"],["Tasks","☑"],["Reviews","⇄"],["Settings","⚙"]];
+let view="Home", state={repos:[],issues:[],prs:[],runs:[],error:null,updated:null,busy:false};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const list=(items,fn,empty)=>items.length?items.map(fn).join(""):'<p class="muted">'+esc(empty)+'</p>';
+const item=(title,desc,url)=>'<div class="item"><div><strong>'+esc(title)+'</strong><small>'+esc(desc)+'</small></div><a target="_blank" rel="noopener noreferrer" href="'+esc(url)+'" aria-label="Open on GitHub">↗</a></div>';
+const card=(heading,body)=>'<section class="card"><h3>'+heading+'</h3>'+body+'</section>';
+async function fetchJSON(path){const r=await fetch(base+path,{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw Error("GitHub HTTP "+r.status+" for "+path);return r.json()}
+async function refresh(){
+ state.busy=true;document.getElementById("status").textContent="Updating from GitHub…";render();
+ try{
+ const [details,issues,prs,runs]=await Promise.all([
+ Promise.all(repos.map(n=>fetchJSON(n))),
+ Promise.all(repos.map(n=>fetchJSON(n+"/issues?state=open&per_page=30").then(a=>a.filter(i=>!i.pull_request).map(i=>({...i,repo:n}))))),
+ Promise.all(repos.map(n=>fetchJSON(n+"/pulls?state=open&per_page=30").then(a=>a.map(i=>({...i,repo:n}))))),
+ fetchJSON("KappaForge/actions/runs?per_page=12")]);
+ state.repos=details;state.issues=issues.flat();state.prs=prs.flat();state.runs=runs.workflow_runs||[];state.error=null;state.updated=new Date();
+ }catch(e){state.error=e.message;}finally{state.busy=false;render()}
+}
+function render(){
+ document.getElementById("title").textContent=view==="Home"?"KappaForge":view;
+ document.getElementById("tabs").innerHTML=screens.map(([name,icon])=>'<button class="tab '+(view===name?"active":"")+'" data-tab="'+name+'"><b>'+icon+'</b>'+name+'</button>').join("");
+ const total=state.issues.length,active=state.runs.filter(r=>r.status!=="completed").length;
+ let content="";
+ if(view==="Home")content=card("KappaForge Cloud",'<span class="pill">Live GitHub read-only</span><p class="muted">Your AI development workspace. Jobs still run in GitHub Actions.</p>')+'<div class="stats">'+card("Projects",'<strong>'+state.repos.length+'</strong><span class="muted">Connected public repos</span>')+card("Open tasks",'<strong>'+total+'</strong><span class="muted">Up to 30 per project</span>')+card("Running jobs",'<strong>'+active+'</strong><span class="muted">Latest KappaForge runs</span>')+'</div>'+card("Recent activity",'<div class="list">'+list(state.runs.slice(0,8),r=>item(r.name||"Workflow",r.status+" · "+(r.conclusion||"pending"),r.html_url),"No workflows found")+'</div>');
+ if(view==="Projects")content=card("Repositories",list(state.repos,r=>item(r.name,(r.description||"GitHub repository")+" · "+r.visibility,r.html_url),"No projects loaded"));
+ if(view==="Tasks")content=card("Open issues",list(state.issues,i=>item("#"+i.number+" "+i.title,i.repo,i.html_url),"No open issues found"));
+ if(view==="Reviews")content=card("Pull requests",list(state.prs,p=>item("#"+p.number+" "+p.title,p.repo+(p.draft?" · Draft":""),p.html_url),"No open pull requests found"));
+ if(view==="Settings")content=card("Connection",'<p><span class="pill">Public GitHub API</span></p><p class="muted">No tokens, authentication, or write permissions. Private repositories cannot be viewed. GitHub rate limits may apply.</p>')+card("Preview",'<p class="muted">Apple-style browser prototype, not the compiled SwiftUI app.</p><p class="muted">Last sync: '+esc(state.updated?state.updated.toLocaleString():"Not yet synced")+'</p><a href="https://github.com/onlykappa/KappaForge" target="_blank">View source ↗</a>');
+ if(state.error)content='<p class="alert">'+esc(state.error)+' — try Refresh. Previously loaded data may still be shown.</p>'+content;
+ document.getElementById("content").innerHTML=content;
+ document.getElementById("status").textContent=state.busy?"Updating from GitHub…":state.updated?"Updated "+state.updated.toLocaleTimeString():"Public read-only GitHub preview";
+}
+document.getElementById("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b){view=b.dataset.tab;render()}});
+document.getElementById("refresh").addEventListener("click",refresh);
+render();refresh();
+</script></body></html>
