@@ -191,7 +191,7 @@ def main():
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token,
                {"body": "### KappaForge project map complete\n\n" +
                 "Read-only structure and import analysis. No source modified.\n\n" +
-                "Changes since previous task snapshot:\n```json\n" + payload + "\n```\n\n" + memory_note})
+                "Changes since previous task snapshot:\n\`\`\`json\n" + payload + "\n\`\`\`\n\n" + memory_note})
         print(f"Indexed {report['total_indexed']} project files")
         return
     if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):
