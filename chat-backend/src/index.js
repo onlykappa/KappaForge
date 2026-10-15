@@ -98,7 +98,7 @@ export default {
       if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) ||
           title.length < 5 || title.length > 120 || instructions.length < 10 || instructions.length > 3500)
         return json({ error: "Job must be valid and explicitly approved." }, 400, cors);
-      if (["code", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) && repo !== "onlykappa/KappaForge")
+      if (["code", "repair", "continuous", "continuous-code", "watch"].includes(mode) && repo !== "onlykappa/KappaForge")
         return json({ error: "Coding jobs are restricted to KappaForge's sandbox." }, 400, cors);
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
