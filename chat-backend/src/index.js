@@ -28,7 +28,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -43,6 +43,33 @@ export default {
       if (raw.length > 20000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
+    if (new URL(request.url).pathname === "/decisions") {
+      if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
+      const number = Number(input.prNumber), decision = input.decision;
+      if (!Number.isSafeInteger(number) || number < 1 || !["approve","deny"].includes(decision) || input.confirmed !== true)
+        return json({ error: "Confirm an allowed review decision." }, 400, cors);
+      const base = "https://api.github.com/repos/onlykappa/KappaForge";
+      const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
+        "Accept": "application/vnd.github+json", "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
+      try {
+        const prResponse = await fetch(base + "/pulls/" + number, {headers});
+        if (!prResponse.ok) return json({error:"Could not verify this pull request (HTTP "+prResponse.status+")."},502,cors);
+        const pr = await prResponse.json();
+        if (pr.state !== "open" || pr.base?.repo?.full_name !== "onlykappa/KappaForge" ||
+            pr.head?.repo?.full_name !== "onlykappa/KappaForge" ||
+            !/^kappa\/(issue-\d+|repair-\d+|cont-\d+-\d+)$/.test(pr.head?.ref || ""))
+          return json({error:"Only open KappaForge agent proposals may be reviewed here."},403,cors);
+        const message = decision === "approve"
+          ? "KappaForge Control Center: owner approved this proposal for manual merge review. This is not a GitHub PR approval, does not merge code, and does not waive required tests."
+          : "KappaForge Control Center: owner declined this proposal. Do not merge without a new explicit approval.";
+        const posted = await fetch(base + "/issues/" + number + "/comments", {
+          method:"POST",headers,body:JSON.stringify({body:message})
+        });
+        if (!posted.ok) return json({error:"GitHub could not save this decision (HTTP "+posted.status+")."},502,cors);
+        return json({status:decision,prNumber:number},200,cors);
+      } catch {return json({error:"GitHub review request failed."},502,cors);}
+    }
     if (new URL(request.url).pathname === "/jobs") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub job integration is not configured. Add GITHUB_JOB_TOKEN as a Worker secret." }, 503, cors);
       const allowed = ["onlykappa/KappaForge", "onlykappa/OmniPC", "onlykappa/Apk-revival"];
