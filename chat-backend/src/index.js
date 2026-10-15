@@ -46,7 +46,7 @@ export default {
     if (new URL(request.url).pathname === "/decisions") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const number = Number(input.prNumber), decision = input.decision;
-      if (!Number.isSafeInteger(number) || number < 1 || !["approve","deny"].includes(decision) || input.confirmed !== true)
+      if (!Number.isSafeInteger(number) || number < 1 || !["approve","deny","validate"].includes(decision) || input.confirmed !== true)
         return json({ error: "Confirm an allowed review decision." }, 400, cors);
       const base = "https://api.github.com/repos/onlykappa/KappaForge";
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
@@ -60,6 +60,20 @@ export default {
             pr.head?.repo?.full_name !== "onlykappa/KappaForge" ||
             !/^kappa\/(issue-\d+|repair-\d+|cont-\d+-\d+)$/.test(pr.head?.ref || ""))
           return json({error:"Only open KappaForge agent proposals may be reviewed here."},403,cors);
+        if (decision === "validate") {
+          const dispatch = await fetch(base + "/actions/workflows/sandbox-tests.yml/dispatches", {
+            method:"POST",headers,body:JSON.stringify({ref:"main",inputs:{branch:pr.head.ref}})
+          });
+          if (!dispatch.ok) return json({error:"Validation could not start (GitHub HTTP "+dispatch.status+")."},502,cors);
+          return json({status:"validation_started",prNumber:number},202,cors);
+        }
+        if (decision === "deny") {
+          const closed = await fetch(base + "/pulls/" + number, {
+            method:"PATCH",headers,body:JSON.stringify({state:"closed"})
+          });
+          if (!closed.ok) return json({error:"GitHub could not close PR (HTTP "+closed.status+"). Check Pull requests: read/write token permission."},502,cors);
+          return json({status:"closed",prNumber:number},200,cors);
+        }
         const message = decision === "approve"
           ? "KappaForge Control Center: owner approved this proposal for manual merge review. This is not a GitHub PR approval, does not merge code, and does not waive required tests."
           : "KappaForge Control Center: owner declined this proposal. Do not merge without a new explicit approval.";
