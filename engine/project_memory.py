@@ -31,7 +31,7 @@ def extract_latest(comments,repo):
     for comment in reversed(comments):
         body=comment.get("body") or ""
         if MARKER+" repo="+repo+" sha=" not in body:continue
-        match=re.search(r"```json\s*(\{.*?\})\s*```",body,re.S)
+        match=re.search(r"```json\s*(\{[\s\S]*?\})\s*```",body)
         if not match:continue
         try:
             obj=json.loads(match.group(1))
