@@ -61,7 +61,6 @@ export default {
       const issueBody = "Repository: " + repo + "\nMode: " + mode +
           "\n\n" + instructions + "\n\nApproved from KappaForge Chat.";
       try {
-        // Before a write, check the token identity and its access without mutating GitHub.
         const identityResponse = await fetch("https://api.github.com/user", { headers });
         const identity = await identityResponse.json().catch(() => ({}));
         if (!identityResponse.ok || identity.login?.toLowerCase() !== "onlykappa") {
@@ -69,23 +68,14 @@ export default {
           return json({ error: "GitHub token validation failed (HTTP " + identityResponse.status +
             "): " + reason + ". The token must authenticate as onlykappa. Check that the full token was saved as the GITHUB_JOB_TOKEN Worker secret." }, 502, cors);
         }
-        const repoResponse = await fetch(endpoint, { headers });
-        if (!repoResponse.ok) {
-          const info = await repoResponse.json().catch(() => ({}));
-          return json({ error: "Token authenticated as onlykappa, but KappaForge repository access returned HTTP " +
-            repoResponse.status + ": " + String(info.message || "Access denied").slice(0, 160) }, 502, cors);
-        }
         const created = await fetch(endpoint + "/issues", { method: "POST", headers,
           body: JSON.stringify({ title, body: issueBody, labels: ["kappa-Task"] }) });
         if (!created.ok) {
           const details = await created.json().catch(() => ({}));
           const reason = typeof details.message === "string" ? details.message.slice(0, 180) : "Permission denied";
-          const required = created.headers.get("x-accepted-github-permissions") || "not provided";
-          return json({ error: "Could not create issue (GitHub HTTP " + created.status + "): " + reason + ". GitHub accepted permissions: " + required + ". Check token activation, authorization, and Issues: read/write." }, 502, cors);
+          return json({ error: "Could not create issue (GitHub HTTP " + created.status + "): " + reason + ". Check token activation, authorization, and Issues: read/write." }, 502, cors);
         }
         const issue = await created.json();
-        // KappaForge's agent accepts issues authored by onlykappa. Require an owner-authored
-        // issue rather than weakening its authorization policy for bot identities.
         if (issue.user?.login?.toLowerCase() !== "onlykappa")
           return json({ error: "Issue #" + issue.number + " was created, but its author is not the authorized repository owner. Agent was not launched.", issueUrl: issue.html_url }, 409, cors);
         const dispatched = await fetch(endpoint + "/actions/workflows/agent.yml/dispatches",
@@ -109,26 +99,17 @@ export default {
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 }
     };
     try {
-      // Discover which explicitly approved Flash models this API key can call.
       const available = new Set();
-      let pageToken = "";
-      for (let page = 0; page < 5; page++) {
-        const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
-        url.searchParams.set("pageSize", "100");
-        if (pageToken) url.searchParams.set("pageToken", pageToken);
-        const listing = await fetch(url, { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
-        if (!listing.ok) return json({ error: "Gemini model discovery failed (HTTP " + listing.status + ")" }, 502, cors);
+      const listing = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100", { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
+      if (listing.ok) {
         const data = await listing.json();
         for (const item of data.models || []) {
           if (item.supportedGenerationMethods?.includes("generateContent"))
             available.add(item.name.replace(/^models\//, ""));
         }
-        pageToken = data.nextPageToken || "";
-        if (!pageToken) break;
       }
       const candidates = PREFERRED_MODELS.filter(m => available.has(m));
-      if (!candidates.length)
-        return json({ error: "No approved Flash model available for this Gemini API key." }, 502, cors);
+      if (!candidates.length) candidates.push("gemini-2.0-flash");
       let lastStatus = 0;
       for (const model of candidates) {
         const controller = new AbortController();
@@ -150,8 +131,6 @@ export default {
         if (answer) return json({ reply: answer, model }, 200, cors);
       }
       return json({ error: "All approved Gemini routes unavailable (last HTTP " + lastStatus + ")." }, 502, cors);
-    } catch {
-      return json({ error: "AI request timed out or failed" }, 502, cors);
-    }
+    } catch { return json({ error: "AI request timed out or failed" }, 502, cors); }
   }
 };
