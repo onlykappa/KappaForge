@@ -43,6 +43,7 @@ struct KappaWebView: UIViewRepresentable {
         }
 
         // Native document picker supports multi-file selection from Files and iCloud Drive.
+        @available(iOS 18.4, *)
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
                      initiatedByFrame frame: WKFrameInfo,
                      completionHandler: @escaping ([URL]?) -> Void) {
