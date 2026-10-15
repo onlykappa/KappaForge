@@ -23,3 +23,22 @@ A $0-first GitHub Actions AI development assistant controlled from iPad/GitHub.
 This initial release **does not autonomously commit generated code**, does not create target-repository PRs, and does not have a live web dashboard. Its output is a code-analysis and patch proposal inside KappaForge Issues. The next milestone can add isolated worktree coding and PRs with explicit opt-in. Public Actions runners are normally free under GitHub's published terms; model API free quotas and availability can change. The workflow does not configure a paid fallback.
 
 Tasks are limited to repositories in `config/repositories.json`; retrieved source files and issue text are untrusted and may not override access rules. GitHub token permissions are scoped to reading contents and writing issue comments in KappaForge. For security, do not put secrets into task issues.
+
+## Coding sandbox (v0.2 preview)
+
+KappaForge can generate **actual code** in **KappaForge only**, within `projects/`, `tests/projects/`, or `docs/generated/`. Code generation requires a manually dispatched workflow and an issue created by `onlykappa` with the `kappa-task` label and exactly:
+
+```text
+Repository: onlykappa/KappaForge
+Mode: code
+
+Build a small Python CLI to organize local notes, including tests.
+```
+
+Open **Actions > KappaForge agent > Run workflow**, enter the issue number, and run on `main`. A fresh `kappa/issue-N` branch is created with generated files and a **draft PR**; no automatic merge. If the branch already exists, the runner will refuse to overwrite it.
+
+**GitHub setting required:** In **Settings > Actions > General > Workflow permissions**, select **Allow GitHub Actions to create and approve pull requests** if available. Otherwise GitHub will reject automatic draft PR creation, while the generated branch remains as a checkpoint.
+
+For validation open **Actions > Sandbox branch tests > Run workflow** and enter the exact `kappa/issue-N` branch. This separate workflow runs without `GEMINI_API_KEY` and with read-only repository permissions. PRs created by GitHub Actions' built-in token don't normally trigger push/PR workflows, so validation is intentionally dispatched separately.
+
+Limitations: This is the *first* real coding milestone. It accepts bounded code generation, not multi-session autonomous repair loops; model output may fail JSON validation, and generated code has not been proven correct until separately tested and reviewed. Other repositories remain read-only. Jules is not integrated into this runner yet.
