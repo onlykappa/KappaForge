@@ -156,6 +156,14 @@ def main():
         print("GEMINI_API_KEY missing; task left queued.")
         return
     body_text = issue.get("body") or ""
+    if re.search(r"^Mode:\s*repair\s*$", body_text, re.I | re.M):
+        if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
+            print("Self-repair requires explicit workflow dispatch; task remains queued.")
+            return
+        from engine.self_repair import produce_repair_pr
+        url = produce_repair_pr(issue, os.environ["GEMINI_API_KEY"], token)
+        print("Self-repair draft pull request created: " + url)
+        return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
             print("Coding mode requires explicit manual workflow dispatch; task remains queued.")
