@@ -77,29 +77,36 @@ def main():
     number = os.environ.get("CONTINUOUS_ISSUE_NUMBER", "").strip()
     if number and not number.isdecimal():
         raise ValueError("Issue number must be numeric")
-    issue = get_issue(int(number), token) if number else None
-    if not number:
-        for candidate in github(f"repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=40", token):
-            body = candidate.get("body") or ""
-            if not re.search(r"^Mode:\s*(continuous|watch)\s*$", body, re.I | re.M):
-                continue
-            issue = get_issue(candidate["number"], token)
-            if issue:
-                break
-    if not issue:
-        print("No authorized continuous/watch issue pending")
-        return
-    body = issue.get("body") or ""
-    if re.search(r"^Mode:\s*continuous\s*$", body, re.I | re.M):
-        existing = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
-        if any("### Continuous task complete" in (c.get("body") or "") for c in existing):
-            print("Continuous audit already complete")
-            return
-        continuous_audit(issue, token, key)
-    elif re.search(r"^Mode:\s*watch\s*$", body, re.I | re.M):
-        monitor_failures(issue, token, key)
+    issues = []
+    if number:
+        selected = get_issue(int(number), token)
+        if selected:
+            issues = [selected]
     else:
-        raise ValueError("Issue must explicitly authorize Mode: continuous or Mode: watch")
+        candidates = github(f"repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=40", token)
+        for desired_mode in ("watch", "continuous"):
+            for candidate in candidates:
+                if re.search(r"^Mode:\s*" + desired_mode + r"\s*$",
+                             candidate.get("body") or "", re.I | re.M):
+                    authorized = get_issue(candidate["number"], token)
+                    if authorized:
+                        issues.append(authorized)
+                        break
+    if not issues:
+        print("No owner-authorized continuous/watch issues pending")
+        return
+    for issue in issues:
+        body = issue.get("body") or ""
+        if re.search(r"^Mode:\s*continuous\s*$", body, re.I | re.M):
+            existing = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
+            if any("### Continuous task complete" in (c.get("body") or "") for c in existing):
+                print("Continuous audit already complete")
+                continue
+            continuous_audit(issue, token, key)
+        elif re.search(r"^Mode:\s*watch\s*$", body, re.I | re.M):
+            monitor_failures(issue, token, key)
+        else:
+            raise ValueError("Issue must explicitly authorize Mode: continuous or Mode: watch")
 
 if __name__ == "__main__":
     main()
