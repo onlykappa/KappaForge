@@ -49,10 +49,10 @@ export default {
       const mode = input.mode, repo = input.repo;
       const title = typeof input.title === "string" ? input.title.trim() : "";
       const instructions = typeof input.instructions === "string" ? input.instructions.trim() : "";
-      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code"].includes(mode) ||
+      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair"].includes(mode) ||
           title.length < 5 || title.length > 120 || instructions.length < 10 || instructions.length > 3500)
         return json({ error: "Job must be valid and explicitly approved." }, 400, cors);
-      if (mode === "code" && repo !== "onlykappa/KappaForge")
+      if ((mode === "code" || mode === "repair") && repo !== "onlykappa/KappaForge")
         return json({ error: "Coding jobs are restricted to KappaForge's sandbox." }, 400, cors);
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
