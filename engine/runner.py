@@ -104,6 +104,15 @@ def run_model(api_key, prompt):
     raise RuntimeError("Free model routes unavailable: " + ", ".join(errors))
 
 def main():
+    if os.getenv("INPUT_ISSUE_NUMBER", "").strip().lower() == "smoke":
+        if not os.getenv("GEMINI_API_KEY"):
+            raise RuntimeError("GEMINI_API_KEY is missing from Actions secrets")
+        model, answer = run_model(os.environ["GEMINI_API_KEY"],
+            "Reply with exactly KAPPAFORGE_CONNECTION_OK to confirm model access.")
+        if "KAPPAFORGE_CONNECTION_OK" not in answer:
+            raise RuntimeError("Model responded but did not return expected smoke marker")
+        print("Gemini API smoke test PASSED with model: " + model)
+        return
     token = os.environ["GITHUB_TOKEN"]
     issue = choose_issue(token)
     if not issue:
