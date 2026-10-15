@@ -251,7 +251,7 @@ async function checkJobResult(){
    const content=comments.map(c=>c.body||"").join("\n");
    const prMatch=content.match(/https:\/\/github\.com\/onlykappa\/KappaForge\/pull\/[0-9]+/);
    if(prMatch){recentJob.prUrl=prMatch[0];recentJob.message="Draft PR created. Review the code changes and independent test results before merging.";}
-   else if(content.includes("### Continuous task complete")||content.includes("Audit complete"))recentJob.message="Audit finished. Open the task to read the complete results.";
+   else if(content.includes("### KappaForge project map complete"))recentJob.message="Project map finished. File structure, imports, and saved architecture snapshot are available in the task report.";else if(content.includes("### Continuous task complete")||content.includes("Audit complete"))recentJob.message="Audit finished. Open the task to read the complete results.";
    else if(comments.length)recentJob.message="Agent posted "+comments.length+" update(s). Open the issue for progress and findings.";
    else recentJob.message="Job submitted. Waiting for agent results. Check Dashboard for live workflow status.";
    localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
