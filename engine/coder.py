@@ -4,6 +4,7 @@ Only generates files in dedicated playground paths; never executes generated cod
 in the privileged job. Draft PR validation runs separately without model secrets.
 """
 import base64
+import ast
 import json
 import re
 import urllib.error
@@ -65,8 +66,12 @@ def generate(api_key, task):
             "Correct the formatting; do not expand scope." if attempt else ""
         ), max_output_tokens=8192)
         try:
-            return model, parse_proposal(output)
-        except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            files = parse_proposal(output)
+            for path, body in files:
+                if path.endswith(".py"):
+                    ast.parse(body, filename=path)
+            return model, files
+        except (ValueError, KeyError, TypeError, SyntaxError, json.JSONDecodeError) as exc:
             errors.append(type(exc).__name__)
     raise ValueError("AI generation failed validation after two bounded attempts: " + ", ".join(errors))
 
