@@ -23,6 +23,9 @@ jobs:
           node-version: '22'
       - name: Check Worker JavaScript syntax
         run: node --check chat-backend/src/index.js
+      - name: Verify Wrangler can build Worker
+        working-directory: chat-backend
+        run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/kappaforge-worker-check
   deploy:
     needs: validate
     runs-on: ubuntu-latest
