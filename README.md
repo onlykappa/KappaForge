@@ -42,3 +42,25 @@ Open **Actions > KappaForge agent > Run workflow**, enter the issue number, and 
 For validation open **Actions > Sandbox branch tests > Run workflow** and enter the exact `kappa/issue-N` branch. This separate workflow runs without `GEMINI_API_KEY` and with read-only repository permissions. PRs created by GitHub Actions' built-in token don't normally trigger push/PR workflows, so validation is intentionally dispatched separately.
 
 Limitations: This is the *first* real coding milestone. It accepts bounded code generation, not multi-session autonomous repair loops; model output may fail JSON validation, and generated code has not been proven correct until separately tested and reviewed. Other repositories remain read-only. Jules is not integrated into this runner yet.
+
+## Owner-approved Self-Repair (experimental)
+
+KappaForge can propose repairs to **its own** limited source files, even when the chat assistant is unavailable. Open KappaForge Chat, enter a task, select **Make a Task**, repository **KappaForge**, and mode **repair**. The request must contain an exact `Repair files:` line with one or two paths chosen from:
+
+- `chat-backend/src/index.js`
+- `engine/runner.py`
+- `engine/coder.py`
+- `engine/full_reader.py`
+- `engine/handoff.py`
+
+Example:
+
+```text
+Investigate and propose a minimal fix for the GitHub job launcher error.
+Repair files: chat-backend/src/index.js
+Do not weaken authentication, authorization, or production safeguards.
+```
+
+The owner explicitly approves the task. The agent reads the named source, asks Gemini for a bounded replacement, validates allowed paths, creates a **new repair branch and draft pull request**, and posts its link to the issue. It never auto-merges, approves itself, or deploys the repair. Review the diff and run independent tests before merging. The self-repair agent has no permission to change CI workflows, secrets, deployment configurations, or other repositories. It may fail on oversized files, model-output limits, or cases where the necessary repair spans unauthorized files. Repairs are not guaranteed correct.
+
+**Recovery if Chat is down:** Create a GitHub issue in KappaForge manually with `Repository: onlykappa/KappaForge`, `Mode: repair`, and `Repair files: <allowed path>`, label it `kappa-task`, then manually dispatch **Actions → KappaForge agent → Run workflow** with that issue number. The scheduled six-hour run does not apply repairs; explicit launch is required.
