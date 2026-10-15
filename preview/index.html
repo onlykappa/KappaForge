@@ -72,8 +72,8 @@ async function toggleDiff(number){
 }
 async function submitReviewDecision(number,decision){
  const pr=data.prs.find(p=>p.repo==="KappaForge"&&p.number===number);
- if(!pr||!["approve","deny"].includes(decision))return;
- const desc=decision==="approve"?"Record approval for manual merge review? This does NOT merge the code or bypass tests.":"Decline this proposal? This records your decision on GitHub but does not close the PR.";
+ if(!pr||!["approve","deny","validate"].includes(decision))return;
+ const desc=decision==="approve"?"Approve this proposal for final release review? Nothing will be merged until tests are verified.":decision==="deny"?"Deny and CLOSE this GitHub pull request? This cannot be undone from this screen.":"Run independent tests for this proposal?";
  if(!confirm(desc))return;
  if(!backend||!access){alert("Connect AI first.");return}
  try{
@@ -82,7 +82,9 @@ async function submitReviewDecision(number,decision){
   if(!response.ok)throw Error(result.error||"Could not save decision");
   reviewDecisions[number]=decision;
   localStorage.setItem("kappaforge.review.decisions",JSON.stringify(reviewDecisions));
-  render();alert(decision==="approve"?"Approval recorded on GitHub. Tests and manual merge still required.":"Decline recorded on GitHub. The PR remains open until closed separately.");
+  if(decision==="deny"){data.prs=data.prs.filter(x=>!(x.repo==="KappaForge"&&x.number===number));reviewHidden.delete(number)}
+  render();alert(decision==="approve"?"Approval saved. The code is not merged; run validation before release.":decision==="deny"?"Proposal denied and closed on GitHub.":"Validation started. Check the Dashboard for results.");
+  load();
  }catch(e){alert("Decision not saved: "+e.message)}
 }
 function hideReview(number){
@@ -106,7 +108,7 @@ function controlCenter(){
  const failures=failing.length?'<p class="control-message">⚠ '+failing.length+' recent workflow(s) need attention. Open the run for actual logs.</p>':"";
  const review=prs.filter(p=>!reviewHidden.has(p.number)).slice(0,10).map(p=>{
  const decision=reviewDecisions[p.number]||"";
- return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
+ return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
  }).join("");
  const runRows=runs.slice(0,8).map(r=>row(r.name||"Workflow",(r.conclusion||r.status)+" · "+(r.head_branch||"main"),r.html_url)).join("");
  return card("Control Center",'<div class="control-head"><h3>Live GitHub overview</h3><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open KappaForge pull requests.</p>')+card("Tests & deployments",runRows||'<p class="muted">No recent workflow results.</p>');
