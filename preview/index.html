@@ -12,7 +12,7 @@
 .top{position:sticky;top:0;z-index:4}
 }
 @media(max-width:700px) and (prefers-color-scheme:dark){.mobile-nav{background:#22222b;border-color:#3b3b47}.mobile-nav button{color:#a6a6b8}.mobile-nav button.active{background:#373755;color:#ceceff}}
-</style></head><body><div class="layout">
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.stat{border:1px solid #dddde6;border-radius:14px;padding:12px}.stat b{display:block;font-size:23px}.stat small,.worksmall{font-size:12px;color:#898998}.workitem{padding:13px 0;border-bottom:1px solid #dddde6}.workitem strong{display:block;margin-bottom:5px}.worklinks{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}.worklinks a{border-radius:10px;background:#ececf5;padding:8px 10px;font-size:13px}@media(prefers-color-scheme:dark){.worklinks a{background:#373755;color:#e1e1ff}.stat,.workitem{border-color:#3b3b47}}</style></head><body><div class="layout">
 <aside id="sidebar" class="sidebar"><div class="brand">✦ KappaForge</div><button class="btn" id="new" style="width:100%">＋ New chat</button><div class="navlink"><button data-page="chat" class="active">◉ Chat</button><button data-page="home">⌂ Dashboard</button><button data-page="projects">▤ Projects</button><button data-page="tasks">☑ Tasks</button><button data-page="reviews">⇄ Reviews</button></div><p class="muted" style="padding-left:10px;margin-top:28px">Recent chats</p><div id="history"></div><p class="muted" style="padding:10px;font-size:12px">Chats are stored in this browser. Connect AI to enable genuine responses.</p></aside>
 <section class="main"><div class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open conversations">☰</button><div><strong id="heading">KappaForge Chat</strong><div><span>Private Gemini chat · Connect AI to begin</span></div></div><button class="iconbtn" id="connect" title="Connect private AI backend">⚙ Connect AI</button><button class="iconbtn" id="refresh">↻</button></div><div class="content" id="content"></div>
 <div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" required></textarea><div class="controls"><button class="btn secondary" type="button" id="task">Make a task</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">AI responds when connected. No automatic code edits or GitHub writes.</div></div></section></div><nav class="mobile-nav" aria-label="Primary navigation"><button data-page="chat" class="active"><span>◉</span>Chat</button><button data-page="home"><span>⌂</span>Dashboard</button><button data-page="projects"><span>▤</span>Projects</button><button data-page="tasks"><span>☑</span>Tasks</button><button data-page="reviews"><span>⇄</span>Reviews</button></nav>
@@ -23,12 +23,30 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);let 
 function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}}
 function fresh(){const c={id:uid(),title:"New conversation",messages:[],at:Date.now()};chats.unshift(c);current=c.id;save();view="chat";render();document.getElementById("message").focus()}
 function active(){return chats.find(c=>c.id===current)}
-function navigate(v){view=v;document.getElementById("sidebar").classList.remove("open");render();if(v==="home")refreshActivity(true)}
+function navigate(v){view=v;document.getElementById("sidebar").classList.remove("open");render();if(v==="home"){load();refreshActivity(true)}}
 function history(){document.getElementById("history").innerHTML=chats.map(c=>'<button class="history '+(c.id===current&&view==="chat"?"active":"")+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")}
 const card=(title,body)=>'<div class="panel"><h3>'+esc(title)+'</h3>'+body+'</div>';
 const row=(name,subtitle,url)=>'<div class="row"><div><strong>'+esc(name)+'</strong><div class="muted">'+esc(subtitle)+'</div></div><a href="'+esc(url)+'" target="_blank" rel="noopener">↗</a></div>';
 const api=async p=>{const r=await fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw Error("GitHub HTTP "+r.status);return r.json()};
 async function load(){try{const names=["KappaForge","OmniPC","Apk-revival"];const [r,i,p,w]=await Promise.all([Promise.all(names.map(api)),Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30").then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),Promise.all(names.map(n=>api(n+"/pulls?state=open&per_page=30").then(x=>x.map(v=>({...v,repo:n}))))),api("KappaForge/actions/runs?per_page=10")]);data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};}catch(e){data.error=e.message}render()}
+
+function repairItem(p){
+ const branch=p.head?.ref||"",safe=/^kappa\/repair-[0-9]+$/.test(branch);
+ const link='<a target="_blank" rel="noopener noreferrer" href="'+esc(p.html_url)+'">Review PR ↗</a>';
+ const validate=safe?'<a target="_blank" rel="noopener noreferrer" href="https://github.com/onlykappa/KappaForge/actions/workflows/sandbox-tests.yml">Start validation ↗</a>':"";
+ const instructions=safe?'<div class="worksmall">In GitHub, tap Run workflow on main and enter branch: <strong>'+esc(branch)+'</strong>. Review the result before merging.</div>':"";
+ return '<div class="workitem"><strong>'+esc(p.title)+'</strong><div class="worksmall">PR #'+esc(p.number)+' · '+esc(branch)+' · '+(p.draft?'Draft awaiting review':'Open')+'</div><div class="worklinks">'+link+validate+'</div>'+instructions+'</div>';
+}
+function dashboardSummary(){
+ const prs=data.prs.filter(x=>x.repo==="KappaForge");
+ const repairs=prs.filter(x=>x.head?.ref?.startsWith("kappa/repair-"));
+ const running=data.runs.filter(x=>x.status!=="completed").length;
+ const stats='<div class="stats"><div class="stat"><b>'+data.issues.filter(x=>x.repo==="KappaForge").length+'</b><small>Open tasks</small></div><div class="stat"><b>'+prs.length+'</b><small>Open PRs</small></div><div class="stat"><b>'+running+'</b><small>Running jobs</small></div></div>';
+ const summary=card("Development overview",stats+'<p class="worksmall">Public GitHub data. Tap ↻ to refresh.</p>');
+ const repairsPanel=card("Self-repair reviews",repairs.map(repairItem).join("")||'<p class="muted">No open repair proposals.</p>');
+ const runs=card("Recent workflow results",data.runs.slice(0,6).map(x=>row(x.name||"Workflow",(x.conclusion||x.status)+" · "+(x.head_branch||"main"),x.html_url)).join("")||'<p class="muted">No workflow data loaded.</p>');
+ return summary+repairsPanel+runs+activityPanel();
+}
 function render(){
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
 document.getElementById("heading").textContent=({chat:"KappaForge Chat",home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews"})[view];
@@ -38,10 +56,10 @@ if(view==="chat"){html=c?.messages.length?c.messages.map(m=>'<div class="bubble 
 
 if(view==="chat"&&pendingJob)html+=jobApproval();
 if(view==="chat"&&recentJob)html+=jobResult();
-if(view==="home")html=activityPanel()+card("Cloud status",'<p class="muted">Public read-only GitHub data · '+(data.loaded?"Connected":"Loading or unavailable")+'</p>')+card("Recent agent runs",(data.runs||[]).map(x=>row(x.name||"Workflow",x.status+" · "+(x.conclusion||"pending"),x.html_url)).join("")||'<p class="muted">No activity loaded.</p>');
+if(view==="home")html=dashboardSummary();
 if(view==="projects")html=card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
-if(view==="reviews")html=card("Pull requests",data.prs.map(x=>row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
+if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
