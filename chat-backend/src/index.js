@@ -63,7 +63,7 @@ export default {
       try {
         const created = await fetch(endpoint + "/issues", { method: "POST", headers,
           body: JSON.stringify({ title, body: issueBody, labels: ["kappa-Task"] }) });
-        if (!created.ok) return json({ error: "Could not create issue (GitHub HTTP " + created.status + ")." }, 502, cors);
+        if (!created.ok) {\n          const details = await created.json().catch(() => ({}));\n          const reason = typeof details.message === "string" ? details.message.slice(0, 180) : "Permission denied";\n          return json({ error: "Could not create issue (GitHub HTTP " + created.status + "): " + reason + ". Check fine-grained token repository access and Issues: read/write permission." }, 502, cors);\n        }
         const issue = await created.json();
         // KappaForge's agent accepts issues authored by onlykappa. Require an owner-authored
         // issue rather than weakening its authorization policy for bot identities.
