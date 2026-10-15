@@ -164,6 +164,22 @@ def main():
         url = produce_draft_pr(issue, os.environ["GEMINI_API_KEY"], token)
         print("Draft pull request created: " + url)
         return
+    if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):
+        from engine.full_reader import inspect_batch
+        match = TARGET_RE.search(body_text)
+        if not match or match.group(1) not in CONFIG["allowed"]:
+            print("Invalid or unapproved audit target")
+            return
+        repo = match.group(1)
+        comments = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
+        branch_match = re.search(r"^Branch:\s*([^\s]+)\s*$", body_text, re.M | re.I)
+        branch = branch_match.group(1) if branch_match else None
+        state, note, complete = inspect_batch(
+            repo, issue["number"], branch, token, os.environ["GEMINI_API_KEY"],
+            github, run_model, comments)
+        github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
+        print(f"Audit {'complete' if complete else 'checkpointed'}: {state['next']}/{state['files_total']}")
+        return
     task = (issue.get("title", "") + "\n" + (issue.get("body") or ""))[:6000]
     match = TARGET_RE.search(issue.get("body") or "")
     if not match or match.group(1) not in CONFIG["allowed"]:
