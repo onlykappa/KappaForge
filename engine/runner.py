@@ -13,7 +13,8 @@ ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
 CONFIG = json.loads((Path(__file__).resolve().parent.parent / "config/repositories.json").read_text())
 TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M | re.I)
-MODEL_NAMES = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+# Restrict unattended automation to Flash-class models; no paid Pro fallback.
+PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.1",
            "X-GitHub-Api-Version": "2022-11-28"}
 
@@ -80,28 +81,60 @@ def repo_context(repo):
             continue
     return "\n\n".join(parts)[:45000]
 
+def discover_models(api_key):
+    """Ask Google which generateContent models this key can access."""
+    available = set()
+    page_token = None
+    for _ in range(10):
+        url = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100"
+        if page_token:
+            url += "&pageToken=" + urllib.parse.quote(page_token)
+        req = urllib.request.Request(url, headers={"x-goog-api-key": api_key})
+        try:
+            with urllib.request.urlopen(req, timeout=35) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError("Gemini model discovery failed (HTTP %s). Check Gemini API project and key permissions." % exc.code) from None
+        for item in data.get("models", []):
+            name = item.get("name", "").removeprefix("models/")
+            if "generateContent" in item.get("supportedGenerationMethods", []):
+                available.add(name)
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+    return available
+
+def select_models(available):
+    """Use a small explicit allowlist so discovery cannot route to billable Pro models."""
+    return [name for name in PREFERRED_MODELS if name in available]
+
 def run_model(api_key, prompt):
+    available = discover_models(api_key)
+    candidates = select_models(available)
+    if not candidates:
+        raise RuntimeError("No approved Flash model supports generateContent for this key. "
+                           "Available model IDs: " + ", ".join(sorted(available)[:20]))
+    print("Approved Gemini fallback models: " + ", ".join(candidates))
     errors = []
-    for model in MODEL_NAMES:
+    for model in candidates:
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}}
         try:
             headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
             req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
-            with urllib.request.urlopen(req, timeout=100) as r:
-                response = json.load(r)
-            candidates = response.get("candidates") or []
-            parts = (candidates[0].get("content") or {}).get("parts", []) if candidates else []
-            text = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
-            if text:
-                return model, text
+            with urllib.request.urlopen(req, timeout=100) as response:
+                data = json.load(response)
+            candidates_out = data.get("candidates") or []
+            parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
+            output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+            if output:
+                return model, output
             errors.append(model + ": empty response")
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-            # Do not print API keys or response bodies.
             errors.append(model + ": " + str(getattr(exc, "code", type(exc).__name__)))
             time.sleep(2)
-    raise RuntimeError("Free model routes unavailable: " + ", ".join(errors))
+    raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
 
 def main():
     if os.getenv("INPUT_ISSUE_NUMBER", "").strip().lower() == "smoke":
