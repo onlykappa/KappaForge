@@ -128,7 +128,7 @@ def produce_draft_pr(issue, api_key, token):
         validation = "Independent validation requires manual dispatch."
         try:
             gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches", token,
-               {"ref": "main", "inputs": {"branch": branch}})
+               {"ref": "main", "inputs": {"branch": branch, "candidate_sha": gh(f"repos/{ROOT}/git/ref/heads/{branch}", token)["object"]["sha"]}})
             validation = "Independent validation dispatched. Check the test run before merging."
         except urllib.error.HTTPError as exc:
             validation = f"Validation dispatch failed (HTTP {exc.code}); manual dispatch required."
