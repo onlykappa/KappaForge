@@ -172,7 +172,7 @@ export default {
     const plannerInstruction = "Classify the user's development request as one JSON object only: " +
       '{"isTask":boolean,"repo":"onlykappa/KappaForge","mode":"audit","title":"short title","instructions":"full task"}.' +
       " If this is only a question or conversation, set isTask false. Repositories: onlykappa/KappaForge, onlykappa/OmniPC, onlykappa/Apk-revival. " +
-      " Only audit is permitted for OmniPC and Apk-revival. Default to KappaForge when unspecified. " +
+      " Only read-only audit and project-map are permitted for OmniPC and Apk-revival. Default to KappaForge when unspecified. " +
       " Modes: audit (inspection), code (isolated sandbox coding), repair (explicit source file repair), " +
       " continuous (long read-only audit), continuous-code (explicit numbered independent steps), watch (workflow failures). " +
       " For requests to understand codebase structure, map dependencies or architecture choose project-map (read-only, allowed for all three repositories). Select repair ONLY with explicit Repair files: line naming source. Select continuous-code ONLY if prompt has Step 1: line and independent numbered steps. " +
