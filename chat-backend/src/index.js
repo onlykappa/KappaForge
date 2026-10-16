@@ -235,8 +235,9 @@ export default {
       }
       if (messages.at(-1).role !== "user") return json({ error: "Last message must be user" }, 400, cors);
     }
-    const personality = ["friendly", "professional", "developer"].includes(input.personality) ? input.personality : "friendly";
+    const personality = ["auto", "friendly", "professional", "developer"].includes(input.personality) ? input.personality : "auto";
     const personalityInstructions = {
+      auto: "Adapt your tone and depth to the actual user request, like an excellent general-purpose AI assistant. For casual questions be natural, warm and concise. For coding, debugging, architecture and engineering work be technically rigorous with concrete code, commands, tests and caveats where useful. For professional writing, business work or complex planning be organized, precise and appropriately formal. For mixed requests balance these styles fluidly; never require the user to select a persona, and do not claim capabilities you do not have.",
       friendly: "Speak like a warm, enthusiastic software-development teammate. Use simple natural language, stay relatively brief, match the user's energy, celebrate genuine progress, use light humor occasionally, and avoid unnecessary jargon. Explain problems and next steps plainly. Ask questions only when needed.",
       professional: "Speak clearly, calmly, and concisely. Give organized actionable answers with minimal jargon and no unnecessary excitement.",
       developer: "Provide precise technical explanations when relevant, including code-level details, root-cause hypotheses, tests, limitations, and next steps. Be concise and accurate."
