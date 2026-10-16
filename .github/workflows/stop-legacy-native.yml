@@ -24,6 +24,7 @@ jobs:
         gh api --paginate --slurp 'repos/onlykappa/KappaForge/actions/workflows/ios-build.yml/runs?branch=main&per_page=100' > /tmp/native-runs.json
         python scripts/select-superseded-native.py "$CURRENT_SHA" < /tmp/native-runs.json > /tmp/superseded-native-ids
         while read -r RUN; do
+            CURRENT_SHA=$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)
           # Recheck status and source before cancellation to avoid stale-list decisions.
           gh api "repos/onlykappa/KappaForge/actions/runs/$RUN" | python -c 'import json,sys; from importlib.machinery import SourceFileLoader; m=SourceFileLoader("selector","scripts/select-superseded-native.py").load_module(); r=json.load(sys.stdin); sys.exit(0 if m.select_runs([{"workflow_runs":[r]}],sys.argv[1]) else 1)' "$CURRENT_SHA" || continue
           gh api --method POST "repos/onlykappa/KappaForge/actions/runs/$RUN/cancel"
