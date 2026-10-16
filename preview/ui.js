@@ -1,6 +1,6 @@
 /* Shared 2.1 interface behavior. This layer never replaces authentication or stored chats. */
 const UI_ICONS={
- menu:'<path d="M4 7h16M4 12h16M4 17h10"/>',new:'<path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15l-1 5Z"/>',
+ stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',menu:'<path d="M4 7h16M4 12h16M4 17h10"/>',new:'<path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15l-1 5Z"/>',
  chat:'<path d="M20 11a8 8 0 0 1-8 8H5l-3 3v-7a8 8 0 1 1 18-4Z"/>',home:'<path d="m3 10 9-7 9 7v10H3V10Z"/><path d="M9 20v-7h6v7"/>',projects:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M8 5V3h8v2M3 11h18"/>',tasks:'<rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 11 2 2 6-6M8 17h8"/>',reviews:'<path d="M6 3v12a4 4 0 0 0 4 4h5M18 21V9a4 4 0 0 0-4-4h-3"/><circle cx="6" cy="3" r="2"/><circle cx="18" cy="21" r="2"/>',
  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',saved:'<path d="M6 3h12v18l-6-4-6 4V3Z"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',settings:'<path d="m9 3-1 3-3 1-2 4 2 3 1 4 4 1 3 2 4-2 1-4 3-3-2-4-3-1-2-3H9Z"/><circle cx="12" cy="12" r="3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 8a2.5 2.5 0 1 1 4.5 1.5L12 12v1M12 17h.01"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',send:'<path d="M12 20V4m-6 6 6-6 6 6"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',file:'<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3V7Z"/>',chevron:'<path d="m9 5 7 7-7 7"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',retry:'<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>'};
@@ -17,7 +17,8 @@ function setSidebar(open,restoreFocus=false){
 }
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
-function renderMessage(m,i){return '<article class="chat-message '+(m.role==='user'?'from-user':'from-assistant')+'" data-message-index="'+i+'"><div class="bubble '+(m.role==='user'?'user':'assistant markdown')+'">'+(m.role==='assistant'?renderChatText(m.text):esc(m.text))+'</div><details class="message-menu"><summary aria-label="Message actions">'+uiIcon('more')+'</summary><div class="message-action-popover"><button type="button" data-copy-message="'+i+'">'+uiIcon('copy')+'Copy</button><button type="button" data-save-message="'+i+'">'+uiIcon('saved')+(m.saved?'Unsave':'Save message')+'</button>'+(m.role==='assistant'?'<button type="button" data-retry-message="'+i+'">'+uiIcon('retry')+'Retry response</button><button type="button" data-repeat-message="'+i+'">'+uiIcon('spark')+'Explain simply</button>':'')+'</div></details></article>';}
+function renderMessage(m,i){return '<article class="chat-message '+(m.role==='user'?'from-user':'from-assistant')+'" data-message-index="'+i+'"><div class="bubble '+(m.role==='user'?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(m.role==='assistant'&&!m.streaming?renderChatText(m.text):esc(m.text))+'</div>'+(m.streaming?'':'<details class="message-menu"><summary aria-label="Message actions">'+uiIcon('more')+'</summary><div class="message-action-popover"><button type="button" data-copy-message="'+i+'">'+uiIcon('copy')+'Copy</button><button type="button" data-save-message="'+i+'">'+uiIcon('saved')+(m.saved?'Unsave':'Save message')+'</button>'+(m.role==='assistant'?'<button type="button" data-retry-message="'+i+'">'+uiIcon('retry')+'Retry response</button><button type="button" data-repeat-message="'+i+'">'+uiIcon('spark')+'Explain simply</button>':'')+'</div></details>')+'</article>';}
+
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}
 function renderProfile(){return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Account & profile</h1><p class="muted">Personal details and connection controls, in one place.</p></div><section class="panel profile-card"><span class="profile-avatar">'+esc(localProfile.name.slice(0,1).toUpperCase())+'</span><h2>'+esc(localProfile.name)+'</h2><p class="muted">A local personal profile. This is not a separate sign-in account.</p><label class="s-select-label">Display name<input id="profile-name" value="'+esc(localProfile.name)+'" maxlength="50" autocomplete="nickname"></label><button class="btn" id="profile-save">Save profile</button></section><section class="panel"><h3>AI connection</h3><p>'+esc(capabilities?'Backend configuration verified this session':backend&&access?'Credentials saved on this device':'Not configured on this device')+'</p><button class="btn secondary" data-setting-jump="overview">Manage connection</button> <button class="btn secondary" data-setting-jump="privacy">Privacy & security</button></section>';}
 function renderHelp(){return '<div class="page-heading"><span class="eyebrow">KAPPAFORGE</span><h1>A little guidance</h1><p class="muted">Your assistant, without the clutter.</p></div><section class="panel help-copy"><h3>Start a conversation</h3><p>Use New Chat, choose a routing preference in the composer, then send a message. Use the attachment menu for files and folders. Plan task creates a reviewable development request.</p><h3>Keep what matters</h3><p>Search your conversation history from the sidebar. Use a message’s action menu to copy, retry, save, or ask for a simpler explanation.</p><h3>Use another device</h3><p>Enable encrypted sync in Settings → Memory & Knowledge with the same backend and original vault passphrase on each device. Safari and the installed app have separate storage.</p><h3>Keyboard shortcuts</h3><p><kbd>⌘ / Ctrl K</kbd> Search conversations<br><kbd>⌘ / Ctrl Shift O</kbd> New chat<br><kbd>Escape</kbd> Close navigation and menus</p><div class="settings-actions"><button class="btn secondary" data-setting-jump="updates">Updates & about</button><a class="btn secondary" href="https://github.com/onlykappa/KappaForge" target="_blank" rel="noopener noreferrer">Source & documentation ↗</a></div></section>';}
@@ -66,4 +67,43 @@ function initInterface(){
  document.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch'||!matchMedia('(max-width:840px)').matches)return;const open=document.body.classList.contains('sidebar-open');if(e.target.closest('input,textarea,select,pre,table,button,a,summary'))return;if((!open&&e.clientX<30)||(open&&e.target.closest('#sidebar')))gesture={x:e.clientX,y:e.clientY,open};},{passive:true});
  document.addEventListener('pointermove',e=>{if(!gesture)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx)){gesture=null;return;}if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){if((gesture.open&&dx<0)||(!gesture.open&&dx>0)){if(e.cancelable)e.preventDefault();setSidebar(!gesture.open);}gesture=null;}},{passive:false});
  document.addEventListener('pointerup',()=>gesture=null,{passive:true});document.addEventListener('pointercancel',()=>gesture=null,{passive:true});
+}
+
+// Paint only the receiving bubble. Keep selection, navigation and scroll position stable.
+async function receiveAssistant(response,chat,prefix,signal){
+ const message={role:'assistant',text:prefix,streaming:true};chat.messages.push(message);render();
+ let full='',shown=0,lastSave=0,terminal=null;
+ const smooth=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const checkStop=()=>{if(signal.aborted)throw new DOMException('Stopped','AbortError')};
+ const paint=()=>{
+  const remaining=full.length-shown;if(!remaining)return;
+  const nearBottom=scrollY+innerHeight>=document.documentElement.scrollHeight-180;
+  shown=smooth&&!document.hidden?Math.min(full.length,shown+Math.max(4,Math.ceil(remaining/24))):full.length;
+  // Do not split a Unicode surrogate pair while revealing a buffered chunk.
+  if(shown<full.length&&/[\uD800-\uDBFF]/.test(full[shown-1]))shown++;
+  message.text=prefix+full.slice(0,shown);
+  if(view==='chat'&&current===chat.id){const index=chat.messages.indexOf(message),bubble=document.querySelector('[data-message-index="'+index+'"] .bubble');if(bubble)bubble.textContent=message.text;if(nearBottom)scrollTo(0,document.documentElement.scrollHeight);}
+  if(Date.now()-lastSave>750){save();lastSave=Date.now();}
+ };
+ const timer=setInterval(paint,28);
+ try{
+  if(response.headers.get('content-type')?.includes('application/x-ndjson')){
+   for await(const packet of KappaStream.packets(response.body)){
+    checkStop();if(packet.usage)usageEvents.push(packet.usage);
+    if(packet.type==='delta'&&typeof packet.text==='string'){full+=packet.text;if(full.length>100000)throw Error('Response too large');setActivity('');if(!smooth)paint();}
+    else if(packet.type==='done'){terminal=packet;}
+    else if(packet.type==='error')throw Error(packet.error||'Response interrupted');
+   }
+   if(!terminal)throw Error('Connection ended before the reply completed');
+  }else{
+   terminal=await response.json();if(terminal.error)throw Error(terminal.error);if(terminal.usage)usageEvents.push(terminal.usage);full=terminal.reply||'';
+  }
+  if(typeof terminal.reply!=='string'||!terminal.reply.trim())throw Error('No reply was returned');
+  if(!full)full=terminal.reply;
+  while(shown<full.length){checkStop();paint();if(shown<full.length)await new Promise(resolve=>setTimeout(resolve,28));}
+  checkStop();message.text=prefix+terminal.reply;return terminal;
+ }catch(error){
+  shown=full.length;message.text=prefix+full+(signal.aborted?'\n\nResponse stopped.':'\n\nResponse interrupted: '+error.message+'. You can retry from the message menu.');
+  error.reported=true;throw error;
+ }finally{clearInterval(timer);delete message.streaming;save();render();}
 }

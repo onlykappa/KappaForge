@@ -16,3 +16,5 @@
 @media(prefers-reduced-transparency:reduce){:root{--glass:var(--surface);--panel:var(--surface)}.top,.sidebar,.compose-inner,.mobile-nav,.message-action-popover,.attachment-popover,.task-sheet,.toast{-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @keyframes message-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@keyframes fade-in{from{opacity:0}to{opacity:1}}
+
+.bubble.streaming{white-space:pre-wrap;min-height:26px}.bubble.streaming::after{content:"";display:inline-block;width:2px;height:1em;margin-left:4px;background:var(--accent);vertical-align:-2px}

@@ -1,5 +1,5 @@
 {
-  "version": "2.1.1",
+  "version": "2.1.2",
   "released": "2026-10-16",
-  "notes": "Sidebar-only navigation, quieter job submission, and automatic delivery of partial and final task findings to the original chat."
+  "notes": "Live streamed replies, smooth text reveal, stop generation, interrupted-response recovery, and accurate streamed usage tracking."
 }

@@ -48,3 +48,37 @@ test('task reports recognize real agent lifecycle headers without misclassifying
  assert.equal(globalThis.KappaJobs.isSubmission({role:'assistant',text:'Development job #23 submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.'}),true);
  assert.equal(globalThis.KappaJobs.isSubmission({role:'user',text:'Development job #23 submitted.'}),false);
 });
+
+test('stream parser handles split UTF-8, CRLF, comments and fragmented frames',async()=>{
+ const raw=': keepalive\r\ndata: {"text":"Hi 🙂"}\r\n\r\ndata: {"done":true}\n\n';const bytes=new TextEncoder().encode(raw);
+ const body=new ReadableStream({start(c){for(const byte of bytes)c.enqueue(new Uint8Array([byte]));c.close()}});
+ const results=[];for await(const p of KappaStream.sse(body))results.push(p);assert.deepEqual(results,[{text:'Hi 🙂'},{done:true}]);
+});
+
+test('authenticated chat streams before completion and records final provider tokens once',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),work=[];let upstream,endpoint;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'fixture-secret',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async url=>{if(String(url).endsWith('/models?pageSize=100'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});if(!String(url).includes(":streamGenerateContent"))return new Response("{}",{status:404});endpoint=String(url);return new Response(new ReadableStream({start(c){upstream=c;c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({candidates:[{content:{parts:[{text:'First words'}]}}]})+'\n\n'))}}),{headers:{'Content-Type':'text/event-stream'}})};
+ try{
+  const response=await worker.fetch(req('/chat',{stream:true,messages:[{role:'user',text:'hello'}]}),env,{waitUntil:p=>work.push(p)});assert.match(response.headers.get('content-type'),/ndjson/);assert.match(endpoint,/:streamGenerateContent\?alt=sse$/);
+  const reader=response.body.getReader();const first=JSON.parse(new TextDecoder().decode((await reader.read()).value));assert.deepEqual(first,{type:'delta',text:'First words'});
+  upstream.enqueue(new TextEncoder().encode('data: '+JSON.stringify({candidates:[{content:{parts:[{thought:true,text:'private reasoning'},{text:' arrive'}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:12,candidatesTokenCount:4,totalTokenCount:16}})+'\n\n'));upstream.close();
+  let tail='';for(;;){const r=await reader.read();if(r.done)break;tail+=new TextDecoder().decode(r.value)}await Promise.all(work);
+  const packets=tail.trim().split('\n').map(JSON.parse);assert.equal(packets.at(-1).reply,'First words arrive');assert.equal(tail.includes('private reasoning'),false);assert.equal(packets.at(-1).usage.total,16);
+  const events=await(await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(events.events.length,1);assert.equal(events.events[0].ok,true);assert.equal(JSON.stringify(events).includes('fixture-secret'),false);
+ }finally{globalThis.fetch=original;}
+});
+
+test('stream interruption preserves output, records failure and never retries a partially emitted answer',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state);let calls=0;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async url=>{if(String(url).endsWith('/models?pageSize=100'))return Response.json({models:MODELS.slice(0,2).map(m=>({name:'models/'+m,supportedGenerationMethods:['generateContent']}))});if(!String(url).includes(":streamGenerateContent"))return new Response("{}",{status:404});calls++;return new Response('data: {"candidates":[{"content":{"parts":[{"text":"Partial answer"}]}}]}\n\n',{headers:{'content-type':'text/event-stream'}})};
+ try{const response=await worker.fetch(req('/chat',{stream:true,messages:[{role:'user',text:'hello'}]}),env);const packets=(await response.text()).trim().split('\n').map(JSON.parse);assert.equal(packets[0].text,'Partial answer');assert.equal(packets.at(-1).type,'error');assert.equal(calls,1);const events=await(await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(events.events.length,1);assert.equal(events.events[0].ok,false);assert.equal(events.events[0].total,null);}finally{globalThis.fetch=original}
+});
+
+test('stopping a stream aborts upstream and persists one failed attempt',async()=>{
+ const {streamReply}=await import('../chat-backend/src/streaming.js');const abort=new AbortController(),work=[],records=[];let upstream;
+ const response=new Response(new ReadableStream({start(c){upstream=c;c.enqueue(new TextEncoder().encode('data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}\n\n'));abort.signal.addEventListener('abort',()=>c.error(new Error('aborted')))}}));
+ const stream=streamReply(response,{abort,timeout:setTimeout(()=>abort.abort(),1000),record:async(result,ok)=>{records.push({result,ok});return{}},context:{waitUntil:p=>work.push(p)}});
+ const reader=stream.getReader();await reader.read();await reader.cancel();await Promise.all(work);assert.equal(abort.signal.aborted,true);assert.equal(records.length,1);assert.equal(records[0].ok,false);
+});

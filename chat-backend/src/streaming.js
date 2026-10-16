@@ -1,0 +1,36 @@
+import '../../preview/stream.js';
+
+// Never replay a request after any streamed output. One telemetry event per attempt.
+export function streamReply(response,{record,model,routing,abort,timeout,signal,context}){
+ const encoder=new TextEncoder();let cancelled=false,stop;
+ const body=new ReadableStream({
+  start(output){
+   stop=()=>abort.abort();signal?.addEventListener('abort',stop,{once:true});
+   if(signal?.aborted)abort.abort();
+   const emit=packet=>{if(!cancelled)try{output.enqueue(encoder.encode(JSON.stringify(packet)+'\n'))}catch{cancelled=true;abort.abort()}};
+   const work=(async()=>{
+    let answer='',metadata={},finished=false,error='';
+    try{
+     for await(const chunk of KappaStream.sse(response.body)){
+      if(chunk.error)throw Error('Provider stream failed');
+      if(chunk.usageMetadata)metadata.usageMetadata=chunk.usageMetadata;
+      const candidate=chunk.candidates?.[0];
+      const text=candidate?.content?.parts?.filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('')||'';
+      if(text){answer+=text;if(answer.length>100000)throw Error('Response exceeded the output limit');emit({type:'delta',text});}
+      if(candidate?.finishReason)finished=['STOP','MAX_TOKENS'].includes(candidate.finishReason);
+     }
+     if(!finished||!answer.trim())throw Error('Response ended before completion');
+    }catch{error=abort.signal.aborted?'Response stopped or timed out.':'Response interrupted. Retry when the connection is available.';}
+    finally{
+     clearTimeout(timeout);signal?.removeEventListener('abort',stop);
+     let usage;try{usage=await record(metadata,!error&&finished)}catch{error='Usage could not be saved. Your partial response is preserved.';}
+     if(!cancelled){emit(error?{type:'error',error,usage}:{type:'done',reply:answer.trim(),model,usage,routing});output.close();}
+    }
+   })();
+   context?.waitUntil(work);
+
+  },
+  cancel(){cancelled=true;abort.abort();}
+ });
+ return body;
+}

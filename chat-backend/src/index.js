@@ -1,3 +1,4 @@
+import {streamReply} from "./streaming.js";
 import {projectHealth} from "./project-health.js";
 import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
@@ -74,7 +75,7 @@ function safeEqual(a, b) {
   return bad === 0;
 }
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, context) {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -473,6 +474,7 @@ export default {
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
       if(!reservation.ok)return json({error:"Server monthly request limit reached. Requests resume next UTC month."},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+      const streaming=!planning&&input.stream===true;
       let attempt=0;
       let lastStatus = 0;
       for (const model of candidates) {
@@ -482,18 +484,22 @@ export default {
         const timeout = setTimeout(() => controller.abort(), 45000);
         let response;
         try {
-          response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+          response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + (streaming?":streamGenerateContent?alt=sse":":generateContent"), {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
             body: JSON.stringify(payload), signal: controller.signal
           });
-        } catch { await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); } finally { clearTimeout(timeout); }
+        } catch { clearTimeout(timeout);await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); }
         lastStatus = response.status;
         if (!response.ok) {
-          await record(null,false);
+          clearTimeout(timeout);await response.body?.cancel();await record(null,false);
           if ([404, 429, 500, 502, 503].includes(response.status)) continue;
           return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
         }
-        const result = await response.json();
+        if(streaming){
+          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"},abort:controller,timeout,signal:request.signal,context});
+          return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
+        }
+        let result;try{result=await response.json()}finally{clearTimeout(timeout)}
         const usage=await record(result,!!result.candidates?.[0]?.content?.parts?.some(p=>p.text));
         const answer = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
         if (answer) {

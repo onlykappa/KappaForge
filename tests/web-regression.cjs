@@ -21,7 +21,18 @@ const apiServer=createServer(async(req,res)=>{
  let result;
  if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
- else if(req.url==='/chat'){lastChatPreferences=data.preferences;result={reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}};}
+ else if(req.url==='/chat'){lastChatPreferences=data.preferences;
+  const prompt=data.messages.at(-1).text;
+  if(data.stream&&!prompt.endsWith('Buffered fixture')){
+   res.setHeader('Content-Type','application/x-ndjson');res.flushHeaders();
+   const packet=p=>{if(!res.destroyed)res.write(JSON.stringify(p)+'\n')};
+   if(prompt.endsWith('Stop streaming fixture')){
+    packet({type:'delta',text:'Partial response before stop'});await new Promise(r=>setTimeout(r,2000));packet({type:'delta',text:' should not appear'});if(!res.destroyed)res.end();return;
+   }
+   if(prompt.endsWith('Interrupted fixture')){packet({type:'delta',text:'Preserved partial reply'});res.end();return;}
+   packet({type:'delta',text:'Live request '});await new Promise(r=>setTimeout(r,700));packet({type:'delta',text:'fixture passed'});packet({type:'done',reply:'Live request fixture passed',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}});res.end();return;
+  }
+  result={reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}};}
  else if(req.url==='/jobs'){issuedJob++;result={issueNumber:issuedJob,issueUrl:'https://github.com/onlykappa/KappaForge/issues/'+issuedJob,status:'dispatched'};}
  else if(req.url==='/plan')result={isTask:false};
  else {res.writeHead(404).end(JSON.stringify({error:'Unknown fixture endpoint'}));return;}
@@ -65,7 +76,7 @@ const apiServer=createServer(async(req,res)=>{
  await page.locator('#settings-search').fill('tokens');assert.equal(await page.locator('[data-section]:visible').count(),1);await page.locator('#settings-search').fill('');
  for(const [id] of [['overview'],['models'],['usage'],['memory'],['personalization'],['services'],['developer'],['privacy'],['updates']]){await page.locator('[data-section='+id+']').click();const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,name+' '+id+' must fit viewport');assert.equal(await page.locator('h2#settings-section-heading').count(),1)}
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.preview.chats.v1'))[0].id),'legacy-chat');assert.equal(await page.evaluate(()=>localStorage.getItem('kappaforge.access')),credentials);
- await openSettings(page);await page.evaluate(()=>navigate('chat'));await page.locator('#message').fill('Hello there');await page.locator('#form button[type=submit]').click();await page.getByText('Live request fixture passed',{exact:true}).waitFor();assert.equal(lastChatPreferences.instructions,'Keep answers precise');assert.equal(lastChatPreferences.model,'gemini-2.5-flash');
+ await openSettings(page);await page.evaluate(()=>navigate('chat'));await page.locator('#message').fill('Hello there');await page.locator('#form button[type=submit]').click();await page.locator('.bubble.streaming').filter({hasText:'Live'}).waitFor();assert.equal(await page.getByText('Live request fixture passed',{exact:true}).count(),0,'First words appear before the final reply');await page.getByText('Live request fixture passed',{exact:true}).waitFor();await page.waitForFunction(()=>!sending);assert.equal(lastChatPreferences.instructions,'Keep answers precise');assert.equal(lastChatPreferences.model,'gemini-2.5-flash');
  await page.locator('#message').fill('Audit project health');await page.evaluate(()=>prepareJob('Audit project health'));assert.equal(await page.locator('.layout').evaluate(el=>el.inert),true);await page.locator('#taskrepo').focus();await page.keyboard.press('Shift+Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'tasknext');await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'taskrepo');await page.keyboard.press('Escape');assert.equal(await page.locator('.layout').evaluate(el=>el.inert),false);await page.locator('#message').fill('');await page.locator('#message').dispatchEvent('input');
  const composer=await page.locator('.compose-inner').boundingBox();assert.ok(composer.height<145,'Composer starts compact');
  assert.equal(await page.locator('.mobile-nav').isVisible(),false,'Sidebar replaces bottom navigation');
@@ -76,6 +87,11 @@ const apiServer=createServer(async(req,res)=>{
  await page.locator('.sidebar [data-page=profile]').click();await page.locator('#profile-name').fill('Test workspace');await page.locator('#profile-save').click();assert.equal(await page.locator('#profilelabel').innerText(),'Test workspace');
  await openNavigation(page);await page.locator('.sidebar [data-page=help]').click();assert.match(await page.locator('.help-copy').innerText(),/Keyboard shortcuts/);
  for(const target of ['home','projects','tasks','reviews','chat']){await openNavigation(page);await page.locator('.sidebar [data-page='+target+']').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,target+' fits viewport');if(target==='home'){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-dashboard.png',fullPage:true,animations:'disabled'});}}
+ // Stop and interrupted connections preserve partial output; old JSON responses remain usable.
+ await page.locator('#message').fill('Stop streaming fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.locator('.bubble.streaming').filter({hasText:'Partial response'}).waitFor();await page.getByRole('button',{name:'Stop response',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Response stopped/);assert.doesNotMatch(await page.locator('.from-assistant').last().innerText(),/should not appear/);
+ await page.locator('#message').fill('Interrupted fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Preserved partial reply/);assert.match(await page.locator('.from-assistant').last().innerText(),/Response interrupted/);
+ await page.locator('#message').fill('Buffered fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Live request fixture passed/);
+ console.log(name+': progressive streaming, stop, interrupted response preservation and JSON fallback passed');
  // Use the actual approval, dispatch, retrieval and persistence flow. No real GitHub writes.
  const firstChat=await page.evaluate(()=>current);
  await page.evaluate(()=>{pendingJob={title:'Audit fixture project',instructions:'Inspect fixture source for bugs',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===1&&!jobTrackingBusy);
