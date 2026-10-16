@@ -244,19 +244,26 @@ export default {
       const project=/\b(apk[\s-]?revival|meegos?|meego village)\b/i.test(last)?"Apk-revival":
         /\bomni[\s-]?pc\b/i.test(last)?"OmniPC":
         /\bkappa[\s-]?forge\b/i.test(last)?"KappaForge":null;
-      if(project&&wantsHistory){
-        const url="https://api.github.com/repos/onlykappa/"+project+"/commits?sha=main&per_page=8";
+      const contextProject=project||(
+       /\b(it|that|this|the project|the repo|the last fix|the last feature)\b/i.test(last)?
+        [...input.messages.slice(0,-1)].reverse().find(m=>/\b(apk[\s-]?revival|meegos?|meego village|omni[\s-]?pc|kappa[\s-]?forge)\b/i.test(m.text))?.text:null);
+      const resolvedProject=project||(typeof contextProject==="string"?
+       /\b(apk[\s-]?revival|meegos?|meego village)\b/i.test(contextProject)?"Apk-revival":
+       /\bomni[\s-]?pc\b/i.test(contextProject)?"OmniPC":
+       /\bkappa[\s-]?forge\b/i.test(contextProject)?"KappaForge":null:null);
+      if(resolvedProject&&wantsHistory){
+        const url="https://api.github.com/repos/onlykappa/"+resolvedProject+"/commits?sha=main&per_page=8";
         try{
           const response=await fetch(url,{headers:{"Accept":"application/vnd.github+json","User-Agent":"KappaForge-history-verifier"},signal:AbortSignal.timeout(6000)});
           if(!response.ok)throw Error("GitHub HTTP "+response.status);
           const commits=await response.json();
           if(!Array.isArray(commits)||!commits.length)throw Error("No main-branch commits returned");
-          repositoryEvidence="VERIFIED GITHUB MAIN-BRANCH COMMIT DATA (repository onlykappa/"+project+", retrieved now; NOT proof of any particular feature beyond the messages below):\n"+
+          repositoryEvidence="VERIFIED GITHUB MAIN-BRANCH COMMIT DATA (repository onlykappa/"+resolvedProject+", retrieved now; NOT proof of any particular feature beyond the messages below):\n"+
             commits.map(c=>String(c.sha||"").slice(0,12)+" | "+String(c.commit?.committer?.date||"")+" | "+String(c.commit?.message||"").split("\n")[0].slice(0,180)).join("\n")+
             "\nRepository: https://github.com/onlykappa/"+project+"/commits/main"+
             "\nDo not assert what files, behavior, or features changed based solely on commit titles. If the question needs diffs or more details, say those have not been verified.";
         }catch(error){
-          repositoryEvidence="GITHUB MAIN-BRANCH HISTORY VERIFICATION FAILED for onlykappa/"+project+": "+String(error.message).slice(0,100)+
+          repositoryEvidence="GITHUB MAIN-BRANCH HISTORY VERIFICATION FAILED for onlykappa/"+resolvedProject+": "+String(error.message).slice(0,100)+
             ". Do not guess, invent a latest commit or rely on cached projects; say the commit history could not be verified.";
         }
       }
