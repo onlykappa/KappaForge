@@ -41,7 +41,7 @@
 #personality{border:1px solid #dddde6;border-radius:10px;padding:7px 6px;background:var(--personality-bg,#fff);color:inherit;font-size:12px;max-width:135px;flex-shrink:0}
 @media(max-width:700px){#personality{font-size:11px;padding:5px 3px;max-width:105px}.top{gap:4px}.top #connect{max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 @media(prefers-color-scheme:dark){#personality{--personality-bg:#24242d;border-color:#3b3b47}}
-.settings-wrap{max-width:740px;margin:auto}.settings-wrap h3{margin-top:0}.setting-select{background:transparent;color:inherit;border:1px solid #aaaabb;border-radius:10px;padding:8px}.plugin-item{display:flex;justify-content:space-between;gap:15px;padding:16px 0;border-bottom:1px solid #e5e5ed}.plugin-item:last-child{border:0}.plugin-item p{margin:4px 0 8px}.plugin-item small{color:#737381}.plugin-actions{display:flex;align-items:center;flex-direction:column;gap:8px;justify-content:center;white-space:nowrap}.plugin-actions a{font-size:12px}.plugin-actions button{font-size:12px;padding:7px 10px}@media(max-width:700px){.top #settingsbtn{padding:6px 9px}.settings-wrap .panel{padding:14px}.plugin-item{gap:8px}.plugin-actions{min-width:66px}#personality{display:none}}@media(prefers-color-scheme:dark){.plugin-item{border-color:#3b3b47}}.top{min-height:64px}.top-title{flex:1;min-width:0}.top-title strong{font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.header-hidden{display:none!important}.settings-actions{display:flex;flex-wrap:wrap;gap:8px}.settings-wrap .row{align-items:center}@media(max-width:700px){.top{min-height:52px;padding:7px 12px;gap:11px}.top-title strong{font-size:17px}.top #settingsbtn{margin-left:auto;flex-shrink:0}}.chat-message{margin-bottom:14px}.message-tools{display:flex;gap:6px;justify-content:flex-start;margin:4px 0 0 8px}.mini-action{background:transparent;border:0;color:#7e7e94;font-size:12px;cursor:pointer;padding:4px 6px}.mini-action:hover{text-decoration:underline}.plugin-search-label{display:block;margin:10px 0 16px;color:inherit;font-size:13px}.plugin-search{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:11px 12px;border-radius:12px;border:1px solid #bcbcca;background:transparent;color:inherit}.plugin-item[hidden]{display:none!important}@media(max-width:700px){.message-tools{margin-left:2px}.settings-wrap{padding-bottom:35px}}</style></head><body><div class="layout">
+.settings-wrap{max-width:740px;margin:auto}.settings-wrap h3{margin-top:0}.setting-select{background:transparent;color:inherit;border:1px solid #aaaabb;border-radius:10px;padding:8px}.plugin-item{display:flex;justify-content:space-between;gap:15px;padding:16px 0;border-bottom:1px solid #e5e5ed}.plugin-item:last-child{border:0}.plugin-item p{margin:4px 0 8px}.plugin-item small{color:#737381}.plugin-actions{display:flex;align-items:center;flex-direction:column;gap:8px;justify-content:center;white-space:nowrap}.plugin-actions a{font-size:12px}.plugin-actions button{font-size:12px;padding:7px 10px}@media(max-width:700px){.top #settingsbtn{padding:6px 9px}.settings-wrap .panel{padding:14px}.plugin-item{gap:8px}.plugin-actions{min-width:66px}#personality{display:none}}@media(prefers-color-scheme:dark){.plugin-item{border-color:#3b3b47}}.top{min-height:64px}.top-title{flex:1;min-width:0}.top-title strong{font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.header-hidden{display:none!important}.settings-actions{display:flex;flex-wrap:wrap;gap:8px}.settings-wrap .row{align-items:center}@media(max-width:700px){.top{min-height:52px;padding:7px 12px;gap:11px}.top-title strong{font-size:17px}.top #settingsbtn{margin-left:auto;flex-shrink:0}}.chat-message{margin-bottom:14px}.message-tools{display:flex;gap:6px;justify-content:flex-start;margin:4px 0 0 8px}.mini-action{background:transparent;border:0;color:#7e7e94;font-size:12px;cursor:pointer;padding:4px 6px}.mini-action:hover{text-decoration:underline}.plugin-search-label{display:block;margin:10px 0 16px;color:inherit;font-size:13px}.plugin-search{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:11px 12px;border-radius:12px;border:1px solid #bcbcca;background:transparent;color:inherit}.plugin-item[hidden]{display:none!important}@media(max-width:700px){.message-tools{margin-left:2px}.settings-wrap{padding-bottom:35px}}.answer-widget{margin:12px 0;padding:14px;border:1px solid #bbb;border-radius:14px}.widget-choices{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.widget-choice{border:1px solid #8888b6;padding:8px 12px;border-radius:20px;background:transparent;color:inherit;cursor:pointer}</style></head><body><div class="layout">
 <aside id="sidebar" class="sidebar"><div class="brand">✦ KappaForge</div><button class="btn" id="new" style="width:100%">＋ New chat</button><div class="navlink"><button data-page="chat" class="active">◉ Chat</button><button data-page="home">⌂ Dashboard</button><button data-page="projects">▤ Projects</button><button data-page="tasks">☑ Tasks</button><button data-page="reviews">⇄ Reviews</button><button data-page="settings">⚙ Settings</button></div><p class="muted" style="padding-left:10px;margin-top:28px">Recent chats</p><div id="history"></div><p class="muted" style="padding:10px;font-size:12px">Chats are stored in this browser. Connect AI to enable genuine responses.</p></aside>
 <section class="main"><div class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open conversations">☰</button><div class="top-title"><strong id="heading">KappaForge</strong></div><button class="iconbtn" id="settingsbtn" title="Settings" aria-label="Open settings">⚙</button><div class="header-hidden"><select id="personality" aria-label="AI personality"><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select><button id="connect">Connect AI</button><button id="updates">Updates</button><button id="refresh">Refresh</button></div></div><div class="content" id="content"></div>
 <div class="composer" id="composer"><div class="compose-inner"><form id="form"><textarea id="message" aria-label="Message" placeholder="Message KappaForge…"></textarea><input type="file" id="folderinput" webkitdirectory multiple hidden><input type="file" id="attachinput" accept="image/png,image/jpeg,image/webp,application/pdf,.txt,.log,.json,.csv,.md,.zip,.apk,.jar,.ipa,.aab,.7z,.tar,.gz,.exe,.dll,.so" multiple hidden><div id="attachlist" class="attachlist"></div><div class="controls"><button class="btn secondary" type="button" id="attachbtn">＋ Files</button><button class="btn secondary" type="button" id="folderbtn">▤ Folder</button><button class="btn secondary" type="button" id="task">Plan task automatically</button><button class="btn" type="submit">Send ↑</button></div></form></div><div class="mini">Development requests become reviewable task proposals. GitHub jobs launch only after your approval.</div></div></section></div><nav class="mobile-nav" aria-label="Primary navigation"><button data-page="chat" class="active"><span>◉</span>Chat</button><button data-page="home"><span>⌂</span>Dashboard</button><button data-page="projects"><span>▤</span>Projects</button><button data-page="tasks"><span>☑</span>Tasks</button><button data-page="reviews"><span>⇄</span>Reviews</button></nav><div id="taskoverlay" class="task-overlay" hidden><section class="task-sheet" role="dialog" aria-modal="true" aria-labelledby="tasktitle"><h2 id="tasktitle">Create a KappaForge task</h2><p>Select a repository and what you want the agent to do. You will review the request before it launches.</p><label class="task-field" for="taskrepo">Repository<select id="taskrepo"><option value="onlykappa/KappaForge">KappaForge</option><option value="onlykappa/OmniPC">OmniPC</option><option value="onlykappa/Apk-revival">APK Revival</option></select></label><label class="task-field" for="taskmode">Task type<select id="taskmode"><option value="audit">Audit · read-only inspection</option><option value="project-map">Project map · files, symbols, dependencies</option><option value="code">Code · isolated sandbox prototype</option><option value="repair">Repair · draft fix for KappaForge</option><option value="continuous">Continuous audit · checkpoint and resume</option><option value="continuous-code">Continuous coding · staged draft PRs</option><option value="watch">Watch · report workflow failures</option></select></label><p id="taskhint">Audits can inspect any of the three repositories. Other modes are limited to KappaForge.</p><p id="taskerror" class="task-error" role="alert"></p><div class="task-actions"><button type="button" class="btn secondary" id="taskcancel">Cancel</button><button type="button" class="btn" id="tasknext">Review task →</button></div></section></div>
@@ -53,7 +53,7 @@ let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("
 const memoryKey="kappaforge.memory.notes.v1";
 let savedMemories=[];
 try{const v=JSON.parse(localStorage.getItem(memoryKey)||"[]");if(Array.isArray(v))savedMemories=v.filter(x=>typeof x==="string").slice(-30)}catch(e){}
-function persistMemories(){localStorage.setItem(memoryKey,JSON.stringify(savedMemories))}
+function persistMemories(){localStorage.setItem(memoryKey,JSON.stringify(savedMemories));scheduleVaultSync()}
 function rememberFromMessage(message){
  const matched=message.match(/^(?:please\s+)?(?:remember(?:\s+that)?|save\s+(?:this\s+)?(?:to\s+)?memory)\s*[:,-]?\s+(.{4,400})$/i);
  if(!matched)return false;
@@ -92,11 +92,52 @@ async function vaultRequest(method,body){
  if(!r.ok)throw Error(result.error||("Cloud sync HTTP "+r.status)+(r.status===409?" (cloud backup changed; restore first)":""));
  return result;
 }
+
+let vaultPassphrase="",syncBusy=false;
+async function syncVault(){
+ if(!vaultPassphrase||syncBusy||!backend||!access||!navigator.onLine)return;
+ syncBusy=true;
+ try{
+  for(let attempt=0;attempt<2;attempt++){
+   const remote=await vaultRequest("GET");
+   if(remote.payload){
+    const restored=await decryptVault(remote.payload,vaultPassphrase);
+    const byId=new Map(chats.map(c=>[c.id,c]));
+    for(const c of restored.chats.slice(0,60))if(c&&typeof c.id==="string"&&Array.isArray(c.messages)){
+     const prior=byId.get(c.id);if(!prior||(Number(c.at)||0)>(Number(prior.at)||0))byId.set(c.id,c);
+    }
+    chats=[...byId.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0)).slice(0,100);
+    savedMemories=[...new Set([...savedMemories,...restored.notes.filter(n=>typeof n==="string"&&n.length<=400)])].slice(-30);
+    localStorage.setItem(key,JSON.stringify(chats));localStorage.setItem(memoryKey,JSON.stringify(savedMemories));
+   }
+   const payload=await encryptVault({chats:chats.slice(0,60),notes:savedMemories,updated:Date.now()},vaultPassphrase);
+   try{await vaultRequest("PUT",{revision:remote.revision,payload});return}
+   catch(e){if(attempt===0&&/409/.test(e.message))continue;throw e}
+  }
+ }catch(e){vaultPassphrase="";alert("Encrypted sync stopped: "+e.message+". Enable it again in Settings.");}
+ finally{syncBusy=false}
+}
+function scheduleVaultSync(){if(vaultPassphrase&&!syncBusy)syncVault()}
+function renderChatText(message){
+ const text=String(message||"");const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
+ let html="",pos=0,hit;
+ while((hit=regex.exec(text))){
+  html+=esc(text.slice(pos,hit.index));
+  try{const w=JSON.parse(hit[1]);
+   if(w.type!=="choice"||typeof w.question!=="string"||w.question.length>200||!Array.isArray(w.options)||w.options.length<2||w.options.length>5||w.options.some(o=>typeof o!=="string"||o.length>100))throw Error("unsupported");
+   html+='<div class="answer-widget"><strong>'+esc(w.question)+'</strong><div class="widget-choices">'+w.options.map(o=>'<button type="button" class="widget-choice" data-choice="'+esc(o)+'">'+esc(o)+'</button>').join("")+'</div></div>';
+  }catch(e){html+=esc(hit[0])}
+  pos=regex.lastIndex;
+ }
+ return html+esc(text.slice(pos));
+}
 async function manageMemory(){
- const action=prompt("KappaForge Memory\n1 = Remember a fact\n2 = Show and remove memories\n3 = Save encrypted cloud backup\n4 = Restore cloud backup\n\nEnter 1, 2, 3, or 4:");
+ const action=prompt("KappaForge Memory\n1 = Remember a fact\n2 = Show and remove memories\n3 = Save encrypted cloud backup\n4 = Restore cloud backup\n5 = Enable automatic encrypted sync\n6 = Stop automatic sync\n\nEnter 1–6:");
  if(!action)return;
  try{
-  if(action==="1"){
+  if(action==="5"){const pass=prompt("Enter the same 12+ character cloud vault passphrase on each device. Held only for this session.");if(!pass||pass.length<12)throw Error("Passphrase must be at least 12 characters.");vaultPassphrase=pass;await syncVault();if(vaultPassphrase)alert("Encrypted auto-sync enabled for this session.");}
+  else if(action==="6"){vaultPassphrase="";alert("Auto-sync stopped.");}
+  else if(action==="1"){
    const note=prompt("What should KappaForge remember across conversations? Keep passwords and private tokens out of memory.");
    if(!note?.trim())return;
    if(note.length>400)throw Error("Memory note too long (400 characters max).");
@@ -132,7 +173,7 @@ async function manageMemory(){
 }
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);let current=chats[0]?.id||null,view="chat",data={repos:[],issues:[],prs:[],runs:[],error:"",loaded:false};
-function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}}
+function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}scheduleVaultSync()}
 function fresh(){const c={id:uid(),title:"New conversation",messages:[],at:Date.now()};chats.unshift(c);current=c.id;save();view="chat";render();document.getElementById("message").focus()}
 function active(){return chats.find(c=>c.id===current)}
 function navigate(v){view=v;document.getElementById("sidebar").classList.remove("open");render();if(v==="home"){load();refreshActivity(true)}}
@@ -317,7 +358,7 @@ history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle
 document.getElementById("heading").textContent=({chat:"KappaForge Chat",home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings"})[view];
 document.getElementById("composer").classList.toggle("hide",view!=="chat");
 let html="";const c=active();
-if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>'<div class="chat-message"><div class="bubble '+(m.role==="user"?"user":"assistant")+'">'+esc(m.text)+'</div><div class="message-tools"><button class="mini-action" data-copy-message="'+i+'" title="Copy message">Copy</button>'+(m.role==="assistant"?'<button class="mini-action" data-repeat-message="'+i+'" title="Ask to explain this simply">Explain simply</button>':'')+'</div></div>').join(""):'<div class="welcome"><div style="font-size:42px;color:#5758ac">✦</div><h1>What should we build today?</h1><p class="muted">Draft an idea, explore a plan, or prepare a new development task.</p><span class="pill">Connect AI to activate live responses</span></div>';}
+if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>'<div class="chat-message"><div class="bubble '+(m.role==="user"?"user":"assistant")+'">'+(m.role==="assistant"?renderChatText(m.text):esc(m.text))+'</div><div class="message-tools"><button class="mini-action" data-copy-message="'+i+'" title="Copy message">Copy</button>'+(m.role==="assistant"?'<button class="mini-action" data-repeat-message="'+i+'" title="Ask to explain this simply">Explain simply</button>':'')+'</div></div>').join(""):'<div class="welcome"><div style="font-size:42px;color:#5758ac">✦</div><h1>What should we build today?</h1><p class="muted">Draft an idea, explore a plan, or prepare a new development task.</p><span class="pill">Connect AI to activate live responses</span></div>';}
 
 if(view==="chat"&&pendingJob)html+=jobApproval();
 if(view==="chat"&&recentJob)html+=jobResult();
@@ -328,12 +369,13 @@ if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaFor
 if(view==="settings")html='<div class="settings-wrap"><h2>Settings</h2><p class="muted">Your KappaForge preferences, memory, and integrations.</p>'+
  '<div class="panel"><h3>AI & conversation</h3><div class="row"><span>Response style</span><select id="settingstyle" class="setting-select"><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select></div><p class="muted">Style affects tone, not permissions. Adaptive responses are a future upgrade.</p>'+
  '<div class="row"><span>AI connection</span><strong>'+esc(backend&&access?"Connected on this device":"Not connected")+'</strong></div><button class="btn secondary" id="settingsconnect">Manage AI connection</button></div>'+
- '<div class="panel"><h3>Memory & device sync</h3><p class="muted">Save or remove memories and back up chats with on-device encryption. Sync is currently manual.</p><button class="btn" id="memorymanage">Manage memory and backups</button></div>'+
+ '<div class="panel"><h3>Memory & device sync</h3><p class="muted">Save or remove memories and back up chats with on-device encryption. Opt-in automatic sync is available while this page is open, using a passphrase kept in session memory.</p><button class="btn" id="memorymanage">Manage memory and backups</button></div>'+
  '<div class="panel"><h3>Plugins & integrations</h3><p class="muted">Discord supports real webhook notifications once configured. Other providers require their own OAuth integrations.</p><button class="btn" id="discordmanage">Connect Discord webhook</button>'+pluginCatalog()+'</div>'+
  '<div class="panel"><h3>App & updates</h3><p class="muted">Installed interface version '+esc(APP_VERSION)+'.</p><div class="settings-actions"><button class="btn secondary" id="settingupdates">Check for updates</button><button class="btn secondary" id="settingrefresh">Refresh dashboard data</button></div></div></div>';
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 if(view==="chat")window.scrollTo({top:document.body.scrollHeight,behavior:"instant"});
+document.querySelectorAll("[data-choice]").forEach(b=>b.addEventListener("click",()=>{navigate("chat");document.getElementById("message").value=b.dataset.choice;document.getElementById("message").focus()}));
 document.querySelectorAll("[data-copy-message]").forEach(b=>b.addEventListener("click",()=>{const m=active()?.messages[Number(b.dataset.copyMessage)];if(m)navigator.clipboard?.writeText(m.text).then(()=>b.textContent="Copied").catch(()=>alert("Copy not available"))}));
 document.querySelectorAll("[data-repeat-message]").forEach(b=>b.addEventListener("click",()=>{const m=active()?.messages[Number(b.dataset.repeatMessage)];if(m){navigate("chat");document.getElementById("message").value="Explain your last answer in plain English with short, actionable steps.";document.getElementById("message").focus();}}));
 document.getElementById("pluginsearch")?.addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll(".plugin-item").forEach(x=>x.hidden=!x.textContent.toLowerCase().includes(q));});
@@ -606,7 +648,7 @@ document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
 
-const APP_VERSION="0.9.0";
+const APP_VERSION="1.0.0";
 async function checkAppUpdate(interactive=false){
  const button=document.getElementById("updates");
  if(interactive)button.textContent="…";
