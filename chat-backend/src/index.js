@@ -5,6 +5,25 @@ export class KappaMemory {
   constructor(state) { this.state = state; }
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/discord") {
+      if (request.method === "GET") return new Response(JSON.stringify({connected:!!(await this.state.storage.get("discordWebhook"))}),{headers:{"Content-Type":"application/json"}});
+      if (request.method === "DELETE") { await this.state.storage.delete("discordWebhook"); return new Response(JSON.stringify({connected:false}),{headers:{"Content-Type":"application/json"}}); }
+      if (request.method === "PUT") {
+        const input = await request.json();
+        if(typeof input.url!=="string" || !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/[0-9]{15,22}\/[A-Za-z0-9_-]{30,}$/.test(input.url))return new Response(JSON.stringify({error:"Enter a valid Discord webhook URL."}),{status:400,headers:{"Content-Type":"application/json"}});
+        await this.state.storage.put("discordWebhook",input.url);
+        return new Response(JSON.stringify({connected:true}),{headers:{"Content-Type":"application/json"}});
+      }
+      if (request.method === "POST") {
+        const webhook=await this.state.storage.get("discordWebhook");
+        if(!webhook)return new Response(JSON.stringify({error:"Discord not connected."}),{status:404,headers:{"Content-Type":"application/json"}});
+        const body=await request.json();
+        if(typeof body.message!=="string" || !body.message.trim() || body.message.length>1600)return new Response(JSON.stringify({error:"Message must be 1–1600 characters."}),{status:400,headers:{"Content-Type":"application/json"}});
+        const sent=await fetch(webhook,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:body.message,allowed_mentions:{parse:[]}})});
+        return new Response(JSON.stringify({sent:sent.ok,error:sent.ok?undefined:"Discord webhook HTTP "+sent.status}),{status:sent.ok?200:502,headers:{"Content-Type":"application/json"}});
+      }
+      return new Response("Method not allowed",{status:405});
+    }
     if (request.method === "GET") {
       const doc = await this.state.storage.get("vault");
       return new Response(JSON.stringify(doc || {revision:0,payload:null}),{headers:{"Content-Type":"application/json"}});
@@ -35,7 +54,7 @@ function corsHeaders(request) {
   return origin === ORIGIN ? {
     "Access-Control-Allow-Origin": ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action",
     "Vary": "Origin"
   } : null;
 }
@@ -52,13 +71,25 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if (new URL(request.url).pathname === "/integrations/discord") {
+      if (!env.MEMORY) return json({error:"Integration storage unavailable"},503,cors);
+      const action = request.headers.get("X-Integration-Action") || "status";
+      const methods = {status:"GET",connect:"PUT",disconnect:"DELETE",send:"POST"};
+      if (!methods[action])return json({error:"Unsupported integration action"},400,cors);
+      if (Number(request.headers.get("Content-Length")||0)>3000)return json({error:"Integration request too large"},413,cors);
+      const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+      const response=await stub.fetch("https://memory.internal/discord",{method:methods[action],
+        headers:{"Content-Type":"application/json"},
+        ...(["connect","send"].includes(action)?{body:await request.text()}:{})});
+      return new Response(response.body,{status:response.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...cors}});
+    }
     if (new URL(request.url).pathname === "/memory") {
       if (!env.MEMORY) return json({error:"Cloud memory storage not configured"},503,cors);
       const method = request.headers.get("X-Memory-Method") || "GET";
