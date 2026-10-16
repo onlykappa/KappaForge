@@ -384,13 +384,13 @@ let html="";const c=active();
 if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>'<div class="chat-message"><div class="bubble '+(m.role==="user"?"user":"assistant")+'">'+(m.role==="assistant"?renderChatText(m.text):esc(m.text))+'</div><div class="message-tools"><button class="mini-action" data-copy-message="'+i+'" title="Copy message">Copy</button>'+(m.role==="assistant"?'<button class="mini-action" data-repeat-message="'+i+'" title="Ask to explain this simply">Explain simply</button>':'')+'</div></div>').join(""):'<div class="welcome"><div style="font-size:42px;color:#5758ac">✦</div><h1>What should we build today?</h1><p class="muted">Draft an idea, explore a plan, or prepare a new development task.</p><span class="pill">Connect AI to activate live responses</span></div>';}
 
 if(view==="chat"&&pendingJob)html+=jobApproval();
-if(view==="chat"&&recentJob)html+=jobResult();
+
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html=card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html='<div class="settings-wrap"><h2>Settings</h2><p class="muted">Your KappaForge preferences, memory, and integrations.</p>'+
- '<div class="panel"><h3>AI & conversation</h3><div class="row"><span>Response style</span><select id="settingstyle" class="setting-select"><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select></div><p class="muted">Auto adapts its tone and level of detail to the request. You can still choose a fixed style.</p>'+
+ '<div class="panel"><h3>AI & conversation</h3><div class="row"><span>Response style</span><select id="settingstyle" class="setting-select"><option value="auto">Auto</option><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select></div><p class="muted">Auto adapts its tone and level of detail to the request. You can still choose a fixed style.</p>'+
  '<div class="row"><span>AI connection</span><strong>'+esc(backend&&access?"Connected on this device":"Not connected")+'</strong></div><button class="btn secondary" id="settingsconnect">Manage AI connection</button></div>'+
  '<div class="panel"><h3>Memory & device sync</h3><p class="muted">Save or remove memories and back up chats with on-device encryption. Enable encrypted automatic sync once per device. Your device stores a non-exportable encryption key; keep your recovery passphrase safe for new devices.</p><button class="btn" id="memorymanage">Manage memory and backups</button></div>'+
  '<div class="panel"><h3>Plugins & integrations</h3><p class="muted">Discord supports real webhook notifications once configured. Other providers require their own OAuth integrations.</p><button class="btn" id="discordmanage">Connect Discord webhook</button>'+pluginCatalog()+'</div>'+
@@ -445,20 +445,43 @@ function jobResult(){
  if(recentJob.number)extra+='<button type="button" class="btn secondary" id="jobcheck">↻ Check job result</button>';
  return '<div class="panel"><h3>Latest development job</h3><p>'+esc(recentJob.message)+'</p><div class="review-tools">'+extra+(recentJob.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(recentJob.url)+'">View task ↗</a>':'')+'</div></div>';
 }
+function jobChatUpdate(jobId,signature,body){
+ const job=recentJob;if(!job||job.number!==jobId||job.lastSignature===signature)return;
+ job.lastSignature=signature;
+ const target=chats.find(c=>c.id===job.chatId)||active();
+ if(!target)return;
+ target.messages.push({role:"assistant",text:body.slice(0,4500)});
+ target.at=Date.now();
+ chats=[target,...chats.filter(c=>c.id!==target.id)];
+ localStorage.setItem("kappaforge.latest.job",JSON.stringify(job));save();
+}
 async function checkJobResult(){
  if(!recentJob?.number||jobTrackingBusy)return;
  jobTrackingBusy=true;
  try{
-   const issueNumber=recentJob.number;
-   const comments=await api("KappaForge/issues/"+issueNumber+"/comments?per_page=100");
-   if(recentJob.number!==issueNumber)return;
-   const content=comments.map(c=>c.body||"").join("\n");
-   const prMatch=content.match(/https:\/\/github\.com\/onlykappa\/KappaForge\/pull\/[0-9]+/);
-   if(prMatch){recentJob.prUrl=prMatch[0];recentJob.message="Draft PR created. Review the code changes and independent test results before merging.";}
-   else if(content.includes("### KappaForge project map complete"))recentJob.message="Project map finished. File structure, imports, and saved architecture snapshot are available in the task report.";else if(content.includes("### Continuous task complete")||content.includes("Audit complete"))recentJob.message="Audit finished. Open the task to read the complete results.";
-   else if(comments.length)recentJob.message="Agent posted "+comments.length+" update(s). Open the issue for progress and findings.";
-   else recentJob.message="Job submitted. Waiting for agent results. Check Dashboard for live workflow status.";
-   localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
+  const issueNumber=recentJob.number;
+  const [comments,issue]=await Promise.all([
+   api("KappaForge/issues/"+issueNumber+"/comments?per_page=100",true),
+   api("KappaForge/issues/"+issueNumber,true)
+  ]);
+  if(recentJob?.number!==issueNumber)return;
+  const updates=comments.filter(c=>typeof c.body==="string"&&c.body.trim());
+  const last=updates.at(-1);
+  const content=updates.map(c=>c.body).join("\n");
+  const prMatch=content.match(/https:\/\/github\.com\/onlykappa\/KappaForge\/pull\/[0-9]+/);
+  if(prMatch)recentJob.prUrl=prMatch[0];
+  const completed=/### Continuous task complete|Audit complete|### KappaForge project map complete/i.test(content);
+  const closed=issue.state==="closed";
+  const status=completed||closed?"Completed":recentJob.prUrl?"Changes ready for review":last?"Agent update":"Running";
+  if(last){
+   const cleaned=last.body.replace(/<[^>]*>/g,"").replace(/!\[[^\]]*\]\([^)]+\)/g,"").trim().slice(0,2300);
+   const next=recentJob.prUrl?"Next: Review the proposed code and tests before merging.":completed||closed?"Next: Tell me what you want to improve or build next.":"Next: You can keep chatting; I'll check this job again automatically.";
+   jobChatUpdate(issueNumber,String(last.id)+":"+status,"Development job #"+issueNumber+" — "+status+"\n\n"+cleaned+"\n\n"+next);
+  }else if(closed){
+   jobChatUpdate(issueNumber,"closed","Development job #"+issueNumber+" is closed. I couldn't find a detailed agent report. Next: Ask me to inspect the job before assuming it completed.");
+  }
+  recentJob.message=status;
+  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  }catch(e){console.warn("Unable to refresh job status",e)}
  finally{jobTrackingBusy=false;if(view==="chat")render()}
 }
@@ -469,7 +492,8 @@ async function launchJob(){
  const response=await fetch(backend+"/jobs",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({...job,approved:true})});
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
- recentJob={message:"Job #"+data.issueNumber+" dispatched. Waiting for GitHub agent results.",url:data.issueUrl,number:data.issueNumber};
+ recentJob={message:"Job #"+data.issueNumber+" dispatched. Waiting for GitHub agent results.",url:data.issueUrl,number:data.issueNumber,chatId:current};
+ jobChatUpdate(data.issueNumber,"dispatched","Development job #"+data.issueNumber+" submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.");
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
  }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};}
@@ -671,7 +695,7 @@ document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
 
-const APP_VERSION="1.1.1";
+const APP_VERSION="1.2.0";
 async function checkAppUpdate(interactive=false){
  const button=document.getElementById("updates");
  if(interactive)button.textContent="…";
