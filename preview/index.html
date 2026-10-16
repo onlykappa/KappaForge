@@ -712,5 +712,5 @@ document.getElementById("updates").addEventListener("click",()=>checkAppUpdate(t
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 document.getElementById("personality").value=personality;
 document.getElementById("personality").addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality)});
-initInterface();updateConnection();render();activateSavedSync();load();refreshActivity(true);checkAppUpdate(false);if(recentJob?.number)checkJobResult();setInterval(()=>{if(document.hidden)return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
+initInterface();updateConnection();render();activateSavedSync();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();setInterval(()=>{if(document.hidden)return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
 </script></body></html>
