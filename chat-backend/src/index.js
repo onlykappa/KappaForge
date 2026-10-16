@@ -1,3 +1,4 @@
+import {discover,routes,telemetry,usageStore} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -6,6 +7,7 @@ export class KappaMemory {
   constructor(state) { this.state = state; }
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname.startsWith("/usage"))return usageStore(this.state,request);
     if(url.pathname.startsWith("/vectors/"))return indexStore(this.state,request);
     if (url.pathname === "/discord") {
       if (request.method === "GET") return new Response(JSON.stringify({connected:!!(await this.state.storage.get("discordWebhook"))}),{headers:{"Content-Type":"application/json"}});
@@ -75,13 +77,24 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if(new URL(request.url).pathname==="/capabilities"){
+      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:2,providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
+      catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
+    }
+    if(new URL(request.url).pathname==="/usage"){
+      if(!env.MEMORY)return json({error:"Usage persistence unavailable"},503,cors);
+      const body=await request.json().catch(()=>({}));
+      const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+      const r=await stub.fetch("https://memory.internal/usage?cursor="+encodeURIComponent(body.cursor||""));
+      return new Response(r.body,{status:r.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...cors}});
+    }
     if(new URL(request.url).pathname==="/index"){
       if(!env.MEMORY||!env.AI)return json({error:"Index infrastructure unavailable"},503,cors);
       const body=await request.json().catch(()=>({}));
@@ -427,47 +440,47 @@ export default {
       contents: messages,
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 }
     };
+    if(!planning){
+      const prefs=input.preferences||{};
+      const instructions=typeof prefs.instructions==="string"?prefs.instructions.slice(0,2000):"";
+      const language=typeof prefs.language==="string"?prefs.language.slice(0,40):"auto";
+      payload.systemInstruction.parts.push({text:"User response preferences (subject to existing security rules): "+JSON.stringify({instructions,language,detail:["concise","standard","thorough"].includes(prefs.reasoning)?prefs.reasoning:"standard"})});
+      payload.generationConfig.maxOutputTokens=({concise:500,standard:1200,thorough:3000})[prefs.reasoning]||1200;
+    }
     try {
-      // Discover which explicitly approved Flash models this API key can call.
-      const available = new Set();
-      let pageToken = "";
-      for (let page = 0; page < 5; page++) {
-        const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
-        url.searchParams.set("pageSize", "100");
-        if (pageToken) url.searchParams.set("pageToken", pageToken);
-        const listing = await fetch(url, { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
-        if (!listing.ok) return json({ error: "Gemini model discovery failed (HTTP " + listing.status + ")" }, 502, cors);
-        const data = await listing.json();
-        for (const item of data.models || []) {
-          if (item.supportedGenerationMethods?.includes("generateContent"))
-            available.add(item.name.replace(/^models\//, ""));
-        }
-        pageToken = data.nextPageToken || "";
-        if (!pageToken) break;
-      }
-      const candidates = PREFERRED_MODELS.filter(m => available.has(m));
-      if (!candidates.length)
-        return json({ error: "No approved Flash model available for this Gemini API key." }, 502, cors);
+      const available=await discover(env);
+      const candidates=routes(available,input.preferences||{},JSON.stringify(input.messages||input.request||"").length>1800);
+      if(!candidates.length)return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
+      if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
+      const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+      const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
+      if(!reservation.ok)return json({error:"Server monthly request limit reached. Requests resume next UTC month."},429,cors);
+      let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+      let attempt=0;
       let lastStatus = 0;
       for (const model of candidates) {
+        const started=Date.now();attempt++;
+        const record=async(result,ok)=>{const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;};
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4500000);
+        const timeout = setTimeout(() => controller.abort(), 45000);
         let response;
         try {
           response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
             body: JSON.stringify(payload), signal: controller.signal
           });
-        } finally { clearTimeout(timeout); }
+        } catch { await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); } finally { clearTimeout(timeout); }
         lastStatus = response.status;
         if (!response.ok) {
+          await record(null,false);
           if ([404, 429, 500, 502, 503].includes(response.status)) continue;
           return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
         }
         const result = await response.json();
+        const usage=await record(result,!!result.candidates?.[0]?.content?.parts?.some(p=>p.text));
         const answer = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
         if (answer) {
-          if (!planning) return json({ reply: answer, model }, 200, cors);
+          if (!planning) return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);
           let proposal;
           try { proposal = JSON.parse(answer); }
           catch { return json({ error: "Planner returned invalid JSON." }, 502, cors); }

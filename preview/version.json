@@ -1,5 +1,5 @@
 {
-  "version": "1.4.1",
+  "version": "2.0.0",
   "released": "2026-10-16",
-  "notes": "Automatic targeted source-line verification and quiet job reporting for failures and completed results"
+  "notes": "Shared premium Settings, authenticated usage history, bounded Gemini routing, memory deletion sync, iOS security and Update Center."
 }

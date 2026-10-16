@@ -8,39 +8,40 @@ struct KappaForgeApp: App {
 }
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var security = AppSecurity()
     @State private var showSettings = false
-
     var body: some View {
-        KappaWebView()
-            .ignoresSafeArea(.container, edges: .bottom)
-            .overlay(alignment: .topTrailing) {
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .padding(12)
-                        .background(.regularMaterial, in: Circle())
-                }
-                .accessibilityLabel("KappaForge settings and updates")
-                .padding(.trailing, 12)
-                .padding(.top, 6)
+        ZStack {
+            KappaWebView(showSecurity: { showSettings = true })
+                .ignoresSafeArea(.container, edges: .bottom)
+                .allowsHitTesting(security.unlocked && scenePhase == .active)
+                .accessibilityHidden(!security.unlocked || scenePhase != .active)
+            if !security.unlocked || scenePhase != .active {
+                VStack(spacing: 22) {
+                    Image(systemName: "lock.shield.fill").font(.system(size: 44)).foregroundStyle(.indigo)
+                    Text("KappaForge is locked").font(.title2.bold())
+                    Text(security.message).font(.footnote).multilineTextAlignment(.center)
+                    Button(security.authenticating ? "Authenticating…" : "Unlock KappaForge") { security.authenticate() }
+                        .buttonStyle(.borderedProminent).disabled(security.authenticating)
+                }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(.background)
             }
-            .sheet(isPresented: $showSettings) {
-                NavigationStack {
-                    SettingsView()
-                        .navigationTitle("KappaForge")
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showSettings = false }
-                            }
-                        }
-                }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { security.lock() }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView().environmentObject(security)
+                    .navigationTitle("Device security")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }
+        }
     }
 }
 
 struct SettingsView: View {
+    @EnvironmentObject private var security: AppSecurity
     @State private var updateStatus = ""
     @State private var downloadURL: URL?
     @State private var isChecking = false
@@ -51,6 +52,14 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            Section("App lock") {
+                LabeledContent("Biometric app lock", value: security.enabled ? "Enabled" : "Disabled")
+                Button(security.enabled ? "Disable app lock" : "Enable Face ID / Touch ID") {
+                    if security.enabled { security.disable() } else { security.authenticate(enabling: true) }
+                }.disabled(security.authenticating)
+                if !security.message.isEmpty { Text(security.message).font(.footnote) }
+                Text("Locks at cold launch and when the app enters the background. Device passcode is available for recovery. Credentials are stored in the iOS Keychain after successful migration.").font(.footnote)
+            }
             Section("Updates") {
                 LabeledContent("Installed version", value: currentVersion)
                 Button(isChecking ? "Checking..." : "Check for Updates") {

@@ -1,47 +1,26 @@
-name: iOS simulator build
+name: iOS build and release
 on:
-  push:
-    branches: [main]
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios-build.yml"
+  workflow_call:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Branch to validate, for example kappa/issue-4"
-        required: true
-        default: "kappa/issue-4"
+        description: Branch to validate (manual runs never publish)
+        required: false
+        default: main
         type: string
 permissions:
   contents: write
 jobs:
-  build:
-    if: startsWith(inputs.branch, 'kappa/issue-')
-    runs-on: macos-15
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
-          persist-credentials: false
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Generate project
-        working-directory: projects/kappaforge_ios
-        run: xcodegen generate
-      - name: Compile iOS Simulator app without signing
-        working-directory: projects/kappaforge_ios
-        run: |
-          xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-
   native:
-    if: github.event_name == 'push' || inputs.branch == ''
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.branch || github.sha }}
           persist-credentials: false
+      - name: Verify shared source and bundle latest interface
+        run: python3 scripts/check-web.py
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate KappaForge app icon
@@ -49,39 +28,55 @@ jobs:
       - name: Generate native project
         working-directory: ios
         run: xcodegen generate
-      - name: Compile native simulator app without signing
+      - name: Build simulator application
         working-directory: ios
+        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simulator-build CODE_SIGNING_ALLOWED=NO build
+      - name: Boot simulator and verify bundled launch
         run: |
-          xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-
-      - name: Build unsigned iPhone device application
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" ios/simulator-build/Build/Products/Debug-iphonesimulator/KappaForge.app
+          xcrun simctl launch "$DEVICE" com.onlykappa.KappaForge
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot /tmp/kappaforge-ios-launch.png
+      - name: Build unsigned iPhone application
         working-directory: ios
-        run: |
-          xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-      - name: Package IPA for SideStore signing
+        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Verify bundle, icon and package unsigned IPA
         working-directory: ios
         run: |
           set -euo pipefail
+          APP=build/Build/Products/Release-iphoneos/KappaForge.app
+          test -s "$APP/Assets.car"
+          test -s "$APP/AppIcon60x60@2x.png"
+          for FILE in index.html core.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = com.onlykappa.KappaForge
           mkdir -p package/Payload
-          cp -R build/Build/Products/Release-iphoneos/KappaForge.app package/Payload/
+          cp -R "$APP" package/Payload/
           cd package
           /usr/bin/zip -qry ../KappaForge-unsigned.ipa Payload
-          test -s ../KappaForge-unsigned.ipa
+          unzip -t ../KappaForge-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: KappaForge-unsigned-iPhone-IPA
           path: ios/KappaForge-unsigned.ipa
           if-no-files-found: error
-          retention-days: 14
-      - name: Publish iPhone-downloadable release
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iOS-launch-screenshot
+          path: /tmp/kappaforge-ios-launch.png
+      - name: Publish versioned iPhone release after validated web deployment
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(sed -n \"s/.*MARKETING_VERSION: '\\([^']*\\)'.*/\\1/p\" ios/project.yml | head -1)
-          test -n \"$VERSION\"
-          if gh release view \"v$VERSION\" >/dev/null 2>&1; then
-            echo \"Version already released. Bump MARKETING_VERSION for the next IPA.\"
+          set -euo pipefail
+          VERSION=$(python3 -c 'import json; print(json.load(open("preview/version.json"))["version"])')
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Version already published; never replace a released IPA."
           else
-            gh release create \"v$VERSION\" ios/KappaForge-unsigned.ipa --title \"KappaForge v$VERSION\" --notes \"Native iPhone app with bundled interface, icon, and in-app update checking. Download the IPA on iPhone and import into SideStore to sign and update.\" --target \"$GITHUB_SHA\"
+            gh release create "v$VERSION" ios/KappaForge-unsigned.ipa --title "KappaForge v$VERSION" --notes-file docs/RELEASE-2.0.0.md --target "$GITHUB_SHA"
           fi

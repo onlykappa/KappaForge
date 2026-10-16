@@ -24,7 +24,7 @@ jobs:
       - name: Check Worker JavaScript syntax
         run: node --check chat-backend/src/index.js
       - name: Test vector index behavior
-        run: node --test chat-backend/vector-index.test.mjs
+        run: node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
       - name: Verify Wrangler can build Worker
         working-directory: chat-backend
         run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/kappaforge-worker-check

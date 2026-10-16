@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+node_modules/
+ios/build/
+ios/simulator-build/
+ios/package/
+ios/*.ipa
+ios/*.xcodeproj/
+test-results/
+playwright-report/

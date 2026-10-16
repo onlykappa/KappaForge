@@ -5,9 +5,12 @@ import UniformTypeIdentifiers
 // KappaForge's interface is packaged with the application.
 // It never navigates to the GitHub Pages website.
 struct KappaWebView: UIViewRepresentable {
+    var showSecurity: () -> Void
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        config.userContentController.add(context.coordinator, name: "kappa")
+        config.userContentController.addUserScript(Self.credentialScript())
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
@@ -31,10 +34,75 @@ struct KappaWebView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    static func credentialScript() -> WKUserScript {
+        var boot = "window.KappaNativeVersion = \"\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")\";"
+        if let credentials = CredentialVault.load(), let data = try? JSONSerialization.data(withJSONObject: credentials), let value = String(data: data, encoding: .utf8) {
+            boot += "try { const c = \(value); sessionStorage.setItem('kappaforge.backend', c.backend || ''); sessionStorage.setItem('kappaforge.access', c.access || ''); } catch (_) {}"
+        }
+        return WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+    }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate {
+    func updateUIView(_ webView: WKWebView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(showSecurity: showSecurity) }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate, WKScriptMessageHandler {
+        let showSecurity: () -> Void
+        init(showSecurity: @escaping () -> Void) { self.showSecurity = showSecurity }
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true, let body = message.body as? [String: String] else { return }
+            if body["action"] == "security" { showSecurity() }
+            if body["action"] == "export", let name = body["name"], let content = body["content"], content.utf8.count < 1_000_000 {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + URL(fileURLWithPath: name).lastPathComponent)
+                do {
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                    sheet.completionWithItemsHandler = { _, _, _, _ in try? FileManager.default.removeItem(at: url) }
+                    if let webView = message.webView, let controller = presenter(webView) {
+                        sheet.popoverPresentationController?.sourceView = webView
+                        sheet.popoverPresentationController?.sourceRect = CGRect(x: webView.bounds.midX, y: webView.bounds.midY, width: 1, height: 1)
+                        controller.present(sheet, animated: true)
+                    }
+                } catch { /* Existing data remains untouched if export cannot be written. */ }
+            }
+            if body["action"] == "credentials", let backend = body["backend"], let access = body["access"] {
+                guard backend.isEmpty || (URL(string: backend)?.scheme == "https" && URL(string: backend)?.host?.hasSuffix(".workers.dev") == true) else { return }
+                if CredentialVault.save(["backend": backend, "access": access]) {
+                    userContentController.removeAllUserScripts()
+                    userContentController.addUserScript(KappaWebView.credentialScript())
+                    message.webView?.evaluateJavaScript("try { localStorage.removeItem('kappaforge.backend'); localStorage.removeItem('kappaforge.access'); } catch (_) {}", completionHandler: nil)
+                }
+            }
+        }
+        private func presenter(_ view: WKWebView) -> UIViewController? {
+            var controller = view.window?.rootViewController
+            while let presented = controller?.presentedViewController { controller = presented }
+            return controller
+        }
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            guard let controller = presenter(webView) else { completionHandler(); return }
+            let dialog = UIAlertController(title: "KappaForge", message: message, preferredStyle: .alert)
+            dialog.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+            controller.present(dialog, animated: true)
+        }
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            guard let controller = presenter(webView) else { completionHandler(false); return }
+            let dialog = UIAlertController(title: "KappaForge", message: message, preferredStyle: .alert)
+            dialog.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+            dialog.addAction(UIAlertAction(title: "Continue", style: .default) { _ in completionHandler(true) })
+            controller.present(dialog, animated: true)
+        }
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            guard let controller = presenter(webView) else { completionHandler(nil); return }
+            let dialog = UIAlertController(title: "KappaForge", message: prompt, preferredStyle: .alert)
+            dialog.addTextField { field in
+                field.text = defaultText
+                field.isSecureTextEntry = prompt.localizedCaseInsensitiveContains("token") || prompt.localizedCaseInsensitiveContains("passphrase")
+                field.autocapitalizationType = .none; field.autocorrectionType = .no
+            }
+            dialog.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            dialog.addAction(UIAlertAction(title: "Save", style: .default) { _ in completionHandler(dialog.textFields?.first?.text) })
+            controller.present(dialog, animated: true)
+        }
         private var fileCompletion: (([URL]?) -> Void)?
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -82,7 +150,7 @@ struct KappaWebView: UIViewRepresentable {
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
             picker.allowsMultipleSelection = parameters.allowsMultipleSelection
             picker.delegate = self
-            guard let controller = webView.window?.rootViewController else {
+            guard let controller = presenter(webView) else {
                 fileCompletion = nil
                 completionHandler(nil)
                 return

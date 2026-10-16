@@ -31,15 +31,6 @@ jobs:
       - name: Check generated source compiles
         run: python -m compileall -q projects tests/projects
       - name: Check Worker and preview JavaScript syntax
-        run: |
-          node --check chat-backend/src/index.js
-          python - <<'PY'
-          from pathlib import Path
-          html = Path('preview/index.html').read_text()
-          if html.count('<script>') != 1 or html.count('</script>') != 1:
-              raise SystemExit('Unexpected preview script count')
-          Path('/tmp/kappaforge-preview.js').write_text(html.split('<script>',1)[1].split('</script>',1)[0])
-          PY
-          node --check /tmp/kappaforge-preview.js
+        run: python scripts/check-web.py
       - name: Check repair engine syntax
         run: python -m compileall -q engine
