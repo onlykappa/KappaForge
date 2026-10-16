@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
+  "version": "1.1.0",
   "released": "2026-10-16",
-  "notes": "Remember device vault unlock for automatic encrypted sync without repeated prompts"
+  "notes": "Automatic response style and remembered encrypted cloud sync on each device"
 }
