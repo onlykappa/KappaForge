@@ -273,10 +273,30 @@ function dashboardSummary(){
  const runs=card("Recent workflow results",data.runs.slice(0,6).map(x=>row(x.name||"Workflow",(x.conclusion||x.status)+" · "+(x.head_branch||"main"),x.html_url)).join("")||'<p class="muted">No workflow data loaded.</p>');
  return controlCenter()+activityPanel();
 }
+async function discordRequest(action,payload={}){
+ if(!backend||!access)throw Error("Connect AI before setting up Discord.");
+ const response=await fetch(backend+"/integrations/discord",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access,"X-Integration-Action":action},body:JSON.stringify(payload)});
+ const result=await response.json();if(!response.ok)throw Error(result.error||"Discord integration failed");return result;
+}
+async function manageDiscord(){
+ try{
+  const status=await discordRequest("status");
+  const choice=prompt("Discord notifications\n"+(status.connected?"Connected":"Not connected")+"\n1 = Connect using a channel webhook\n2 = Send a test notification\n3 = Disconnect\n\nEnter 1, 2, or 3");
+  if(choice==="1"){
+   const url=prompt("Paste the Discord webhook URL for a channel you control. Treat it like a password. It will be sent privately to your KappaForge backend, not to the AI.");
+   if(!url)return;
+   await discordRequest("connect",{url:url.trim()});alert("Discord webhook connected. Send a test notification to verify.");
+  }else if(choice==="2"){
+   await discordRequest("send",{message:"✅ KappaForge Discord integration is working."});alert("Test notification sent to Discord.");
+  }else if(choice==="3"&&confirm("Disconnect Discord and erase the saved webhook?")){
+   await discordRequest("disconnect");alert("Discord disconnected.");
+  }
+ }catch(e){alert("Discord: "+e.message)}
+}
 const PLUGIN_CATALOG=[
  {name:"GitHub",desc:"Repository and pull-request workflows are supported through the configured KappaForge backend.",status:"Existing integration",url:"https://github.com/settings/personal-access-tokens"},
  {name:"Google Drive",desc:"Browse files, import documents, and attach project assets.",status:"Not connected",url:"https://drive.google.com"},
- {name:"Discord",desc:"Send build alerts and project updates to your own channels.",status:"Not connected",url:"https://discord.com/developers/applications"},
+ {name:"Discord",desc:"Send build alerts and project updates to your own channels.",status:"Webhook connection available",url:"https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks"},
  {name:"Slack",desc:"Read approved channels and post development summaries.",status:"Not connected",url:"https://api.slack.com/apps"},
  {name:"Notion",desc:"Import notes, documentation, and task databases.",status:"Not connected",url:"https://www.notion.so/my-integrations"},
  {name:"Google Calendar",desc:"Coordinate schedules and task reminders.",status:"Not connected",url:"https://calendar.google.com"}
@@ -301,7 +321,7 @@ if(view==="settings")html='<div class="settings-wrap"><h2>Settings</h2><p class=
  '<div class="panel"><h3>AI & conversation</h3><div class="row"><span>Response style</span><select id="settingstyle" class="setting-select"><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select></div><p class="muted">Style affects tone, not permissions. Adaptive responses are a future upgrade.</p>'+
  '<div class="row"><span>AI connection</span><strong>'+esc(backend&&access?"Connected on this device":"Not connected")+'</strong></div><button class="btn secondary" id="settingsconnect">Manage AI connection</button></div>'+
  '<div class="panel"><h3>Memory & device sync</h3><p class="muted">Save or remove memories and back up chats with on-device encryption. Sync is currently manual.</p><button class="btn" id="memorymanage">Manage memory and backups</button></div>'+
- '<div class="panel"><h3>Plugins & integrations</h3><p class="muted">Explore services KappaForge could integrate with. No new third-party account is linked by these cards. OAuth and real provider APIs must be built before connection is available.</p>'+pluginCatalog()+'</div>'+
+ '<div class="panel"><h3>Plugins & integrations</h3><p class="muted">Discord supports real webhook notifications once configured. Other providers require their own OAuth integrations.</p><button class="btn" id="discordmanage">Connect Discord webhook</button>'+pluginCatalog()+'</div>'+
  '<div class="panel"><h3>App & updates</h3><p class="muted">Installed interface version '+esc(APP_VERSION)+'.</p><div class="settings-actions"><button class="btn secondary" id="settingupdates">Check for updates</button><button class="btn secondary" id="settingrefresh">Refresh dashboard data</button></div></div></div>';
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
@@ -312,6 +332,7 @@ document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",(
 document.getElementById("settingstyle")?.addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality);document.getElementById("personality").value=personality;});
 document.getElementById("settingsconnect")?.addEventListener("click",()=>document.getElementById("connect").click());
 document.getElementById("memorymanage")?.addEventListener("click",manageMemory);
+document.getElementById("discordmanage")?.addEventListener("click",manageDiscord);
 document.getElementById("settingupdates")?.addEventListener("click",()=>checkAppUpdate(true));
 document.getElementById("settingrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true);alert("Refreshing KappaForge data.");});
 document.querySelectorAll("[data-plugin-request]").forEach(b=>b.addEventListener("click",()=>{
