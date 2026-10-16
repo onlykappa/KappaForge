@@ -1,5 +1,5 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "released": "2026-10-16",
-  "notes": "Persistent Cloudflare Workers AI vector code index and semantic retrieval controls"
+  "notes": "Automatic targeted source-line verification and quiet job reporting for failures and completed results"
 }
