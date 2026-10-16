@@ -545,7 +545,7 @@ document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
 
-const APP_VERSION="0.5.0";
+const APP_VERSION="0.6.0";
 async function checkAppUpdate(interactive=false){
  const button=document.getElementById("updates");
  if(interactive)button.textContent="…";
