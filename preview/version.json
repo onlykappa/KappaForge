@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "released": "2026-10-16",
-  "notes": "Interactive AI choices and optional encrypted cross-device memory sync"
+  "notes": "Remember device vault unlock for automatic encrypted sync without repeated prompts"
 }
