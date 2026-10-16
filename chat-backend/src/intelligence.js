@@ -10,6 +10,11 @@ export async function discover(env){
  }
  return MODELS.filter(m=>available.has(m));
 }
+export function isComplex(input){
+ const messages=Array.isArray(input.messages)?input.messages:[];
+ const latest=String(messages.filter(m=>m.role==='user').at(-1)?.text||input.request||'');
+ return JSON.stringify(messages.length?messages:latest).length>1800||/\b(debug|refactor|algorithm|architecture|derive|prove|tradeoffs|trade-offs|security audit|optimi[sz]e|compare.*(?:approach|implementation))\b/i.test(latest);
+}
 export function routes(models,options={},complex=false){
  let list=[...models];
  if(options.routing==='quality'||(options.routing==='balanced'&&complex))list.sort((a,b)=>Number(a.includes('lite'))-Number(b.includes('lite')));

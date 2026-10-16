@@ -1,5 +1,5 @@
 import {projectHealth} from "./project-health.js";
-import {discover,routes,telemetry,usageStore} from "./intelligence.js";
+import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -466,7 +466,7 @@ export default {
     }
     try {
       const available=await discover(env);
-      const candidates=routes(available,input.preferences||{},JSON.stringify(input.messages||input.request||"").length>1800);
+      const candidates=routes(available,input.preferences||{},isComplex(input));
       if(!candidates.length)return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));

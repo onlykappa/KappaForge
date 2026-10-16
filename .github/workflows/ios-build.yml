@@ -11,7 +11,24 @@ on:
 permissions:
   contents: write
 jobs:
+  sandbox:
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.branch, 'kappa/issue-')
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          persist-credentials: false
+      - run: brew install xcodegen
+      - name: Generate existing agent sandbox project
+        working-directory: projects/kappaforge_ios
+        run: xcodegen generate
+      - name: Compile existing agent sandbox simulator app
+        working-directory: projects/kappaforge_ios
+        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
   native:
+    if: github.event_name != 'workflow_dispatch' || !startsWith(inputs.branch, 'kappa/issue-')
     runs-on: macos-15
     timeout-minutes: 30
     steps:

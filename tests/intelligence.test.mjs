@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
-import {routes,telemetry,usageStore,discover,MODELS} from '../chat-backend/src/intelligence.js';
+import {routes,telemetry,usageStore,discover,MODELS,isComplex} from '../chat-backend/src/intelligence.js';
 const C=globalThis.KappaCore;
 const memoryState=()=>{const records=new Map();const storage={get:async k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>{for(const id of Array.isArray(k)?k:[k])records.delete(id)},list:async({prefix='',end,reverse=false,limit=1000}={})=>new Map([...records].filter(([k])=>k.startsWith(prefix)&&(!end||k<end)).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit))};storage.transaction=async f=>f(storage);return {storage,records};};
 const req=(path,body={},token='owner-token')=>new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});
@@ -21,3 +21,5 @@ test('real chat path records fallback and token metadata using mocked provider, 
 
 test('semantic memory search uses transient notes and preserves vault authentication',async()=>{let received;const r=await worker.fetch(req('/memory/search',{query:'coding preferences',notes:['Prefer concise code','Lives in Spokane']}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{run:async(model,body)=>{received=body.text;return {data:[[1,0],[.9,.1],[0,1]]}}}});assert.equal(r.status,200);const result=await r.json();assert.equal(result.matches[0].index,0);assert.equal(received.length,3);assert.equal((await worker.fetch(req('/memory/search',{query:'x',notes:[]}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{}})).status,400)});
 test('project diagnostics refuse arbitrary repository access',async()=>{const r=await worker.fetch(req('/projects/health',{repo:'not-allowed'}),{CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'test'});assert.equal(r.status,400)});
+
+test('complexity routing recognizes coding tasks without adding a paid classification call',()=>{assert.equal(isComplex({messages:[{role:'user',text:'Debug the authentication flow'}]}),true);assert.equal(isComplex({messages:[{role:'user',text:'Hello'}]}),false);assert.equal(isComplex({request:'a'.repeat(2000)}),true)});
