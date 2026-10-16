@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "released": "2026-10-16",
-  "notes": "Agent results and next steps appear directly in chat"
+  "notes": "Verify project history against live GitHub commits and show actual AI/GitHub activity under chat"
 }
