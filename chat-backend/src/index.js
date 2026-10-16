@@ -53,8 +53,10 @@ function json(data, status = 200, cors = {}) {
 }
 function corsHeaders(request) {
   const origin = request.headers.get("Origin");
-  return origin === ORIGIN ? {
-    "Access-Control-Allow-Origin": ORIGIN,
+  // Bundled iOS WKWebView pages use a file:// origin, serialized as "null".
+  // Requests still require the private bearer token, never cookie authentication.
+  return (origin === ORIGIN || origin === "null") ? {
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action",
     "Vary": "Origin"
