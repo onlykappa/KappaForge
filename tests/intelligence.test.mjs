@@ -34,3 +34,17 @@ test('Markdown renders code, tables and emphasis without accepting executable HT
  const code=md.render('```html\n<script>alert(1)</script>\n```');assert.match(code,/&lt;script&gt;/);assert.equal(code.includes('<script>'),false);
  assert.match(md.render('[safe](https://example.com/?a=1&b=2)'),/rel="noopener noreferrer"/);
 });
+
+test('task reports recognize real agent lifecycle headers without misclassifying audit findings',()=>{
+ const report=body=>globalThis.KappaJobs.report({id:23,user:{login:'github-actions[bot]'},body});
+ const partial=report('### KappaForge repository audit batch 1\n**Status:** Partial, next batch pending.\n\nFinding: tests failed handling is missing.\n<!-- KAPPA_AUDIT_STATE:{"next":12} -->');
+ assert.equal(partial.status,'partial');assert.equal(partial.body.includes('KAPPA_AUDIT_STATE'),false);
+ assert.equal(report('### KappaForge repository audit batch 7\n**Status:** All eligible paths processed.').status,'complete');
+ assert.equal(report('### KappaForge run completed\nRead-only report.').status,'complete');
+ assert.equal(report('### KappaForge task failed\nOpen workflow logs.').status,'failed');
+ assert.equal(report('KappaForge generated a draft PR: https://github.com/onlykappa/KappaForge/pull/24').status,'complete');
+ assert.equal(report('Waiting for the agent'),null);
+ assert.equal(globalThis.KappaJobs.report({user:{login:'untrusted'},body:'### KappaForge task failed'}),null);
+ assert.equal(globalThis.KappaJobs.isSubmission({role:'assistant',text:'Development job #23 submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.'}),true);
+ assert.equal(globalThis.KappaJobs.isSubmission({role:'user',text:'Development job #23 submitted.'}),false);
+});

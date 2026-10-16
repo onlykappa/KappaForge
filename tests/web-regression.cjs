@@ -10,7 +10,7 @@ const {join,extname,resolve}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+'/')){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
-let lastChatPreferences;
+let lastChatPreferences,issuedJob=22;let taskReports={};
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -21,6 +21,7 @@ const apiServer=createServer(async(req,res)=>{
  if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;result={reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}};}
+ else if(req.url==='/jobs'){issuedJob++;result={issueNumber:issuedJob,issueUrl:'https://github.com/onlykappa/KappaForge/issues/'+issuedJob,status:'dispatched'};}
  else if(req.url==='/plan')result={isTask:false};
  else {res.writeHead(404).end(JSON.stringify({error:'Unknown fixture endpoint'}));return;}
  res.end(JSON.stringify(result));
@@ -29,7 +30,7 @@ const apiServer=createServer(async(req,res)=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='http://127.0.0.1:'+apiServer.address().port;
  let runs=0;let activeBrowser;let activePage;let activeName;
  try{for(const [name,engine,viewport] of [['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]]){
- const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block'});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ issuedJob=22;taskReports={};const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block'});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
  await page.addInitScript(({credentials,backendURL})=>{
   if(!localStorage.getItem('fixture-seeded')){
@@ -38,7 +39,7 @@ const apiServer=createServer(async(req,res)=>{
    localStorage.setItem('kappaforge.memory.notes.v1',JSON.stringify(['Prefers precise responses','Project KappaForge']));
   }
  },{credentials,backendURL});
- await page.route('https://api.github.com/**',route=>{const url=route.request().url();const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
+ await page.route('https://api.github.com/**',route=>{const url=route.request().url();const task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);if(task)return route.fulfill({json:task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}});const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
  page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept('recovery-passphrase-123');else await dialog.accept()});
  await page.goto(base);console.log(name+': loaded interface');assert.equal(await page.locator('.top #settingsbtn').count(),0);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');if(name==='mobile-safari'){
   await page.evaluate(()=>document.documentElement.style.setProperty('--kappa-safe-top','59px'));
@@ -66,14 +67,29 @@ const apiServer=createServer(async(req,res)=>{
  await openSettings(page);await page.evaluate(()=>navigate('chat'));await page.locator('#message').fill('Hello there');await page.locator('#form button[type=submit]').click();await page.getByText('Live request fixture passed',{exact:true}).waitFor();assert.equal(lastChatPreferences.instructions,'Keep answers precise');assert.equal(lastChatPreferences.model,'gemini-2.5-flash');
  await page.locator('#message').fill('Audit project health');await page.evaluate(()=>prepareJob('Audit project health'));assert.equal(await page.locator('.layout').evaluate(el=>el.inert),true);await page.locator('#taskrepo').focus();await page.keyboard.press('Shift+Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'tasknext');await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'taskrepo');await page.keyboard.press('Escape');assert.equal(await page.locator('.layout').evaluate(el=>el.inert),false);await page.locator('#message').fill('');await page.locator('#message').dispatchEvent('input');
  const composer=await page.locator('.compose-inner').boundingBox();assert.ok(composer.height<145,'Composer starts compact');
- if(name==='mobile-safari'){const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(composer.y+composer.height<tabs.y,'Floating composer must not overlap tabs');}
+ assert.equal(await page.locator('.mobile-nav').isVisible(),false,'Sidebar replaces bottom navigation');
  await page.locator('.from-assistant .message-menu summary').last().click();await page.locator('[data-save-message]').last().click();
  await openNavigation(page);await page.locator('.sidebar [data-page=saved]').click();await page.locator('.saved-card').waitFor();assert.match(await page.locator('.saved-card').innerText(),/Live request fixture passed/);
  await page.locator('[data-open-saved]').click();
  await openNavigation(page);await page.locator('#conversation-search').fill('Keep this chat');assert.equal(await page.locator('#history .history').count(),1);await page.locator('#conversation-search').fill('does-not-exist');assert.equal(await page.locator('#history .history').count(),0);await page.locator('#conversation-search').fill('');
  await page.locator('.sidebar [data-page=profile]').click();await page.locator('#profile-name').fill('Test workspace');await page.locator('#profile-save').click();assert.equal(await page.locator('#profilelabel').innerText(),'Test workspace');
  await openNavigation(page);await page.locator('.sidebar [data-page=help]').click();assert.match(await page.locator('.help-copy').innerText(),/Keyboard shortcuts/);
- for(const target of ['home','projects','tasks','reviews','chat']){if(name==='mobile-safari')await page.locator('.mobile-nav [data-page='+target+']').click();else{await openNavigation(page);await page.locator('.sidebar [data-page='+target+']').click();}assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,target+' fits viewport');if(target==='home'){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-dashboard.png',fullPage:true,animations:'disabled'});}}
+ for(const target of ['home','projects','tasks','reviews','chat']){await openNavigation(page);await page.locator('.sidebar [data-page='+target+']').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,target+' fits viewport');if(target==='home'){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-dashboard.png',fullPage:true,animations:'disabled'});}}
+ // Use the actual approval, dispatch, retrieval and persistence flow. No real GitHub writes.
+ const firstChat=await page.evaluate(()=>current);
+ await page.evaluate(()=>{pendingJob={title:'Audit fixture project',instructions:'Inspect fixture source for bugs',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===1&&!jobTrackingBusy);
+ assert.doesNotMatch(await page.locator('#content').innerText(),/submitted|dispatched|Waiting for GitHub/);
+ const comment=(id,body)=>({id,user:{login:'github-actions[bot]'},updated_at:'2026-10-16',body});
+ taskReports[23]=[comment(101,'### KappaForge repository audit batch 1\n**Status:** Partial, next batch pending.\n\nFound a missing timeout in source.js. Tests failed handling should be reviewed.')];
+ await page.evaluate(()=>checkJobResult());await page.getByText('Findings so far (audit still partial)',{exact:false}).waitFor();await page.evaluate(()=>checkJobResult());assert.equal(await page.locator('.from-assistant').filter({hasText:'Found a missing timeout'}).count(),1);
+ await page.evaluate(()=>fresh());await page.evaluate(()=>{pendingJob={title:'Second fixture task',instructions:'Inspect the second fixture task',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===2&&!jobTrackingBusy);
+ taskReports[23].push(comment(102,'### KappaForge repository audit batch 2\n**Status:** All eligible paths processed.\n\nFinal finding: add timeout tests.'));
+ taskReports[24]=[comment(103,'### KappaForge task failed\nFixture build step stopped. Review logs and retry.')];
+ await page.evaluate(()=>checkJobResult());assert.match(await page.locator('#content').innerText(),/Fixture build step stopped/);assert.doesNotMatch(await page.locator('#content').innerText(),/Final finding/);
+ assert.equal(await page.evaluate(id=>chats.find(c=>c.id===id).messages.filter(m=>m.text.includes('Final finding')).length,firstChat),1);
+ await page.reload();await page.waitForFunction(()=>typeof trackedJobs!=='undefined');assert.equal(await page.evaluate(()=>trackedJobs.every(j=>j.finished)),true);
+ await page.evaluate(id=>{current=id;active().messages.push({role:'assistant',text:'Development job #23 submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.'});save();navigate('chat')},firstChat);assert.doesNotMatch(await page.locator('#content').innerText(),/Development job #23 submitted/);
+ console.log(name+': quiet task dispatch, partial/final findings, failure delivery, multiple chats and reload deduplication passed');
  const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});

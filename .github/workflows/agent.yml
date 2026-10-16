@@ -30,3 +30,19 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: python -m engine.runner
+
+      - name: Report task execution failure
+        if: failure() && inputs.issue_number != ''
+        uses: actions/github-script@v7
+        env:
+          TASK_NUMBER: ${{ inputs.issue_number }}
+        with:
+          script: |
+            const raw = process.env.TASK_NUMBER;
+            if (!/^[1-9][0-9]*$/.test(raw)) return;
+            const issue_number = Number(raw);
+            const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
+            if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({...context.repo, issue_number,
+              body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});

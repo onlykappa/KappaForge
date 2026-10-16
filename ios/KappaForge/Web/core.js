@@ -29,3 +29,16 @@ function mergeNotes(local,remote,deleted=[]){const tombstones=new Set(deleted);r
 function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(Number),y=String(b).replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)?1:-1;}return 0;}
 root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions};
 })(globalThis);
+
+// Interpret lifecycle metadata, not words quoted inside an audit's findings.
+globalThis.KappaJobs={report(comment){
+ if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string')return null;
+ const body=comment.body.replace(/<!--[\s\S]*?-->/g,'').replace(/\\`/g,'`').trim();
+ const heading=body.split('\n')[0];let status;
+ if(/^### (?:KappaForge task failed|Self-repair watch: failed)/i.test(heading))status='failed';
+ else if(/^### KappaForge repository audit batch \d+/i.test(heading))status=/^\*\*Status:\*\* All eligible paths processed/m.test(body)?'complete':'partial';
+ else if(/^### (?:KappaForge (?:run completed|project map complete)|Continuous task complete)/i.test(heading)||/^(?:KappaForge generated a draft PR|Self-repair draft PR created)/i.test(heading))status='complete';
+ else if(/^### Continuous coding milestone/i.test(heading))status='partial';
+ else return null;
+ return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body};
+},isSubmission(message){return message?.role==='assistant'&&/^Development job #\d+ submitted\. I will bring agent findings into this conversation automatically\. You can keep chatting while it runs\.$/.test(message.text)}};
