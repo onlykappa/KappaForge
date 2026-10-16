@@ -85,7 +85,7 @@ function rememberFromMessage(message){
  if(!savedMemories.includes(note)){restoreMemory(note);persistMemories()}
  return true;
 }
-const encode64=bytes=>btoa(String.fromCharCode(...bytes));
+const encode64=bytes=>{let raw="";for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(raw);};
 const decode64=data=>Uint8Array.from(atob(data),c=>c.charCodeAt(0));
 async function deriveVaultKey(pass,salt){
  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pass),"PBKDF2",false,["deriveKey"]);
