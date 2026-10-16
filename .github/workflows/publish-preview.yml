@@ -19,7 +19,7 @@ permissions:
   id-token: write
 concurrency:
   group: kappaforge-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   validate:
     uses: ./.github/workflows/web-validation.yml

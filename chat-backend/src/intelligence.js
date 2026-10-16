@@ -44,6 +44,6 @@ export async function usageStore(state,request){
  }
  const cursor=url.searchParams.get('cursor')||'';
  if(cursor&&!/^usage:\d{13}:[a-f0-9-]{36}$/.test(cursor))return Response.json({error:'Invalid cursor'},{status:400});
- const entries=await storage.list({prefix:'usage:',reverse:true,limit:501,...(cursor?{end:cursor}:{})});
+ const entries=await storage.list({prefix:'usage:',start:'usage:'+String(Date.now()-90*86400000),reverse:true,limit:501,...(cursor?{end:cursor}:{})});
  const rows=[...entries];return Response.json({events:rows.slice(0,500).map(([,v])=>v),cursor:rows.length>500?rows[499][0]:null,retentionDays:90});
 }

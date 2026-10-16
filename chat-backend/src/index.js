@@ -1,3 +1,4 @@
+import {projectHealth} from "./project-health.js";
 import {discover,routes,telemetry,usageStore} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
 
@@ -77,13 +78,29 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if(new URL(request.url).pathname==="/projects/health"){
+      const body=await request.json().catch(()=>({}));
+      try{const report=await projectHealth(env,body.repo);return json(report,report.status||200,cors)}catch{return json({error:"GitHub diagnostics timed out or failed. Existing repository data is unchanged."},502,cors)}
+    }
+    if(new URL(request.url).pathname==="/memory/search"){
+      if(!env.AI)return json({error:"Semantic memory search requires Workers AI."},503,cors);
+      const body=await request.json().catch(()=>({}));
+      if(typeof body.query!=="string"||body.query.length<2||body.query.length>300||!Array.isArray(body.notes)||body.notes.length>100||body.notes.some(n=>typeof n!=="string"||n.length>400))return json({error:"Search needs a 2–300 character query and at most 100 notes."},400,cors);
+      try{
+        const embeddings=await env.AI.run("@cf/baai/bge-small-en-v1.5",{text:[body.query,...body.notes]});
+        const [query,...notes]=embeddings.data||[];
+        if(!Array.isArray(query)||notes.length!==body.notes.length)throw Error("Embedding data unavailable");
+        const cosine=v=>{let dot=0,a=0,b=0;for(let i=0;i<query.length;i++){dot+=query[i]*v[i];a+=query[i]**2;b+=v[i]**2}return a&&b?dot/Math.sqrt(a*b):0};
+        return json({matches:notes.map((v,index)=>({index,score:cosine(v)})).sort((a,b)=>b.score-a.score).slice(0,10),processing:"Workers AI · transient notes, not stored by KappaForge"},200,cors);
+      }catch{return json({error:"Semantic search unavailable. Text search still works."},502,cors)}
+    }
     if(new URL(request.url).pathname==="/capabilities"){
       try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:2,providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}

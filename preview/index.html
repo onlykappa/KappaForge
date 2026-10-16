@@ -71,7 +71,7 @@ function chatCommand(input){
  if(/^!(lock|verify)\b/i.test(input))return "Commands: !lock [repository] <full 40-character SHA>, !unlock, !verify on, !verify off.";
  return null;
 }
-let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages)).slice(0,100)}catch(e){}
+let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages))}catch(e){}
 
 const memoryKey="kappaforge.memory.notes.v1";
 let savedMemories=[];
@@ -152,7 +152,7 @@ async function syncVault(){
     for(const c of restored.chats.slice(0,60))if(c&&typeof c.id==="string"&&Array.isArray(c.messages)){
      const prior=byId.get(c.id);if(!prior||(Number(c.at)||0)>(Number(prior.at)||0))byId.set(c.id,c);
     }
-    chats=[...byId.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0)).slice(0,100);
+    chats=[...byId.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0));
     mergeVaultExtras(restored);
     localStorage.setItem(key,JSON.stringify(chats));localStorage.setItem(memoryKey,JSON.stringify(savedMemories));
    }
@@ -210,7 +210,7 @@ async function manageMemory(){
     for(const c of restored.chats.slice(0,60))if(c&&typeof c.id==="string"&&Array.isArray(c.messages)){
       const old=existing.get(c.id);if(!old||(Number(c.at)||0)>(Number(old.at)||0))existing.set(c.id,c);
     }
-    chats=[...existing.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0)).slice(0,100);
+    chats=[...existing.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0));
     mergeVaultExtras(restored);
     persistMemories();save();current=chats[0]?.id||null;render();alert("Cloud backup merged into this device.");
    }
