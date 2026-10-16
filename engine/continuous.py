@@ -112,7 +112,13 @@ def main():
             monitor_failures(issue, token, key)
         elif re.search(r"^Mode:\s*continuous-code\s*$", body, re.I | re.M):
             from engine.continuous_code import code_one_step
-            outcome = code_one_step(issue, key, token)
+            try:
+                outcome = code_one_step(issue, key, token)
+            except RuntimeError as exc:
+                if "Approved Gemini routes unavailable" not in str(exc) and "No approved Flash model" not in str(exc):
+                    raise
+                print("Temporary AI provider unavailability; milestone stays queued for retry. " + str(exc))
+                continue
             print("Continuous coding: " + outcome["status"])
         else:
             raise ValueError("Issue must explicitly authorize Mode: continuous or Mode: watch")
