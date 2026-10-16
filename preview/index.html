@@ -474,10 +474,10 @@ async function checkJobResult(){
   if(prMatch)recentJob.prUrl=prMatch[0];
   const completed=/### Continuous task complete|Audit complete|### KappaForge project map complete/i.test(content);
   const closed=issue.state==="closed";
-  const status=completed||closed?"Completed":recentJob.prUrl?"Changes ready for review":last?"Agent update":"Running";
+  const status=completed?"Agent reported completion (tests not verified)":closed?"Issue closed (outcome unverified)":recentJob.prUrl?"Changes ready for review":last?"Agent update":"Running";
   if(last){
    const cleaned=last.body.replace(/<[^>]*>/g,"").replace(/!\[[^\]]*\]\([^)]+\)/g,"").trim().slice(0,2300);
-   const next=recentJob.prUrl?"Next: Review the proposed code and tests before merging.":completed||closed?"Next: Tell me what you want to improve or build next.":"Next: You can keep chatting; I'll check this job again automatically.";
+   const next=recentJob.prUrl?"Next: Review the proposed code and tests before merging.":completed||closed?"Next: Check test results or the application before treating this as fixed.":"Next: You can keep chatting; I'll check this job again automatically.";
    jobChatUpdate(issueNumber,String(last.id)+":"+status,"Development job #"+issueNumber+" — "+status+"\n\n"+cleaned+"\n\n"+next);
   }else if(closed){
    jobChatUpdate(issueNumber,"closed","Development job #"+issueNumber+" is closed. I couldn't find a detailed agent report. Next: Ask me to inspect the job before assuming it completed.");
