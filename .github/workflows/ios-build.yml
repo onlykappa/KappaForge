@@ -51,3 +51,23 @@ jobs:
         working-directory: ios
         run: |
           xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build unsigned iPhone device application
+        working-directory: ios
+        run: |
+          xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package IPA for SideStore signing
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          mkdir -p package/Payload
+          cp -R build/Build/Products/Release-iphoneos/KappaForge.app package/Payload/
+          cd package
+          /usr/bin/zip -qry ../KappaForge-unsigned.ipa Payload
+          test -s ../KappaForge-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KappaForge-unsigned-iPhone-IPA
+          path: ios/KappaForge-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
