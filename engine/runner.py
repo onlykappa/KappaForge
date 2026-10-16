@@ -124,20 +124,32 @@ def run_model(api_key, prompt, max_output_tokens=2000):
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens}}
-        try:
-            headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-            req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
-            with urllib.request.urlopen(req, timeout=100) as response:
-                data = json.load(response)
-            candidates_out = data.get("candidates") or []
-            parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
-            output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
-            if output:
-                return model, output
-            errors.append(model + ": empty response")
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-            errors.append(model + ": " + str(getattr(exc, "code", type(exc).__name__)))
-            time.sleep(2)
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+        # Provider outages are transient. Retry only 429/5xx; an invalid
+        # model (404) needs a different route, never repeated requests.
+        for attempt in range(3):
+            try:
+                req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
+                with urllib.request.urlopen(req, timeout=100) as response:
+                    data = json.load(response)
+                candidates_out = data.get("candidates") or []
+                parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
+                output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                if output:
+                    return model, output
+                errors.append(model + ": empty response")
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                errors.append(model + ": HTTP " + str(exc.code))
+                break
+            except (urllib.error.URLError, TimeoutError) as exc:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                errors.append(model + ": " + type(exc).__name__)
     raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
 
 def main():
