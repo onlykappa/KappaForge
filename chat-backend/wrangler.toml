@@ -10,3 +10,6 @@ class_name = "KappaMemory"
 [[migrations]]
 tag = "memory_v1"
 new_sqlite_classes = ["KappaMemory"]
+
+[ai]
+binding = "AI"
