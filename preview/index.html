@@ -483,7 +483,7 @@ function jobChatUpdate(jobId,signature,body){
 }
 async function checkJobResult(){
  if(!recentJob?.number||jobTrackingBusy)return;
- jobTrackingBusy=true;setActivity("Checking GitHub agent updates…");
+ jobTrackingBusy=true;
  try{
   const issueNumber=recentJob.number;
   const [comments,issue]=await Promise.all([
@@ -496,20 +496,24 @@ async function checkJobResult(){
   const content=updates.map(c=>c.body).join("\n");
   const prMatch=content.match(/https:\/\/github\.com\/onlykappa\/KappaForge\/pull\/[0-9]+/);
   if(prMatch)recentJob.prUrl=prMatch[0];
-  const completed=/### Continuous task complete|Audit complete|### KappaForge project map complete/i.test(content);
+  const agentCompleted=/### Continuous task complete|Audit complete|### KappaForge project map complete/i.test(content);
   const closed=issue.state==="closed";
-  const status=completed?"Agent reported completion (tests not verified)":closed?"Issue closed (outcome unverified)":recentJob.prUrl?"Changes ready for review":last?"Agent update":"Running";
-  if(last){
-   const cleaned=last.body.replace(/<[^>]*>/g,"").replace(/!\[[^\]]*\]\([^)]+\)/g,"").trim().slice(0,2300);
-   const next=recentJob.prUrl?"Next: Review the proposed code and tests before merging.":completed||closed?"Next: Check test results or the application before treating this as fixed.":"Next: You can keep chatting; I'll check this job again automatically.";
-   jobChatUpdate(issueNumber,String(last.id)+":"+status,"Development job #"+issueNumber+" — "+status+"\n\n"+cleaned+"\n\n"+next);
+  const explicitFailure=/\b(tests?\s+failed|build\s+failed|workflow\s+failed|job\s+failed|fatal error|verification failed)\b/i.test(content);
+  const explicitPass=/\b(all tests passed|tests passed|test suite passed|build succeeded)\b/i.test(content);
+  const status=explicitFailure?"failed":agentCompleted||closed?"complete":last?"running":"waiting";
+  if(explicitFailure){
+    jobChatUpdate(issueNumber,"failed:"+String(last?.id||issue.updated_at),"Something went wrong with your development task.\n\n"+String(last?.body||"Agent reported a failure.").replace(/<[^>]*>/g,"").slice(0,1700)+"\n\nNext: Share the error or ask me to investigate the failing test.");
+  }else if((agentCompleted||closed)&&last){
+    const cleaned=last.body.replace(/<[^>]*>/g,"").replace(/!\[[^\]]*\]\([^)]+\)/g,"").trim().slice(0,2100);
+    const evidence=explicitPass?"The agent reports passing tests (not independently checked).":"No independent passing test evidence was confirmed.";
+    jobChatUpdate(issueNumber,"complete:"+String(last.id),"Task report ready.\n\n"+cleaned+"\n\n"+evidence+"\n\nNext: Review the actual tests or try the change before treating it as verified.");
   }else if(closed){
-   jobChatUpdate(issueNumber,"closed","Development job #"+issueNumber+" is closed. I couldn't find a detailed agent report. Next: Ask me to inspect the job before assuming it completed.");
+    jobChatUpdate(issueNumber,"closed:"+String(issue.updated_at),"This task closed without a verifiable result. I couldn't confirm it passed or failed.\n\nNext: Inspect the job logs or retry it.");
   }
   recentJob.message=status;
   localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  }catch(e){console.warn("Unable to refresh job status",e)}
- finally{jobTrackingBusy=false;setActivity("");if(view==="chat")render()}
+ finally{jobTrackingBusy=false;if(view==="chat")render()}
 }
 async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
@@ -522,7 +526,7 @@ async function launchJob(){
  jobChatUpdate(data.issueNumber,"dispatched","Development job #"+data.issueNumber+" submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.");
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
- }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};}
+ }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};const target=active();if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
  render();
 }
 let taskDraft="",taskFocus=null;
@@ -721,7 +725,7 @@ document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
 
-const APP_VERSION="1.4.0";
+const APP_VERSION="1.4.1";
 async function checkAppUpdate(interactive=false){
  const button=document.getElementById("updates");
  if(interactive)button.textContent="…";
