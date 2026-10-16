@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.1.0",
   "released": "2026-10-16",
-  "notes": "iPhone Home Screen fix: safe-area header and menu spacing, solid status-bar background, appearance-aware theme color, and refreshed shared assets."
+  "notes": "OLED Black and glass redesign across chat, navigation, composer, dashboard and Settings. Search conversations, save messages, contextual actions and safe Markdown. Web-only rollout."
 }

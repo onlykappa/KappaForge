@@ -6,7 +6,7 @@ import re
 root = Path(__file__).resolve().parents[1]
 source = root / 'preview'
 target = root / 'ios/KappaForge/Web'
-files = ['index.html', 'settings.js', 'settings.css', 'core.js', 'version.json', 'icon.svg', 'manifest.webmanifest', 'sw.js']
+files = ['index.html', 'settings.js', 'settings.css', 'core.js', 'design.css', 'ui.js', 'markdown.js', 'version.json', 'icon.svg', 'manifest.webmanifest', 'sw.js']
 for name in files:
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / name, target / name)

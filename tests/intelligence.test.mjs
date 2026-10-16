@@ -23,3 +23,14 @@ test('semantic memory search uses transient notes and preserves vault authentica
 test('project diagnostics refuse arbitrary repository access',async()=>{const r=await worker.fetch(req('/projects/health',{repo:'not-allowed'}),{CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'test'});assert.equal(r.status,400)});
 
 test('complexity routing recognizes coding tasks without adding a paid classification call',()=>{assert.equal(isComplex({messages:[{role:'user',text:'Debug the authentication flow'}]}),true);assert.equal(isComplex({messages:[{role:'user',text:'Hello'}]}),false);assert.equal(isComplex({request:'a'.repeat(2000)}),true)});
+
+await import('../preview/markdown.js');
+test('Markdown renders code, tables and emphasis without accepting executable HTML or links',()=>{
+ const md=globalThis.KappaMarkdown;
+ assert.match(md.render('## Heading\n\n**Bold** and `code`'),/<h3>Heading<\/h3>/);
+ assert.match(md.render('| A | B |\n| --- | --- |\n| 1 | 2 |'),/<table>/);
+ const unsafe=md.render('<img src=x onerror=alert(1)> [click](javascript:alert(1))');
+ assert.equal(unsafe.includes('<img'),false);assert.equal(unsafe.includes('href="javascript:'),false);
+ const code=md.render('```html\n<script>alert(1)</script>\n```');assert.match(code,/&lt;script&gt;/);assert.equal(code.includes('<script>'),false);
+ assert.match(md.render('[safe](https://example.com/?a=1&b=2)'),/rel="noopener noreferrer"/);
+});

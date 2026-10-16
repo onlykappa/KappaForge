@@ -1,6 +1,6 @@
 {
   "name": "kappaforge-validation",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "test:web": "node tests/web-regression.cjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "playwright": "1.62.1"
   }
 }
