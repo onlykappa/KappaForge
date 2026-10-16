@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "repository": "onlykappa/KappaForge",
+  "generated_from": "repository structure reviewed 2026-10-16; curated, not exhaustively inferred",
+  "advisory": true,
+  "modules": [
+    {
+      "path": "preview/index.html",
+      "depends_on": [
+        "chat-backend/src/index.js",
+        "preview/version.json",
+        "preview/sw.js"
+      ],
+      "tests": [],
+      "notes": "Browser UI; chat requests, encrypted memory sync, job status"
+    },
+    {
+      "path": "chat-backend/src/index.js",
+      "depends_on": [
+        "chat-backend/wrangler.toml"
+      ],
+      "tests": [
+        ".github/workflows/deploy-chat.yml"
+      ],
+      "notes": "Cloudflare Worker API, GitHub lookups, AI chat, Durable Object memory"
+    },
+    {
+      "path": "engine/runner.py",
+      "depends_on": [
+        "engine/project_index.py",
+        "engine/project_memory.py",
+        "engine/coder.py"
+      ],
+      "tests": [
+        "tests/test_runner.py",
+        "tests/test_project_index.py",
+        "tests/test_project_memory.py"
+      ]
+    },
+    {
+      "path": "engine/continuous.py",
+      "depends_on": [
+        "engine/project_index.py",
+        "engine/repair_loop.py"
+      ],
+      "tests": [
+        "tests/test_continuous.py"
+      ]
+    },
+    {
+      "path": "ios/KappaForge/KappaWebView.swift",
+      "depends_on": [
+        "preview/index.html"
+      ],
+      "tests": [
+        ".github/workflows/ios-build.yml"
+      ]
+    }
+  ],
+  "warning": "Map is a curated starting point. Verify imports, call sites, runtime edges, and tests against the selected immutable commit before changing code."
+}
