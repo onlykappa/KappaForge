@@ -77,14 +77,20 @@ def main():
     number = os.environ.get("CONTINUOUS_ISSUE_NUMBER", "").strip()
     if number and not number.isdecimal():
         raise ValueError("Issue number must be numeric")
+    from engine.task_scope import mode_of, require_scope
+    scope = os.environ.get("KAPPA_TASK_SCOPE", "read")
+    if scope not in {"read", "write"}:
+        raise ValueError("Invalid continuous job scope")
+    allowed_modes = ("watch", "continuous") if scope == "read" else ("continuous-code",)
     issues = []
     if number:
         selected = get_issue(int(number), token)
         if selected:
+            require_scope(mode_of(selected), scope, "continuous")
             issues = [selected]
     else:
         candidates = github(f"repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=40", token)
-        for desired_mode in ("watch", "continuous", "continuous-code"):
+        for desired_mode in allowed_modes:
             for candidate in candidates:
                 if re.search(r"^Mode:\s*" + desired_mode + r"\s*$",
                              candidate.get("body") or "", re.I | re.M):
@@ -92,8 +98,8 @@ def main():
                     if authorized:
                         issues.append(authorized)
                         break
-    if not number:
-        # Only scheduled scans repair previously approved sandbox draft PRs.
+    if not number and scope == "write":
+        # Only the isolated write job scans repair previously approved sandbox draft PRs.
         from engine.repair_loop import scan_failures
         outcomes = scan_failures(token, key, github)
         print("Bounded independent-test repair scan:", outcomes[:4])
@@ -101,6 +107,7 @@ def main():
         print("No owner-authorized continuous/watch issues pending")
         return
     for issue in issues:
+        require_scope(mode_of(issue), scope, "continuous")
         body = issue.get("body") or ""
         if re.search(r"^Mode:\s*continuous\s*$", body, re.I | re.M):
             existing = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
@@ -124,4 +131,5 @@ def main():
             raise ValueError("Issue must explicitly authorize Mode: continuous or Mode: watch")
 
 if __name__ == "__main__":
-    main()
+    from tools.diagnostics import run
+    raise SystemExit(run(main, "continuous"))

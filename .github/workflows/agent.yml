@@ -1,48 +1,146 @@
 name: KappaForge agent
-on:
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: "KappaForge issue number (blank = next labeled task)"
-        required: false
-        type: string
-  schedule:
-    - cron: '17 */6 * * *'
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 concurrency:
   group: kappaforge-agent
   cancel-in-progress: false
 jobs:
+  classify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+      issue: ${{ steps.scope.outputs.issue }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Classify owner-authorized task with read-only token
+      id: scope
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.task_scope
+      shell: bash
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Analyze authorized KappaForge issue
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
-        run: python -m engine.runner
-
-      - name: Report task execution failure
-        if: failure() && inputs.issue_number != ''
-        uses: actions/github-script@v7
-        env:
-          TASK_NUMBER: ${{ inputs.issue_number }}
-        with:
-          script: |
-            const raw = process.env.TASK_NUMBER;
-            if (!/^[1-9][0-9]*$/.test(raw)) return;
-            const issue_number = Number(raw);
-            const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
-            if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
-            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.issues.createComment({...context.repo, issue_number,
-              body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Analyze authorized KappaForge issue
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
+        KAPPA_TASK_SCOPE: read
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.runner
+      shell: bash
+    - name: Report task execution failure
+      if: failure() && inputs.issue_number != ''
+      uses: actions/github-script@v7
+      env:
+        TASK_NUMBER: ${{ needs.classify.outputs.issue }}
+      with:
+        script: |
+          const raw = process.env.TASK_NUMBER;
+          if (!/^[1-9][0-9]*$/.test(raw)) return;
+          const issue_number = Number(raw);
+          const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
+          if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
+          const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          await github.rest.issues.createComment({...context.repo, issue_number,
+            body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
+    needs: classify
+    if: needs.classify.outputs.scope == 'read'
+    permissions:
+      contents: read
+      issues: write
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Analyze authorized KappaForge issue
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
+        KAPPA_TASK_SCOPE: write
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.runner
+      shell: bash
+    - name: Report task execution failure
+      if: failure() && inputs.issue_number != ''
+      uses: actions/github-script@v7
+      env:
+        TASK_NUMBER: ${{ needs.classify.outputs.issue }}
+      with:
+        script: |
+          const raw = process.env.TASK_NUMBER;
+          if (!/^[1-9][0-9]*$/.test(raw)) return;
+          const issue_number = Number(raw);
+          const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
+          if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
+          const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          await github.rest.issues.createComment({...context.repo, issue_number,
+            body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
+    needs: classify
+    if: needs.classify.outputs.scope == 'write' && github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+'on':
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: KappaForge issue number (blank = next labeled task)
+        required: false
+        type: string
+  schedule:
+  - cron: 17 */6 * * *
+defaults:
+  run:
+    shell: bash

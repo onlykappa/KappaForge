@@ -1,24 +1,42 @@
 name: Stop superseded native builds
-on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/stop-legacy-native.yml']
 permissions:
-  actions: write
+  contents: read
 jobs:
   stop:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Stop the two already-running native rollout jobs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for RUN in 38971462350 38971637764; do
-            STATUS=$(gh api "repos/onlykappa/KappaForge/actions/runs/$RUN" --jq .status)
-            if [ "$STATUS" != completed ]; then
-              gh api --method POST "repos/onlykappa/KappaForge/actions/runs/$RUN/cancel"
-              echo "Stopped superseded native run $RUN. Its completed web deployment is retained."
-            fi
-          done
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Cancel active superseded main-branch iOS builds
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        set -euo pipefail
+        CURRENT_SHA=$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)
+        gh api --paginate --slurp 'repos/onlykappa/KappaForge/actions/workflows/ios-build.yml/runs?branch=main&per_page=100' > /tmp/native-runs.json
+        python scripts/select-superseded-native.py "$CURRENT_SHA" < /tmp/native-runs.json > /tmp/superseded-native-ids
+        while read -r RUN; do
+          # Recheck status and source before cancellation to avoid stale-list decisions.
+          gh api "repos/onlykappa/KappaForge/actions/runs/$RUN" | python -c 'import json,sys; from importlib.machinery import SourceFileLoader; m=SourceFileLoader("selector","scripts/select-superseded-native.py").load_module(); r=json.load(sys.stdin); sys.exit(0 if m.select_runs([{"workflow_runs":[r]}],sys.argv[1]) else 1)' "$CURRENT_SHA" || continue
+          gh api --method POST "repos/onlykappa/KappaForge/actions/runs/$RUN/cancel"
+          echo "Stopped superseded native run $RUN."
+        done < /tmp/superseded-native-ids
+'on':
+  workflow_dispatch: null
+  push:
+    branches:
+    - main
+    paths:
+    - .github/workflows/stop-legacy-native.yml
+    - scripts/select-superseded-native.py
+defaults:
+  run:
+    shell: bash

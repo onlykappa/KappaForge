@@ -1,22 +1,6 @@
 name: Publish KappaForge Web
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'preview/**'
-      - 'chat-backend/**'
-      - 'ios/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'package*.json'
-      - '.github/workflows/publish-preview.yml'
-      - '.github/workflows/web-validation.yml'
-      - '.github/workflows/ios-build.yml'
-  workflow_dispatch:
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 concurrency:
   group: kappaforge-pages-${{ github.sha }}
   cancel-in-progress: true
@@ -32,14 +16,42 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Reject superseded source before deployment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: preview
-      - id: deployment
-        uses: actions/deploy-pages@v4
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Reject superseded source before deployment
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
+      shell: bash
+    - uses: actions/configure-pages@v5
+    - uses: actions/upload-pages-artifact@v3
+      with:
+        path: preview
+    - id: deployment
+      uses: actions/deploy-pages@v4
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+'on':
+  push:
+    branches:
+    - main
+    paths:
+    - preview/**
+    - chat-backend/**
+    - ios/**
+    - scripts/**
+    - tests/**
+    - package*.json
+    - .github/workflows/publish-preview.yml
+    - .github/workflows/web-validation.yml
+    - .github/workflows/ios-build.yml
+  workflow_dispatch: null
+defaults:
+  run:
+    shell: bash

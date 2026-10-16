@@ -1,11 +1,4 @@
 name: Deploy KappaForge Chat
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'chat-backend/**'
-      - '.github/workflows/deploy-chat.yml'
-  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -15,36 +8,89 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Check Worker JavaScript syntax
-        run: node --check chat-backend/src/index.js
-      - name: Test vector index behavior
-        run: node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
-      - name: Verify Wrangler can build Worker
-        working-directory: chat-backend
-        run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/kappaforge-worker-check
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+    - name: Install locked Worker deployment tools
+      working-directory: chat-backend
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        npm ci --ignore-scripts --no-audit --no-fund
+      shell: bash
+    - name: Preflight worker tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py worker
+    - name: Check Worker JavaScript syntax
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node --check chat-backend/src/index.js
+      shell: bash
+    - name: Test vector index behavior
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
+      shell: bash
+    - name: Verify Wrangler can build Worker
+      working-directory: chat-backend
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        npm run build:check
+      shell: bash
   deploy:
     needs: validate
     runs-on: ubuntu-latest
     environment: cloudflare-production
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Deploy Worker
-        working-directory: chat-backend
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN"; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
-          npx --yes wrangler@4 deploy --config wrangler.toml
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+    - name: Install locked Worker deployment tools
+      working-directory: chat-backend
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        npm ci --ignore-scripts --no-audit --no-fund
+      shell: bash
+    - name: Preflight worker tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py worker
+    - name: Deploy Worker
+      working-directory: chat-backend
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+        test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+        npm run deploy
+      shell: bash
+'on':
+  push:
+    branches:
+    - main
+    paths:
+    - chat-backend/**
+    - .github/workflows/deploy-chat.yml
+    - tests/intelligence.test.mjs
+  workflow_dispatch: null
+defaults:
+  run:
+    shell: bash

@@ -1,16 +1,5 @@
 name: Sandbox branch tests
 run-name: Sandbox validation ${{ inputs.branch }} @ ${{ inputs.candidate_sha }}
-on:
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: "KappaForge generated branch (kappa/issue-N, kappa/repair-N, or kappa/cont-N-M)"
-        required: true
-        type: string
-      candidate_sha:
-        description: "Exact generated branch SHA for automatic repair eligibility"
-        required: false
-        type: string
 permissions:
   contents: read
 jobs:
@@ -19,18 +8,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Run Python tests without API secrets
-        run: python -m unittest discover -s tests -v
-      - name: Check generated source compiles
-        run: python -m compileall -q projects tests/projects
-      - name: Check Worker and preview JavaScript syntax
-        run: python scripts/check-web.py
-      - name: Check repair engine syntax
-        run: python -m compileall -q engine
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.branch }}
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Run Python tests without API secrets
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest discover -s tests -v
+      shell: bash
+    - name: Check generated source compiles
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m compileall -q projects tests/projects
+      shell: bash
+    - name: Check Worker and preview JavaScript syntax
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python scripts/check-web.py
+      shell: bash
+    - name: Check repair engine syntax
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m compileall -q engine
+      shell: bash
+'on':
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: KappaForge generated branch (kappa/issue-N, kappa/repair-N, or kappa/cont-N-M)
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact generated branch SHA for automatic repair eligibility
+        required: false
+        type: string
+defaults:
+  run:
+    shell: bash

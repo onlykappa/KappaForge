@@ -1,35 +1,116 @@
 name: KappaForge continuous agent
-on:
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: "Optional owner-approved task issue number (blank scans eligible tasks)"
-        required: false
-        type: string
-  schedule:
-    - cron: '43 */6 * * *'
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: write
+  contents: read
 concurrency:
   group: kappaforge-continuous
   cancel-in-progress: false
 jobs:
-  continue:
+  classify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Classify owner-authorized task with read-only token
+      id: scope
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.task_scope continuous
+      shell: bash
+  observe:
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Resume approved task or diagnose failures
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CONTINUOUS_ISSUE_NUMBER: ${{ inputs.issue_number }}
-        run: python -m engine.continuous
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Resume approved task or diagnose failures
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        CONTINUOUS_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        KAPPA_TASK_SCOPE: read
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.continuous
+      shell: bash
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    if: needs.classify.outputs.scope == 'queues' || needs.classify.outputs.scope == 'read'
+    needs: classify
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight agent tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py agent
+    - name: Resume approved task or diagnose failures
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        CONTINUOUS_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        KAPPA_TASK_SCOPE: write
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m engine.continuous
+      shell: bash
+    permissions:
+      contents: write
+      issues: write
+      actions: write
+      pull-requests: write
+    if: needs.classify.outputs.scope == 'queues' || needs.classify.outputs.scope == 'write'
+    needs: classify
+'on':
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Optional owner-approved task issue number (blank scans eligible tasks)
+        required: false
+        type: string
+  schedule:
+  - cron: 43 */6 * * *
+defaults:
+  run:
+    shell: bash

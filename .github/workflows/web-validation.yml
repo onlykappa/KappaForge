@@ -1,6 +1,4 @@
 name: Shared web regression
-on:
-  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -8,28 +6,63 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python scripts/check-web.py
-      - run: node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
-      - run: python -m unittest discover -s tests -v
-      - name: Install browser regression dependency
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Install desktop Chromium and Safari WebKit test engines
-        run: npx playwright install --with-deps chromium webkit
-      - name: Test real interface on desktop and mobile WebKit
-        timeout-minutes: 3
-        run: node tests/web-regression.cjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: web-regression-screenshots
-          path: /tmp/kappaforge-*.png
-          if-no-files-found: ignore
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Preflight web tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py web
+    - run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python scripts/check-web.py
+      shell: bash
+    - run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
+      shell: bash
+    - run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest discover -s tests -v
+      shell: bash
+    - name: Install browser regression dependency
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        npm ci --ignore-scripts --no-audit --no-fund
+      shell: bash
+    - name: Install desktop Chromium and Safari WebKit test engines
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        ./node_modules/.bin/playwright install --with-deps chromium webkit
+      shell: bash
+    - name: Test real interface on desktop and mobile WebKit
+      timeout-minutes: 3
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node tests/web-regression.cjs
+      shell: bash
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: web-regression-screenshots
+        path: /tmp/kappaforge-*.png
+        if-no-files-found: ignore
+'on':
+  workflow_call: null
+defaults:
+  run:
+    shell: bash

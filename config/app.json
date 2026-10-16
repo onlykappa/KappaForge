@@ -1,0 +1,11 @@
+{
+  "version": "2.1.1",
+  "released": "2026-10-16",
+  "notes": "Sidebar-only navigation, quieter job submission, and automatic delivery of partial and final task findings to the original chat.",
+  "repository": "onlykappa/KappaForge",
+  "iosBundleIdentifier": "com.onlykappa.KappaForge",
+  "webSource": "preview",
+  "iosWebBundle": "ios/KappaForge/Web",
+  "nodeVersion": "22",
+  "pythonVersion": "3.12"
+}

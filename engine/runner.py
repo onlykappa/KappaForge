@@ -46,7 +46,7 @@ def get_issue(number, token):
         return None
     return issue
 
-def choose_issue(token):
+def choose_issue(token, allowed_modes=None):
     number = os.getenv("INPUT_ISSUE_NUMBER", "").strip()
     if number:
         if not number.isdecimal():
@@ -55,6 +55,10 @@ def choose_issue(token):
     issues = github(f"repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=40&sort=created&direction=asc", token)
     for item in issues:
         issue = get_issue(item["number"], token)
+        if issue and allowed_modes is not None:
+            from engine.task_scope import mode_of
+            if mode_of(issue) not in allowed_modes:
+                continue
         if issue and not any(x["body"] and "KappaForge run completed" in x["body"] for x in
                              github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)):
             return issue
@@ -170,6 +174,8 @@ def main():
     if not os.getenv("GEMINI_API_KEY"):
         print("GEMINI_API_KEY missing; task left queued.")
         return
+    from engine.task_scope import mode_of, require_scope
+    require_scope(mode_of(issue), os.environ.get("KAPPA_TASK_SCOPE", "read"))
     body_text = issue.get("body") or ""
     if re.search(r"^Mode:\s*repair\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
@@ -187,7 +193,7 @@ def main():
         url = produce_draft_pr(issue, os.environ["GEMINI_API_KEY"], token)
         print("Draft pull request created: " + url)
         return
-    if re.search(r"^Mode:\\s*project-map\\s*$", body_text, re.I | re.M):
+    if re.search(r"^Mode:\s*project-map\s*$", body_text, re.I | re.M):
         match = TARGET_RE.search(body_text)
         if not match or match.group(1) not in CONFIG["allowed"]:
             raise ValueError("Invalid project map target")
@@ -256,4 +262,5 @@ def main():
     print(f"Completed issue #{issue['number']}")
 
 if __name__ == "__main__":
-    main()
+    from tools.diagnostics import run
+    raise SystemExit(run(main, "runner"))

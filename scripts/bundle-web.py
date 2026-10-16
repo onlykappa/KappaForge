@@ -1,18 +1,20 @@
-"""Bundle the single tested web source without changing the WebKit origin or app ID."""
+"""Bundle the tested source without changing origin, app ID, or user data."""
 from pathlib import Path
 import shutil
-import json
-import re
-root = Path(__file__).resolve().parents[1]
-source = root / 'preview'
-target = root / 'ios/KappaForge/Web'
-files = ['index.html', 'settings.js', 'settings.css', 'core.js', 'design.css', 'ui.js', 'markdown.js', 'version.json', 'icon.svg', 'manifest.webmanifest', 'sw.js']
-for name in files:
-    target.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source / name, target / name)
-version = json.loads((source / 'version.json').read_text())['version']
-assert f'const APP_VERSION="{version}"' in (source / 'index.html').read_text()
-assert f"MARKETING_VERSION: '{version}'" in (root / 'ios/project.yml').read_text()
-for name in files:
-    assert (source / name).read_bytes() == (target / name).read_bytes(), name
-print(f'Bundled {len(files)} shared files, v{version}')
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from tools.build_config import ROOT, load_config
+from tools.diagnostics import run
+
+
+def main():
+    config=load_config();source=ROOT/config['webSource'];target=ROOT/config['iosWebBundle']
+    files=['index.html','app-config.js','settings.js','settings.css','core.js','design.css','ui.js','markdown.js','version.json','icon.svg','manifest.webmanifest','sw.js']
+    for name in files:
+        target.mkdir(parents=True,exist_ok=True);shutil.copy2(source/name,target/name)
+    if 'const APP_VERSION=KappaConfig.version;' not in (source/'index.html').read_text():raise ValueError('Frontend does not use generated build metadata')
+    for name in files:
+        if (source/name).read_bytes()!=(target/name).read_bytes():raise ValueError('Bundle differs: '+name)
+    print('Bundled '+str(len(files))+' shared files, v'+config['version'])
+
+if __name__=='__main__':sys.exit(run(main,'bundle'))

@@ -1,6 +1,170 @@
 name: iOS build and release
-on:
-  workflow_call:
+permissions:
+  contents: read
+jobs:
+  sandbox:
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.branch, 'kappa/issue-')
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.branch }}
+        persist-credentials: false
+    - run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        brew install xcodegen
+      shell: bash
+    - name: Preflight native tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py native
+    - name: Generate existing agent sandbox project
+      working-directory: projects/kappaforge_ios
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        xcodegen generate
+      shell: bash
+    - name: Compile existing agent sandbox simulator app
+      working-directory: projects/kappaforge_ios
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      shell: bash
+  native:
+    if: github.event_name != 'workflow_dispatch' || !startsWith(inputs.branch, 'kappa/issue-')
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.branch || github.sha }}
+        persist-credentials: false
+    - name: Install XcodeGen
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        brew install xcodegen
+      shell: bash
+    - name: Preflight native tools and build settings
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/preflight.py native
+    - name: Verify shared source and bundle latest interface
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python3 scripts/check-web.py
+      shell: bash
+    - name: Generate KappaForge app icon
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        swift ios/generate-icon.swift
+      shell: bash
+    - name: Generate native project
+      working-directory: ios
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        xcodegen generate
+      shell: bash
+    - name: Build simulator application
+      working-directory: ios
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simulator-build CODE_SIGNING_ALLOWED=NO build
+      shell: bash
+    - name: Boot simulator and verify bundled launch
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        set -euo pipefail
+        DEVICE=$(xcrun simctl list devices available -j | python3 scripts/select-simulator.py)
+        [[ "$DEVICE" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || { echo "Invalid simulator UUID"; exit 1; }
+        xcrun simctl boot "$DEVICE"
+        xcrun simctl bootstatus "$DEVICE" -b
+        xcrun simctl install "$DEVICE" ios/simulator-build/Build/Products/Debug-iphonesimulator/KappaForge.app
+        APP_ID=$(python3 scripts/config-value.py iosBundleIdentifier)
+        xcrun simctl launch "$DEVICE" "$APP_ID"
+        sleep 5
+        xcrun simctl io "$DEVICE" screenshot /tmp/kappaforge-ios-launch.png
+        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build CODE_SIGNING_ALLOWED=NO test
+      shell: bash
+    - name: Build unsigned iPhone application
+      working-directory: ios
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      shell: bash
+    - name: Verify bundle, icon and package unsigned IPA
+      working-directory: ios
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        set -euo pipefail
+        APP=build/Build/Products/Release-iphoneos/KappaForge.app
+        test -s "$APP/Assets.car"
+        test -s "$APP/AppIcon60x60@2x.png"
+        for FILE in index.html app-config.js core.js design.css ui.js markdown.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
+        test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = "$(python3 ../scripts/config-value.py iosBundleIdentifier)"
+        mkdir -p package/Payload
+        cp -R "$APP" package/Payload/
+        cd package
+        /usr/bin/zip -qry ../KappaForge-unsigned.ipa Payload
+        unzip -t ../KappaForge-unsigned.ipa
+      shell: bash
+    - uses: actions/upload-artifact@v4
+      with:
+        name: KappaForge-unsigned-iPhone-IPA
+        path: ios/KappaForge-unsigned.ipa
+        if-no-files-found: error
+        retention-days: 30
+    - uses: actions/upload-artifact@v4
+      with:
+        name: iOS-launch-screenshot
+        path: /tmp/kappaforge-ios-launch.png
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/download-artifact@v4
+      with:
+        name: KappaForge-unsigned-iPhone-IPA
+        path: ios
+    - name: Publish versioned iPhone release after validated web deployment
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        set -euo pipefail
+        test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
+        VERSION=$(python3 -c 'import json; print(json.load(open("preview/version.json"))["version"])')
+        if gh release view "v$VERSION" >/dev/null 2>&1; then
+          echo "Version already published; never replace a released IPA."
+        else
+          gh release create "v$VERSION" ios/KappaForge-unsigned.ipa --title "KappaForge v$VERSION" --notes-file docs/RELEASE-2.0.0.md --target "$GITHUB_SHA"
+        fi
+      shell: bash
+'on':
+  workflow_call: null
   workflow_dispatch:
     inputs:
       branch:
@@ -8,94 +172,6 @@ on:
         required: false
         default: main
         type: string
-permissions:
-  contents: write
-jobs:
-  sandbox:
-    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.branch, 'kappa/issue-')
-    runs-on: macos-15
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
-          persist-credentials: false
-      - run: brew install xcodegen
-      - name: Generate existing agent sandbox project
-        working-directory: projects/kappaforge_ios
-        run: xcodegen generate
-      - name: Compile existing agent sandbox simulator app
-        working-directory: projects/kappaforge_ios
-        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-  native:
-    if: github.event_name != 'workflow_dispatch' || !startsWith(inputs.branch, 'kappa/issue-')
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch || github.sha }}
-          persist-credentials: false
-      - name: Verify shared source and bundle latest interface
-        run: python3 scripts/check-web.py
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Generate KappaForge app icon
-        run: swift ios/generate-icon.swift
-      - name: Generate native project
-        working-directory: ios
-        run: xcodegen generate
-      - name: Build simulator application
-        working-directory: ios
-        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simulator-build CODE_SIGNING_ALLOWED=NO build
-      - name: Boot simulator and verify bundled launch
-        run: |
-          set -euo pipefail
-          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if x["name"].startswith("iPhone")))')
-          xcrun simctl boot "$DEVICE"
-          xcrun simctl bootstatus "$DEVICE" -b
-          xcrun simctl install "$DEVICE" ios/simulator-build/Build/Products/Debug-iphonesimulator/KappaForge.app
-          xcrun simctl launch "$DEVICE" com.onlykappa.KappaForge
-          sleep 5
-          xcrun simctl io "$DEVICE" screenshot /tmp/kappaforge-ios-launch.png
-          xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build CODE_SIGNING_ALLOWED=NO test
-      - name: Build unsigned iPhone application
-        working-directory: ios
-        run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-      - name: Verify bundle, icon and package unsigned IPA
-        working-directory: ios
-        run: |
-          set -euo pipefail
-          APP=build/Build/Products/Release-iphoneos/KappaForge.app
-          test -s "$APP/Assets.car"
-          test -s "$APP/AppIcon60x60@2x.png"
-          for FILE in index.html core.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
-          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = com.onlykappa.KappaForge
-          mkdir -p package/Payload
-          cp -R "$APP" package/Payload/
-          cd package
-          /usr/bin/zip -qry ../KappaForge-unsigned.ipa Payload
-          unzip -t ../KappaForge-unsigned.ipa
-      - uses: actions/upload-artifact@v4
-        with:
-          name: KappaForge-unsigned-iPhone-IPA
-          path: ios/KappaForge-unsigned.ipa
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: iOS-launch-screenshot
-          path: /tmp/kappaforge-ios-launch.png
-      - name: Publish versioned iPhone release after validated web deployment
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
-          VERSION=$(python3 -c 'import json; print(json.load(open("preview/version.json"))["version"])')
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "Version already published; never replace a released IPA."
-          else
-            gh release create "v$VERSION" ios/KappaForge-unsigned.ipa --title "KappaForge v$VERSION" --notes-file docs/RELEASE-2.0.0.md --target "$GITHUB_SHA"
-          fi
+defaults:
+  run:
+    shell: bash
