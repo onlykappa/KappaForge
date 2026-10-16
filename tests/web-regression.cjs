@@ -6,21 +6,35 @@ const {join,extname,resolve}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+'/')){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
+let lastChatPreferences;
+const apiServer=createServer(async(req,res)=>{
+ res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
+ if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
+ res.setHeader('Content-Type','application/json');
+ if(req.headers.authorization!=='Bearer fixture-private-token'){res.writeHead(401).end(JSON.stringify({error:'Unauthorized fixture request'}));return;}
+ let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
+ let result;
+ if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
+ else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
+ else if(req.url==='/chat'){lastChatPreferences=data.preferences;result={reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}};}
+ else if(req.url==='/plan')result={isTask:false};
+ else {res.writeHead(404).end(JSON.stringify({error:'Unknown fixture endpoint'}));return;}
+ res.end(JSON.stringify(result));
+});
 (async()=>{
- await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='http://127.0.0.1:'+apiServer.address().port;
  let runs=0;let activeBrowser;let activePage;let activeName;
  try{for(const [name,engine,viewport] of [['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]]){
  const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
- await page.addInitScript(({credentials})=>{
+ await page.addInitScript(({credentials,backendURL})=>{
   if(!localStorage.getItem('fixture-seeded')){
-   localStorage.setItem('fixture-seeded','yes');localStorage.setItem('kappaforge.backend','https://fixture.workers.dev');localStorage.setItem('kappaforge.access',credentials);
+   localStorage.setItem('fixture-seeded','yes');localStorage.setItem('kappaforge.backend',backendURL);localStorage.setItem('kappaforge.access',credentials);
    localStorage.setItem('kappaforge.preview.chats.v1',JSON.stringify([{id:'legacy-chat',title:'Preserved conversation',at:1,messages:[{role:'user',text:'Keep this chat'}]}]));
    localStorage.setItem('kappaforge.memory.notes.v1',JSON.stringify(['Prefers precise responses','Project KappaForge']));
   }
- },{credentials});
+ },{credentials,backendURL});
  await page.route('https://api.github.com/**',route=>{const url=route.request().url();const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
- await page.route('https://fixture.workers.dev/**',route=>{const url=route.request().url();if(url.endsWith('/capabilities'))return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:{version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2}});if(url.endsWith('/usage'))return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:{events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90}});if(url.endsWith('/chat'))return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:{reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}}});if(url.endsWith('/plan'))return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:{isTask:false}});return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:{revision:0,payload:null}})});
  page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept('recovery-passphrase-123');else await dialog.accept()});
  await page.goto(base);console.log(name+': loaded interface');await page.locator('#settingsbtn').click();console.log(name+': opened settings');
  await page.locator('#s-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();
@@ -35,9 +49,9 @@ const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.
  await page.locator('#settings-search').fill('tokens');assert.equal(await page.locator('[data-section]:visible').count(),1);await page.locator('#settings-search').fill('');
  for(const [id] of [['overview'],['models'],['usage'],['memory'],['personalization'],['services'],['developer'],['privacy'],['updates']]){await page.locator('[data-section='+id+']').click();const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,name+' '+id+' must fit viewport');assert.equal(await page.locator('h2#settings-section-heading').count(),1)}
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.preview.chats.v1'))[0].id),'legacy-chat');assert.equal(await page.evaluate(()=>localStorage.getItem('kappaforge.access')),credentials);
- await page.locator('[data-section=usage]').click();await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true,animations:'disabled'});
+ await page.locator('#settingsbtn').click();await page.evaluate(()=>navigate('chat'));await page.locator('#message').fill('Hello there');await page.locator('#form button[type=submit]').click();await page.getByText('Live request fixture passed',{exact:true}).waitFor();assert.equal(lastChatPreferences.instructions,'Keep answers precise');assert.equal(lastChatPreferences.model,'gemini-2.5-flash');await page.locator('#settingsbtn').click();await page.locator('[data-section=usage]').click();await page.locator('#s-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);await browser.close();runs++;console.log('PASS '+name+': settings persistence, usage, export, deletion, recovery crypto, releases, search, responsive sections, preserved data');
  }
- }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText().catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close()}
+ }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText().catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close();apiServer.close()}
  assert.equal(runs,2);
-})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
+})().catch(error=>{console.error(error);process.exitCode=1;server.close();apiServer.close()});
