@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "released": "2026-10-16",
-  "notes": "Shared premium Settings, authenticated usage history, bounded Gemini routing, memory deletion sync, iOS security and Update Center."
+  "notes": "iPhone Home Screen fix: safe-area header and menu spacing, solid status-bar background, appearance-aware theme color, and refreshed shared assets."
 }

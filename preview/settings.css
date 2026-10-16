@@ -7,3 +7,10 @@
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@keyframes s-enter{from{opacity:.5;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 :root[data-appearance] .iconbtn{background:var(--s-panel);color:var(--s-text);border-color:var(--s-line)}:root[data-appearance] .navlink button.active,:root[data-appearance] .history.active,:root[data-appearance] .mobile-nav button.active{background:#7777c533;color:var(--s-text)}:root[data-appearance] .btn.secondary{background:var(--s-bg);color:var(--s-text)}:root[data-appearance] .muted{color:var(--s-muted)}:root[data-appearance] .compose-inner textarea{color:var(--s-text)}.s-detail>h2{scroll-margin-top:74px}
+
+/* Installed iPhone web apps extend into the status-bar area. Keep controls below it. */
+:root{--kappa-safe-top:env(safe-area-inset-top,0px);--kappa-safe-left:env(safe-area-inset-left,0px);--kappa-safe-right:env(safe-area-inset-right,0px)}
+.top{padding-top:calc(18px + var(--kappa-safe-top));padding-left:max(24px,var(--kappa-safe-left));padding-right:max(24px,var(--kappa-safe-right));min-height:calc(64px + var(--kappa-safe-top));background-color:var(--s-panel);opacity:1;isolation:isolate}
+.top #menubtn,.top #settingsbtn{min-width:44px;min-height:44px;flex-shrink:0}
+.sidebar{padding-top:calc(24px + var(--kappa-safe-top));padding-left:calc(12px + var(--kappa-safe-left))}
+@media(max-width:700px){.top{padding-top:calc(7px + var(--kappa-safe-top));padding-bottom:7px;padding-left:max(12px,var(--kappa-safe-left));padding-right:max(12px,var(--kappa-safe-right));min-height:calc(58px + var(--kappa-safe-top));top:0;z-index:4}.sidebar{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto}}

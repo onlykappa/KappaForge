@@ -1,8 +1,13 @@
 {
   "name": "kappaforge-validation",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "type": "module",
-  "scripts": {"test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs", "test:web": "node tests/web-regression.cjs"},
-  "devDependencies": {"playwright": "1.62.1"}
+  "scripts": {
+    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs",
+    "test:web": "node tests/web-regression.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }
