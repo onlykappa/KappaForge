@@ -1,5 +1,5 @@
 {
-  "version": "0.9.0",
+  "version": "1.0.0",
   "released": "2026-10-16",
-  "notes": "Chat actions, searchable plugins and conversational memory"
+  "notes": "Interactive AI choices and optional encrypted cross-device memory sync"
 }
