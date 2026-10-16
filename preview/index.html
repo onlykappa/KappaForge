@@ -34,7 +34,7 @@ function chatCommand(input){
  if(/^!(lock|verify)\b/i.test(input))return "Commands: !lock [repository] <full 40-character SHA>, !unlock, !verify on, !verify off.";
  return null;
 }
-let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages));for(const c of chats)for(const m of c.messages)if(m.streaming){delete m.streaming;m.text=(m.text||"")+"\n\nResponse interrupted when the page closed. You can retry from the message menu."}}catch(e){}
+let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages));for(const c of chats)for(const m of c.messages)if(m.streaming){delete m.streaming;m.text=(m.text||"")+"\n\nThis reply was unfinished when the page loaded. You can retry from the message menu."}}catch(e){}
 
 const memoryKey="kappaforge.memory.notes.v1";
 let savedMemories=[];

@@ -81,7 +81,7 @@ async function receiveAssistant(response,chat,prefix,signal){
   shown=smooth&&!document.hidden?Math.min(full.length,shown+Math.max(4,Math.ceil(remaining/24))):full.length;
   // Do not split a Unicode surrogate pair while revealing a buffered chunk.
   if(shown<full.length&&/[\uD800-\uDBFF]/.test(full[shown-1]))shown++;
-  message.text=prefix+full.slice(0,shown);
+  message.text=prefix+full.slice(0,shown);chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);
   if(view==='chat'&&current===chat.id){const index=chat.messages.indexOf(message),bubble=document.querySelector('[data-message-index="'+index+'"] .bubble');if(bubble)bubble.textContent=message.text;if(nearBottom)scrollTo(0,document.documentElement.scrollHeight);}
   if(Date.now()-lastSave>750){save();lastSave=Date.now();}
  };
@@ -105,5 +105,5 @@ async function receiveAssistant(response,chat,prefix,signal){
  }catch(error){
   shown=full.length;message.text=prefix+full+(signal.aborted?'\n\nResponse stopped.':'\n\nResponse interrupted: '+error.message+'. You can retry from the message menu.');
   error.reported=true;throw error;
- }finally{clearInterval(timer);delete message.streaming;save();render();}
+ }finally{clearInterval(timer);delete message.streaming;chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);save();render();}
 }
