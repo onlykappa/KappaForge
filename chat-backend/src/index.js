@@ -272,8 +272,8 @@ export default {
           }catch(e){commitDetail="\nLatest commit file metadata unavailable; do not infer file modifications.";}
           repositoryEvidence="VERIFIED GITHUB MAIN-BRANCH COMMIT DATA (repository onlykappa/"+resolvedProject+", retrieved now; NOT proof of any particular feature beyond the messages below):\n"+
             commits.map(c=>String(c.sha||"").slice(0,12)+" | "+String(c.commit?.committer?.date||"")+" | "+String(c.commit?.message||"").split("\n")[0].slice(0,180)).join("\n")+
-            "\nRepository: https://github.com/onlykappa/"+project+"/commits/main"+
-            "\nDo not assert what files, behavior, or features changed based solely on commit titles. If the question needs diffs or more details, say those have not been verified.";
+            "\nRepository: https://github.com/onlykappa/"+resolvedProject+"/commits/main"+commitDetail+
+            "\nCommit titles and file metadata do not demonstrate functional success. Local changes are invisible. Only claim verified tests when supported by explicit test evidence.";
         }catch(error){
           repositoryEvidence="GITHUB MAIN-BRANCH HISTORY VERIFICATION FAILED for onlykappa/"+resolvedProject+": "+String(error.message).slice(0,100)+
             ". Do not guess, invent a latest commit or rely on cached projects; say the commit history could not be verified.";
