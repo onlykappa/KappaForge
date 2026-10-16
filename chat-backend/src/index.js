@@ -1,3 +1,4 @@
+import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -5,6 +6,7 @@ export class KappaMemory {
   constructor(state) { this.state = state; }
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname.startsWith("/vectors/"))return indexStore(this.state,request);
     if (url.pathname === "/discord") {
       if (request.method === "GET") return new Response(JSON.stringify({connected:!!(await this.state.storage.get("discordWebhook"))}),{headers:{"Content-Type":"application/json"}});
       if (request.method === "DELETE") { await this.state.storage.delete("discordWebhook"); return new Response(JSON.stringify({connected:false}),{headers:{"Content-Type":"application/json"}}); }
@@ -71,13 +73,24 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if(new URL(request.url).pathname==="/index"){
+      if(!env.MEMORY||!env.AI)return json({error:"Index infrastructure unavailable"},503,cors);
+      const body=await request.json().catch(()=>({}));
+      if(!INDEX_REPOS.includes(body.repo))return json({error:"Choose an allowed repository"},400,cors);
+      try{
+        if(body.action==="refresh")return json(await refreshIndex(env,body.repo),200,cors);
+        const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+        const r=await stub.fetch("https://memory.internal/vectors/status?repo="+body.repo);
+        return new Response(r.body,{status:r.status,headers:{"Content-Type":"application/json",...cors}});
+      }catch(e){return json({error:"Index unavailable: "+e.message},503,cors)}
+    }
     if (new URL(request.url).pathname === "/integrations/discord") {
       if (!env.MEMORY) return json({error:"Integration storage unavailable"},503,cors);
       const action = request.headers.get("X-Integration-Action") || "status";
@@ -318,7 +331,7 @@ export default {
             });
             snippets.push("FILE "+item.path+" @ "+ref+"\n"+spans.join("\n...\n"));
           }
-          codeEvidence="RETRIEVED SOURCE from onlykappa/"+repoName+" @ "+ref+
+          codeEvidence+="\nRETRIEVED SOURCE from onlykappa/"+repoName+" @ "+ref+
             "\nRepository tree paths: "+files.map(x=>x.path).slice(0,70).join(", ")+
             "\n"+snippets.join("\n\n");
           if(snippets.length)verifiedEvidence=true;
