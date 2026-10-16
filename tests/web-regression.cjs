@@ -8,9 +8,9 @@ const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+'/')){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
- let runs=0;let activeBrowser;
+ let runs=0;let activeBrowser;let activePage;let activeName;
  try{for(const [name,engine,viewport] of [['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]]){
- const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
  await page.addInitScript(({credentials})=>{
   if(!localStorage.getItem('fixture-seeded')){
@@ -35,9 +35,9 @@ const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.
  await page.locator('#settings-search').fill('tokens');assert.equal(await page.locator('[data-section]:visible').count(),1);await page.locator('#settings-search').fill('');
  for(const [id] of [['overview'],['models'],['usage'],['memory'],['personalization'],['services'],['developer'],['privacy'],['updates']]){await page.locator('[data-section='+id+']').click();const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,name+' '+id+' must fit viewport');assert.equal(await page.locator('h2#settings-section-heading').count(),1)}
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.preview.chats.v1'))[0].id),'legacy-chat');assert.equal(await page.evaluate(()=>localStorage.getItem('kappaforge.access')),credentials);
- await page.locator('[data-section=usage]').click();await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true});
+ await page.locator('[data-section=usage]').click();await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);await browser.close();runs++;console.log('PASS '+name+': settings persistence, usage, export, deletion, recovery crypto, releases, search, responsive sections, preserved data');
  }
- }finally{if(activeBrowser)await activeBrowser.close();server.close()}
+ }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText().catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close()}
  assert.equal(runs,2);
 })().catch(error=>{console.error(error);process.exitCode=1;server.close()});
