@@ -1,3 +1,4 @@
+// Service workers are blocked because WebKit bypasses Playwright route fixtures for worker-controlled requests. Production sw.js is separately network-only for navigations and never caches APIs.
 // Executes the real shared interface. APIs are deterministic fixtures, never live paid calls.
 const {chromium,webkit}=require('playwright');
 const {createServer}=require('node:http');
@@ -25,7 +26,7 @@ const apiServer=createServer(async(req,res)=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='http://127.0.0.1:'+apiServer.address().port;
  let runs=0;let activeBrowser;let activePage;let activeName;
  try{for(const [name,engine,viewport] of [['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]]){
- const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block'});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
  await page.addInitScript(({credentials,backendURL})=>{
   if(!localStorage.getItem('fixture-seeded')){
