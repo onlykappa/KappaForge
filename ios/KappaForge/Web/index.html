@@ -198,7 +198,12 @@ async function manageMemory(){
    if(!pass||pass.length<12)throw Error("A passphrase of at least 12 characters is required.");
    const vault=await vaultRequest("GET");
    if(action==="3"){
-    if(vault.payload&&!confirm("This replaces the existing encrypted cloud backup. Restore it first if it contains newer chats. Continue?"))return;
+    if(vault.payload){
+      const restored=await decryptVault(vault.payload,pass);
+      const existing=new Map(chats.map(c=>[c.id,c]));
+      for(const c of restored.chats){const old=existing.get(c.id);if(!old||Number(c.at)>Number(old.at))existing.set(c.id,c);}
+      chats=[...existing.values()];mergeVaultExtras(restored);persistMemories();save();
+    }
     const payload=await encryptVault(vaultSnapshot(),pass);
     const result=await vaultRequest("PUT",{revision:vault.revision,payload});
     alert("Encrypted backup saved. Revision "+result.revision+". Use the same AI connection and passphrase on your other device.");

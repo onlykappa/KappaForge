@@ -28,7 +28,7 @@ async function refreshIntelligence(){
  settingsBusy=false;if(view==='settings')render();
 }
 function exportFile(name,content,type='application/json'){
- const text=typeof content==='string'?content:JSON.stringify(content,null,2);if(window.webkit?.messageHandlers?.kappa){window.webkit.messageHandlers.kappa.postMessage({action:'export',name,content:text});return;}
+ const text=typeof content==='string'?content:JSON.stringify(content,null,2);if(window.webkit?.messageHandlers?.kappa){if(new TextEncoder().encode(text).length>=1000000)throw Error('Native sharing is limited to 1 MB. Export a narrower usage period or use the website.');window.webkit.messageHandlers.kappa.postMessage({action:'export',name,content:text});return;}
  const blob=new Blob([text],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 const sf=(label,control,hint='')=>'<div class="s-field"><div><strong>'+label+'</strong>'+(hint?'<p class="muted">'+hint+'</p>':'')+'</div>'+control+'</div>';

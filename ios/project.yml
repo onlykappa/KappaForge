@@ -31,4 +31,18 @@ targets:
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
         CODE_SIGN_STYLE: Automatic
     scheme:
-      testTargets: []
+      testTargets:
+        - KappaForgeUITests
+  KappaForgeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: KappaForgeUITests
+    dependencies:
+      - target: KappaForge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge.UITests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.9'
+        CODE_SIGNING_ALLOWED: NO

@@ -41,6 +41,7 @@ jobs:
           xcrun simctl launch "$DEVICE" com.onlykappa.KappaForge
           sleep 5
           xcrun simctl io "$DEVICE" screenshot /tmp/kappaforge-ios-launch.png
+          xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build CODE_SIGNING_ALLOWED=NO test
       - name: Build unsigned iPhone application
         working-directory: ios
         run: xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
