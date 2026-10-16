@@ -9,7 +9,7 @@ This is an **XcodeGen SwiftUI iOS application** wrapping the existing KappaForge
 3. Open `KappaForge.xcodeproj` and select a signing team for `com.onlykappa.KappaForge` (change the bundle ID if needed).
 4. Run on the iPhone or distribute an App Store Connect / TestFlight build.
 
-The GitHub iOS CI workflow performs a **simulator compile without signing** to catch source issues. It does not publish an IPA because Apple signing credentials, an Apple Developer team and distribution setup have not been provided.
+The GitHub iOS CI workflow compiles simulator and iPhone device builds **without signing** and publishes the unsigned `KappaForge-unsigned.ipa` in the `KappaForge-unsigned-iPhone-IPA` workflow artifact (retained for 14 days). A compatible sideloader must sign this IPA with valid Apple provisioning before installation. The native WKWebView loads the deployed KappaForge website, so its web features update independently of the IPA.
 
 ## Migration and versions
 
