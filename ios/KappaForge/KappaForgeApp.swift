@@ -37,7 +37,7 @@ struct SettingsView: View {
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")
             }
             Section("Updates") {
-                Text("App Store builds update through the App Store. Test builds update through TestFlight or a new signed installation. The embedded KappaForge interface updates from the server automatically.")
+                Text("App Store builds update through the App Store. Test builds update through TestFlight or a new signed installation. KappaForge's interface is bundled into the app. Install a new signed build to update it.")
                     .font(.footnote)
                 Link("Check App Store", destination: URL(string: "https://apps.apple.com/")!)
             }
