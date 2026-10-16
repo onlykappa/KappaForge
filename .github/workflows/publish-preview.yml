@@ -18,7 +18,7 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: kappaforge-pages
+  group: kappaforge-pages-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   validate:
@@ -33,6 +33,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Reject superseded source before deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

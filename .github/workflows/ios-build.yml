@@ -74,6 +74,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          test "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" = "$GITHUB_SHA"
           VERSION=$(python3 -c 'import json; print(json.load(open("preview/version.json"))["version"])')
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "Version already published; never replace a released IPA."

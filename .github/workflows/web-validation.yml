@@ -25,6 +25,7 @@ jobs:
       - name: Install desktop Chromium and Safari WebKit test engines
         run: npx playwright install --with-deps chromium webkit
       - name: Test real interface on desktop and mobile WebKit
+        timeout-minutes: 3
         run: node tests/web-regression.cjs
       - uses: actions/upload-artifact@v4
         if: always()
