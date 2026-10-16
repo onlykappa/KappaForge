@@ -145,3 +145,14 @@ The top **⇩ Check updates** button fetches `preview/version.json` without brow
 ## Project memory across tasks
 
 Authorized project-map tasks can find the most recent SHA-verified architecture snapshot in the same task, or in one of the latest 12 authorized owner-authored project-map issues targeting the **same repository**. A new snapshot and bounded added/removed path comparison are then posted in the active task's issue comments. This is a structured memory of scanned files, symbols, and imports, not a full semantic search engine and not a source of unverified historical claims.
+
+## Memory and cross-device encrypted backups (v0.6.0)
+
+The **🧠 Memory** control in the KappaForge Chat header provides four explicit actions: save a remembered fact, review/remove local facts, save an encrypted cloud backup, and restore/merge one on another device.
+
+- Chat histories and manually saved memory notes are kept in browser storage until backed up. The **Save to cloud** action encrypts up to 280 KB of serialized history (up to 60 conversations) with AES-256-GCM using a passphrase-derived PBKDF2 key, then sends only ciphertext to a Cloudflare Durable Object. The server cannot recover the passphrase or read the backup.
+- **Restore** uses the same private Worker URL, `CHAT_ACCESS_TOKEN`, and vault passphrase. It decrypts locally and merges chats by conversation ID and recent timestamp, then combines notes without duplicates. It does not silently delete local conversations.
+- Backup is **manual** rather than a live per-message sync. Memory notes must currently be added explicitly, and they are inserted as user-provided context on future chat requests. The app does not silently infer or persist personal facts. Do not put passwords or API keys in notes.
+- The Worker Durable Object `MEMORY` binding is configured in `chat-backend/wrangler.toml`. The API is guarded by the existing private chat bearer token. Cloud storage holds one owner vault, not independent user accounts. Changing the secret or backend address without migration may block access to older backups. Losing the passphrase makes the ciphertext unrecoverable.
+- This is an experimental cloud backup and long-term user-managed note system, not continuous automatic synchronization, a searchable vector database, or a complete native iOS Keychain migration.
+
