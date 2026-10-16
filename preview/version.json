@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "released": "2026-10-16",
-  "notes": "Automatic response style and remembered encrypted cloud sync on each device"
+  "notes": "Fix Send button remaining disabled after first message"
 }
