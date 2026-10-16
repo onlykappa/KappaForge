@@ -255,7 +255,7 @@ export default {
       contents: [{ role: "user", parts: [{ text: input.request }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 850, responseMimeType: "application/json" }
     } : {
-      systemInstruction: { parts: [{ text: safetyInstruction + "\n\nCommunication style: " + personalityInstructions[personality] }] },
+      systemInstruction: { parts: [{ text: safetyInstruction + "\n\nCommunication style: " + personalityInstructions[personality] + "\n\nFor questions that benefit from 2–5 clickable response choices, optionally append exactly one fenced block marked kappa-widget. Its content MUST be JSON with schema {\\\"type\\\":\\\"choice\\\",\\\"question\\\":\\\"short question\\\",\\\"options\\\":[\\\"choice one\\\",\\\"choice two\\\"]}. Use plain text for most questions. Never include HTML, script, URLs, external actions, or secrets in widgets; choices only draft user input and never execute actions." }] },
       contents: messages,
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 }
     };
