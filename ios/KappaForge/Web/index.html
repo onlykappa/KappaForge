@@ -498,11 +498,11 @@ function prepareJob(message){
  document.getElementById("taskerror").textContent="";
  document.getElementById("taskrepo").value="onlykappa/KappaForge";
  document.getElementById("taskmode").value="audit";
- overlay.hidden=false;updateTaskChoices();
+ overlay.hidden=false;document.querySelector(".layout").inert=true;document.querySelector(".mobile-nav").inert=true;updateTaskChoices();
  document.getElementById("taskrepo").focus();
 }
 function closeTaskSheet(){
- document.getElementById("taskoverlay").hidden=true;
+ document.getElementById("taskoverlay").hidden=true;document.querySelector(".layout").inert=false;document.querySelector(".mobile-nav").inert=false;
  if(taskFocus?.focus)taskFocus.focus();
 }
 function updateTaskChoices(){
@@ -543,7 +543,11 @@ document.getElementById("taskrepo").addEventListener("change",updateTaskChoices)
 document.getElementById("taskcancel").addEventListener("click",closeTaskSheet);
 document.getElementById("tasknext").addEventListener("click",confirmTaskChoices);
 document.getElementById("taskoverlay").addEventListener("click",e=>{if(e.target.id==="taskoverlay")closeTaskSheet()});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!document.getElementById("taskoverlay").hidden)closeTaskSheet()});
+document.addEventListener("keydown",e=>{
+ if(document.getElementById("taskoverlay").hidden)return;
+ if(e.key==="Escape")closeTaskSheet();
+ if(e.key==="Tab"){const items=[...document.querySelectorAll(".task-sheet select,.task-sheet button")].filter(el=>!el.disabled);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
+});
 function activityPanel(){
  const entries=activity.runs.slice(0,6).map(r=>{
    const dot=r.status!=="completed"?"🔄":r.conclusion==="success"?"✅":r.conclusion==="failure"?"❌":"◯";
