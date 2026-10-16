@@ -1,0 +1,24 @@
+name: Stop superseded native builds
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/stop-legacy-native.yml']
+permissions:
+  actions: write
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Stop the two already-running native rollout jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for RUN in 38971462350 38971637764; do
+            STATUS=$(gh api "repos/onlykappa/KappaForge/actions/runs/$RUN" --jq .status)
+            if [ "$STATUS" != completed ]; then
+              gh api --method POST "repos/onlykappa/KappaForge/actions/runs/$RUN/cancel"
+              echo "Stopped superseded native run $RUN. Its completed web deployment is retained."
+            fi
+          done

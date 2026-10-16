@@ -43,8 +43,3 @@ jobs:
           path: preview
       - id: deployment
         uses: actions/deploy-pages@v4
-  ios:
-    needs: deploy
-    uses: ./.github/workflows/ios-build.yml
-    permissions:
-      contents: write

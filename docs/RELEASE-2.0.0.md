@@ -1,3 +1,5 @@
+Current rollout: web only. Native iOS changes are staged in source for later device validation and release. Automatic app builds and IPA publication are paused while sideloading is unavailable.
+
 KappaForge 2.0.0 upgrades the existing app and website with a shared Settings interface and actual backend usage tracking.
 
 - Nine searchable Settings sections, responsive controls, accessible labels, light/dark appearance, response style, language and custom instructions.
