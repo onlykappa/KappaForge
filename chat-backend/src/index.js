@@ -1,3 +1,27 @@
+
+// Persistent account-scoped storage. Authenticated by the existing private Worker token.
+// Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
+export class KappaMemory {
+  constructor(state) { this.state = state; }
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "GET") {
+      const doc = await this.state.storage.get("vault");
+      return new Response(JSON.stringify(doc || {revision:0,payload:null}),{headers:{"Content-Type":"application/json"}});
+    }
+    if (request.method !== "PUT") return new Response("Method not allowed",{status:405});
+    const data = await request.json();
+    if (!data || !Number.isSafeInteger(data.revision) || data.revision < 0 ||
+        typeof data.payload !== "string" || data.payload.length > 500000)
+      return new Response("Invalid encrypted payload",{status:400});
+    const prior = await this.state.storage.get("vault") || {revision:0};
+    if (prior.revision !== data.revision)
+      return new Response(JSON.stringify({revision:prior.revision,conflict:true}),{status:409});
+    const next = {revision:prior.revision+1,payload:data.payload};
+    await this.state.storage.put("vault",next);
+    return new Response(JSON.stringify({revision:next.revision}),{headers:{"Content-Type":"application/json"}});
+  }
+}
 const ORIGIN = "https://onlykappa.github.io";
 const PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
 function json(data, status = 200, cors = {}) {
@@ -11,7 +35,7 @@ function corsHeaders(request) {
   return origin === ORIGIN ? {
     "Access-Control-Allow-Origin": ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method",
     "Vary": "Origin"
   } : null;
 }
@@ -28,13 +52,24 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if (new URL(request.url).pathname === "/memory") {
+      if (!env.MEMORY) return json({error:"Cloud memory storage not configured"},503,cors);
+      const method = request.headers.get("X-Memory-Method") || "GET";
+      if (!["GET","PUT"].includes(method)) return json({error:"Invalid memory operation"},400,cors);
+      const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+      const response = await stub.fetch("https://memory.internal/vault", {
+        method,headers:{"Content-Type":"application/json"},
+        ...(method==="PUT"?{body:await request.text()}:{})
+      });
+      return new Response(response.body,{status:response.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...cors}});
+    }
     const length = Number(request.headers.get("Content-Length") || 0);
     if (length > 4500000) return json({ error: "Request too large" }, 413, cors);
     let input;
