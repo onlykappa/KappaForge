@@ -13,21 +13,8 @@ struct RootView: View {
     @State private var showSettings = false
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            KappaWebView()
-                .ignoresSafeArea(.container, edges: .bottom)
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.title3)
-                    .padding(13)
-                    .background(.regularMaterial, in: Circle())
-            }
-            .accessibilityLabel("Native app settings")
-            .padding(.trailing, 14)
-            .padding(.bottom, 90)
-        }
+        KappaWebView()
+            .ignoresSafeArea(.container, edges: .bottom)
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 SettingsView()
