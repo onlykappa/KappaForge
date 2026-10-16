@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "released": "2026-10-16",
-  "notes": "Session commit lock, verification-only mode, manual evidence fallback, editable Project Truth"
+  "notes": "Persistent Cloudflare Workers AI vector code index and semantic retrieval controls"
 }
