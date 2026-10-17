@@ -29,7 +29,7 @@ jobs:
       run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
-        python -m compileall -q projects tests/projects
+        python -m compileall -q engine scripts tools tests
       shell: bash
     - name: Check Worker and preview JavaScript syntax
       run: |-
