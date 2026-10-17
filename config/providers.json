@@ -9,7 +9,7 @@
       "kind": "workers-ai",
       "worker": true,
       "agent": false,
-      "models": ["@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"]
+      "models": ["@cf/zai-org/glm-4.7-flash", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"]
     },
     "groq": {
       "name": "Groq",
@@ -34,7 +34,7 @@
       "key": "OPENROUTER_API_KEY",
       "signup": "https://openrouter.ai/settings/keys",
       "freeOnly": true,
-      "prefer": ["qwen3-coder", "deepseek", "kimi", "gpt-oss", "llama-3.3", "nemotron"]
+      "prefer": ["nemotron-3-ultra", "nemotron-3-super", "qwen3.8", "laguna-s", "gemma-4-31b", "qwen3-coder", "deepseek", "gpt-oss"]
     },
     "mistral": {
       "name": "Mistral",
@@ -50,7 +50,7 @@
       "base": "https://integrate.api.nvidia.com/v1",
       "key": "NVIDIA_API_KEY",
       "signup": "https://build.nvidia.com",
-      "prefer": ["qwen3-coder", "deepseek", "llama-3.3-70b", "nemotron"]
+      "prefer": ["nemotron-3-ultra", "deepseek-v4", "nemotron-3-super", "qwen3-coder", "gemma-4-31b", "llama-3.3-70b"]
     },
     "ollama": {
       "name": "Ollama Cloud",
