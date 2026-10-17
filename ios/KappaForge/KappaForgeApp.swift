@@ -43,8 +43,11 @@ struct RootView: View {
 struct SettingsView: View {
     @EnvironmentObject private var security: AppSecurity
     @State private var updateStatus = ""
-    @State private var downloadURL: URL?
+    @State private var downloadedIPA: URL?
+    @State private var releaseAssetURL: URL?
     @State private var isChecking = false
+    @State private var isDownloading = false
+    @State private var releaseVersion = ""
 
     private var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -67,11 +70,19 @@ struct SettingsView: View {
                 }
                 .disabled(isChecking)
                 if !updateStatus.isEmpty { Text(updateStatus).font(.footnote) }
-                if let downloadURL {
-                    ShareLink(item: downloadURL) {
-                        Label("Get latest IPA", systemImage: "arrow.down.circle")
+                if let releaseAssetURL {
+                    if let downloadedIPA {
+                        ShareLink(item: downloadedIPA, preview: SharePreview("KappaForge v\(releaseVersion)")) {
+                            Label("Install with SideStore", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(isDownloading)
+                    } else {
+                        Button(isDownloading ? "Downloading IPA..." : "Download IPA for SideStore") {
+                            Task { await downloadIPA(from: releaseAssetURL) }
+                        }
+                        .disabled(isDownloading)
                     }
-                    Text("Download the IPA in Safari, then use Share or Files to import it into SideStore. SideStore signs and installs updates on your phone once it is configured. Keep the same Apple signing account and app identifier to preserve data.")
+                    Text("Select SideStore from the iOS share sheet. SideStore must sign and install the IPA. Do not delete the existing app. Use the same Apple ID/team and bundle identifier to retain the app container.")
                         .font(.footnote)
                 }
             }
@@ -83,10 +94,52 @@ struct SettingsView: View {
         }
     }
 
+    // Download a real IPA file to the device before sharing. Sharing a remote URL
+    // only sends a web link, which SideStore cannot install as an IPA.
+    @MainActor
+    private func downloadIPA(from url: URL) async {
+        guard url.scheme == "https",
+              url.host == "github.com",
+              url.path.hasPrefix("/onlykappa/KappaForge/releases/download/"),
+              url.path.lowercased().hasSuffix(".ipa") else {
+            updateStatus = "Untrusted release download URL."
+            return
+        }
+        isDownloading = true
+        defer { isDownloading = false }
+        do {
+            let (temporaryURL, response) = try await URLSession.shared.download(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw URLError(.badServerResponse)
+            }
+            let values = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)
+            let size = values[.size] as? Int64 ?? 0
+            guard size > 1024, size < 250_000_000 else {
+                updateStatus = "The downloaded IPA has an invalid size."
+                return
+            }
+            let signature = try FileHandle(forReadingFrom: temporaryURL)
+            defer { try? signature.close() }
+            guard try signature.read(upToCount: 4) == Data([0x50, 0x4b, 0x03, 0x04]) else {
+                updateStatus = "Download was not an IPA archive."
+                return
+            }
+            let destination = FileManager.default.temporaryDirectory
+                .appendingPathComponent("KappaForge-\(releaseVersion).ipa")
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: temporaryURL, to: destination)
+            downloadedIPA = destination
+            updateStatus = "IPA downloaded. Tap Install with SideStore and choose SideStore from the share sheet."
+        } catch {
+            updateStatus = "IPA download failed. Check your connection and try again."
+        }
+    }
+
     @MainActor
     private func checkUpdates() async {
         isChecking = true
-        downloadURL = nil
+        downloadedIPA = nil
+        releaseAssetURL = nil
         defer { isChecking = false }
         guard let url = URL(string: "https://api.github.com/repos/onlykappa/KappaForge/releases/latest") else { return }
         do {
@@ -102,8 +155,8 @@ struct SettingsView: View {
             let availableVersion = release.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             if availableVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
                 updateStatus = "Version \(availableVersion) is available. Download it and open with SideStore to install."
-                if let asset = release.assets.first(where: { $0.name.hasSuffix(".ipa") }) {
-                    downloadURL = URL(string: asset.browser_download_url)
+                if let asset = release.assets.first(where: { $0.name == "KappaForge-unsigned.ipa" }) {
+                    releaseAssetURL = URL(string: asset.browser_download_url)
                 } else {
                     updateStatus = "A newer release exists but has no downloadable IPA yet."
                 }
