@@ -1,8 +1,9 @@
 name: KappaForge agent
 permissions:
   contents: read
+# One queue per task: a shared group lets GitHub cancel a pending run when a newer task arrives.
 concurrency:
-  group: kappaforge-agent
+  group: kappaforge-agent-${{ inputs.issue_number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
   classify:
@@ -56,6 +57,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
         KAPPA_TASK_SCOPE: read
       run: |-
@@ -105,6 +107,7 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
+        INPUT_ACTION: ${{ inputs.action }}
         KAPPA_TASK_SCOPE: write
       run: |-
         set -Eeuo pipefail
@@ -138,6 +141,10 @@ jobs:
     inputs:
       issue_number:
         description: KappaForge issue number (blank = next labeled task)
+        required: false
+        type: string
+      action:
+        description: Blank to run the task, or "fix" to repair its failed development PR
         required: false
         type: string
   schedule:

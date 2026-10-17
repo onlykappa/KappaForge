@@ -2,7 +2,7 @@ name: KappaForge continuous agent
 permissions:
   contents: read
 concurrency:
-  group: kappaforge-continuous
+  group: kappaforge-continuous-${{ inputs.issue_number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
   classify:

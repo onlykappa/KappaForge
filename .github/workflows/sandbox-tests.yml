@@ -6,12 +6,16 @@ jobs:
   verify:
     if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-') || startsWith(inputs.branch, 'kappa/dev-')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ inputs.branch }}
+        # Test the exact commit the dashboard will offer to merge.
+        ref: ${{ inputs.candidate_sha || inputs.branch }}
         persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
@@ -32,6 +36,25 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python scripts/check-web.py
+      shell: bash
+    - name: Run Worker and app logic tests
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
+      shell: bash
+    - name: Install browser regression dependencies
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        npm ci --ignore-scripts --no-audit --no-fund
+        ./node_modules/.bin/playwright install --with-deps chromium webkit
+      shell: bash
+    - name: Run browser regression tests
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        node tests/web-regression.cjs
       shell: bash
     - name: Check repair engine syntax
       run: |-
