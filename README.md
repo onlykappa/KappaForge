@@ -93,6 +93,10 @@ to this issue, and suggest targeted investigations. Do not edit code.
 
 For live results, open the authorized issue's comments or Dashboard's workflow feed. Stop continuous work by closing the issue or removing the `kappa-task` label. To change code, submit a separate explicit owner-approved `repair` or sandbox `code` task and review its draft PR. GitHub token renewal is not yet automatic.
 
+### Just ask in chat
+
+Tell KappaForge what you want, the way you'd tell a person: "add live date and time to chat", "fix the broken refresh button in OmniPC". When a message asks for work, the AI says what it will do and the task starts on its own (it shows *Task requested*, then progress, the PR, fixes and the merge arrive in the same chat). If the request is unclear it asks you one question first. Ask "did the tests pass?" or "what are you working on?" and it answers from live GitHub data. When a task says **KappaForge needs your help**, just reply in chat; your answer is sent to the task as guidance and a new fix starts. Prefer to approve each task first? Turn off **Settings → AI Models → Tasks**. Everything is still a draft PR; nothing merges until you tap Merge.
+
 ### Develop mode: real code changes as draft PRs
 
 Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the feature or fix. After you approve, the agent:
