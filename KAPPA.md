@@ -26,6 +26,9 @@ Test command: python -m unittest discover -s tests && node --test tests/intellig
 - User data (chats, memory, the vault) must stay backward compatible: never rename storage keys or change the vault format.
 - Every user-visible error should say what to do next.
 
-## Do not touch
-- Authentication, the access token check, CORS, and anything that decides who may merge or what gets deployed.
-- Workflows, secrets handling, and the provider list (these are locked for the agent anyway).
+## Safe-Edit Protocol for Core Engine Files
+- Scope: Files in engine/ are critical to agent stability.
+-Mandatory Validation: Before any change to engine/ is committed, the agent must run python engine/validate_change.py. This script executes the core test suite and verifies that the agent's ability to communicate and execute tasks remains intact.
+-Atomic Execution: Changes to engine/ must be applied in a dedicated branch (engine-fix/) and accompanied by a passing test log.
+-Emergency Rollback: If a change to engine/ results in a test failure or agent instability, the agent must immediately revert the local branch to the last known good commit and report the failure to the owner.
+-Human Review: All changes to engine/ require a manual review and merge by the owner; the agent is prohibited from self-merging any PR that modifies core engine logic.
