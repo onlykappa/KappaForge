@@ -160,6 +160,45 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertIn("## What this does\nCast inputs", pr["body"])
 
 
+class OtherRepositoryTests(unittest.TestCase):
+    def test_develop_reads_project_instructions_and_tests_in_the_project_sandbox(self):
+        calls, prompts = [], []
+        def fake_gh(path, token, payload=None, method=None):
+            calls.append((path, payload, token))
+            if path.endswith("/git/ref/heads/kappa/dev-9"):
+                raise urllib.error.HTTPError(path, 404, "missing", {}, None)
+            if path == "repos/onlykappa/OmniPC":
+                return {"default_branch": "master"}
+            if path == "repos/onlykappa/OmniPC/git/ref/heads/master":
+                return {"object": {"sha": "b" * 40}}
+            if path.startswith("repos/onlykappa/OmniPC/git/trees/"):
+                return {"tree": [{"path": "app/main.py", "type": "blob", "size": 60}, {"path": "KAPPA.md", "type": "blob", "size": 40}]}
+            if path.startswith("repos/onlykappa/OmniPC/contents/"):
+                import base64
+                text = "Test command: pytest\nUse tabs." if "KAPPA.md" in path else SOURCES["app/main.py"]
+                return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+            if path.startswith("repos/onlykappa/OmniPC/git/commits/"):
+                return {"tree": {"sha": "r" * 40}}
+            if path == "repos/onlykappa/OmniPC/pulls":
+                return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3"}
+            return {"sha": "c" * 40}
+        def model(key, prompt, max_output_tokens=0):
+            prompts.append(prompt)
+            if len(prompts) == 1:
+                return "flash", json.dumps({"read": ["app/main.py"]})
+            return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        issue = {"number": 9, "title": "Fix", "user": {"login": "onlykappa"}, "body": "Repository: onlykappa/OmniPC\nMode: develop\n\nFix adding"}
+        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "owner-pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
+                patch.object(developer, "run_model", side_effect=model):
+            developer.produce_development_pr(issue, "key", "actions-token")
+        self.assertIn("Use tabs.", prompts[1])
+        dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
+        self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
+        self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})
+        self.assertEqual(dispatch[2], "actions-token")
+        self.assertTrue(all(c[2] == "owner-pat" for c in calls if c[0].startswith("repos/onlykappa/OmniPC")))
+
+
 class OwnerRequestedFixTests(unittest.TestCase):
     ISSUE = {"number": 9, "title": "Add feature", "user": {"login": "onlykappa"},
              "body": "Repository: onlykappa/KappaForge\nMode: develop\n\nAdd a feature"}

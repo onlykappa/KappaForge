@@ -4,7 +4,7 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
-import {reviewPR,mergePR,requestFix,closePR,undoLast} from "./review.js";
+import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,REGISTRY} from "./providers.js";
 import app from "../../config/app.json" with {type: "json"};
 
@@ -178,7 +178,7 @@ export default {
       try { const result = await undoLast(env, input.confirmed === true, input.sha); return json(result, result.error ? result.status : 200, cors); }
       catch { return json({ error: "GitHub undo request failed." }, 502, cors); }
     }
-    if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix", "close"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
+    if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix", "close", "test"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const number = Number(input.prNumber), repo = typeof input.repo === "string" ? input.repo : "KappaForge";
       const action = new URL(request.url).pathname === "/review" ? "review" : input.decision;
@@ -187,8 +187,9 @@ export default {
       try {
         const result = action === "review" ? await reviewPR(env, repo, number) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
-          action === "close" ? await closePR(env, repo, number) : await requestFix(env, repo, number);
-        return json(result, result.error ? result.status : action === "fix" ? 202 : 200, cors);
+          action === "close" ? await closePR(env, repo, number) :
+          action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+        return json(result, result.error ? result.status : ["fix", "test"].includes(action) ? 202 : 200, cors);
       } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/decisions") {

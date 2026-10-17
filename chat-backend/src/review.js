@@ -43,16 +43,26 @@ async function exactRestore(env,repo,sha){
  return head.commit.tree.sha===before.commit.tree.sha;
 }
 
-// Test state for the PR's exact head commit. KappaForge uses the secret-free sandbox run dispatched
-// from main; other repositories use their own check runs.
+// KappaForge tests itself in its sandbox; other repositories in the secret-free project test workflow.
+const testWorkflow=(repo,ref,sha)=>repo===ROOT?{file:"sandbox-tests.yml",title:"Sandbox validation "+ref+" @ "+sha,inputs:{branch:ref,candidate_sha:sha}}:
+ {file:"project-tests.yml",title:"Project validation "+repo+" "+ref+" @ "+sha,inputs:{repo,branch:ref,candidate_sha:sha}};
+
+// Test state for the PR's exact head commit, from a run dispatched from main's trusted workflow.
+// Other repositories fall back to their own check runs when KappaForge has not tested them.
 export async function testState(env,repo,pr){
- const sha=pr.head.sha;
- if(repo===ROOT){
-  const runs=(await read(env,"repos/onlykappa/KappaForge/actions/workflows/sandbox-tests.yml/runs?per_page=30")).workflow_runs||[];
-  const run=runs.find(r=>r.display_title==="Sandbox validation "+pr.head.ref+" @ "+sha&&r.head_branch==="main"&&r.event==="workflow_dispatch");
-  if(!run)return {state:"none",sha};
-  return {state:run.status!=="completed"?"running":run.conclusion==="success"?"passed":"failed",sha,url:run.html_url};
+ const sha=pr.head.sha,w=testWorkflow(repo,pr.head.ref,sha);
+ const runs=(await read(env,"repos/onlykappa/KappaForge/actions/workflows/"+w.file+"/runs?per_page=30")).workflow_runs||[];
+ const run=runs.find(r=>r.display_title===w.title&&r.head_branch==="main"&&r.event==="workflow_dispatch");
+ if(run){
+  const state=run.status!=="completed"?"running":run.conclusion==="success"?"passed":"failed";
+  let noTests=false;
+  if(state==="passed"&&repo!==ROOT){
+   const jobs=(await read(env,"repos/onlykappa/KappaForge/actions/runs/"+run.id+"/jobs?per_page=30")).jobs||[];
+   noTests=jobs.some(j=>(j.steps||[]).some(s=>s.name==="No tests detected"&&s.conclusion==="success"));
+  }
+  return {state,sha,url:run.html_url,sandbox:true,noTests};
  }
+ if(repo===ROOT)return {state:"none",sha};
  const checks=(await read(env,"repos/onlykappa/"+repo+"/commits/"+sha+"/check-runs?per_page=100")).check_runs||[];
  if(!checks.length)return {state:"none",sha};
  if(checks.some(c=>c.status!=="completed"))return {state:"running",sha};
@@ -67,8 +77,9 @@ export async function reviewPR(env,repo,number){
  const tests=await testState(env,repo,pr);
  const dev=/^kappa\/dev-\d+$/.test(pr.head.ref),restore=/^kappa\/revert-\d+$/.test(pr.head.ref)&&await exactRestore(env,repo,pr.head.sha);
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
-  explanation:explanation(pr.body),tests,risks:restore?[]:riskScan(files),files:files.map(f=>({name:f.filename,status:f.status,additions:f.additions,deletions:f.deletions})),
-  canMerge:pr.mergeable!==false&&(restore||dev&&tests.state==="passed"),canFix:dev&&repo===ROOT&&tests.state==="failed"};
+  explanation:explanation(pr.body),tests,
+  risks:restore?[]:[...(tests.noTests?[{level:"medium",text:"This project has no automated tests; merging relies on your review",files:[]}]:[]),...riskScan(files)],files:files.map(f=>({name:f.filename,status:f.status,additions:f.additions,deletions:f.deletions})),
+  canMerge:pr.mergeable!==false&&(restore||dev&&tests.state==="passed"),canFix:dev&&!!tests.sandbox&&tests.state==="failed",canTest:dev&&tests.state!=="running"};
 }
 
 // Merge only what was reviewed: same head commit, tests passed on it, owner confirmed in the app.
@@ -123,11 +134,22 @@ export async function closePR(env,repo,number){
  return {status:"closed",url:pr.html_url};
 }
 
+// Start (or re-run) the sandbox tests for the PR's current commit.
+export async function requestTests(env,repo,number){
+ const review=await reviewPR(env,repo,number);
+ if(review.error)return review;
+ if(!review.canTest)return {error:"Tests are already running for this pull request.",status:409};
+ const w=testWorkflow(repo,review.branch,review.tests.sha);
+ const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/"+w.file+"/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:w.inputs})});
+ if(!r.ok)return {error:"Tests could not start (GitHub HTTP "+r.status+").",status:502};
+ return {status:"tests_started"};
+}
+
 // Ask the agent to fix a failed KappaForge development PR. The owner approves the result like any other change.
 export async function requestFix(env,repo,number){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
- if(!review.canFix)return {error:"Fix it is available for KappaForge development PRs whose tests failed on the latest commit.",status:409};
+ if(!review.canFix)return {error:"Fix it is available for development PRs whose sandbox tests failed on the latest commit.",status:409};
  const issue=review.branch.split("-").pop();
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{issue_number:issue,action:"fix"}})});
  if(!r.ok)return {error:"The fix could not start (GitHub HTTP "+r.status+").",status:502};

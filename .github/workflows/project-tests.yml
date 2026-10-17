@@ -1,0 +1,105 @@
+name: Project tests
+run-name: Project validation ${{ inputs.repo }} ${{ inputs.branch }} @ ${{ inputs.candidate_sha }}
+# Tests an agent branch of another owner repository. The fetch job alone holds a token, only to download
+# the exact commit; the verify job runs the project's code with no token and no secrets.
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Validate inputs
+      env:
+        REPO: ${{ inputs.repo }}
+        BRANCH: ${{ inputs.branch }}
+        SHA: ${{ inputs.candidate_sha }}
+      run: |
+        set -Eeuo pipefail
+        [[ "$REPO" =~ ^[A-Za-z0-9_.-]+$ && "$REPO" != "KappaForge" && ! "$REPO" =~ ^\.+$ ]] || { echo "Invalid repository"; exit 1; }
+        [[ "$BRANCH" =~ ^kappa/dev-[0-9]+$ ]] || { echo "Only agent development branches are tested here"; exit 1; }
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "A full commit SHA is required"; exit 1; }
+      shell: bash
+    - uses: actions/checkout@v4
+      with:
+        repository: onlykappa/${{ inputs.repo }}
+        ref: ${{ inputs.candidate_sha }}
+        token: ${{ secrets.KAPPA_CODER_TOKEN || github.token }}
+        persist-credentials: false
+        path: project
+    - name: Package source without git metadata
+      run: tar --exclude=.git -czf project.tgz -C project .
+      shell: bash
+    - uses: actions/upload-artifact@v4
+      with:
+        name: project-source
+        path: project.tgz
+        retention-days: 1
+  verify:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions: {}
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: project-source
+    - name: Unpack source
+      run: mkdir project && tar -xzf project.tgz -C project
+      shell: bash
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Detect test command
+      id: detect
+      working-directory: project
+      run: |
+        set -Eeuo pipefail
+        cmd=""
+        # A project can name its own command in KAPPA.md, e.g. "Test command: npm run test:unit".
+        if [ -f KAPPA.md ]; then cmd=$(grep -m1 -iE '^test command:' KAPPA.md | sed -E 's/^[^:]+:[[:space:]]*//; s/^`//; s/`$//' || true); fi
+        if [ -z "$cmd" ] && [ -f package.json ] && node -e 'const t=(require("./package.json").scripts||{}).test||"";process.exit(t&&!/no test specified/.test(t)?0:1)'; then
+          cmd="(npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npm test"
+        fi
+        if [ -z "$cmd" ] && { [ -f pytest.ini ] || [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f tox.ini ] || [ -n "$(find . -maxdepth 3 -path ./node_modules -prune -o \( -name 'test_*.py' -o -name '*_test.py' \) -print | head -1)" ]; }; then
+          # pytest exit 5 means "no tests collected": fall back to unittest discovery.
+          cmd="([ ! -f requirements.txt ] || pip install -r requirements.txt) && pip install -q pytest && { python -m pytest -q || { rc=\$?; [ \$rc -eq 5 ] && python -m unittest discover -v || exit \$rc; }; }"
+        fi
+        if [ -z "$cmd" ] && [ -f go.mod ]; then cmd="go test ./..."; fi
+        if [ -z "$cmd" ] && [ -f Cargo.toml ]; then cmd="cargo test"; fi
+        printf 'cmd<<KAPPA_EOF\n%s\nKAPPA_EOF\n' "$cmd" >> "$GITHUB_OUTPUT"
+        echo "Detected: ${cmd:-no tests}"
+      shell: bash
+    - name: Run project tests
+      if: steps.detect.outputs.cmd != ''
+      working-directory: project
+      env:
+        TEST_COMMAND: ${{ steps.detect.outputs.cmd }}
+      run: bash -Eeuo pipefail -c "$TEST_COMMAND"
+      shell: bash
+    # The dashboard reads this step's outcome to warn that a merge rests on review alone.
+    - name: No tests detected
+      if: steps.detect.outputs.cmd == ''
+      run: echo "::warning::No automated tests found in this project; merging relies on your review."
+      shell: bash
+'on':
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Owner repository name (not KappaForge)
+        required: true
+        type: string
+      branch:
+        description: Agent branch (kappa/dev-N)
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact commit to test
+        required: true
+        type: string
+defaults:
+  run:
+    shell: bash

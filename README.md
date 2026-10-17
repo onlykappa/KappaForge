@@ -102,6 +102,11 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 
+### Working on your other projects
+
+- **Project instructions:** put a `KAPPA.md` (or `AGENTS.md` / `CLAUDE.md`) at a repository's root with its conventions, what not to touch, and a `Test command:` line. Develop reads it before every change. See this repository's `KAPPA.md` for the layout.
+- **Tests for any project:** development PRs in other repositories are tested by KappaForge's **Project tests** workflow. One job downloads the exact commit with your token; a second job, with no token and no secrets, runs the `Test command:` from `KAPPA.md`, or detects `npm test`, `pytest`/`unittest`, `go test` or `cargo test`. The review card shows the result, offers **Run tests** and **Fix it**, and warns when a project has no tests. If KappaForge hasn't tested a commit, the card falls back to the project's own GitHub checks.
+
 ### Free fallback AI providers
 
 Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`, in this order: Cloudflare Workers AI (built in, no key), Groq, Cerebras, OpenRouter free models, Mistral, NVIDIA NIM, Ollama Cloud and Z AI, each only when its key is configured; then the keyless safety net of Kilo Code's free pool, LLM7.io and OVHcloud AI Endpoints, which need no key at all. Models are discovered live from each provider; nothing is assumed from published lists, which change often. Z AI is pinned to its free `glm-4.7-flash` because the same key also reaches paid models. File and image attachments always use Gemini. The provider list follows [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis).
