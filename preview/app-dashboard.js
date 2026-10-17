@@ -314,7 +314,7 @@ document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));d
 async function proposeTaskAutomatically(text,notify=true){
  if(!backend||!access){if(notify)alert("Connect AI first.");return false}
  try{
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:text,preferences})});
+  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:text,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
   const data=await resp.json();
   if(!resp.ok)throw Error(data.error||"Could not plan task");
   if(!data.isTask){if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
