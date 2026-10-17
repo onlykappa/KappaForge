@@ -98,7 +98,7 @@ For live results, open the authorized issue's comments or Dashboard's workflow f
 Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the feature or fix. After you approve, the agent:
 
 1. Lists the target repository and asks Gemini which files it needs (any file path you name in the task is always read).
-2. Reads up to 12 of those files from the default branch and asks for precise find/replace edits or new files (at most 8 files).
+2. Reads the files it needs from the default branch and asks for precise find/replace edits or new files. When Gemini answers, it reads up to 30 files (files up to 200,000 characters are shown whole, about 600,000 characters in all) and may change up to 20. If Gemini is busy or out of quota, the change is re-planned at sizes every free fallback provider can handle: 12 files read, 8 changed, files over 60,000 characters shown as relevant excerpts.
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 

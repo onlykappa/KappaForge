@@ -259,7 +259,8 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
         for attempt in range(3):
             try:
                 req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
-                with urllib.request.urlopen(req, timeout=100) as response:
+                # Long replies (large-budget development) take minutes to generate.
+                with urllib.request.urlopen(req, timeout=100 if max_output_tokens <= 16384 else 420) as response:
                     data = json.load(response)
                 candidates_out = data.get("candidates") or []
                 parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
