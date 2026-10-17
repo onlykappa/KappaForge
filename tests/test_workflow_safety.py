@@ -68,9 +68,9 @@ class NativeSelectionTests(unittest.TestCase):
 
     def test_simulator_rejects_unexpected_ids_and_missing_devices(self):
         uuid='AABBCCDD-1234-5678-9ABC-AABBCCDDEEFF'
-        self.assertEqual(simulator.select_simulator({'devices':{'runtime':[{'name':'iPhone Test','udid':uuid}]}}),uuid.lower())
+        self.assertEqual(simulator.select_simulator({'devices':{'com.apple.CoreSimulator.SimRuntime.iOS-18-5':[{'name':'iPhone Test','udid':uuid}]}}),uuid.lower())
         for raw in ['invalid','$(touch /tmp/unsafe)','aabbccdd123456789abcaabbccddeeff']:
-            with self.subTest(raw=raw),self.assertRaises(ValueError):simulator.select_simulator({'devices':{'runtime':[{'name':'iPhone Test','udid':raw}]}})
+            with self.subTest(raw=raw),self.assertRaises(ValueError):simulator.select_simulator({'devices':{'com.apple.CoreSimulator.SimRuntime.iOS-18-5':[{'name':'iPhone Test','udid':raw}]}})
         with self.assertRaises(ValueError):simulator.select_simulator({'devices':{}})
 
 class BuildSettingsTests(unittest.TestCase):
