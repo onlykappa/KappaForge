@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -398,7 +399,8 @@ def produce_development_pr(issue, api_key, token):
         "body": review_body(number, model, explanation, summary, changes)})
     try:
         dispatch_tests(repo, branch, commit["sha"], token)
-        validation = "Independent tests started in KappaForge's secret-free sandbox."
+        validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
+                      f"test again, up to {MAX_FIXES} times, before asking you.")
     except urllib.error.HTTPError as exc:
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
@@ -406,7 +408,7 @@ def produce_development_pr(issue, api_key, token):
         f"**What this does:** {explanation or summary}\n\n"
         f"**Repository:** `{repo}` | **Model:** `{model}` | Read {len(sources)} files, changed {len(changes)}.\n\n"
         f"{validation} Review it on the Dashboard; nothing merges until you tap Merge.")})
-    notify(f"🛠️ KappaForge PR ready for review in {repo}: {(issue.get('title') or '')[:120]}\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
+    notify(f"🛠️ KappaForge opened a draft PR in {repo} and is testing it: {(issue.get('title') or '')[:120]}\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
     return pr["html_url"]
 
 
@@ -438,7 +440,7 @@ def job_log(job_id, token, limit=7000):
     return re.sub(r"\x1b\[[0-9;]*m", "", text)[-limit:]
 
 
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None):
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=()):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)
@@ -460,6 +462,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     task = ("The independent sandbox tests FAILED for this change. Fix the code so the tests pass while still "
             "delivering the original task. Prefer fixing the implementation over weakening or deleting tests.\n\n"
             "ORIGINAL TASK:\n" + ((issue.get("title") or "") + "\n" + (issue.get("body") or ""))[:4000] +
+            ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     allowed = code_providers(is_private(repo, repo_token))
@@ -467,8 +470,25 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     return model, summary, changes, explanation, modes
 
 
+# Failed tests are fixed automatically up to MAX_FIXES times; each owner "Guidance:" comment on the task allows one more.
 MAX_FIXES = 3
 FIX_MARKER = "<!-- KAPPA_FIX:"
+STUCK_MARKER = "<!-- KAPPA_STUCK:"
+GUIDANCE_RE = re.compile(r"^\s*guidance\s*:\s*(.+)", re.I | re.S)
+
+
+def owner_guidance(number, token):
+    """The owner's "Guidance: ..." comments on the task issue, oldest first."""
+    comments = gh(f"repos/{ROOT}/issues/{number}/comments?per_page=100", token)
+    return [m.group(1).strip() for c in comments if (c.get("user") or {}).get("login", "").lower() == OWNER
+            for m in [GUIDANCE_RE.match(c.get("body") or "")] if m]
+
+
+def failure_summary(failed, token):
+    """Failed step names plus the last lines of the failing log, short enough to read on a phone."""
+    steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
+    tail = "\n".join(l for l in "\n".join(job_log(j["id"], token, 3000) for j in failed[:1]).splitlines() if l.strip())[-1200:]
+    return ("Failing step: " + ", ".join(steps[:3]) if steps else "Failing step: unknown") + ("\n```\n" + tail + "\n```" if tail else "")
 
 
 def sandbox_result(branch, head_sha, token, repo=ROOT):
@@ -479,6 +499,20 @@ def sandbox_result(branch, head_sha, token, repo=ROOT):
         if run.get("display_title") == title and run.get("head_branch") == "main" and run.get("event") == "workflow_dispatch":
             return run
     return None
+
+
+def report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments):
+    """Out of automatic fixes: say once what still fails and how the owner can steer the next attempt."""
+    marker = f"{STUCK_MARKER}{fixes} -->"
+    if any(marker in (c.get("body") or "") for c in comments):
+        return
+    body = (f"### KappaForge needs your help\n\nI tried {fixes} fixes and the tests still fail.\n\n"
+            f"{failure_summary(failed, token)}\n\n**How to proceed:** reply on this task with a comment starting with "
+            "`Guidance:` (for example `Guidance: the test expects UTC, keep the old format`) and tap **Fix it**; each guidance "
+            "comment allows one more attempt. Or close the PR to drop the change.")
+    gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": body + "\n\n" + marker})
+    gh(f"repos/{repo}/issues/{pr['number']}/comments", repo_token, {"body": body + "\n\n" + marker})
+    notify(f"🆘 KappaForge is stuck on {repo} after {fixes} fixes; it needs your guidance.\n{pr['html_url']}")
 
 
 def fix_pull_request(issue, api_key, token):
@@ -496,14 +530,23 @@ def fix_pull_request(issue, api_key, token):
     pr = prs[0]
     head = pr["head"]["sha"]
     run = sandbox_result(branch, head, token, repo)
+    # An automatic fix is started from the test run's last job, moments before the run itself is marked finished.
+    for _ in range(9):
+        if not run or run.get("status") == "completed":
+            break
+        time.sleep(10)
+        run = sandbox_result(branch, head, token, repo)
     if not run or run.get("status") != "completed" or run.get("conclusion") != "failure":
         raise ValueError("Fix needs a failed sandbox test run on the PR's latest commit")
     comments = gh(f"repos/{repo}/issues/{pr['number']}/comments?per_page=100", repo_token)
-    if sum(FIX_MARKER in (c.get("body") or "") for c in comments) >= MAX_FIXES:
-        raise ValueError(f"Fix limit reached ({MAX_FIXES}); review the PR manually")
+    fixes = sum(FIX_MARKER in (c.get("body") or "") for c in comments)
+    guidance = owner_guidance(number, token)
     jobs = gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30", token).get("jobs", [])
     failed = [j for j in jobs if j.get("conclusion") == "failure"]
-    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token)
+    if fixes >= MAX_FIXES + len(guidance):
+        report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
+        return None
+    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance)
     flags = {}
     if repo != ROOT and not flags_allowed(issue.get("body")):
         before = {}
