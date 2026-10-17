@@ -17,7 +17,7 @@ async function runChatAction(reply,typed,chat,offerTask){
  if(action?.type==="guidance"){
   try{const r=await fetch(backend+"/guidance",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({task:action.task,text:action.text})});const d=await r.json().catch(()=>({}));
    say(r.ok?"💬 "+d.message:"⚠️ Couldn't send your guidance: "+(d.error||"HTTP "+r.status)+" You can also comment \"Guidance: …\" on task #"+action.task+" in GitHub.");
-   const job=trackedJobs.find(j=>j.number===action.task);if(job){job.finished=false;persistJobs();}
+   const job=trackedJobs.find(j=>j.number===action.task);if(job){job.finished=false;job.activeAt=Date.now();persistJobs();}
   }catch(e){say("⚠️ Couldn't send your guidance: "+e.message)}
   return;
  }
@@ -29,6 +29,14 @@ async function runChatAction(reply,typed,chat,offerTask){
  // Without an action block (e.g. a fallback model), offer an approval card unless the reply asked the owner a question.
  if(offerTask&&!/\?\s*$/.test(String(reply||"").trim()))await proposeTaskAutomatically(typed,false);
 }
+function showProgress(job,commentId,body){
+ const target=chats.find(c=>c.id===job.chatId);if(!target)return false;
+ const key="progress:"+job.number+":"+commentId,message=target.messages.find(m=>m.progressKey===key);
+ const text=body.replace(/^### KappaForge is working on it/,"**KappaForge is working on it**");
+ if(message?.text===text)return false;
+ if(message)message.text=text;else target.messages.push({role:"assistant",text,progressKey:key});
+ job.activeAt=Date.now();target.at=Date.now();save();return true;
+}
 function jobChatUpdate(job,signature,body){
  if(job.delivered?.includes(signature))return false;
  const target=chats.find(c=>c.id===job.chatId);
@@ -36,7 +44,7 @@ function jobChatUpdate(job,signature,body){
  if(!target)return false;
  const deliveryKey="job:"+job.number+":"+signature;
  if(!target.messages.some(m=>m.jobReport===deliveryKey))target.messages.push({role:"assistant",text:body,jobReport:deliveryKey});
- job.delivered=[...(job.delivered||[]),signature];target.at=Date.now();save();persistJobs();return true;
+ job.delivered=[...(job.delivered||[]),signature];job.activeAt=Date.now();target.at=Date.now();save();persistJobs();return true;
 }
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
@@ -47,6 +55,8 @@ async function checkJobResult(){
    const [comments,issue]=await Promise.all([api("KappaForge/issues/"+job.number+"/comments?per_page=100",true),api("KappaForge/issues/"+job.number,true)]);
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
+    // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
+    if(report.status==="progress"){changed=showProgress(job,comment.id,report.body)||changed;continue;}
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const label=report.status==="partial"?"Findings so far (audit still partial)":report.status==="failed"?"Task failed":"Task results";
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
@@ -76,7 +86,7 @@ async function launchJob(){
  const response=await fetch(backend+"/jobs",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({...job,approved:true})});
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
- recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,chatId:jobChatId};
+ recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,chatId:jobChatId,activeAt:Date.now()};
  trackedJobs.push(recentJob);persistJobs();jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
@@ -164,3 +174,5 @@ async function refreshActivity(force=false){
 }
 
 function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge development task").slice(0,110),body="Repository: onlykappa/KappaForge\nMode: audit\n\n"+text+"\n\nReview before creating. This browser preview cannot authorize a coding run.";const url="https://github.com/onlykappa/KappaForge/issues/new?"+new URLSearchParams({title,body});window.open(url,"_blank","noopener")}
+// While a task is busy (started or updated in the last 20 minutes), look for progress every 10 seconds instead of every 90.
+setInterval(()=>{if(!document.hidden&&trackedJobs.some(j=>!j.finished&&Date.now()-(j.activeAt||0)<1200000)){jobPollAfter=0;checkJobResult()}},10000);
