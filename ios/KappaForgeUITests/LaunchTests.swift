@@ -13,7 +13,8 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "Shared interface settings button must be accessible")
         settings.tap()
         XCTAssertTrue(web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Usage & Billing")).firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(web.staticTexts["A clear view of your assistant."].exists)
+        // Settings opens on its grouped list; "Assistant" is the first group heading.
+        XCTAssertTrue(web.staticTexts["Assistant"].exists)
         XCTAssertFalse(web.staticTexts["KappaForge could not start"].exists)
     }
 }
