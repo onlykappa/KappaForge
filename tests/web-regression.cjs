@@ -112,6 +112,16 @@ const apiServer=createServer(async(req,res)=>{
  await page.reload();await page.waitForFunction(()=>typeof trackedJobs!=='undefined');assert.equal(await page.evaluate(()=>trackedJobs.every(j=>j.finished)),true);
  await page.evaluate(id=>{current=id;active().messages.push({role:'assistant',text:'Development job #23 submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.'});save();navigate('chat')},firstChat);assert.doesNotMatch(await page.locator('#content').innerText(),/Development job #23 submitted/);
  console.log(name+': quiet task dispatch, partial/final findings, failure delivery, multiple chats and reload deduplication passed');
+ // Asking for work in chat starts the task itself: the reply's kappa-action block is planned and launched with no Make a task sheet.
+ const acted=await page.evaluate(async()=>{const c={id:'act-chat',title:'Act',messages:[],at:Date.now()};chats.unshift(c);current='act-chat';const original=window.fetch;
+  window.fetch=async(u,o)=>String(u).endsWith('/plan')?new Response(JSON.stringify({isTask:true,proposal:{title:'Add live time',instructions:'Add live time',repo:'onlykappa/KappaForge',mode:'develop'}}),{headers:{'Content-Type':'application/json'}}):original(u,o);
+  const reply='I will add live time.\n```kappa-action\n{"type":"task","request":"Add live time to KappaForge chat"}\n```';
+  try{await runChatAction(reply,'add live time',c,true)}finally{window.fetch=original}
+  await runChatAction('Which repository should I use?','change the colors',c,true);
+  return {chip:renderChatText(reply),pending:!!pendingJob,started:trackedJobs.some(j=>j.chatId==='act-chat'&&j.mode==='develop')}});
+ assert.equal(acted.started,true,'task started from chat');assert.equal(acted.pending,false);
+ assert.match(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);
+ console.log(name+': chat starts tasks itself passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});

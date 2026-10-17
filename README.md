@@ -93,12 +93,16 @@ to this issue, and suggest targeted investigations. Do not edit code.
 
 For live results, open the authorized issue's comments or Dashboard's workflow feed. Stop continuous work by closing the issue or removing the `kappa-task` label. To change code, submit a separate explicit owner-approved `repair` or sandbox `code` task and review its draft PR. GitHub token renewal is not yet automatic.
 
+### Just ask in chat
+
+Tell KappaForge what you want, the way you'd tell a person: "add live date and time to chat", "fix the broken refresh button in OmniPC". When a message asks for work, the AI says what it will do and the task starts on its own (it shows *Task requested*, then progress, the PR, fixes and the merge arrive in the same chat). If the request is unclear it asks you one question first. Ask "did the tests pass?" or "what are you working on?" and it answers from live GitHub data. When a task says **KappaForge needs your help**, just reply in chat; your answer is sent to the task as guidance and a new fix starts. Prefer to approve each task first? Turn off **Settings → AI Models → Tasks**. Everything is still a draft PR; nothing merges until you tap Merge.
+
 ### Develop mode: real code changes as draft PRs
 
 Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the feature or fix. After you approve, the agent:
 
 1. Lists the target repository and asks Gemini which files it needs (any file path you name in the task is always read).
-2. Reads up to 12 of those files from the default branch and asks for precise find/replace edits or new files (at most 8 files).
+2. Reads the files it needs from the default branch and asks for precise find/replace edits or new files. When Gemini answers, it reads up to 30 files (files up to 200,000 characters are shown whole, about 600,000 characters in all) and may change up to 20. If Gemini is busy or out of quota, the change is re-planned at sizes every free fallback provider can handle: 12 files read, 8 changed, files over 60,000 characters shown as relevant excerpts.
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 
@@ -137,7 +141,7 @@ To add a provider, create a key at its site and save it under the same name in *
 **Reviewing and merging from the app.** Each development PR appears under **Code reviews & approvals** on the Dashboard. **Review & merge** shows the agent's plain-English *What this does* summary (also posted in your chat), the changed files and the test result for the PR's latest commit:
 
 - **Merge** appears only when the tests passed on that exact commit. The Worker re-checks this, refuses if the PR changed since you opened the card, and only merges `kappa/dev-N` agent branches. KappaForge merges redeploy the app and Worker.
-- **Fix it** appears when KappaForge's sandbox tests failed. The agent reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests (at most three fixes per PR). Nothing merges until you tap Merge.
+- **Tests fix themselves.** When the sandbox tests fail on a development PR, KappaForge starts **Fix it** automatically: it reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests, up to three times. Discord says "Tests passed, Merge is ready" only once they pass. If they still fail, it stops and posts **KappaForge needs your help** on the task with what is failing; reply with a comment starting `Guidance:` and tap **Fix it**, and each guidance comment allows one more attempt. You can still tap **Fix it** yourself at any time. Nothing merges until you tap Merge.
 
 The Worker's `GITHUB_JOB_TOKEN` needs **Contents** and **Pull requests** read/write for Merge. Sandbox tests run the Python, Worker and browser regression suites against the exact commit.
 

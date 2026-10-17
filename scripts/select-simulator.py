@@ -18,7 +18,10 @@ def select_simulator(payload):
             if device.get("isAvailable") is False:
                 continue
             raw = device.get("udid", "")
-            value = str(UUID(raw))
+            # Validate the UUID but keep simctl's uppercase form: xcodebuild matches destination ids case-sensitively.
+            value = str(UUID(raw)).upper()
+            if value != str(raw).upper():
+                raise ValueError("Unexpected simulator id format: " + str(raw)[:60])
             candidates.append((runtime, value))
     if candidates:
         # Choose a device on the iOS 18.5 runtime bundled with Xcode 16.4.

@@ -117,7 +117,7 @@ jobs:
         APP=build/Build/Products/Release-iphoneos/KappaForge.app
         test -s "$APP/Assets.car"
         test -s "$APP/AppIcon60x60@2x.png"
-        for FILE in index.html app-config.js core.js design.css ui.js markdown.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
+        for FILE in index.html app-state.js app-dashboard.js app-tasks.js app-main.js app-config.js core.js design.css ui.js markdown.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
         test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = "$(python3 ../scripts/config-value.py iosBundleIdentifier)"
         mkdir -p package/Payload
         cp -R "$APP" package/Payload/

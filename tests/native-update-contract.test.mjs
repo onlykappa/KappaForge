@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const file = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 
 test('bundled update button calls native updater instead of website', () => {
-  const html = file('preview/index.html');
+  const html = file('preview/app-main.js');
   assert.match(html, /window\.KappaNativeVersion && window\.webkit\?\.messageHandlers\?\.kappa/);
   assert.match(html, /postMessage\(\{action:"updates"\}\)/);
 });
