@@ -23,7 +23,7 @@ def check(target, which=shutil.which, execute=subprocess.run, platform=sys.platf
         raise RuntimeError('Locked Wrangler is missing. Run npm ci --ignore-scripts --prefix chat-backend.')
     if target=='native':
         if platform!='darwin':raise RuntimeError('Native builds require macOS and Xcode. Web development does not.')
-        result=execute(['xcrun','simctl','list','devices','available','-j'],capture_output=True,text=True,check=True,timeout=20)
+        # GitHub-hosted macOS runners often need longer to initialize CoreSimulator.\n        # Retry the availability probe before treating a cold simulator as a broken build.\n        for attempt in range(3):\n            try:\n                result=execute(['xcrun','simctl','list','devices','available','-j'],capture_output=True,text=True,check=True,timeout=90)\n                break\n            except subprocess.TimeoutExpired:\n                if attempt == 2: raise
         spec=importlib.util.spec_from_file_location('simulator',ROOT/'scripts/select-simulator.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         module.select_simulator(json.loads(result.stdout))
     print('Preflight: '+target+' requirements satisfied')
