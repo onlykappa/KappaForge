@@ -1,7 +1,7 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'standard',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[]};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'standard',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
 function settings(value={}){
  const s={...defaults};
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
@@ -10,6 +10,7 @@ function settings(value={}){
  if(typeof value.model==='string'&&/^(auto|gemini-[a-z0-9.-]+|[a-z-]{2,20}:[A-Za-z0-9@/._:-]{1,120})$/.test(value.model))s.model=value.model;
  if(Array.isArray(value.disabledProviders))s.disabledProviders=[...new Set(value.disabledProviders.filter(p=>typeof p==='string'&&/^[a-z-]{2,20}$/.test(p)))].slice(0,20);
  if(typeof value.fallback==='boolean')s.fallback=value.fallback;
+ if(typeof value.autoStart==='boolean')s.autoStart=value.autoStart;
  for(const k of ['tokenBudget','requestBudget'])if(Number.isSafeInteger(value[k])&&value[k]>=0)s[k]=value[k];
  if(Number.isFinite(value.alertPercent))s.alertPercent=Math.max(1,Math.min(100,value.alertPercent));
  return s;
@@ -40,7 +41,7 @@ globalThis.KappaJobs={report(comment){
  if(/^### (?:KappaForge task failed|Self-repair watch: failed)/i.test(heading))status='failed';
  else if(/^### KappaForge repository audit batch \d+/i.test(heading))status=/^\*\*Status:\*\* All eligible paths processed/m.test(body)?'complete':'partial';
  else if(/^### (?:KappaForge (?:run completed|project map complete)|Continuous task complete)/i.test(heading)||/^(?:KappaForge generated a draft PR|Self-repair draft PR created)/i.test(heading))status='complete';
- else if(/^### Continuous coding milestone/i.test(heading))status='partial';
+ else if(/^### Continuous coding milestone/i.test(heading)||/^### KappaForge (?:fix ready|needs your help)/i.test(heading))status='partial';
  else return null;
  return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body};
 },isSubmission(message){return message?.role==='assistant'&&/^Development job #\d+ submitted\. I will bring agent findings into this conversation automatically\. You can keep chatting while it runs\.$/.test(message.text)}};

@@ -139,7 +139,7 @@ async function syncVault(){
 }
 function scheduleVaultSync(){if(vaultPassphrase&&!syncBusy)syncVault()}
 function renderChatText(message){
- const text=String(message||"");const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
+ const text=String(message||"").replace(/\x60\x60\x60kappa-action\s*\n([\s\S]*?)\n\x60\x60\x60/g,(_,json)=>{const a=chatActionFrom(json);return a?"\n\n**"+(a.type==="task"?"🛠️ Task requested. Progress appears below.":"💬 Guidance for task #"+a.task)+"**\n\n":""});const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
  let html="",pos=0,hit;
  while((hit=regex.exec(text))){
   html+=KappaMarkdown.render(text.slice(pos,hit.index));

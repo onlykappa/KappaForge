@@ -304,3 +304,55 @@ test('agent runs (tasks and fixes) share a daily cap',async()=>{
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:5,decision:'fix',confirmed:true}),env)).status,429,'fixes share the cap');
  }finally{globalThis.fetch=original}
 });
+
+test('chat tells the AI how to act, and answers status questions from live agent work',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state);let system='';
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-work',GITHUB_JOB_TOKEN:'gh-work',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes(':generateContent')){system=JSON.parse(init.body).systemInstruction.parts.map(p=>p.text).join('\n');return Response.json({candidates:[{content:{parts:[{text:'Tests passed.'}]}}]})}
+  if(u.includes('/issues?labels=kappa-task'))return Response.json([{number:12,title:'Add live time',comments:1}]);
+  if(u.endsWith('/issues/12/comments?per_page=100'))return Response.json([{user:{login:'github-actions[bot]'},body:'### KappaForge needs your help\n\nI tried 3 fixes'}]);
+  if(u.includes('/pulls?state=open'))return Response.json([{number:50,title:'Draft: Add live time',draft:true,head:{ref:'kappa/dev-12'}},{number:9,title:'Human PR',head:{ref:'feature'}}]);
+  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-12 @ '+'a'.repeat(40),status:'completed',conclusion:'failure'}]});
+  if(u.includes('project-tests.yml/runs'))return Response.json({workflow_runs:[]});
+  return new Response('{}',{status:404})};
+ try{
+  await worker.fetch(req('/chat',{messages:[{role:'user',text:'Did the tests pass on my task?'}]}),env);
+  assert.match(system,/kappa-action/);assert.doesNotMatch(system,/cannot execute actions/i);
+  assert.match(system,/Task #12 "Add live time": latest update: ### KappaForge needs your help/);
+  assert.match(system,/PR #50 .*kappa\/dev-12.*tests failure/);assert.doesNotMatch(system,/Human PR/);
+  system='';await worker.fetch(req('/chat',{messages:[{role:'user',text:'Write me a haiku'}]}),env);
+  assert.doesNotMatch(system,/LIVE AGENT WORK/,'only status questions pay for the GitHub lookups');
+ }finally{globalThis.fetch=original}
+});
+
+test('owner guidance reaches only open KappaForge tasks and starts a fix when the latest tests failed',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),posted=[],dispatched=[];
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-guide',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ const head='c'.repeat(40);
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.endsWith('/issues/12'))return Response.json({number:12,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-Task'}],body:'Repository: onlykappa/KappaForge\nMode: develop'});
+  if(u.endsWith('/issues/13'))return Response.json({number:13,state:'open',user:{login:'stranger'},labels:[{name:'kappa-task'}]});
+  if(u.endsWith('/issues/12/comments')&&init.method==='POST'){posted.push(JSON.parse(init.body).body);return Response.json({id:1},{status:201})}
+  if(u.includes('/pulls?state=open&head=onlykappa:kappa/dev-12'))return Response.json([{number:50}]);
+  if(u.endsWith('/pulls/50'))return Response.json({number:50,state:'open',draft:true,title:'Draft',body:'',html_url:'https://github.com/onlykappa/KappaForge/pull/50',head:{ref:'kappa/dev-12',sha:head},user:{login:'github-actions[bot]'}});
+  if(u.includes('/pulls/50/files'))return Response.json([{filename:'a.js',status:'modified',additions:1,deletions:0,patch:'+x'}]);
+  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{id:7,display_title:'Sandbox validation kappa/dev-12 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:'failure',html_url:'u'}]});
+  if(u.includes('agent.yml/dispatches')){dispatched.push(JSON.parse(init.body).inputs);return new Response(null,{status:204})}
+  return Response.json({});};
+ try{
+  const bad=await worker.fetch(req('/guidance',{task:13,text:'do it'}),env);assert.equal(bad.status,404);
+  const r=await worker.fetch(req('/guidance',{task:12,text:'Keep the old date format'}),env);const d=await r.json();
+  assert.equal(r.status,200,JSON.stringify(d));assert.deepEqual(posted,['Guidance: Keep the old date format']);
+  assert.equal(d.fix,true);assert.deepEqual(dispatched,[{issue_number:'12',action:'fix'}]);
+  assert.equal((await worker.fetch(req('/guidance',{task:12,text:''}),env)).status,400);
+ }finally{globalThis.fetch=original}
+});
+
+test('task tracking follows fixes and requests for help, and tasks start automatically by default',()=>{
+ const bot={login:'github-actions[bot]'};
+ assert.equal(globalThis.KappaJobs.report({id:1,user:bot,body:'### KappaForge fix ready\n\nx'}).status,'partial');
+ assert.equal(globalThis.KappaJobs.report({id:2,user:bot,body:'### KappaForge needs your help\n\nx'}).status,'partial');
+ assert.equal(C.settings({}).autoStart,true);assert.equal(C.settings({autoStart:false}).autoStart,false);assert.equal(C.settings({autoStart:'no'}).autoStart,true);
+});
