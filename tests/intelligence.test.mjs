@@ -357,3 +357,23 @@ test('task tracking follows fixes and requests for help, and tasks start automat
  assert.equal(globalThis.KappaJobs.report({id:3,user:bot,body:'### KappaForge is working on it\n\n⏳ Reading'}).status,'progress');
  assert.equal(C.settings({}).autoStart,true);assert.equal(C.settings({autoStart:false}).autoStart,false);assert.equal(C.settings({autoStart:'no'}).autoStart,true);
 });
+
+test('the AI is told the owner\'s local date, time and timezone, with safe fallbacks',async()=>{
+ const {getTimeContext}=await import('../chat-backend/src/time.js');
+ const now=new Date('2026-10-17T19:28:00Z');
+ const la=getTimeContext('2026-10-17T19:28:00Z','America/Los_Angeles',now);
+ assert.match(la,/Saturday, October 17, 2026/);assert.match(la,/12:28 PM PDT/);assert.match(la,/America\/Los_Angeles; 2026-10-17T19:28 UTC/);
+ assert.match(getTimeContext('2026-10-17T19:28:00Z','Not/AZone',now),/7:28 PM UTC \(UTC;/,'invalid timezone falls back to UTC');
+ assert.match(getTimeContext('1999-01-01T00:00:00Z','UTC',now),/October 17, 2026/,'a clock more than a day off is ignored');
+ assert.match(getTimeContext(undefined,undefined,now),/October 17, 2026.*\(UTC;/);
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state);let system='';
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-time',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes(':generateContent')){system=JSON.parse(init.body).systemInstruction.parts.map(p=>p.text).join('\n');return Response.json({candidates:[{content:{parts:[{text:'It is Saturday.'}]}}]})}
+  return new Response('{}',{status:404})};
+ try{
+  const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'x'.repeat(3500)}],clientTime:new Date().toISOString(),timeZone:'Asia/Tokyo'}),env);
+  assert.equal(r.status,200,'a full-length message is still accepted');assert.match(system,/Current date and time for the owner: .*\(Asia\/Tokyo;/);
+ }finally{globalThis.fetch=original}
+});
