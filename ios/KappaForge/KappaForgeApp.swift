@@ -11,9 +11,11 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var security = AppSecurity()
     @State private var showSettings = false
+    @State private var showUpdatesOnOpen = false
     var body: some View {
         ZStack {
-            KappaWebView(showSecurity: { showSettings = true })
+            KappaWebView(showSecurity: { showUpdatesOnOpen = false; showSettings = true },
+                         showUpdates: { showUpdatesOnOpen = true; showSettings = true })
                 .ignoresSafeArea(.container, edges: .bottom)
                 .allowsHitTesting(security.unlocked && scenePhase == .active)
                 .accessibilityHidden(!security.unlocked || scenePhase != .active)
@@ -32,7 +34,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
-                SettingsView().environmentObject(security)
+                SettingsView(checkOnAppear: showUpdatesOnOpen).environmentObject(security)
                     .navigationTitle("Device security")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }
@@ -41,6 +43,7 @@ struct RootView: View {
 }
 
 struct SettingsView: View {
+    let checkOnAppear: Bool
     @EnvironmentObject private var security: AppSecurity
     @State private var updateStatus = ""
     @State private var downloadedIPA: URL?
@@ -92,6 +95,7 @@ struct SettingsView: View {
                     .font(.footnote)
             }
         }
+        .task { if checkOnAppear { await checkUpdates() } }
     }
 
     // Download a real IPA file to the device before sharing. Sharing a remote URL
