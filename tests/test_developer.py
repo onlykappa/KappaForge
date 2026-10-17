@@ -4,6 +4,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 from engine import developer
+from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
@@ -193,7 +194,8 @@ class OtherRepositoryTests(unittest.TestCase):
                 patch.object(developer, "run_model", side_effect=model):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
-        self.assertEqual(allowances, [set(), set()], "private repository code stays on Gemini by default")
+        everything = set(PROVIDERS["order"])
+        self.assertEqual(allowances, [everything, everything], "owner allows every fallback provider by default")
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})
