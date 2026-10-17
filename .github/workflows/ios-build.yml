@@ -57,6 +57,8 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python3 scripts/preflight.py native
+    - name: Verify native update contract
+      run: node --test tests/native-update-contract.test.mjs
     - name: Verify shared source and bundle latest interface
       run: |-
         set -Eeuo pipefail
@@ -164,6 +166,20 @@ jobs:
         fi
       shell: bash
 'on':
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'preview/**'
+      - 'scripts/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'preview/**'
+      - 'tests/native-update-contract.test.mjs'
+      - 'scripts/**'
+      - '.github/workflows/ios-build.yml'
   workflow_call: null
   workflow_dispatch:
     inputs:

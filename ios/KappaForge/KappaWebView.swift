@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 // It never navigates to the GitHub Pages website.
 struct KappaWebView: UIViewRepresentable {
     var showSecurity: () -> Void
+    var showUpdates: () -> Void
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
@@ -43,14 +44,19 @@ struct KappaWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(showSecurity: showSecurity) }
+    func makeCoordinator() -> Coordinator { Coordinator(showSecurity: showSecurity, showUpdates: showUpdates) }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate, WKScriptMessageHandler {
         let showSecurity: () -> Void
-        init(showSecurity: @escaping () -> Void) { self.showSecurity = showSecurity }
+        let showUpdates: () -> Void
+        init(showSecurity: @escaping () -> Void, showUpdates: @escaping () -> Void) {
+            self.showSecurity = showSecurity
+            self.showUpdates = showUpdates
+        }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true, let body = message.body as? [String: String] else { return }
             if body["action"] == "security" { showSecurity() }
+            if body["action"] == "updates" { showUpdates() }
             if body["action"] == "export", let name = body["name"], let content = body["content"], content.utf8.count < 1_000_000 {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + URL(fileURLWithPath: name).lastPathComponent)
                 do {
