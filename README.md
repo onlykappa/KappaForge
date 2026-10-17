@@ -102,6 +102,22 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 
+### Free fallback AI providers
+
+Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`: Cloudflare Workers AI (built in, no key), then Groq, Cerebras, OpenRouter free models, Mistral and NVIDIA NIM, each only when its key is configured. Models are discovered live from each provider; nothing is assumed from published lists, which change often. File and image attachments always use Gemini.
+
+To add a provider, create a key at its site and save it under the same name in **both** places: the Cloudflare Worker (Settings → Variables and Secrets, type Secret) for chat, and GitHub Actions secrets for the coding agent.
+
+| Provider | Key name | Get a key |
+|---|---|---|
+| Groq | `GROQ_API_KEY` | https://console.groq.com/keys |
+| Cerebras | `CEREBRAS_API_KEY` | https://cloud.cerebras.ai |
+| OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/settings/keys |
+| Mistral | `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
+| NVIDIA NIM | `NVIDIA_API_KEY` | https://build.nvidia.com |
+
+**Settings → Models** shows which providers are configured and their models, lets you pick a specific `provider:model`, and has a per-device switch to stop prompts going to any provider. Some free tiers may use prompts to improve their models; switch those off for private code.
+
 **Reviewing and merging from the app.** Each development PR appears under **Code reviews & approvals** on the Dashboard. **Review & merge** shows the agent's plain-English *What this does* summary (also posted in your chat), the changed files and the test result for the PR's latest commit:
 
 - **Merge** appears only when the tests passed on that exact commit. The Worker re-checks this, refuses if the PR changed since you opened the card, and only merges `kappa/dev-N` agent branches. KappaForge merges redeploy the app and Worker.
