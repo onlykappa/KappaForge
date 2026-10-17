@@ -50,7 +50,7 @@ struct KappaWebView: UIViewRepresentable {
         init(showSecurity: @escaping () -> Void) { self.showSecurity = showSecurity }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true, let body = message.body as? [String: String] else { return }
-            if body["action"] == "security" { showSecurity() }
+            if body["action"] == "security" || body["action"] == "updates" { showSecurity() }
             if body["action"] == "export", let name = body["name"], let content = body["content"], content.utf8.count < 1_000_000 {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + URL(fileURLWithPath: name).lastPathComponent)
                 do {
