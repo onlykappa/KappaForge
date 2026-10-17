@@ -13,6 +13,12 @@ from engine.handoff import collect
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
 CONFIG = json.loads((Path(__file__).resolve().parent.parent / "config/repositories.json").read_text())
+# Every repository owned by the account is in scope, including ones created later.
+REPO_RE = re.compile(r"^" + re.escape(CONFIG["owner"]) + r"/(?!\.+$)[A-Za-z0-9_.-]{1,100}$")
+
+def allowed_repo(repo):
+    return isinstance(repo, str) and bool(REPO_RE.match(repo))
+
 TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M | re.I)
 # Restrict unattended automation to Flash-class models; no paid Pro fallback.
 PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
@@ -208,7 +214,7 @@ def main():
         return
     if re.search(r"^Mode:\s*project-map\s*$", body_text, re.I | re.M):
         match = TARGET_RE.search(body_text)
-        if not match or match.group(1) not in CONFIG["allowed"]:
+        if not match or not allowed_repo(match.group(1)):
             raise ValueError("Invalid project map target")
         from engine.project_index import index_repository
         report = index_repository(match.group(1), token, github, content)
@@ -230,7 +236,7 @@ def main():
     if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):
         from engine.full_reader import inspect_batch
         match = TARGET_RE.search(body_text)
-        if not match or match.group(1) not in CONFIG["allowed"]:
+        if not match or not allowed_repo(match.group(1)):
             print("Invalid or unapproved audit target")
             return
         repo = match.group(1)
@@ -245,7 +251,7 @@ def main():
         return
     task = (issue.get("title", "") + "\n" + (issue.get("body") or ""))[:6000]
     match = TARGET_RE.search(issue.get("body") or "")
-    if not match or match.group(1) not in CONFIG["allowed"]:
+    if not match or not allowed_repo(match.group(1)):
         print("No allowed Repository: line. Task left queued.")
         return
     repo = match.group(1)

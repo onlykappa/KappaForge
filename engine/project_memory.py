@@ -12,7 +12,8 @@ MARKER="<!-- KAPPA_PROJECT_MEMORY_V1"
 def snapshot(report):
     repo=report.get("repo","")
     sha=report.get("commit","")
-    if repo not in ("onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"):
+    from engine.runner import allowed_repo
+    if not allowed_repo(repo):
         raise ValueError("Unapproved memory repository")
     if not re.fullmatch(r"[0-9a-f]{40}",sha):
         raise ValueError("Memory requires full immutable commit SHA")
@@ -50,7 +51,8 @@ def change_summary(previous,current):
 
 def recent_repo_memory(repo, github, token, current_issue=None, max_issues=12):
     """Find the latest verified repository snapshot across bounded owner tasks."""
-    if repo not in ("onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"):
+    from engine.runner import allowed_repo
+    if not allowed_repo(repo):
         raise ValueError("Repository not authorized")
     from engine.runner import ROOT
     issues=github(f"repos/{ROOT}/issues?state=all&labels=kappa-task&per_page={max_issues}&sort=updated&direction=desc",token)

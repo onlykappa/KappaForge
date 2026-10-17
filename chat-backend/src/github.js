@@ -6,7 +6,7 @@ export function githubHeaders(env,agent="KappaForge-Chat-Worker"){
  return headers;
 }
 // Read-only proxy for the dashboard, so browsers use the Worker's authenticated quota.
-const READ_PATH=/^(?:KappaForge|OmniPC|Apk-revival)(?:\/(?:issues|pulls|actions\/runs|releases|commits)(?:\/[0-9]+(?:\/comments|\/files)?)?)?(?:\?[A-Za-z0-9_=&.-]*)?$/;
+const READ_PATH=/^(?!\.+(?:[/?]|$))[A-Za-z0-9_.-]{1,100}(?:\/(?:issues|pulls|actions\/runs|releases|commits)(?:\/[0-9]+(?:\/comments|\/files)?)?)?(?:\?[A-Za-z0-9_=&.-]*)?$/;
 export async function githubRead(env,path){
  if(typeof path!=="string"||!READ_PATH.test(path))return {status:400,body:JSON.stringify({error:"Unsupported GitHub path"}),headers:{}};
  const r=await fetch("https://api.github.com/repos/onlykappa/"+path,{headers:githubHeaders(env,"KappaForge-dashboard"),signal:AbortSignal.timeout(10000)});

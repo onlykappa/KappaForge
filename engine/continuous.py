@@ -5,7 +5,7 @@ diagnosis is read-only and produces reviewable recommendations, never code pushe
 """
 import os
 import re
-from engine.runner import ROOT, CONFIG, github, get_issue, run_model
+from engine.runner import ROOT, allowed_repo, github, get_issue, run_model
 from engine.full_reader import inspect_batch
 
 MAX_BATCHES_PER_RUN = 3
@@ -16,7 +16,7 @@ ALLOWED_WORKFLOWS = {"KappaForge tests", "Deploy KappaForge Chat", "Publish Kapp
 def continuous_audit(issue, token, api_key):
     body = issue.get("body") or ""
     target = re.search(r"^Repository:\s*(onlykappa/[\w.-]+)\s*$", body, re.M | re.I)
-    if not target or target.group(1) not in CONFIG["allowed"]:
+    if not target or not allowed_repo(target.group(1)):
         raise ValueError("Continuous task must target an allowlisted repository")
     branch_match = re.search(r"^Branch:\s*([^\s]+)\s*$", body, re.I | re.M)
     branch = branch_match.group(1) if branch_match else None

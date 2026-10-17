@@ -102,7 +102,9 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 
-KappaForge itself works with the built-in Actions token. To develop in **OmniPC** or **Apk-revival**, add an Actions secret named `KAPPA_CODER_TOKEN`: a fine-grained token for those repositories with **Contents** and **Pull requests** read/write. Their own CI then runs on the draft PR.
+Every repository owned by `onlykappa` is in scope, including ones created later: the app loads the list from the Worker (most recently pushed first, archived repositories hidden) and the agent accepts any `onlykappa/<name>` target. Repair, sandbox code and continuous modes stay limited to KappaForge.
+
+KappaForge itself works with the built-in Actions token. To develop in any other repository, add an Actions secret named `KAPPA_CODER_TOKEN`: a fine-grained token with **Contents** and **Pull requests** read/write. Choose **All repositories** so new projects are covered automatically. Their own CI then runs on the draft PR.
 
 ### Owner-approved continuous coding milestones (experimental)
 

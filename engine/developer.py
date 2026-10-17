@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.parse
-from engine.runner import CONFIG, request, run_model
+from engine.runner import allowed_repo, request, run_model
 
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
@@ -44,7 +44,7 @@ def check_path(path):
 
 def target_of(issue):
     match = re.search(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", issue.get("body") or "", re.I | re.M)
-    if not match or match.group(1) not in CONFIG["allowed"]:
+    if not match or not allowed_repo(match.group(1)):
         raise ValueError("Development needs a Repository: line naming an allowed repository")
     return match.group(1)
 

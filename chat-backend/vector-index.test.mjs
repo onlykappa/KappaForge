@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {indexStore, INDEX_REPOS, EMBEDDING_MODEL} from "../chat-backend/src/vector-index.js";
+import {indexStore, EMBEDDING_MODEL} from "../chat-backend/src/vector-index.js";
 
-test("vector index supports approved repositories only", async()=>{
- assert.equal(INDEX_REPOS.length,3);
+test("vector index refuses malformed repository names", async()=>{
  assert.match(EMBEDDING_MODEL,/bge-small/);
  const state={storage:{}};
- const response=await indexStore(state,new Request("https://memory.internal/vectors/status?repo=Untrusted"));
- assert.equal(response.status,400);
+ for(const repo of ["../secrets","owner/repo","..",""]){
+  const response=await indexStore(state,new Request("https://memory.internal/vectors/status?repo="+encodeURIComponent(repo)));
+  assert.equal(response.status,400);
+ }
 });
 
 test("write, query and track persistent vector chunks", async()=>{
