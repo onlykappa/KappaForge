@@ -33,14 +33,19 @@ class DeveloperValidationTests(unittest.TestCase):
             apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/other.py", "edits": [{"find": "a", "replace": "b"}]}]})
 
     def test_guardrails_ci_secrets_and_unsafe_paths_are_protected(self):
-        for path in [".github/workflows/agent.yml", "engine/task_scope.py", "engine/developer.py", "engine/runner.py",
+        for path in [".github/workflows/agent.yml", ".git/config",
                      "chat-backend/wrangler.toml", "chat-backend/src/review.js", "chat-backend/src/github.js",
-                     "chat-backend/src/providers.js", "config/providers.json", "engine/repair_loop.py",
-                     "tests/test_developer.py", "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
+                     "chat-backend/src/providers.js", "config/providers.json",
+                     "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
                      "../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 check_path(path)
         self.assertEqual(check_path("chat-backend/src/index.js"), "chat-backend/src/index.js")
+        for path in ["engine/task_scope.py", "engine/developer.py", "engine/runner.py",
+                     "engine/repair_loop.py", "engine/validate_change.py",
+                     "tests/test_developer.py", "tests/test_workflow_safety.py"]:
+            with self.subTest(editable=path):
+                self.assertEqual(check_path(path), path)
 
     def test_unchanged_duplicate_and_oversized_results_are_rejected(self):
         bad = [
