@@ -86,6 +86,32 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertEqual(explanation, "Adding now works with text numbers.")
         self.assertIn("matched 0 times", ai.call_args_list[1][0][1])
 
+    def test_large_budget_on_gemini_then_small_budget_for_fallbacks(self):
+        good = json.dumps({"summary": "Cast inputs", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with patch.object(developer, "run_model", return_value=("flash", good)) as ai:
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, allowed={"groq"})
+        self.assertEqual(ai.call_args.kwargs["max_output_tokens"], developer.LARGE.output_tokens)
+        self.assertEqual(ai.call_args.kwargs["allowed"], set(), "large prompts only go to Gemini")
+        self.assertIn(f"At most {developer.LARGE.changed_files} files", ai.call_args[0][1])
+        # Gemini out of quota: re-planned at fallback size for the providers allowed for this repository.
+        with patch.object(developer, "run_model", side_effect=[RuntimeError("quota"), ("groq:llama", good)]) as ai:
+            model, *_ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, allowed={"groq"})
+        self.assertEqual(model, "groq:llama")
+        self.assertEqual(ai.call_args.kwargs, {"max_output_tokens": developer.SMALL.output_tokens, "allowed": {"groq"}})
+        self.assertIn(f"At most {developer.SMALL.changed_files} files", ai.call_args[0][1])
+
+    def test_large_budget_shows_big_files_whole_and_allows_more_files(self):
+        big = "x = 1\n" * 20000
+        self.assertLess(developer.MAX_FILE_CHARS, len(big))
+        changes = apply_changes({"app/big.py": big}, {"app/big.py": len(big)},
+                                {"files": [{"path": "app/big.py", "content": big + "y = 2\n"}]}, developer.LARGE)
+        self.assertIn("app/big.py", changes)
+        many = {"files": [{"path": f"n{i}.py", "content": "1"} for i in range(developer.SMALL.changed_files + 1)]}
+        self.assertEqual(len(apply_changes({}, {}, many, developer.LARGE)), developer.SMALL.changed_files + 1)
+        with self.assertRaises(ValueError):
+            apply_changes({}, {}, many)
+
     def test_gives_up_after_three_invalid_answers(self):
         bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
         with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
@@ -195,7 +221,8 @@ class OtherRepositoryTests(unittest.TestCase):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
         everything = set(PROVIDERS["order"])
-        self.assertEqual(allowances, [everything, everything], "owner allows every fallback provider by default")
+        # File choice may use any allowed provider; the change itself is tried large on Gemini alone first.
+        self.assertEqual(allowances, [everything, set()], "owner allows every fallback provider by default")
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})
