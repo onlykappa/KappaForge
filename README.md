@@ -137,7 +137,7 @@ To add a provider, create a key at its site and save it under the same name in *
 **Reviewing and merging from the app.** Each development PR appears under **Code reviews & approvals** on the Dashboard. **Review & merge** shows the agent's plain-English *What this does* summary (also posted in your chat), the changed files and the test result for the PR's latest commit:
 
 - **Merge** appears only when the tests passed on that exact commit. The Worker re-checks this, refuses if the PR changed since you opened the card, and only merges `kappa/dev-N` agent branches. KappaForge merges redeploy the app and Worker.
-- **Fix it** appears when KappaForge's sandbox tests failed. The agent reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests (at most three fixes per PR). Nothing merges until you tap Merge.
+- **Tests fix themselves.** When the sandbox tests fail on a development PR, KappaForge starts **Fix it** automatically: it reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests, up to three times. Discord says "Tests passed, Merge is ready" only once they pass. If they still fail, it stops and posts **KappaForge needs your help** on the task with what is failing; reply with a comment starting `Guidance:` and tap **Fix it**, and each guidance comment allows one more attempt. You can still tap **Fix it** yourself at any time. Nothing merges until you tap Merge.
 
 The Worker's `GITHUB_JOB_TOKEN` needs **Contents** and **Pull requests** read/write for Merge. Sandbox tests run the Python, Worker and browser regression suites against the exact commit.
 

@@ -63,22 +63,34 @@ jobs:
         python -m compileall -q engine
       shell: bash
   notify:
-    # Separate job: never checks out or runs the tested code, so the webhook secret is not exposed to it.
+    # Separate job: never checks out or runs the tested code, so the webhook secret and its token are not exposed to it.
     needs: verify
     if: always() && inputs.candidate_sha != '' && (needs.verify.result == 'success' || needs.verify.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    permissions: {}
+    permissions:
+      actions: write
     steps:
+    - name: Start an automatic fix for a failed agent development PR
+      # Only reads the branch name; the agent fixes it from KappaForge's trusted main, at most a few times per PR.
+      if: needs.verify.result == 'failure' && startsWith(inputs.branch, 'kappa/dev-')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
+        gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="${BASH_REMATCH[1]}" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
+      shell: bash
     - name: Post the test result to Discord
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         RESULT: ${{ needs.verify.result }}
+        BRANCH: ${{ inputs.branch }}
         TARGET: KappaForge ${{ inputs.branch }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         [[ "$DISCORD_WEBHOOK_URL" =~ ^https://(discord|discordapp)\.com/api/webhooks/ ]] || exit 0
-        python3 -c 'import json,os;ok=os.environ["RESULT"]=="success";print(json.dumps({"content":("✅ Tests passed for " if ok else "❌ Tests failed for ")+os.environ["TARGET"]+(". Merge is ready on the Dashboard." if ok else ". Tap Fix it on the Dashboard.")+"\n"+os.environ["RUN_URL"],"allowed_mentions":{"parse":[]}}))' > payload.json
+        python3 -c 'import json,os;ok=os.environ["RESULT"]=="success";print(json.dumps({"content":("✅ Tests passed for " if ok else "❌ Tests failed for ")+os.environ["TARGET"]+(". Merge is ready on the Dashboard." if ok else (". KappaForge is fixing it automatically." if os.environ["BRANCH"].startswith("kappa/dev-") else ". Tap Fix it on the Dashboard."))+"\n"+os.environ["RUN_URL"],"allowed_mentions":{"parse":[]}}))' > payload.json
         curl -fsS -m 15 -H 'Content-Type: application/json' -d @payload.json "$DISCORD_WEBHOOK_URL" >/dev/null || true
       shell: bash
 'on':
