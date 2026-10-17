@@ -98,6 +98,38 @@ class ModelRoutingTests(unittest.TestCase):
             self.assertEqual(runner.provider_models("zai"), ["glm-4.7-flash"])
             urlopen.assert_not_called()
             self.assertEqual(runner.provider_headers(runner.PROVIDERS["providers"]["llm7"])["Authorization"], "Bearer llm7-key")
+    def test_code_only_goes_to_providers_allowed_for_the_repository(self):
+        keys = {k: "" for k in ("CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
+                                "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "KAPPA_CODE_PROVIDERS", "KAPPA_PRIVATE_CODE_PROVIDERS")}
+        with patch.dict(os.environ, {**keys, "GROQ_API_KEY": "k"}):
+            self.assertEqual(runner.code_providers(False), {"groq"}, "keyless providers need opting in")
+            self.assertEqual(runner.code_providers(True), set())
+        with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
+            self.assertEqual(runner.code_providers(True), {"groq", "cerebras"})
+            self.assertEqual(runner.code_providers(False), {"kilo"})
+
+    def test_fallback_skips_disallowed_providers_and_retries_with_a_smaller_reply_limit(self):
+        def response(data):
+            result = MagicMock()
+            result.__enter__.return_value = result
+            result.__exit__.return_value = False
+            result.read.return_value = json.dumps(data).encode()
+            return result
+        sent = []
+        def urlopen(req, timeout=None):
+            url = req.full_url
+            if url.endswith("/models"):
+                return response({"data": [{"id": "llama-3.3-70b-versatile"}]})
+            body = json.loads(req.data)
+            sent.append((url, body["max_tokens"]))
+            if body["max_tokens"] > runner.FALLBACK_MAX_TOKENS:
+                raise urllib.error.HTTPError(url, 400, "max_tokens too large", {}, io.BytesIO(b""))
+            return response({"choices": [{"message": {"content": "ok"}}]})
+        with patch.dict(os.environ, {"GROQ_API_KEY": "k"}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            self.assertIsNone(runner.run_fallback_providers("x", 16384, [], allowed=set()))
+            self.assertEqual(sent, [])
+            self.assertEqual(runner.run_fallback_providers("x", 16384, [], allowed={"groq"}), ("groq:llama-3.3-70b-versatile", "ok"))
+        self.assertEqual([limit for _, limit in sent], [16384, runner.FALLBACK_MAX_TOKENS])
 
 if __name__ == "__main__":
     unittest.main()

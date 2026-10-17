@@ -62,6 +62,25 @@ jobs:
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python -m compileall -q engine
       shell: bash
+  notify:
+    # Separate job: never checks out or runs the tested code, so the webhook secret is not exposed to it.
+    needs: verify
+    if: always() && inputs.candidate_sha != '' && (needs.verify.result == 'success' || needs.verify.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+    - name: Post the test result to Discord
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        RESULT: ${{ needs.verify.result }}
+        TARGET: KappaForge ${{ inputs.branch }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        [[ "$DISCORD_WEBHOOK_URL" =~ ^https://(discord|discordapp)\.com/api/webhooks/ ]] || exit 0
+        python3 -c 'import json,os;ok=os.environ["RESULT"]=="success";print(json.dumps({"content":("✅ Tests passed for " if ok else "❌ Tests failed for ")+os.environ["TARGET"]+(". Merge is ready on the Dashboard." if ok else ". Tap Fix it on the Dashboard.")+"\n"+os.environ["RUN_URL"],"allowed_mentions":{"parse":[]}}))' > payload.json
+        curl -fsS -m 15 -H 'Content-Type: application/json' -d @payload.json "$DISCORD_WEBHOOK_URL" >/dev/null || true
+      shell: bash
 'on':
   workflow_dispatch:
     inputs:

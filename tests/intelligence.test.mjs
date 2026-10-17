@@ -289,3 +289,18 @@ test('other repositories are tested in the secret-free project sandbox, with a w
   assert.equal(review.canMerge,true);assert.match(review.risks[0].text,/no automated tests/);
  }finally{globalThis.fetch=original}
 });
+
+test('agent runs (tasks and fixes) share a daily cap',async()=>{
+ const state=memoryState(),vault=new KappaMemory(state),original=globalThis.fetch;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-cap',DAILY_TASK_LIMIT:'1',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  if(u.endsWith('/user'))return Response.json({message:'Bad credentials'},{status:401});
+  return new Response('{}',{status:404})};
+ const job=()=>worker.fetch(req('/jobs',{approved:true,repo:'onlykappa/KappaForge',mode:'develop',title:'Add tooltip',instructions:'Add a tooltip to refresh.'}),env);
+ try{
+  assert.equal((await job()).status,502,'first run is allowed (then fails on the fake token)');
+  const second=await job();assert.equal(second.status,429);assert.match((await second.json()).error,/Daily agent limit reached \(1/);
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:5,decision:'fix',confirmed:true}),env)).status,429,'fixes share the cap');
+ }finally{globalThis.fetch=original}
+});

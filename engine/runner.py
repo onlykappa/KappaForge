@@ -20,6 +20,25 @@ REPO_RE = re.compile(r"^" + re.escape(CONFIG["owner"]) + r"/(?!\.+$)[A-Za-z0-9_.
 def allowed_repo(repo):
     return isinstance(repo, str) and bool(REPO_RE.match(repo))
 
+def notify(text):
+    """Best-effort Discord message (DISCORD_WEBHOOK_URL Actions secret). Never blocks or fails a task."""
+    hook = os.getenv("DISCORD_WEBHOOK_URL", "")
+    if not re.match(r"^https://(?:discord\.com|discordapp\.com)/api/webhooks/", hook):
+        return
+    req = urllib.request.Request(hook, json.dumps({"content": text[:1900], "allowed_mentions": {"parse": []}}).encode(),
+                                 {"Content-Type": "application/json", "User-Agent": "KappaForge"})
+    try:
+        urllib.request.urlopen(req, timeout=15).close()
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        pass
+
+def is_private(repo, token=None):
+    """Treat a repository as private unless GitHub says otherwise."""
+    try:
+        return github(f"repos/{repo}", read_token(repo, token)).get("private", True) is not False
+    except (urllib.error.URLError, ValueError):
+        return True
+
 def read_token(repo, token=None):
     # The Actions token reaches KappaForge and public repositories; the owner token also reaches private ones.
     token = token or os.getenv("GITHUB_TOKEN")
@@ -173,29 +192,55 @@ def provider_models(pid):
         return (found[0] if found else 99, m)
     return sorted(ids, key=rank)[:PROVIDERS["maxModelsPerProvider"]]
 
-def run_fallback_providers(prompt, max_output_tokens, errors):
+def code_providers(private=False):
+    """Fallback providers allowed to receive source code (Gemini, the primary, always is).
+
+    KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) override.
+    Default for public code: providers you added a key for, so anonymous keyless endpoints need opting in.
+    Default for private repositories: none.
+    """
+    listed = os.getenv("KAPPA_PRIVATE_CODE_PROVIDERS" if private else "KAPPA_CODE_PROVIDERS", "").strip()
+    if listed:
+        return {name.strip() for name in listed.split(",") if name.strip()}
+    if private:
+        return set()
+    return {pid for pid, p in PROVIDERS["providers"].items() if p.get("key") and os.getenv(p["key"], "")}
+
+# Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
+FALLBACK_MAX_TOKENS = 8192
+
+def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None):
     """Try each configured free provider once per model; a 429 or error moves on rather than waiting."""
     for pid in PROVIDERS["order"]:
+        if allowed is not None and pid not in allowed:
+            continue
         p = PROVIDERS["providers"][pid]
         for model in provider_models(pid):
-            payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "max_tokens": max_output_tokens, "temperature": 0.2}
-            req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
-                                         {"Content-Type": "application/json", **provider_headers(p)})
-            try:
-                with urllib.request.urlopen(req, timeout=180) as response:
-                    data = json.load(response)
-                output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-                if output.strip():
-                    return pid + ":" + model, output.strip()
-                errors.append(pid + ":" + model + ": empty response")
-            except urllib.error.HTTPError as exc:
-                errors.append(pid + ":" + model + ": HTTP " + str(exc.code))
-            except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-                errors.append(pid + ":" + model + ": " + type(exc).__name__)
+            limit = max_output_tokens
+            while True:
+                payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
+                           "max_tokens": limit, "temperature": 0.2}
+                req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
+                                             {"Content-Type": "application/json", **provider_headers(p)})
+                try:
+                    with urllib.request.urlopen(req, timeout=180) as response:
+                        data = json.load(response)
+                    output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                    if output.strip():
+                        return pid + ":" + model, output.strip()
+                    errors.append(pid + ":" + model + ": empty response")
+                except urllib.error.HTTPError as exc:
+                    if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
+                        limit = FALLBACK_MAX_TOKENS
+                        continue
+                    errors.append(pid + ":" + model + ": HTTP " + str(exc.code))
+                except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+                    errors.append(pid + ":" + model + ": " + type(exc).__name__)
+                break
     return None
 
-def run_model(api_key, prompt, max_output_tokens=2000):
+def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
+    """Gemini first, then free fallback providers; `allowed` limits which fallbacks may see this prompt."""
     errors = []
     try:
         available = discover_models(api_key)
@@ -203,7 +248,7 @@ def run_model(api_key, prompt, max_output_tokens=2000):
         available = set()
         errors.append(str(exc))
     candidates = select_models(available)
-    if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"]):
+    if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"] if allowed is None or pid in allowed):
         raise RuntimeError("No approved Flash model supports generateContent for this key. "
                            "Available model IDs: " + ", ".join(sorted(available)[:20]))
     print("Approved Gemini fallback models: " + ", ".join(candidates))
@@ -240,7 +285,7 @@ def run_model(api_key, prompt, max_output_tokens=2000):
                     time.sleep(2 * (attempt + 1))
                     continue
                 errors.append(model + ": " + type(exc).__name__)
-    fallback = run_fallback_providers(prompt, max_output_tokens, errors)
+    fallback = run_fallback_providers(prompt, max_output_tokens, errors, allowed)
     if fallback:
         return fallback
     raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
@@ -281,11 +326,11 @@ def main():
         if os.getenv("INPUT_ACTION", "").strip() == "fix":
             from engine.developer import fix_pull_request
             url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
-            print("Owner-requested fix pushed: " + url)
+            print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
             return
         from engine.developer import produce_development_pr
         url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
-        print("Development draft pull request created: " + url)
+        print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
         return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
@@ -326,9 +371,10 @@ def main():
         comments = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
         branch_match = re.search(r"^Branch:\s*([^\s]+)\s*$", body_text, re.M | re.I)
         branch = branch_match.group(1) if branch_match else None
+        allowed = code_providers(is_private(repo, token))
         state, note, complete = inspect_batch(
             repo, issue["number"], branch, token, os.environ["GEMINI_API_KEY"],
-            lambda path: github(path, read_token(repo, token)), run_model, comments)
+            lambda path: github(path, read_token(repo, token)), lambda key, prompt: run_model(key, prompt, allowed=allowed), comments)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
         print(f"Audit {'complete' if complete else 'checkpointed'}: {state['next']}/{state['files_total']}")
         if not complete:
@@ -358,7 +404,7 @@ def main():
         + 'TASK:\n' + task + '\n\nGITHUB EVIDENCE:\n' + handoff['evidence']
     )
     try:
-        model, result = run_model(os.environ["GEMINI_API_KEY"], prompt)
+        model, result = run_model(os.environ["GEMINI_API_KEY"], prompt, allowed=code_providers(is_private(repo, token)))
     except RuntimeError as err:
         print(str(err) + "; task remains queued")
         return
