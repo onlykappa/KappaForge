@@ -88,6 +88,7 @@ jobs:
     - main
     paths:
     - chat-backend/**
+    - config/providers.json
     - .github/workflows/deploy-chat.yml
     - tests/intelligence.test.mjs
   workflow_dispatch: null

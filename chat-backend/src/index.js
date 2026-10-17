@@ -5,6 +5,7 @@ import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
 import {reviewPR,mergePR,requestFix,closePR} from "./review.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary} from "./providers.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -114,7 +115,7 @@ export default {
       }catch{return json({error:"Semantic search unavailable. Text search still works."},502,cors)}
     }
     if(new URL(request.url).pathname==="/capabilities"){
-      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:env.GEMINI_API_KEY?(await discover(env)).length:0,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
+      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:env.GEMINI_API_KEY?(await discover(env)).length:0,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers:await providerSummary(env),monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
     if(new URL(request.url).pathname==="/usage"){
@@ -481,8 +482,12 @@ export default {
       payload.generationConfig.maxOutputTokens=({concise:500,standard:1200,thorough:3000})[prefs.reasoning]||1200;
     }
     try {
-      const available=await discover(env);
-      const candidates=routes(available,input.preferences||{},isComplex(input));
+      const prefs=input.preferences||{},chat=toChat(payload);
+      // A Gemini outage or exhausted key should not block the free fallback providers.
+      const available=await discover(env).catch(()=>[]);
+      const manualGemini=typeof prefs.model==="string"&&prefs.model!=="auto"&&!prefs.model.includes(":");
+      if(manualGemini&&!available.includes(prefs.model))return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
+      const candidates=await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia);
       if(!candidates.length)return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
@@ -492,35 +497,39 @@ export default {
       const streaming=!planning&&input.stream===true;
       let attempt=0;
       let lastStatus = 0;
-      for (const model of candidates) {
+      for (const route of candidates) {
+        const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const record=async(result,ok)=>{const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;};
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 45000);
         let response;
         try {
-          response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + (streaming?":streamGenerateContent?alt=sse":":generateContent"), {
+          response = gemini ? await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + route.model + (streaming?":streamGenerateContent?alt=sse":":generateContent"), {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
             body: JSON.stringify(payload), signal: controller.signal
-          });
+          }) : await callProvider(env, route, chat, streaming, controller.signal);
         } catch { clearTimeout(timeout);await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); }
         lastStatus = response.status;
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
-          if ([404, 429, 500, 502, 503].includes(response.status)) continue;
+          // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
+          if (!gemini || [404, 429, 500, 502, 503].includes(response.status)) continue;
           return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
         }
         if(streaming){
-          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"},abort:controller,timeout,signal:request.signal,context});
+          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider},abort:controller,timeout,signal:request.signal,context,
+            normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
         let result;try{result=await response.json()}finally{clearTimeout(timeout)}
+        if(!gemini)result=normalizeResult(route,result);
         const usage=await record(result,!!result.candidates?.[0]?.content?.parts?.some(p=>p.text));
         const answer = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
         if (answer) {
           if (!planning) return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);
           let proposal;
-          try { proposal = JSON.parse(answer); }
+          try { proposal = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
           catch { return json({ error: "Planner returned invalid JSON." }, 502, cors); }
           const repos = (await listRepos(env)).map(name => "onlykappa/" + name);
           const modes = ["audit", "code", "develop", "repair", "continuous", "continuous-code", "watch", "project-map"];
@@ -542,7 +551,7 @@ export default {
           } }, 200, cors);
         }
       }
-      return json({ error: "All approved Gemini routes unavailable (last HTTP " + lastStatus + ")." }, 502, cors);
+      return json({ error: "All approved AI routes unavailable (last HTTP " + lastStatus + "). Free daily limits may be used up; add another provider key or try later." }, 502, cors);
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }
