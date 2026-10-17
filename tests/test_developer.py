@@ -134,10 +134,51 @@ class DeveloperValidationTests(unittest.TestCase):
     def test_planner_gives_stages_only_for_big_changes(self):
         files = {"app/main.py": 60}
         with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["Only one"]}))):
-            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], []))
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], [], ""))
         with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["A", "B", "C"]}))) as ai:
-            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"]))
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"], ""))
         self.assertIn('"stages"', ai.call_args[0][1])
+        plan = {"read": ["app/main.py"], "design": "Runs on the server, which does not know the user's timezone."}
+        with patch.object(developer, "run_model", return_value=("flash", json.dumps(plan))) as ai:
+            self.assertEqual(developer.plan_change("key", "task", files)[2], plan["design"])
+        self.assertIn("where each part runs", ai.call_args[0][1])
+
+    def test_design_notes_reach_the_change_and_a_test_is_required_when_the_repo_has_tests(self):
+        no_test = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with_test = json.dumps({"summary": "Cast + test", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+            {"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", no_test), ("flash", with_test)]) as ai:
+            _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING,
+                                                  design="Every request, not just the first.", require_test=True)
+        self.assertIn("tests/test_main.py", changes)
+        self.assertIn("DESIGN NOTES", ai.call_args_list[0][0][1])
+        self.assertIn("Every request, not just the first.", ai.call_args_list[0][0][1])
+        self.assertIn("A change without such a test is rejected", ai.call_args_list[0][0][1])
+        self.assertIn("No test was added", ai.call_args_list[1][0][1])
+        with patch.object(developer, "run_model", return_value=("flash", no_test)), \
+                self.assertRaisesRegex(ValueError, "No test was added"):
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, require_test=True)
+        with patch.object(developer, "run_model", return_value=("flash", no_test)):
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertTrue(developer.has_tests(["tests/test_x.py", "a.js"]))
+        self.assertTrue(developer.has_tests(["web/src/app.test.ts"]))
+        self.assertFalse(developer.has_tests(["app/main.py", "contest.py", "latest/x.js"]))
+
+    def test_staged_build_ends_with_a_test_stage_when_no_stage_added_one(self):
+        first = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        second = json.dumps({"summary": "Sub", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a - b", "replace": "return int(a) - int(b)"}]}]})
+        test = json.dumps({"summary": "Test", "files": [{"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", second), ("flash", test)]) as ai:
+            _, summary, changes, _ = developer.build_in_stages(
+                "key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast add", "Cast sub"], require_test=True)
+        self.assertEqual(set(changes), {"app/main.py", "tests/test_main.py"})
+        self.assertIn("FINAL STAGE", ai.call_args_list[2][0][1])
+        self.assertIn("int(a) - int(b)", ai.call_args_list[2][0][1], "the test stage sees every earlier stage")
+        self.assertIn("Tests: Test", summary)
 
     def test_ios_web_copies_follow_preview_edits(self):
         sources = {"preview/app.js": "let a = 1;\n"}
