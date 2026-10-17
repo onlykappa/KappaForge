@@ -14,8 +14,14 @@ final class LaunchTests: XCTestCase {
         settings.tap()
         // The Settings home contains an accessible search field. Section rows and group headings
         // can be exposed differently by WKWebView accessibility on different simulator runtimes.
-        let search = web.textFields["Search settings"]
-        XCTAssertTrue(search.waitForExistence(timeout: 20), "Settings home should expose its search field")
+        // HTML input[type=search] is exposed as XCUIElementTypeSearchField, not TextField.
+        let search = web.searchFields["Search settings"]
+        if !search.waitForExistence(timeout: 20) {
+            XCTContext.runActivity(named: "Settings accessibility hierarchy") { activity in
+                activity.add(XCTAttachment(string: app.debugDescription))
+            }
+            XCTFail("Settings search field did not appear. Inspect the attached accessibility hierarchy.")
+        }
         XCTAssertTrue(web.staticTexts["KappaForge could not start"].exists == false, "App should remain running after opening Settings")
     }
 }
