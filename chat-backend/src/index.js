@@ -178,7 +178,7 @@ export default {
         const pr = await prResponse.json();
         if (pr.state !== "open" || pr.base?.repo?.full_name !== "onlykappa/KappaForge" ||
             pr.head?.repo?.full_name !== "onlykappa/KappaForge" ||
-            !/^kappa\/(issue-\d+|repair-\d+|cont-\d+-\d+)$/.test(pr.head?.ref || ""))
+            !/^kappa\/(issue-\d+|repair-\d+|cont-\d+-\d+|dev-\d+)$/.test(pr.head?.ref || ""))
           return json({error:"Only open KappaForge agent proposals may be reviewed here."},403,cors);
         if (decision === "validate") {
           const dispatch = await fetch(base + "/actions/workflows/sandbox-tests.yml/dispatches", {
@@ -215,7 +215,7 @@ export default {
       const mode = input.mode, repo = input.repo;
       const title = typeof input.title === "string" ? input.title.trim() : "";
       const instructions = typeof input.instructions === "string" ? input.instructions.trim() : "";
-      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) ||
+      if (input.approved !== true || !allowed.includes(repo) || !["audit", "code", "develop", "repair", "continuous", "continuous-code", "watch", "project-map"].includes(mode) ||
           title.length < 5 || title.length > 120 || instructions.length < 10 || instructions.length > 3500)
         return json({ error: "Job must be valid and explicitly approved." }, 400, cors);
       if (["code", "repair", "continuous", "continuous-code", "watch"].includes(mode) && repo !== "onlykappa/KappaForge")
@@ -452,8 +452,8 @@ export default {
     const plannerInstruction = "Classify the user's development request as one JSON object only: " +
       '{"isTask":boolean,"repo":"onlykappa/KappaForge","mode":"audit","title":"short title","instructions":"full task"}.' +
       " If this is only a question or conversation, set isTask false. Repositories: onlykappa/KappaForge, onlykappa/OmniPC, onlykappa/Apk-revival. " +
-      " Only read-only audit and project-map are permitted for OmniPC and Apk-revival. Default to KappaForge when unspecified. " +
-      " Modes: audit (inspection), code (isolated sandbox coding), repair (explicit source file repair), " +
+      " Only audit, project-map and develop are permitted for OmniPC and Apk-revival. Default to KappaForge when unspecified. " +
+      " Modes: audit (inspection), develop (implement a feature or fix in the repository's real source files as a draft PR; prefer this for most coding requests), code (new standalone prototype in an isolated sandbox folder), repair (explicit source file repair), " +
       " continuous (long read-only audit), continuous-code (explicit numbered independent steps), watch (workflow failures). " +
       " For requests to understand codebase structure, map dependencies or architecture choose project-map (read-only, allowed for all three repositories). Select repair ONLY with explicit Repair files: line naming source. Select continuous-code ONLY if prompt has Step 1: line and independent numbered steps. " +
       " Never claim work has started. Preserve user's actual instructions. This is a draft that requires owner approval.";
@@ -516,11 +516,11 @@ export default {
           try { proposal = JSON.parse(answer); }
           catch { return json({ error: "Planner returned invalid JSON." }, 502, cors); }
           const repos = ["onlykappa/KappaForge", "onlykappa/OmniPC", "onlykappa/Apk-revival"];
-          const modes = ["audit", "code", "repair", "continuous", "continuous-code", "watch", "project-map"];
+          const modes = ["audit", "code", "develop", "repair", "continuous", "continuous-code", "watch", "project-map"];
           if (!proposal || typeof proposal.isTask !== "boolean") return json({ error: "Invalid planner response." }, 502, cors);
           if (!proposal.isTask) return json({ isTask: false }, 200, cors);
           if (!repos.includes(proposal.repo) || !modes.includes(proposal.mode) ||
-              (!["audit","project-map"].includes(proposal.mode) && proposal.repo !== "onlykappa/KappaForge") ||
+              (!["audit","project-map","develop"].includes(proposal.mode) && proposal.repo !== "onlykappa/KappaForge") ||
               typeof proposal.instructions !== "string" || proposal.instructions.trim().length < 10 ||
               proposal.instructions.length > 3500 || typeof proposal.title !== "string")
             return json({ error: "Planner suggestion needs manual task setup." }, 422, cors);

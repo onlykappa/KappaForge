@@ -190,6 +190,14 @@ def main():
         url = produce_repair_pr(issue, os.environ["GEMINI_API_KEY"], token)
         print("Self-repair draft pull request created: " + url)
         return
+    if re.search(r"^Mode:\s*develop\s*$", body_text, re.I | re.M):
+        if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
+            print("Development mode requires explicit manual workflow dispatch; task remains queued.")
+            return
+        from engine.developer import produce_development_pr
+        url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
+        print("Development draft pull request created: " + url)
+        return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
             print("Coding mode requires explicit manual workflow dispatch; task remains queued.")
@@ -216,7 +224,7 @@ def main():
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token,
                {"body": "### KappaForge project map complete\n\n" +
                 "Read-only structure and import analysis. No source modified.\n\n" +
-                "Changes since previous task snapshot:\n\`\`\`json\n" + payload + "\n\`\`\`\n\n" + memory_note})
+                "Changes since previous task snapshot:\n```json\n" + payload + "\n```\n\n" + memory_note})
         print(f"Indexed {report['total_indexed']} project files")
         return
     if re.search(r"^Mode:\s*audit\s*$", body_text, re.I | re.M):

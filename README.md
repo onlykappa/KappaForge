@@ -93,6 +93,17 @@ to this issue, and suggest targeted investigations. Do not edit code.
 
 For live results, open the authorized issue's comments or Dashboard's workflow feed. Stop continuous work by closing the issue or removing the `kappa-task` label. To change code, submit a separate explicit owner-approved `repair` or sandbox `code` task and review its draft PR. GitHub token renewal is not yet automatic.
 
+### Develop mode: real code changes as draft PRs
+
+Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the feature or fix. After you approve, the agent:
+
+1. Lists the target repository and asks Gemini which files it needs (any file path you name in the task is always read).
+2. Reads up to 12 of those files from the default branch and asks for precise find/replace edits or new files (at most 8 files).
+3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
+4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
+
+KappaForge itself works with the built-in Actions token. To develop in **OmniPC** or **Apk-revival**, add an Actions secret named `KAPPA_CODER_TOKEN`: a fine-grained token for those repositories with **Contents** and **Pull requests** read/write. Their own CI then runs on the draft PR.
+
 ### Owner-approved continuous coding milestones (experimental)
 
 Use KappaForge Chat **Make a task**, select repository **KappaForge**, mode **continuous-code**, and approve a task containing numbered independent steps. Each invocation prepares at most **one** draft PR for a standalone milestone in KappaForge's isolated `projects/`, `tests/projects/`, or `docs/generated/` sandbox. It dispatches `Sandbox branch tests` separately without AI secrets. The six-hour scheduled workflow resumes later steps; you can also manually rerun the workflow. **Nothing is auto-merged or deployed.**
