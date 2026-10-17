@@ -13,6 +13,7 @@ from engine.handoff import collect
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
 CONFIG = json.loads((Path(__file__).resolve().parent.parent / "config/repositories.json").read_text())
+PROVIDERS = json.loads((Path(__file__).resolve().parent.parent / "config/providers.json").read_text())
 # Every repository owned by the account is in scope, including ones created later.
 REPO_RE = re.compile(r"^" + re.escape(CONFIG["owner"]) + r"/(?!\.+$)[A-Za-z0-9_.-]{1,100}$")
 
@@ -129,14 +130,58 @@ def select_models(available):
     """Use a small explicit allowlist so discovery cannot route to billable Pro models."""
     return [name for name in PREFERRED_MODELS if name in available]
 
+def provider_models(pid):
+    """Live chat models for a free fallback provider whose key is configured, preferred families first."""
+    p = PROVIDERS["providers"][pid]
+    key = os.getenv(p.get("key", ""), "")
+    if p.get("kind") != "openai" or not key or p.get("agent") is False:
+        return []
+    req = urllib.request.Request(p["base"] + "/models", headers={"Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            ids = [m.get("id") for m in json.load(response).get("data", []) if isinstance(m.get("id"), str)]
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return []
+    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or m.endswith(":free"))]
+    def rank(m):
+        found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
+        return (found[0] if found else 99, m)
+    return sorted(ids, key=rank)[:PROVIDERS["maxModelsPerProvider"]]
+
+def run_fallback_providers(prompt, max_output_tokens, errors):
+    """Try each configured free provider once per model; a 429 or error moves on rather than waiting."""
+    for pid in PROVIDERS["order"]:
+        p = PROVIDERS["providers"][pid]
+        for model in provider_models(pid):
+            payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
+                       "max_tokens": max_output_tokens, "temperature": 0.2}
+            req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
+                                         {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ[p["key"]]})
+            try:
+                with urllib.request.urlopen(req, timeout=180) as response:
+                    data = json.load(response)
+                output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                if output.strip():
+                    return pid + ":" + model, output.strip()
+                errors.append(pid + ":" + model + ": empty response")
+            except urllib.error.HTTPError as exc:
+                errors.append(pid + ":" + model + ": HTTP " + str(exc.code))
+            except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+                errors.append(pid + ":" + model + ": " + type(exc).__name__)
+    return None
+
 def run_model(api_key, prompt, max_output_tokens=2000):
-    available = discover_models(api_key)
+    errors = []
+    try:
+        available = discover_models(api_key)
+    except RuntimeError as exc:
+        available = set()
+        errors.append(str(exc))
     candidates = select_models(available)
-    if not candidates:
+    if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"]):
         raise RuntimeError("No approved Flash model supports generateContent for this key. "
                            "Available model IDs: " + ", ".join(sorted(available)[:20]))
     print("Approved Gemini fallback models: " + ", ".join(candidates))
-    errors = []
     for model in candidates:
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
@@ -170,6 +215,9 @@ def run_model(api_key, prompt, max_output_tokens=2000):
                     time.sleep(2 * (attempt + 1))
                     continue
                 errors.append(model + ": " + type(exc).__name__)
+    fallback = run_fallback_providers(prompt, max_output_tokens, errors)
+    if fallback:
+        return fallback
     raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
 
 def main():

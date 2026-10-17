@@ -159,3 +159,48 @@ test('agent development PRs can be closed in any owner repository, human PRs nev
   assert.equal(calls.some(c=>c.method==='PATCH'),false);
  }finally{globalThis.fetch=original}
 });
+
+test('free providers take over when Gemini is rate limited, with live model discovery and normalized usage',async()=>{
+ const {fallbackRoutes,providerModels}=await import('../chat-backend/src/providers.js');
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),seen=[];
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-providers',GROQ_API_KEY:'groq-key',OPENROUTER_API_KEY:'or-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push(u);
+  if(u.includes('generativelanguage')&&u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes('generativelanguage'))return new Response('{}',{status:429});
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'whisper-large-v3'},{id:'llama-3.3-70b-versatile'},{id:'meta-llama/llama-guard-4'},{id:'moonshotai/kimi-k2-instruct'}]});
+  if(u==='https://openrouter.ai/api/v1/models')return Response.json({data:[{id:'qwen/qwen3-coder'},{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-4o'}]});
+  if(u==='https://api.groq.com/openai/v1/chat/completions'){const body=JSON.parse(init.body);assert.equal(body.messages[0].role,'system');assert.equal(init.headers.Authorization,'Bearer groq-key');
+   return Response.json({choices:[{message:{content:'Answer from Groq'},finish_reason:'stop'}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}})}
+  return new Response('{}',{status:404})};
+ try{
+  assert.deepEqual(await providerModels(env,'groq'),['moonshotai/kimi-k2-instruct','llama-3.3-70b-versatile']);
+  assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder:free']);
+  assert.deepEqual(await providerModels(env,'cerebras'),[]);
+  const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}]}),env);const d=await r.json();
+  assert.equal(r.status,200);assert.equal(d.reply,'Answer from Groq');assert.equal(d.model,'groq:moonshotai/kimi-k2-instruct');assert.equal(d.usage.total,12);
+  const events=(await(await usageStore(state,new Request('https://memory.internal/usage'))).json()).events;
+  assert.equal(events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('groq-key'),false);
+  const labels=async(prefs,media=false)=>(await fallbackRoutes(env,[MODELS[0]],prefs,media)).map(x=>x.label);
+  assert.deepEqual(await labels({},true),[MODELS[0]],'attachments stay on Gemini');
+  assert.deepEqual(await labels({disabledProviders:['groq']}),[MODELS[0],'openrouter:qwen/qwen3-coder:free']);
+  assert.deepEqual(await labels({fallback:false}),[MODELS[0]]);
+  assert.deepEqual(await labels({model:'openrouter:qwen/qwen3-coder:free',fallback:false}),['openrouter:qwen/qwen3-coder:free']);
+  assert.deepEqual(await labels({model:'groq:not-a-model'}),[]);
+ }finally{globalThis.fetch=original}
+});
+
+test('fallback providers stream through the same reply protocol, including Workers AI without finish reasons',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),work=[];
+ const sse=frames=>new ReadableStream({start(c){for(const f of frames)c.enqueue(new TextEncoder().encode('data: '+f+'\n\n'));c.close()}});
+ const ai={run:async(model,body)=>{assert.equal(body.stream,true);assert.equal(body.messages[0].role,'system');return sse([JSON.stringify({response:'Edge '}),JSON.stringify({response:'answer',usage:{prompt_tokens:5,completion_tokens:2,total_tokens:7}}),'[DONE]'])}};
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-stream',AI:ai,MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async url=>{const u=String(url);
+  if(u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes('streamGenerateContent'))return new Response('{}',{status:503});
+  return new Response('{}',{status:404})};
+ try{
+  const r=await worker.fetch(req('/chat',{stream:true,messages:[{role:'user',text:'hello'}]}),env,{waitUntil:p=>work.push(p)});
+  const packets=(await r.text()).trim().split('\n').map(JSON.parse);await Promise.all(work);
+  assert.equal(packets.at(-1).type,'done');assert.equal(packets.at(-1).reply,'Edge answer');assert.match(packets.at(-1).model,/^workers-ai:@cf\//);assert.equal(packets.at(-1).usage.total,7);
+ }finally{globalThis.fetch=original}
+});

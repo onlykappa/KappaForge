@@ -1,7 +1,7 @@
 import '../../preview/stream.js';
 
 // Never replay a request after any streamed output. One telemetry event per attempt.
-export function streamReply(response,{record,model,routing,abort,timeout,signal,context}){
+export function streamReply(response,{record,model,routing,abort,timeout,signal,context,normalize,implicitFinish}){
  const encoder=new TextEncoder();let cancelled=false,stop;
  const body=new ReadableStream({
   start(output){
@@ -11,7 +11,8 @@ export function streamReply(response,{record,model,routing,abort,timeout,signal,
    const work=(async()=>{
     let answer='',metadata={},finished=false,error='';
     try{
-     for await(const chunk of KappaStream.sse(response.body)){
+     for await(const raw of KappaStream.sse(response.body)){
+      const chunk=normalize?normalize(raw):raw;
       if(chunk.error)throw Error('Provider stream failed');
       if(chunk.usageMetadata)metadata.usageMetadata=chunk.usageMetadata;
       const candidate=chunk.candidates?.[0];
@@ -19,6 +20,8 @@ export function streamReply(response,{record,model,routing,abort,timeout,signal,
       if(text){answer+=text;if(answer.length>100000)throw Error('Response exceeded the output limit');emit({type:'delta',text});}
       if(candidate?.finishReason)finished=['STOP','MAX_TOKENS'].includes(candidate.finishReason);
      }
+     // Providers without finish reasons (Workers AI) count a clean end of stream as complete.
+     if(implicitFinish&&answer.trim())finished=true;
      if(!finished||!answer.trim())throw Error('Response ended before completion');
     }catch{error=abort.signal.aborted?'Response stopped or timed out.':'Response interrupted. Retry when the connection is available.';}
     finally{

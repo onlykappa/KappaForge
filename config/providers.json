@@ -1,0 +1,56 @@
+{
+  "note": "Free-tier LLM providers tried in order after Gemini. Each is used only when its key is configured; models are discovered live from the provider, never assumed. Limits change often; see README.",
+  "order": ["workers-ai", "groq", "cerebras", "openrouter", "mistral", "nvidia"],
+  "maxModelsPerProvider": 2,
+  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|vision|vl-|-vl|safety|prompt-guard",
+  "providers": {
+    "workers-ai": {
+      "name": "Cloudflare Workers AI",
+      "kind": "workers-ai",
+      "worker": true,
+      "agent": false,
+      "models": ["@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"]
+    },
+    "groq": {
+      "name": "Groq",
+      "kind": "openai",
+      "base": "https://api.groq.com/openai/v1",
+      "key": "GROQ_API_KEY",
+      "signup": "https://console.groq.com/keys",
+      "prefer": ["kimi-k2", "gpt-oss-120b", "llama-3.3-70b", "qwen"]
+    },
+    "cerebras": {
+      "name": "Cerebras",
+      "kind": "openai",
+      "base": "https://api.cerebras.ai/v1",
+      "key": "CEREBRAS_API_KEY",
+      "signup": "https://cloud.cerebras.ai",
+      "prefer": ["qwen-3-coder", "gpt-oss", "glm", "qwen", "llama"]
+    },
+    "openrouter": {
+      "name": "OpenRouter (free models)",
+      "kind": "openai",
+      "base": "https://openrouter.ai/api/v1",
+      "key": "OPENROUTER_API_KEY",
+      "signup": "https://openrouter.ai/settings/keys",
+      "freeOnly": true,
+      "prefer": ["qwen3-coder", "deepseek", "kimi", "gpt-oss", "llama-3.3", "nemotron"]
+    },
+    "mistral": {
+      "name": "Mistral",
+      "kind": "openai",
+      "base": "https://api.mistral.ai/v1",
+      "key": "MISTRAL_API_KEY",
+      "signup": "https://console.mistral.ai/api-keys",
+      "prefer": ["codestral-latest", "mistral-medium-latest", "mistral-small-latest"]
+    },
+    "nvidia": {
+      "name": "NVIDIA NIM",
+      "kind": "openai",
+      "base": "https://integrate.api.nvidia.com/v1",
+      "key": "NVIDIA_API_KEY",
+      "signup": "https://build.nvidia.com",
+      "prefer": ["qwen3-coder", "deepseek", "llama-3.3-70b", "nemotron"]
+    }
+  }
+}
