@@ -112,6 +112,33 @@ class DeveloperValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_changes({}, {}, many)
 
+    def test_big_changes_are_built_in_stages_on_top_of_each_other(self):
+        first = json.dumps({"explanation": "Adds casting.", "summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        second = json.dumps({"explanation": "Adds a test.", "summary": "Test", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return int(a) + int(b)", "replace": "return int(a) + int(b)  # checked"}]},
+            {"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", second)]) as ai:
+            model, summary, changes, explanation = developer.build_in_stages(
+                "key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast inputs", "Add a test"])
+        self.assertIn("STAGE 1 OF 2", ai.call_args_list[0][0][1])
+        self.assertIn("Later stages (do not do them yet): Add a test", ai.call_args_list[0][0][1])
+        self.assertIn("return int(a) + int(b)", ai.call_args_list[1][0][1], "stage 2 sees stage 1's change")
+        self.assertEqual(set(changes), {"app/main.py", "tests/test_main.py"})
+        self.assertIn("# checked", changes["app/main.py"])
+        self.assertTrue(explanation.startswith("Built in 2 stages."))
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 3), \
+                self.assertRaisesRegex(ValueError, "Stage 2 of 2"):
+            developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast", "Test"])
+
+    def test_planner_gives_stages_only_for_big_changes(self):
+        files = {"app/main.py": 60}
+        with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["Only one"]}))):
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], []))
+        with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["A", "B", "C"]}))) as ai:
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"]))
+        self.assertIn('"stages"', ai.call_args[0][1])
+
     def test_gives_up_after_three_invalid_answers(self):
         bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
         with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
