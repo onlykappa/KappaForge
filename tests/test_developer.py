@@ -225,8 +225,14 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertEqual(ref, {"ref": "refs/heads/kappa/dev-9", "sha": "c" * 40})
         self.assertNotIn("repos/onlykappa/KappaForge/git/refs/heads/main", paths)
         self.assertIn("repos/onlykappa/KappaForge/actions/workflows/sandbox-tests.yml/dispatches", paths)
-        comment = next(payload for p, payload in calls if p.endswith("/issues/9/comments"))
-        self.assertTrue(comment["body"].startswith("KappaForge generated a draft PR: "))
+        comments = [payload["body"] for p, payload in calls if p.endswith("/issues/9/comments")]
+        self.assertTrue(any(b.startswith("KappaForge generated a draft PR: ") for b in comments))
+        # The owner watches the work happen: one progress checklist, updated at each step.
+        progress = [b for b in comments if b.startswith(developer.Progress.HEADING)]
+        self.assertIn("⏳ Reading the onlykappa/KappaForge code", progress[0])
+        self.assertIn("✅ Read 1 files: `app/main.py`", progress[-1])
+        self.assertIn("✅ Opened draft PR", progress[-1])
+        self.assertNotIn("⏳", progress[-1])
         pr = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls")
         self.assertTrue(pr["draft"])
         self.assertIn("## What this does\nCast inputs", pr["body"])
@@ -308,6 +314,24 @@ class FlaggedChangeTests(unittest.TestCase):
         self.assertFalse(any(p.endswith(("/git/commits", "/git/refs", "/pulls")) or "/dispatches" in p for p in calls))
         self.assertIn("repos/onlykappa/KappaForge/issues/9/comments", calls)
         self.assertFalse(developer.flags_allowed("Allow flagged changes: no"))
+
+
+class ProgressTests(unittest.TestCase):
+    def test_progress_posts_once_then_edits_the_same_comment(self):
+        calls = []
+        def gh(path, token, payload=None, method=None):
+            calls.append((path, payload, method))
+            return {"id": 77}
+        with patch.object(developer, "gh", side_effect=gh):
+            p = developer.Progress(9, "t")
+            p.now("Reading")
+            p.now("Writing")
+            p.ok("Opened PR")
+        self.assertEqual(calls[0][0], "repos/onlykappa/KappaForge/issues/9/comments")
+        self.assertEqual([c[0] for c in calls[1:]], ["repos/onlykappa/KappaForge/issues/comments/77"] * 2)
+        self.assertEqual(calls[-1][1]["body"], developer.Progress.HEADING + "\n\n✅ Reading\n✅ Opened PR", "a result replaces the step it finishes")
+        with patch.object(developer, "gh", side_effect=urllib.error.URLError("down")):
+            developer.Progress(9, "t").now("never blocks the task")
 
 
 class OwnerRequestedFixTests(unittest.TestCase):

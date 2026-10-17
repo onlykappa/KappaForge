@@ -414,12 +414,50 @@ def commit_changes(repo, parent, changes, modes, message, token):
     return gh(f"repos/{repo}/git/commits", token, {"message": message, "tree": tree["sha"], "parents": [parent]})
 
 
-def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages):
+class Progress:
+    """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort."""
+    HEADING = "### KappaForge is working on it"
+
+    def __init__(self, number, token):
+        self.number, self.token, self.done, self.current, self.comment = number, token, [], "", None
+
+    def now(self, text):
+        """Start a step; the previous one is marked done."""
+        if self.current:
+            self.done.append(self.current)
+        self.current = text
+        self._write()
+
+    def ok(self, text):
+        """Record a finished step with its result, replacing the step in progress."""
+        self.done.append(text)
+        self.current = ""
+        self._write()
+
+    def _write(self):
+        body = self.HEADING + "\n\n" + "\n".join("✅ " + d for d in self.done) + ("\n⏳ " + self.current if self.current else "")
+        try:
+            if self.comment:
+                gh(f"repos/{ROOT}/issues/comments/{self.comment}", self.token, {"body": body}, method="PATCH")
+            else:
+                self.comment = gh(f"repos/{ROOT}/issues/{self.number}/comments", self.token, {"body": body}).get("id")
+        except (urllib.error.URLError, ValueError, AttributeError):
+            pass
+
+
+def short_list(paths, n=4):
+    shown = ", ".join("`" + p + "`" for p in list(paths)[:n])
+    return shown + (f" and {len(paths) - n} more" if len(paths) > n else "")
+
+
+def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress=None):
     """One change, or several stages built in order on top of each other and delivered as one commit."""
     if not stages:
         return generate(api_key, task, repo, sources, existing, guide, allowed)
     current, files, combined, summaries, explanations, model = dict(sources), dict(existing), {}, [], [], ""
     for i, stage in enumerate(stages, 1):
+        if progress:
+            progress.now(f"Step {i} of {len(stages)}: {stage[:160]}")
         step = (task + f"\n\nTHIS IS STAGE {i} OF {len(stages)}. Do only this stage now: {stage}\n"
                 + ("Earlier stages are already applied to the files below: " + "; ".join(stages[:i - 1]) + "\n" if i > 1 else "")
                 + "Later stages (do not do them yet): " + ("; ".join(stages[i:]) or "none"))
@@ -457,8 +495,12 @@ def produce_development_pr(issue, api_key, token):
         if exc.code != 404:
             raise
     task = (issue.get("title") or "") + "\n" + body
+    progress = Progress(number, token)
+    progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     guide = project_guide(repo, sha, existing, repo_token)
+    progress.ok(f"Read {repo}: {len(existing)} source files" + (" and its project instructions" if guide else ""))
+    progress.now("Choosing which files to read")
     # Source code only goes to fallback providers allowed for this repository's visibility.
     allowed = code_providers(is_private(repo, repo_token))
     sources = {}
@@ -468,7 +510,13 @@ def produce_development_pr(issue, api_key, token):
             sources[path] = read_source(repo, path, sha, repo_token)
         except (ValueError, UnicodeDecodeError):
             continue
-    model, summary, changes, explanation = build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages)
+    progress.ok(f"Read {len(sources)} files: {short_list(sources)}")
+    if stages:
+        progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)))
+    else:
+        progress.now("Writing the change")
+    model, summary, changes, explanation = build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress)
+    progress.ok(f"Wrote the change ({len(changes)} files: {short_list(changes)}) with {model}")
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
     if flags:
         stop_for_flags(repo, number, flags, token)
@@ -486,6 +534,7 @@ def produce_development_pr(issue, api_key, token):
                       f"test again, up to {MAX_FIXES} times, before asking you.")
     except urllib.error.HTTPError as exc:
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; tests are running. If they fail I fix them, up to {MAX_FIXES} times")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"
         f"**What this does:** {explanation or summary}\n\n"
@@ -629,6 +678,10 @@ def fix_pull_request(issue, api_key, token):
     if fixes >= MAX_FIXES + len(guidance):
         report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
         return None
+    progress = Progress(number, token)
+    steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
+    progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""))
+    progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""))
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance)
     flags = {}
     if repo != ROOT and not flags_allowed(issue.get("body")):
@@ -646,6 +699,7 @@ def fix_pull_request(issue, api_key, token):
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token)
+    progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

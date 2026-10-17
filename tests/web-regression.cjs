@@ -121,6 +121,9 @@ const apiServer=createServer(async(req,res)=>{
   return {chip:renderChatText(reply),pending:!!pendingJob,started:trackedJobs.some(j=>j.chatId==='act-chat'&&j.mode==='develop')}});
  assert.equal(acted.started,true,'task started from chat');assert.equal(acted.pending,false);
  assert.match(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);
+ // The agent's progress checklist is one chat message that updates in place.
+ const progressed=await page.evaluate(()=>{const job={number:77,chatId:'act-chat'};showProgress(job,5,'### KappaForge is working on it\n\n⏳ Reading the code');showProgress(job,5,'### KappaForge is working on it\n\n✅ Read 3 files\n⏳ Writing the change');const shown=chats.find(c=>c.id==='act-chat').messages.filter(m=>m.progressKey);return {count:shown.length,text:shown[0]?.text}});
+ assert.equal(progressed.count,1);assert.match(progressed.text,/Writing the change/);assert.doesNotMatch(progressed.text,/###/);
  console.log(name+': chat starts tasks itself passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});

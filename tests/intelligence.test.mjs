@@ -354,6 +354,7 @@ test('task tracking follows fixes and requests for help, and tasks start automat
  const bot={login:'github-actions[bot]'};
  assert.equal(globalThis.KappaJobs.report({id:1,user:bot,body:'### KappaForge fix ready\n\nx'}).status,'partial');
  assert.equal(globalThis.KappaJobs.report({id:2,user:bot,body:'### KappaForge needs your help\n\nx'}).status,'partial');
+ assert.equal(globalThis.KappaJobs.report({id:3,user:bot,body:'### KappaForge is working on it\n\n⏳ Reading'}).status,'progress');
  assert.equal(C.settings({}).autoStart,true);assert.equal(C.settings({autoStart:false}).autoStart,false);assert.equal(C.settings({autoStart:'no'}).autoStart,true);
 });
 
