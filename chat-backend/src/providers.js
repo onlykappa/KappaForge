@@ -101,7 +101,9 @@ const finish=reason=>reason?(reason==="length"?"MAX_TOKENS":"STOP"):undefined;
 export function normalizeResult(route,data){
  const p=registry.providers[route.provider];
  if(p.kind==="workers-ai"){
-  const text=typeof data?.response==="string"?data.response:data?.response!=null?JSON.stringify(data.response):"";
+  // Newer Workers AI models (GLM, gpt-oss) answer in OpenAI chat format rather than {response}.
+  const openai=data?.choices?.[0]?.message?.content;
+  const text=typeof data?.response==="string"?data.response:data?.response!=null?JSON.stringify(data.response):typeof openai==="string"?openai:"";
   return {candidates:[{content:{parts:[{text}]},finishReason:"STOP"}],usageMetadata:usage(data?.usage)};
  }
  const choice=data?.choices?.[0];
@@ -111,7 +113,7 @@ export function normalizeResult(route,data){
 // Streaming chunk -> Gemini-shaped chunk. Workers AI sends no finish reason; streamReply treats a clean end as finished.
 export function chunkNormalizer(route){
  const p=registry.providers[route.provider];
- if(p.kind==="workers-ai")return raw=>({candidates:[{content:{parts:[{text:typeof raw?.response==="string"?raw.response:""}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});
+ if(p.kind==="workers-ai")return raw=>({candidates:[{content:{parts:[{text:typeof raw?.response==="string"?raw.response:raw?.choices?.[0]?.delta?.content||""}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});
  return raw=>{
   const choice=raw?.choices?.[0];
   return {candidates:choice?[{content:{parts:[{text:choice.delta?.content||""}]},finishReason:finish(choice.finish_reason)}]:[],usageMetadata:usage(raw?.usage),error:raw?.error};
