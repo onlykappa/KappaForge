@@ -143,3 +143,19 @@ test('review card explains the change, and merge requires passing tests on the e
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head,confirmed:true}),env)).status,403,'human PRs are never merged here');
  }finally{globalThis.fetch=original}
 });
+
+test('agent development PRs can be closed in any owner repository, human PRs never',async()=>{
+ const original=globalThis.fetch,calls=[];let ref='kappa/dev-4';
+ globalThis.fetch=async(url,init={})=>{const u=String(url);calls.push({u,method:init.method||'GET'});
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}},{name:'OmniPC',owner:{login:'onlykappa'}}]);
+  if(u.endsWith('/OmniPC/pulls/7')&&!init.method)return Response.json({state:'open',html_url:'x',head:{ref,repo:{full_name:'onlykappa/OmniPC'}},base:{repo:{full_name:'onlykappa/OmniPC'}}});
+  return new Response('{}',{status:200})};
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-close'};
+ try{
+  assert.equal((await worker.fetch(req('/decisions',{repo:'OmniPC',prNumber:7,decision:'close',confirmed:true}),env)).status,200);
+  assert.ok(calls.some(c=>c.u.endsWith('/OmniPC/pulls/7')&&c.method==='PATCH'));
+  ref='feature/mine';calls.length=0;
+  assert.equal((await worker.fetch(req('/decisions',{repo:'OmniPC',prNumber:7,decision:'close',confirmed:true}),env)).status,403);
+  assert.equal(calls.some(c=>c.method==='PATCH'),false);
+ }finally{globalThis.fetch=original}
+});

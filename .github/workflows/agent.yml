@@ -85,6 +85,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: write
   code:
     runs-on: ubuntu-latest
     timeout-minutes: 12

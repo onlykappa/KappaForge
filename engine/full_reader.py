@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 
 MARKER = "<!-- KAPPA_AUDIT_STATE:"
-MAX_FILES = 12
+MAX_FILES = 20
 MAX_BYTES = 8000
 MAX_BATCHES = 100
 EXTENSIONS = (".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".yml", ".yaml",

@@ -51,6 +51,19 @@ class DeveloperValidationTests(unittest.TestCase):
             with self.subTest(proposal=str(proposal)[:60]), self.assertRaises(ValueError):
                 apply_changes(SOURCES, EXISTING, proposal)
 
+    def test_large_files_are_excerpted_but_edited_in_full(self):
+        big = "\n".join(f"line {i} filler text " + "x" * 90 for i in range(1500)) + "\nfunction refreshButton(){}\n" + "tail\n" * 50
+        sources = {"app/big.js": big}
+        shown = developer.excerpt(big, "Add a tooltip to refreshButton")
+        self.assertLess(len(shown), developer.MAX_FILE_CHARS + 1)
+        self.assertIn("function refreshButton(){}", shown)
+        self.assertIn("omitted", shown)
+        changes = apply_changes(sources, {"app/big.js": len(big)}, {"files": [{"path": "app/big.js", "edits": [
+            {"find": "function refreshButton(){}", "replace": "function refreshButton(){/* tooltip */}"}]}]})
+        self.assertEqual(len(changes["app/big.js"]), len(big) + len("/* tooltip */"))
+        with self.assertRaisesRegex(ValueError, "use edits|with edits"):
+            apply_changes(sources, {"app/big.js": len(big)}, {"files": [{"path": "app/big.js", "content": "truncated"}]})
+
     def test_syntax_checks_parse_without_executing(self):
         self.assertIsNone(syntax_error("a.py", "x = 1\n"))
         self.assertIsNotNone(syntax_error("a.py", "def broken(:\n"))

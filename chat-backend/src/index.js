@@ -4,7 +4,7 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
-import {reviewPR,mergePR,requestFix} from "./review.js";
+import {reviewPR,mergePR,requestFix,closePR} from "./review.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -166,7 +166,7 @@ export default {
       if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
-    if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
+    if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix", "close"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const number = Number(input.prNumber), repo = typeof input.repo === "string" ? input.repo : "KappaForge";
       const action = new URL(request.url).pathname === "/review" ? "review" : input.decision;
@@ -174,7 +174,8 @@ export default {
         return json({ error: "Choose a pull request and confirm the action." }, 400, cors);
       try {
         const result = action === "review" ? await reviewPR(env, repo, number) :
-          action === "merge" ? await mergePR(env, repo, number, input.headSha) : await requestFix(env, repo, number);
+          action === "merge" ? await mergePR(env, repo, number, input.headSha) :
+          action === "close" ? await closePR(env, repo, number) : await requestFix(env, repo, number);
         return json(result, result.error ? result.status : action === "fix" ? 202 : 200, cors);
       } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
     }
