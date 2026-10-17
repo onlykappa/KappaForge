@@ -204,3 +204,24 @@ test('fallback providers stream through the same reply protocol, including Worke
   assert.equal(packets.at(-1).type,'done');assert.equal(packets.at(-1).reply,'Edge answer');assert.match(packets.at(-1).model,/^workers-ai:@cf\//);assert.equal(packets.at(-1).usage.total,7);
  }finally{globalThis.fetch=original}
 });
+
+test('keyless providers answer anonymously, fixed free lists skip discovery, and the summary links key signup',async()=>{
+ const {providerModels,providerSummary,callProvider}=await import('../chat-backend/src/providers.js');
+ const original=globalThis.fetch,seen=[];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push([u,init.headers?.Authorization]);
+  if(u==='https://api.kilo.ai/api/gateway/models')return Response.json({data:[{id:'paid/model'},{id:'kilo-auto/free'},{id:'poolside/laguna-s-2.1:free'}]});
+  if(u==='https://api.kilo.ai/api/gateway/chat/completions')return Response.json({choices:[{message:{content:'ok'}}]});
+  return new Response('{}',{status:404})};
+ try{
+  assert.deepEqual(await providerModels({},'kilo'),['kilo-auto/free','poolside/laguna-s-2.1:free']);
+  assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
+  assert.deepEqual(await providerModels({ZAI_API_KEY:'z'},'zai'),['glm-4.7-flash']);
+  assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'fixed free list is never rediscovered');
+  await callProvider({},{provider:'kilo',model:'kilo-auto/free'},{system:'',messages:[],maxTokens:10,temperature:0},false);
+  assert.equal(seen.every(([,auth])=>auth===undefined),true,'no credentials sent to keyless providers');
+  const summary=Object.fromEntries((await providerSummary({LLM7_API_KEY:'l'})).map(p=>[p.id,p]));
+  assert.equal(summary.ovh.configured,true);assert.equal(summary.ovh.keyless,true);
+  assert.equal(summary.ollama.configured,false);assert.equal(summary.ollama.signup,'https://ollama.com/settings/keys');
+  assert.equal(summary.llm7.hasKey,true);assert.equal(JSON.stringify(summary).includes('"l"'),false,'keys never leave the Worker');
+ }finally{globalThis.fetch=original}
+});

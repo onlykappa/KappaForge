@@ -1,6 +1,6 @@
 {
-  "note": "Free-tier LLM providers tried in order after Gemini. Each is used only when its key is configured; models are discovered live from the provider, never assumed. Limits change often; see README.",
-  "order": ["workers-ai", "groq", "cerebras", "openrouter", "mistral", "nvidia"],
+  "note": "Free-tier LLM providers tried in order after Gemini. Keyed providers are used only when their key is configured; ones without a key (or with keyOptional) also work anonymously. Models are discovered live unless a fixed free list is given. Source list: https://github.com/mnfst/awesome-free-llm-apis. Limits change often; see README.",
+  "order": ["workers-ai", "groq", "cerebras", "openrouter", "mistral", "nvidia", "ollama", "zai", "kilo", "llm7", "ovh"],
   "maxModelsPerProvider": 2,
   "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|vision|vl-|-vl|safety|prompt-guard",
   "providers": {
@@ -51,6 +51,44 @@
       "key": "NVIDIA_API_KEY",
       "signup": "https://build.nvidia.com",
       "prefer": ["qwen3-coder", "deepseek", "llama-3.3-70b", "nemotron"]
+    },
+    "ollama": {
+      "name": "Ollama Cloud",
+      "kind": "openai",
+      "base": "https://ollama.com/v1",
+      "key": "OLLAMA_API_KEY",
+      "signup": "https://ollama.com/settings/keys",
+      "prefer": ["deepseek-v4-pro", "kimi-k3", "qwen3.5", "deepseek-v4-flash", "gpt-oss:120b"]
+    },
+    "zai": {
+      "name": "Z AI (GLM Flash)",
+      "kind": "openai",
+      "base": "https://api.z.ai/api/paas/v4",
+      "key": "ZAI_API_KEY",
+      "signup": "https://z.ai/manage-apikey/apikey-list",
+      "models": ["glm-4.7-flash"]
+    },
+    "kilo": {
+      "name": "Kilo Code free pool (no key)",
+      "kind": "openai",
+      "base": "https://api.kilo.ai/api/gateway",
+      "freeOnly": true,
+      "prefer": ["kilo-auto/free", "nemotron-3-ultra", "qwen3.8", "laguna-s"]
+    },
+    "llm7": {
+      "name": "LLM7.io (key optional)",
+      "kind": "openai",
+      "base": "https://api.llm7.io/v1",
+      "key": "LLM7_API_KEY",
+      "keyOptional": true,
+      "signup": "https://token.llm7.io",
+      "prefer": ["deepseek-v4", "gpt-oss", "minimax"]
+    },
+    "ovh": {
+      "name": "OVHcloud AI Endpoints (no key, EU)",
+      "kind": "openai",
+      "base": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+      "prefer": ["qwen3.5-397b", "gpt-oss-120b", "qwen3.8"]
     }
   }
 }

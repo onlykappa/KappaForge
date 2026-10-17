@@ -4,25 +4,32 @@ import registry from "../../config/providers.json" with {type: "json"};
 // tracking stay provider-neutral.
 export const REGISTRY=registry;
 const EXCLUDE=new RegExp(registry.exclude,"i");
+// Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
+const FREE=/[:/]free$/;
 const cache=new Map();
+
+// Providers without a key field, or with keyOptional, also answer anonymously; a key only raises their limits.
+const keyless=p=>!p.key||!!p.keyOptional;
+const authHeaders=(env,p)=>p.key&&env[p.key]?{Authorization:"Bearer "+env[p.key]}:{};
 
 export function configured(env,id){
  const p=registry.providers[id];
- return !!p&&(p.kind==="workers-ai"?!!env.AI:!!env[p.key]);
+ return !!p&&(p.kind==="workers-ai"?!!env.AI:keyless(p)||!!env[p.key]);
 }
 
 // Live model list per provider, cached ten minutes per key. Preferred families first, then anything chat-capable.
+// A fixed "models" list skips discovery, for providers whose key also reaches paid models.
 export async function providerModels(env,id){
  const p=registry.providers[id];
  if(!configured(env,id))return [];
- if(p.kind==="workers-ai")return p.models;
- const key=id+":"+env[p.key],hit=cache.get(key);
+ if(p.models)return p.models;
+ const key=id+":"+(p.key?env[p.key]||"":""),hit=cache.get(key);
  if(hit&&Date.now()-hit.at<600000)return hit.models;
  try{
-  const r=await fetch(p.base+"/models",{headers:{Authorization:"Bearer "+env[p.key]},signal:AbortSignal.timeout(8000)});
+  const r=await fetch(p.base+"/models",{headers:authHeaders(env,p),signal:AbortSignal.timeout(8000)});
   if(!r.ok)throw Error("HTTP "+r.status);
   let ids=((await r.json()).data||[]).map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
-  if(p.freeOnly)ids=ids.filter(m=>m.endsWith(":free"));
+  if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
@@ -31,7 +38,10 @@ export async function providerModels(env,id){
 }
 
 export async function providerSummary(env){
- return Promise.all(registry.order.map(async id=>({id,name:registry.providers[id].name,configured:configured(env,id),models:await providerModels(env,id)})));
+ return Promise.all(registry.order.map(async id=>{
+  const p=registry.providers[id];
+  return {id,name:p.name,configured:configured(env,id),keyless:p.kind==="workers-ai"||keyless(p),hasKey:!!(p.key&&env[p.key]),signup:p.signup||null,models:await providerModels(env,id)};
+ }));
 }
 
 // Gemini routes first (already ordered by preference), then every enabled provider in registry order.
@@ -79,7 +89,7 @@ export async function callProvider(env,route,chat,streaming,signal){
   }
  }
  return fetch(p.base+"/chat/completions",{method:"POST",signal,
-  headers:{Authorization:"Bearer "+env[p.key],"Content-Type":"application/json"},
+  headers:{...authHeaders(env,p),"Content-Type":"application/json"},
   body:JSON.stringify({model:route.model,messages,max_tokens:chat.maxTokens,temperature:chat.temperature,stream:streaming,
    ...(streaming?{stream_options:{include_usage:true}}:{})})});
 }

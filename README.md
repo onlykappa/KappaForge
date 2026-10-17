@@ -104,9 +104,9 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 
 ### Free fallback AI providers
 
-Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`: Cloudflare Workers AI (built in, no key), then Groq, Cerebras, OpenRouter free models, Mistral and NVIDIA NIM, each only when its key is configured. Models are discovered live from each provider; nothing is assumed from published lists, which change often. File and image attachments always use Gemini.
+Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`, in this order: Cloudflare Workers AI (built in, no key), Groq, Cerebras, OpenRouter free models, Mistral, NVIDIA NIM, Ollama Cloud and Z AI, each only when its key is configured; then the keyless safety net of Kilo Code's free pool, LLM7.io and OVHcloud AI Endpoints, which need no key at all. Models are discovered live from each provider; nothing is assumed from published lists, which change often. Z AI is pinned to its free `glm-4.7-flash` because the same key also reaches paid models. File and image attachments always use Gemini. The provider list follows [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis).
 
-To add a provider, create a key at its site and save it under the same name in **both** places: the Cloudflare Worker (Settings → Variables and Secrets, type Secret) for chat, and GitHub Actions secrets for the coding agent.
+To add a provider, create a key at its site and save it under the same name in **both** places: the Cloudflare Worker (Settings → Variables and Secrets, type Secret) for chat, and GitHub Actions secrets for the coding agent. These free-tier keys do not expire unless you revoke them, so each one is set once. Never put a key in a link, issue or chat: anyone holding it can spend your quota.
 
 | Provider | Key name | Get a key |
 |---|---|---|
@@ -115,8 +115,12 @@ To add a provider, create a key at its site and save it under the same name in *
 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/settings/keys |
 | Mistral | `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
 | NVIDIA NIM | `NVIDIA_API_KEY` | https://build.nvidia.com |
+| Ollama Cloud | `OLLAMA_API_KEY` | https://ollama.com/settings/keys |
+| Z AI | `ZAI_API_KEY` | https://z.ai/manage-apikey/apikey-list |
+| LLM7.io (optional, raises limits) | `LLM7_API_KEY` | https://token.llm7.io |
+| Kilo Code, OVHcloud | none | works without a key |
 
-**Settings → Models** shows which providers are configured and their models, lets you pick a specific `provider:model`, and has a per-device switch to stop prompts going to any provider. Some free tiers may use prompts to improve their models; switch those off for private code.
+**Settings → Models** shows which providers are configured and their models, links to each missing key's signup page, lets you pick a specific `provider:model`, and has a per-device switch to stop prompts going to any provider. Some free tiers log prompts or use them to improve their models (Kilo's free pool may route to such providers, and its NVIDIA models are logged); switch those off for private code. The coding agent in GitHub Actions does not read that per-device switch, so it will use the keyless providers when every keyed route is exhausted.
 
 **Reviewing and merging from the app.** Each development PR appears under **Code reviews & approvals** on the Dashboard. **Review & merge** shows the agent's plain-English *What this does* summary (also posted in your chat), the changed files and the test result for the PR's latest commit:
 
