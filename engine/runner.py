@@ -130,19 +130,26 @@ def select_models(available):
     """Use a small explicit allowlist so discovery cannot route to billable Pro models."""
     return [name for name in PREFERRED_MODELS if name in available]
 
+def provider_headers(p):
+    """Bearer auth when a key is set; providers without a key field (or keyOptional) also answer anonymously."""
+    key = os.getenv(p["key"], "") if p.get("key") else ""
+    return {"User-Agent": "KappaForge", **({"Authorization": "Bearer " + key} if key else {})}
+
 def provider_models(pid):
-    """Live chat models for a free fallback provider whose key is configured, preferred families first."""
+    """Chat models for a usable free fallback provider: its fixed free list, else live discovery, preferred families first."""
     p = PROVIDERS["providers"][pid]
-    key = os.getenv(p.get("key", ""), "")
-    if p.get("kind") != "openai" or not key or p.get("agent") is False:
+    keyed = bool(p.get("key")) and not p.get("keyOptional")
+    if p.get("kind") != "openai" or p.get("agent") is False or (keyed and not os.getenv(p["key"], "")):
         return []
-    req = urllib.request.Request(p["base"] + "/models", headers={"Authorization": "Bearer " + key})
+    if p.get("models"):
+        return p["models"][:PROVIDERS["maxModelsPerProvider"]]
+    req = urllib.request.Request(p["base"] + "/models", headers=provider_headers(p))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
             ids = [m.get("id") for m in json.load(response).get("data", []) if isinstance(m.get("id"), str)]
     except (urllib.error.URLError, TimeoutError, ValueError):
         return []
-    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or m.endswith(":free"))]
+    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or re.search(r"[:/]free$", m))]
     def rank(m):
         found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
         return (found[0] if found else 99, m)
@@ -156,7 +163,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors):
             payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
                        "max_tokens": max_output_tokens, "temperature": 0.2}
             req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
-                                         {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ[p["key"]]})
+                                         {"Content-Type": "application/json", **provider_headers(p)})
             try:
                 with urllib.request.urlopen(req, timeout=180) as response:
                     data = json.load(response)

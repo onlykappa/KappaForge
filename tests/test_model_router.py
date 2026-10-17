@@ -6,6 +6,16 @@ import urllib.error
 from unittest.mock import patch, MagicMock
 from engine import runner
 
+KEYS = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
+        "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY")
+
+def response(data):
+    result = MagicMock()
+    result.__enter__.return_value = result
+    result.__exit__.return_value = False
+    result.read.return_value = json.dumps(data).encode()
+    return result
+
 class ModelRoutingTests(unittest.TestCase):
     def test_approved_models_only(self):
         available = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash", "other"}
@@ -51,7 +61,7 @@ class ModelRoutingTests(unittest.TestCase):
             if url == "https://api.groq.com/openai/v1/chat/completions":
                 return response({"choices": [{"message": {"content": "fallback answer"}}]})
             raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
-        keys = {k: "" for k in ("CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY")}
+        keys = {k: "" for k in KEYS if k != "GROQ_API_KEY"}
         with patch.dict(os.environ, {"GROQ_API_KEY": "groq-key", **keys}), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), patch("engine.runner.time.sleep"):
             model, output = runner.run_model("gemini-key", "Write code")
@@ -59,10 +69,35 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertIn(("https://api.groq.com/openai/v1/chat/completions", "Bearer groq-key"), requests)
 
     def test_without_provider_keys_gemini_errors_are_reported(self):
-        empty = {k: "" for k in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY")}
-        with patch.dict(os.environ, empty), patch.object(runner, "discover_models", return_value=set()):
+        empty = {k: "" for k in KEYS}
+        offline = urllib.error.URLError("offline")
+        with patch.dict(os.environ, empty), patch.object(runner, "discover_models", return_value=set()), \
+                patch("engine.runner.urllib.request.urlopen", side_effect=offline):
             with self.assertRaisesRegex(RuntimeError, "No approved Flash model"):
                 runner.run_model("gemini-key", "x")
+
+    def test_keyless_providers_answer_without_credentials(self):
+        requests = []
+        def urlopen(req, timeout=None):
+            url = req.full_url
+            requests.append((url, req.get_header("Authorization")))
+            if url == "https://api.kilo.ai/api/gateway/models":
+                return response({"data": [{"id": "paid/model"}, {"id": "kilo-auto/free"}, {"id": "poolside/laguna-s-2.1:free"}]})
+            if url == "https://api.kilo.ai/api/gateway/chat/completions":
+                return response({"choices": [{"message": {"content": "free pool answer"}}]})
+            raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
+        with patch.dict(os.environ, {k: "" for k in KEYS}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            self.assertEqual(runner.provider_models("kilo"), ["kilo-auto/free", "poolside/laguna-s-2.1:free"])
+            self.assertEqual(runner.provider_models("zai"), [], "keyed providers stay off without a key")
+            self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:kilo-auto/free", "free pool answer"))
+        self.assertTrue(all(auth is None for _, auth in requests))
+
+    def test_fixed_free_list_and_optional_keys(self):
+        with patch.dict(os.environ, {"ZAI_API_KEY": "zai-key", "LLM7_API_KEY": "llm7-key"}), \
+                patch("engine.runner.urllib.request.urlopen") as urlopen:
+            self.assertEqual(runner.provider_models("zai"), ["glm-4.7-flash"])
+            urlopen.assert_not_called()
+            self.assertEqual(runner.provider_headers(runner.PROVIDERS["providers"]["llm7"])["Authorization"], "Bearer llm7-key")
 
 if __name__ == "__main__":
     unittest.main()
