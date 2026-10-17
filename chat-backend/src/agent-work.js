@@ -15,10 +15,15 @@ export async function agentWork(env){
   get(env,ROOT+"/actions/workflows/project-tests.yml/runs?per_page=30").catch(()=>({workflow_runs:[]}))]);
  const runs=[...(sandbox.workflow_runs||[]),...(project.workflow_runs||[])];
  const testsFor=branch=>{const run=runs.find(r=>new RegExp(" "+branch.replace(/[.*+?^${}()|[\]\\/]/g,"\\$&")+" @ ").test(r.display_title||""));return run?(run.status==="completed"?run.conclusion:"running"):"not run"};
- const tasks=await Promise.all(issues.filter(i=>!i.pull_request).slice(0,4).map(async i=>{
-  const comments=i.comments?await get(env,ROOT+"/issues/"+i.number+"/comments?per_page=100").catch(()=>[]):[];
-  const last=[...comments].reverse().find(c=>/github-actions|onlykappa/i.test(c.user?.login||""));
-  return "- Task #"+i.number+" \""+short(i.title,80)+"\""+(last?": latest update: "+short(last.body,240):": no updates yet");
+ const tasks=await Promise.all(issues.filter(i=>!i.pull_request).slice(0,6).map(async i=>{
+  try {
+    const comments=i.comments?await get(env,ROOT+"/issues/"+i.number+"/comments?per_page=100").catch(()=>[]):[];
+    if (!Array.isArray(comments)) return "- Task #"+i.number+" (status update failed)";
+    const last=[...comments].reverse().find(c=>/github-actions|onlykappa/i.test(c.user?.login||"") && !/\b(Guidance|KAPPA_FIX|KAPPA_STUCK):/i.test(c.body));
+    return "- Task #"+i.number+" \""+short(i.title,80)+"\""+(last?": latest update: "+short(last.body,240):": no updates yet");
+  } catch (e) {
+    return "- Task #"+i.number+" \""+short(i.title,80)+"\" (status update failed)";
+  }
  }));
  const agentPrs=prs.filter(p=>/^kappa\//.test(p.head?.ref||"")).slice(0,6).map(p=>"- PR #"+p.number+" \""+short(p.title,80)+"\" ("+p.head.ref+", "+(p.draft?"draft":"ready")+"): tests "+testsFor(p.head.ref));
  return "LIVE AGENT WORK in onlykappa/KappaForge (fetched now from GitHub; other repositories' PRs are not listed):\n"+
