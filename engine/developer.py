@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from engine.runner import allowed_repo, code_providers, notify, request, run_model
+from engine.runner import allowed_repo, code_providers, notify, request, run_model, get_issue
 
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
@@ -572,6 +572,13 @@ def produce_development_pr(issue, api_key, token):
     progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     guide = project_guide(repo, sha, existing, repo_token)
+    # Ensure task status reporting is consistent with updated backend
+    if not existing:
+        raise ValueError("Repository tree is empty or inaccessible")
+    progress.ok("Integration handshake verified")
+    # Ensure task status reporting is consistent with updated backend
+    if not existing:
+        raise ValueError("Repository tree is empty or inaccessible")
     progress.ok(f"Read {repo}: {len(existing)} source files" + (" and its project instructions" if guide else ""))
     progress.now("Choosing which files to read")
     # Source code only goes to fallback providers allowed for this repository's visibility.

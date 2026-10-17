@@ -268,6 +268,10 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             produce_development_pr(self.issue(), "key", "token")
         self.assertIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
 
+    def test_integration_handshake_validation(self):
+        with self.assertRaises(ValueError):
+            developer.produce_development_pr({"number": 9, "body": "Repository: onlykappa/KappaForge\nMode: develop"}, "key", "token")
+
     def test_commits_one_atomic_change_and_reports_back(self):
         calls = []
         def fake_gh(path, token, payload=None, method=None):

@@ -328,14 +328,15 @@ def main():
     if not issue:
         print("No authorized unprocessed task found.")
         return
+    # Validate task scope before proceeding
+    from engine.task_scope import mode_of, require_scope
+    require_scope(mode_of(issue), os.environ.get("KAPPA_TASK_SCOPE", "read"))
     if not os.getenv("GEMINI_API_KEY"):
         if os.getenv("INPUT_ISSUE_NUMBER", "").strip():
             report_failure(issue["number"], token, "GEMINI_API_KEY is missing from the repository's Actions secrets",
                            "add it under GitHub → Settings → Secrets and variables → Actions, then retry the task")
         print("GEMINI_API_KEY missing; task left queued.")
         return
-    from engine.task_scope import mode_of, require_scope
-    require_scope(mode_of(issue), os.environ.get("KAPPA_TASK_SCOPE", "read"))
     body_text = issue.get("body") or ""
     if re.search(r"^Mode:\s*repair\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
@@ -350,6 +351,9 @@ def main():
             print("Development mode requires explicit manual workflow dispatch; task remains queued.")
             return
         from engine.developer import Progress, fix_pull_request, produce_development_pr
+        # Validate task scope before proceeding
+        from engine.task_scope import mode_of, require_scope
+        require_scope(mode_of(issue), os.environ.get("KAPPA_TASK_SCOPE", "read"))
         fixing = os.getenv("INPUT_ACTION", "").strip() == "fix"
         try:
             if fixing:
