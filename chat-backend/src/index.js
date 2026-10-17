@@ -123,7 +123,7 @@ export default {
     }
     if(new URL(request.url).pathname==="/repos")return json({owner:"onlykappa",repos:await listRepos(env)},200,cors);
     if(new URL(request.url).pathname==="/github"){
-      if(!env.GITHUB_JOB_TOKEN)return json({error:"GitHub token not configured"},503,cors);
+      if(!env?.GITHUB_JOB_TOKEN)return json({error:"GitHub token not configured"},503,cors);
       const body=await request.json().catch(()=>({}));
       try{const r=await githubRead(env,body.path);return new Response(r.body,{status:r.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...r.headers,...cors}})}
       catch{return json({error:"GitHub request timed out or failed."},502,cors)}
@@ -187,11 +187,11 @@ export default {
     }
     const length = Number(request.headers.get("Content-Length") || 0);
     if (length > 4500000) return json({ error: "Request too large" }, 413, cors);
-    let input;
+    let input = {};
     try {
       const raw = await request.text();
       if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
-      input = JSON.parse(raw);
+      if (raw.trim()) input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
     if (new URL(request.url).pathname === "/guidance") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
