@@ -108,3 +108,38 @@ test('every owner repository is in scope, including new ones, and names in chat 
   for(const bad of ['..','a/b','../x','',null])assert.equal(isRepoName(bad),false);
  }finally{globalThis.fetch=original}
 });
+
+test('review card explains the change, and merge requires passing tests on the exact reviewed commit',async()=>{
+ const original=globalThis.fetch,calls=[],head='c'.repeat(40);let conclusion='success';
+ const pr={state:'open',draft:true,node_id:'PR_1',title:'Draft: Add tooltip',html_url:'https://github.com/onlykappa/KappaForge/pull/50',mergeable:true,
+  body:'Owner-approved.\n\n## What this does\nAdds a tooltip to refresh.\n\n## Technical summary\nx',
+  head:{ref:'kappa/dev-9',sha:head,repo:{full_name:'onlykappa/KappaForge'}},base:{repo:{full_name:'onlykappa/KappaForge'}}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);calls.push({u,method:init.method||'GET',body:init.body});
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  if(u.endsWith('/pulls/50'))return Response.json(pr);
+  if(u.includes('/pulls/50/files'))return Response.json([{filename:'preview/ui.js',status:'modified',additions:3,deletions:1}]);
+  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-9 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion,html_url:'https://github.com/run/1'}]});
+  if(u.endsWith('/graphql'))return Response.json({data:{markPullRequestReadyForReview:{pullRequest:{isDraft:false}}}});
+  if(u.endsWith('/pulls/50/merge'))return Response.json({merged:true});
+  if(u.includes('/git/refs/heads/'))return new Response(null,{status:204});
+  if(u.includes('agent.yml/dispatches'))return new Response(null,{status:204});
+  return new Response('{}',{status:404})};
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh'};
+ try{
+  const review=await(await worker.fetch(req('/review',{repo:'KappaForge',prNumber:50}),env)).json();
+  assert.equal(review.explanation.what,'Adds a tooltip to refresh.');assert.equal(review.tests.state,'passed');assert.equal(review.canMerge,true);assert.equal(review.canFix,false);assert.equal(review.files[0].name,'preview/ui.js');
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head}),env)).status,400,'needs confirmation');
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:'d'.repeat(40),confirmed:true}),env)).status,409,'stale review');
+  conclusion='failure';
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head,confirmed:true}),env)).status,409,'failed tests');
+  assert.equal(calls.some(c=>c.u.endsWith('/merge')),false);
+  const fix=await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'fix',confirmed:true}),env);
+  assert.equal(fix.status,202);assert.deepEqual(JSON.parse(calls.find(c=>c.u.includes('agent.yml/dispatches')).body).inputs,{issue_number:'9',action:'fix'});
+  conclusion='success';
+  const merged=await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head,confirmed:true}),env);
+  assert.equal(merged.status,200);assert.ok(calls.findIndex(c=>c.u.endsWith('/graphql'))<calls.findIndex(c=>c.u.endsWith('/merge')));
+  assert.equal(JSON.parse(calls.find(c=>c.u.endsWith('/merge')).body).sha,head);
+  pr.head.ref='feature/human-branch';
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head,confirmed:true}),env)).status,403,'human PRs are never merged here');
+ }finally{globalThis.fetch=original}
+});

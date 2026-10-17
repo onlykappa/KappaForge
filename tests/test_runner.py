@@ -1,5 +1,7 @@
 import unittest
-from engine.runner import TARGET_RE, allowed_repo
+import os
+from unittest.mock import patch
+from engine.runner import TARGET_RE, allowed_repo, read_token
 
 class TestTaskSafety(unittest.TestCase):
     def test_target_syntax(self):
@@ -11,6 +13,12 @@ class TestTaskSafety(unittest.TestCase):
             self.assertTrue(allowed_repo(repo), repo)
         for repo in ["someone/KappaForge", "onlykappa/..", "onlykappa/a/b", "onlykappa/", "onlykappa/a b", None]:
             self.assertFalse(allowed_repo(repo), repo)
+    def test_private_repositories_read_with_the_owner_token(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "actions", "KAPPA_CODER_TOKEN": "owner"}):
+            self.assertEqual(read_token("onlykappa/KappaForge"), "actions")
+            self.assertEqual(read_token("onlykappa/OmniPC"), "owner")
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "actions", "KAPPA_CODER_TOKEN": ""}):
+            self.assertEqual(read_token("onlykappa/OmniPC"), "actions")
 
 if __name__ == "__main__":
     unittest.main()

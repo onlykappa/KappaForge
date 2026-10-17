@@ -102,6 +102,13 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 3. Rejects edits that don't match exactly once, overwrite files it never read, or touch protected paths (`.github/`, the agent's own guardrail files, `wrangler.toml`, lockfiles, `.env` files). Python, JSON and JavaScript are syntax-checked (parsed only, never run); invalid output is retried up to three times with the rejection reason.
 4. Commits everything as one commit on a fresh `kappa/dev-N` branch and opens a **draft PR**. The default branch is never written. KappaForge PRs get the sandbox tests dispatched automatically.
 
+**Reviewing and merging from the app.** Each development PR appears under **Code reviews & approvals** on the Dashboard. **Review & merge** shows the agent's plain-English *What this does* summary (also posted in your chat), the changed files and the test result for the PR's latest commit:
+
+- **Merge** appears only when the tests passed on that exact commit. The Worker re-checks this, refuses if the PR changed since you opened the card, and only merges `kappa/dev-N` agent branches. KappaForge merges redeploy the app and Worker.
+- **Fix it** appears when KappaForge's sandbox tests failed. The agent reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests (at most three fixes per PR). Nothing merges until you tap Merge.
+
+The Worker's `GITHUB_JOB_TOKEN` needs **Contents** and **Pull requests** read/write for Merge. Sandbox tests run the Python, Worker and browser regression suites against the exact commit.
+
 Every repository owned by `onlykappa` is in scope, including ones created later: the app loads the list from the Worker (most recently pushed first, archived repositories hidden) and the agent accepts any `onlykappa/<name>` target. Repair, sandbox code and continuous modes stay limited to KappaForge.
 
 KappaForge itself works with the built-in Actions token. To develop in any other repository, add an Actions secret named `KAPPA_CODER_TOKEN`: a fine-grained token with **Contents** and **Pull requests** read/write. Choose **All repositories** so new projects are covered automatically. Their own CI then runs on the draft PR.

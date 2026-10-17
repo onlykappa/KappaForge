@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.parse
+import urllib.request
 from engine.runner import allowed_repo, request, run_model
 
 ROOT = "onlykappa/KappaForge"
@@ -68,6 +69,11 @@ def snapshot(repo, token):
     info = gh(f"repos/{repo}", token)
     base = info["default_branch"]
     sha = gh(f"repos/{repo}/git/ref/heads/{urllib.parse.quote(base, safe='')}", token)["object"]["sha"]
+    files, modes = list_tree(repo, sha, token)
+    return base, sha, files, modes
+
+
+def list_tree(repo, sha, token):
     tree = gh(f"repos/{repo}/git/trees/{sha}?recursive=1", token)
     if tree.get("truncated"):
         raise ValueError("Repository tree is too large to list completely")
@@ -75,7 +81,7 @@ def snapshot(repo, token):
     files = {item["path"]: item.get("size", 0) for item in blobs
              if SOURCE_RE.search(item["path"]) and not SKIP_RE.search(item["path"])}
     modes = {item["path"]: item.get("mode", "100644") for item in blobs}
-    return base, sha, files, modes
+    return files, modes
 
 
 def read_source(repo, path, sha, token):
@@ -185,7 +191,9 @@ def generate(api_key, task, repo, sources, existing):
         "You are KappaForge, a careful senior engineer implementing an owner-approved change in "
         + repo + ". Make the smallest complete change that fully implements the task, matching the "
         "surrounding code style. Return ONLY strict JSON, no markdown:\n"
-        '{"summary":"what changed and why, with any follow-up the reviewer must do",'
+        '{"explanation":"for the owner, who reviews from a phone and may not read code: 2-5 short plain-English '
+        'sentences on what will be different, why, anything that could go wrong, and how to check it after merging",'
+        '"summary":"technical summary of what changed and why, with any follow-up the reviewer must do",'
         '"files":[{"path":"existing/file.py","edits":[{"find":"exact unique text from the file","replace":"new text"}]},'
         '{"path":"new/file.py","content":"full file"}]}\n'
         "Rules: each find must be copied exactly from the file below and occur exactly once; keep finds "
@@ -206,11 +214,18 @@ def generate(api_key, task, repo, sources, existing):
             problems = [e for e in (syntax_error(p, t) for p, t in changes.items()) if e]
             if problems:
                 raise ValueError("Syntax check failed: " + "; ".join(problems))
-            summary = proposal.get("summary") if isinstance(proposal.get("summary"), str) else ""
-            return model, summary[:3000], changes
+            text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
+            return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             errors.append(str(exc)[:300] or type(exc).__name__)
     raise ValueError("Generated change failed validation after three attempts: " + " | ".join(errors))
+
+
+def commit_changes(repo, parent, changes, modes, message, token):
+    base_tree = gh(f"repos/{repo}/git/commits/{parent}", token)["tree"]["sha"]
+    tree = gh(f"repos/{repo}/git/trees", token, {"base_tree": base_tree, "tree": [
+        {"path": p, "mode": modes.get(p, "100644"), "type": "blob", "content": t} for p, t in changes.items()]})
+    return gh(f"repos/{repo}/git/commits", token, {"message": message, "tree": tree["sha"], "parents": [parent]})
 
 
 def produce_development_pr(issue, api_key, token):
@@ -237,21 +252,14 @@ def produce_development_pr(issue, api_key, token):
             sources[path] = read_source(repo, path, sha, repo_token)
         except (ValueError, UnicodeDecodeError):
             continue
-    model, summary, changes = generate(api_key, task, repo, sources, existing)
+    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing)
     # One atomic commit on a fresh branch; the default branch is never written.
-    base_tree = gh(f"repos/{repo}/git/commits/{sha}", repo_token)["tree"]["sha"]
-    tree = gh(f"repos/{repo}/git/trees", repo_token, {"base_tree": base_tree, "tree": [
-        {"path": p, "mode": modes.get(p, "100644"), "type": "blob", "content": t} for p, t in changes.items()]})
-    commit = gh(f"repos/{repo}/git/commits", repo_token, {
-        "message": f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}",
-        "tree": tree["sha"], "parents": [sha]})
+    commit = commit_changes(repo, sha, changes, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", repo_token)
     gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
     pr = gh(f"repos/{repo}/pulls", repo_token, {
         "title": f"Draft: {(issue.get('title') or 'KappaForge task')[:90]}",
         "head": branch, "base": base, "draft": True,
-        "body": (f"Owner-approved development for {ROOT}#{number}.\n\nModel: `{model}`\n\n"
-                 f"{summary}\n\nChanged files:\n" + "\n".join("- `" + p + "`" for p in changes) +
-                 "\n\n**AI-generated changes. Review the diff and wait for CI before merging.**")})
+        "body": review_body(number, model, explanation, summary, changes)})
     validation = "This repository's own CI runs on the pull request."
     if repo == ROOT:
         try:
@@ -262,6 +270,113 @@ def produce_development_pr(issue, api_key, token):
             validation = f"Sandbox test dispatch failed (HTTP {exc.code}); run it manually."
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"
-        f"**Repository:** `{repo}` | **Model:** `{model}`\n\n{summary}\n\n"
-        f"Read {len(sources)} files, changed {len(changes)}. {validation} Manual review required.")})
+        f"**What this does:** {explanation or summary}\n\n"
+        f"**Repository:** `{repo}` | **Model:** `{model}` | Read {len(sources)} files, changed {len(changes)}.\n\n"
+        f"{validation} Review it on the Dashboard; nothing merges until you tap Merge.")})
+    return pr["html_url"]
+
+
+def review_body(number, model, explanation, summary, changes):
+    # The app shows the "What this does" section on its review card; keep the heading stable.
+    return (f"Owner-approved development for {ROOT}#{number}. Model: `{model}`\n\n"
+            f"## What this does\n{explanation or summary}\n\n## Technical summary\n{summary}\n\n"
+            "## Changed files\n" + "\n".join("- `" + p + "`" for p in changes) +
+            "\n\n**AI-generated. Merge only after the sandbox tests pass and you have read the summary.**")
+
+
+def job_log(job_id, token, limit=7000):
+    """Tail of a secret-free sandbox job log. GitHub redirects to signed storage; follow without auth."""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+    req = urllib.request.Request(f"https://api.github.com/repos/{ROOT}/actions/jobs/{int(job_id)}/logs",
+                                 headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json"})
+    try:
+        urllib.request.build_opener(NoRedirect).open(req, timeout=35)
+        return ""
+    except urllib.error.HTTPError as exc:
+        location = exc.headers.get("Location") if exc.code in (301, 302, 303, 307, 308) else None
+        if not location:
+            return ""
+    with urllib.request.urlopen(location, timeout=35) as response:
+        text = response.read().decode("utf-8", errors="replace")
+    text = re.sub(r"^\S+Z ", "", text, flags=re.M)
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)[-limit:]
+
+
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key):
+    """Prepare a fix for a failing development PR without writing anything."""
+    files = gh(f"repos/{ROOT}/pulls/{int(pr['number'])}/files?per_page=100", token)
+    if not files or len(files) > MAX_CHANGED_FILES * 2 or any(f.get("status") not in ("added", "modified") for f in files):
+        raise ValueError("Unsupported diff for automatic revision")
+    changed = [check_path(f["filename"]) for f in files]
+    existing, modes = list_tree(ROOT, head_sha, token)
+    log = "\n".join(job_log(job["id"], token) for job in failed_jobs[:2])
+    # Also read existing files the failure output names, such as the failing test module.
+    named = [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
+    sources = {}
+    for path in (changed + named)[:MAX_READ_FILES]:
+        if path in existing and existing[path] <= MAX_FILE_CHARS:
+            try:
+                sources[path] = read_source(ROOT, path, head_sha, token)
+            except (ValueError, UnicodeDecodeError):
+                continue
+    task = ("The independent sandbox tests FAILED for this change. Fix the code so the tests pass while still "
+            "delivering the original task. Prefer fixing the implementation over weakening or deleting tests.\n\n"
+            "ORIGINAL TASK:\n" + ((issue.get("title") or "") + "\n" + (issue.get("body") or ""))[:4000] +
+            "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
+            ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
+    model, summary, changes, explanation = generate(api_key, task, ROOT, sources, existing)
+    return model, summary, changes, explanation, modes
+
+
+MAX_FIXES = 3
+FIX_MARKER = "<!-- KAPPA_FIX:"
+
+
+def sandbox_result(branch, head_sha, token):
+    """Latest sandbox run for this exact commit, dispatched from main's trusted workflow."""
+    runs = gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/runs?per_page=30", token).get("workflow_runs", [])
+    for run in runs:
+        if (run.get("display_title") == f"Sandbox validation {branch} @ {head_sha}" and run.get("head_branch") == "main"
+                and run.get("event") == "workflow_dispatch"):
+            return run
+    return None
+
+
+def fix_pull_request(issue, api_key, token):
+    """Owner-requested fix for a development PR whose sandbox tests failed on its latest commit."""
+    if (issue.get("user") or {}).get("login", "").lower() != OWNER:
+        raise ValueError("Only the repository owner can request a fix")
+    if target_of(issue) != ROOT:
+        raise ValueError("Fix it currently supports KappaForge pull requests only")
+    number = int(issue["number"])
+    branch = f"kappa/dev-{number}"
+    prs = [p for p in gh(f"repos/{ROOT}/pulls?state=open&head={OWNER}:{branch}", token)
+           if p.get("head", {}).get("ref") == branch and (p.get("head", {}).get("repo") or {}).get("full_name") == ROOT]
+    if len(prs) != 1:
+        raise ValueError("No open pull request for " + branch)
+    pr = prs[0]
+    head = pr["head"]["sha"]
+    run = sandbox_result(branch, head, token)
+    if not run or run.get("status") != "completed" or run.get("conclusion") != "failure":
+        raise ValueError("Fix needs a failed sandbox test run on the PR's latest commit")
+    comments = gh(f"repos/{ROOT}/issues/{pr['number']}/comments?per_page=100", token)
+    if sum(FIX_MARKER in (c.get("body") or "") for c in comments) >= MAX_FIXES:
+        raise ValueError(f"Fix limit reached ({MAX_FIXES}); review the PR manually")
+    jobs = gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30", token).get("jobs", [])
+    failed = [j for j in jobs if j.get("conclusion") == "failure"]
+    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key)
+    commit = commit_changes(ROOT, head, changes, modes, f"fix: make sandbox tests pass for #{number}\n\n{summary[:1000]}", token)
+    # Fast-forward only: refuses if the branch moved since the failed run.
+    gh(f"repos/{ROOT}/git/refs/heads/{branch}", token, {"sha": commit["sha"], "force": False}, method="PATCH")
+    gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches", token,
+       {"ref": "main", "inputs": {"branch": branch, "candidate_sha": commit["sha"]}})
+    note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
+            ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
+    previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]
+    gh(f"repos/{ROOT}/pulls/{pr['number']}", token, {"body": previous + "\n\n## Latest fix\n" + (explanation or summary)}, method="PATCH")
+    gh(f"repos/{ROOT}/issues/{pr['number']}/comments", token,
+       {"body": f"### Fix applied after failed run {run['id']} ({model})\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
+    gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": f"### KappaForge fix ready\n\n{note}\n\n{pr['html_url']}"})
     return pr["html_url"]

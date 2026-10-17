@@ -4,6 +4,7 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
+import {reviewPR,mergePR,requestFix} from "./review.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -82,7 +83,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/repos"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/repos", "/review"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -165,6 +166,18 @@ export default {
       if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
+    if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
+      if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
+      const number = Number(input.prNumber), repo = typeof input.repo === "string" ? input.repo : "KappaForge";
+      const action = new URL(request.url).pathname === "/review" ? "review" : input.decision;
+      if (!Number.isSafeInteger(number) || number < 1 || !(await listRepos(env)).includes(repo) || (action !== "review" && input.confirmed !== true))
+        return json({ error: "Choose a pull request and confirm the action." }, 400, cors);
+      try {
+        const result = action === "review" ? await reviewPR(env, repo, number) :
+          action === "merge" ? await mergePR(env, repo, number, input.headSha) : await requestFix(env, repo, number);
+        return json(result, result.error ? result.status : action === "fix" ? 202 : 200, cors);
+      } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
+    }
     if (new URL(request.url).pathname === "/decisions") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const number = Number(input.prNumber), decision = input.decision;
@@ -184,7 +197,7 @@ export default {
           return json({error:"Only open KappaForge agent proposals may be reviewed here."},403,cors);
         if (decision === "validate") {
           const dispatch = await fetch(base + "/actions/workflows/sandbox-tests.yml/dispatches", {
-            method:"POST",headers,body:JSON.stringify({ref:"main",inputs:{branch:pr.head.ref}})
+            method:"POST",headers,body:JSON.stringify({ref:"main",inputs:{branch:pr.head.ref,candidate_sha:pr.head.sha}})
           });
           if (!dispatch.ok) return json({error:"Validation could not start (GitHub HTTP "+dispatch.status+")."},502,cors);
           return json({status:"validation_started",prNumber:number},202,cors);

@@ -96,8 +96,8 @@ def inspect_batch(repo, issue_number, branch, token, api_key, get, model, commen
     if state["batch"] >= MAX_BATCHES and not complete:
         raise RuntimeError("Audit batch safety cap reached; partial results remain on issue")
     note = (f"### KappaForge repository audit batch {state['batch']}\n"
-            f"**Repository:** \`{repo}\` | **Pinned commit:** \`{sha[:12]}\` | "
-            f"**Model:** \`{model_name}\`\n\n"
+            f"**Repository:** `{repo}` | **Pinned commit:** `{sha[:12]}` | "
+            f"**Model:** `{model_name}`\n\n"
             f"**Coverage:** {state['next']}/{len(paths)} eligible file paths processed; "
             f"{state['analyzed']} read, {state['skipped']} skipped/truncated.\n"
             f"**Status:** {'All eligible paths processed' if complete else 'Partial, next batch pending'}.\n\n"

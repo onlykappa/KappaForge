@@ -19,6 +19,11 @@ REPO_RE = re.compile(r"^" + re.escape(CONFIG["owner"]) + r"/(?!\.+$)[A-Za-z0-9_.
 def allowed_repo(repo):
     return isinstance(repo, str) and bool(REPO_RE.match(repo))
 
+def read_token(repo, token=None):
+    # The Actions token reaches KappaForge and public repositories; the owner token also reaches private ones.
+    token = token or os.getenv("GITHUB_TOKEN")
+    return token if repo == ROOT else os.getenv("KAPPA_CODER_TOKEN") or token
+
 TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M | re.I)
 # Restrict unattended automation to Flash-class models; no paid Pro fallback.
 PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
@@ -74,7 +79,7 @@ def content(repo, path, ref=None):
     encoded = urllib.parse.quote(path, safe="/")
     # Anonymous reads share 60/hour per runner IP; the job token can read public repositories.
     obj = github(f"repos/{repo}/contents/{encoded}" + ("?ref=" + urllib.parse.quote(ref, safe="") if ref else ""),
-                 os.getenv("GITHUB_TOKEN"))
+                 read_token(repo))
     if not isinstance(obj, dict) or obj.get("type") != "file":
         return ""
     if obj.get("encoding") != "base64":
@@ -200,6 +205,11 @@ def main():
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
             print("Development mode requires explicit manual workflow dispatch; task remains queued.")
             return
+        if os.getenv("INPUT_ACTION", "").strip() == "fix":
+            from engine.developer import fix_pull_request
+            url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
+            print("Owner-requested fix pushed: " + url)
+            return
         from engine.developer import produce_development_pr
         url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
         print("Development draft pull request created: " + url)
@@ -217,7 +227,7 @@ def main():
         if not match or not allowed_repo(match.group(1)):
             raise ValueError("Invalid project map target")
         from engine.project_index import index_repository
-        report = index_repository(match.group(1), token, github, content)
+        report = index_repository(match.group(1), read_token(match.group(1), token), github, content)
         from engine.project_memory import snapshot, extract_latest, change_summary, recent_repo_memory
         comments = github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)
         previous = extract_latest(comments, report["repo"])
@@ -245,7 +255,7 @@ def main():
         branch = branch_match.group(1) if branch_match else None
         state, note, complete = inspect_batch(
             repo, issue["number"], branch, token, os.environ["GEMINI_API_KEY"],
-            github, run_model, comments)
+            lambda path: github(path, read_token(repo, token)), run_model, comments)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
         print(f"Audit {'complete' if complete else 'checkpointed'}: {state['next']}/{state['files_total']}")
         return
@@ -256,7 +266,7 @@ def main():
         return
     repo = match.group(1)
     try:
-        handoff = collect(repo, issue.get('body') or '', github, content)
+        handoff = collect(repo, issue.get('body') or '', lambda path: github(path, read_token(repo, token)), content)
     except (ValueError, urllib.error.HTTPError) as err:
         print('Handoff inspection failed: ' + str(err) + '; task remains queued')
         return
