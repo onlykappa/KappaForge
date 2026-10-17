@@ -332,7 +332,7 @@ async function submitReviewDecision(number,decision){
 }
 // Owner review card for agent PRs: plain-English summary, exact-commit test state, then Merge or Fix it.
 let reviewCards={};
-const isDevPR=p=>/^kappa\/dev-[0-9]+$/.test(p.head?.ref||"");
+const isDevPR=p=>/^kappa\/(?:dev|revert)-[0-9]+$/.test(p.head?.ref||"");
 async function reviewAction(path,body){
  const response=await fetch(backend+path,{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify(body)});
  const result=await response.json().catch(()=>({}));
@@ -355,10 +355,13 @@ function reviewCardHTML(key){
  const d=card.data,t=d.tests||{};
  const tests={passed:'<span class="status-good">✅ Tests passed on the latest commit</span>',failed:'<span class="status-bad">❌ Tests failed on the latest commit</span>',
   running:'<span class="status-pending">🔄 Tests are running</span>',none:'<span class="worksmall">Tests have not run on the latest commit yet</span>'}[t.state]||"";
+ const risks=(d.risks||[]).map(r=>'<li class="'+(r.level==="high"?"status-bad":"status-pending")+'">'+(r.level==="high"?"⚠ ":"• ")+esc(r.text)+' <span class="worksmall">('+esc(r.files.slice(0,3).join(", "))+')</span></li>').join("");
  const files=(d.files||[]).slice(0,12).map(f=>esc(f.name)+' <span class="worksmall">+'+esc(f.additions)+' / -'+esc(f.deletions)+'</span>').join("<br>");
  return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change. Open the PR to review it.")+'</p>'+
   (d.explanation?.fix?'<p><strong>Latest fix</strong>'+esc(d.explanation.fix)+'</p>':'')+
-  '<p>'+tests+(t.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(t.url)+'">Test log ↗</a>':'')+'</p>'+
+  (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before. Safe to merge without waiting for tests.</p>':
+   '<p>'+tests+(t.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(t.url)+'">Test log ↗</a>':'')+'</p>')+
+  (risks?'<div class="review-risks"><strong>Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
   '<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+
   (d.canFix?'<button data-fix="'+esc(key)+'">Fix it</button>':'')+
@@ -367,7 +370,8 @@ function reviewCardHTML(key){
 async function mergeReviewed(key){
  const d=reviewCards[key]?.data;if(!d?.canMerge)return;
  if(!confirm("Merge \""+d.title.replace(/^Draft:\s*/,"")+"\" into "+d.repo+"?\n\nWhat this does: "+(d.explanation?.what||"see the PR")+"\n\n"+
-  (d.repo==="KappaForge"?"This goes live: the app and Worker redeploy automatically.":"This updates "+d.repo+"'s main branch.")))return;
+  ((d.risks||[]).length?"Flagged: "+d.risks.map(r=>r.text).join("; ")+"\n\n":"")+
+  (d.repo==="KappaForge"?"This goes live: the app and Worker redeploy automatically. If something breaks, use Undo last change on the Dashboard.":"This updates "+d.repo+"'s main branch.")))return;
  try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"merge",headSha:d.tests.sha,confirmed:true});delete reviewCards[key];alert("Merged. Deployment starts automatically for KappaForge changes.");load(true)}
  catch(e){alert("Not merged: "+e.message);openReviewCard(key)}
 }
@@ -376,6 +380,15 @@ async function fixReviewed(key){
  if(!confirm("Ask KappaForge to fix the failing tests on \""+d.title.replace(/^Draft:\s*/,"")+"\"?\n\nIt reads the test output, pushes a fix to this PR and re-runs the tests. Nothing merges until you tap Merge."))return;
  try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
  catch(e){alert("Fix not started: "+e.message)}
+}
+async function undoLastChange(){
+ if(!backend||!access){alert("Connect AI first.");return}
+ try{
+  const last=await reviewAction("/undo",{});
+  if(!confirm("Undo the latest KappaForge change?\n\n\""+last.title+"\"\n\nThis opens a pull request that puts KappaForge back exactly as it was before it. Review and Merge it on the Dashboard like any other change."))return;
+  await reviewAction("/undo",{confirmed:true,sha:last.sha});
+  alert("Undo is ready under Code reviews. Tap Review & merge, then Merge.");load(true);
+ }catch(e){alert("Undo not started: "+e.message+"\n\nYou can always revert on GitHub; see EMERGENCY.md in the repository.")}
 }
 async function closeReviewed(key){
  const [repo,number]=key.split("#");
@@ -412,7 +425,7 @@ function controlCenter(){
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
  }).join("");
  const runRows=runs.slice(0,8).map(r=>row(r.name||"Workflow",(r.conclusion||r.status)+" · "+(r.head_branch||"main"),r.html_url)).join("");
- return card("Workspace health",'<div class="control-head"><span class="muted">Live GitHub status</span><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open agent pull requests.</p>')+card("Tests & deployments",runRows||'<p class="muted">No recent workflow results.</p>');
+ return card("Workspace health",'<div class="control-head"><span class="muted">Live GitHub status</span><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open agent pull requests.</p>')+card("Tests & deployments",(runRows||'<p class="muted">No recent workflow results.</p>')+'<div class="review-tools"><button type="button" id="undolast" class="review-deny">↶ Undo last change</button></div><p class="worksmall">If a merged change broke something, Undo opens a pull request restoring the previous version.</p>');
 }
 function dashboardSummary(){
  return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Overview</h1><p class="muted">Repository health, reviews, and recent results.</p></div>'+controlCenter()+activityPanel();
@@ -482,6 +495,7 @@ document.querySelectorAll("[data-reviewcard]").forEach(b=>b.addEventListener("cl
 document.querySelectorAll("[data-merge]").forEach(b=>b.addEventListener("click",()=>mergeReviewed(b.dataset.merge)));
 document.querySelectorAll("[data-fix]").forEach(b=>b.addEventListener("click",()=>fixReviewed(b.dataset.fix)));
 document.querySelectorAll("[data-closepr]").forEach(b=>b.addEventListener("click",()=>closeReviewed(b.dataset.closepr)));
+document.getElementById("undolast")?.addEventListener("click",undoLastChange);
 document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b)));
 document.getElementById("settingstyle")?.addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality);document.getElementById("personality").value=personality;});
 document.getElementById("settingsconnect")?.addEventListener("click",()=>document.getElementById("connect").click());

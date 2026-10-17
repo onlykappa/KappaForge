@@ -4,8 +4,9 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
-import {reviewPR,mergePR,requestFix,closePR} from "./review.js";
-import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary} from "./providers.js";
+import {reviewPR,mergePR,requestFix,closePR,undoLast} from "./review.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,REGISTRY} from "./providers.js";
+import app from "../../config/app.json" with {type: "json"};
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -81,10 +82,15 @@ function safeEqual(a, b) {
 }
 export default {
   async fetch(request, env, context) {
+    // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
+    if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+      const ready = !!env.MEMORY && !!env.CHAT_ACCESS_TOKEN && typeof globalThis.KappaStream?.sse === "function" && REGISTRY.order.length > 0;
+      return json({ ok: ready, version: app.version }, ready ? 200 : 503);
+    }
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/repos", "/review"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/repos", "/review", "/undo"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -167,6 +173,11 @@ export default {
       if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
+    if (new URL(request.url).pathname === "/undo") {
+      if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
+      try { const result = await undoLast(env, input.confirmed === true, input.sha); return json(result, result.error ? result.status : 200, cors); }
+      catch { return json({ error: "GitHub undo request failed." }, 502, cors); }
+    }
     if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix", "close"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const number = Number(input.prNumber), repo = typeof input.repo === "string" ? input.repo : "KappaForge";

