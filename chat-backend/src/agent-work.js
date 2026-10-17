@@ -16,10 +16,12 @@ export async function agentWork(env){
  const runs=[...(sandbox.workflow_runs||[]),...(project.workflow_runs||[])];
  const testsFor=branch=>{const run=runs.find(r=>new RegExp(" "+branch.replace(/[.*+?^${}()|[\]\\/]/g,"\\$&")+" @ ").test(r.display_title||""));return run?(run.status==="completed"?run.conclusion:"running"):"not run"};
  const tasks=await Promise.all(issues.filter(i=>!i.pull_request).slice(0,4).map(async i=>{
-  const comments=i.comments?await get(env,ROOT+"/issues/"+i.number+"/comments?per_page=100").catch(()=>[]):[];
+  const comments=i.comments>0?await get(env,ROOT+"/issues/"+i.number+"/comments?per_page=100").catch(()=>[]):[];
   const last=[...comments].reverse().find(c=>/github-actions|onlykappa/i.test(c.user?.login||""));
   return "- Task #"+i.number+" \""+short(i.title,80)+"\""+(last?": latest update: "+short(last.body,240):": no updates yet");
  }));
+ const taskMap = new Map(tasks.map((t, idx) => [issues[idx].number, t]));
+ const orderedTasks = issues.filter(i=>!i.pull_request).slice(0,4).map(i => taskMap.get(i.number));
  const agentPrs=prs.filter(p=>/^kappa\//.test(p.head?.ref||"")).slice(0,6).map(p=>"- PR #"+p.number+" \""+short(p.title,80)+"\" ("+p.head.ref+", "+(p.draft?"draft":"ready")+"): tests "+testsFor(p.head.ref));
  return "LIVE AGENT WORK in onlykappa/KappaForge (fetched now from GitHub; other repositories' PRs are not listed):\n"+
   (tasks.length?tasks.join("\n"):"- No open tasks.")+"\n"+(agentPrs.length?agentPrs.join("\n"):"- No open agent PRs.");

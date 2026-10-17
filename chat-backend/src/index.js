@@ -166,7 +166,7 @@ export default {
       if (!env.MEMORY) return json({error:"Integration storage unavailable"},503,cors);
       const action = request.headers.get("X-Integration-Action") || "status";
       const methods = {status:"GET",connect:"PUT",disconnect:"DELETE",send:"POST"};
-      if (!methods[action])return json({error:"Unsupported integration action"},400,cors);
+      if (!methods[action]) return json({error:"Unsupported integration action"},400,cors);
       if (Number(request.headers.get("Content-Length")||0)>3000)return json({error:"Integration request too large"},413,cors);
       const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const response=await stub.fetch("https://memory.internal/discord",{method:methods[action],
