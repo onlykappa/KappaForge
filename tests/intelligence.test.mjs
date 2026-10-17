@@ -269,3 +269,23 @@ test('health probe is public and reveals no configuration; Undo restores the pre
   assert.equal(review.restore,true);assert.equal(review.canMerge,true);assert.equal(review.tests.state,'none');assert.deepEqual(review.risks,[]);
  }finally{globalThis.fetch=original}
 });
+
+test('other repositories are tested in the secret-free project sandbox, with a warning when they have no tests',async()=>{
+ const original=globalThis.fetch,calls=[],head='f'.repeat(40);let steps=[{name:'Run project tests',conclusion:'success'}];
+ globalThis.fetch=async(url,init={})=>{const u=String(url),method=init.method||'GET';calls.push({u,method,body:init.body});
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}},{name:'OmniPC',owner:{login:'onlykappa'}}]);
+  if(u.endsWith('/OmniPC/pulls/3'))return Response.json({state:'open',title:'Draft: Fix input',body:'## What this does\nFixes input lag.',mergeable:true,draft:true,head:{ref:'kappa/dev-12',sha:head,repo:{full_name:'onlykappa/OmniPC'}},base:{repo:{full_name:'onlykappa/OmniPC'}}});
+  if(u.includes('/OmniPC/pulls/3/files'))return Response.json([{filename:'src/input.ts',status:'modified',patch:'@@\n+const lag=0;'}]);
+  if(u.includes('project-tests.yml/runs'))return Response.json({workflow_runs:[{id:77,display_title:'Project validation OmniPC kappa/dev-12 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:'success',html_url:'https://github.com/run/77'}]});
+  if(u.includes('/runs/77/jobs'))return Response.json({jobs:[{name:'verify',steps}]});
+  if(u.includes('/check-runs'))throw Error('own CI must not be consulted when the sandbox tested the commit');
+  return new Response(null,{status:204})};
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-project'};
+ try{
+  let review=await(await worker.fetch(req('/review',{repo:'OmniPC',prNumber:3}),env)).json();
+  assert.equal(review.tests.state,'passed');assert.equal(review.tests.sandbox,true);assert.equal(review.canMerge,true);assert.equal(review.risks.length,0);
+  steps=[{name:'No tests detected',conclusion:'success'}];
+  review=await(await worker.fetch(req('/review',{repo:'OmniPC',prNumber:3}),env)).json();
+  assert.equal(review.canMerge,true);assert.match(review.risks[0].text,/no automated tests/);
+ }finally{globalThis.fetch=original}
+});

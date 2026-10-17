@@ -365,7 +365,8 @@ function reviewCardHTML(key){
   '<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+
   (d.canFix?'<button data-fix="'+esc(key)+'">Fix it</button>':'')+
-  '<button data-reviewcard="'+esc(key)+'">Refresh</button><a target="_blank" rel="noopener noreferrer" href="'+esc(d.url)+'">Open on GitHub ↗</a></div></div>';
+  (d.canTest&&!d.canMerge&&!d.canFix?'<button data-runtests="'+esc(key)+'">Run tests</button>':'')+
+  '<button data-refreshcard="'+esc(key)+'">Refresh</button><a target="_blank" rel="noopener noreferrer" href="'+esc(d.url)+'">Open on GitHub ↗</a></div></div>';
 }
 async function mergeReviewed(key){
  const d=reviewCards[key]?.data;if(!d?.canMerge)return;
@@ -380,6 +381,11 @@ async function fixReviewed(key){
  if(!confirm("Ask KappaForge to fix the failing tests on \""+d.title.replace(/^Draft:\s*/,"")+"\"?\n\nIt reads the test output, pushes a fix to this PR and re-runs the tests. Nothing merges until you tap Merge."))return;
  try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
  catch(e){alert("Fix not started: "+e.message)}
+}
+async function runReviewTests(key){
+ const d=reviewCards[key]?.data;if(!d)return;
+ try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"test",confirmed:true});alert("Tests started in KappaForge's sandbox. Tap Refresh on the card in a few minutes.");delete reviewCards[key];openReviewCard(key)}
+ catch(e){alert("Tests not started: "+e.message)}
 }
 async function undoLastChange(){
  if(!backend||!access){alert("Connect AI first.");return}
@@ -496,6 +502,8 @@ document.querySelectorAll("[data-merge]").forEach(b=>b.addEventListener("click",
 document.querySelectorAll("[data-fix]").forEach(b=>b.addEventListener("click",()=>fixReviewed(b.dataset.fix)));
 document.querySelectorAll("[data-closepr]").forEach(b=>b.addEventListener("click",()=>closeReviewed(b.dataset.closepr)));
 document.getElementById("undolast")?.addEventListener("click",undoLastChange);
+document.querySelectorAll("[data-refreshcard]").forEach(b=>b.addEventListener("click",()=>{delete reviewCards[b.dataset.refreshcard];openReviewCard(b.dataset.refreshcard)}));
+document.querySelectorAll("[data-runtests]").forEach(b=>b.addEventListener("click",()=>runReviewTests(b.dataset.runtests)));
 document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b)));
 document.getElementById("settingstyle")?.addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality);document.getElementById("personality").value=personality;});
 document.getElementById("settingsconnect")?.addEventListener("click",()=>document.getElementById("connect").click());
