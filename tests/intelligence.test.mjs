@@ -93,3 +93,18 @@ test('GitHub reads authenticate with the Worker token and the proxy refuses non-
   assert.equal((await worker.fetch(req('/github',{path:'KappaForge'}),{CHAT_ACCESS_TOKEN:'owner-token'})).status,503);
  }finally{globalThis.fetch=original}
 });
+
+test('every owner repository is in scope, including new ones, and names in chat resolve to them',async()=>{
+ const {listRepos,mentionedRepo,isRepoName,defaultBranch}=await import('../chat-backend/src/repos.js');const original=globalThis.fetch;let seen;
+ globalThis.fetch=async(url,init)=>{seen={url:String(url),auth:init.headers.Authorization};return Response.json([
+  {name:'KappaForge',owner:{login:'onlykappa'},default_branch:'main'},{name:'Brand-New_Game',owner:{login:'onlykappa'},default_branch:'master'},
+  {name:'OldThing',owner:{login:'onlykappa'},archived:true},{name:'Forked',owner:{login:'someone'}}])};
+ try{
+  const names=await listRepos({GITHUB_JOB_TOKEN:'t'});
+  assert.deepEqual(names,['KappaForge','Brand-New_Game']);assert.match(seen.url,/\/user\/repos\?affiliation=owner/);assert.equal(seen.auth,'Bearer t');assert.equal(defaultBranch('Brand-New_Game'),'master');
+  assert.equal(mentionedRepo('fix the bug in brand new game please',names),'Brand-New_Game');
+  assert.equal(mentionedRepo('How does KappaForge stream?',names),'KappaForge');
+  assert.equal(mentionedRepo('hello there',names),null);
+  for(const bad of ['..','a/b','../x','',null])assert.equal(isRepoName(bad),false);
+ }finally{globalThis.fetch=original}
+});

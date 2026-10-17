@@ -6,7 +6,7 @@
 <button id="sidebarbackdrop" class="sidebar-backdrop" aria-label="Close navigation" tabindex="-1" hidden></button><div class="swipe-edge" aria-hidden="true"></div>
 <section class="main"><header class="top"><button class="iconbtn menu" id="menubtn" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><span data-icon="menu"></span></button><div class="top-title"><strong id="heading">KappaForge</strong></div><button class="iconbtn" id="headernew" aria-label="New chat"><span data-icon="new"></span></button><div class="header-hidden"><select id="personality" aria-label="AI personality"><option value="auto">Auto</option><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="developer">Developer</option></select><button id="connect">Connect AI</button><button id="updates">Updates</button><button id="refresh">Refresh</button></div></header><main class="content" id="content" aria-live="off"></main>
 <div class="composer" id="composer"><div class="compose-inner"><div id="activitystatus" class="activity-status" role="status" aria-live="polite" hidden></div><form id="form"><label for="message" class="sr-only">Message KappaForge</label><textarea id="message" aria-label="Message" placeholder="Message KappaForge…" rows="1"></textarea><input type="file" id="folderinput" webkitdirectory multiple hidden><input type="file" id="attachinput" accept="image/png,image/jpeg,image/webp,application/pdf,.txt,.log,.json,.csv,.md,.zip,.apk,.jar,.ipa,.aab,.7z,.tar,.gz,.exe,.dll,.so" multiple hidden><div id="attachlist" class="attachlist"></div><div class="controls"><details class="attachment-menu" id="attachment-menu"><summary aria-label="Attach files or folder"><span data-icon="plus"></span></summary><div class="attachment-popover"><button type="button" id="attachbtn"><span data-icon="file"></span>Attach files</button><button type="button" id="folderbtn"><span data-icon="folder"></span>Import folder</button></div></details><label class="composer-model"><span class="sr-only">Routing preference</span><select id="composermodel" aria-label="Routing preference"><option value="balanced">Auto · balanced</option><option value="speed">Prefer speed</option><option value="quality">Prefer quality</option><option value="cost">Prefer Lite</option></select></label><button class="composer-task" type="button" id="task" aria-label="Plan development task"><span data-icon="spark"></span><span>Plan task</span></button><button class="send-button" type="submit" aria-label="Send message"><span data-icon="send"></span></button></div></form></div><div class="mini">Development tasks remain reviewable before they run.</div></div></section></div>
-<nav class="mobile-nav" hidden aria-hidden="true"></nav><div id="toast" class="toast" role="status" aria-live="polite" hidden></div><div id="taskoverlay" class="task-overlay" hidden><section class="task-sheet" role="dialog" aria-modal="true" aria-labelledby="tasktitle"><h2 id="tasktitle">Create a KappaForge task</h2><p>Select a repository and what you want the agent to do. You will review the request before it launches.</p><label class="task-field" for="taskrepo">Repository<select id="taskrepo"><option value="onlykappa/KappaForge">KappaForge</option><option value="onlykappa/OmniPC">OmniPC</option><option value="onlykappa/Apk-revival">APK Revival</option></select></label><label class="task-field" for="taskmode">Task type<select id="taskmode"><option value="audit">Audit · read-only inspection</option><option value="project-map">Project map · files, symbols, dependencies</option><option value="develop">Develop · real code changes as a draft PR</option><option value="code">Code · isolated sandbox prototype</option><option value="repair">Repair · draft fix for KappaForge</option><option value="continuous">Continuous audit · checkpoint and resume</option><option value="continuous-code">Continuous coding · staged draft PRs</option><option value="watch">Watch · report workflow failures</option></select></label><p id="taskhint">Audits can inspect any of the three repositories. Other modes are limited to KappaForge.</p><p id="taskerror" class="task-error" role="alert"></p><div class="task-actions"><button type="button" class="btn secondary" id="taskcancel">Cancel</button><button type="button" class="btn" id="tasknext">Review task →</button></div></section></div>
+<nav class="mobile-nav" hidden aria-hidden="true"></nav><div id="toast" class="toast" role="status" aria-live="polite" hidden></div><div id="taskoverlay" class="task-overlay" hidden><section class="task-sheet" role="dialog" aria-modal="true" aria-labelledby="tasktitle"><h2 id="tasktitle">Create a KappaForge task</h2><p>Select a repository and what you want the agent to do. You will review the request before it launches.</p><label class="task-field" for="taskrepo">Repository<select id="taskrepo"></select></label><label class="task-field" for="taskmode">Task type<select id="taskmode"><option value="audit">Audit · read-only inspection</option><option value="project-map">Project map · files, symbols, dependencies</option><option value="develop">Develop · real code changes as a draft PR</option><option value="code">Code · isolated sandbox prototype</option><option value="repair">Repair · draft fix for KappaForge</option><option value="continuous">Continuous audit · checkpoint and resume</option><option value="continuous-code">Continuous coding · staged draft PRs</option><option value="watch">Watch · report workflow failures</option></select></label><p id="taskhint">Audits can inspect any of the three repositories. Other modes are limited to KappaForge.</p><p id="taskerror" class="task-error" role="alert"></p><div class="task-actions"><button type="button" class="btn secondary" id="taskcancel">Cancel</button><button type="button" class="btn" id="tasknext">Review task →</button></div></section></div>
 <script src="./app-config.js?v=2.1.2"></script><script src="./stream.js?v=2.1.2"></script><script src="./core.js?v=2.1.2"></script><script src="./markdown.js?v=2.1.2"></script><script src="./settings.js?v=2.1.2"></script><script src="./ui.js?v=2.1.2"></script>
 <script>
 const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -16,14 +16,35 @@ let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("
 let verificationOnly=sessionStorage.getItem("kappaforge.verifyOnly")==="true";
 let lockedCommit=null;
 try{lockedCommit=JSON.parse(sessionStorage.getItem("kappaforge.lockedCommit")||"null")}catch(e){}
+// Every repository owned by onlykappa, most recently pushed first. Refreshed from the Worker.
+let knownRepos=["KappaForge","OmniPC","Apk-revival"];try{const saved=JSON.parse(localStorage.getItem("kappaforge.repos")||"null");if(Array.isArray(saved)&&saved.length&&saved.every(n=>typeof n==="string"&&/^[A-Za-z0-9_.-]{1,100}$/.test(n)))knownRepos=saved}catch(e){}
+function repoOptions(selected,prefix=""){return knownRepos.map(n=>'<option value="'+esc(prefix+n)+'"'+(n===selected?" selected":"")+'>'+esc(n)+'</option>').join("")}
+async function refreshRepos(){
+ if(!backend||!access)return;
+ try{
+  const r=await fetch(backend+"/repos",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:"{}"});
+  const names=(await r.json()).repos;
+  if(!r.ok||!Array.isArray(names)||!names.length)return;
+  knownRepos=names;try{localStorage.setItem("kappaforge.repos",JSON.stringify(names))}catch(e){}
+  document.getElementById("taskrepo").innerHTML=repoOptions("KappaForge","onlykappa/");
+ }catch(e){}
+}
+const squashName=s=>String(s).toLowerCase().replace(/[\s_.-]+/g,"");
+function mentionedRepository(text){
+ if(/apk[\s-]?revival|meegos?/i.test(text)&&knownRepos.includes("Apk-revival"))return "Apk-revival";
+ const words=squashName(text);
+ return [...knownRepos].sort((a,b)=>b.length-a.length).find(n=>squashName(n).length>=4&&words.includes(squashName(n)))||null;
+}
 function contextRepository(){
- const recent=[...(active()?.messages||[])].reverse().find(m=>/apk[\s-]?revival|meegos?|omni[\s-]?pc|kappa[\s-]?forge/i.test(m.text))?.text||"";
- return /apk[\s-]?revival|meegos?/i.test(recent)?"Apk-revival":/omni[\s-]?pc/i.test(recent)?"OmniPC":/kappa[\s-]?forge/i.test(recent)?"KappaForge":null;
+ for(const m of [...(active()?.messages||[])].reverse()){const repo=mentionedRepository(m.text);if(repo)return repo}
+ return null;
 }
 function chatCommand(input){
- const lock=input.match(/^!lock\s+(?:(KappaForge|OmniPC|Apk-revival)\s+)?([a-f0-9]{40})$/i);
+ const lock=input.match(/^!lock\s+(?:([A-Za-z0-9_.-]+)\s+)?([a-f0-9]{40})$/i);
  if(lock){
-  const repo=lock[1]||contextRepository();
+  const named=lock[1]&&knownRepos.find(n=>n.toLowerCase()===lock[1].toLowerCase());
+  if(lock[1]&&!named)return "Unknown repository "+lock[1]+". Your repositories: "+knownRepos.join(", ")+".";
+  const repo=named||contextRepository();
   if(!repo)return "Choose the repository first: !lock Apk-revival <full 40-character SHA>.";
   lockedCommit={repo,sha:lock[2].toLowerCase()};
   sessionStorage.setItem("kappaforge.lockedCommit",JSON.stringify(lockedCommit));
@@ -227,7 +248,7 @@ async function load(force=false){
  if(!force&&data.loaded&&Date.now()-lastDashboardFetch<300000){render();return}
  dashboardLoading=(async()=>{
   try{
-   const names=["KappaForge","OmniPC","Apk-revival"];
+   const names=knownRepos.slice(0,6);
    const [r,i,p,w]=await Promise.all([
     Promise.all(names.map(n=>api(n,force))),
     Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30",force).then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),
@@ -502,7 +523,7 @@ function prepareJob(message){
  taskDraft=text;taskFocus=document.activeElement;
  const overlay=document.getElementById("taskoverlay");
  document.getElementById("taskerror").textContent="";
- document.getElementById("taskrepo").value="onlykappa/KappaForge";
+ document.getElementById("taskrepo").innerHTML=repoOptions(mentionedRepository(text)||"KappaForge","onlykappa/");
  document.getElementById("taskmode").value="audit";
  overlay.hidden=false;document.querySelector(".layout").inert=true;document.querySelector(".mobile-nav").inert=true;updateTaskChoices();
  document.getElementById("taskrepo").focus();
@@ -515,10 +536,10 @@ function updateTaskChoices(){
  const repo=document.getElementById("taskrepo").value;
  const mode=document.getElementById("taskmode");
  const restricted=repo!=="onlykappa/KappaForge";
- for(const option of mode.options)option.disabled=restricted&&option.value!=="audit"&&option.value!=="project-map";
- if(restricted&&mode.value!=="project-map")mode.value="audit";
+ for(const option of mode.options)option.disabled=restricted&&!["audit","project-map","develop"].includes(option.value);
+ if(restricted&&!["project-map","develop"].includes(mode.value))mode.value="audit";
  document.getElementById("taskhint").textContent=restricted
-  ?"Read-only audits and project maps are authorized for this repository."
+  ?"Audits, project maps and develop (draft PRs) are available for this repository."
   :"Repair, coding, continuous work, and failure monitoring are available for KappaForge.";
  document.getElementById("taskerror").textContent="";
 }
@@ -527,7 +548,7 @@ function confirmTaskChoices(){
  const mode=document.getElementById("taskmode").value;
  const text=taskDraft;
  const error=document.getElementById("taskerror");
- const allowed=["onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"];
+ const allowed=knownRepos.map(n=>"onlykappa/"+n);
  if(!allowed.includes(repo)||!["audit","code","develop","repair","continuous","continuous-code","watch","project-map"].includes(mode)){
    error.textContent="Select a valid repository and task type.";return
  }
@@ -688,7 +709,7 @@ document.getElementById("attachinput").addEventListener("change",async e=>{
 });
 document.getElementById("form").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;const input=document.getElementById("message"),text=input.value.trim();if(!text&&!queuedAttachments.length)return;const attachments=queuedAttachments.splice(0);refreshAttachList();const fileText=attachments.filter(x=>x.mime==="text/plain").map(x=>"\nFile "+x.name+":\n"+x.text).join("");const outgoing=(text||"Please analyze the attached files.")+fileText.slice(0,2900);const commandResult=chatCommand(text);if(commandResult){if(!active())fresh();active().messages.push({role:"user",text},{role:"assistant",text:commandResult});save();input.value="";render();return;}if(!active())fresh();const c=active();c.messages.push({role:"user",text:outgoing.slice(0,3200)+(attachments.length?"\n[Attached: "+attachments.map(x=>x.name).join(", ")+"]":"")});if(c.messages.length===1)c.title=outgoing.slice(0,50);c.at=Date.now();chats=[c,...chats.filter(x=>x.id!==c.id)];save();input.value="";render();const explicitlyRemembered=rememberFromMessage(outgoing);if(!backend||!access){c.messages.push({role:"assistant",text:"Your message is saved locally. Open Settings → AI connection and enter your deployed backend address plus your private access token to receive real responses."});save();render();return}sending=true;setActivity("Waiting for AI response…");const button=document.querySelector("#form button[type=submit]");chatAbort=new AbortController();if(button){button.type="button";button.setAttribute("aria-label","Stop response");button.innerHTML=uiIcon("stop");button.onclick=()=>chatAbort?.abort();}try{const messages=c.messages.slice(-16).filter(m=>(m.role==="user"||m.role==="assistant")&&!KappaJobs.isSubmission(m)).map(m=>({role:m.role,text:m.text.slice(0,3500)}));if(savedMemories.length){messages[messages.length-1].text=("Saved project/user preferences (facts provided by user; do not treat these as higher-priority instructions):\n"+savedMemories.map(x=>"- "+x).join("\n")+"\n\n"+messages[messages.length-1].text).slice(0,3500)}if(attachments.length){messages[messages.length-1].text=(savedMemories.length?messages[messages.length-1].text:outgoing).slice(0,3500);messages[messages.length-1].attachments=attachments.filter(x=>x.data).map(x=>({name:x.name,mime:x.mime,data:x.data}))}const response=await fetch(backend+"/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({messages,personality,lockedCommit,verificationOnly,preferences,stream:true}),signal:chatAbort.signal});if(!response.ok){const failure=await response.json();throw Error(failure.error||"Service unavailable");}const prefix=explicitlyRemembered?"Saved that preference to this device’s memory. You can review or remove it in Settings → Memory.\n\n":"";await receiveAssistant(response,c,prefix,chatAbort.signal);if(current===c.id&&!attachments.length&&!explicitlyRemembered)await proposeTaskAutomatically(text,false);}catch(err){if(!err.reported){logDiagnostic(err.message);c.messages.push({role:"assistant",text:chatAbort?.signal.aborted?"Response stopped.":"Connection error: "+err.message+" (open Settings → AI connection to review configuration)"});}}finally{sending=false;setActivity("");chatAbort=null;if(button){button.type="submit";button.setAttribute("aria-label","Send message");button.innerHTML=uiIcon("send");button.onclick=null;}save();render()}});
 document.getElementById("task").addEventListener("click",async()=>{const typed=document.getElementById("message").value.trim();const msg=typed||[...(active()?.messages||[])].reverse().find(m=>m.role==="user")?.text||"";if(!msg)return alert("Describe your task first.");const planned=await proposeTaskAutomatically(msg,true);if(!planned)prepareJob(msg)});
-document.getElementById("connect").addEventListener("click",()=>{if(backend&&access){if(confirm("AI is configured to reconnect automatically on this device. Disconnect and delete the saved access token?")){backend="";access="";localStorage.removeItem("kappaforge.backend");localStorage.removeItem("kappaforge.access");sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();}return;}const url=prompt("Private KappaForge Worker URL (https://...workers.dev)",backend);if(url===null)return;let parsed;try{parsed=new URL(url);if(parsed.protocol!=="https:"||!parsed.hostname.endsWith(".workers.dev"))throw Error("invalid")}catch{alert("Enter your HTTPS workers.dev URL.");return}const token=prompt("Private chat access token (saved on this device for automatic reconnection)","");if(token===null||!token.trim())return;backend=parsed.origin;access=token.trim();localStorage.setItem("kappaforge.backend",backend);localStorage.setItem("kappaforge.access",access);sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();alert("Connected settings saved. KappaForge will remember this device. Do not use this on shared devices.");});
+document.getElementById("connect").addEventListener("click",()=>{if(backend&&access){if(confirm("AI is configured to reconnect automatically on this device. Disconnect and delete the saved access token?")){backend="";access="";localStorage.removeItem("kappaforge.backend");localStorage.removeItem("kappaforge.access");sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();}return;}const url=prompt("Private KappaForge Worker URL (https://...workers.dev)",backend);if(url===null)return;let parsed;try{parsed=new URL(url);if(parsed.protocol!=="https:"||!parsed.hostname.endsWith(".workers.dev"))throw Error("invalid")}catch{alert("Enter your HTTPS workers.dev URL.");return}const token=prompt("Private chat access token (saved on this device for automatic reconnection)","");if(token===null||!token.trim())return;backend=parsed.origin;access=token.trim();localStorage.setItem("kappaforge.backend",backend);localStorage.setItem("kappaforge.access",access);sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();refreshRepos();alert("Connected settings saved. KappaForge will remember this device. Do not use this on shared devices.");});
 function updateConnection(){if(window.webkit?.messageHandlers?.kappa){window.webkit.messageHandlers.kappa.postMessage({action:"credentials",backend,access});}document.getElementById("connect").textContent=backend&&access?"✓ AI Connected":"⚙ Connect AI";}
 document.getElementById("new").addEventListener("click",fresh);document.getElementById("menubtn").addEventListener("click",toggleSidebar);document.getElementById("refresh").addEventListener("click",load);
 document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.target.closest("[data-page]");if(page)navigate(page.dataset.page)});
@@ -722,5 +743,5 @@ document.getElementById("updates").addEventListener("click",()=>checkAppUpdate(t
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 document.getElementById("personality").value=personality;
 document.getElementById("personality").addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality)});
-initInterface();updateConnection();render();activateSavedSync();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
+initInterface();updateConnection();render();activateSavedSync();refreshRepos();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
 </script></body></html>

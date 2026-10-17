@@ -1,6 +1,6 @@
-const REPOS=['KappaForge','OmniPC','Apk-revival'];
+import {listRepos} from "./repos.js";
 export async function projectHealth(env,repo){
- if(!REPOS.includes(repo))return {error:'Choose an allowed repository',status:400};
+ if(!(await listRepos(env)).includes(repo))return {error:'Choose an allowed repository',status:400};
  if(!env.GITHUB_JOB_TOKEN)return {error:'GitHub backend integration not configured',status:503};
  const headers={Authorization:'Bearer '+env.GITHUB_JOB_TOKEN,Accept:'application/vnd.github+json','User-Agent':'KappaForge-health','X-GitHub-Api-Version':'2022-11-28'};
  const base='https://api.github.com/repos/onlykappa/'+repo;

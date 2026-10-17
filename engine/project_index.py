@@ -36,7 +36,8 @@ def summarize_source(path,source):
     return {"path":path,"symbols":symbols[:35],"imports":imports[:35],"lines":text.count("\n")+1}
 
 def index_repository(repo,token,github,reader,ref="main"):
-    if repo not in ("onlykappa/KappaForge","onlykappa/OmniPC","onlykappa/Apk-revival"):
+    from engine.runner import allowed_repo
+    if not allowed_repo(repo):
         raise ValueError("Repository not authorized")
     branch=github(f"repos/{repo}/branches/{ref}",token)
     sha=branch["commit"]["sha"]

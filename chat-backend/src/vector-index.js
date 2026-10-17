@@ -1,13 +1,13 @@
 import {githubHeaders} from "./github.js";
 // Persistent bounded vector index with Workers AI embeddings and Durable Object storage.
 // Only public, allowlisted GitHub code is indexed. No private conversation data.
-export const INDEX_REPOS=["KappaForge","OmniPC","Apk-revival"];
+import {isRepoName,defaultBranch} from "./repos.js";
 export const EMBEDDING_MODEL="@cf/baai/bge-small-en-v1.5";
 const json=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:{"content-type":"application/json"}});
 const cosine=(a,b)=>{let ab=0,aa=0,bb=0;for(let i=0;i<Math.min(a.length,b.length);i++){ab+=a[i]*b[i];aa+=a[i]*a[i];bb+=b[i]*b[i]}return ab/(Math.sqrt(aa*bb)||1)};
 export async function indexStore(state,request){
  const url=new URL(request.url),repo=url.searchParams.get("repo");
- if(!INDEX_REPOS.includes(repo))return json({error:"Invalid repo"},400);
+ if(!isRepoName(repo))return json({error:"Invalid repo"},400);
  const prefix="vectors:"+repo+":";
  if(url.pathname==="/vectors/status"){
   const meta=await state.storage.get(prefix+"meta");return json(meta||{repo,status:"empty",count:0});
@@ -47,8 +47,8 @@ async function gh(env,path){
  return response.json();
 }
 export async function refreshIndex(env,repo){
- if(!INDEX_REPOS.includes(repo))throw Error("Unsupported repository");
- const latest=await gh(env,repo+"/commits/main");const sha=latest.sha;
+ if(!isRepoName(repo))throw Error("Unsupported repository");
+ const latest=await gh(env,repo+"/commits/"+encodeURIComponent(defaultBranch(repo)));const sha=latest.sha;
  const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
  const status=await (await stub.fetch("https://memory.internal/vectors/status?repo="+repo)).json();
  if(status.sha===sha&&status.status==="ready")return status;
@@ -76,7 +76,7 @@ export async function refreshIndex(env,repo){
  return {repo,sha,count,status:"ready"};
 }
 export async function searchIndex(env,repo,question,sha){
- if(!INDEX_REPOS.includes(repo))throw Error("Unsupported repository");
+ if(!isRepoName(repo))throw Error("Unsupported repository");
  const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
  const meta=await (await stub.fetch("https://memory.internal/vectors/status?repo="+repo)).json();
  if(meta.status!=="ready"||sha&&meta.sha!==sha)throw Error("Index missing/stale for requested commit; refresh required");

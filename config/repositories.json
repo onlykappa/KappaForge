@@ -1,9 +1,5 @@
 {
-  "allowed": [
-    "onlykappa/KappaForge",
-    "onlykappa/OmniPC",
-    "onlykappa/Apk-revival"
-  ],
+  "owner": "onlykappa",
   "max_files": 12,
   "max_chars_per_file": 8000
 }
