@@ -166,6 +166,13 @@ jobs:
         fi
       shell: bash
 'on':
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'preview/**'
+      - 'scripts/**'
+      - '.github/workflows/ios-build.yml'
   pull_request:
     paths:
       - 'ios/**'
