@@ -20,15 +20,24 @@ function restoreMemory(note){noteEdits[note]={deleted:false,at:Date.now()};remov
 async function settingsAPI(path,body={}){
  if(!backend||!access)throw Error('Connect your private AI backend on this device first.');
  const r=await fetch(backend+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
- const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Backend HTTP '+r.status);return d;
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(Error(d.error||'Backend HTTP '+r.status),{status:r.status});return d;
 }
 function logDiagnostic(message,ok=false){diagnostics.unshift({at:Date.now(),ok,message:String(message).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').split(access||'\u0000').join('[redacted]').slice(0,500)});diagnostics=diagnostics.slice(0,30);}
-async function refreshIntelligence(){
- if(settingsBusy)return;settingsBusy=true;settingsNotice='Checking authenticated backend…';render();
+// Setup check: runs silently once per app launch and when Settings opens with a stale result; Verify runs it on demand.
+let verifyRun=null,lastVerify=null;
+async function refreshIntelligence(manual=true){
+ if(verifyRun){await verifyRun;if(manual){settingsNotice=settingsIssues().length?'':'Backend connection verified just now.';if(view==='settings')render();}return;}
+ verifyRun=Promise.resolve().then(()=>runVerify(manual));try{await verifyRun}finally{verifyRun=null}
+}
+function autoVerify(){if(backend&&access&&!verifyRun&&(!lastVerify||Date.now()-lastVerify.at>600000))refreshIntelligence(false);}
+async function runVerify(manual){
+ settingsBusy=true;if(manual)settingsNotice='Checking authenticated backend…';if(view==='settings')render();
  const results=await Promise.allSettled([settingsAPI('/capabilities'),(async()=>{let cursor=null,all=[];for(let page=0;page<100;page++){const d=await settingsAPI('/usage',{cursor});all.push(...(d.events||[]));cursor=d.cursor;if(!cursor){usageEvents=all;usageNotice='Backend records · rolling '+(d.retentionDays||90)+' days · UTC periods · attempts include planner calls and failed fallbacks.';return;} }throw Error('History exceeds this view. Narrow server retention or export in pages.');})()]);
  if(results[0].status==='fulfilled'){capabilities=results[0].value;logDiagnostic('Authentication and model discovery passed',true)}else{capabilities=null;logDiagnostic(results[0].reason.message);}
+ lastVerify={at:Date.now(),error:results[0].status==='rejected'?{status:results[0].reason.status||0,message:results[0].reason.message}:null,usageError:results[1].status==='rejected'?results[1].reason.message:''};
  if(results[1].status==='rejected')usageNotice='Usage unavailable: '+results[1].reason.message;
- settingsNotice=results.every(r=>r.status==='fulfilled')?'Backend connection verified just now.':results.filter(r=>r.status==='rejected').map(r=>r.reason.message).join(' · ');
+ // Problems surface as fix-it cards on the Settings home, so only a manual check also reports success here.
+ settingsNotice=manual&&!settingsIssues().length?'Backend connection verified just now.':'';
  settingsBusy=false;if(view==='settings')render();
 }
 function exportFile(name,content,type='application/json'){
@@ -49,8 +58,28 @@ function usageSummary(){return KappaCore.aggregate(usageEvents,{since:KappaCore.
 function usageStats(s){return '<div class="usage-stats">'+[['Measured tokens',s.requests&&s.unknownTokens<s.requests?s.total.toLocaleString():'Unavailable'],['Provider attempts',s.requests.toLocaleString()],['Average latency',s.requests?(s.averageLatency/1000).toFixed(1)+'s':'Unavailable'],['Estimated cost',!s.requests||s.unknownCosts?'Unavailable':'$'+s.cost.toFixed(4)]].map(([l,v])=>'<div class="s-stat"><small>'+l+'</small><strong>'+v+'</strong></div>').join('')+'</div>';}
 function budgetAlert(){const s=KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
 function chart(s){const dates=[];const days=usagePeriod==='day'?1:usagePeriod==='week'?7:30;for(let i=days-1;i>=0;i--){const d=new Date();d.setUTCDate(d.getUTCDate()-i);dates.push(d.toISOString().slice(0,10))}const max=Math.max(1,...dates.map(d=>s.days[d]?.tokens||0));return '<div class="usage-chart" role="img" aria-label="Measured token usage over the last '+days+' UTC days">'+dates.map(d=>'<div class="chart-column" title="'+d+': '+(s.days[d]?.tokens||0)+' measured tokens"><i style="height:'+Math.max(2,(s.days[d]?.tokens||0)/max*100)+'%"></i><small>'+d.slice(8)+'</small></div>').join('')+'</div><p class="muted">Measured tokens per UTC day. Chart shows the last '+days+' days within the selected period. Missing metadata is excluded.</p>';}
+// Everything the setup check can find wrong, each with a plain fix. Empty means all good and the card stays hidden.
+function settingsIssues(){
+ if(!backend||!access)return [{level:'error',title:'Not connected to your AI backend',fix:'Open Connection → Manage connection and enter your Worker URL and access token (the CHAT_ACCESS_TOKEN secret in your Cloudflare Worker).'}];
+ if(!lastVerify)return [];
+ const e=lastVerify.error;
+ if(e?.status===401||e?.status===403)return [{level:'error',title:'Your access token was rejected',fix:'Open Connection → Manage connection and re-enter the access token. It must exactly match the CHAT_ACCESS_TOKEN secret in your Cloudflare Worker.'}];
+ if(e&&!e.status)return [{level:'error',title:'Can’t reach your backend',fix:'Check your internet connection. If it keeps happening, make sure the Worker URL in Connection → Manage connection is right and the latest “Deploy KappaForge Chat” run passed in GitHub → Actions.'}];
+ if(e)return [{level:'error',title:'Your backend returned an error',fix:'“'+e.message+'”. Tap Check again in a minute. If it keeps failing, open the latest “Deploy KappaForge Chat” run in GitHub → Actions.'}];
+ const c=capabilities||{},providers=c.providers||[],backups=providers.filter(p=>p.configured&&p.models.length).length,out=[];
+ if(!(c.models||[]).length)out.push({level:backups?'warn':'error',title:'Gemini isn’t available',fix:'Add or re-paste the GEMINI_API_KEY secret in your Cloudflare Worker (Settings → Variables and Secrets), or check its free quota in Google AI Studio.'+(backups?' Your free providers are covering for it.':' No backup provider is working either, so chat will fail until this is fixed.')});
+ for(const p of providers)if(p.hasKey&&!p.models.length)out.push({level:'warn',title:p.name+' key isn’t working',fix:'Re-paste the key in your Cloudflare Worker (Settings → Variables and Secrets) with no spaces before or after it. If it still fails, create a new key'+(p.signup?' at '+p.signup.replace(/^https:\/\//,'').split('/')[0]:'')+'.'});
+ if(c.github===false)out.push({level:'warn',title:'GitHub isn’t connected to your backend',fix:'Add a GITHUB_JOB_TOKEN secret to your Cloudflare Worker so tasks, code reviews and project health can reach GitHub.'});
+ if(lastVerify.usageError)out.push({level:'warn',title:'Usage history couldn’t load',fix:lastVerify.usageError+'. Chat still works; usage numbers stay empty until this is fixed.'});
+ return out;
+}
+function issuesCard(){
+ const issues=settingsIssues();
+ if(!issues.length)return verifyRun&&!lastVerify?'<p class="muted s-checking" role="status">Checking your setup…</p>':'';
+ return '<section class="s-card s-issues" role="alert"><h3>'+(issues.length===1?'1 thing needs attention':issues.length+' things need attention')+'</h3>'+issues.map(i=>'<div class="s-issue s-issue-'+i.level+'"><strong>'+esc(i.title)+'</strong><p>'+esc(i.fix)+'</p></div>').join('')+'<div class="settings-actions">'+sb('s-refresh',verifyRun?'Checking…':'Check again',false)+(backend&&access?'':sb('settingsconnect','Connect AI'))+'</div></section>';
+}
 function settingSummary(id){
- if(id==='overview')return capabilities?'Verified':backend&&access?'Saved':'Not set';
+ if(id==='overview'){const n=settingsIssues().length;return n?n+(n===1?' issue':' issues'):verifyRun&&!lastVerify?'Checking…':capabilities?'Verified':'';}
  if(id==='models')return preferences.model==='auto'?'Automatic':preferences.model.split(':').pop();
  if(id==='personalization')return ({system:'System',light:'Light',dark:'Dark'})[preferences.appearance]||'';
  if(id==='memory')return String(savedMemories.length);
@@ -60,8 +89,7 @@ function settingSummary(id){
 }
 function settingsHome(){
  const groups=[...new Set(settingSections.map(s=>s[3]))];
- const status=capabilities?'Connected and verified':backend&&access?'Credentials saved · not verified yet':'Not connected';
- return '<div class="settings-v2 s-home"><h2 class="sr-only" id="settings-section-heading" tabindex="-1">Settings</h2><section class="s-card s-profile"><span class="s-avatar" aria-hidden="true">K</span><div><strong>KappaForge</strong><p class="muted">'+esc(status)+' · '+APP_VERSION+'</p></div>'+sb('s-refresh',settingsBusy?'Checking…':'Verify',false)+'</section>'+(settingsNotice?'<p class="s-notice" role="status">'+esc(settingsNotice)+'</p>':'')+'<label class="s-search-label"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings"></label>'+groups.map(g=>'<section class="s-group" data-group><h3>'+esc(g)+'</h3><div class="s-card">'+settingSections.filter(s=>s[3]===g).map(([id,title,terms,,icon])=>'<button type="button" class="s-row" data-section="'+id+'" data-search="'+esc((title+' '+terms).toLowerCase())+'">'+settingIcon(icon)+'<span class="s-row-title">'+esc(title)+'</span><span class="s-row-value">'+esc(settingSummary(id))+'</span>'+settingIcon('chevron')+'</button>').join('')+'</div></section>').join('')+'<p id="settings-no-results" class="muted s-empty" hidden>No matching settings.</p></div>';
+ return '<div class="settings-v2 s-home"><h2 class="sr-only" id="settings-section-heading" tabindex="-1">Settings</h2>'+issuesCard()+(settingsNotice?'<p class="s-notice" role="status">'+esc(settingsNotice)+'</p>':'')+'<label class="s-search-label"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings"></label>'+groups.map(g=>'<section class="s-group" data-group><h3>'+esc(g)+'</h3><div class="s-card">'+settingSections.filter(s=>s[3]===g).map(([id,title,terms,,icon])=>'<button type="button" class="s-row" data-section="'+id+'" data-search="'+esc((title+' '+terms).toLowerCase())+'">'+settingIcon(icon)+'<span class="s-row-title">'+esc(title)+'</span><span class="s-row-value">'+esc(settingSummary(id))+'</span>'+settingIcon('chevron')+'</button>').join('')+'</div></section>').join('')+'<p id="settings-no-results" class="muted s-empty" hidden>No matching settings.</p></div>';
 }
 function renderSettings(){
  const section=settingSections.find(s=>s[0]===settingsSection);if(!section)return settingsHome();let body='';
@@ -93,6 +121,7 @@ function mergeVaultExtras(restored){
 async function encryptedBackup(){const pass=prompt('Recovery passphrase (at least 12 characters). Keep it safe; it is required to restore this file.');if(!pass||pass.length<12)throw Error('Backup cancelled or passphrase shorter than 12 characters.');exportFile('KappaForge-encrypted-backup-'+new Date().toISOString().slice(0,10)+'.json',await encryptVault(vaultSnapshot(true),pass));}
 function bindSettings(){
  if(view!=='settings')return;
+ autoVerify();
  const openSection=id=>{settingsSection=id;settingsNotice='';render();scrollTo(0,0);document.querySelector('.content')?.scrollTo?.(0,0);document.getElementById('settings-section-heading')?.focus({preventScroll:true});};
  document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>openSection(b.dataset.section));
  document.getElementById('settings-back')?.addEventListener('click',()=>openSection(''));
@@ -122,3 +151,6 @@ function bindSettings(){
 }
 
 function projectHealthHTML(){if(!projectReport)return '';const p=projectReport;return '<h4>'+esc(p.repo)+'</h4><p class="muted">Last push: '+esc(p.updatedAt||'Unavailable')+' · Default branch: '+esc(p.defaultBranch)+'</p><h4>Build & test history</h4>'+(p.workflows||[]).map(r=>'<p><a href="'+esc(r.url)+'" target="_blank" rel="noopener noreferrer">'+esc(r.name)+'</a> · '+esc(r.conclusion||r.status)+' <small>'+esc(r.sha?.slice(0,8))+'</small></p>').join('')+'<h4>Actionable failures</h4>'+((p.failures||[]).map(r=>'<div class="s-warning"><strong>'+esc(r.name)+'</strong>'+r.failedSteps.map(s=>'<p>'+esc(s.job+': '+s.step)+'. Open the job log, reproduce this step on the matching commit, fix the first reported error, then rerun its tests.</p>').join('')+'<a href="'+esc(r.url)+'" target="_blank" rel="noopener noreferrer">Inspect failure logs ↗</a></div>').join('')||'<p class="muted">No failed runs among the retrieved workflows. This does not prove every feature works.</p>')+'<h4>Dependency manifests</h4>'+((p.manifests||[]).map(m=>'<p><a href="'+esc(m.url)+'" target="_blank" rel="noopener noreferrer">'+esc(m.name)+'</a></p>').join('')||'<p class="muted">No recognized dependency manifests at repository root. Nested manifests may exist.</p>')+'<h4>Security diagnostics</h4><p class="muted">'+esc(p.security?.notice)+'</p>'+(p.security?.alerts||[]).map(a=>'<p><a href="'+esc(a.url)+'" target="_blank" rel="noopener noreferrer">'+esc(a.package+' · '+a.severity+': '+a.summary)+'</a><br>Patched version: '+esc(a.patchedVersion||'Not available')+'</p>').join('');}
+
+// Check the setup in the background on every launch (which includes each update); a problem gets a pointer to Settings.
+addEventListener('load',()=>setTimeout(async()=>{if(!backend||!access||lastVerify)return;await refreshIntelligence(false);const n=settingsIssues().length;if(n&&view!=='settings')toast('Setup check found '+n+(n===1?' issue':' issues')+'. Open Settings to see how to fix '+(n===1?'it':'them')+'.');},1500));
