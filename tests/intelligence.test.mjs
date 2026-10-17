@@ -1,4 +1,5 @@
 import test from 'node:test';
+import './review-card.test.mjs';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
