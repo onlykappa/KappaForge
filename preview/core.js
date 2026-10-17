@@ -43,6 +43,19 @@ globalThis.KappaJobs={report(comment){
  else if(/^### (?:KappaForge (?:run completed|project map complete)|Continuous task complete)/i.test(heading)||/^(?:KappaForge generated a draft PR|Self-repair draft PR created)/i.test(heading))status='complete';
  else if(/^### KappaForge is working on it/i.test(heading))status='progress';
  else if(/^### Continuous coding milestone/i.test(heading)||/^### KappaForge (?:fix ready|needs your help)/i.test(heading))status='partial';
+ // Posted by the sandbox test run on a development PR's task: a result, never the end of the task.
+ else if(/^### Tests passed\b/i.test(heading))status='tests-passed';
+ else if(/^### Tests failed\b/i.test(heading))status='tests-failed';
  else return null;
  return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body};
-},isSubmission(message){return message?.role==='assistant'&&/^Development job #\d+ submitted\. I will bring agent findings into this conversation automatically\. You can keep chatting while it runs\.$/.test(message.text)}};
+},
+// Act only on reports newer than the last one handled (comment ids only grow). A job tracked before ids were recorded
+// falls back to ignoring reports written before a retry or guidance resumed it.
+isNew(job,comment){const id=Number(comment?.id)||0,last=Number(job?.lastReportId)||0;if(last)return id>last;const at=Date.parse(comment?.created_at||'');return !(job?.resumedAt&&at&&at<job.resumedAt)},
+// A report ends tracking unless more can follow: watch jobs, test results, and develop jobs whose PR is still open (fixes may come).
+finishes(job,status){if(job?.mode==='watch'||!['failed','complete'].includes(status))return false;return !(job?.mode==='develop'&&job?.prUrl)},
+// Active, waiting on the agent (not on the owner), and silent for 15+ minutes; noted once per silence.
+stalled(job,now=Date.now()){return !!job&&!job.finished&&!['watch','continuous','continuous-code'].includes(job.mode)&&['waiting','progress','tests-failed'].includes(job.message)&&Number(job.activeAt)>0&&now-job.activeAt>=900000&&job.stuckNote!==job.activeAt},
+// The last few chat turns, newest kept, trimmed to max characters in total, as background for a task.
+conversationContext(messages,count=6,max=1500){const turns=(Array.isArray(messages)?messages:[]).filter(m=>(m?.role==='user'||m?.role==='assistant')&&typeof m.text==='string'&&m.text.trim()&&!m.progressKey&&!m.jobReport).slice(-count).map(m=>(m.role==='user'?'Owner: ':'KappaForge: ')+m.text.replace(/\x60\x60\x60kappa-(?:action|widget)[\s\S]*?\x60\x60\x60/g,'').replace(/\s+/g,' ').trim()).filter(t=>!/^\w+: $/.test(t));const out=[];let left=max;for(const t of turns.reverse()){if(left<40)break;const piece=t.length>left?t.slice(0,left-1)+'…':t;out.unshift(piece);left-=piece.length+1}return out.join('\n')},
+isSubmission(message){return message?.role==='assistant'&&/^Development job #\d+ submitted\. I will bring agent findings into this conversation automatically\. You can keep chatting while it runs\.$/.test(message.text)}};

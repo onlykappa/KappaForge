@@ -108,6 +108,8 @@ jobs:
     paths:
     - chat-backend/**
     - config/providers.json
+    - config/app.json
+    - preview/stream.js
     - .github/workflows/deploy-chat.yml
     - tests/intelligence.test.mjs
   workflow_dispatch: null

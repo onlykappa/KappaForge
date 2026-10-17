@@ -25,19 +25,50 @@ export async function agentWork(env){
   (tasks.length?tasks.join("\n"):"- No open tasks.")+"\n"+(agentPrs.length?agentPrs.join("\n"):"- No open agent PRs.");
 }
 
-// Owner guidance for a task: posted as a "Guidance:" comment the agent reads, then a fix starts if the latest tests failed.
-export async function sendGuidance(env,task,text){
+// Earlier chat turns go into the issue as background. Every line is quoted so nothing in it can read as one of the
+// issue's control lines (Mode:, Repository:, Allow flagged changes:, Repair files:, Step 1:), which the agent matches at line start.
+export function taskBody(repo,mode,instructions,context){
+ const quoted=typeof context==="string"&&context.trim()?context.trim().slice(0,2000).split("\n").map(l=>"> "+l).join("\n"):"";
+ return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat.";
+}
+const CONTINUOUS=/^Mode:\s*(?:continuous|continuous-code|watch)\s*$/mi;
+// The owner's open kappa-task issue with that number, or an error result.
+async function ownerTask(env,task){
  const number=Number(task);
- if(!Number.isSafeInteger(number)||number<1||typeof text!=="string"||!text.trim()||text.length>1500)return {error:"Guidance needs a task number and up to 1500 characters.",status:400};
+ if(!Number.isSafeInteger(number)||number<1)return {error:"Give the task number.",status:400};
  const issue=await get(env,ROOT+"/issues/"+number).catch(()=>null);
  if(!issue||issue.pull_request||issue.state!=="open"||issue.user?.login?.toLowerCase()!=="onlykappa"||!(issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name)))
   return {error:"Task #"+number+" is not an open KappaForge task.",status:404};
- const posted=await fetch("https://api.github.com/"+ROOT+"/issues/"+number+"/comments",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({body:"Guidance: "+text.trim()}),signal:AbortSignal.timeout(8000)});
- if(!posted.ok)return {error:"GitHub refused the guidance comment (HTTP "+posted.status+").",status:502};
  const repo=((issue.body||"").match(/^Repository:\s*onlykappa\/([A-Za-z0-9_.-]+)\s*$/mi)||[])[1]||"KappaForge";
  const prs=await get(env,"repos/onlykappa/"+repo+"/pulls?state=open&head=onlykappa:kappa/dev-"+number).catch(()=>[]);
- if(!prs.length)return {status:"guidance_saved",fix:false,message:"Saved. Task #"+number+" has no open PR yet, so the agent will use it on its next attempt."};
- const fix=await requestFix(env,repo,prs[0].number);
+ return {number,issue,repo,pr:prs[0]||null};
+}
+// A fresh attempt at the task (the same dispatch /jobs uses); the agent reads the task's Guidance: comments.
+async function startAttempt(env,t){
+ const workflow=CONTINUOUS.test(t.issue.body||"")?"continuous.yml":"agent.yml";
+ const r=await fetch("https://api.github.com/"+ROOT+"/actions/workflows/"+workflow+"/dispatches",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({ref:"main",inputs:{issue_number:String(t.number)}}),signal:AbortSignal.timeout(8000)});
+ return r.ok?{}:{error:"The new attempt could not start (GitHub HTTP "+r.status+")."};
+}
+
+// Owner guidance for a task: posted as a "Guidance:" comment the agent reads, then a fix (open PR whose tests failed) or a fresh attempt (no PR) starts.
+export async function sendGuidance(env,task,text){
+ if(typeof text!=="string"||!text.trim()||text.length>1500)return {error:"Guidance needs a task number and up to 1500 characters.",status:400};
+ const t=await ownerTask(env,task);if(t.error)return t;
+ const posted=await fetch("https://api.github.com/"+ROOT+"/issues/"+t.number+"/comments",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({body:"Guidance: "+text.trim()}),signal:AbortSignal.timeout(8000)});
+ if(!posted.ok)return {error:"GitHub refused the guidance comment (HTTP "+posted.status+").",status:502};
+ if(!t.pr){const run=await startAttempt(env,t);
+  return run.error?{status:"guidance_saved",fix:false,message:"Saved, but "+run.error.toLowerCase()+" Ask me to retry task #"+t.number+" in a minute."}
+   :{status:"guidance_saved",fix:false,retry:true,message:"Saved, and a fresh attempt at task #"+t.number+" started using your guidance."}}
+ const fix=await requestFix(env,t.repo,t.pr.number);
  return fix.error?{status:"guidance_saved",fix:false,message:"Saved. A fix will use it once the current tests finish failing; "+fix.error}
-  :{status:"guidance_saved",fix:true,message:"Saved, and a new fix attempt started for PR #"+prs[0].number+"."};
+  :{status:"guidance_saved",fix:true,message:"Saved, and a new fix attempt started for PR #"+t.pr.number+"."};
+}
+
+// Retry a failed or stuck task: fix its open PR when the latest tests failed, otherwise start a fresh attempt.
+export async function retryTask(env,task){
+ const t=await ownerTask(env,task);if(t.error)return t;
+ if(!t.pr){const run=await startAttempt(env,t);return run.error?{error:run.error,status:502}:{status:"retry_started",message:"Started a fresh attempt at task #"+t.number+". I'll post its progress here."}}
+ const fix=await requestFix(env,t.repo,t.pr.number);
+ if(!fix.error)return {status:"fix_started",message:"Started a fix attempt for PR #"+t.pr.number+" (task #"+t.number+")."};
+ return {error:"Task #"+t.number+" already has an open PR (#"+t.pr.number+") and it can't be fixed right now: "+fix.error+" If its tests passed, review and merge it on the Dashboard.",status:409};
 }
