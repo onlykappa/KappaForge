@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   verify:
-    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-') || startsWith(inputs.branch, 'kappa/dev-')
+    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-') || startsWith(inputs.branch, 'kappa/dev-') || startsWith(inputs.branch, 'kappa/revert-')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

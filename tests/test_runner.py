@@ -1,7 +1,8 @@
 import unittest
 import os
 from unittest.mock import patch
-from engine.runner import TARGET_RE, allowed_repo, read_token
+import time
+from engine.runner import TARGET_RE, allowed_repo, read_token, settled
 
 class TestTaskSafety(unittest.TestCase):
     def test_target_syntax(self):
@@ -19,6 +20,16 @@ class TestTaskSafety(unittest.TestCase):
             self.assertEqual(read_token("onlykappa/OmniPC"), "owner")
         with patch.dict(os.environ, {"GITHUB_TOKEN": "actions", "KAPPA_CODER_TOKEN": ""}):
             self.assertEqual(read_token("onlykappa/OmniPC"), "actions")
+    def test_scheduled_runs_skip_finished_and_in_flight_tasks(self):
+        now = time.time()
+        iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        old = iso(now - 86400)
+        self.assertTrue(settled([{"body": "### KappaForge project map complete", "created_at": old}], now))
+        self.assertTrue(settled([{"body": "**Status:** All eligible paths processed.", "created_at": old}], now))
+        self.assertTrue(settled([{"body": "### KappaForge task failed", "created_at": old}], now))
+        self.assertTrue(settled([{"body": "**Status:** Partial, next batch pending.", "created_at": iso(now - 600)}], now))
+        self.assertFalse(settled([{"body": "**Status:** Partial, next batch pending.", "created_at": old}], now))
+        self.assertFalse(settled([], now))
 
 if __name__ == "__main__":
     unittest.main()

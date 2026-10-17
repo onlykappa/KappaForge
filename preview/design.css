@@ -19,3 +19,4 @@
 
 .bubble.streaming{white-space:pre-wrap;min-height:26px}.bubble.streaming::after{content:"";display:inline-block;width:2px;height:1em;margin-left:4px;background:var(--accent);vertical-align:-2px}
 .review-card{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:13px;overflow-wrap:anywhere}.review-card p{font-size:13px;line-height:1.55;margin:0 0 10px}.review-card p strong{display:block;font-size:12px;margin-bottom:4px}.review-files{font-size:12px!important}
+.review-risks{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:rgba(242,160,169,.08);border:1px solid var(--line)}.review-risks strong{font-size:12px}.review-risks ul{margin:6px 0 0;padding-left:4px;list-style:none;font-size:12px;line-height:1.6}

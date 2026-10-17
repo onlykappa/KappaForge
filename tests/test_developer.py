@@ -33,7 +33,9 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_guardrails_ci_secrets_and_unsafe_paths_are_protected(self):
         for path in [".github/workflows/agent.yml", "engine/task_scope.py", "engine/developer.py", "engine/runner.py",
-                     "chat-backend/wrangler.toml", "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
+                     "chat-backend/wrangler.toml", "chat-backend/src/review.js", "chat-backend/src/github.js",
+                     "chat-backend/src/providers.js", "config/providers.json", "engine/repair_loop.py",
+                     "tests/test_developer.py", "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
                      "../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 check_path(path)
