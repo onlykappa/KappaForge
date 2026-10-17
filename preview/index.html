@@ -802,6 +802,10 @@ document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="En
 
 const APP_VERSION=KappaConfig.version;
 async function checkAppUpdate(interactive=false){
+ if(window.KappaNativeVersion && window.webkit?.messageHandlers?.kappa){
+  if(interactive)window.webkit.messageHandlers.kappa.postMessage({action:"updates"});
+  return;
+ }
  if(location.protocol==="file:"){if(interactive){navigate("settings");settingsSection="updates";render();}return;}
  const button=document.getElementById("updates");
  if(interactive)button.textContent="…";
