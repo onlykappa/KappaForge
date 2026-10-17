@@ -118,6 +118,7 @@ document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.
 document.getElementById("sidebar").addEventListener("click",e=>{const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
 
+function render(){const c=active();const content=document.getElementById('content');const welcome=document.getElementById('welcome');if(!c||c.messages.length===0){content.innerHTML='';welcome.hidden=false;}else{welcome.hidden=true;content.innerHTML=c.messages.map(renderMessage).join('');}bindInterface();}
 const APP_VERSION=KappaConfig.version;
 async function checkAppUpdate(interactive=false){
  if(window.KappaNativeVersion && window.webkit?.messageHandlers?.kappa){
