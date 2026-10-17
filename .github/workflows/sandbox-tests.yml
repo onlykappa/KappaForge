@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   verify:
-    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-')
+    if: startsWith(inputs.branch, 'kappa/issue-') || startsWith(inputs.branch, 'kappa/repair-') || startsWith(inputs.branch, 'kappa/cont-') || startsWith(inputs.branch, 'kappa/dev-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -43,7 +43,7 @@ jobs:
   workflow_dispatch:
     inputs:
       branch:
-        description: KappaForge generated branch (kappa/issue-N, kappa/repair-N, or kappa/cont-N-M)
+        description: KappaForge generated branch (kappa/issue-N, kappa/repair-N, kappa/cont-N-M, or kappa/dev-N)
         required: true
         type: string
       candidate_sha:

@@ -15,7 +15,7 @@ def mode_of(issue):
 
 
 def require_scope(mode, scope, family="agent"):
-    allowed = ({"read": {"analysis", "audit", "project-map"}, "write": {"code", "repair"}}
+    allowed = ({"read": {"analysis", "audit", "project-map"}, "write": {"code", "repair", "develop"}}
                if family == "agent" else
                {"read": {"continuous", "watch"}, "write": {"continuous-code"}})
     if mode not in allowed.get(scope, set()):
@@ -38,7 +38,7 @@ def main():
         scope, number = "skip", ""
         if issue:
             mode = mode_of(issue)
-            scope = "write" if mode in {"code", "repair", "continuous-code"} else "read"
+            scope = "write" if mode in {"code", "repair", "develop", "continuous-code"} else "read"
             require_scope(mode, scope, family)
             if family == "agent" and scope == "write" and os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
                 scope = "skip"
