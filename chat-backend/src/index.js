@@ -80,10 +80,10 @@ async function notifyOwner(env, message) {
     await stub.fetch("https://memory.internal/discord", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: message.slice(0, 1600) }) });
   } catch {}
 }
-// Default 25 agent runs per UTC day; DAILY_TASK_LIMIT overrides, and 0 removes the cap.
+// Default 100 agent runs per UTC day; DAILY_TASK_LIMIT overrides, and 0 removes the cap.
 async function reserveAgentRun(env) {
   if (!env.MEMORY) return { allowed: true };
-  const limit = env.DAILY_TASK_LIMIT === undefined ? 25 : Math.max(0, Number(env.DAILY_TASK_LIMIT) || 0);
+  const limit = env.DAILY_TASK_LIMIT === undefined ? 100 : Math.max(0, Number(env.DAILY_TASK_LIMIT) || 0);
   const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
   const r = await stub.fetch("https://memory.internal/usage/task-reserve", { method: "POST", body: JSON.stringify({ limit }) });
   return { allowed: r.ok, limit };

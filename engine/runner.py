@@ -195,16 +195,13 @@ def provider_models(pid):
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).
 
-    KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) override.
-    Default for public code: providers you added a key for, so anonymous keyless endpoints need opting in.
-    Default for private repositories: none.
+    Default, chosen by the owner for maximum uptime: every provider, for public and private repositories alike.
+    KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) narrow it.
     """
     listed = os.getenv("KAPPA_PRIVATE_CODE_PROVIDERS" if private else "KAPPA_CODE_PROVIDERS", "").strip()
     if listed:
         return {name.strip() for name in listed.split(",") if name.strip()}
-    if private:
-        return set()
-    return {pid for pid, p in PROVIDERS["providers"].items() if p.get("key") and os.getenv(p["key"], "")}
+    return set(PROVIDERS["order"])
 
 # Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
 FALLBACK_MAX_TOKENS = 8192

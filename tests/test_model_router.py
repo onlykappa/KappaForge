@@ -102,8 +102,9 @@ class ModelRoutingTests(unittest.TestCase):
         keys = {k: "" for k in ("CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
                                 "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "KAPPA_CODE_PROVIDERS", "KAPPA_PRIVATE_CODE_PROVIDERS")}
         with patch.dict(os.environ, {**keys, "GROQ_API_KEY": "k"}):
-            self.assertEqual(runner.code_providers(False), {"groq"}, "keyless providers need opting in")
-            self.assertEqual(runner.code_providers(True), set())
+            everything = set(runner.PROVIDERS["order"])
+            self.assertEqual(runner.code_providers(False), everything, "owner allows every provider by default")
+            self.assertEqual(runner.code_providers(True), everything)
         with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
             self.assertEqual(runner.code_providers(True), {"groq", "cerebras"})
             self.assertEqual(runner.code_providers(False), {"kilo"})
