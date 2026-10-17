@@ -46,7 +46,8 @@ def read_token(repo, token=None):
 
 TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M | re.I)
 # Restrict unattended automation to Flash-class models; no paid Pro fallback.
-PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+# Strongest first: the lite models write noticeably weaker code and only answer when the others cannot.
+PREFERRED_MODELS = ["gemini-3-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.1",
            "X-GitHub-Api-Version": "2022-11-28"}
 
@@ -254,17 +255,24 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
         payload = {"contents": [{"parts": [{"text": prompt}]}],
                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens}}
         headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+        grown = False
         # Provider outages are transient. Retry only 429/5xx; an invalid
         # model (404) needs a different route, never repeated requests.
         for attempt in range(3):
             try:
                 req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
                 # Long replies (large-budget development) take minutes to generate.
-                with urllib.request.urlopen(req, timeout=100 if max_output_tokens <= 16384 else 420) as response:
+                with urllib.request.urlopen(req, timeout=100 if payload["generationConfig"]["maxOutputTokens"] <= 16384 else 420) as response:
                     data = json.load(response)
                 candidates_out = data.get("candidates") or []
                 parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
                 output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                # Thinking counts against the limit, so a long answer can stop mid-way; ask once more with room to finish.
+                if candidates_out and candidates_out[0].get("finishReason") == "MAX_TOKENS" and max_output_tokens < 65536 and not grown:
+                    grown = True
+                    payload["generationConfig"]["maxOutputTokens"] = min(65536, max_output_tokens * 4)
+                    errors.append(model + ": answer cut off at the output limit")
+                    continue
                 if output:
                     return model, output
                 errors.append(model + ": empty response")
@@ -288,6 +296,23 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
         return fallback
     raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
 
+FAILED_MARKER = "<!-- KAPPA_FAILED:"
+
+
+def report_failure(number, token, reason, next_step):
+    """Tell the owner on the task why it stopped and what to do; the workflow's generic report then stays quiet."""
+    for name, value in os.environ.items():
+        if len(value) >= 8 and re.search(r"TOKEN|SECRET|PASSWORD|API_KEY", name, re.I):
+            reason = reason.replace(value, "[redacted]")
+    try:
+        github(f"repos/{ROOT}/issues/{int(number)}/comments", token, {"body": (
+            f"### KappaForge task failed\n\n**Why:** {reason}\n\n**What to do:** {next_step}.\n\n"
+            f"{FAILED_MARKER}{os.getenv('GITHUB_RUN_ID', '')} -->")})
+    except (urllib.error.URLError, ValueError):
+        pass
+    notify(f"❌ KappaForge task #{number} failed: {reason}"[:1500])
+
+
 def main():
     if os.getenv("INPUT_ISSUE_NUMBER", "").strip().lower() == "smoke":
         if not os.getenv("GEMINI_API_KEY"):
@@ -304,6 +329,9 @@ def main():
         print("No authorized unprocessed task found.")
         return
     if not os.getenv("GEMINI_API_KEY"):
+        if os.getenv("INPUT_ISSUE_NUMBER", "").strip():
+            report_failure(issue["number"], token, "GEMINI_API_KEY is missing from the repository's Actions secrets",
+                           "add it under GitHub → Settings → Secrets and variables → Actions, then retry the task")
         print("GEMINI_API_KEY missing; task left queued.")
         return
     from engine.task_scope import mode_of, require_scope
@@ -321,14 +349,22 @@ def main():
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
             print("Development mode requires explicit manual workflow dispatch; task remains queued.")
             return
-        if os.getenv("INPUT_ACTION", "").strip() == "fix":
-            from engine.developer import fix_pull_request
-            url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
-            print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
-            return
-        from engine.developer import produce_development_pr
-        url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
-        print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
+        from engine.developer import Progress, fix_pull_request, produce_development_pr
+        fixing = os.getenv("INPUT_ACTION", "").strip() == "fix"
+        try:
+            if fixing:
+                url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
+                print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
+            else:
+                url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
+                print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
+        except Exception as exc:
+            reason = str(exc)[:900] or type(exc).__name__
+            if Progress.latest:
+                Progress.latest.fail(reason[:300])
+            report_failure(issue["number"], token, reason, "reply in chat with guidance (what to do differently) and ask "
+                           "me to try again" + (", or tap Fix it on the Dashboard" if fixing else ""))
+            raise
         return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":

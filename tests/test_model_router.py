@@ -134,3 +134,39 @@ class ModelRoutingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CutOffAnswerTests(unittest.TestCase):
+    def test_strongest_flash_model_goes_first(self):
+        available = {"gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"}
+        self.assertEqual(runner.select_models(available)[:2], ["gemini-3-flash", "gemini-2.5-flash"])
+
+    def test_an_answer_cut_off_at_the_limit_is_asked_again_with_more_room(self):
+        sent = []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/gemini-3-flash", "supportedGenerationMethods": ["generateContent"]}]})
+            limit = json.loads(req.data)["generationConfig"]["maxOutputTokens"]
+            sent.append(limit)
+            if len(sent) == 1:
+                return response({"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": '{"read": ['}]}}]})
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": '{"read": []}'}]}}]})
+        with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            model, output = runner.run_model("key", "plan", max_output_tokens=8000)
+        self.assertEqual((model, output), ("gemini-3-flash", '{"read": []}'))
+        self.assertEqual(sent, [8000, 32000])
+
+
+class FailureReportTests(unittest.TestCase):
+    def test_the_task_gets_the_real_reason_and_next_step_without_secrets(self):
+        posted = []
+        with patch.dict(os.environ, {"GITHUB_RUN_ID": "77", "GEMINI_API_KEY": "secret-key-123"}), \
+                patch.object(runner, "github", side_effect=lambda path, token, payload: posted.append((path, payload))), \
+                patch.object(runner, "notify"):
+            runner.report_failure(9, "t", "Stage 2 failed: bad edit (key secret-key-123)", "reply with guidance")
+        path, payload = posted[0]
+        self.assertEqual(path, "repos/onlykappa/KappaForge/issues/9/comments")
+        self.assertIn("**Why:** Stage 2 failed: bad edit", payload["body"])
+        self.assertIn("**What to do:** reply with guidance.", payload["body"])
+        self.assertIn("<!-- KAPPA_FAILED:77 -->", payload["body"])
+        self.assertNotIn("secret-key-123", payload["body"])

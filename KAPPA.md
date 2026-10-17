@@ -10,6 +10,16 @@ Test command: python -m unittest discover -s tests && node --test tests/intellig
 - `engine/` is the Python agent that runs in GitHub Actions.
 - `config/app.json` holds the version and app identity; generated files come from `python scripts/configure.py`.
 
+## Where code runs (think about this before designing)
+- The Worker runs on Cloudflare servers: it does not know the owner's timezone, location, device or app settings. Anything about the user must be sent by the app with each request.
+- The app runs on the owner's iPhone inside the native shell (`ios/`); there is no website any more. Changes reach the phone through a new app release, which is published automatically after each merge to main.
+- The agent runs in GitHub Actions with no access to the phone or the Worker's live state.
+
+## Lessons from earlier changes
+- A feature must work for every message or request, not just the first one in a chat.
+- Respect existing limits (message length caps, token budgets): add to text after validation without pushing it over the cap.
+- Every code change needs a test of the new behaviour itself, one that would fail without the change.
+
 ## Conventions
 - Match the surrounding style: the web app and Worker use compact one-line JavaScript; keep it that way rather than reformatting.
 - No new dependencies or build steps without saying so in the summary.

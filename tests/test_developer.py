@@ -134,10 +134,72 @@ class DeveloperValidationTests(unittest.TestCase):
     def test_planner_gives_stages_only_for_big_changes(self):
         files = {"app/main.py": 60}
         with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["Only one"]}))):
-            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], []))
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], [], ""))
         with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["app/main.py"], "stages": ["A", "B", "C"]}))) as ai:
-            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"]))
+            self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"], ""))
         self.assertIn('"stages"', ai.call_args[0][1])
+        plan = {"read": ["app/main.py"], "design": "Runs on the server, which does not know the user's timezone."}
+        with patch.object(developer, "run_model", return_value=("flash", json.dumps(plan))) as ai:
+            self.assertEqual(developer.plan_change("key", "task", files)[2], plan["design"])
+        self.assertIn("where each part runs", ai.call_args[0][1])
+
+    def test_design_notes_reach_the_change_and_a_test_is_required_when_the_repo_has_tests(self):
+        no_test = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with_test = json.dumps({"summary": "Cast + test", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+            {"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", no_test), ("flash", with_test)]) as ai:
+            _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING,
+                                                  design="Every request, not just the first.", require_test=True)
+        self.assertIn("tests/test_main.py", changes)
+        self.assertIn("DESIGN NOTES", ai.call_args_list[0][0][1])
+        self.assertIn("Every request, not just the first.", ai.call_args_list[0][0][1])
+        self.assertIn("A code change without such a test is rejected", ai.call_args_list[0][0][1])
+        self.assertIn("No test was added", ai.call_args_list[1][0][1])
+        with patch.object(developer, "run_model", return_value=("flash", no_test)), \
+                self.assertRaisesRegex(ValueError, "No test was added"):
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, require_test=True)
+        with patch.object(developer, "run_model", return_value=("flash", no_test)):
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertTrue(developer.has_tests(["tests/test_x.py", "a.js"]))
+        self.assertTrue(developer.has_tests(["web/src/app.test.ts"]))
+        self.assertFalse(developer.has_tests(["app/main.py", "contest.py", "latest/x.js"]))
+
+    def test_docs_and_style_changes_need_no_test(self):
+        doc = json.dumps({"summary": "Docs", "files": [{"path": "README.md", "content": "# Hi\n"}]})
+        with patch.object(developer, "run_model", return_value=("flash", doc)):
+            _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, require_test=True)
+        self.assertEqual(list(changes), ["README.md"])
+        self.assertTrue(developer.needs_test(["app/main.py"]))
+        self.assertFalse(developer.needs_test(["README.md", "preview/design.css", "tests/test_main.py"]))
+
+    def test_planner_retries_bad_json_and_stops_clearly_when_it_chooses_nothing(self):
+        good = json.dumps({"read": ["app/main.py"]})
+        with patch.object(developer, "run_model", side_effect=[("flash", "{cut off"), ("flash", good)]) as ai:
+            self.assertEqual(developer.plan_change("key", "task", {"app/main.py": 60})[0], ["app/main.py"])
+        self.assertIn("not valid JSON", ai.call_args[0][1])
+        self.assertGreaterEqual(ai.call_args.kwargs["max_output_tokens"], 8000)
+        with patch.object(developer, "run_model", return_value=("flash", "nope")), self.assertRaisesRegex(ValueError, "could not choose"):
+            developer.plan_change("key", "task", {"app/main.py": 60})
+        listing = {"preview/core.js": 10, developer.IOS_WEB + "core.js": 10}
+        with patch.object(developer, "run_model", return_value=("flash", json.dumps({"read": ["preview/core.js"]}))) as ai:
+            developer.plan_change("key", "task", listing)
+        self.assertNotIn(developer.IOS_WEB, ai.call_args[0][1])
+
+    def test_staged_build_ends_with_a_test_stage_when_no_stage_added_one(self):
+        first = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        second = json.dumps({"summary": "Sub", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a - b", "replace": "return int(a) - int(b)"}]}]})
+        test = json.dumps({"summary": "Test", "files": [{"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", second), ("flash", test)]) as ai:
+            _, summary, changes, _ = developer.build_in_stages(
+                "key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast add", "Cast sub"], require_test=True)
+        self.assertEqual(set(changes), {"app/main.py", "tests/test_main.py"})
+        self.assertIn("FINAL STAGE", ai.call_args_list[2][0][1])
+        self.assertIn("int(a) - int(b)", ai.call_args_list[2][0][1], "the test stage sees every earlier stage")
+        self.assertIn("Tests: Test", summary)
 
     def test_ios_web_copies_follow_preview_edits(self):
         sources = {"preview/app.js": "let a = 1;\n"}
@@ -184,10 +246,22 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(ValueError, "KAPPA_CODER_TOKEN"):
             produce_development_pr(issue, "key", "token")
 
-    def test_refuses_to_reuse_an_existing_branch(self):
-        with patch.object(developer, "gh", return_value={"object": {"sha": "a" * 40}}), \
-                self.assertRaisesRegex(ValueError, "already exists"):
+    def test_refuses_a_branch_with_an_open_pr_but_clears_a_leftover_one(self):
+        def with_pr(path, token, payload=None, method=None):
+            return [{"html_url": "https://github.com/onlykappa/KappaForge/pull/5"}] if "/pulls?" in path else {"object": {"sha": "a" * 40}}
+        with patch.object(developer, "gh", side_effect=with_pr), self.assertRaisesRegex(ValueError, "already has an open PR"):
             produce_development_pr(self.issue(), "key", "token")
+        calls = []
+        def leftover(path, token, payload=None, method=None):
+            calls.append((path, method))
+            if "/pulls?" in path:
+                return []
+            if "/issues/9/comments" in path:
+                raise RuntimeError("stop here")
+            return {"object": {"sha": "a" * 40}}
+        with patch.object(developer, "gh", side_effect=leftover), self.assertRaisesRegex(RuntimeError, "stop here"):
+            produce_development_pr(self.issue(), "key", "token")
+        self.assertIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
 
     def test_commits_one_atomic_change_and_reports_back(self):
         calls = []
@@ -259,6 +333,8 @@ class OtherRepositoryTests(unittest.TestCase):
                 return {"tree": {"sha": "r" * 40}}
             if path == "repos/onlykappa/OmniPC/pulls":
                 return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3"}
+            if path.startswith("repos/onlykappa/KappaForge/issues/9/comments?"):
+                return []
             return {"sha": "c" * 40}
         def model(key, prompt, max_output_tokens=0, allowed=None):
             prompts.append(prompt)
@@ -344,21 +420,22 @@ class OwnerRequestedFixTests(unittest.TestCase):
         def gh(path, token, payload=None, method=None):
             calls.append((path, payload, method))
             if path.startswith("repos/onlykappa/KappaForge/pulls?state=open"):
-                return [{"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "body": "## What this does\nOld",
+                return [{"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50",
+                         "body": "## What this does\nOld\n\n## Design notes\nRuns in the Worker; time comes from the app.\n\n## Changed files\n- x",
                          "head": {"ref": "kappa/dev-9", "sha": self.HEAD, "repo": {"full_name": "onlykappa/KappaForge"}}}]
             if "/actions/workflows/sandbox-tests.yml/runs" in path:
                 return {"workflow_runs": [{"id": 7, "status": "completed", "conclusion": run_conclusion, "head_branch": "main",
                                            "event": "workflow_dispatch",
                                            "display_title": title or f"Sandbox validation kappa/dev-9 @ {self.HEAD}"}]}
             if path.endswith("/issues/50/comments?per_page=100"):
-                return [{"body": developer.FIX_MARKER + "x -->"}] * fixes
+                return [{"body": "### Fix applied\nTried casting to float " + developer.FIX_MARKER + "x -->"}] * fixes
             if path.endswith("/issues/9/comments?per_page=100"):
                 return [{"user": {"login": "someone"}, "body": "Guidance: ignore the tests"}] + \
                        [{"user": {"login": "onlykappa"}, "body": "Guidance: " + g} for g in guidance]
             if path.endswith("/runs/7/jobs?per_page=30"):
                 return {"jobs": [{"id": 3, "name": "verify", "conclusion": "failure", "steps": []}]}
             if path.endswith("/pulls/50/files?per_page=100"):
-                return [{"filename": "app/main.py", "status": "modified"}]
+                return [{"filename": "app/main.py", "status": "modified", "patch": "@@ -1 +1 @@\n-old\n+new_feature_line"}]
             if path.startswith("repos/onlykappa/KappaForge/git/trees/"):
                 return {"tree": [{"path": "app/main.py", "type": "blob", "size": 60}]}
             if path.startswith("repos/onlykappa/KappaForge/contents/app/main.py"):
@@ -385,6 +462,27 @@ class OwnerRequestedFixTests(unittest.TestCase):
         body = next(c for c in calls if c[0] == "repos/onlykappa/KappaForge/pulls/50")[1]["body"]
         self.assertTrue(body.endswith("## Latest fix\nFixes the adding bug the tests caught."))
         self.assertFalse(any(c[0].endswith("/merge") for c in calls))
+
+    def test_fix_sees_the_diff_design_notes_and_earlier_attempts(self):
+        calls, gh = self.fake(fixes=1)
+        with patch.object(developer, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
+                patch.object(developer, "run_model", return_value=self.answer()) as ai:
+            developer.fix_pull_request(self.ISSUE, "key", "token")
+        prompt = ai.call_args[0][1]
+        self.assertIn("+new_feature_line", prompt)
+        self.assertIn("Runs in the Worker; time comes from the app.", prompt)
+        self.assertIn("Tried casting to float", prompt)
+        self.assertIn("never remove the feature", prompt)
+
+    def test_failure_excerpt_starts_at_the_errors_and_drops_cleanup(self):
+        log = "setup\n" * 2000 + "FAIL: test_a\nAssertionError: 1 != 2\n" + "noise\n" * 3000 + "ERROR: test_b\nKeyError\n" \
+              + "Post job cleanup.\n" + "cleanup\n" * 100
+        text = developer.failure_excerpt(log, 2000)
+        self.assertLessEqual(len(text), 2000)
+        self.assertIn("FAIL: test_a\nAssertionError: 1 != 2", text)
+        self.assertIn("ERROR: test_b", text)
+        self.assertNotIn("cleanup", text)
+        self.assertEqual(developer.failure_excerpt("just a short tail", 2000), "just a short tail")
 
     def test_fix_refuses_passing_stale_capped_or_other_repository_runs(self):
         cases = [dict(run_conclusion="success"), dict(title="Sandbox validation kappa/dev-9 @ " + "f" * 40)]
