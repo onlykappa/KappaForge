@@ -72,6 +72,22 @@ function corsHeaders(request) {
     "Vary": "Origin"
   } : null;
 }
+// Best-effort Discord message through the webhook connected in the app; never blocks the action itself.
+async function notifyOwner(env, message) {
+  if (!env.MEMORY) return;
+  try {
+    const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+    await stub.fetch("https://memory.internal/discord", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: message.slice(0, 1600) }) });
+  } catch {}
+}
+// Default 25 agent runs per UTC day; DAILY_TASK_LIMIT overrides, and 0 removes the cap.
+async function reserveAgentRun(env) {
+  if (!env.MEMORY) return { allowed: true };
+  const limit = env.DAILY_TASK_LIMIT === undefined ? 25 : Math.max(0, Number(env.DAILY_TASK_LIMIT) || 0);
+  const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+  const r = await stub.fetch("https://memory.internal/usage/task-reserve", { method: "POST", body: JSON.stringify({ limit }) });
+  return { allowed: r.ok, limit };
+}
 function safeEqual(a, b) {
   const enc = new TextEncoder();
   const x = enc.encode(a), y = enc.encode(b);
@@ -175,7 +191,11 @@ export default {
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
     if (new URL(request.url).pathname === "/undo") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
-      try { const result = await undoLast(env, input.confirmed === true, input.sha); return json(result, result.error ? result.status : 200, cors); }
+      try {
+        const result = await undoLast(env, input.confirmed === true, input.sha);
+        if (!result.error && input.confirmed === true) await notifyOwner(env, "↶ Undo opened for the latest KappaForge change. Review & merge it on the Dashboard.\n" + result.url);
+        return json(result, result.error ? result.status : 200, cors);
+      }
       catch { return json({ error: "GitHub undo request failed." }, 502, cors); }
     }
     if (["/review", "/decisions"].includes(new URL(request.url).pathname) && ["review", "merge", "fix", "close", "test"].includes(new URL(request.url).pathname === "/review" ? "review" : input.decision)) {
@@ -185,10 +205,16 @@ export default {
       if (!Number.isSafeInteger(number) || number < 1 || !(await listRepos(env)).includes(repo) || (action !== "review" && input.confirmed !== true))
         return json({ error: "Choose a pull request and confirm the action." }, 400, cors);
       try {
+        if (action === "fix") {
+          const run = await reserveAgentRun(env);
+          if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
+        }
         const result = action === "review" ? await reviewPR(env, repo, number) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
           action === "close" ? await closePR(env, repo, number) :
           action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+        if (!result.error && action === "merge") await notifyOwner(env, "✅ Merged " + repo + " #" + number + ". " + (repo === "KappaForge" ? "KappaForge redeploys now; if anything breaks, use Undo last change on the Dashboard." : "") + "\n" + result.url);
+        if (!result.error && action === "close") await notifyOwner(env, "Closed " + repo + " #" + number + " without merging.");
         return json(result, result.error ? result.status : ["fix", "test"].includes(action) ? 202 : 200, cors);
       } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
     }
@@ -252,6 +278,8 @@ export default {
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
+      const run = await reserveAgentRun(env);
+      if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
       const issueBody = "Repository: " + repo + "\nMode: " + mode +
           "\n\n" + instructions + "\n\nApproved from KappaForge Chat.";

@@ -45,6 +45,13 @@ export async function usageStore(state,request){
   const allowed=storage.transaction?await storage.transaction(op):await op(storage);
   return Response.json({allowed},{status:allowed?200:429});
  }
+ // Daily cap on agent runs (tasks and fixes), so a burst cannot spend every provider's free quota at once.
+ if(url.pathname==='/usage/task-reserve'){
+  const {limit}=await request.json();const key='task-budget:'+new Date().toISOString().slice(0,10);
+  const op=async s=>{const used=await s.get(key)||0;if(limit&&used>=limit)return {allowed:false,used};await s.put(key,used+1);return {allowed:true,used:used+1};};
+  const result=storage.transaction?await storage.transaction(op):await op(storage);
+  return Response.json({...result,limit},{status:result.allowed?200:429});
+ }
  if(request.method==='POST'){
   const event=await request.json();
   await storage.put('usage:'+String(event.at).padStart(13,'0')+':'+event.id,event);

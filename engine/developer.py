@@ -15,7 +15,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from engine.runner import allowed_repo, request, run_model
+from engine.runner import allowed_repo, code_providers, notify, request, run_model
 
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
@@ -79,6 +79,14 @@ def snapshot(repo, token):
     return base, sha, files, modes
 
 
+def is_private(repo, token):
+    """Treat a repository as private unless GitHub says otherwise."""
+    try:
+        return gh(f"repos/{repo}", token).get("private", True) is not False
+    except (urllib.error.URLError, ValueError):
+        return True
+
+
 def list_tree(repo, sha, token):
     tree = gh(f"repos/{repo}/git/trees/{sha}?recursive=1", token)
     if tree.get("truncated"):
@@ -131,7 +139,7 @@ def dispatch_tests(repo, branch, sha, token):
     gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": "main", "inputs": inputs})
 
 
-def select_files(api_key, task, files, guide=""):
+def select_files(api_key, task, files, guide="", allowed=None):
     named = [p for p in files if p in task]
     listing = "\n".join(f"{p} ({files[p]} bytes)" for p in sorted(files)[:MAX_LISTED_PATHS])
     prompt = (
@@ -142,7 +150,7 @@ def select_files(api_key, task, files, guide=""):
         + ("PROJECT INSTRUCTIONS (from the repository):\n" + guide[:4000] + "\n\n" if guide else "") +
         "TASK:\n" + task[:6000] + "\n\nREPOSITORY FILES:\n" + listing)
     try:
-        chosen = parse_json(run_model(api_key, prompt, max_output_tokens=1500)[1]).get("read", [])
+        chosen = parse_json(run_model(api_key, prompt, max_output_tokens=1500, allowed=allowed)[1]).get("read", [])
     except (ValueError, AttributeError, json.JSONDecodeError):
         chosen = []
     paths = [p for p in dict.fromkeys(named + [p for p in chosen if isinstance(p, str)])
@@ -244,7 +252,7 @@ def excerpt(text, task, budget=MAX_FILE_CHARS):
     return "\n".join(out)
 
 
-def generate(api_key, task, repo, sources, existing, guide=""):
+def generate(api_key, task, repo, sources, existing, guide="", allowed=None):
     context = ""
     for path, text in sources.items():
         if len(text) > MAX_FILE_CHARS:
@@ -277,7 +285,7 @@ def generate(api_key, task, repo, sources, existing, guide=""):
     for attempt in range(3):
         retry = ("\n\nYour previous answer was rejected: " + "; ".join(errors[-3:]) +
                  "\nFix exactly these problems. Do not expand scope.") if attempt else ""
-        model, output = run_model(api_key, instruction + retry, max_output_tokens=16384)
+        model, output = run_model(api_key, instruction + retry, max_output_tokens=16384, allowed=allowed)
         try:
             proposal = parse_json(output)
             changes = apply_changes(sources, existing, proposal)
@@ -289,6 +297,40 @@ def generate(api_key, task, repo, sources, existing, guide=""):
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             errors.append(str(exc)[:300] or type(exc).__name__)
     raise ValueError("Generated change failed validation after three attempts: " + " | ".join(errors))
+
+
+# Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
+# reach secrets or the network stop before anything is pushed there unless the owner allowed them.
+FLAGS = (
+    ("reads secrets or environment variables", re.compile(r"\b(?:env\.[A-Z][A-Z_]{2,}|process\.env|os\.environ|os\.getenv|secrets\.)")),
+    ("touches login, tokens or authorization", re.compile(r"\b(?:Authorization|Bearer|access_token|password|api[_-]?key)\b", re.I)),
+    ("runs other programs or dynamically built code", re.compile(r"(?:\beval\(|new Function\(|child_process|\bsubprocess\.|os\.system\(|\bexec\()")),
+    ("contacts a web address", re.compile(r"https?://(?!(?:api\.)?github\.com)[a-z0-9.-]+\.[a-z]{2,}", re.I)),
+)
+
+
+def flagged_changes(sources, changes):
+    found = {}
+    for path, text in changes.items():
+        before = set(sources.get(path, "").splitlines())
+        added = [line for line in text.splitlines() if line not in before]
+        for label, pattern in FLAGS:
+            if any(pattern.search(line) for line in added):
+                found.setdefault(label, []).append(path)
+    return found
+
+
+def flags_allowed(body):
+    return bool(re.search(r"^Allow flagged changes:\s*yes\s*$", body or "", re.I | re.M))
+
+
+def stop_for_flags(repo, number, flags, token):
+    listing = "\n".join(f"- It {label}: " + ", ".join(f"`{p}`" for p in paths) for label, paths in flags.items())
+    gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
+        f"### KappaForge task failed\n\nStopped before changing `{repo}`. The generated change was flagged:\n\n{listing}\n\n"
+        f"Pushing it would let `{repo}`'s own GitHub checks run this code with that repository's secrets. If the change is "
+        "intended, edit this issue to add the line `Allow flagged changes: yes`, then comment `/audit-code` to run it again.")})
+    notify(f"⚠️ KappaForge stopped a change to {repo} before pushing it: " + "; ".join(flags) + f". https://github.com/{ROOT}/issues/{number}")
 
 
 def commit_changes(repo, parent, changes, modes, message, token):
@@ -317,13 +359,19 @@ def produce_development_pr(issue, api_key, token):
     task = (issue.get("title") or "") + "\n" + body
     base, sha, existing, modes = snapshot(repo, repo_token)
     guide = project_guide(repo, sha, existing, repo_token)
+    # Source code only goes to fallback providers allowed for this repository's visibility.
+    allowed = code_providers(is_private(repo, repo_token))
     sources = {}
-    for path in select_files(api_key, task, existing, guide):
+    for path in select_files(api_key, task, existing, guide, allowed):
         try:
             sources[path] = read_source(repo, path, sha, repo_token)
         except (ValueError, UnicodeDecodeError):
             continue
-    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide)
+    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
+    flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
+    if flags:
+        stop_for_flags(repo, number, flags, token)
+        return None
     # One atomic commit on a fresh branch; the default branch is never written.
     commit = commit_changes(repo, sha, changes, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", repo_token)
     gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
@@ -341,6 +389,7 @@ def produce_development_pr(issue, api_key, token):
         f"**What this does:** {explanation or summary}\n\n"
         f"**Repository:** `{repo}` | **Model:** `{model}` | Read {len(sources)} files, changed {len(changes)}.\n\n"
         f"{validation} Review it on the Dashboard; nothing merges until you tap Merge.")})
+    notify(f"🛠️ KappaForge PR ready for review in {repo}: {(issue.get('title') or '')[:120]}\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
     return pr["html_url"]
 
 
@@ -396,7 +445,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "ORIGINAL TASK:\n" + ((issue.get("title") or "") + "\n" + (issue.get("body") or ""))[:4000] +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
-    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide)
+    allowed = code_providers(is_private(repo, repo_token))
+    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
     return model, summary, changes, explanation, modes
 
 
@@ -437,6 +487,18 @@ def fix_pull_request(issue, api_key, token):
     jobs = gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30", token).get("jobs", [])
     failed = [j for j in jobs if j.get("conclusion") == "failure"]
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token)
+    flags = {}
+    if repo != ROOT and not flags_allowed(issue.get("body")):
+        before = {}
+        for path in changes:
+            try:
+                before[path] = read_source(repo, path, head, repo_token)
+            except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
+                before[path] = ""  # New file: every line is new.
+        flags = flagged_changes(before, changes)
+    if flags:
+        stop_for_flags(repo, number, flags, token)
+        return None
     commit = commit_changes(repo, head, changes, modes, f"fix: make sandbox tests pass for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
@@ -448,4 +510,5 @@ def fix_pull_request(issue, api_key, token):
     gh(f"repos/{repo}/issues/{pr['number']}/comments", repo_token,
        {"body": f"### Fix applied after failed run {run['id']} ({model})\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": f"### KappaForge fix ready\n\n{note}\n\n{pr['html_url']}"})
+    notify(f"🔧 KappaForge pushed a fix to {repo}; tests are running again.\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
     return pr["html_url"]

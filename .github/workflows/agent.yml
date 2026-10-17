@@ -57,6 +57,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        KAPPA_CODE_PROVIDERS: ${{ vars.KAPPA_CODE_PROVIDERS }}
+        KAPPA_PRIVATE_CODE_PROVIDERS: ${{ vars.KAPPA_PRIVATE_CODE_PROVIDERS }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
         OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -78,6 +81,7 @@ jobs:
       uses: actions/github-script@v7
       env:
         TASK_NUMBER: ${{ needs.classify.outputs.issue }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       with:
         script: |
           const raw = process.env.TASK_NUMBER;
@@ -88,6 +92,10 @@ jobs:
           const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           await github.rest.issues.createComment({...context.repo, issue_number,
             body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
+          const hook = process.env.DISCORD_WEBHOOK_URL || '';
+          if (/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(hook))
+            await fetch(hook, {method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({content: `❌ KappaForge task #${issue_number} failed: ${issue.title}\n${url}`.slice(0, 1900), allowed_mentions: {parse: []}})}).catch(() => {});
     needs: classify
     if: needs.classify.outputs.scope == 'read'
     permissions:
@@ -114,6 +122,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        KAPPA_CODE_PROVIDERS: ${{ vars.KAPPA_CODE_PROVIDERS }}
+        KAPPA_PRIVATE_CODE_PROVIDERS: ${{ vars.KAPPA_PRIVATE_CODE_PROVIDERS }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
         OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -136,6 +147,7 @@ jobs:
       uses: actions/github-script@v7
       env:
         TASK_NUMBER: ${{ needs.classify.outputs.issue }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       with:
         script: |
           const raw = process.env.TASK_NUMBER;
@@ -146,6 +158,10 @@ jobs:
           const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           await github.rest.issues.createComment({...context.repo, issue_number,
             body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
+          const hook = process.env.DISCORD_WEBHOOK_URL || '';
+          if (/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(hook))
+            await fetch(hook, {method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({content: `❌ KappaForge task #${issue_number} failed: ${issue.title}\n${url}`.slice(0, 1900), allowed_mentions: {parse: []}})}).catch(() => {});
     needs: classify
     if: needs.classify.outputs.scope == 'write' && github.event_name == 'workflow_dispatch'
     permissions:
