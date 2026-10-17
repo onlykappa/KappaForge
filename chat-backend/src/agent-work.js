@@ -29,9 +29,10 @@ export async function agentWork(env){
 // issue's control lines (Mode:, Repository:, Allow flagged changes:, Repair files:, Step 1:), which the agent matches at line start.
 export function taskBody(repo,mode,instructions,context){
  const quoted=typeof context==="string"&&context.trim()?context.trim().slice(0,2000).split("\n").map(l=>"> "+l).join("\n"):"";
- return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat.";
+ return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat.\n\nStatus: active";
 }
 const CONTINUOUS=/^Mode:\s*(?:continuous|continuous-code|watch)\s*$/mi;
+const STALLED_THRESHOLD = 15 * 60 * 1000;
 // The owner's open kappa-task issue with that number, or an error result.
 async function ownerTask(env,task){
  const number=Number(task);
@@ -47,7 +48,9 @@ async function ownerTask(env,task){
 async function startAttempt(env,t){
  const workflow=CONTINUOUS.test(t.issue.body||"")?"continuous.yml":"agent.yml";
  const r=await fetch("https://api.github.com/"+ROOT+"/actions/workflows/"+workflow+"/dispatches",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({ref:"main",inputs:{issue_number:String(t.number)}}),signal:AbortSignal.timeout(8000)});
- return r.ok?{}:{error:"The new attempt could not start (GitHub HTTP "+r.status+")."};
+ if (!r.ok) return {error:"The new attempt could not start (GitHub HTTP "+r.status+")."};
+ await fetch("https://api.github.com/"+ROOT+"/issues/"+t.number+"/comments",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({body:"Status: active"})});
+ return {};
 }
 
 // Owner guidance for a task: posted as a "Guidance:" comment the agent reads, then a fix (open PR whose tests failed) or a fresh attempt (no PR) starts.
