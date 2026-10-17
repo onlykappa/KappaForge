@@ -1,5 +1,7 @@
 # KappaForge
 
+> **The iPhone app is now the only interface.** The GitHub Pages website is retired: it is no longer built or deployed, and browser regression tests no longer run. The app's screens live in `preview/` and are bundled into the IPA (`ios/KappaForge/Web/`); the Cloudflare chat backend is unchanged.
+
 A $0-first GitHub Actions AI development assistant controlled from iPad/GitHub.
 
 ## Current capability (v0.1)
@@ -143,7 +145,7 @@ To add a provider, create a key at its site and save it under the same name in *
 - **Merge** appears only when the tests passed on that exact commit. The Worker re-checks this, refuses if the PR changed since you opened the card, and only merges `kappa/dev-N` agent branches. KappaForge merges redeploy the app and Worker.
 - **Tests fix themselves.** When the sandbox tests fail on a development PR, KappaForge starts **Fix it** automatically: it reads the failed test output, pushes a fix to the same PR, explains it under *Latest fix* and re-runs the tests, up to three times. Discord says "Tests passed, Merge is ready" only once they pass. If they still fail, it stops and posts **KappaForge needs your help** on the task with what is failing; reply with a comment starting `Guidance:` and tap **Fix it**, and each guidance comment allows one more attempt. You can still tap **Fix it** yourself at any time. Nothing merges until you tap Merge.
 
-The Worker's `GITHUB_JOB_TOKEN` needs **Contents** and **Pull requests** read/write for Merge. Sandbox tests run the Python, Worker and browser regression suites against the exact commit.
+The Worker's `GITHUB_JOB_TOKEN` needs **Contents** and **Pull requests** read/write for Merge. Sandbox tests run the Python and Worker suites and the web syntax and bundle checks against the exact commit.
 
 Every repository owned by `onlykappa` is in scope, including ones created later: the app loads the list from the Worker (most recently pushed first, archived repositories hidden) and the agent accepts any `onlykappa/<name>` target. Repair, sandbox code and continuous modes stay limited to KappaForge.
 
