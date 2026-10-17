@@ -85,7 +85,7 @@ async function toggleDiff(number,button,repo="KappaForge"){
  preview.textContent="Fetching code differences from GitHub…";
  try{
   const files=await api(repo+"/pulls/"+number+"/files?per_page=20");
-  const text=files.slice(0,5).map(file=>file.filename+"  +"+file.additions+" / -"+file.deletions+"\\n"+(file.patch||"Large or binary file. Open GitHub for full changes.").slice(0,5000)).join("\\n\\n");
+  const text=files.slice(0,5).map(file=>file.filename+"  +"+file.additions+" / -"+file.deletions+"\n"+(file.patch||"Large or binary file. Open GitHub for full changes.").slice(0,5000)).join("\n\n");
   preview.textContent=text||"No text changes returned.";
   preview.className="diff-view";
   preview.style.whiteSpace="pre-wrap";
@@ -120,7 +120,7 @@ async function submitReviewDecision(number,decision){
 let reviewCards={};
 const isDevPR=p=>/^kappa\/(?:dev|revert)-[0-9]+$/.test(p.head?.ref||"");
 async function reviewAction(path,body){
- const response=await fetch(backend+path,{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify(body)});
+ const response=await fetch(backend+path,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify(body)});
  const result=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(result.error||"Request failed (HTTP "+response.status+")");
  return result;
@@ -139,15 +139,15 @@ function reviewCardHTML(key){
  if(card.loading)return '<div class="review-card"><p class="worksmall">Checking the summary and tests…</p></div>';
  if(card.error)return '<div class="review-card"><p class="status-bad">'+esc(card.error)+'</p></div>';
  const d=card.data,t=d.tests||{};
- const tests={passed:'<span class="status-good">✅ Tests passed on the latest commit</span>',failed:'<span class="status-bad">❌ Tests failed on the latest commit</span>',
+ const tests={passed:'<span class="status-good">✅ Tests passed</span>',failed:'<span class="status-bad">❌ Tests failed</span>',
   running:'<span class="status-pending">🔄 Tests are running</span>',none:'<span class="worksmall">Tests have not run on the latest commit yet</span>'}[t.state]||"";
  const risks=(d.risks||[]).map(r=>'<li class="'+(r.level==="high"?"status-bad":"status-pending")+'">'+(r.level==="high"?"⚠ ":"• ")+esc(r.text)+' <span class="worksmall">('+esc(r.files.slice(0,3).join(", "))+')</span></li>').join("");
  const files=(d.files||[]).slice(0,12).map(f=>esc(f.name)+' <span class="worksmall">+'+esc(f.additions)+' / -'+esc(f.deletions)+'</span>').join("<br>");
- return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change. Open the PR to review it.")+'</p>'+
+ return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change.")+'</p>'+
   (d.explanation?.fix?'<p><strong>Latest fix</strong>'+esc(d.explanation.fix)+'</p>':'')+
-  (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before. Safe to merge without waiting for tests.</p>':
+  (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before.</p>':
    '<p>'+tests+(t.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(t.url)+'">Test log ↗</a>':'')+'</p>')+
-  (risks?'<div class="review-risks"><strong>Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
+  (risks?'<div class="review-risks"><strong>⚠ Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
   '<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+
   (d.canFix?'<button data-fix="'+esc(key)+'">Fix it</button>':'')+
@@ -333,6 +333,6 @@ function jobResult(){
  if(!recentJob)return "";
  let extra=recentJob.prUrl?'<a target="_blank" rel="noopener noreferrer" href="'+esc(recentJob.prUrl)+'">Review generated code ↗</a> ':"";
  if(recentJob.number)extra+='<button type="button" class="btn secondary" id="jobcheck">↻ Check job result</button>';
- return '<div class="panel"><h3>Latest development job</h3><p>'+esc(recentJob.message)+'</p><div class="review-tools">'+extra+(recentJob.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(recentJob.url)+'">View task ↗</a>':'')+'</div></div>';
+ return '<div class="panel"><h3>Latest development job</h3><p>'+esc(recentJob.message)+'</p><div class="review-tools">'+extra+(recentJob.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(recentJob.url)+'">View task ↗</a>':"")+'</div></div>';
 }
 // Keep earlier in-flight jobs when another task starts. Migrate the existing latest-job record.

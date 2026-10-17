@@ -1,4 +1,9 @@
 import test from 'node:test';
+import {readFileSync as readRenderSource} from 'node:fs';
+import {fileURLToPath as renderFileURLToPath} from 'node:url';
+import {dirname as renderDirname,resolve as renderResolve} from 'node:path';
+
+import './review-card.test.mjs';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
@@ -432,4 +437,15 @@ test('the AI is told the owner\'s local date, time and timezone, with safe fallb
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'x'.repeat(3500)}],clientTime:new Date().toISOString(),timeZone:'Asia/Tokyo'}),env);
   assert.equal(r.status,200,'a full-length message is still accepted');assert.match(system,/Current date and time for the owner: .*\(Asia\/Tokyo;/);
  }finally{globalThis.fetch=original}
+});
+
+// Classic scripts share global function declarations: a duplicate render() in app-main.js
+// silently overrides app-dashboard.js and leaves Settings blank in native WKWebView.
+test('exactly one shared render function remains, owned by dashboard',()=>{
+ const base=renderResolve(renderDirname(renderFileURLToPath(import.meta.url)),'../preview');
+ const dashboard=readRenderSource(renderResolve(base,'app-dashboard.js'),'utf8');
+ const main=readRenderSource(renderResolve(base,'app-main.js'),'utf8');
+ assert.match(dashboard,/function render\s*\(/);
+ assert.doesNotMatch(main,/\bfunction\s+render\s*\(/);
+ assert.match(dashboard,/view===["']settings["']/);
 });
