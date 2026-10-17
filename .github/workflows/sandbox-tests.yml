@@ -57,6 +57,7 @@ jobs:
     timeout-minutes: 3
     permissions:
       actions: write
+      issues: write
     steps:
     - name: Start an automatic fix for a failed agent development PR
       # Only reads the branch name; the agent fixes it from KappaForge's trusted main, at most a few times per PR.
@@ -67,6 +68,24 @@ jobs:
       run: |
         [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
         gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="${BASH_REMATCH[1]}" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
+      shell: bash
+    - name: Post the test result on the task, where the chat sees it
+      # kappa/dev-N belongs to task issue N. Only the branch name and the result are used.
+      if: startsWith(inputs.branch, 'kappa/dev-')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RESULT: ${{ needs.verify.result }}
+        BRANCH: ${{ inputs.branch }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
+        issue="${BASH_REMATCH[1]}"
+        if [ "$RESULT" = success ]; then
+          body=$(printf '### Tests passed ✅ — ready to merge\n\nAll tests passed on the latest commit of `%s`. Review and merge it on the Dashboard.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
+        else
+          body=$(printf '### Tests failed ❌ — fixing\n\nTests failed on the latest commit of `%s`. KappaForge is starting a fix automatically; if it gets stuck it will ask for your guidance.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
+        fi
+        gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the test result on task $issue."
       shell: bash
     - name: Post the test result to Discord
       env:

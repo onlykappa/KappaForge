@@ -66,7 +66,7 @@ function inlineDiff(p){
   '<pre>'+esc((file.patch||"Binary or large change. Open GitHub to review.").slice(0,5000))+'</pre>'
  ).join("")+'</div>';
 }
-async function toggleDiff(number,button){
+async function toggleDiff(number,button,repo="KappaForge"){
  const details=button.closest("details");
  let preview=details?.querySelector(".diff-view, .diff-placeholder");
  if(!preview){
@@ -84,7 +84,7 @@ async function toggleDiff(number,button){
  button.textContent="Loading changes…";
  preview.textContent="Fetching code differences from GitHub…";
  try{
-  const files=await api("KappaForge/pulls/"+number+"/files?per_page=20");
+  const files=await api(repo+"/pulls/"+number+"/files?per_page=20");
   const text=files.slice(0,5).map(file=>file.filename+"  +"+file.additions+" / -"+file.deletions+"\\n"+(file.patch||"Large or binary file. Open GitHub for full changes.").slice(0,5000)).join("\\n\\n");
   preview.textContent=text||"No text changes returned.";
   preview.className="diff-view";
@@ -158,8 +158,8 @@ async function mergeReviewed(key){
  const d=reviewCards[key]?.data;if(!d?.canMerge)return;
  if(!confirm("Merge \""+d.title.replace(/^Draft:\s*/,"")+"\" into "+d.repo+"?\n\nWhat this does: "+(d.explanation?.what||"see the PR")+"\n\n"+
   ((d.risks||[]).length?"Flagged: "+d.risks.map(r=>r.text).join("; ")+"\n\n":"")+
-  (d.repo==="KappaForge"?"This goes live: the app and Worker redeploy automatically. If something breaks, use Undo last change on the Dashboard.":"This updates "+d.repo+"'s main branch.")))return;
- try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"merge",headSha:d.tests.sha,confirmed:true});delete reviewCards[key];alert("Merged. Deployment starts automatically for KappaForge changes.");load(true)}
+  (d.repo==="KappaForge"?"This goes live: the Worker redeploys automatically, and a new app version is built and released automatically in about 30-40 minutes (install it from Settings → Updates). If something breaks, use Undo last change on the Dashboard.":"This updates "+d.repo+"'s main branch.")))return;
+ try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"merge",headSha:d.tests.sha,confirmed:true});delete reviewCards[key];alert(d.repo==="KappaForge"?"Merged. The Worker redeploys now; the new app version arrives in Settings → Updates in about 30-40 minutes.":"Merged.");load(true)}
  catch(e){alert("Not merged: "+e.message);openReviewCard(key)}
 }
 async function fixReviewed(key){
@@ -214,7 +214,7 @@ function controlCenter(){
    (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review &amp; merge</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
  }
  const decision=reviewDecisions[p.number]||"";
- return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
+ return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'" data-diffrepo="'+esc(p.repo||"KappaForge")+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
  }).join("");
  const runRows=runs.slice(0,8).map(r=>row(r.name||"Workflow",(r.conclusion||r.status)+" · "+(r.head_branch||"main"),r.html_url)).join("");
  return card("Workspace health",'<div class="control-head"><span class="muted">Live GitHub status</span><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Recent public GitHub status. Updates every 90 seconds when Dashboard is open.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open agent pull requests.</p>')+card("Tests & deployments",(runRows||'<p class="muted">No recent workflow results.</p>')+'<div class="review-tools"><button type="button" id="undolast" class="review-deny">↶ Undo last change</button></div><p class="worksmall">If a merged change broke something, Undo opens a pull request restoring the previous version.</p>');
@@ -290,7 +290,7 @@ document.querySelectorAll("[data-closepr]").forEach(b=>b.addEventListener("click
 document.getElementById("undolast")?.addEventListener("click",undoLastChange);
 document.querySelectorAll("[data-refreshcard]").forEach(b=>b.addEventListener("click",()=>{delete reviewCards[b.dataset.refreshcard];openReviewCard(b.dataset.refreshcard)}));
 document.querySelectorAll("[data-runtests]").forEach(b=>b.addEventListener("click",()=>runReviewTests(b.dataset.runtests)));
-document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b)));
+document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b,b.dataset.diffrepo||"KappaForge")));
 document.getElementById("settingstyle")?.addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality);document.getElementById("personality").value=personality;});
 document.getElementById("settingsconnect")?.addEventListener("click",()=>document.getElementById("connect").click());
 document.getElementById("memorymanage")?.addEventListener("click",manageMemory);
@@ -311,17 +311,20 @@ document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));d
 }
 
 
-async function proposeTaskAutomatically(text,notify=true){
- if(!backend||!access){if(notify)alert("Connect AI first.");return false}
+// Why the last automatic planning attempt made no task, for the chat to show.
+let planError="";
+async function proposeTaskAutomatically(text,notify=true,context=""){
+ planError="";
+ if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:text,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
-  const data=await resp.json();
-  if(!resp.ok)throw Error(data.error||"Could not plan task");
-  if(!data.isTask){if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
+  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+  const data=await resp.json().catch(()=>({}));
+  if(!resp.ok)throw Error(data.error||"Could not plan task (HTTP "+resp.status+")");
+  if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
   const p=data.proposal;
-  pendingJob={title:p.title,instructions:p.instructions,repo:p.repo,mode:p.mode};
+  pendingJob={title:p.title,instructions:p.instructions,repo:p.repo,mode:p.mode,context};
   view="chat";render();return true;
- }catch(e){if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
+ }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
  return '<div class="panel" style="border:2px solid #5456b9"><span class="pill">Approval required</span><h3>Launch KappaForge job?</h3><p><strong>'+esc(pendingJob.title)+'</strong></p><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p style="white-space:pre-wrap">'+esc(pendingJob.instructions)+'</p><button class="btn" id="approvejob">Approve & Launch</button> <button class="btn secondary" id="canceljob">Cancel</button><p class="muted">This creates a GitHub task and starts the agent. Code changes arrive as pull requests; nothing merges until you review it and tap Merge.</p></div>';
