@@ -10,7 +10,7 @@ def select_simulator(payload):
     # against its supported iOS 18.x simulator SDK/runtime.
     candidates = []
     for runtime, group in devices.items():
-        if "iOS-18-" not in runtime:
+        if "iOS-18-5" not in runtime:
             continue
         for device in group:
             if not str(device.get("name", "")).startswith("iPhone"):
@@ -21,9 +21,9 @@ def select_simulator(payload):
             value = str(UUID(raw))
             candidates.append((runtime, value))
     if candidates:
-        # Choose newest available supported runtime.
+        # Choose a device on the iOS 18.5 runtime bundled with Xcode 16.4.
         return sorted(candidates, reverse=True)[0][1]
-    raise ValueError("No Xcode 16-compatible iOS 18 iPhone simulator available")
+    raise ValueError("No iOS 18.5 iPhone simulator available for Xcode 16.4")
 
 
 if __name__ == "__main__":
