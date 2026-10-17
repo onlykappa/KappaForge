@@ -276,14 +276,53 @@ def excerpt(text, task, budget=MAX_FILE_CHARS):
     return "\n".join(out)
 
 
+# KappaForge's iPhone app bundles an identical copy of the web app; the agent edits preview/ and the copy follows.
+IOS_WEB = "ios/KappaForge/Web/"
+
+
+def web_copy_path(repo, path):
+    """The preview/ file an iOS copy mirrors, or None."""
+    return "preview/" + path[len(IOS_WEB):] if repo == ROOT and path.startswith(IOS_WEB) else None
+
+
+def redirect_ios_copies(repo, proposal):
+    """Point edits aimed at an iOS copy at its preview/ original (dropping duplicates of an existing preview/ entry)."""
+    if not isinstance(proposal, dict) or not isinstance(proposal.get("files"), list):
+        return proposal
+    targets = {e.get("path") for e in proposal["files"] if isinstance(e, dict)}
+    files = []
+    for entry in proposal["files"]:
+        original = web_copy_path(repo, entry.get("path", "")) if isinstance(entry, dict) else None
+        if original:
+            if original in targets:
+                continue
+            entry = dict(entry, path=original)
+            targets.add(original)
+        files.append(entry)
+    return dict(proposal, files=files)
+
+
+def mirror_ios_copies(repo, changes, existing):
+    """Copy every changed preview/ file onto its iOS twin, as scripts/bundle-web.py does."""
+    if repo != ROOT:
+        return changes
+    mirrored = dict(changes)
+    for path, text in changes.items():
+        twin = IOS_WEB + path[len("preview/"):] if path.startswith("preview/") else None
+        if twin and twin in existing:
+            mirrored[twin] = text
+    return mirrored
+
+
 def generate(api_key, task, repo, sources, existing, guide="", allowed=None):
     """Try the large budget on Gemini alone; if Gemini can't answer, re-plan at the small size for any provider."""
     try:
-        return generate_with(api_key, task, repo, sources, existing, guide, set(), LARGE)
+        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, set(), LARGE)
     except RuntimeError as exc:
         print("Large-budget Gemini route unavailable, using fallback-sized limits: " + str(exc)[:300])
-    small = dict(list(sources.items())[:SMALL.read_files])
-    return generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL)
+        small = dict(list(sources.items())[:SMALL.read_files])
+        model, summary, changes, explanation = generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL)
+    return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget):
@@ -308,6 +347,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         '{"path":"new/file.py","content":"full file"}]}\n'
         "Rules: each find must be copied exactly from the file below and occur exactly once; keep finds "
         "short but unique. Use content only for new files or a full rewrite of a file shown below. "
+        + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
         f"At most {budget.changed_files} files. Never edit .github/, deployment config, lockfiles, secrets "
         "or the agent's own guardrail files. Never weaken authentication or authorization. "
         "Add or update tests when the repository has them. Do not claim tests ran. "
@@ -321,7 +361,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  "\nFix exactly these problems. Do not expand scope.") if attempt else ""
         model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed)
         try:
-            proposal = parse_json(output)
+            proposal = redirect_ios_copies(repo, parse_json(output))
             changes = apply_changes(sources, existing, proposal, budget)
             problems = [e for e in (syntax_error(p, t) for p, t in changes.items()) if e]
             if problems:

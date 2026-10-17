@@ -139,6 +139,24 @@ class DeveloperValidationTests(unittest.TestCase):
             self.assertEqual(developer.plan_change("key", "task", files), (["app/main.py"], ["A", "B", "C"]))
         self.assertIn('"stages"', ai.call_args[0][1])
 
+    def test_ios_web_copies_follow_preview_edits(self):
+        sources = {"preview/app.js": "let a = 1;\n"}
+        existing = {"preview/app.js": 11, "ios/KappaForge/Web/app.js": 11}
+        aimed_at_copy = json.dumps({"summary": "s", "files": [
+            {"path": "preview/app.js", "edits": [{"find": "let a = 1;", "replace": "let a = 2;"}]},
+            {"path": "ios/KappaForge/Web/app.js", "edits": [{"find": "let a = 1;", "replace": "let a = 2;"}]}]})
+        with patch.object(developer, "run_model", return_value=("flash", aimed_at_copy)) as ai:
+            _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", sources, existing)
+        self.assertEqual(changes, {"preview/app.js": "let a = 2;\n", "ios/KappaForge/Web/app.js": "let a = 2;\n"})
+        self.assertIn("are updated automatically", ai.call_args[0][1])
+        only_copy = json.dumps({"summary": "s", "files": [
+            {"path": "ios/KappaForge/Web/app.js", "edits": [{"find": "let a = 1;", "replace": "let a = 3;"}]}]})
+        with patch.object(developer, "run_model", return_value=("flash", only_copy)):
+            _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", sources, existing)
+        self.assertEqual(changes["preview/app.js"], changes["ios/KappaForge/Web/app.js"])
+        with patch.object(developer, "run_model", return_value=("flash", aimed_at_copy)), self.assertRaises(ValueError):
+            developer.generate("key", "task", "onlykappa/OmniPC", sources, existing)
+
     def test_gives_up_after_three_invalid_answers(self):
         bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
         with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
