@@ -17,6 +17,21 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("int(a) + int(b)", changes["app/main.py"])
         self.assertIn("return a - b", changes["app/main.py"])
 
+    def test_full_repository_instructions_reach_planner_and_generator(self):
+        guide = "START_RULE\\n" + ("x" * 18000) + "\\nEND_RULE"
+        with patch.object(developer, "read_source", return_value=guide):
+            loaded = developer.project_guide("onlykappa/KappaForge", "sha", {"KAPPA.md": 1}, "token")
+        self.assertEqual(loaded, guide)
+        plan = json.dumps({"read": ["app/main.py"]})
+        with patch.object(developer, "run_model", return_value=("flash", plan)) as model:
+            developer.select_files("key", "task", EXISTING, guide=loaded)
+        self.assertIn("END_RULE", model.call_args.args[1])
+        proposal = json.dumps({"summary": "Updated add", "files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with patch.object(developer, "run_model", return_value=("flash", proposal)) as model:
+            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, guide=loaded)
+        self.assertIn("END_RULE", model.call_args.args[1])
+
     def test_new_files_may_be_created(self):
         changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "tests/test_main.py", "content": "import unittest\n"}]})
         self.assertEqual(list(changes), ["tests/test_main.py"])
