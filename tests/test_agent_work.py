@@ -1,5 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from chat_backend.src.agent_work import agentWork
 
 class TestAgentWork(unittest.TestCase):
