@@ -14,10 +14,11 @@ MAX_REVISIONS = 2
 MARKER = "<!-- KAPPA_AUTOFIX:"
 
 def candidate(run):
-    match = re.search(r"Sandbox validation (kappa/[A-Za-z0-9/-]+) @ ([a-f0-9]{40})", run.get("display_title",""))
+    # Matches: 'Sandbox validation kappa/issue-123 @ a1b2c3d4...'
+    match = re.search(r"Sandbox validation (kappa/[A-Za-z0-9/-]+) @ ([a-f0-9]{40})", run.get("display_title", ""))
     branch = match.group(1) if match else ""
-    return branch if (run.get("name")=="Sandbox branch tests" and
-                      run.get("conclusion")=="failure" and BRANCH.fullmatch(branch)) else None
+    return branch if (run.get("name") == "Sandbox branch tests" and
+                      run.get("conclusion") == "failure" and BRANCH.fullmatch(branch)) else None
 
 def revision_count(comments,branch):
     return sum(MARKER+branch+":" in (c.get("body") or "") for c in comments)
@@ -37,8 +38,8 @@ def failure_evidence(jobs):
 def revise_failed_run(run,token,key):
     branch=candidate(run)
     if not branch:return {"status":"ignored"}
-    pulls=gh(f"repos/{ROOT}/pulls?state=open&head=onlykappa:{branch}",token)
-    prs=[p for p in pulls if p.get("draft") and p.get("head",{}).get("ref")==branch]
+    pulls=gh(f"repos/{ROOT}/pulls?state=open",token)
+    prs=[p for p in pulls if p.get("draft") and p.get("head",{}).get("ref")==branch and p.get("head",{}).get("repo",{}).get("full_name")==ROOT]
     if len(prs)!=1:return {"status":"no_authorized_draft"}
     pr=prs[0]
     # Never overwrite a branch whose head changed since the failed run.
@@ -65,6 +66,10 @@ def revise_failed_run(run,token,key):
     jobs=gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30",token).get("jobs",[])
     errors=failure_evidence(jobs)
     prompt=("An independent secret-free test workflow failed. Repair only the listed preexisting "
+            "sandbox source files. No new files. Do not access secrets, modify CI or add network calls. "
+            "Return strict JSON with exactly the same paths in files[]. "
+            "A failed step name does not identify the root cause; make minimal evidence-based corrections. "
+            "Failed job and step metadata (not full logs): "+json.dumps(errors)+"\n"
             "sandbox source files. No new files. Do not access secrets, modify CI or add network calls. "
             "Return strict JSON with exactly the same paths in files[]. "
             "A failed step name does not identify the root cause; make minimal evidence-based corrections. "
@@ -98,8 +103,9 @@ def scan_failures(token,key,github):
     runs=github(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/runs?per_page=20",token).get("workflow_runs",[])
     outcomes=[]
     for run in runs:
-        if not candidate(run):continue
+        if run.get("status") != "completed": continue
+        if not candidate(run): continue
         result=revise_failed_run(run,token,key)
         outcomes.append(result)
-        if result.get("status")=="revised":break
+        if result.get("status")=="revised": break
     return outcomes

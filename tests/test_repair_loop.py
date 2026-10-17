@@ -23,3 +23,9 @@ class RepairLoopTests(unittest.TestCase):
                   {"body":"<!-- KAPPA_AUTOFIX:kappa/issue-7:101 -->"},
                   {"body":"<!-- KAPPA_AUTOFIX:kappa/issue-8:102 -->"}]
         self.assertEqual(revision_count(comments,"kappa/issue-7"),MAX_REVISIONS)
+    def test_failure_evidence_extraction(self):
+        from engine.repair_loop import failure_evidence
+        jobs=[{"name":"Test","steps":[{"name":"Step1","conclusion":"failure"}]}]
+        evidence=failure_evidence(jobs)
+        self.assertEqual(len(evidence),1)
+        self.assertEqual(evidence[0]["step"],"Step1")
