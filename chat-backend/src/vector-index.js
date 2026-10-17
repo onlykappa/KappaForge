@@ -1,3 +1,4 @@
+import {githubHeaders} from "./github.js";
 // Persistent bounded vector index with Workers AI embeddings and Durable Object storage.
 // Only public, allowlisted GitHub code is indexed. No private conversation data.
 export const INDEX_REPOS=["KappaForge","OmniPC","Apk-revival"];
@@ -40,18 +41,18 @@ export async function embed(env,texts){
  if(!Array.isArray(result?.data)||result.data.length!==texts.length||result.data.some(v=>!Array.isArray(v)||v.length!==384))throw Error("Embedding model returned unexpected dimensions");
  return result.data;
 }
-async function gh(path){
- const response=await fetch("https://api.github.com/repos/onlykappa/"+path,{headers:{"Accept":"application/vnd.github+json","User-Agent":"KappaForge-vector-index"},signal:AbortSignal.timeout(10000)});
+async function gh(env,path){
+ const response=await fetch("https://api.github.com/repos/onlykappa/"+path,{headers:githubHeaders(env,"KappaForge-vector-index"),signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw Error("GitHub HTTP "+response.status);
  return response.json();
 }
 export async function refreshIndex(env,repo){
  if(!INDEX_REPOS.includes(repo))throw Error("Unsupported repository");
- const latest=await gh(repo+"/commits/main");const sha=latest.sha;
+ const latest=await gh(env,repo+"/commits/main");const sha=latest.sha;
  const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
  const status=await (await stub.fetch("https://memory.internal/vectors/status?repo="+repo)).json();
  if(status.sha===sha&&status.status==="ready")return status;
- const tree=await gh(repo+"/git/trees/"+sha+"?recursive=1");
+ const tree=await gh(env,repo+"/git/trees/"+sha+"?recursive=1");
  if(tree.truncated)throw Error("Tree truncated; refusing partial index");
  const paths=tree.tree.filter(v=>v.type==="blob"&&allowed(v.path)&&v.size<=28000).map(v=>v.path).slice(0,75);
  let count=0,reset=true;

@@ -66,7 +66,9 @@ def choose_issue(token, allowed_modes=None):
 
 def content(repo, path, ref=None):
     encoded = urllib.parse.quote(path, safe="/")
-    obj = github(f"repos/{repo}/contents/{encoded}" + ("?ref=" + urllib.parse.quote(ref, safe="") if ref else ""))
+    # Anonymous reads share 60/hour per runner IP; the job token can read public repositories.
+    obj = github(f"repos/{repo}/contents/{encoded}" + ("?ref=" + urllib.parse.quote(ref, safe="") if ref else ""),
+                 os.getenv("GITHUB_TOKEN"))
     if not isinstance(obj, dict) or obj.get("type") != "file":
         return ""
     if obj.get("encoding") != "base64":
@@ -145,7 +147,10 @@ def run_model(api_key, prompt, max_output_tokens=2000):
                 break
             except urllib.error.HTTPError as exc:
                 if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
-                    time.sleep(2 * (attempt + 1))
+                    # Per-minute quotas reset slowly; honor the provider's Retry-After when given.
+                    retry_after = (exc.headers or {}).get("Retry-After", "")
+                    delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
+                    time.sleep(min(delay, 60))
                     continue
                 errors.append(model + ": HTTP " + str(exc.code))
                 break

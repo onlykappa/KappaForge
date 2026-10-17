@@ -2,6 +2,7 @@ import {streamReply} from "./streaming.js";
 import {projectHealth} from "./project-health.js";
 import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex,INDEX_REPOS} from "./vector-index.js";
+import {githubHeaders,githubRead} from "./github.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -63,6 +64,7 @@ function corsHeaders(request) {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action",
+    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-reset",
     "Vary": "Origin"
   } : null;
 }
@@ -79,7 +81,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -89,6 +91,12 @@ export default {
     if(new URL(request.url).pathname==="/projects/health"){
       const body=await request.json().catch(()=>({}));
       try{const report=await projectHealth(env,body.repo);return json(report,report.status||200,cors)}catch{return json({error:"GitHub diagnostics timed out or failed. Existing repository data is unchanged."},502,cors)}
+    }
+    if(new URL(request.url).pathname==="/github"){
+      if(!env.GITHUB_JOB_TOKEN)return json({error:"GitHub token not configured"},503,cors);
+      const body=await request.json().catch(()=>({}));
+      try{const r=await githubRead(env,body.path);return new Response(r.body,{status:r.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...r.headers,...cors}})}
+      catch{return json({error:"GitHub request timed out or failed."},502,cors)}
     }
     if(new URL(request.url).pathname==="/memory/search"){
       if(!env.AI)return json({error:"Semantic memory search requires Workers AI."},503,cors);
@@ -103,7 +111,7 @@ export default {
       }catch{return json({error:"Semantic search unavailable. Text search still works."},502,cors)}
     }
     if(new URL(request.url).pathname==="/capabilities"){
-      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:2,providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
+      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:env.GEMINI_API_KEY?(await discover(env)).length:0,providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
     if(new URL(request.url).pathname==="/usage"){
@@ -288,7 +296,7 @@ export default {
     const locked=lock&&typeof lock==="object"&&["KappaForge","OmniPC","Apk-revival"].includes(lock.repo)&&typeof lock.sha==="string"&&/^[a-f0-9]{40}$/i.test(lock.sha);
     if(lock&&!locked)return json({error:"Invalid session lock. Specify an allowed repository and a full 40-character Git commit SHA."},400,cors);
     let lockedEvidence="",truthEvidence="",verifiedEvidence=false;
-    const proofHeaders={"Accept":"application/vnd.github+json","User-Agent":"KappaForge-verify-first"};
+    const proofHeaders=githubHeaders(env,"KappaForge-verify-first");
     if(locked){
       try{
         const response=await fetch("https://api.github.com/repos/onlykappa/"+lock.repo+"/commits/"+lock.sha,
@@ -405,7 +413,7 @@ export default {
       if(!locked&&resolvedProject&&wantsHistory){
         const url="https://api.github.com/repos/onlykappa/"+resolvedProject+"/commits?sha=main&per_page=8";
         try{
-          const response=await fetch(url,{headers:{"Accept":"application/vnd.github+json","User-Agent":"KappaForge-history-verifier"},signal:AbortSignal.timeout(6000)});
+          const response=await fetch(url,{headers:githubHeaders(env,"KappaForge-history-verifier"),signal:AbortSignal.timeout(6000)});
           if(!response.ok)throw Error("GitHub HTTP "+response.status);
           const commits=await response.json();
           if(!Array.isArray(commits)||!commits.length)throw Error("No main-branch commits returned");
@@ -413,7 +421,7 @@ export default {
           let commitDetail="";
           try{
             const detailResponse=await fetch("https://api.github.com/repos/onlykappa/"+resolvedProject+"/commits/"+encodeURIComponent(commits[0].sha),{
-              headers:{"Accept":"application/vnd.github+json","User-Agent":"KappaForge-history-verifier"},signal:AbortSignal.timeout(6000)});
+              headers:githubHeaders(env,"KappaForge-history-verifier"),signal:AbortSignal.timeout(6000)});
             if(detailResponse.ok){
               const detail=await detailResponse.json();
               const files=Array.isArray(detail.files)?detail.files.slice(0,15):[];

@@ -195,16 +195,25 @@ function history(){const q=conversationSearch.trim().toLowerCase();const matches
 const card=(title,body)=>'<div class="panel"><h3>'+esc(title)+'</h3>'+body+'</div>';
 const row=(name,subtitle,url)=>'<div class="row"><div><strong>'+esc(name)+'</strong><div class="muted">'+esc(subtitle)+'</div></div><a href="'+esc(url)+'" target="_blank" rel="noopener">↗</a></div>';
 const requestCache=new Map();
+// Browser GitHub calls share a 60/hour anonymous limit. When connected, read through the Worker's token instead.
+async function githubFetch(p){
+ if(backend&&access){
+  const r=await fetch(backend+"/github",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({path:p})});
+  // 404/503: older Worker or no GITHUB_JOB_TOKEN configured; use the browser's own quota.
+  if(![404,503].includes(r.status))return r;
+ }
+ return fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});
+}
 const api=async (p,force=false)=>{
  const now=Date.now(),hit=requestCache.get(p);
  if(hit?.promise)return hit.promise;
  if(!force&&hit&&now-hit.time<300000)return hit.value;
  const promise=(async()=>{
-  const r=await fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});
+  const r=await githubFetch(p);
   if(r.status===403||r.status===429){
    const reset=Number(r.headers.get("x-ratelimit-reset")||0)*1000;
    const remain=r.headers.get("x-ratelimit-remaining");
-   if(remain==="0")throw Error("GitHub public API limit reached. Cached information remains available. Try again after "+(reset?new Date(reset).toLocaleTimeString():"the limit resets")+".");
+   if(remain==="0")throw Error((backend&&access?"GitHub API limit reached.":"GitHub public API limit reached. Connect AI to use your authenticated limit.")+" Cached information remains available. Try again after "+(reset?new Date(reset).toLocaleTimeString():"the limit resets")+".");
   }
   if(!r.ok)throw Error("GitHub HTTP "+r.status);
   const value=await r.json();requestCache.set(p,{value,time:Date.now()});return value;
@@ -557,7 +566,7 @@ async function refreshActivity(force=false){
  if(activity.busy||document.hidden||(!force&&view!=="home"))return;
  activity.busy=true;
  try {
-  const response=await fetch("https://api.github.com/repos/onlykappa/KappaForge/actions/runs?per_page=12",{headers:{"Accept":"application/vnd.github+json"}});
+  const response=await githubFetch("KappaForge/actions/runs?per_page=12");
   if(!response.ok)throw Error(response.status===403?"GitHub rate limit reached. Try again later.":"GitHub API HTTP "+response.status);
   const result=await response.json();
   activity.runs=(result.workflow_runs||[]).filter(r=>r&&typeof r.html_url==="string"&&r.html_url.startsWith("https://github.com/onlykappa/KappaForge/actions/runs/"));
@@ -713,5 +722,5 @@ document.getElementById("updates").addEventListener("click",()=>checkAppUpdate(t
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 document.getElementById("personality").value=personality;
 document.getElementById("personality").addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality)});
-initInterface();updateConnection();render();activateSavedSync();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();setInterval(()=>{if(document.hidden)return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
+initInterface();updateConnection();render();activateSavedSync();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
 </script></body></html>

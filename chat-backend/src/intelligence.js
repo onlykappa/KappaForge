@@ -1,5 +1,8 @@
 export const MODELS=['gemini-3.1-flash-lite','gemini-3-flash','gemini-2.5-flash-lite','gemini-2.5-flash'];
+// Discovery is a provider call; caching it keeps each chat message to one Gemini request.
+let discovered={key:'',at:0,models:null};
 export async function discover(env){
+ if(discovered.models&&discovered.key===env.GEMINI_API_KEY&&Date.now()-discovered.at<600000)return discovered.models;
  const available=new Set();let pageToken='';
  for(let page=0;page<5;page++){
   const url=new URL('https://generativelanguage.googleapis.com/v1beta/models');url.searchParams.set('pageSize','100');if(pageToken)url.searchParams.set('pageToken',pageToken);
@@ -8,7 +11,9 @@ export async function discover(env){
   const data=await r.json();for(const m of data.models||[])if(m.supportedGenerationMethods?.includes('generateContent'))available.add(m.name.replace(/^models\//,''));
   pageToken=data.nextPageToken||'';if(!pageToken)break;
  }
- return MODELS.filter(m=>available.has(m));
+ const models=MODELS.filter(m=>available.has(m));
+ if(models.length)discovered={key:env.GEMINI_API_KEY,at:Date.now(),models};
+ return models;
 }
 export function isComplex(input){
  const messages=Array.isArray(input.messages)?input.messages:[];
@@ -22,7 +27,8 @@ export function routes(models,options={},complex=false){
   if(!models.includes(options.model))return [];
   list=[options.model,...list.filter(m=>m!==options.model)];
  }
- return list.slice(0,options.fallback===false?1:2);
+ // Free-tier quotas are per model, so a 429 on one route should fall through to every other approved route.
+ return options.fallback===false?list.slice(0,1):list;
 }
 export function telemetry(result,model,latency,ok,fallback,kind,pricing){
  const u=result?.usageMetadata||{};const count=n=>Number.isSafeInteger(n)&&n>=0?n:null;
