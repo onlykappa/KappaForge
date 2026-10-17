@@ -377,6 +377,12 @@ async function fixReviewed(key){
  try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
  catch(e){alert("Fix not started: "+e.message)}
 }
+async function closeReviewed(key){
+ const [repo,number]=key.split("#");
+ if(!confirm("Close "+repo+" PR #"+number+" without merging? The proposed change is discarded."))return;
+ try{await reviewAction("/decisions",{repo,prNumber:Number(number),decision:"close",confirmed:true});delete reviewCards[key];data.prs=data.prs.filter(p=>!(p.repo===repo&&p.number===Number(number)));render();alert("Closed.")}
+ catch(e){alert("Not closed: "+e.message)}
+}
 function hideReview(number){
  if(!confirm("Remove PR #"+number+" from this device's Dashboard? This will NOT delete or close anything on GitHub."))return;
  reviewHidden.add(number);
@@ -400,7 +406,7 @@ function controlCenter(){
  if(isDevPR(p)){
   const key=p.repo+"#"+p.number;
   return '<div class="workitem"><strong>'+esc(p.title.replace(/^Draft:\s*/,""))+'</strong><span class="worksmall">'+esc(p.repo)+' #'+esc(p.number)+' · KappaForge change awaiting your review</span>'+
-   (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review &amp; merge</button>'+(p.repo==="KappaForge"?'<button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Close</button>':'')+'</div>')+reviewCardHTML(key)+'</div>';
+   (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review &amp; merge</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
  }
  const decision=reviewDecisions[p.number]||"";
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
@@ -475,6 +481,7 @@ document.querySelectorAll("[data-hide]").forEach(b=>b.addEventListener("click",(
 document.querySelectorAll("[data-reviewcard]").forEach(b=>b.addEventListener("click",()=>openReviewCard(b.dataset.reviewcard)));
 document.querySelectorAll("[data-merge]").forEach(b=>b.addEventListener("click",()=>mergeReviewed(b.dataset.merge)));
 document.querySelectorAll("[data-fix]").forEach(b=>b.addEventListener("click",()=>fixReviewed(b.dataset.fix)));
+document.querySelectorAll("[data-closepr]").forEach(b=>b.addEventListener("click",()=>closeReviewed(b.dataset.closepr)));
 document.querySelectorAll("[data-diff]").forEach(b=>b.addEventListener("click",()=>toggleDiff(Number(b.dataset.diff),b)));
 document.getElementById("settingstyle")?.addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality);document.getElementById("personality").value=personality;});
 document.getElementById("settingsconnect")?.addEventListener("click",()=>document.getElementById("connect").click());

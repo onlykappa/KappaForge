@@ -21,6 +21,8 @@ ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
 MAX_CHANGED_FILES = 8
 MAX_FILE_CHARS = 60000
+# Larger files are shown to the model as relevant excerpts but edited in full.
+MAX_LARGE_FILE_CHARS = 400000
 MAX_READ_FILES = 12
 MAX_CONTEXT_CHARS = 160000
 MAX_LISTED_PATHS = 700
@@ -112,7 +114,7 @@ def select_files(api_key, task, files):
     except (ValueError, AttributeError, json.JSONDecodeError):
         chosen = []
     paths = [p for p in dict.fromkeys(named + [p for p in chosen if isinstance(p, str)])
-             if p in files and files[p] <= MAX_FILE_CHARS]
+             if p in files and files[p] <= MAX_LARGE_FILE_CHARS]
     return paths[:MAX_READ_FILES]
 
 
@@ -146,13 +148,17 @@ def apply_changes(sources, existing, proposal):
                     raise ValueError(f"Edit text must match exactly once in {path} (matched {count} times): " + find[:80])
                 text = text.replace(find, replace)
         elif isinstance(entry.get("content"), str):
-            # Whole-file writes are for new files, or files the model has actually read.
+            # Whole-file writes are for new files, or files the model has actually read in full.
             if path in existing and path not in sources:
                 raise ValueError("Refusing to overwrite a file that was not read: " + path)
+            if len(sources.get(path, "")) > MAX_FILE_CHARS:
+                raise ValueError("Large file was shown as excerpts; change it with edits, not content: " + path)
             text = entry["content"]
         else:
             raise ValueError("Entry needs edits or content: " + path)
-        if len(text) > MAX_FILE_CHARS:
+        # Large files may grow moderately; new or fully rewritten files keep the normal cap.
+        limit = min(MAX_LARGE_FILE_CHARS, max(MAX_FILE_CHARS, len(sources.get(path, "")) + MAX_FILE_CHARS // 2))
+        if len(text) > limit:
             raise ValueError("Resulting file too large: " + path)
         if text == sources.get(path):
             raise ValueError("Change leaves file unchanged: " + path)
@@ -180,10 +186,40 @@ def syntax_error(path, text):
     return None
 
 
+STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", "would", "could", "make",
+              "please", "add", "the", "and", "for", "repository", "mode", "develop", "onlykappa", "kappaforge"}
+
+
+def excerpt(text, task, budget=MAX_FILE_CHARS):
+    """Relevant windows of a large file: its opening plus lines matching the task's words."""
+    lines = text.split("\n")
+    terms = {t for t in re.findall(r"[a-z][a-z0-9_-]{3,}", task.lower()) if t not in STOP_WORDS}
+    hits = [i for i, line in enumerate(lines) if any(t in line.lower() for t in terms)]
+    keep = set(range(min(40, len(lines))))
+    for i in hits:
+        window = set(range(max(0, i - 20), min(len(lines), i + 21)))
+        if sum(len(lines[j]) + 1 for j in keep | window) > budget:
+            break
+        keep |= window
+    out, previous = [], -1
+    for i in sorted(keep):
+        if i != previous + 1:
+            out.append(f"... [lines {previous + 2}-{i} omitted] ...")
+        out.append(lines[i])
+        previous = i
+    if previous < len(lines) - 1:
+        out.append(f"... [lines {previous + 2}-{len(lines)} omitted] ...")
+    return "\n".join(out)
+
+
 def generate(api_key, task, repo, sources, existing):
     context = ""
     for path, text in sources.items():
-        block = f"\n===== FILE {path} =====\n{text}\n"
+        if len(text) > MAX_FILE_CHARS:
+            block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
+                     f"copying find text from the lines shown) =====\n{excerpt(text, task)}\n")
+        else:
+            block = f"\n===== FILE {path} =====\n{text}\n"
         if len(context) + len(block) > MAX_CONTEXT_CHARS:
             break
         context += block
@@ -316,7 +352,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key):
     named = [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
     sources = {}
     for path in (changed + named)[:MAX_READ_FILES]:
-        if path in existing and existing[path] <= MAX_FILE_CHARS:
+        if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS:
             try:
                 sources[path] = read_source(ROOT, path, head_sha, token)
             except (ValueError, UnicodeDecodeError):

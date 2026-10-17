@@ -61,6 +61,17 @@ export async function mergePR(env,repo,number,expectedSha){
  return {status:"merged",url:review.url};
 }
 
+// Decline an agent development PR in any owner repository. Only kappa/dev-N branches; never human PRs.
+export async function closePR(env,repo,number){
+ const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
+ if(pr.state!=="open"||!/^kappa\/dev-\d+$/.test(pr.head?.ref||"")||pr.head?.repo?.full_name!==pr.base?.repo?.full_name)
+  return {error:"Only open agent development pull requests can be closed here.",status:403};
+ const r=await api(env,"repos/onlykappa/"+repo+"/pulls/"+number,{method:"PATCH",body:JSON.stringify({state:"closed"})});
+ if(!r.ok)return {error:"GitHub refused to close the pull request (HTTP "+r.status+").",status:502};
+ await api(env,"repos/onlykappa/"+repo+"/git/refs/heads/"+pr.head.ref,{method:"DELETE"}).catch(()=>{});
+ return {status:"closed",url:pr.html_url};
+}
+
 // Ask the agent to fix a failed KappaForge development PR. The owner approves the result like any other change.
 export async function requestFix(env,repo,number){
  const review=await reviewPR(env,repo,number);

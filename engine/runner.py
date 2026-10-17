@@ -258,6 +258,13 @@ def main():
             lambda path: github(path, read_token(repo, token)), run_model, comments)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
         print(f"Audit {'complete' if complete else 'checkpointed'}: {state['next']}/{state['files_total']}")
+        if not complete:
+            # Start the next batch now instead of waiting for the six-hourly schedule.
+            try:
+                github(f"repos/{ROOT}/actions/workflows/agent.yml/dispatches", token,
+                       {"ref": "main", "inputs": {"issue_number": str(int(issue["number"]))}})
+            except urllib.error.HTTPError as exc:
+                print(f"Next audit batch waits for the schedule (dispatch HTTP {exc.code})")
         return
     task = (issue.get("title", "") + "\n" + (issue.get("body") or ""))[:6000]
     match = TARGET_RE.search(issue.get("body") or "")
