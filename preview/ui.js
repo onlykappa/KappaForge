@@ -23,7 +23,7 @@ function renderTaskActivity(m){
  // Only explicit progress lines are candidates. Never interpret an arbitrary
  // bullet or the last paragraph as an authoritative completed stage.
  const stages=/^(?:Reading project files|Identifying issues|Implementing fixes|Running tests|Building iOS app|Pushing pull request)\b/i;
- const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,'')));
+ const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,''))||/^Step \d+ of \d+:/i.test(x));
  const latest=steps.at(-1)||lines.find(x=>/^[✅✔☑]\s+/.test(x))||'Task update received';
  const label=latest.replace(/^[-*]\s*/, '').replace(/^\*\*|\*\*$/g,'').replace(/^[✅✔☑]\s*/,'');
  const headline=label.length>105?label.slice(0,102)+'…':label;
