@@ -11,15 +11,25 @@ const end=source.indexOf('\n\nfunction renderSavedItems(',start);
 assert.ok(start>=0&&end>start);
 const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>s,uiIcon:()=>'<svg></svg>'};
 vm.runInNewContext(source.slice(start,end),ctx);
-test('progress is visually separate, readable and HTML-escaped',()=>{
- const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\nRead code\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
+test('progress remains compact with escaped summary and expandable report',()=>{
+ const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
  assert.match(html,/agent-activity/);
- assert.match(html,/activity-current/);
- assert.match(html,/Previous updates/);
- assert.match(html,/activity-timeline/);
- assert.match(html,/Identifying issues/);
+ assert.match(html,/activity-summary/);
+ assert.match(html,/View progress details/);
+ assert.match(html,/Development task #88/);
  assert.doesNotMatch(html,/<script>/);
+ assert.doesNotMatch(html,/activity-timeline/);
  assert.doesNotMatch(html,/data-retry-message/);
+});
+test('very long updates are shortened without losing the full report',()=>{
+ const text='✅ '+('Reading source files '.repeat(30));
+ const html=ctx.renderTaskActivity({text,progressKey:'progress:3:4'});
+ assert.match(html,/activity-summary/);
+ assert.match(html,/…/);
+ assert.match(html,/activity-report/);
+});
+test('empty progress updates remain safe',()=>{
+ assert.match(ctx.renderTaskActivity({text:'',progressKey:'progress:2:1'}),/Task update received/);
 });
 test('assistant action icons are immediately available without opening a menu',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'Completed successfully'},2);
