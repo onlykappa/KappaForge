@@ -18,26 +18,25 @@ function setSidebar(open,restoreFocus=false){
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
 function renderTaskActivity(m){
- const raw=String(m.text||'').replace(/^\\*\\*KappaForge is working on it\\*\\*/i,'').trim();
- const lines=raw.split(/\\n+/).map(x=>x.replace(/^[-*]\\s*/,'').trim()).filter(Boolean);
- const steps=[...new Set(lines.filter(x=>!/^KappaForge is working on it/i.test(x)))];
- const current=steps.at(-1)||'Reading project files';
- const complete=steps.slice(0,-1);
- const stages=['Reading project files','Identifying issues','Implementing fixes','Running tests','Building iOS app','Pushing pull request'];
- const classify=x=>/read|source files|project instructions|choosing which files/i.test(x)?0:/analyz|identif|inspect|investigat|audit/i.test(x)?1:/implement|edit|fix|correct|patch|generat|commit/i.test(x)?2:/test|validat|unit|regression/i.test(x)?3:/simulator|ios|build/i.test(x)?4:/push|pull request|publish/i.test(x)?5:-1;
- const active=classify(current);
- const tracked=active<0?0:active;
- const timeline=stages.map((name,i)=>'<li class="'+(i<tracked?'done':i===tracked?'current':'upcoming')+'"><span class="activity-node"></span><span>'+esc(name)+'</span></li>').join('');
- const issueLines=steps.filter(x=>/^(?:high|medium|low|critical)\\s*[:—-]|(?:bug|issue)\\s*#?\\d+\\s*[:—-]/i.test(x));
- return '<section class="agent-activity" aria-label="Agent development progress" aria-live="polite">'+
- '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span><span class="activity-heading">Starting bug audit</span><span class="activity-tag">LIVE</span></div>'+
- '<ol class="activity-timeline">'+timeline+'</ol>'+
- '<div class="activity-current"><strong>'+esc(current)+'</strong></div>'+
- (complete.length?'<details class="activity-history"><summary>Previous updates ('+complete.length+')</summary><ol>'+complete.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol></details>':'')+
- (issueLines.length?'<details class="activity-findings"><summary>Issues found ('+issueLines.length+')</summary><ul>'+issueLines.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></details>':'')+
- '</section>';
+ const report=String(m.text||'');
+ const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
+ // Only explicit progress lines are candidates. Never interpret an arbitrary
+ // bullet or the last paragraph as an authoritative completed stage.
+ const stages=/^(?:Reading project files|Identifying issues|Implementing fixes|Running tests|Building iOS app|Pushing pull request)\b/i;
+ const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,''))||/^Step \d+ of \d+:/i.test(x));
+ const latest=steps.at(-1)||lines.find(x=>/^[✅✔☑]\s+/.test(x))||'Task update received';
+ const label=latest.replace(/^[-*]\s*/, '').replace(/^\*\*|\*\*$/g,'').replace(/^[✅✔☑]\s*/,'');
+ const headline=label.length>105?label.slice(0,102)+'…':label;
+ const fail=lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
+ const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
+ return '<section class="agent-activity" aria-label="Task progress">'+
+ '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span>'+
+ '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
+ '<span class="activity-tag">'+(fail?'NEEDS ATTENTION':'IN PROGRESS')+'</span></div>'+
+ '<p class="activity-summary">'+esc(headline)+'</p>'+
+ '<details class="activity-history"><summary>View progress details</summary>'+
+ '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
 }
-
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
  const actions=m.streaming||progress?'':user?'':'<div class="quick-actions" aria-label="Message actions">'+
@@ -64,6 +63,16 @@ const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.s
  uiLastChat=c?.id;uiLastCount=c?.messages.length||0;
  if(uiLastView!==view&&!matchMedia('(prefers-reduced-motion: reduce)').matches)document.getElementById('content').animate([{opacity:.4,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:170,easing:'ease-out'});uiLastView=view;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
+ const networkStatus=document.getElementById('network-status');
+ const syncNetworkStatus=()=>{
+  if(!networkStatus)return;
+  const online=navigator.onLine;
+  networkStatus.innerHTML='<i aria-hidden="true"></i> '+(online?'Network available':'Offline');
+  networkStatus.classList.toggle('offline',!online);
+ };
+ window.addEventListener('online',syncNetworkStatus);
+ window.addEventListener('offline',syncNetworkStatus);
+ syncNetworkStatus();
  document.querySelectorAll('[data-save-message]').forEach(b=>b.onclick=()=>{const m=active()?.messages[Number(b.dataset.saveMessage)];if(m){m.saved=!m.saved;active().at=Date.now();save();render();toast(m.saved?'Message saved':'Message unsaved')}});
  document.querySelectorAll('[data-retry-message]').forEach(b=>b.onclick=()=>{if(sending)return;const messages=active()?.messages||[];const last=messages.slice(0,Number(b.dataset.retryMessage)).reverse().find(m=>m.role==='user');if(!last)return;if(/\[Attached:/.test(last.text)){document.getElementById('message').value=last.text;toast('Reattach the original files, then send to retry.');return;}document.getElementById('message').value=last.text;document.getElementById('form').requestSubmit();});
  document.querySelectorAll('[data-copy-code]').forEach(b=>b.onclick=async()=>{try{await copyInterfaceText(b.closest('.code-block').querySelector('code').textContent);toast('Code copied')}catch(e){toast(e.message)}});
@@ -83,13 +92,13 @@ function updateKeyboard(){
  const open=typing&&inset>80;
  document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
  document.body.classList.toggle('keyboard-open',open);
- if(open&&view==='chat')document.getElementById('composer')?.scrollIntoView({block:'nearest',behavior:'instant'});
+ // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }
 function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
  if(uiInitialized)return;uiInitialized=true;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
- document.getElementById('headernew').onclick=fresh;document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
+ document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
  const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',updateKeyboard);input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));

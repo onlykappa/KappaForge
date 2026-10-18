@@ -24,4 +24,22 @@ final class LaunchTests: XCTestCase {
         }
         XCTAssertTrue(web.staticTexts["KappaForge could not start"].exists == false, "App should remain running after opening Settings")
     }
+    func testComposerRemainsBelowHeaderWhenKeyboardOpens() {
+        let app = XCUIApplication()
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 15))
+        let editor = web.textViews["Message"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 15), "Chat composer must expose its text editor")
+        editor.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "Software keyboard must appear after editor focus")
+        XCTAssertGreaterThan(editor.frame.minY, web.frame.minY + 45, "Composer must remain below navigation header")
+        XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "PR97 keyboard open layout"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
 }

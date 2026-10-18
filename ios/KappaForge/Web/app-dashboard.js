@@ -258,7 +258,7 @@ function setActivity(label){activityLabel=label;const el=document.getElementById
 function render(){
 const scrollState=captureInterfaceScroll();
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
-document.getElementById("heading").textContent=view==="chat"?(active()?.messages.length?active().title:"KappaForge"):({home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings",saved:"Saved items",profile:"Account & profile",help:"Help & about"})[view];
+document.getElementById("heading").textContent=view==="chat"?"KappaForge":({home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings",saved:"Saved items",profile:"Account & profile",help:"Help & about"})[view];
 document.getElementById("composer").classList.toggle("hide",view!=="chat");
 let html="";const c=active();
 if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>KappaJobs.isSubmission(m)?"":renderMessage(m,i)).join(""):'<div class="welcome"><span class="welcome-symbol">'+uiIcon('spark')+'</span><h1>A little clarity.<br>A lot of possibility.</h1><p class="muted">Think it through, make a plan, or build what comes next.</p><div class="welcome-hints"><button data-draft="Help me think through an idea">Explore an idea</button><button data-draft="Help me plan a project">Plan a project</button><button data-draft="Help me debug my code">Work on code</button></div></div>';}
@@ -323,7 +323,13 @@ async function proposeTaskAutomatically(text,notify=true,context=""){
   if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
   const p=data.proposal;
   pendingJob={title:p.title,instructions:p.instructions,repo:p.repo,mode:p.mode,context};
-  view="chat";render();return true;
+  view="chat";
+  // Owner explicitly requested hands-off development. Only safe task modes start
+  // automatically; potentially destructive or long-running modes still need review.
+  if(preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
+   await launchJob();
+  }else render();
+  return true;
  }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
