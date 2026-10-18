@@ -82,7 +82,7 @@ function updateKeyboard(){
  const open=typing&&inset>80;
  document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
  document.body.classList.toggle('keyboard-open',open);
- if(open&&view==='chat')document.getElementById('composer')?.scrollIntoView({block:'nearest',behavior:'instant'});
+ // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }
 function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
