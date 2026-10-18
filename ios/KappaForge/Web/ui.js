@@ -98,14 +98,12 @@ function initInterface(){
 async function receiveAssistant(response,chat,prefix,signal){
  const message={role:'assistant',text:prefix,streaming:true};chat.messages.push(message);render();
  let full='',shown=0,lastSave=0,terminal=null;
- const smooth=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+ // Render the latest available network chunk without delaying completed replies.
  const checkStop=()=>{if(signal.aborted)throw new DOMException('Stopped','AbortError')};
  const paint=()=>{
   const remaining=full.length-shown;if(!remaining)return;
   const nearBottom=scrollY+innerHeight>=document.documentElement.scrollHeight-180;
-  shown=smooth&&!document.hidden?Math.min(full.length,shown+Math.max(4,Math.ceil(remaining/24))):full.length;
-  // Do not split a Unicode surrogate pair while revealing a buffered chunk.
-  if(shown<full.length&&/[\uD800-\uDBFF]/.test(full[shown-1]))shown++;
+  shown=full.length; // Paint whole received chunks instead of artificially pacing the answer.
   message.text=prefix+full.slice(0,shown);chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);
   if(view==='chat'&&current===chat.id){const index=chat.messages.indexOf(message),bubble=document.querySelector('[data-message-index="'+index+'"] .bubble');if(bubble)bubble.textContent=message.text;if(nearBottom)scrollTo(0,document.documentElement.scrollHeight);}
   if(Date.now()-lastSave>750){save();lastSave=Date.now();}
@@ -115,7 +113,7 @@ async function receiveAssistant(response,chat,prefix,signal){
   if(response.headers.get('content-type')?.includes('application/x-ndjson')){
    for await(const packet of KappaStream.packets(response.body)){
     checkStop();if(packet.usage)usageEvents.push(packet.usage);
-    if(packet.type==='delta'&&typeof packet.text==='string'){full+=packet.text;if(full.length>100000)throw Error('Response too large');setActivity('');if(!smooth)paint();}
+    if(packet.type==='delta'&&typeof packet.text==='string'){full+=packet.text;if(full.length>100000)throw Error('Response too large');setActivity('');if(document.hidden)paint();}
     else if(packet.type==='done'){terminal=packet;}
     else if(packet.type==='error')throw Error(packet.error||'Response interrupted');
    }
@@ -125,7 +123,7 @@ async function receiveAssistant(response,chat,prefix,signal){
   }
   if(typeof terminal.reply!=='string'||!terminal.reply.trim())throw Error('No reply was returned');
   if(!full)full=terminal.reply;
-  while(shown<full.length){checkStop();paint();if(shown<full.length)await new Promise(resolve=>setTimeout(resolve,28));}
+  checkStop();paint();
   checkStop();message.text=prefix+terminal.reply;return terminal;
  }catch(error){
   shown=full.length;message.text=prefix+full+(signal.aborted?'\n\nResponse stopped.':'\n\nResponse interrupted: '+error.message+'. You can retry from the message menu.');
