@@ -5,9 +5,10 @@ final class LaunchTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         let web = app.webViews.firstMatch
-        XCTAssertTrue(web.waitForExistence(timeout: 15), "Bundled WKWebView must load")
+        // The first launch on a freshly booted simulator renders the bundled interface slowly (about 40s observed in CI).
+        XCTAssertTrue(web.waitForExistence(timeout: 60), "Bundled WKWebView must load")
         let navigation = web.buttons["Open navigation"]
-        XCTAssertTrue(navigation.waitForExistence(timeout: 15))
+        XCTAssertTrue(navigation.waitForExistence(timeout: 60), "Shared interface navigation must render")
         navigation.tap()
         let settings = web.buttons["Open settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "Shared interface settings button must be accessible")
@@ -16,7 +17,7 @@ final class LaunchTests: XCTestCase {
         // can be exposed differently by WKWebView accessibility on different simulator runtimes.
         // HTML input[type=search] is exposed as XCUIElementTypeSearchField, not TextField.
         let search = web.searchFields["Search settings"]
-        if !search.waitForExistence(timeout: 20) {
+        if !search.waitForExistence(timeout: 30) {
             XCTContext.runActivity(named: "Settings accessibility hierarchy") { activity in
                 activity.add(XCTAttachment(string: app.debugDescription))
             }
