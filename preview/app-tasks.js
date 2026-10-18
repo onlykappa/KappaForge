@@ -102,14 +102,14 @@ async function launchJob(){
  render();
 }
 let taskDraft="",taskFocus=null;
-function prepareJob(message){
+function prepareJob(message,mode="audit"){
  const text=(message||"").trim();
  if(!text){alert("Write a task first, then tap Make a task.");return}
  taskDraft=text;taskFocus=document.activeElement;
  const overlay=document.getElementById("taskoverlay");
  document.getElementById("taskerror").textContent="";
  document.getElementById("taskrepo").innerHTML=repoOptions(mentionedRepository(text)||"KappaForge","onlykappa/");
- document.getElementById("taskmode").value="audit";
+ document.getElementById("taskmode").value=mode;
  overlay.hidden=false;document.querySelector(".layout").inert=true;document.querySelector(".mobile-nav").inert=true;updateTaskChoices();
  syncNativeComposer();document.getElementById("taskrepo").focus();
 }
