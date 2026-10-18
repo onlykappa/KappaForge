@@ -33,7 +33,8 @@ class DeveloperValidationTests(unittest.TestCase):
         guide = "START_RULE\\n" + ("x" * 18000) + "\\nEND_RULE"
         with patch.object(developer, "read_source", return_value=guide):
             loaded = developer.project_guide("onlykappa/KappaForge", "sha", {"KAPPA.md": 1}, "token")
-        self.assertEqual(loaded, guide)
+        self.assertIn(guide, loaded)
+        self.assertIn("SOURCE: KAPPA.md", loaded)
         plan = json.dumps({"read": ["app/main.py"]})
         with patch.object(developer, "run_model", return_value=("flash", plan)) as model:
             developer.select_files("key", "task", EXISTING, guide=loaded)
