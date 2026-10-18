@@ -44,3 +44,19 @@
 @media(min-width:841px){.top{grid-template-columns:44px minmax(0,1fr) 44px 44px 44px}.top-title{text-align:left}.connection-state{display:block;color:var(--muted);font-size:10px}.online-dot{display:inline-block;background:#43ba88;width:6px;height:6px;border-radius:50%;margin-right:5px}}
 
 .connection-state.is-offline .online-dot{background:#e68a87}
+
+/* Real task reports are rendered as compact expandable cards; no speculative stages. */
+.task-report{padding-left:0!important}
+.task-report::before{display:none!important}
+.task-report-card{width:100%;min-width:0;background:#12131b;border:1px solid rgba(163,151,204,.19);border-radius:17px;overflow:hidden}
+.task-report-card>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:68px}
+.task-report-card>summary::-webkit-details-marker{display:none}
+.task-report-mark{display:grid;place-items:center;color:#a083f0;background:rgba(140,105,229,.13);border-radius:11px;width:32px;height:32px;flex:none}
+.task-report-mark svg{width:18px;height:18px}
+.task-report-title{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.task-report-title strong{font-size:13px;color:var(--text)}
+.task-report-title small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-report-chevron{color:var(--muted);transition:transform .2s}
+.task-report-chevron svg{width:15px;height:15px}
+.task-report-card[open] .task-report-chevron{transform:rotate(90deg)}
+.task-report-details{padding:13px 15px 17px;border-top:1px solid var(--line);font-size:12px;overflow-wrap:anywhere;max-height:65vh;overflow:auto}
