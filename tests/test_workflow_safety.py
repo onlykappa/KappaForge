@@ -54,9 +54,9 @@ class TaskScopeTests(unittest.TestCase):
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'23','KAPPA_TASK_SCOPE':'read'}), patch.object(continuous,'get_issue',return_value=issue('continuous-code')):
             with self.assertRaises(ValueError):continuous.main()
 
-    def test_write_queue_cannot_scan_unrelated_repairs(self):
+    def test_write_queue_retains_authorized_repair_scan(self):
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'','KAPPA_TASK_SCOPE':'write'}), patch.object(continuous,'github',return_value=[]), patch('engine.repair_loop.scan_failures',return_value=[]) as repair:
-            continuous.main();repair.assert_not_called()
+            continuous.main();repair.assert_called_once()
 
 class NativeSelectionTests(unittest.TestCase):
     def test_cleanup_keeps_current_completed_other_workflows_and_branches(self):

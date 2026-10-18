@@ -70,10 +70,10 @@ def request(url, payload=None, token=None, method=None):
     with urllib.request.urlopen(req, timeout=35) as response:
         body = response.read()
         if not body.strip():
-            record_success(url, payload)
+            record_success(url, payload, {})
             return {}  # GitHub workflow dispatch returns HTTP 204 with an empty body.
         result = json.loads(body)
-        record_success(url, payload)
+        record_success(url, payload, result)
         return result
 
 def github(path, token=None, payload=None):

@@ -78,3 +78,25 @@ class IntentGuardTests(unittest.TestCase):
             return [{'number':n} for n in tasks]
         with patch.dict('os.environ',{'INPUT_ISSUE_NUMBER':''}),patch.object(runner,'github',github),patch.object(runner,'get_issue',lambda n,t:tasks[int(n)]):
             self.assertEqual(runner.choose_issue('fixture',{'audit'})['number'],98)
+
+    def test_task_maintains_its_own_progress_comment_and_pull_request(self):
+        from engine.intent_guard import record_success
+        task=issue();scope=activate(task)
+        root='https://api.github.com/repos/onlykappa/KappaForge/'
+        record_success(root+'issues/98/comments',{'body':'Working'},{'id':555})
+        scope.permit(root+'issues/comments/555',{'body':'Done'},'PATCH')
+        with self.assertRaises(PermissionError):scope.permit(root+'issues/comments/556',{'body':'Edit someone else'},'PATCH')
+        record_success(root+'pulls?state=open&head=onlykappa:kappa/dev-98',None,[{'number':120,'head':{'ref':'kappa/dev-98','repo':{'full_name':'onlykappa/KappaForge'}}},
+                                                                            {'number':121,'head':{'ref':'kappa/dev-12','repo':{'full_name':'onlykappa/KappaForge'}}}])
+        scope.permit(root+'pulls/120',{'body':'## Latest fix'},'PATCH')
+        scope.permit(root+'issues/120/comments',{'body':'### Fix applied'},'POST')
+        for path,payload,method in [('pulls/121',{'body':'x'},'PATCH'),('issues/121/comments',{'body':'x'},'POST'),
+                                    ('pulls/120',{'state':'closed'},'PATCH'),('issues/120/comments',{'body':'Guidance: do more'},'POST')]:
+            with self.assertRaises(PermissionError):scope.permit(root+path,payload,method)
+
+    def test_long_running_modes_stay_authorized_for_a_week(self):
+        import time
+        week=issue('watch');week['created_at']=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(time.time()-3*86400))
+        ExecutionScope(week)
+        day=issue('develop');day['created_at']=week['created_at']
+        with self.assertRaises(PermissionError):ExecutionScope(day)

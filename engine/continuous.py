@@ -102,8 +102,8 @@ def main():
     if not number and scope == "write":
         # Only the isolated write job scans repair previously approved sandbox draft PRs.
         from engine.repair_loop import scan_failures
-        # No global repair scan: a failed run is evidence, never authorization.
-        outcomes = []
+        # Each repair runs under the still-authorized task that owns the failed branch.
+        outcomes = scan_failures(token, key, github)
         print("Bounded independent-test repair scan:", outcomes[:4])
     if not issues:
         print("No owner-authorized continuous/watch issues pending")

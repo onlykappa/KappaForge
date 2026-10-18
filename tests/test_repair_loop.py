@@ -29,3 +29,30 @@ class RepairLoopTests(unittest.TestCase):
         self.assertIn("Identify failing assertions",repair_diagnosis([{"step":"Run unit tests"}]))
         self.assertIn("compilation",repair_diagnosis([{"step":"Build app"}]))
         self.assertIn("Inspect",repair_diagnosis([{"step":"Unexpected runner failure"}]))
+
+    def test_scan_repairs_only_tasks_that_are_still_authorized(self):
+        from unittest.mock import patch
+        from engine import repair_loop
+        from engine.intent_guard import ACTIVE
+        sha="c"*40
+        runs=[{"id":n,"name":"Sandbox branch tests","conclusion":"failure",
+               "display_title":f"Sandbox validation kappa/issue-{n} @ {sha}"} for n in (14,98)]
+        def issue(n,token):
+            return {"number":n,"state":"open","user":{"login":"onlykappa"},
+                    "created_at":"2020-01-01T00:00:00Z" if n==14 else "2099-01-01T00:00:00Z",
+                    "body":"Repository: onlykappa/KappaForge\nMode: code\n\nFix"}
+        repaired=[]
+        def revise(run,token,key):
+            repaired.append((run["id"],ACTIVE.get().number));return {"status":"revised"}
+        with patch.object(repair_loop,"get_issue",issue),patch.object(repair_loop,"revise_failed_run",revise):
+            outcomes=repair_loop.scan_failures("t","k",lambda path,token:{"workflow_runs":runs})
+        self.assertEqual(repaired,[(98,98)])
+        self.assertEqual(outcomes[0]["status"],"task_not_authorized")
+        self.assertIsNone(ACTIVE.get())
+
+    def test_repair_reads_the_real_failure_output(self):
+        from unittest.mock import patch
+        from engine import repair_loop
+        jobs=[{"id":7,"name":"unit","conclusion":"failure","steps":[{"name":"Run tests","conclusion":"failure"}]}]
+        with patch.object(repair_loop,"job_log",lambda job_id,token,limit:"FAIL: test_retry\nAssertionError: 2 != 3"):
+            self.assertIn("AssertionError: 2 != 3",repair_loop.failure_output(jobs,"t"))

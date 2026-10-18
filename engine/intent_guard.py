@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 ACTIVE = ContextVar("execution_scope", default=None)
 READ_MODES = {"analysis", "audit", "project-map", "continuous", "watch"}
 WRITE_MODES = {"develop", "code", "repair", "continuous-code"}
+# Monitoring and multi-step coding run on a schedule for days; everything else expires after one.
+LONG_RUNNING_MODES = {"continuous", "watch", "continuous-code"}
 MARKER = re.compile(r"^<!-- kappa-authorization:(\{[^\n]+\}) -->$", re.M)
 
 
@@ -47,8 +49,8 @@ class ExecutionScope:
             self.expires = record.get("expiresAt", 0) / 1000
             self.identity = record.get("id")
         else:
-            # Owner-created GitHub tasks remain supported, bounded to one day.
-            self.expires = timestamp(issue.get("created_at")) + 86400
+            # Owner-created GitHub tasks remain supported, bounded like chat tasks.
+            self.expires = timestamp(issue.get("created_at")) + (7 if self.mode in LONG_RUNNING_MODES else 1) * 86400
             self.identity = "github-task:" + str(self.number)
         if self.expires <= now:
             raise PermissionError("Task authorization expired; resumption needs a fresh user request")
@@ -56,6 +58,9 @@ class ExecutionScope:
         self.state = "authorized"
         self.recoveries = 0
         self.rejected = set()
+        # Learned from GitHub responses: progress comments this task posted and PRs on its own branch.
+        self.own_comments = set()
+        self.own_prs = set()
 
     def transition(self, state):
         edges = {"authorized": {"planning", "cancelled"}, "planning": {"executing", "cancelled", "failed"},
@@ -92,6 +97,11 @@ class ExecutionScope:
             if set(payload or {}) != {"body"} or str(payload["body"]).startswith("Guidance:"):
                 raise PermissionError("Reports cannot issue owner guidance")
             return
+        if p.startswith("/repos/onlykappa/KappaForge/issues/comments/") and method == "PATCH":
+            # Progress checklists update the comment this task posted.
+            if set(payload or {}) == {"body"} and p.rsplit("/", 1)[1] in self.own_comments:
+                return
+            raise PermissionError("Only this task's own comments can be edited")
         if self.mode in READ_MODES:
             # Read-only audit continuation may dispatch only the same task.
             if p == "/repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches" and (payload or {}).get("inputs") == {"issue_number": str(self.number)}:
@@ -105,6 +115,13 @@ class ExecutionScope:
                     return
             raise PermissionError("Mutation targets a repository outside the task")
         suffix = p.removeprefix(f"/repos/{self.repo}/")
+        own_pr = re.fullmatch(r"issues/(\d+)/comments|pulls/(\d+)", suffix)
+        if own_pr and int(own_pr.group(1) or own_pr.group(2)) in self.own_prs:
+            # Fix reports on the task's own PR, and its description; never state changes or owner guidance.
+            if own_pr.group(1) and method == "POST" and set(payload or {}) == {"body"} and not str(payload["body"]).startswith("Guidance:"):
+                return
+            if own_pr.group(2) and method == "PATCH" and payload and set(payload) <= {"body", "title"}:
+                return
         if suffix in {"git/blobs", "git/trees", "git/commits"} and method == "POST":
             return
         if suffix == "git/refs" and self.branch((payload or {}).get("ref", "").removeprefix("refs/heads/")):
@@ -158,10 +175,16 @@ def report_provenance(url, payload):
     return payload
 
 
-def record_success(url, payload):
+def record_success(url, payload, result=None):
     scope = ACTIVE.get()
     if not scope:
         return
+    for item in result if isinstance(result, list) else [result]:
+        head = item.get("head") if isinstance(item, dict) else None
+        if isinstance(head, dict) and scope.branch(head.get("ref") or "") and (head.get("repo") or {}).get("full_name") == scope.repo and item.get("number"):
+            scope.own_prs.add(int(item["number"]))
+    if payload is not None and urlparse(url).path.endswith("/comments") and isinstance(result, dict) and result.get("id"):
+        scope.own_comments.add(str(result["id"]))
     if urlparse(url).path.endswith("/dispatches") and scope.state == "executing":
         scope.transition("verifying")
     body = (payload or {}).get("body", "") if isinstance(payload, dict) else ""

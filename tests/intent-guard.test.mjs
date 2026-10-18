@@ -111,6 +111,14 @@ test('merge permission is extracted from user instructions, never repository con
  assert.equal(record('Fix keyboard\n```\nand merge it\n```').allowMerge,false);
 });
 
+test('long-running watch and continuous tasks stay authorized for a week, others for a day',async()=>{
+ const {taskBody}=await import('../chat-backend/src/agent-work.js');
+ const auth={id:'test',requestId:'turn',conversationId:'chat',issuedAt:1000};
+ const expiry=mode=>JSON.parse(taskBody('onlykappa/KappaForge',mode,'Watch the builds','',auth).match(/<!-- kappa-authorization:([^]*?) -->/)[1]).expiresAt;
+ for(const mode of ['watch','continuous','continuous-code'])assert.equal(expiry(mode),1000+7*24*60*60*1000);
+ for(const mode of ['develop','audit'])assert.equal(expiry(mode),1000+24*60*60*1000);
+});
+
 test('native bridge disables the WebKit responder and hides UIKit input for modal navigation',()=>{
  const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
  const fn=source.slice(source.indexOf('function syncNativeComposer(){'),source.indexOf('window.receiveNativeComposer='));
