@@ -75,14 +75,28 @@ Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
 
 After this PR (local): `python -m unittest discover -s tests` 148 OK, `npm test` 154 pass,
 `python scripts/check-web.py` passed, `python3 scripts/dependency-map.py --check` current.
-`npm run test:web` desktop (Chromium) PASS; the mobile-Safari pass needs WebKit, which only CI installs.
+`npm run test:web` desktop (Chromium) PASS locally; the CI WebKit pass also passed (see CI verification below).
 Browser smoke (Chromium, 1280 and 390 wide, mocked `/actions` stream): overview, run page, parsed log,
 no horizontal overflow, composer draft and run page kept across Chat ↔ Dashboard, no page errors.
 Live checks against the real GitHub API: `scripts/verify-actions-state.mjs` passes a correct snapshot and
 reports a real stale run, a confirmed ghost (404) and a missing run. The log parser was checked on a real
 failed `iOS build and release` job log; that check added the XCTest `Test Case '…' failed` pattern.
 
+### CI verification: passed (2026-10-18)
+Verified against GitHub Actions for commit `fa4454a2141ad2fbd0c73527fb36d4bf6b13e211`, matching the owner's success screenshot.
+
+- [x] [iOS build and release #148](https://github.com/onlykappa/KappaForge/actions/runs/39153838383): **success**.
+  The `native` job passed in 8m 46s, including the native update contract, source/bundle verification,
+  simulator build and bundled-launch verification, keyboard screenshot export, unsigned iPhone build,
+  IPA package verification and artifact uploads.
+- [x] [KappaForge tests #437](https://github.com/onlykappa/KappaForge/actions/runs/39153838355): **success**.
+  Both `unit` and `web` jobs passed, including `npm test`, dependency-map validation and
+  `npm run test:web` after installing Chromium and WebKit. The previously pending CI WebKit check is complete.
+- The `release`, `agent-report` and `sandbox` jobs in run #148 were **skipped**, not failed.
+  This records successful PR validation; it does not establish release publication or physical-device acceptance.
+
 ### Milestone log
+- M4 (CI verification, 2026-10-18): iOS run #148 and test run #437 passed on `fa4454a`; native and WebKit verification are complete. Evidence is linked above.
 - M1 (backend): `chat-backend/src/actions.js`, `preview/actions-core.js`, `engine/actions_log.py`,
   `/actions` route in `index.js`, fixtures + `tests/actions.test.mjs` + `tests/test_actions_log.py`.
   `/actions` body: `{op:"snapshot"|"run"|"log"|"stream", repo, runId?, jobId?, attempt?}`.
@@ -106,10 +120,13 @@ failed `iOS build and release` job log; that check added the XCTest `Test Case '
   the Worker falls back to `GITHUB_JOB_TOKEN`.
 
 ## Next task
-All planned items, including round 3, are done. Watch CI on the PR (the `web` job runs the WebKit pass that could not run locally).
-Possible follow-ups, not started: a Re-run button (needs a write path through the authorized `/decisions`
-flow), using `engine/actions_log.headline` in `engine/developer.py` repair reports, and a live-build chip in
-the chat header.
+All planned implementation items, including round 3, and CI verification are complete.
+PR #101 remains open and draft at this verification point. Merge/release and physical-device acceptance
+remain separate steps; no release was published by PR run #148.
+
+Possible follow-ups, not started: using `engine/actions_log.headline` in
+`engine/developer.py` repair reports, and a live-build chip in the chat header.
+Re-run / Cancel is already implemented and tested (item 12), so it is not an outstanding follow-up.
 
 ## Safety notes
 No tokens or secrets are stored in this file, the PR, or the browser.
