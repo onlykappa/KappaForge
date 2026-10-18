@@ -10,7 +10,7 @@ test('iOS keyboard optimization uses visual viewport and correct insets',()=>{
  assert.match(ui,/window\.innerHeight-vv\.height-vv\.offsetTop/);
  assert.match(css,/\.keyboard-open \.composer/);
  assert.match(css,/bottom:var\(--keyboard-inset\)/);
- assert.match(css,/padding-bottom:max\(12px,env\(safe-area-inset-bottom\)\)/);
+ assert.match(css,/padding:8px 12px max\(12px,env\(safe-area-inset-bottom\)\)/);
 });
 
 test('composer resizes on keyboard update',()=>{
