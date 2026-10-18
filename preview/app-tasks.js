@@ -69,7 +69,7 @@ async function checkJobResult(){
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
-    const text=report.status==="tests-passed"||report.status==="tests-failed"?report.body:({partial:"Findings so far (audit still partial)",failed:"Task failed"}[report.status]||"Task results")+"\n\n"+report.body+"\n\n[View source report]("+source+")";
+    const text=KappaJobs.conciseReport(report.status,report.body,source);
     changed=jobChatUpdate(job,report.id,text)||changed;
     job.message=report.status;job.lastReportId=Number(comment.id);
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
