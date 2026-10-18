@@ -20,43 +20,75 @@
 .bubble.streaming{white-space:pre-wrap;min-height:26px}.bubble.streaming::after{content:"";display:inline-block;width:2px;height:1em;margin-left:4px;background:var(--accent);vertical-align:-2px}
 .review-card{margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:16px;overflow-wrap:anywhere}.review-card p{font-size:13px;line-height:1.55;margin:0 0 10px}.review-card p strong{display:block;font-size:12px;margin-bottom:4px}.review-files{font-size:12px!important}
 .review-risks{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:rgba(242,160,169,.08);border:1px solid var(--line)}.review-risks strong{font-size:12px;color:#f2a0a9}.review-risks ul{margin:6px 0 0;padding-left:4px;list-style:none;font-size:12px;line-height:1.6}
-/* PR #94 Phase 1: compact reference-inspired chat chrome and deterministic keyboard placement. */
+
+/* Compact assistant progress and action surfaces, shared by native iOS and web. */
+.message-stack{display:flex;flex-direction:column;align-items:flex-start;max-width:100%;min-width:0}
+.chat-message.from-user .message-stack{align-items:flex-end}
+.chat-message.is-progress{margin:9px 0 22px;padding-left:0}
+.chat-message.is-progress::before{display:none}
+.agent-activity{width:min(100%,580px);padding:15px 18px;border:1px solid rgba(255,255,255,.085);background:rgba(255,255,255,.035);border-radius:18px;color:#a9a9b2}
+.activity-top{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.01em;color:#aaa9b2;margin-bottom:15px}
+.activity-heading{font-weight:620;color:#d5d5db}
+.activity-pulse{width:8px;height:8px;border-radius:50%;background:#a2b9ac;box-shadow:0 0 0 4px rgba(162,185,172,.10);animation:activity-breathe 2.4s ease-in-out infinite}
+.activity-tag{margin-left:auto;font-size:9px;font-weight:700;letter-spacing:1.1px;color:#9da8a1}
+.activity-current{display:flex;gap:11px;align-items:flex-start;font-size:13px;line-height:1.55}
+.activity-current strong{font-weight:520;color:#d8d8dc}
+.activity-step-dot{width:7px;height:7px;margin-top:7px;flex:none;background:#9b9ba8;border-radius:50%}
+.activity-history{margin:12px 0 0 18px;font-size:12px;color:#8f909a}
+.activity-history summary{cursor:pointer;list-style:none;padding:5px 0}
+.activity-history summary::before{content:'⌄';margin-right:7px}
+.activity-history ol{border-left:1px solid rgba(255,255,255,.14);padding-left:19px;margin:9px 0 0}
+.activity-history li{margin:8px 0;line-height:1.5}
+.quick-actions{display:flex;align-items:center;gap:3px;margin-top:10px;min-height:34px}
+.quick-actions>button,.quick-actions>.message-menu>summary{width:34px;height:34px;min-height:34px;border:none;border-radius:11px;background:transparent;display:flex;align-items:center;justify-content:center;color:#94949f;cursor:pointer;opacity:1}
+.quick-actions>button:hover,.quick-actions>.message-menu>summary:hover{background:rgba(255,255,255,.08);color:#f0f0f2}
+.quick-actions svg{width:17px;height:17px}
+.quick-actions .message-menu{margin:0;width:34px}
+@keyframes activity-breathe{50%{opacity:.5;box-shadow:0 0 0 7px rgba(162,185,172,.05)}}
+@media(max-width:840px){.agent-activity{padding:14px 15px}.chat-message.is-progress{margin:5px 0 20px}.quick-actions{margin-top:5px}.chat-message.from-assistant{padding-left:23px}}
+@media(prefers-reduced-motion:reduce){.activity-pulse{animation:none}}
+
+
+/* KappaForge activity cockpit: sourced stage states, collapsible findings and native mobile controls. */
+.header-presence{display:block;font-size:10px;line-height:1.2;color:#999da7;letter-spacing:.01em;margin-top:3px}
+.header-presence i{display:inline-block;width:6px;height:6px;margin-right:5px;vertical-align:1px;border-radius:50%;background:#70bfa0}
+.top-title strong{font-weight:650;font-size:15px}
+.activity-timeline{margin:0 0 15px;padding:3px 0 3px 9px;list-style:none;position:relative}
+.activity-timeline::before{content:"";position:absolute;left:14px;top:14px;bottom:14px;width:1px;background:#3c414c}
+.activity-timeline li{position:relative;display:flex;align-items:center;gap:15px;min-height:37px;font-size:12px;color:#777f8b}
+.activity-timeline li.done{color:#c2c6cd}
+.activity-timeline li.current{color:#f2f2f5;font-weight:610}
+.activity-node{width:11px;height:11px;flex:none;position:relative;z-index:1;background:#181a20;border:1.5px solid #59606c;border-radius:50%}
+.activity-timeline li.done .activity-node{background:#55ac83;border-color:#55ac83;box-shadow:inset 0 0 0 3px #192a25}
+.activity-timeline li.current .activity-node{background:#a28ae7;border-color:#a28ae7;box-shadow:0 0 0 3px rgba(162,138,231,.14)}
+.activity-current{margin:3px 0 0 20px;padding:12px 13px;border:1px solid rgba(175,161,220,.17);background:rgba(149,131,195,.07);border-radius:12px}
+.activity-history,.activity-findings{margin:9px 0 0 19px;color:#a1a4ac;font-size:12px}
+.activity-history summary,.activity-findings summary{padding:7px 0;cursor:pointer}
+.activity-findings ul{list-style:none;margin:8px 0;padding:0}
+.activity-findings li{margin:6px 0;padding:7px 10px;background:rgba(255,255,255,.035);border-radius:8px}
+.composer-task{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:7px 12px}
+.composer-task:hover{background:rgba(255,255,255,.10)}
+.compose-inner{border-radius:27px;background:rgba(23,24,30,.91);box-shadow:0 14px 40px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.055)}
+.controls .send-button{background:#8866d5;box-shadow:0 2px 13px rgba(136,102,213,.20)}
+@media(max-width:840px){.header-presence{font-size:9px}.activity-timeline li{min-height:35px}.activity-current{margin-left:14px}.agent-activity{background:linear-gradient(140deg,rgba(35,38,48,.75),rgba(16,17,22,.95))}}
+
+
+/* iPhone keyboard optimization: compact floating composer with one safe-area offset. */
 @media(max-width:840px){
- .top{grid-template-columns:38px minmax(0,1fr) 38px 38px;gap:5px;padding-left:max(13px,env(safe-area-inset-left));padding-right:max(13px,env(safe-area-inset-right));background:#000;border-bottom:1px solid rgba(255,255,255,.06)}
- .top-title{text-align:left;display:flex;flex-direction:column;justify-content:center;line-height:1.2}
- .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.3px}
- .connection-state{display:flex;align-items:center;gap:5px;color:#a4a0b4;font-size:10px;margin-top:3px}
- .online-dot{width:6px;height:6px;background:#43ba88;border-radius:100%}
- .header-new{display:none}
- .content{padding-left:20px;padding-right:20px}
- .composer,.sidebar-collapsed .composer{left:8px;right:8px;bottom:calc(var(--nav-height) + var(--tab-bottom) + 8px);padding:0;background:none}
- .keyboard-open .composer,.keyboard-open.sidebar-collapsed .composer{bottom:calc(var(--keyboard-inset) + 8px)}
- .compose-inner{max-width:100%;border-radius:23px;padding:11px 12px;background:#181820;border:1px solid rgba(153,132,205,.38);box-shadow:none}
- .compose-inner textarea{padding:3px 5px 5px;font-size:16px;line-height:1.45}
- .controls{gap:6px;margin-top:7px}
- .composer-task{border:1px solid rgba(255,255,255,.09);border-radius:22px;padding:7px 10px}
- .controls .send-button{width:38px;height:38px;background:#875dde}
- .chat-message.from-assistant::before{background:#754aea;color:white;width:23px;height:23px;display:grid;place-items:center;border-radius:9px;left:0;top:0;font-size:14px}
- .chat-message.from-assistant{padding-left:32px}
+ .keyboard-open .composer,.keyboard-open.sidebar-collapsed .composer{
+   left:0;
+   right:0;
+   bottom:var(--keyboard-inset);
+   padding:8px 12px;
+   background:var(--bg);
+   border-top:1px solid var(--line);
+ }
+ .keyboard-open .compose-inner{padding:6px 8px 5px;border-radius:20px}
+ .keyboard-open .compose-inner textarea{min-height:22px;height:22px;max-height:112px;padding:0 4px 2px;line-height:1.3}
+ .keyboard-open .controls{gap:3px;margin-top:3px}
+ .keyboard-open .controls .iconbtn,.keyboard-open .attachment-menu>summary{width:32px;height:32px;min-height:32px;padding:6px}
+ .keyboard-open .composer-model select{min-height:32px;max-width:118px;font-size:10px}
+ .keyboard-open .composer-task{min-height:32px;font-size:10px;padding:5px 8px}
+ .keyboard-open .controls .send-button{width:34px;height:34px}
+ .keyboard-open .content{padding-bottom:calc(var(--composer-height) + var(--keyboard-inset) + 28px)}
 }
-
-/* Keep desktop header columns valid after adding mobile search and overflow actions. */
-@media(min-width:841px){.top{grid-template-columns:44px minmax(0,1fr) 44px 44px 44px}.top-title{text-align:left}.connection-state{display:block;color:var(--muted);font-size:10px}.online-dot{display:inline-block;background:#43ba88;width:6px;height:6px;border-radius:50%;margin-right:5px}}
-
-.connection-state.is-offline .online-dot{background:#e68a87}
-
-/* Real task reports are rendered as compact expandable cards; no speculative stages. */
-.task-report{padding-left:0!important}
-.task-report::before{display:none!important}
-.task-report-card{width:100%;min-width:0;background:#12131b;border:1px solid rgba(163,151,204,.19);border-radius:17px;overflow:hidden}
-.task-report-card>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:68px}
-.task-report-card>summary::-webkit-details-marker{display:none}
-.task-report-mark{display:grid;place-items:center;color:#a083f0;background:rgba(140,105,229,.13);border-radius:11px;width:32px;height:32px;flex:none}
-.task-report-mark svg{width:18px;height:18px}
-.task-report-title{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
-.task-report-title strong{font-size:13px;color:var(--text)}
-.task-report-title small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.task-report-chevron{color:var(--muted);transition:transform .2s}
-.task-report-chevron svg{width:15px;height:15px}
-.task-report-card[open] .task-report-chevron{transform:rotate(90deg)}
-.task-report-details{padding:13px 15px 17px;border-top:1px solid var(--line);font-size:12px;overflow-wrap:anywhere;max-height:65vh;overflow:auto}

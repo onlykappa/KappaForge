@@ -80,10 +80,11 @@ function updateKeyboard(){
  const vv=window.visualViewport;
  const typing=document.activeElement===document.getElementById('message');
  const inset=vv?Math.max(0,window.innerHeight-vv.height-vv.offsetTop):0;
- const open=typing&&inset>80;
- document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
+ const open=typing&&inset>40;
+ document.documentElement.style.setProperty('--keyboard-inset',open?Math.round(inset)+'px':'0px');
  document.body.classList.toggle('keyboard-open',open);
- if(open&&view==='chat')document.getElementById('composer')?.scrollIntoView({block:'nearest',behavior:'instant'});
+ if(open&&view==='chat')requestAnimationFrame(()=>document.getElementById('composer')?.scrollIntoView({block:'nearest',behavior:'instant'}));
+ resizeComposer();
 }
 function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
