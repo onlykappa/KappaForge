@@ -36,6 +36,7 @@ const apiServer=createServer(async(req,res)=>{
    packet({type:'delta',text:'Live request '});await new Promise(r=>setTimeout(r,700));packet({type:'delta',text:'fixture passed'});packet({type:'done',reply:'Live request fixture passed',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}});res.end();return;
   }
   result={reply:'Live request fixture passed',model:'gemini-2.5-flash-lite',usage:{id:'2',at:Date.now(),model:'gemini-2.5-flash-lite',total:8,ok:true}};}
+ else if(req.url==='/authorize')result={state:'authorized'};
  else if(req.url==='/jobs'){issuedJob++;result={issueNumber:issuedJob,issueUrl:'https://github.com/onlykappa/KappaForge/issues/'+issuedJob,status:'dispatched'};}
  else if(req.url==='/plan')result={isTask:false};
  else {res.writeHead(404).end(JSON.stringify({error:'Unknown fixture endpoint'}));return;}
@@ -103,7 +104,7 @@ const apiServer=createServer(async(req,res)=>{
  assert.doesNotMatch(await page.locator('#content').innerText(),/submitted|dispatched|Waiting for GitHub/);
  const comment=(id,body)=>({id,user:{login:'github-actions[bot]'},updated_at:'2026-10-16',body});
  taskReports[23]=[comment(101,'### KappaForge repository audit batch 1\n**Status:** Partial, next batch pending.\n\nFound a missing timeout in source.js. Tests failed handling should be reviewed.')];
- await page.evaluate(()=>checkJobResult());await page.getByText('Findings so far (audit still partial)',{exact:false}).waitFor();await page.evaluate(()=>checkJobResult());assert.equal(await page.locator('.from-assistant').filter({hasText:'Found a missing timeout'}).count(),1);
+ await page.evaluate(()=>checkJobResult());await page.getByText('Progress update',{exact:false}).waitFor();await page.evaluate(()=>checkJobResult());assert.equal(await page.locator('.from-assistant').filter({hasText:'Found a missing timeout'}).count(),1);
  await page.evaluate(()=>fresh());await page.evaluate(()=>{pendingJob={title:'Second fixture task',instructions:'Inspect the second fixture task',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===2&&!jobTrackingBusy);
  taskReports[23].push(comment(102,'### KappaForge repository audit batch 2\n**Status:** All eligible paths processed.\n\nFinal finding: add timeout tests.'));
  taskReports[24]=[comment(103,'### KappaForge task failed\nFixture build step stopped. Review logs and retry.')];
@@ -112,19 +113,19 @@ const apiServer=createServer(async(req,res)=>{
  await page.reload();await page.waitForFunction(()=>typeof trackedJobs!=='undefined');assert.equal(await page.evaluate(()=>trackedJobs.every(j=>j.finished)),true);
  await page.evaluate(id=>{current=id;active().messages.push({role:'assistant',text:'Development job #23 submitted. I will bring agent findings into this conversation automatically. You can keep chatting while it runs.'});save();navigate('chat')},firstChat);assert.doesNotMatch(await page.locator('#content').innerText(),/Development job #23 submitted/);
  console.log(name+': quiet task dispatch, partial/final findings, failure delivery, multiple chats and reload deduplication passed');
- // Asking for work in chat starts the task itself: the reply's kappa-action block is planned and launched with no Make a task sheet.
- const acted=await page.evaluate(async()=>{const c={id:'act-chat',title:'Act',messages:[],at:Date.now()};chats.unshift(c);current='act-chat';const original=window.fetch;
+ // Direct user work starts a scoped task; assistant-written actions remain display-only.
+ const acted=await page.evaluate(async()=>{const c={id:'act-chat',title:'Act',messages:[{role:'user',text:'add live time'}],at:Date.now()};chats.unshift(c);current='act-chat';const original=window.fetch;
   window.fetch=async(u,o)=>String(u).endsWith('/plan')?new Response(JSON.stringify({isTask:true,proposal:{title:'Add live time',instructions:'Add live time',repo:'onlykappa/KappaForge',mode:'develop'}}),{headers:{'Content-Type':'application/json'}}):original(u,o);
   const reply='I will add live time.\n```kappa-action\n{"type":"task","request":"Add live time to KappaForge chat"}\n```';
   try{await runChatAction(reply,'add live time',c,true)}finally{window.fetch=original}
   await runChatAction('Which repository should I use?','change the colors',c,true);
   return {chip:renderChatText(reply),pending:!!pendingJob,started:trackedJobs.some(j=>j.chatId==='act-chat'&&j.mode==='develop')}});
  assert.equal(acted.started,true,'task started from chat');assert.equal(acted.pending,false);
- assert.match(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);
+ assert.doesNotMatch(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);
  // The agent's progress checklist is one chat message that updates in place.
  const progressed=await page.evaluate(()=>{const job={number:77,chatId:'act-chat'};showProgress(job,5,'### KappaForge is working on it\n\n⏳ Reading the code');showProgress(job,5,'### KappaForge is working on it\n\n✅ Read 3 files\n⏳ Writing the change');const shown=chats.find(c=>c.id==='act-chat').messages.filter(m=>m.progressKey);return {count:shown.length,text:shown[0]?.text}});
  assert.equal(progressed.count,1);assert.match(progressed.text,/Writing the change/);assert.doesNotMatch(progressed.text,/###/);
- console.log(name+': chat starts tasks itself passed');
+ console.log(name+': user-authorized chat starts tasks; assistant action syntax stays hidden');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});

@@ -50,7 +50,7 @@ export async function usageStore(state,request){
   const {limit,action,receipt}=await request.json();const day=new Date().toISOString().slice(0,10);
   const key='task-budget:'+day;
   if(action==='refund'){
-   if(typeof receipt!=='string'||!/^\\d{4}-\\d{2}-\\d{2}:[a-f0-9-]{36}$/.test(receipt))return Response.json({error:'Invalid receipt'},{status:400});
+   if(typeof receipt!=='string'||!/^\d{4}-\d{2}-\d{2}:[a-f0-9-]{36}$/.test(receipt))return Response.json({error:'Invalid receipt'},{status:400});
    const receiptKey='task-receipt:'+receipt;
    const op=async s=>{if(await s.get(receiptKey)!=='reserved')return false;
     const target='task-budget:'+receipt.slice(0,10);

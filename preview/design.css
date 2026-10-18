@@ -50,7 +50,7 @@
 
 
 /* KappaForge activity cockpit: sourced stage states, collapsible findings and native mobile controls. */
-.header-presence{display:block;font-size:10px;line-height:1.2;color:#999da7;letter-spacing:.01em;margin-top:3px}
+.header-presence{display:block;font-size:10px;line-height:1.2;color:var(--muted);letter-spacing:.01em;margin-top:3px}
 .header-presence i{display:inline-block;width:6px;height:6px;margin-right:5px;vertical-align:1px;border-radius:50%;background:#70bfa0}
 .top-title strong{font-weight:650;font-size:15px}
 
@@ -104,16 +104,16 @@
 .activity-report code{white-space:pre-wrap;overflow-wrap:anywhere}
 .activity-report pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;overflow:auto}
 @media(max-width:840px){
- .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:#000;min-height:calc(56px + var(--kappa-safe-top))}
+ .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:var(--bg);min-height:calc(56px + var(--kappa-safe-top))}
  .top-title{text-align:left}
  .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.2px;white-space:nowrap}
- .header-presence{color:#a19dae;font-size:10px}
+ .header-presence{color:var(--muted);font-size:10px}
  .header-presence i{background:#54bd96}
  .content{max-width:100%;padding-left:16px;padding-right:16px}
  .chat-message.is-progress{margin:12px 0 20px;padding:0}
  .chat-message.is-progress .message-stack{width:100%;display:block}
  .composer,.sidebar-collapsed .composer{left:10px;right:10px;padding:0;background:none}
- .compose-inner{background:#181820;border:1px solid rgba(161,139,211,.35);border-radius:23px;box-shadow:none;padding:10px 11px}
+ .compose-inner{background:var(--surface);border:1px solid rgba(161,139,211,.35);border-radius:23px;box-shadow:none;padding:10px 11px}
  .controls{gap:5px}
  .composer-task{background:rgba(255,255,255,.04);border-radius:20px;padding:6px 10px}
  .controls .send-button{background:#865edd}
@@ -122,3 +122,7 @@
 @media(max-width:840px){.top{grid-template-columns:40px minmax(0,1fr) 38px 38px;gap:5px}.top .header-new{display:none}.top .iconbtn{width:38px;height:38px}.top-title{overflow:hidden}.top-title strong{max-width:100%;text-overflow:ellipsis;overflow:hidden}}
 
 .header-presence.offline i{background:#d7898c}
+
+/* Native UIKit input overlays this disabled geometry anchor; keep its placeholder readable. */
+.compose-inner textarea:disabled{opacity:1;-webkit-text-fill-color:transparent}
+.compose-inner textarea:disabled::placeholder{opacity:1;color:var(--faint);-webkit-text-fill-color:var(--faint)}

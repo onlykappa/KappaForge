@@ -5,7 +5,7 @@ diagnosis is read-only and produces reviewable recommendations, never code pushe
 """
 import os
 import re
-from engine.runner import ROOT, allowed_repo, code_providers, github, get_issue, is_private, run_model
+from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model
 from engine.full_reader import inspect_batch
 
 MAX_BATCHES_PER_RUN = 3
@@ -95,19 +95,22 @@ def main():
             for candidate in candidates:
                 if re.search(r"^Mode:\s*" + desired_mode + r"\s*$",
                              candidate.get("body") or "", re.I | re.M):
-                    authorized = get_issue(candidate["number"], token)
-                    if authorized:
-                        issues.append(authorized)
+                    selected = get_issue(candidate["number"], token)
+                    if selected and authorized(selected):
+                        issues.append(selected)
                         break
     if not number and scope == "write":
         # Only the isolated write job scans repair previously approved sandbox draft PRs.
         from engine.repair_loop import scan_failures
+        # Each repair runs under the still-authorized task that owns the failed branch.
         outcomes = scan_failures(token, key, github)
         print("Bounded independent-test repair scan:", outcomes[:4])
     if not issues:
         print("No owner-authorized continuous/watch issues pending")
         return
     for issue in issues:
+        from engine.intent_guard import activate
+        activate(issue)
         require_scope(mode_of(issue), scope, "continuous")
         body = issue.get("body") or ""
         if re.search(r"^Mode:\s*continuous\s*$", body, re.I | re.M):

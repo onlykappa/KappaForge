@@ -52,18 +52,29 @@ HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.
            "X-GitHub-Api-Version": "2022-11-28"}
 
 def request(url, payload=None, token=None, method=None):
+    from engine.intent_guard import report_provenance, record_success
+    payload = report_provenance(url, payload)
     headers = dict(HEADERS)
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None if payload is None else json.dumps(payload).encode()
     if data is not None:
         headers["Content-Type"] = "application/json"
+    from engine.intent_guard import guard_request
+    def read_current(number):
+        current = urllib.request.Request(f"https://api.github.com/repos/{ROOT}/issues/{number}", headers=headers)
+        with urllib.request.urlopen(current, timeout=35) as response:
+            return json.load(response)
+    guard_request(url, payload, method or ("POST" if payload is not None else "GET"), read_current)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=35) as response:
         body = response.read()
         if not body.strip():
+            record_success(url, payload, {})
             return {}  # GitHub workflow dispatch returns HTTP 204 with an empty body.
-        return json.loads(body)
+        result = json.loads(body)
+        record_success(url, payload, result)
+        return result
 
 def github(path, token=None, payload=None):
     return request("https://api.github.com/" + path, payload, token)
@@ -91,9 +102,21 @@ def choose_issue(token, allowed_modes=None):
             from engine.task_scope import mode_of
             if mode_of(issue) not in allowed_modes:
                 continue
+        if issue and not authorized(issue):
+            continue
         if issue and not settled(github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)):
             return issue
     return None
+
+def authorized(issue):
+    """Scheduled runs skip expired or legacy tasks instead of failing on the oldest one every run."""
+    from engine.intent_guard import ExecutionScope
+    try:
+        ExecutionScope(issue)
+    except PermissionError as error:
+        print(f"Skipping task #{issue['number']}: {error}")
+        return False
+    return True
 
 # Final reports of every task type. Scheduled runs skip these issues; an explicit dispatch or /audit-code still re-runs them.
 DONE_MARKERS = ("KappaForge run completed", "### KappaForge project map complete",
@@ -328,6 +351,8 @@ def main():
     if not issue:
         print("No authorized unprocessed task found.")
         return
+    from engine.intent_guard import activate
+    activate(issue)
     if not os.getenv("GEMINI_API_KEY"):
         if os.getenv("INPUT_ISSUE_NUMBER", "").strip():
             report_failure(issue["number"], token, "GEMINI_API_KEY is missing from the repository's Actions secrets",

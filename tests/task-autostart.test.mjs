@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import '../preview/intent-guard.js';
+import {webcrypto} from 'node:crypto';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const source=readFileSync(resolve(root,'preview/app-dashboard.js'),'utf8');
@@ -26,7 +28,7 @@ async function attempt({autoStart=true,mode='develop',isTask=true}={}){
   launchJob:async()=>{launched++;sandbox.pendingJob=null;},
   render:()=>{rendered++;},
   fetch:async()=>({ok:true,json:async()=>isTask?{isTask:true,proposal:pending}:{isTask:false}}),
-  Intl,Date,alert:()=>{throw Error('unexpected alert')}
+  KappaIntent:globalThis.KappaIntent,crypto:webcrypto,Intl,Date,alert:()=>{throw Error('unexpected alert')}
  };
  vm.runInNewContext(planner,sandbox);
  const ok=await sandbox.proposeTaskAutomatically('Fix navigation',false,'recent conversation');

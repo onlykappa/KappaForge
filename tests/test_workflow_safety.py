@@ -19,7 +19,7 @@ cleanup = script_module('select-superseded-native')
 simulator = script_module('select-simulator')
 
 def issue(mode):
-    return {'number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
+    return {'state':'open','user':{'login':'onlykappa'},'created_at':'2099-01-01T00:00:00Z','number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
 
 class TaskScopeTests(unittest.TestCase):
     def test_read_scopes_reject_every_code_mode(self):

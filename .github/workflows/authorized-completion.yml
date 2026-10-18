@@ -1,0 +1,33 @@
+name: Complete authorized task
+on:
+  workflow_run:
+    workflows: [Sandbox branch tests, Project tests]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: authorized-completion-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  complete:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      actions: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Complete only the original explicitly merge-authorized task
+      env:
+        GITHUB_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN || github.token }}
+        VERIFIED_RUN_ID: ${{ github.event.workflow_run.id }}
+      run: python -m engine.authorized_completion
