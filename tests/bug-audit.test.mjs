@@ -46,7 +46,7 @@ test('agent work sorts run evidence newest first and checks API comment shape',(
 });
 
 test('partial GitHub dispatch does not invite creating a duplicate issue',async()=>{
- const source=extract('async function launchJob(','\\nlet taskDraft=');
+ const source=extract('async function launchJob(','\nlet taskDraft=');
  const draft={title:'Fix settings',instructions:'Fix settings with tests',mode:'develop',repo:'onlykappa/KappaForge'};
  const chats=[{id:'chat',messages:[]}];
  const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',chats,
