@@ -20,11 +20,14 @@ function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar
 function renderTaskActivity(m){
  const report=String(m.text||'');
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
- const steps=lines.filter(x=>/^(?:✅|✔|☑|[-*]\s|Step \d|Reading |Identifying |Implementing |Running |Building |Pushing )/i.test(x));
- const latest=steps.at(-1)||lines.find(x=>!/^\s*#{1,4}\s*/.test(x))||'Task update received';
+ // Only explicit progress lines are candidates. Never interpret an arbitrary
+ // bullet or the last paragraph as an authoritative completed stage.
+ const stages=/^(?:Reading project files|Identifying issues|Implementing fixes|Running tests|Building iOS app|Pushing pull request)\b/i;
+ const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,'')));
+ const latest=steps.at(-1)||lines.find(x=>/^[✅✔☑]\s+/.test(x))||'Task update received';
  const label=latest.replace(/^[-*]\s*/, '').replace(/^\*\*|\*\*$/g,'').replace(/^[✅✔☑]\s*/,'');
  const headline=label.length>105?label.slice(0,102)+'…':label;
- const fail=/\b(failed|error|blocked)\b/i.test(lines.at(-1)||'');
+ const fail=lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  return '<section class="agent-activity" aria-label="Task progress">'+
  '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span>'+
