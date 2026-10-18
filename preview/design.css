@@ -289,3 +289,6 @@ button.gh-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}but
 
 .agent-activity.stale .task-bar.indeterminate i,.agent-activity.stale .activity-pulse,.agent-activity.stale .task-step.current .task-dot{animation:none;box-shadow:none}
 .finding-resolution{font-size:11px;color:#8fd3b1;margin-left:auto}
+
+/* Keep the complete fixed composer in one WebKit compositing layer on short native chats. */
+.composer{transform:translateZ(0);isolation:isolate;-webkit-backface-visibility:hidden;backface-visibility:hidden}

@@ -14,6 +14,9 @@ enum ProgressFixture {
           // This fixture enters the real persisted task model and the production renderer.
           // No network task, model call, authorization or repository mutation is performed.
           backend = ''; access = '';
+          // UI fixtures do not poll an unrelated live GitHub issue with the same number.
+          checkJobResult = async () => {};
+          jobPollAfter = Number.MAX_SAFE_INTEGER;
           const chat = {id:'simulator-progress-'+scenario,title:'Simulator task progress',at:now,messages:[]};
           chats.unshift(chat); current = chat.id; view = 'chat';
           const failed = scenario === 'failed';
