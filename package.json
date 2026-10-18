@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs",
+    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/ios-ui-pr94.test.mjs",
     "test:web": "node tests/web-regression.cjs"
   },
   "devDependencies": {
