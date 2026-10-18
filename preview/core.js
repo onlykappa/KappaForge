@@ -1,7 +1,7 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'standard',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
 function settings(value={}){
  const s={...defaults};
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
