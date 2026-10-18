@@ -71,3 +71,23 @@
 .compose-inner{border-radius:27px;background:rgba(23,24,30,.91);box-shadow:0 14px 40px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.055)}
 .controls .send-button{background:#8866d5;box-shadow:0 2px 13px rgba(136,102,213,.20)}
 @media(max-width:840px){.header-presence{font-size:9px}.activity-timeline li{min-height:35px}.activity-current{margin-left:14px}.agent-activity{background:linear-gradient(140deg,rgba(35,38,48,.75),rgba(16,17,22,.95))}}
+
+
+/* iPhone keyboard optimization: compact floating composer with one safe-area offset. */
+@media(max-width:840px){
+ .keyboard-open .composer,.keyboard-open.sidebar-collapsed .composer{
+   left:max(8px,env(safe-area-inset-left,0px));
+   right:max(8px,env(safe-area-inset-right,0px));
+   bottom:calc(var(--keyboard-inset) + 4px);
+   padding:0;
+   background:transparent;
+ }
+ .keyboard-open .compose-inner{padding:8px 10px 7px;border-radius:22px}
+ .keyboard-open .compose-inner textarea{min-height:23px;height:23px;max-height:112px;padding:0 4px 2px;line-height:1.35}
+ .keyboard-open .controls{gap:3px;margin-top:3px}
+ .keyboard-open .controls .iconbtn,.keyboard-open .attachment-menu>summary{width:32px;height:32px;min-height:32px;padding:6px}
+ .keyboard-open .composer-model select{min-height:32px;max-width:118px;font-size:10px}
+ .keyboard-open .composer-task{min-height:32px;font-size:10px;padding:5px 8px}
+ .keyboard-open .controls .send-button{width:34px;height:34px}
+ .keyboard-open .content{padding-bottom:calc(var(--composer-height) + var(--keyboard-inset) + 28px)}
+}
