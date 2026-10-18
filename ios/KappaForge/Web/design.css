@@ -39,3 +39,8 @@
  .chat-message.from-assistant::before{background:#754aea;color:white;width:23px;height:23px;display:grid;place-items:center;border-radius:9px;left:0;top:0;font-size:14px}
  .chat-message.from-assistant{padding-left:32px}
 }
+
+/* Keep desktop header columns valid after adding mobile search and overflow actions. */
+@media(min-width:841px){.top{grid-template-columns:44px minmax(0,1fr) 44px 44px 44px}.top-title{text-align:left}.connection-state{display:block;color:var(--muted);font-size:10px}.online-dot{display:inline-block;background:#43ba88;width:6px;height:6px;border-radius:50%;margin-right:5px}}
+
+.connection-state.is-offline .online-dot{background:#e68a87}
