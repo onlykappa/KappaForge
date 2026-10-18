@@ -3,6 +3,13 @@ let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
+function taskCheckpoint(job,status,source="issue"){
+ if(!job||!Number.isInteger(job.number))return;
+ const previous=job.checkpoint;
+ if(previous?.status===status&&previous?.source===source)return;
+ job.checkpoint={status,source,at:Date.now()};
+ persistJobs();
+}
 // The chat AI marks requests for work with a kappa-action block; the app carries them out here.
 function chatActionFrom(json){
  try{const a=JSON.parse(json);
@@ -35,7 +42,7 @@ async function runChatAction(reply,typed,chat,offerTask){
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now()});persistJobs();jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now()});taskCheckpoint(job,"waiting","resume");persistJobs();jobPollAfter=0;
 }
 function showProgress(job,commentId,body){
  const target=chats.find(c=>c.id===job.chatId);if(!target)return false;
@@ -64,7 +71,7 @@ async function checkJobResult(){
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
-    if(report.status==="progress"){if(showProgress(job,comment.id,report.body)){changed=true;if(KappaJobs.isNew(job,comment)||job.message==="waiting")job.message="progress"}continue;}
+    if(report.status==="progress"){if(showProgress(job,comment.id,report.body)){changed=true;if(KappaJobs.isNew(job,comment)||job.message==="waiting")job.message="progress";taskCheckpoint(job,"progress","issue-comment:"+comment.id)}continue;}
     // Every poll re-reads all comments: only reports newer than the last handled one (and not from before a retry) change the job.
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
@@ -72,6 +79,7 @@ async function checkJobResult(){
     const text=report.status==="tests-passed"||report.status==="tests-failed"?report.body:({partial:"Findings so far (audit still partial)",failed:"Task failed"}[report.status]||"Task results")+"\n\n"+report.body+"\n\n[View source report]("+source+")";
     changed=jobChatUpdate(job,report.id,text)||changed;
     job.message=report.status;job.lastReportId=Number(comment.id);
+    taskCheckpoint(job,report.status,"issue-comment:"+comment.id);
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
    }
@@ -98,7 +106,7 @@ async function launchJob(){
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
  recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,chatId:jobChatId,activeAt:Date.now()};
- trackedJobs.push(recentJob);persistJobs();jobPollAfter=0;
+ trackedJobs.push(recentJob);taskCheckpoint(recentJob,"waiting","launch");persistJobs();jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
  }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
