@@ -63,6 +63,16 @@ const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.s
  uiLastChat=c?.id;uiLastCount=c?.messages.length||0;
  if(uiLastView!==view&&!matchMedia('(prefers-reduced-motion: reduce)').matches)document.getElementById('content').animate([{opacity:.4,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:170,easing:'ease-out'});uiLastView=view;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
+ const networkStatus=document.getElementById('network-status');
+ const syncNetworkStatus=()=>{
+  if(!networkStatus)return;
+  const online=navigator.onLine;
+  networkStatus.innerHTML='<i aria-hidden="true"></i> '+(online?'Network available':'Offline');
+  networkStatus.classList.toggle('offline',!online);
+ };
+ window.addEventListener('online',syncNetworkStatus);
+ window.addEventListener('offline',syncNetworkStatus);
+ syncNetworkStatus();
  document.querySelectorAll('[data-save-message]').forEach(b=>b.onclick=()=>{const m=active()?.messages[Number(b.dataset.saveMessage)];if(m){m.saved=!m.saved;active().at=Date.now();save();render();toast(m.saved?'Message saved':'Message unsaved')}});
  document.querySelectorAll('[data-retry-message]').forEach(b=>b.onclick=()=>{if(sending)return;const messages=active()?.messages||[];const last=messages.slice(0,Number(b.dataset.retryMessage)).reverse().find(m=>m.role==='user');if(!last)return;if(/\[Attached:/.test(last.text)){document.getElementById('message').value=last.text;toast('Reattach the original files, then send to retry.');return;}document.getElementById('message').value=last.text;document.getElementById('form').requestSubmit();});
  document.querySelectorAll('[data-copy-code]').forEach(b=>b.onclick=async()=>{try{await copyInterfaceText(b.closest('.code-block').querySelector('code').textContent);toast('Code copied')}catch(e){toast(e.message)}});
