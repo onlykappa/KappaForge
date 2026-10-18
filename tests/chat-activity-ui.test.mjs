@@ -111,6 +111,7 @@ test('structured cards expose truthful units, queued versus active timing and te
   assert.match(html,/aria-valuenow="1"/);assert.match(html,/Read &lt;files&gt;/);assert.match(html,/task-step current/);
   job.progress={...p,units:null};html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/task-bar indeterminate/);assert.doesNotMatch(html,/aria-valuenow=/);
   job.message='tests-passed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/READY FOR REVIEW/);assert.doesNotMatch(html,/data-since=/);
+  job.message='tests-failed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/NEEDS ATTENTION/);assert.doesNotMatch(html,/data-since=/);
   job.finished=true;job.message='cancelled';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/CANCELLED/);assert.doesNotMatch(html,/data-since=/);
  }finally{delete ctx.trackedJobs}
 });

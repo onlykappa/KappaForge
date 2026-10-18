@@ -88,13 +88,14 @@ async function checkJobResult(){
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
-    if(report.status==="progress"){if(showProgress(job,comment.id,comment.body,comment)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if((Date.parse(comment.updated_at||comment.created_at)||0)>=(job.lastReportAt||0)||job.message==="waiting")job.message="progress"}continue;}
+    if(report.status==="progress"){if(showProgress(job,comment.id,comment.body,comment)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if((Date.parse(comment.updated_at||comment.created_at)||0)>=(job.lastReportAt||0)||job.message==="waiting"){job.message="progress";if(!KappaProgress.terminal.has(job.progress?.status))job.finishedAt=0}}continue;}
     // Every poll re-reads all comments: only reports newer than the last handled one (and not from before a retry) change the job.
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
     const text=KappaJobs.conciseReport(report.status,report.body,source);
     changed=jobChatUpdate(job,report.id,text)||changed;
+    if(job.progress?.status==="queued"&&report.status!=="progress"){job.progress=null;job.startedAt=Date.parse(comment.created_at||comment.updated_at)||Date.now()}
     job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);job.lastReportAt=Date.parse(comment.updated_at||comment.created_at)||Date.now();
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
@@ -220,6 +221,7 @@ setInterval(()=>{
  document.querySelectorAll('[data-task-freshness]').forEach(el=>{
   const job=trackedJobs.find(j=>j.number===Number(el.dataset.taskFreshness));if(!job)return;
   const updated=Number(el.dataset.updatedAt),label=updated?new Date(updated).toLocaleTimeString():'not received';
+  el.closest('.agent-activity')?.classList.toggle('stale',!!job.pollError||KappaProgress.stale(job));
   el.textContent=job.pollError?'Updates unavailable. Reconnecting automatically.':KappaProgress.stale(job)?'No recent execution update. Last update '+label+'.':'Last update '+label;
  });
 },1000);

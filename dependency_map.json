@@ -34,7 +34,7 @@
   {"path":"engine/self_repair.py","depends_on":["engine/coder.py","engine/runner.py"]},
   {"path":"engine/task_scope.py","depends_on":["engine/intent_guard.py","engine/runner.py","tools/diagnostics.py"]},
   {"path":"ios/KappaForge/KappaWebView.swift","depends_on":["ios/KappaForge/Web/ (byte-identical copy of preview/ via scripts/bundle-web.py)"]},
-  {"path":"preview/index.html","depends_on":["preview/app-config.js","preview/intent-guard.js","preview/stream.js","preview/core.js","preview/actions-core.js","preview/markdown.js","preview/settings.js","preview/ui.js","preview/app-state.js","preview/app-dashboard.js","preview/app-tasks.js","preview/app-main.js"]},
+  {"path":"preview/index.html","depends_on":["preview/app-config.js","preview/intent-guard.js","preview/stream.js","preview/task-progress.js","preview/core.js","preview/actions-core.js","preview/markdown.js","preview/settings.js","preview/ui.js","preview/app-state.js","preview/app-dashboard.js","preview/app-tasks.js","preview/app-main.js"]},
   {"path":"tools/build_config.py","depends_on":[]},
   {"path":"tools/diagnostics.py","depends_on":[],"tests":["tests/test_workflow_safety.py"]}
  ]

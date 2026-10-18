@@ -1,3 +1,5 @@
+import './task-progress.test.mjs';
+import './task-tracking.test.mjs';
 import './intent-guard.test.mjs';
 import './ios-keyboard-layout.test.mjs';
 import './bug-audit.test.mjs';

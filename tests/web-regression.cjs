@@ -147,6 +147,7 @@ const apiServer=createServer(async(req,res)=>{
  await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-running.png',fullPage:true,animations:'disabled'});
  fixtureBody=fixtureEvents.middle;await page.evaluate(()=>checkJobResult());
  assert.match(await page.locator('#content').innerText(),/1 of 3 implementation stages completed/);
+ assert.match(await page.locator('.issues-card').innerText(),/Issues found \(2\)/);
  assert.equal(await page.locator('[role=progressbar]').getAttribute('aria-valuenow'),'1');
  assert.equal(await page.locator('.agent-activity').count(),1,'one card updates in place');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'progress fits viewport');

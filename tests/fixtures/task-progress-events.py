@@ -18,4 +18,4 @@ with patch.object(developer.Progress, 'clock', lambda: next(clock)), patch.objec
     progress.now('Step 1 of 3: Implement parsing fix', phase=True)
     progress.now('Step 2 of 3: Add recovery test')
     progress.fail('Fixture validation failure, intentionally exercised')
-print(json.dumps({'initial': bodies[0], 'middle': bodies[-2], 'failed': bodies[-1]}))
+print(json.dumps({'initial': bodies[0], 'middle': bodies[-2] + '\n- [High] Fixture: malformed JSON recovery\n- [Medium] Fixture: reconnect coverage', 'failed': bodies[-1]}))

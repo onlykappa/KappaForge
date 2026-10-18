@@ -59,3 +59,12 @@ Added browser replay coverage in tests/web-regression.cjs with a clearly labeled
 Remote feature 2 commit: `f7af9015054ae0f850d7248da17d9a43f546090f`. All 153 Python tests passed locally and GitHub's unit job passed. The previous web CI failed on a missing dependency in an old test VM; that harness is corrected in this checkpoint. Native CI reached simulator compilation after passing bundle and contract checks.
 
 Next: inspect the latest CI web/native runs; retrieve screenshots and visually compare the reference; fix any observed browser or native regression; synchronize final acceptance status and exact remaining production verification limits. No merge or release.
+
+## Feature 4 checkpoint: screenshot review and final timer fixes
+Browser replay passed in desktop Chromium and mobile Safari on commit `997491c5b237843a4f869095bfab005188e2c260`: https://github.com/onlykappa/KappaForge/actions/runs/39163299803 . Retrieved artifact 12150180422 and inspected mobile progress-middle screenshot against the attached reference. Connected steps, purple current ring, green checkmarks, dark bordered cards, timestamp durations and measured purple bar render in the actual application. Fixture labels remain explicit. Split result titles and supporting detail to match the reference hierarchy more closely. Browser fixture now includes two labeled findings to verify the findings card alongside live progress.
+
+Review fixes: failed independent-test reports freeze timers even while the task remains open for a retry; a later real running update unfreezes the task; final reports no longer retain queued semantics. The freshness ticker now pauses decorative activity when data becomes stale. New progress/tracking tests are imported by the standard intelligence test entrypoint, so CI cannot omit them. Dependency map regenerated.
+
+Local final verification before this visual refinement: npm test 175/175 and required Node/intelligence suite 148/148 passed. Full Python suite 153/153 passed. check-web and dependency-map checks passed. Latest screenshot/detail refinements require the next CI run. Native run 39163299925 compiled simulator successfully and is running launch/keyboard tests; full native completion remains pending.
+
+Next: verify final CI commit, inspect refreshed mobile findings screenshot and native build artifacts, update this log's acceptance checklist accurately. Draft only.
