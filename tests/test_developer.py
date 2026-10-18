@@ -3,7 +3,7 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import patch
-from engine import developer
+from engine import developer, native_build
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
@@ -470,7 +470,7 @@ class ProgressTests(unittest.TestCase):
         def gh(path, token, payload=None, method=None):
             calls.append((path, payload, method))
             return {"id": 77}
-        with patch.object(developer, "gh", side_effect=gh):
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh):
             p = developer.Progress(9, "t")
             p.now("Reading")
             p.now("Writing")
@@ -524,7 +524,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
 
     def test_fix_fast_forwards_the_branch_retests_and_explains(self):
         calls, gh = self.fake()
-        with patch.object(developer, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
                 patch.object(developer, "run_model", return_value=self.answer()):
             developer.fix_pull_request(self.ISSUE, "key", "token")
         ref = next(c for c in calls if c[0] == "repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9")
@@ -537,7 +537,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
 
     def test_fix_sees_the_diff_design_notes_and_earlier_attempts(self):
         calls, gh = self.fake(fixes=1)
-        with patch.object(developer, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
                 patch.object(developer, "run_model", return_value=self.answer()) as ai:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         prompt = ai.call_args[0][1]
@@ -557,18 +557,21 @@ class OwnerRequestedFixTests(unittest.TestCase):
         self.assertEqual(developer.failure_excerpt("just a short tail", 2000), "just a short tail")
 
     def test_fix_refuses_passing_stale_capped_or_other_repository_runs(self):
-        cases = [dict(run_conclusion="success"), dict(title="Sandbox validation kappa/dev-9 @ " + "f" * 40)]
-        for case in cases:
-            calls, gh = self.fake(**case)
-            with self.subTest(case=case), patch.object(developer, "gh", side_effect=gh), self.assertRaises(ValueError):
-                developer.fix_pull_request(self.ISSUE, "key", "token")
-            self.assertFalse(any(c[2] == "PATCH" for c in calls))
+        calls, gh = self.fake(run_conclusion="success")
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), self.assertRaises(ValueError):
+            developer.fix_pull_request(self.ISSUE, "key", "token")
+        self.assertFalse(any(c[2] == "PATCH" for c in calls))
+        # A newer commit is already being tested (an earlier fix moved the branch on): do nothing, and don't fail the task.
+        calls, gh = self.fake(title="Sandbox validation kappa/dev-9 @ " + "f" * 40)
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer.time, "sleep"):
+            self.assertIsNone(developer.fix_pull_request(self.ISSUE, "key", "token"))
+        self.assertFalse(any(c[2] == "PATCH" for c in calls))
         with self.assertRaises(ValueError):
             developer.fix_pull_request(dict(self.ISSUE, body="Repository: onlykappa/OmniPC\nMode: develop\n\nx"), "key", "token")
 
     def test_out_of_fixes_asks_the_owner_once_and_pushes_nothing(self):
         calls, gh = self.fake(fixes=developer.MAX_FIXES)
-        with patch.object(developer, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add\nAssertionError"), \
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add\nAssertionError"), \
                 patch.object(developer, "run_model") as ai, patch.object(developer, "notify") as notify:
             self.assertIsNone(developer.fix_pull_request(self.ISSUE, "key", "token"))
         ai.assert_not_called()
@@ -582,13 +585,51 @@ class OwnerRequestedFixTests(unittest.TestCase):
 
     def test_owner_guidance_reaches_the_fix_and_allows_one_more_attempt(self):
         calls, gh = self.fake(fixes=developer.MAX_FIXES, guidance=["keep the old date format"])
-        with patch.object(developer, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL"), \
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL"), \
                 patch.object(developer, "run_model", return_value=self.answer()) as ai:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         prompt = ai.call_args[0][1]
         self.assertIn("keep the old date format", prompt)
         self.assertNotIn("ignore the tests", prompt, "only the owner's guidance counts")
         self.assertTrue(any(c[2] == "PATCH" for c in calls))
+
+    def native(self, gh, conclusion="failure"):
+        """The fake GitHub plus a native iOS build of the PR head with a failed Xcode compile."""
+        def with_native(path, token, payload=None, method=None):
+            if "/actions/workflows/ios-build.yml/runs" in path:
+                return {"workflow_runs": [{"id": 8, "status": "completed", "conclusion": conclusion, "head_branch": "main",
+                                           "event": "workflow_dispatch", "created_at": "2026-10-18T10:00:00Z",
+                                           "display_title": f"iOS build kappa/dev-9 @ {self.HEAD}", "html_url": "https://x/8"}]}
+            if path.endswith("/runs/8/jobs?per_page=30"):
+                return {"jobs": [{"id": 4, "name": "native", "conclusion": "failure",
+                                  "steps": [{"name": "Build simulator application", "conclusion": "failure"}]}]}
+            if path.endswith("/pulls/50/files?per_page=100"):
+                return gh(path, token, payload, method) + [{"filename": "preview/ui.js", "status": "modified", "patch": "@@ -1 +1 @@\n-a\n+b"}]
+            return gh(path, token, payload, method)
+        return with_native
+
+    def test_a_failed_ios_build_is_fixed_from_its_xcode_log_and_rebuilt(self):
+        calls, gh = self.fake(run_conclusion="success")
+        logs = {3: "", 4: "KappaWebView.swift:42:17: error: cannot find 'composer' in scope"}
+        with patch.object(developer, "gh", side_effect=self.native(gh)), patch.object(native_build, "gh", side_effect=self.native(gh)), \
+                patch.object(developer, "job_log", side_effect=lambda job, token: logs[job]), \
+                patch.object(developer, "run_model", return_value=self.answer()) as ai:
+            developer.fix_pull_request(self.ISSUE, "key", "token")
+        prompt = ai.call_args[0][1]
+        self.assertIn("cannot find 'composer' in scope", prompt)
+        self.assertIn("native iOS build", prompt)
+        self.assertIn("failed at Build simulator application", prompt, "the fix sees earlier native builds")
+        native = [c for c in calls if c[0].endswith("ios-build.yml/dispatches")]
+        self.assertEqual(native[0][1]["inputs"], {"branch": "kappa/dev-9", "candidate_sha": "e" * 40}, "the fixed commit is rebuilt")
+
+    def test_new_pr_starts_a_native_build_only_for_app_changes(self):
+        calls = []
+        record = lambda path, token, payload=None, method=None: calls.append(path)
+        with patch.object(developer, "gh", side_effect=record), patch.object(native_build, "gh", side_effect=record):
+            developer.dispatch_tests("onlykappa/KappaForge", "kappa/dev-9", "e" * 40, "t", ["engine/runner.py"])
+            self.assertFalse(any("ios-build" in c for c in calls))
+            developer.dispatch_tests("onlykappa/KappaForge", "kappa/dev-9", "e" * 40, "t", ["preview/ui.js"])
+        self.assertTrue(any(c.endswith("ios-build.yml/dispatches") for c in calls))
 
     def test_waits_for_the_test_run_to_finish(self):
         calls, gh = self.fake()
@@ -600,7 +641,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
                 if state["n"] == 1:
                     result["workflow_runs"][0] = dict(result["workflow_runs"][0], status="in_progress", conclusion=None)
             return result
-        with patch.object(developer, "gh", side_effect=slow), patch.object(developer, "job_log", return_value="FAIL"), \
+        with patch.object(developer, "gh", side_effect=slow), patch.object(native_build, "gh", side_effect=slow), patch.object(developer, "job_log", return_value="FAIL"), \
                 patch.object(developer, "run_model", return_value=self.answer()), patch.object(developer.time, "sleep") as sleep:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         sleep.assert_called_once()
