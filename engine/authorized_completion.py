@@ -5,11 +5,18 @@ Runs from main, never checks out candidate code. GitHub protections still apply.
 import json
 import os
 import re
+import time
 from engine.intent_guard import MARKER, WRITE_MODES, activate
 from engine.runner import request
 
 
-def complete(run, api):
+# GitHub computes mergeability lazily, and the native build usually finishes after the sandbox tests.
+MERGEABLE_POLLS = 6
+CHECK_POLLS = 40
+POLL_SECONDS = 30
+
+
+def complete(run, api, wait=time.sleep):
     if run.get('event') != 'workflow_dispatch' or run.get('conclusion') != 'success' or run.get('head_branch') != 'main':
         return 'not_verified'
     if run.get('repository', {}).get('full_name') != 'onlykappa/KappaForge':
@@ -31,11 +38,20 @@ def complete(run, api):
     if len(prs) != 1:
         return 'no_unique_pr'
     pr = api(f'repos/{repo}/pulls/{prs[0]["number"]}')
+    for _ in range(MERGEABLE_POLLS):
+        if pr.get('mergeable') is not None:
+            break
+        wait(5)
+        pr = api(f'repos/{repo}/pulls/{prs[0]["number"]}')
     if pr.get('head', {}).get('sha') != sha or pr.get('head', {}).get('repo', {}).get('full_name') != repo or pr.get('base', {}).get('repo', {}).get('full_name') != repo:
         return 'superseded'
     if pr.get('mergeable') is not True:
         return 'merge_blocked'
-    checks = api(f'repos/{repo}/commits/{sha}/check-runs?per_page=100')
+    for _ in range(CHECK_POLLS):
+        checks = api(f'repos/{repo}/commits/{sha}/check-runs?per_page=100')
+        if not any(c.get('status') != 'completed' for c in checks.get('check_runs', [])):
+            break
+        wait(POLL_SECONDS)
     if checks.get('total_count', 0) > 100 or any(c.get('status') != 'completed' or c.get('conclusion') not in {'success', 'skipped', 'neutral'} for c in checks.get('check_runs', [])):
         return 'checks_pending_or_failed'
     files = api(f'repos/{repo}/pulls/{pr['number']}/files?per_page=100')

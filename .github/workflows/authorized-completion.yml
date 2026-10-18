@@ -12,7 +12,8 @@ jobs:
   complete:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Waits up to 20 minutes for checks such as the native iOS build to finish.
+    timeout-minutes: 25
     permissions:
       contents: write
       pull-requests: write
