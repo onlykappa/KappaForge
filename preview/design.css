@@ -286,3 +286,6 @@ button.gh-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}but
 @keyframes task-indeterminate{0%{transform:translateX(-105%)}100%{transform:translateX(420%)}}
 @media(prefers-reduced-motion:reduce){.task-bar.indeterminate i,.task-dots i,.task-step.current .task-dot,.activity-pulse{animation:none!important}.task-bar i{transition:none}}
 @media(max-width:420px){.task-card,.task-progress-card,.issues-card{padding:12px}.task-step{gap:9px;padding-right:5px}.task-step-text strong{font-size:13px}.task-step-text small,.task-step time{font-size:12px}.task-card .activity-heading{font-size:13px}}
+
+.agent-activity.stale .task-bar.indeterminate i,.agent-activity.stale .activity-pulse,.agent-activity.stale .task-step.current .task-dot{animation:none;box-shadow:none}
+.finding-resolution{font-size:11px;color:#8fd3b1;margin-left:auto}

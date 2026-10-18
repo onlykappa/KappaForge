@@ -48,3 +48,14 @@ Verification: 44 existing developer tests and 3 new runner wire-contract tests p
 Feature 1 remote commit: `6ee18ff789dd346a1e0e42ab86f764a18782c764`. Feature 2 commit is the commit containing this checkpoint.
 
 Next: review all full-suite results after exact baseline restoration, exercise the real UI in an available browser, add structured-card assertions and connection isolation coverage, and document native/production integration limits. Browser preflight: runtime Playwright exists but its default Chromium and WebKit binaries are absent. Locate an installed browser before attempting screenshots.
+
+## Feature 3 checkpoint: concurrent recovery and lifecycle verification
+Status: implemented; 23 focused client tests and 138 required Node/intelligence tests pass locally after regenerating the native bundle. Existing test harnesses were updated to load the new progress dependency.
+
+Per-task polling now isolates failures and backoff, uses uncached authoritative reads for PR state, and preserves the newest lifecycle report against older progress updates. Finished and cancelled clocks stop; stale connections stop decorative activity animation. Resolved findings can display a Verified badge. Details expansion and reading position survive refresh.
+
+Added browser replay coverage in tests/web-regression.cjs with a clearly labeled deterministic fixture generated through the real Python Progress writer (tests/fixtures/task-progress-events.py). This exercises GitHub-shaped comment polling, measured units, failure, collapse persistence and restart using the actual shared interface, and captures queued/running/middle/failed screenshots. It does not claim to be a live production task. Browser replay execution is pending CI because local browser binaries are unavailable and the download returned an invalid ZIP.
+
+Remote feature 2 commit: `f7af9015054ae0f850d7248da17d9a43f546090f`. All 153 Python tests passed locally and GitHub's unit job passed. The previous web CI failed on a missing dependency in an old test VM; that harness is corrected in this checkpoint. Native CI reached simulator compilation after passing bundle and contract checks.
+
+Next: inspect the latest CI web/native runs; retrieve screenshots and visually compare the reference; fix any observed browser or native regression; synchronize final acceptance status and exact remaining production verification limits. No merge or release.

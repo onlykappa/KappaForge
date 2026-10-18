@@ -6,13 +6,14 @@ import {resolve,dirname} from 'node:path';
 import vm from 'node:vm';
 import '../preview/intent-guard.js';
 import '../preview/core.js';
+import '../preview/task-progress.js';
 import '../preview/actions-core.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const source=readFileSync(resolve(root,'preview/ui.js'),'utf8');
 const start=source.indexOf('function renderTaskActivity(');
 const end=source.indexOf('\n\nfunction renderSavedItems(',start);
 assert.ok(start>=0&&end>start);
-const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>',KappaIntent:globalThis.KappaIntent,KappaJobs:globalThis.KappaJobs,KappaActions:globalThis.KappaActions};
+const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>',KappaIntent:globalThis.KappaIntent,KappaJobs:globalThis.KappaJobs,KappaActions:globalThis.KappaActions,KappaProgress:globalThis.KappaProgress};
 vm.runInNewContext(source.slice(start,end),ctx);
 test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
@@ -96,5 +97,20 @@ test('completion follows validation and tracked lifecycle rather than an exhaust
   delete ctx.trackedJobs;
   assert.match(ctx.renderTaskActivity({text,progressKey:'progress:7:1'}),/activity-tag">TESTING/,'older progress messages must not claim tests passed');
   assert.match(ctx.renderTaskActivity({text:'✅ Opened draft PR #7; Test dispatch failed (HTTP 403)',progressKey:'progress:7:1'}),/NEEDS ATTENTION/);
+ }finally{delete ctx.trackedJobs}
+});
+
+
+test('structured cards expose truthful units, queued versus active timing and terminal states',()=>{
+ const started=Date.now()-5000;
+ const p=globalThis.KappaProgress.normalize({version:1,taskId:'9',attemptId:'runner:1',attemptAt:started,revision:2,status:'running',updatedAt:started,startedAt:started,steps:[{id:'read',title:'Read <files>',status:'completed',startedAt:started,finishedAt:started+1000},{id:'write',title:'Implementing fixes',status:'running',startedAt:started+1000}],units:{done:1,total:3,label:'implementation stages'}},9);
+ const job={number:9,queuedAt:started-2000,progress:p,message:'progress'};ctx.trackedJobs=[job];
+ try{
+  let html=ctx.renderTaskActivity({text:'',progressKey:'progress:9:live'});
+  assert.match(html,/Working <time data-since=/);assert.match(html,/Queued <time>2s/);
+  assert.match(html,/aria-valuenow="1"/);assert.match(html,/Read &lt;files&gt;/);assert.match(html,/task-step current/);
+  job.progress={...p,units:null};html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/task-bar indeterminate/);assert.doesNotMatch(html,/aria-valuenow=/);
+  job.message='tests-passed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/READY FOR REVIEW/);assert.doesNotMatch(html,/data-since=/);
+  job.finished=true;job.message='cancelled';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/CANCELLED/);assert.doesNotMatch(html,/data-since=/);
  }finally{delete ctx.trackedJobs}
 });

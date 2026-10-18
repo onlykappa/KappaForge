@@ -123,9 +123,43 @@ const apiServer=createServer(async(req,res)=>{
  assert.equal(acted.started,true,'task started from chat');assert.equal(acted.pending,false);
  assert.doesNotMatch(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);
  // The agent's progress checklist is one chat message that updates in place.
- const progressed=await page.evaluate(()=>{const job={number:77,chatId:'act-chat'};showProgress(job,5,'### KappaForge is working on it\n\n⏳ Reading the code');showProgress(job,5,'### KappaForge is working on it\n\n✅ Read 3 files\n⏳ Writing the change');const shown=chats.find(c=>c.id==='act-chat').messages.filter(m=>m.progressKey);return {count:shown.length,text:shown[0]?.text}});
+ const progressed=await page.evaluate(()=>{const job={number:77,chatId:'act-chat'};showProgress(job,5,'### KappaForge is working on it\n\n⏳ Reading the code');showProgress(job,5,'### KappaForge is working on it\n\n✅ Read 3 files\n⏳ Writing the change');const shown=chats.find(c=>c.id==='act-chat').messages.filter(m=>String(m.progressKey||'').startsWith('progress:77:'));return {count:shown.length,text:shown[0]?.text}});
  assert.equal(progressed.count,1);assert.match(progressed.text,/Writing the change/);assert.doesNotMatch(progressed.text,/###/);
  console.log(name+': user-authorized chat starts tasks; assistant action syntax stays hidden');
+ // Clearly labeled fixture: actual Python Progress -> GitHub-shaped comments -> task poll -> persisted UI.
+ // No production model calls or GitHub writes occur in this test.
+ const fixtureBase=Date.now()-100000;
+ const fixtureEvents=JSON.parse(require('node:child_process').execFileSync('python3',[resolve(__dirname,'fixtures/task-progress-events.py'),String(fixtureBase)],{encoding:'utf8'}));
+ await page.evaluate(base=>{
+  chats.unshift({id:'progress-fixture',title:'Progress regression fixture',at:Date.now(),messages:[{role:'user',text:'Progress regression fixture'}]});current='progress-fixture';
+  trackedJobs.push({number:77,chatId:current,title:'Task progress fixture',message:'waiting',mode:'develop',queuedAt:base-3000,activeAt:base-3000,progress:KappaProgress.queued(77,base-3000)});
+  ensureTaskCard(trackedJobs.at(-1));save();navigate('chat');
+ },fixtureBase);
+ await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-queued.png',fullPage:true,animations:'disabled'});
+ let fixtureBody=fixtureEvents.initial;
+ await page.route('**/github',async route=>{
+  const input=route.request().postDataJSON();
+  if(!/^KappaForge\/issues\/77(?:\/comments)?(?:\?|$)/.test(input?.path||''))return route.fallback();
+  return route.fulfill({json:input.path.includes('/comments')?[{id:770,user:{login:'github-actions[bot]'},created_at:new Date(fixtureBase).toISOString(),updated_at:new Date().toISOString(),body:fixtureBody}]:{state:'open'}});
+ });
+ await page.evaluate(()=>checkJobResult());
+ await page.locator('.task-step.current strong').filter({hasText:'Reading project files'}).waitFor();
+ await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-running.png',fullPage:true,animations:'disabled'});
+ fixtureBody=fixtureEvents.middle;await page.evaluate(()=>checkJobResult());
+ assert.match(await page.locator('#content').innerText(),/1 of 3 implementation stages completed/);
+ assert.equal(await page.locator('[role=progressbar]').getAttribute('aria-valuenow'),'1');
+ assert.equal(await page.locator('.agent-activity').count(),1,'one card updates in place');
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'progress fits viewport');
+ await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-middle.png',fullPage:true,animations:'disabled'});
+ await page.locator('.task-card>summary').click();await page.evaluate(()=>render());assert.equal(await page.locator('.task-card').getAttribute('open'),null,'collapsed details survive refresh');
+ await page.locator('.task-card>summary').click();
+ await page.reload();await page.waitForFunction(()=>typeof trackedJobs!=='undefined');
+ assert.equal(await page.locator('.agent-activity').count(),1,'reload restores one card');
+ await page.waitForFunction(()=>!jobTrackingBusy);fixtureBody=fixtureEvents.failed;await page.evaluate(()=>checkJobResult());
+ assert.match(await page.locator('#content').innerText(),/NEEDS ATTENTION/);assert.equal(await page.locator('.agent-activity [data-since]').count(),0,'failure timers freeze');
+ await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-failed.png',fullPage:true,animations:'disabled'});
+ console.log(name+': real runner snapshot fixture, polling, measured progress, collapsed state, restart and failure passed');
+
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});

@@ -82,7 +82,7 @@ function renderExecutionActivity(m,job){
  const fresh='<p class="task-freshness" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
  const reports=String(m.text||'').replace(/<!--[^]*?-->/g,'');
  const findings=p.findings?.length?p.findings:KappaJobs.findings(reports);
- return '<section class="agent-activity'+(failed?' failed':ended?' finished':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary><span class="activity-pulse" aria-hidden="true"></span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="activity-tag" role="status">'+esc(labels[status]||'IN PROGRESS')+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+'</ol>'+fresh+'</details>'+findingsCard(findings)+bar+
+ return '<section class="agent-activity'+(failed?' failed':ended?' finished':'')+(stale||unavailable?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary><span class="activity-pulse" aria-hidden="true"></span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="activity-tag" role="status">'+esc(labels[status]||'IN PROGRESS')+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+'</ol>'+fresh+'</details>'+findingsCard(findings)+bar+
   (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
   (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+
   (reports?'<details class="activity-history" data-progress-detail="'+id+':report"><summary>View progress details</summary><div class="activity-report markdown">'+renderChatText(reports)+'</div></details>':'')+'</section>';
@@ -111,8 +111,8 @@ function elapsedSince(since){const t=Date.parse(since||'');return Number.isFinit
 function findingsCard(list){
  if(!list.length)return '';
  return '<details class="issues-card" open><summary><span aria-hidden="true">'+uiIcon('search')+'</span><strong>Issues found ('+list.length+')</strong><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><ul>'+
-  list.slice(0,5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul>'+
-  (list.length>5?'<details class="issues-more"><summary>+'+(list.length-5)+' more issue'+(list.length>6?'s':'')+'</summary><ul>'+list.slice(5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul></details>':'')+'</details>';
+  list.slice(0,5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span>'+(f.resolved?'<small class="finding-resolution">Verified</small>':'')+'</li>').join('')+'</ul>'+
+  (list.length>5?'<details class="issues-more"><summary>+'+(list.length-5)+' more issue'+(list.length>6?'s':'')+'</summary><ul>'+list.slice(5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span>'+(f.resolved?'<small class="finding-resolution">Verified</small>':'')+'</li>').join('')+'</ul></details>':'')+'</details>';
 }
 
 function renderMessage(m,i){

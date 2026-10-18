@@ -31,7 +31,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 // A task owns one card across comments and retries. Never infer launch from assistant prose.
 function ensureTaskCard(job){
@@ -78,38 +78,36 @@ function jobChatUpdate(job,signature,body,quiet=false){
 }
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
- const jobs=trackedJobs.filter(j=>!j.finished&&chats.some(c=>c.id===j.chatId));if(!jobs.length)return;
+ const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0)&&chats.some(c=>c.id===j.chatId));if(!jobs.length)return;
  jobTrackingBusy=true;let changed=false;
  try{
   for(const job of jobs){
+   try{
    const [comments,issue]=await Promise.all([taskComments(job.number),taskRead("KappaForge/issues/"+job.number)]);
-   if(!Array.isArray(comments)||!issue||typeof issue!=="object")throw Error("Task status response is unavailable or invalid");
+   if(!Array.isArray(comments)||!issue||typeof issue!=="object"||Array.isArray(issue))throw Error("Task status response is unavailable or invalid");
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
-    if(report.status==="progress"){if(showProgress(job,comment.id,comment.body,comment)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if(KappaJobs.isNew(job,comment)||job.message==="waiting")job.message="progress"}continue;}
+    if(report.status==="progress"){if(showProgress(job,comment.id,comment.body,comment)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if((Date.parse(comment.updated_at||comment.created_at)||0)>=(job.lastReportAt||0)||job.message==="waiting")job.message="progress"}continue;}
     // Every poll re-reads all comments: only reports newer than the last handled one (and not from before a retry) change the job.
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
     const text=KappaJobs.conciseReport(report.status,report.body,source);
     changed=jobChatUpdate(job,report.id,text)||changed;
-    job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);
+    job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);job.lastReportAt=Date.parse(comment.updated_at||comment.created_at)||Date.now();
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
    }
    const prPath=job.prUrl&&!job.finished?job.prUrl.match(/github\.com\/onlykappa\/([A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/):null;
-   if(prPath){const pr=await api(prPath[1]+"/pulls/"+prPath[2],true);
+   if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);
     if(pr.merged_at){changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
     else if(pr.state==="closed"){changed=jobChatUpdate(job,"pr-closed","The pull request was closed without merging. ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="closed";}}
    if(issue.state==="closed"&&!job.finished){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
-   if(job.pollError)changed=true;job.pollError="";job.lastCheckedAt=Date.now();
+   if(job.pollError)changed=true;job.pollError="";job.pollAfter=0;job.lastCheckedAt=Date.now();
    if(KappaJobs.stalled(job)){changed=jobChatUpdate(job,"stuck:"+job.activeAt,"⏳ Task #"+job.number+" has had no new update for over 15 minutes, so it may be stuck. Ask me to **retry task #"+job.number+"** or [check it on GitHub](https://github.com/onlykappa/KappaForge/issues/"+job.number+").",true)||changed;job.stuckNote=job.activeAt;}
+   }catch(e){job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}
   }
- }catch(e){
-  jobPollAfter=Date.now()+15000;console.warn("Unable to refresh task findings",e);
-  for(const job of jobs){job.pollError=e.message;ensureTaskCard(job);changed=true;}
-
  }finally{
   for(const job of jobs){if(job.finished&&!job.finishedAt)job.finishedAt=Date.now()}
   recentJob=trackedJobs.find(j=>j.number===recentJob?.number)||recentJob;persistJobs();jobTrackingBusy=false;if(changed)render();
