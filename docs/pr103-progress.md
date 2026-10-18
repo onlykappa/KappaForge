@@ -27,3 +27,15 @@ Initial progress log only. Implementation pending.
 
 ## Resume
 Finish source retrieval, inspect `preview/ui.js` renderTaskActivity, task submission in app-main.js and agent-work.js, and establish baseline tests. Add structured progress with compatibility for existing comments, then save each verified feature with this log.
+
+## Feature 1 checkpoint: persisted client progress and launch visibility
+Status: implemented; focused regression verification passed. Actual draft PR number is **102**, assigned by GitHub; PR/issue 102 did not exist before creation. Requested branch/log names retain pr103.
+
+Verified causes: (1) `launchJob` previously saved a tracking record but inserted no progress message until a bot report arrived; (2) `runChatAction` ignored a false planner result, leaving the model's plan without an execution error; (3) comments were read only from the first 100 entries; (4) old progress comments were processed before retry timestamp checks; (5) task polling used a dashboard helper that could silently return cached data on failed refresh; (6) the 10-second timer cleared a failed request's backoff. All are corrected in the client checkpoint.
+
+Changed: preview/task-progress.js, app-tasks.js, ui.js, design.css, index.html and generated native counterparts; tests/task-progress.test.mjs and tests/task-tracking.test.mjs. Versioned snapshots reject duplicate/delayed revisions and mismatched identities; queued/active timing is timestamp-based. Cards begin at confirmed dispatch and remain in the initiating chat. Live reference renderer implemented, awaiting browser screenshot validation.
+
+Validation: 20 focused Node tests passed (task-progress, task-tracking, chat-activity-ui, task-autostart). `python scripts/check-web.py` passed syntax/configuration/bundle checks. Initial local source materialization added an extra terminal newline; corrected to exact baseline bytes before checks. No production end-to-end or native simulator claim.
+
+Next: emit structured snapshots from real Python Progress transitions; add runner event tests, terminal state timing and stale indicators; run full baseline suite and mobile browser tests. Baseline Python suite output is being reviewed separately.
+

@@ -31,6 +31,7 @@ function renderTaskActivity(m){
  const headline=label.length>105?label.slice(0,102)+'…':label;
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
+ if(job?.progress||job?.queuedAt)return renderExecutionActivity(m,job);
  const finished=!current&&!rows.some(r=>r.state==='upcoming')&&rows.length>0;
  const lifecycle=job?.message||'';
  const validationFailed=['failed','tests-failed'].includes(lifecycle);
@@ -55,6 +56,38 @@ function renderTaskActivity(m){
  '<details class="activity-history"><summary>View progress details</summary>'+
  '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
 }
+// Structured snapshots are preferred; legacy checklist comments remain readable after an app upgrade.
+function renderExecutionActivity(m,job){
+ const now=Date.now(),legacy=KappaJobs.progressSteps(m.text),p=job.progress||{
+  status:job.message==='waiting'?'queued':'running',updatedAt:job.lastProgressAt||job.queuedAt,startedAt:job.startedAt||0,
+  steps:legacy.map((r,i)=>({id:String(i),title:r.title,detail:r.detail,status:({done:'completed',current:'running',failed:'failed',upcoming:'queued'})[r.state],startedAt:Date.parse(r.since)||0,displayTime:r.time})),
+  units:null,findings:[]
+ };
+ const life=job.message,failed=p.status==='failed'||['failed','tests-failed'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||life==='tests-passed';
+ const status=life==='tests-passed'?'ready':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
+ const labels={queued:'QUEUED',running:'IN PROGRESS',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
+ const active=p.steps.find(r=>r.status==='running'),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
+ const stale=KappaProgress.stale(job,now),unavailable=!!job.pollError;
+ const headline=status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?'Task cancelled':status==='closed'?'Task closed':(active||last)?.title||'Waiting for an execution update';
+ const times=KappaProgress.timing({...p,finishedAt:p.finishedAt||job.finishedAt},job.queuedAt,now),duration=ms=>KappaActions.formatDuration(Math.round(ms/1000));
+ const id=String(job.number),unit=p.units,percent=unit?Math.round(unit.done/unit.total*100):0;
+ const timing='<div class="task-timing"><span>Queued <time'+(!p.startedAt&&!ended?' data-since="'+new Date(job.queuedAt||now).toISOString()+'"':'')+'>'+duration(times.queuedMs)+'</time></span><span>Working <time'+(p.startedAt&&!ended?' data-since="'+new Date(p.startedAt).toISOString()+'"':'')+'>'+duration(times.activeMs)+'</time></span></div>';
+ const rows=p.steps.map(r=>{
+  const state=({completed:'done',running:'current',queued:'upcoming',skipped:'skipped',failed:'failed',cancelled:'cancelled',blocked:'blocked'})[r.status]||'upcoming';
+  const seconds=r.displayTime||(r.startedAt?duration(Math.max(0,(r.finishedAt||p.finishedAt||job.finishedAt||now)-r.startedAt)):'');
+  return '<li class="task-step '+state+'"><span class="task-dot" aria-hidden="true"></span><div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),180))+'</small>':'')+'</div><time'+(r.status==='running'&&!ended&&r.startedAt?' data-since="'+new Date(r.startedAt).toISOString()+'"':'')+'>'+esc(seconds)+'</time><span class="sr-only">'+esc(r.status)+'</span></li>';
+ }).join('');
+ const bar=ended?'':'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>'+esc(headline)+'</strong></div>'+
+  '<span class="task-bar'+(!unit?' indeterminate':'')+'" role="progressbar" aria-label="'+esc(unit?unit.label:'Task progress, total work unknown')+'"'+(unit?' aria-valuemin="0" aria-valuemax="'+unit.total+'" aria-valuenow="'+unit.done+'"':'')+'><i'+(unit?' style="width:'+percent+'%"':'')+'></i></span><small>'+esc(unit?unit.done+' of '+unit.total+' '+unit.label+' completed':status==='queued'?'Queued. Timing begins when execution starts.':'Total work is not yet measurable')+'</small></div>';
+ const fresh='<p class="task-freshness" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
+ const reports=String(m.text||'').replace(/<!--[^]*?-->/g,'');
+ const findings=p.findings?.length?p.findings:KappaJobs.findings(reports);
+ return '<section class="agent-activity'+(failed?' failed':ended?' finished':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary><span class="activity-pulse" aria-hidden="true"></span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="activity-tag" role="status">'+esc(labels[status]||'IN PROGRESS')+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+'</ol>'+fresh+'</details>'+findingsCard(findings)+bar+
+  (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
+  (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+
+  (reports?'<details class="activity-history" data-progress-detail="'+id+':report"><summary>View progress details</summary><div class="activity-report markdown">'+renderChatText(reports)+'</div></details>':'')+'</section>';
+}
+
 const stepSeconds=t=>{const m=String(t||'').match(/^(?:(\d+)h )?(?:(\d+)m ?)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
 function taskTimeline(steps){
  // Planned stages fold into one "Writing the change" row; their progress gets its own card below.
@@ -104,9 +137,10 @@ function renderHelp(){return '<div class="page-heading"><span class="eyebrow">KA
 async function copyInterfaceText(text){if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);return;}catch{}}const field=document.createElement('textarea');field.value=text;field.style.position='fixed';field.style.opacity='0';document.body.append(field);field.select();const copied=document.execCommand('copy');field.remove();if(!copied)throw Error('Copy is unavailable in this browser.');}
 let toastTimer;
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,2800);}
-function captureInterfaceScroll(){return {page:document.body.dataset.view,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};}
-const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}));function bindInterface(state={}){
+function captureInterfaceScroll(){return {page:document.body.dataset.view,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200,progressDetails:Object.fromEntries([...document.querySelectorAll('[data-progress-detail]')].map(el=>[el.dataset.progressDetail,el.open]))};}
+const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.documentElement.scrollHeight-200)window.scrollTo({top:document.body.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})});function bindInterface(state={}){
  document.body.dataset.view=view;resizeComposer();
+ document.querySelectorAll('[data-progress-detail]').forEach(el=>{if(Object.hasOwn(state.progressDetails||{},el.dataset.progressDetail))el.open=state.progressDetails[el.dataset.progressDetail]});
  const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){const back=state.page!=='chat'&&typeof viewScroll!=='undefined'&&!!viewScroll.chat&&viewScroll.chat.id===c?.id&&!viewScroll.chat.nearBottom;window.scrollTo({top:back?viewScroll.chat.y:document.body.scrollHeight,behavior:'instant'});}
  if(view==='chat'&&c?.messages.length>uiLastCount&&uiLastChat===c?.id){document.querySelector('.chat-message:last-child')?.classList.add('message-new');}if(view==='chat'){chatObserver.observe(document.getElementById('content'),{childList:true,subtree:true});}else{chatObserver.disconnect();}
  uiLastChat=c?.id;uiLastCount=c?.messages.length||0;
@@ -350,3 +384,4 @@ function stepView(detail,job,step,{log=null,now=Date.now()}={}){
   (earlier.length?'<ul class="log-errors gh-note">'+earlier.map(e=>'<li><small>line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('')+'</ul>':'')+
   '<div class="gh-log" role="log" aria-label="'+esc(step.name)+' log">'+section.log.map(l=>'<div class="gh-line'+(l.kind?' '+esc(l.kind):'')+'"><span class="gh-ln">'+esc(l.n)+'</span><span class="gh-lt">'+(l.kind==='group'?'▸ ':'')+esc(l.text)+'</span></div>').join('')+'</div>'+link+rerunMenu(detail.run);
 }
+
