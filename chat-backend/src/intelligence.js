@@ -47,8 +47,22 @@ export async function usageStore(state,request){
  }
  // Daily cap on agent runs (tasks and fixes), so a burst cannot spend every provider's free quota at once.
  if(url.pathname==='/usage/task-reserve'){
-  const {limit}=await request.json();const key='task-budget:'+new Date().toISOString().slice(0,10);
-  const op=async s=>{const used=await s.get(key)||0;if(limit&&used>=limit)return {allowed:false,used};await s.put(key,used+1);return {allowed:true,used:used+1};};
+  const {limit,action,receipt}=await request.json();const day=new Date().toISOString().slice(0,10);
+  const key='task-budget:'+day;
+  if(action==='refund'){
+   if(typeof receipt!=='string'||!/^\\d{4}-\\d{2}-\\d{2}:[a-f0-9-]{36}$/.test(receipt))return Response.json({error:'Invalid receipt'},{status:400});
+   const receiptKey='task-receipt:'+receipt;
+   const op=async s=>{if(await s.get(receiptKey)!=='reserved')return false;
+    const target='task-budget:'+receipt.slice(0,10);
+    const used=await s.get(target)||0;await s.put(target,Math.max(0,used-1));
+    await s.put(receiptKey,'refunded');return true;};
+   const refunded=storage.transaction?await storage.transaction(op):await op(storage);
+   return Response.json({refunded});
+  }
+  const id=day+':'+crypto.randomUUID();
+  const op=async s=>{const used=await s.get(key)||0;if(limit&&used>=limit)return {allowed:false,used};
+   await s.put(key,used+1);await s.put('task-receipt:'+id,'reserved');
+   return {allowed:true,used:used+1,receipt:id};};
   const result=storage.transaction?await storage.transaction(op):await op(storage);
   return Response.json({...result,limit},{status:result.allowed?200:429});
  }
