@@ -63,7 +63,10 @@ function initInterface(){
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
  document.getElementById('headernew').onclick=fresh;
  document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};
- document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
+ document.getElementById('headermore').onclick=()=>navigate('settings');
+ const connection=document.querySelector('.connection-state');
+ function syncNetworkIndicator(){if(!connection)return;const online=navigator.onLine;connection.innerHTML='<span class="online-dot" aria-hidden="true"></span>'+(online?'Online':'Offline');connection.setAttribute('aria-label',online?'Network connection available':'Network unavailable');connection.classList.toggle('is-offline',!online)}
+ window.addEventListener('online',syncNetworkIndicator);window.addEventListener('offline',syncNetworkIndicator);syncNetworkIndicator();document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
  const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',updateKeyboard);input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
