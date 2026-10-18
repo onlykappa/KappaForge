@@ -34,13 +34,41 @@ root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersio
 })(globalThis);
 
 // Interpret lifecycle metadata, not words quoted inside an audit's findings.
-globalThis.KappaJobs={conciseReport(status,body,source){
+// The agent's progress checklist: "✅ done · 24s", "⏳ current · started 2026-10-18 18:02:11 UTC", "❌ failed: why",
+// "◻ upcoming". Older checklists without times still read. Each line splits into a title and its detail at ": ".
+const STEP_MARK={'✅':'done','✔':'done','☑':'done','⏳':'current','❌':'failed','◻':'upcoming'};
+function progressSteps(text){
+ const steps=[];
+ for(const raw of String(text||'').split('\n')){
+  const line=raw.trim(),state=STEP_MARK[[...line][0]];if(!state)continue;
+  let body=line.slice([...line][0].length).trim(),time='',since='';
+  const stamp=body.match(/ · started (\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) UTC$/);if(stamp){since=stamp[1]+'T'+stamp[2]+'Z';body=body.slice(0,stamp.index)}
+  const took=body.match(/ · (\d+h \d+m|\d+m \d+s|\d+s)$/);if(took){time=took[1];body=body.slice(0,took.index)}
+  const stage=body.match(/^Step (\d+) of (\d+): (.*)$/);
+  const cut=stage?-1:body.indexOf(': ');
+  steps.push({state,title:stage?'Step '+stage[1]+' of '+stage[2]:cut>0?body.slice(0,cut):body,detail:stage?stage[3]:cut>0?body.slice(cut+2):'',time,since,stage:stage?{index:Number(stage[1]),total:Number(stage[2])}:null});
+ }
+ return steps;
+}
+// Planned stages ("Step 3 of 5") as progress: how many are finished, and the one being written now.
+function stageProgress(steps){
+ const staged=steps.filter(s=>s.stage);if(!staged.length)return null;
+ const last=staged.at(-1),total=last.stage.total,current=last.state==='current';
+ const done=current?last.stage.index-1:last.state==='done'?last.stage.index:last.stage.index-1;
+ return {done,total,label:last.detail,current,failed:last.state==='failed',since:current?last.since:''};
+}
+// Audit findings, one per line: "- [High] Crash on malformed JSON (path)".
+const FINDING=/^[-*] \[(Critical|High|Medium|Low)\] (.+)$/i;
+function findings(text){return String(text||'').split('\n').map(l=>l.trim().match(FINDING)).filter(Boolean).map(m=>({level:m[1].toLowerCase()==='critical'?'high':m[1].toLowerCase(),text:m[2]}))}
+globalThis.KappaJobs={progressSteps,stageProgress,findings,conciseReport(status,body,source){
  const raw=String(body||'').replace(/<!--[^]*?-->/g,'').replace(/\\n/g,'\n').trim();
  const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
  const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':status==='complete'?'Task complete':'Progress update';
- const useful=lines.filter(x=>!/^### |^```|^<!--/.test(x)).slice(0,5);
+ const issues=lines.filter(x=>FINDING.test(x));
+ const useful=lines.filter(x=>!/^### |^#### Findings|^```|^<!--/.test(x)&&!FINDING.test(x)).slice(0,5);
  const message=(useful.length?useful:lines.slice(0,2)).join('\n').slice(0,900);
- return '**'+heading+'**\n\n'+message+(source?'\n\n[View full report]('+source+')':'');
+ // Findings travel whole (up to 40) so the chat can draw its Issues found card.
+ return '**'+heading+'**\n\n'+message+(issues.length?'\n\n'+issues.slice(0,40).map(x=>x.slice(0,240)).join('\n'):'')+(source?'\n\n[View full report]('+source+')':'');
 },autoLaunchAllowed(job){
  // Never auto-launch long-running, broad, or custom modes; these need explicit review.
  return !!job&&['develop','audit','project-map','code'].includes(job.mode)

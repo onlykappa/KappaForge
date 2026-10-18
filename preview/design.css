@@ -220,3 +220,56 @@ button.gh-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}but
 .gh-fab-menu{position:absolute;right:0;bottom:56px;min-width:210px;display:flex;flex-direction:column;padding:6px;border-radius:14px;border:1px solid var(--line-bright);background:var(--surface);box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .gh-fab-menu button{border:0;background:transparent;text-align:left;padding:11px 12px;border-radius:9px;font-size:14px}.gh-fab-menu button:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
 .run-page~.review-tools,.gh-steps~.review-tools{margin-bottom:84px}
+
+/* Live task progress in chat: a step timeline, a stage progress card and audit findings (shared iOS + web). */
+.agent-activity{display:flex;flex-direction:column;gap:10px;padding:0;background:none;border:0;border-radius:0;overflow:visible}
+.task-card,.task-progress-card,.issues-card{background:#14151b;border:1px solid rgba(157,145,199,.2);border-radius:16px;padding:14px 15px}
+:root[data-appearance=light] .task-card,:root[data-appearance=light] .task-progress-card,:root[data-appearance=light] .issues-card{background:var(--surface);border-color:var(--line-bright)}
+.task-card>summary,.issues-card>summary{display:flex;align-items:center;gap:9px;list-style:none;cursor:pointer}
+.task-card>summary::-webkit-details-marker,.issues-card>summary::-webkit-details-marker{display:none}
+.task-chevron{margin-left:6px;display:inline-flex;width:16px;height:16px;color:var(--faint);transform:rotate(90deg);transition:transform .2s}
+.task-chevron svg{width:16px;height:16px}details:not([open])>summary .task-chevron{transform:none}
+.task-card .activity-summary{margin:8px 0 4px}
+.agent-activity.finished .activity-pulse{background:var(--run-success);animation:none}.agent-activity.failed .activity-pulse{background:var(--run-failure);animation:none}
+.agent-activity.finished .activity-tag{color:var(--run-success)}.agent-activity.failed .activity-tag{color:var(--run-failure)}
+.task-steps{list-style:none;margin:10px 0 0;padding:0;position:relative}
+.task-step{position:relative;display:flex;align-items:flex-start;gap:12px;padding:8px 10px 8px 2px;border-radius:12px;min-width:0}
+.task-step:not(:last-child)::before{content:"";position:absolute;left:11px;top:30px;bottom:-8px;width:2px;background:rgba(157,145,199,.22)}
+.task-step.done:not(:last-child)::before{background:color-mix(in srgb,var(--run-success) 55%,transparent)}
+.task-dot{flex:none;position:relative;z-index:1;width:20px;height:20px;margin-top:1px;border-radius:50%;border:2px solid rgba(157,145,199,.45);background:#14151b}
+.task-step.done .task-dot{background:var(--run-success);border-color:var(--run-success)}
+.task-step.done .task-dot::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:9px;border:solid #0b0c10;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.task-step.current{background:rgba(140,124,255,.09);box-shadow:inset 0 0 0 1px rgba(140,124,255,.22)}
+.task-step.current .task-dot{border:3px solid #8c7cff;box-shadow:0 0 0 4px rgba(140,124,255,.18),0 0 14px rgba(140,124,255,.55);animation:activity-breathe 1.8s ease-in-out infinite}
+.task-step.failed .task-dot{background:var(--run-failure);border-color:var(--run-failure)}
+.task-step.failed .task-dot::after{content:"×";position:absolute;inset:-3px 0 0;text-align:center;color:#0b0c10;font:700 15px/20px -apple-system,sans-serif}
+.task-step.upcoming .task-dot{width:14px;height:14px;margin:4px 3px 0;border-width:2px;border-color:rgba(157,145,199,.4)}
+.task-step-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.task-step-text strong{font-size:14px;font-weight:600;color:#f0eef6;overflow-wrap:anywhere}
+.task-step-text small{font-size:12.5px;color:#a9a6b6;overflow-wrap:anywhere}
+.task-step.upcoming strong{font-weight:500;color:#a9a6b6}
+.task-step time{flex:none;font-size:12.5px;color:#a9a6b6;font-variant-numeric:tabular-nums;margin-top:2px}
+:root[data-appearance=light] .task-step-text strong{color:var(--text)}:root[data-appearance=light] .task-step-text small,:root[data-appearance=light] .task-step time,:root[data-appearance=light] .task-step.upcoming strong{color:var(--muted)}
+:root[data-appearance=light] .task-dot{background:var(--surface)}
+.task-progress-card{display:flex;flex-direction:column;gap:8px}
+.task-progress-head{display:flex;align-items:center;gap:10px}.task-progress-head strong{font-size:14px;color:#f0eef6}:root[data-appearance=light] .task-progress-head strong{color:var(--text)}
+.task-progress-icon{display:inline-flex;width:18px;height:18px;color:#d0cdd9}.task-progress-icon svg{width:18px;height:18px}
+.task-dots{display:inline-flex;gap:3px}.task-dots i{width:4px;height:4px;border-radius:50%;background:#8c7cff;animation:activity-breathe 1.2s ease-in-out infinite}.task-dots i:nth-child(2){animation-delay:.2s}.task-dots i:nth-child(3){animation-delay:.4s}
+.task-progress-row{display:flex;justify-content:space-between;gap:10px}.task-progress-row small,.task-progress-card>small{font-size:12.5px;color:#a9a6b6}
+.task-progress-row time{font-size:12.5px;color:#a9a6b6;font-variant-numeric:tabular-nums}
+.task-bar{display:block;height:5px;border-radius:99px;background:rgba(157,145,199,.18);overflow:hidden}
+.task-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7b6cff,#a495ff);transition:width .4s ease}
+.issues-card{width:min(100%,580px);margin-top:10px}
+.issues-card>summary strong{font-size:14px;color:#f0eef6}:root[data-appearance=light] .issues-card>summary strong{color:var(--text)}
+.issues-card>summary>span:first-child{display:inline-flex;width:18px;height:18px}.issues-card>summary svg{width:18px;height:18px}
+.issues-card ul{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.issues-card li{display:flex;align-items:center;gap:10px;font-size:13px;min-width:0}.issues-card li>span:last-child{min-width:0;overflow-wrap:anywhere}
+.severity{flex:none;min-width:62px;text-align:center;font-size:11.5px;font-weight:650;padding:3px 8px;border-radius:6px}
+.severity.high{background:rgba(229,115,126,.22);color:#f2a0a9;box-shadow:inset 0 0 0 1px rgba(229,115,126,.45)}
+.severity.medium{background:rgba(217,164,65,.2);color:#e8c27a;box-shadow:inset 0 0 0 1px rgba(217,164,65,.45)}
+.severity.low{background:rgba(87,184,138,.2);color:#8fd3b1;box-shadow:inset 0 0 0 1px rgba(87,184,138,.45)}
+:root[data-appearance=light] .severity.high{color:#a4121d}:root[data-appearance=light] .severity.medium{color:#7a5200}:root[data-appearance=light] .severity.low{color:#116a32}
+.issues-more{margin-top:8px}.issues-more>summary{font-size:12.5px;color:#a9a6b6;cursor:pointer;list-style:none}.issues-more>summary::-webkit-details-marker{display:none}
+.agent-activity>.activity-history{border:0;background:none;padding:0 4px;margin:0}.agent-activity>.activity-history>summary{border-top:0;padding:4px 0}
+:root[data-appearance=light] .agent-activity .activity-heading{color:var(--text)}:root[data-appearance=light] .agent-activity .activity-summary,:root[data-appearance=light] .task-progress-row small,:root[data-appearance=light] .task-progress-row time,:root[data-appearance=light] .task-progress-card>small{color:var(--muted)}
+@media(prefers-color-scheme:light){:root[data-appearance=system] .agent-activity .activity-heading{color:var(--text)}:root[data-appearance=system] .agent-activity .activity-summary,:root[data-appearance=system] .task-progress-row small,:root[data-appearance=system] .task-progress-card>small{color:var(--muted)}:root[data-appearance=system] .task-card,:root[data-appearance=system] .task-progress-card,:root[data-appearance=system] .issues-card{background:var(--surface);border-color:var(--line-bright)}:root[data-appearance=system] .task-step-text strong{color:var(--text)}:root[data-appearance=system] .task-dot{background:var(--surface)}}

@@ -347,8 +347,8 @@ const PLUGIN_CATALOG=[
 function pluginCatalog(){
  return '<label class="plugin-search-label">Find an integration<input id="pluginsearch" class="plugin-search" placeholder="Search plugins…" autocomplete="off"></label><div id="pluginresults">'+PLUGIN_CATALOG.map((p,i)=>'<div class="plugin-item"><div><strong>'+esc(p.name)+'</strong><p class="muted">'+esc(p.desc)+'</p><small>'+esc(p.status)+'</small></div><div class="plugin-actions"><a href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer">Website ↗</a><button type="button" class="btn secondary" data-plugin-request="'+i+'">Plan</button></div></div>').join("")+'</div>';
 }
-// Running times count up once a second in place, without re-rendering the page.
-setInterval(()=>{if(view!=="home"||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))});document.querySelectorAll("[data-summary-since]").forEach(el=>{const t=Date.parse(el.dataset.summarySince);if(Number.isFinite(t))el.textContent="In progress · "+KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
+// Running times (builds on the dashboard, task steps in chat) count up once a second in place, without re-rendering.
+setInterval(()=>{if(!["home","chat"].includes(view)||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))});document.querySelectorAll("[data-summary-since]").forEach(el=>{const t=Date.parse(el.dataset.summarySince);if(Number.isFinite(t))el.textContent="In progress · "+KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
 let activityLabel="";
 function setActivity(label){activityLabel=label;const el=document.getElementById("activitystatus");if(el){el.hidden=!label;el.textContent=label?"● "+label:"";}}
 function render(){

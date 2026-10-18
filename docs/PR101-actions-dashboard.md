@@ -50,6 +50,25 @@ Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
     `openJob`, `openStep`, `dashboardBack` (one level up), `runControl`. Browser smoke on a phone walked
     run → job → step → back, and Re-run went through `/authorize` then `/actions/control`.
 
+### Round 3: live task progress in chat (owner's bug-audit mockup)
+Why it did not look like the mockup: `renderTaskActivity` looked for stage lines ("Reading project files",
+"Step 2 of 5") that the agent never wrote. The agent edits one "KappaForge is working on it" comment.
+14. [x] **Agent checklist** (`engine/developer.py` `Progress`, `took`):
+    - `✅ done · 24s`, `⏳ current · started 2026-10-18 18:02:11 UTC`, `❌ failed`, `◻ upcoming`;
+    - `ahead=[…]` phases, advanced with `phase=True` in the develop and fix flows; nothing is promised after a failure.
+15. [x] **Audit findings** (`engine/full_reader.py`): the prompt asks for `#### Findings` lines `- [High] title (path)`.
+    `KappaJobs.conciseReport` keeps up to 40 finding lines.
+16. [x] **Chat cards**:
+    - `core.js`: `KappaJobs.progressSteps`, `stageProgress`, `findings`.
+    - `ui.js`:
+      - `renderTaskActivity` draws a timeline: check + time, glowing ring + live timer, grey upcoming, red ✕;
+      - planned stages fold into one "Writing the change" row;
+      - `stepSeconds`, `taskTimeline` and `elapsedSince` sit below `renderTaskActivity`; `findingsCard` draws "Issues found (N)".
+    - `app-dashboard.js`: the one-second timer also runs in chat.
+17. [x] **Guard**: `scripts/check-web.py` now fails when two preview scripts declare the same global name.
+    It would have caught the bug the browser regression found here: `ui.js` `issuesCard` replaced the one in
+    `settings.js`, so the Settings check never finished. Mine is named `findingsCard`.
+
 ## Tests performed
 Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
 `npm test` 137 pass, `python scripts/check-web.py` passed.
@@ -87,7 +106,7 @@ failed `iOS build and release` job log; that check added the XCTest `Test Case '
   the Worker falls back to `GITHUB_JOB_TOKEN`.
 
 ## Next task
-All planned items are done. Watch CI on the PR (the `web` job runs the WebKit pass that could not run locally).
+All planned items, including round 3, are done. Watch CI on the PR (the `web` job runs the WebKit pass that could not run locally).
 Possible follow-ups, not started: a Re-run button (needs a write path through the authorized `/decisions`
 flow), using `engine/actions_log.headline` in `engine/developer.py` repair reports, and a live-build chip in
 the chat header.

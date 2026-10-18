@@ -18,29 +18,70 @@ function setSidebar(open,restoreFocus=false){
 }
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
+// Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
+// times, a progress card while planned stages are written, and the full report one tap away.
 function renderTaskActivity(m){
  const report=String(m.text||'');
+ const steps=KappaJobs.progressSteps(report),rows=taskTimeline(steps),stages=KappaJobs.stageProgress(steps);
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
- // Only explicit progress lines are candidates. Never interpret an arbitrary
- // bullet or the last paragraph as an authoritative completed stage.
- const stages=/^(?:Reading project files|Identifying issues|Implementing fixes|Running tests|Building iOS app|Pushing pull request)\b/i;
- const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,''))||/^Step \d+ of \d+:/i.test(x));
- const latest=steps.at(-1)||lines.find(x=>/^[✅✔☑]\s+/.test(x))||'Task update received';
- const label=latest.replace(/^[-*]\s*/, '').replace(/^\*\*|\*\*$/g,'').replace(/^[✅✔☑]\s*/,'');
+ const current=rows.find(r=>r.state==='current'),failedRow=rows.find(r=>r.state==='failed');
+ const fail=!!failedRow||lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
+ const latest=current||failedRow||rows.filter(r=>r.state==='done').at(-1);
+ const label=latest?latest.title+(latest.detail?': '+latest.detail:''):lines.filter(x=>!/^\*\*KappaForge is working on it\*\*$/.test(x)).at(-1)?.replace(/^[-*✅✔☑⏳❌◻]\s*/,'').replace(/^\*\*|\*\*$/g,'')||'Task update received';
  const headline=label.length>105?label.slice(0,102)+'…':label;
- const fail=lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
- return '<section class="agent-activity" aria-label="Task progress">'+
- '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span>'+
+ const finished=!current&&!rows.some(r=>r.state==='upcoming')&&rows.length>0;
+ const tag=fail?'NEEDS ATTENTION':finished?'DONE':'IN PROGRESS';
+ const timeline=rows.length?'<ol class="task-steps">'+rows.map(r=>'<li class="task-step '+esc(r.state)+'"><span class="task-dot" aria-hidden="true"></span>'+
+  '<div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),140))+'</small>':'')+'</div>'+
+  '<time'+(r.state==='current'?sinceAttr(r):'')+'>'+esc(r.state==='current'?elapsedSince(r.since):r.time)+'</time>'+
+  '<span class="sr-only">'+({done:'done',current:'in progress',failed:'failed',upcoming:'not started'}[r.state])+'</span></li>').join('')+'</ol>':'';
+ const pct=stages?Math.round(stages.done/stages.total*100):0;
+ const stageCard=stages&&!stages.failed&&(stages.current||stages.done<stages.total)?'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>Writing the change</strong>'+(stages.current?'<span class="task-dots" aria-hidden="true"><i></i><i></i><i></i></span>':'')+'</div>'+
+  '<div class="task-progress-row"><small>'+esc(clip(plain(stages.label),90))+'</small><time'+(stages.since?' data-since="'+esc(stages.since)+'"':'')+'>'+esc(elapsedSince(stages.since))+'</time></div>'+
+  '<span class="task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="'+esc(stages.total)+'" aria-valuenow="'+esc(stages.done)+'" aria-label="Steps completed"><i style="width:'+pct+'%"></i></span>'+
+  '<small>'+esc(stages.done)+' of '+esc(stages.total)+' steps completed</small></div>':'';
+ return '<section class="agent-activity'+(fail?' failed':finished?' finished':'')+'" aria-label="Task progress">'+
+ '<details class="task-card" open><summary><span class="activity-pulse" aria-hidden="true"></span>'+
  '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
- '<span class="activity-tag">'+(fail?'NEEDS ATTENTION':'IN PROGRESS')+'</span></div>'+
- '<p class="activity-summary">'+esc(headline)+'</p>'+(job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
+ '<span class="activity-tag">'+tag+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
+ '<p class="activity-summary">'+esc(headline)+'</p>'+timeline+'</details>'+stageCard+
+ (job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
  '<details class="activity-history"><summary>View progress details</summary>'+
  '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
 }
+const stepSeconds=t=>{const m=String(t||'').match(/^(?:(\d+)h )?(?:(\d+)m ?)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
+function taskTimeline(steps){
+ // Planned stages fold into one "Writing the change" row; their progress gets its own card below.
+ const rows=[];let staged=null;
+ for(const s of steps){
+  if(!s.stage){rows.push(s);continue}
+  if(!staged){staged={state:'done',title:'Writing the change',detail:'',time:'',since:'',seconds:0};rows.push(staged)}
+  staged.detail=s.title+': '+s.detail;staged.seconds+=stepSeconds(s.time);
+  if(s.state!=='done'){staged.state=s.state;staged.since=s.since}
+ }
+ if(staged&&staged.state==='done'&&staged.seconds)staged.time=typeof KappaActions!=='undefined'?KappaActions.formatDuration(staged.seconds):staged.seconds+'s';
+ return rows;
+}
+const sinceAttr=s=>s.since?' data-since="'+esc(s.since)+'"':'';
+// Step text arrives as Markdown from GitHub; the card shows it plain.
+const plain=t=>String(t||'').replace(/`([^`]*)`/g,'$1').replace(/\*\*([^*]*)\*\*/g,'$1');
+const clip=(t,n)=>t.length>n?t.slice(0,n-1)+'…':t;
+// The current step's time so far; the one-second ticker keeps it counting from here.
+function elapsedSince(since){const t=Date.parse(since||'');return Number.isFinite(t)&&typeof KappaActions!=='undefined'?KappaActions.formatDuration(Math.max(0,Math.round((Date.now()-t)/1000))):''}
+// Audit findings as GitHub-style severity rows: the first five, then "+N more issues".
+function findingsCard(list){
+ if(!list.length)return '';
+ return '<details class="issues-card" open><summary><span aria-hidden="true">'+uiIcon('search')+'</span><strong>Issues found ('+list.length+')</strong><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><ul>'+
+  list.slice(0,5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul>'+
+  (list.length>5?'<details class="issues-more"><summary>+'+(list.length-5)+' more issue'+(list.length>6?'s':'')+'</summary><ul>'+list.slice(5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul></details>':'')+'</details>';
+}
+
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
+ // Task reports carry audit findings; they become an Issues found card under the report.
+ const issues=m.jobReport&&!user?KappaJobs.findings(m.text):[];
  const actions=m.streaming||progress?'':user?'':'<div class="quick-actions" aria-label="Message actions">'+
  '<button type="button" data-copy-message="'+i+'" aria-label="Copy response" title="Copy">'+uiIcon('copy')+'</button>'+
  '<button type="button" data-save-message="'+i+'" aria-label="'+(m.saved?'Unsave':'Save')+' response" title="'+(m.saved?'Unsave':'Save')+'">'+uiIcon('saved')+'</button>'+
@@ -50,7 +91,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&KappaIntent.suggestsTask(m.text)?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(m.text))+'</div>')+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}

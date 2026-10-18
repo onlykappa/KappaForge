@@ -35,8 +35,11 @@ class ReaderTests(unittest.TestCase):
             if "/contents/" in path:
                 return {"encoding":"base64","content":base64.b64encode(b"print('ok')").decode()}
             raise AssertionError(path)
+        prompts=[]
         state,note,complete=inspect_batch("onlykappa/KappaForge",4,None,None,"key",get,
-                                         lambda k,p:("mock-model","No issue found"),[])
+                                         lambda k,p:prompts.append(p) or ("mock-model","No issue found"),[])
+        # The chat's "Issues found" card reads these lines, so the audit is asked for exactly this shape.
+        self.assertIn("'- [High] short title (path)' using High, Medium or Low",prompts[0])
         self.assertTrue(complete)
         self.assertEqual(state["analyzed"],1)
         self.assertIn("1/1",note)
