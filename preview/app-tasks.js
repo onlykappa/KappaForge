@@ -34,7 +34,7 @@ async function runChatAction(reply,typed,chat,offerTask){
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now()});persistJobs();jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null});persistJobs();jobPollAfter=0;
 }
 function showProgress(job,commentId,body){
  const target=chats.find(c=>c.id===job.chatId);if(!target)return false;
@@ -100,7 +100,7 @@ async function launchJob(){
  trackedJobs.push(recentJob);persistJobs();jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
- }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
+ }catch(e){pendingJob=job;recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
  render();
 }
 let taskDraft="",taskFocus=null;
