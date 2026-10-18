@@ -22,4 +22,5 @@ class RepairLoopTests(unittest.TestCase):
         comments=[{"body":"<!-- KAPPA_AUTOFIX:kappa/issue-7:100 -->"},
                   {"body":"<!-- KAPPA_AUTOFIX:kappa/issue-7:101 -->"},
                   {"body":"<!-- KAPPA_AUTOFIX:kappa/issue-8:102 -->"}]
-        self.assertEqual(revision_count(comments,"kappa/issue-7"),MAX_REVISIONS)
+        self.assertEqual(revision_count(comments,"kappa/issue-7"),2)
+        self.assertEqual(MAX_REVISIONS,3)
