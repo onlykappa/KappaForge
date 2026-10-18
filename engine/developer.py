@@ -763,6 +763,16 @@ def failure_excerpt(text, limit):
     return text[first.start():] if first else text[-limit:]
 
 
+RUNNER_CHECKOUT_RE = re.compile(r"/(?:Users|home)/runner/work/[^/\s]+/[^/\s]+/")
+
+
+def files_named_in(log, existing, changed):
+    """Repository files a failure log names, such as the Swift file an Xcode error points at, beyond the PR's own files."""
+    # Xcode and other tools print absolute paths inside the runner's checkout; reduce them to repository paths.
+    log = RUNNER_CHECKOUT_RE.sub("", log)
+    return [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
+
+
 def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history=""):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
@@ -774,7 +784,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     guide = project_guide(repo, head_sha, existing, repo_token)
     log = "\n".join(job_log(job["id"], token) for job in failed_jobs[:2])
     # Also read existing files the failure output names, such as the failing test module.
-    named = [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
+    named = files_named_in(log, existing, changed)
     sources = {}
     for path in (changed + named)[:LARGE.read_files]:
         if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS:

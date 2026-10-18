@@ -63,3 +63,12 @@ class NativeBuildTests(unittest.TestCase):
             scope.permit(url, {"ref": "main", "inputs": {"branch": "main", "candidate_sha": SHA}}, "POST")
         with self.assertRaises(PermissionError):
             scope.permit(url, {"ref": "main", "inputs": {"branch": "kappa/dev-8", "candidate_sha": SHA}}, "POST")
+
+    def test_files_named_by_xcode_with_runner_paths_are_read_like_any_other(self):
+        from engine.developer import files_named_in
+        existing = {"ios/KappaForge/KappaWebView.swift": 1, "ios/KappaForgeUITests/LaunchTests.swift": 1, "preview/ui.js": 1}
+        log = ("/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'x'\n"
+               "/Users/runner/work/KappaForge/KappaForge/ios/KappaForgeUITests/LaunchTests.swift:10: error: XCTAssertTrue failed\n"
+               "/home/runner/work/KappaForge/KappaForge/preview/ui.js:3 TypeError")
+        self.assertEqual(files_named_in(log, existing, ["preview/ui.js"]),
+                         ["ios/KappaForge/KappaWebView.swift", "ios/KappaForgeUITests/LaunchTests.swift"])
