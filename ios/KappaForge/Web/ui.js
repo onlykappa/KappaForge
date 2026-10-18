@@ -45,12 +45,25 @@ const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.s
  resizeComposer();
 }
 function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');}
-function updateKeyboard(){const vv=window.visualViewport;const inset=vv?Math.max(0,innerHeight-vv.height-vv.offsetTop):0;const typing=document.activeElement===document.getElementById('message');document.documentElement.style.setProperty('--keyboard-inset',typing?inset+'px':'0px');document.body.classList.toggle('keyboard-open',typing&&inset>80);}
+function updateKeyboard(){
+ // SwiftUI keeps the WebView's layout viewport stable. Only the visual viewport
+ // moves with the keyboard, so apply its obscured region exactly once.
+ const viewport=window.visualViewport;
+ const input=document.getElementById('message');
+ const typing=document.activeElement===input;
+ const obscured=viewport?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop):0;
+ const open=typing&&obscured>80;
+ const inset=open?Math.round(obscured):0;
+ document.documentElement.style.setProperty('--keyboard-inset',inset+'px');
+ document.body.classList.toggle('keyboard-open',open);
+}
 function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
  if(uiInitialized)return;uiInitialized=true;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
- document.getElementById('headernew').onclick=fresh;document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
+ document.getElementById('headernew').onclick=fresh;
+ document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};
+ document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
  const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',updateKeyboard);input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
