@@ -102,9 +102,21 @@ def choose_issue(token, allowed_modes=None):
             from engine.task_scope import mode_of
             if mode_of(issue) not in allowed_modes:
                 continue
+        if issue and not authorized(issue):
+            continue
         if issue and not settled(github(f"repos/{ROOT}/issues/{issue['number']}/comments?per_page=100", token)):
             return issue
     return None
+
+def authorized(issue):
+    """Scheduled runs skip expired or legacy tasks instead of failing on the oldest one every run."""
+    from engine.intent_guard import ExecutionScope
+    try:
+        ExecutionScope(issue)
+    except PermissionError as error:
+        print(f"Skipping task #{issue['number']}: {error}")
+        return False
+    return True
 
 # Final reports of every task type. Scheduled runs skip these issues; an explicit dispatch or /audit-code still re-runs them.
 DONE_MARKERS = ("KappaForge run completed", "### KappaForge project map complete",

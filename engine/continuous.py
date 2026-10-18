@@ -5,7 +5,7 @@ diagnosis is read-only and produces reviewable recommendations, never code pushe
 """
 import os
 import re
-from engine.runner import ROOT, allowed_repo, code_providers, github, get_issue, is_private, run_model
+from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model
 from engine.full_reader import inspect_batch
 
 MAX_BATCHES_PER_RUN = 3
@@ -95,9 +95,9 @@ def main():
             for candidate in candidates:
                 if re.search(r"^Mode:\s*" + desired_mode + r"\s*$",
                              candidate.get("body") or "", re.I | re.M):
-                    authorized = get_issue(candidate["number"], token)
-                    if authorized:
-                        issues.append(authorized)
+                    selected = get_issue(candidate["number"], token)
+                    if selected and authorized(selected):
+                        issues.append(selected)
                         break
     if not number and scope == "write":
         # Only the isolated write job scans repair previously approved sandbox draft PRs.

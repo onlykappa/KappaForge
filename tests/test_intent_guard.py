@@ -65,3 +65,16 @@ class IntentGuardTests(unittest.TestCase):
         record_success(url,payload)
         self.assertEqual(scope.state,'completed')
         with self.assertRaises(PermissionError):guard_request(url,payload,'POST',lambda n:task)
+
+    def test_scheduled_selection_skips_expired_or_unauthorized_tasks(self):
+        from unittest.mock import patch
+        from engine import runner
+        expired=issue('audit');expired['number']=14;expired['created_at']='2020-01-01T00:00:00Z'
+        legacy=issue('audit');legacy['number']=20;legacy['body']+='\nApproved from KappaForge Chat.'
+        current=issue('audit')
+        tasks={14:expired,20:legacy,98:current}
+        def github(path,token=None,payload=None):
+            if '/comments' in path:return []
+            return [{'number':n} for n in tasks]
+        with patch.dict('os.environ',{'INPUT_ISSUE_NUMBER':''}),patch.object(runner,'github',github),patch.object(runner,'get_issue',lambda n,t:tasks[int(n)]):
+            self.assertEqual(runner.choose_issue('fixture',{'audit'})['number'],98)
