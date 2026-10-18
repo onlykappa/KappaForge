@@ -163,3 +163,40 @@ test('post-run verification confirms ghosts one by one and ignores runs that sta
  assert.equal(clean.ok,true);assert.match(describe(clean),/matches GitHub \(3 runs checked\)/);
  await assert.rejects(verify({runs:[]},{repo:'../x',fetcher}),/Invalid repository/);
 });
+test('each step of a real iOS job maps to its own log section, and skipped steps have none',()=>{
+ const dir=new URL('./fixtures/actions-logs/',import.meta.url);
+ const job=JSON.parse(readFileSync(new URL('ios-native-job.steps.json',dir),'utf8'));
+ const log=K.parseLog(readFileSync(new URL('ios-native-job.txt',dir),'utf8'));
+ const steps=K.normalizeJob({id:1,...job}).steps;
+ const map=K.stepSections(steps,log.sections);
+ const section=n=>log.sections[map[n]];
+ assert.equal(section(1).title,'Set up job');assert.equal(section(4).title,'brew install xcodegen');
+ assert.equal(section(11).errors,4,'the failing step owns the failure lines');assert.ok(section(11).log.some(l=>l.kind==='error'&&/TEST FAILED/.test(l.text)));
+ assert.equal(section(36).title,'Post job cleanup');assert.equal(section(37).title,'Complete job');
+ for(const n of [3,15,16,17,18])assert.equal(map[n],undefined,'skipped step '+n);
+ assert.equal(section(11).log[0].kind,'group','a step view starts with its Run command');
+ // A composite action adds an extra "Run" group: counts differ, so only steps matched by name are paired.
+ const extra={...log,sections:[...log.sections.slice(0,3),{title:'inner composite step'},...log.sections.slice(3)]};
+ const loose=K.stepSections(steps,extra.sections);
+ assert.equal(extra.sections[loose[2]].title,'actions/checkout@v4');assert.equal(loose[4],undefined,'no guessing for renamed steps');
+ assert.equal(extra.sections[loose[36]].title,'Post job cleanup');
+});
+test('re-run and cancel are validated, use the job token, and explain GitHub refusals',async()=>{
+ const {actionsControl}=await import('../chat-backend/src/actions.js');
+ const {fetcher,calls}=github([
+  [/actions\/runs\/5\/rerun-failed-jobs$/,()=>new Response(null,{status:201})],
+  [/actions\/runs\/6\/cancel$/,()=>Response.json({message:'Cannot cancel a workflow run that is completed.'},{status:409})]]);
+ const env={GITHUB_JOB_TOKEN:'job',GITHUB_ACTIONS_READ_TOKEN:'read'};
+ assert.equal((await actionsControl(env,{action:'delete',runId:5},{fetcher})).status,400);
+ assert.equal((await actionsControl(env,{action:'rerun',runId:'5;rm'},{fetcher})).status,400);
+ assert.equal((await actionsControl({GITHUB_ACTIONS_READ_TOKEN:'read'},{action:'rerun',runId:5},{fetcher})).status,503,'the read-only token never writes');
+ const ok=await actionsControl(env,{action:'rerun-failed',runId:5,repo:'KappaForge'},{fetcher});
+ assert.equal(ok.status,202);assert.deepEqual(ok.data,{status:'requested',action:'rerun-failed',runId:5});
+ const post=calls.find(c=>c.url.endsWith('/rerun-failed-jobs'));assert.equal(post.headers.Authorization,'Bearer job');
+ assert.match((await actionsControl(env,{action:'cancel',runId:6},{fetcher})).error,/refused to cancel[^]*already|completed/);
+ const {needsAuthorization,validateRequest}=await import('../chat-backend/src/intent-guard.js');
+ assert.equal(needsAuthorization('/actions/control'),true);
+ assert.throws(()=>validateRequest('/actions/control',{action:'rerun',runId:5},'Re-run','user-control'),/Confirm/);
+ assert.throws(()=>validateRequest('/actions/control',{action:'rerun',runId:5,confirmed:true},'re-run it','assistant'),/direct user request/);
+ validateRequest('/actions/control',{action:'rerun',runId:5,confirmed:true},'Confirmed re-run','user-control');
+});

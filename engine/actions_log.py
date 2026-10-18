@@ -5,7 +5,7 @@ against the same fixtures in tests/fixtures/actions-logs, so change them togethe
 """
 import re
 
-LIMIT = {"errors": 50, "warnings": 20, "signals": 20, "tail": 30, "line": 400}
+LIMIT = {"errors": 50, "warnings": 20, "signals": 20, "tail": 30, "line": 400, "step": 150}
 
 # Token shapes GitHub masks only when they were registered as secrets. Redact them anyway.
 SECRETS = [
@@ -68,13 +68,31 @@ def _count_tests(line, tests):
             tests["found"] = True
 
 
+# Where the log moves to the next step. "Run …" groups start ordinary steps; post steps each print
+# "Post job cleanup."; "Complete job" opens with one of two runner lines.
+COMPLETE = re.compile(r"^(?:Evaluate and set job outputs|Cleaning up orphan processes)$")
+
+
 def parse_log(text):
-    """The same structure as KappaActions.parseLog: sections, errors, warnings, signals, tests, exitCode, tail."""
+    """The same structure as KappaActions.parseLog: sections (with each step's last lines), errors, warnings,
+    signals, tests, exitCode, tail."""
     lines = re.split(r"\r?\n", str(text or ""))
     out = {"lineCount": 0, "sections": [], "errors": [], "warnings": [], "signals": [],
            "tests": {"passed": 0, "failed": 0, "found": False}, "exitCode": None, "tail": []}
-    section = {"title": "Set up job", "start": 1, "lines": 0, "errors": 0, "warnings": 0}
-    out["sections"].append(section)
+
+    def open_section(title, n):
+        section = {"title": title, "start": n, "lines": 0, "errors": 0, "warnings": 0, "omitted": 0, "log": []}
+        out["sections"].append(section)
+        return section
+
+    def keep(n, text, kind):
+        # Each step keeps its last LIMIT["step"] lines; errors stay listed even when their line scrolls out.
+        section["log"].append({"n": n, "text": _clip(text), "kind": kind})
+        if len(section["log"]) > LIMIT["step"]:
+            section["log"].pop(0)
+            section["omitted"] += 1
+
+    section = open_section("Set up job", 1)
     depth = 0
     for raw in lines:
         if raw == "" and out["lineCount"] == len(lines) - 1:
@@ -84,35 +102,44 @@ def parse_log(text):
         line = redact(ANSI.sub("", STAMP.sub("", raw, count=1))).rstrip()
         if line.startswith("##[group]"):
             title = line[9:].strip()
-            # Top-level "Run …" groups start a workflow step; other groups are details inside the current step.
             if depth == 0 and title.startswith("Run "):
-                section = {"title": _clip(title[4:]) or "Step", "start": n, "lines": 0, "errors": 0, "warnings": 0}
-                out["sections"].append(section)
+                section = open_section(_clip(title[4:]) or "Step", n)
+            keep(n, title, "group")
             depth += 1
             continue
         if line.startswith("##[endgroup]"):
             depth = max(0, depth - 1)
             continue
+        if depth == 0 and line == "Post job cleanup.":
+            section = open_section("Post job cleanup", n)
+        elif depth == 0 and COMPLETE.match(line) and section["title"] != "Complete job":
+            section = open_section("Complete job", n)
         section["lines"] += 1
-        error, warning = _first(ERROR_CMD, line), None
+        at = len(out["sections"]) - 1
+        error, warning, kind = _first(ERROR_CMD, line), None, ""
         if not error:
             warning = _first(WARNING_CMD, line)
         if error:
+            kind = "error"
             section["errors"] += 1
             if len(out["errors"]) < LIMIT["errors"]:
-                out["errors"].append({"line": n, "section": section["title"], "text": _clip(error[1].strip())})
+                out["errors"].append({"line": n, "section": section["title"], "at": at, "text": _clip(error[1].strip())})
         elif warning:
+            kind = "warning"
             section["warnings"] += 1
             if len(out["warnings"]) < LIMIT["warnings"]:
-                out["warnings"].append({"line": n, "section": section["title"], "text": _clip(warning[1].strip())})
+                out["warnings"].append({"line": n, "section": section["title"], "at": at, "text": _clip(warning[1].strip())})
         else:
             body = line.strip()
             if body and any(p.search(body) for p in FAILURE):
+                kind = "error"
                 section["errors"] += 1
                 if len(out["errors"]) < LIMIT["errors"]:
-                    out["errors"].append({"line": n, "section": section["title"], "text": _clip(body)})
+                    out["errors"].append({"line": n, "section": section["title"], "at": at, "text": _clip(body)})
             elif body and any(p.search(body) for p in SUCCESS) and len(out["signals"]) < LIMIT["signals"]:
-                out["signals"].append({"line": n, "section": section["title"], "text": _clip(body)})
+                out["signals"].append({"line": n, "section": section["title"], "at": at, "text": _clip(body)})
+        command = error or warning
+        keep(n, command[1].strip() if command else line, kind)
         exit_code = re.search(r"Process completed with exit code (\d+)", line)
         if exit_code:
             out["exitCode"] = int(exit_code[1])

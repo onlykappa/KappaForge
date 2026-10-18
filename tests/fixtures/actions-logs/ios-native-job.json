@@ -1,0 +1,476 @@
+{
+ "lineCount": 60,
+ "sections": [
+  {
+   "title": "Set up job",
+   "start": 1,
+   "lines": 2,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 1,
+     "text": "Current runner version: '2.329.0'",
+     "kind": ""
+    },
+    {
+     "n": 2,
+     "text": "Runner Image",
+     "kind": "group"
+    },
+    {
+     "n": 3,
+     "text": "Image: macos-15-arm64",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "actions/checkout@v4",
+   "start": 5,
+   "lines": 3,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 5,
+     "text": "Run actions/checkout@v4",
+     "kind": "group"
+    },
+    {
+     "n": 6,
+     "text": "with:",
+     "kind": ""
+    },
+    {
+     "n": 7,
+     "text": "  persist-credentials: false",
+     "kind": ""
+    },
+    {
+     "n": 9,
+     "text": "Syncing repository: onlykappa/KappaForge",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "brew install xcodegen",
+   "start": 10,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 10,
+     "text": "Run brew install xcodegen",
+     "kind": "group"
+    },
+    {
+     "n": 12,
+     "text": "==> Pouring xcodegen--2.44.1.arm64_sequoia.bottle.tar.gz",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "python3 scripts/preflight.py native",
+   "start": 13,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 13,
+     "text": "Run python3 scripts/preflight.py native",
+     "kind": "group"
+    },
+    {
+     "n": 15,
+     "text": "Preflight native: passed",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "node --test tests/native-update-contract.test.mjs",
+   "start": 16,
+   "lines": 2,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 16,
+     "text": "Run node --test tests/native-update-contract.test.mjs",
+     "kind": "group"
+    },
+    {
+     "n": 18,
+     "text": "# pass 6",
+     "kind": ""
+    },
+    {
+     "n": 19,
+     "text": "# fail 0",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "python3 scripts/bundle-web.py --check",
+   "start": 20,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 20,
+     "text": "Run python3 scripts/bundle-web.py --check",
+     "kind": "group"
+    },
+    {
+     "n": 22,
+     "text": "Bundled 19 shared files, v2.1.3",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "swift scripts/make-icon.swift",
+   "start": 23,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 23,
+     "text": "Run swift scripts/make-icon.swift",
+     "kind": "group"
+    },
+    {
+     "n": 25,
+     "text": "Wrote AppIcon-1024.png",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "xcodegen generate --spec ios/project.yml",
+   "start": 26,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 26,
+     "text": "Run xcodegen generate --spec ios/project.yml",
+     "kind": "group"
+    },
+    {
+     "n": 28,
+     "text": "Created project at ios/KappaForge.xcodeproj",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -sdk iphonesimulator build",
+   "start": 29,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 29,
+     "text": "Run xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -sdk iphonesimulator build",
+     "kind": "group"
+    },
+    {
+     "n": 31,
+     "text": "** BUILD SUCCEEDED **",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "set -Eeuo pipefail",
+   "start": 32,
+   "lines": 6,
+   "errors": 4,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 32,
+     "text": "Run set -Eeuo pipefail",
+     "kind": "group"
+    },
+    {
+     "n": 34,
+     "text": "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).",
+     "kind": "error"
+    },
+    {
+     "n": 35,
+     "text": "Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).",
+     "kind": ""
+    },
+    {
+     "n": 36,
+     "text": "\t Executed 2 tests, with 1 failure (0 unexpected) in 83.817 (83.828) seconds",
+     "kind": ""
+    },
+    {
+     "n": 37,
+     "text": "** TEST FAILED **",
+     "kind": "error"
+    },
+    {
+     "n": 38,
+     "text": "Error: [workflow] step failed at line 11 (exit 65)",
+     "kind": "error"
+    },
+    {
+     "n": 39,
+     "text": "Process completed with exit code 65.",
+     "kind": "error"
+    }
+   ]
+  },
+  {
+   "title": "if [ -d /tmp/kappaforge-ui-tests.xcresult ]; then",
+   "start": 40,
+   "lines": 2,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 40,
+     "text": "Run if [ -d /tmp/kappaforge-ui-tests.xcresult ]; then",
+     "kind": "group"
+    },
+    {
+     "n": 41,
+     "text": "  xcrun xcresulttool export attachments --path /tmp/kappaforge-ui-tests.xcresult --output-path /tmp/kappaforge-ui-attachments",
+     "kind": ""
+    },
+    {
+     "n": 43,
+     "text": "Exported 22 attachments for: LaunchTests/testBundledInterfaceLaunchAndSettings():",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "actions/upload-artifact@v4",
+   "start": 44,
+   "lines": 3,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 44,
+     "text": "Run actions/upload-artifact@v4",
+     "kind": "group"
+    },
+    {
+     "n": 45,
+     "text": "with:",
+     "kind": ""
+    },
+    {
+     "n": 46,
+     "text": "  name: iOS-keyboard-screenshots",
+     "kind": ""
+    },
+    {
+     "n": 48,
+     "text": "Artifact iOS-keyboard-screenshots has been successfully uploaded! Final size is 6303709 bytes. Artifact ID is 12141304622",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "actions/upload-artifact@v4",
+   "start": 49,
+   "lines": 3,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 49,
+     "text": "Run actions/upload-artifact@v4",
+     "kind": "group"
+    },
+    {
+     "n": 50,
+     "text": "with:",
+     "kind": ""
+    },
+    {
+     "n": 51,
+     "text": "  name: iOS-keyboard-ui-test-results",
+     "kind": ""
+    },
+    {
+     "n": 53,
+     "text": "Artifact iOS-keyboard-ui-test-results has been successfully uploaded! Final size is 63557228 bytes. Artifact ID is 12141593700",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "Post job cleanup",
+   "start": 54,
+   "lines": 3,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 54,
+     "text": "Post job cleanup.",
+     "kind": ""
+    },
+    {
+     "n": 55,
+     "text": "[command]/opt/homebrew/bin/git version",
+     "kind": ""
+    },
+    {
+     "n": 56,
+     "text": "git version 2.55.0",
+     "kind": ""
+    }
+   ]
+  },
+  {
+   "title": "Complete job",
+   "start": 57,
+   "lines": 4,
+   "errors": 0,
+   "warnings": 1,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 57,
+     "text": "Evaluate and set job outputs",
+     "kind": ""
+    },
+    {
+     "n": 58,
+     "text": "Cleaning up orphan processes",
+     "kind": ""
+    },
+    {
+     "n": 59,
+     "text": "Terminate orphan process: pid (6644) (DTServiceHub)",
+     "kind": ""
+    },
+    {
+     "n": 60,
+     "text": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4.",
+     "kind": "warning"
+    }
+   ]
+  }
+ ],
+ "errors": [
+  {
+   "line": 34,
+   "section": "set -Eeuo pipefail",
+   "at": 9,
+   "text": "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds)."
+  },
+  {
+   "line": 37,
+   "section": "set -Eeuo pipefail",
+   "at": 9,
+   "text": "** TEST FAILED **"
+  },
+  {
+   "line": 38,
+   "section": "set -Eeuo pipefail",
+   "at": 9,
+   "text": "Error: [workflow] step failed at line 11 (exit 65)"
+  },
+  {
+   "line": 39,
+   "section": "set -Eeuo pipefail",
+   "at": 9,
+   "text": "Process completed with exit code 65."
+  }
+ ],
+ "warnings": [
+  {
+   "line": 60,
+   "section": "Complete job",
+   "at": 14,
+   "text": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4."
+  }
+ ],
+ "signals": [
+  {
+   "line": 19,
+   "section": "node --test tests/native-update-contract.test.mjs",
+   "at": 4,
+   "text": "# fail 0"
+  },
+  {
+   "line": 31,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -sdk iphonesimulator build",
+   "at": 8,
+   "text": "** BUILD SUCCEEDED **"
+  }
+ ],
+ "tests": {
+  "passed": 6,
+  "failed": 0,
+  "found": true
+ },
+ "exitCode": 65,
+ "tail": [
+  "Syncing repository: onlykappa/KappaForge",
+  "==> Pouring xcodegen--2.44.1.arm64_sequoia.bottle.tar.gz",
+  "Preflight native: passed",
+  "# pass 6",
+  "# fail 0",
+  "Bundled 19 shared files, v2.1.3",
+  "Wrote AppIcon-1024.png",
+  "Created project at ios/KappaForge.xcodeproj",
+  "** BUILD SUCCEEDED **",
+  "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).",
+  "Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).",
+  "\t Executed 2 tests, with 1 failure (0 unexpected) in 83.817 (83.828) seconds",
+  "** TEST FAILED **",
+  "Error: [workflow] step failed at line 11 (exit 65)",
+  "##[error]Process completed with exit code 65.",
+  "  xcrun xcresulttool export attachments --path /tmp/kappaforge-ui-tests.xcresult --output-path /tmp/kappaforge-ui-attachments",
+  "Exported 22 attachments for: LaunchTests/testBundledInterfaceLaunchAndSettings():",
+  "with:",
+  "  name: iOS-keyboard-screenshots",
+  "Artifact iOS-keyboard-screenshots has been successfully uploaded! Final size is 6303709 bytes. Artifact ID is 12141304622",
+  "with:",
+  "  name: iOS-keyboard-ui-test-results",
+  "Artifact iOS-keyboard-ui-test-results has been successfully uploaded! Final size is 63557228 bytes. Artifact ID is 12141593700",
+  "Post job cleanup.",
+  "[command]/opt/homebrew/bin/git version",
+  "git version 2.55.0",
+  "Evaluate and set job outputs",
+  "Cleaning up orphan processes",
+  "Terminate orphan process: pid (6644) (DTServiceHub)",
+  "##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4."
+ ]
+}

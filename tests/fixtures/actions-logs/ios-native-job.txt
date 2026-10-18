@@ -1,0 +1,60 @@
+2026-10-18T15:30:01.0000000Z Current runner version: '2.329.0'
+2026-10-18T15:30:02.0000000Z ##[group]Runner Image
+2026-10-18T15:30:03.0000000Z Image: macos-15-arm64
+2026-10-18T15:30:04.0000000Z ##[endgroup]
+2026-10-18T15:30:05.0000000Z ##[group]Run actions/checkout@v4
+2026-10-18T15:30:06.0000000Z with:
+2026-10-18T15:30:07.0000000Z   persist-credentials: false
+2026-10-18T15:30:08.0000000Z ##[endgroup]
+2026-10-18T15:30:09.0000000Z Syncing repository: onlykappa/KappaForge
+2026-10-18T15:30:10.0000000Z ##[group]Run brew install xcodegen
+2026-10-18T15:30:11.0000000Z ##[endgroup]
+2026-10-18T15:30:12.0000000Z ==> Pouring xcodegen--2.44.1.arm64_sequoia.bottle.tar.gz
+2026-10-18T15:30:13.0000000Z ##[group]Run python3 scripts/preflight.py native
+2026-10-18T15:30:14.0000000Z ##[endgroup]
+2026-10-18T15:30:15.0000000Z Preflight native: passed
+2026-10-18T15:30:16.0000000Z ##[group]Run node --test tests/native-update-contract.test.mjs
+2026-10-18T15:30:17.0000000Z ##[endgroup]
+2026-10-18T15:30:18.0000000Z # pass 6
+2026-10-18T15:30:19.0000000Z # fail 0
+2026-10-18T15:30:20.0000000Z ##[group]Run python3 scripts/bundle-web.py --check
+2026-10-18T15:30:21.0000000Z ##[endgroup]
+2026-10-18T15:30:22.0000000Z Bundled 19 shared files, v2.1.3
+2026-10-18T15:30:23.0000000Z ##[group]Run swift scripts/make-icon.swift
+2026-10-18T15:30:24.0000000Z ##[endgroup]
+2026-10-18T15:30:25.0000000Z Wrote AppIcon-1024.png
+2026-10-18T15:30:26.0000000Z ##[group]Run xcodegen generate --spec ios/project.yml
+2026-10-18T15:30:27.0000000Z ##[endgroup]
+2026-10-18T15:30:28.0000000Z Created project at ios/KappaForge.xcodeproj
+2026-10-18T15:30:29.0000000Z ##[group]Run xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -sdk iphonesimulator build
+2026-10-18T15:30:30.0000000Z ##[endgroup]
+2026-10-18T15:30:31.0000000Z ** BUILD SUCCEEDED **
+2026-10-18T15:30:32.0000000Z ##[group]Run set -Eeuo pipefail
+2026-10-18T15:30:33.0000000Z ##[endgroup]
+2026-10-18T15:30:34.0000000Z Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).
+2026-10-18T15:30:35.0000000Z Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).
+2026-10-18T15:30:36.0000000Z 	 Executed 2 tests, with 1 failure (0 unexpected) in 83.817 (83.828) seconds
+2026-10-18T15:30:37.0000000Z ** TEST FAILED **
+2026-10-18T15:30:38.0000000Z Error: [workflow] step failed at line 11 (exit 65)
+2026-10-18T15:30:39.0000000Z ##[error]Process completed with exit code 65.
+2026-10-18T15:30:40.0000000Z ##[group]Run if [ -d /tmp/kappaforge-ui-tests.xcresult ]; then
+2026-10-18T15:30:41.0000000Z   xcrun xcresulttool export attachments --path /tmp/kappaforge-ui-tests.xcresult --output-path /tmp/kappaforge-ui-attachments
+2026-10-18T15:30:42.0000000Z ##[endgroup]
+2026-10-18T15:30:43.0000000Z Exported 22 attachments for: LaunchTests/testBundledInterfaceLaunchAndSettings():
+2026-10-18T15:30:44.0000000Z ##[group]Run actions/upload-artifact@v4
+2026-10-18T15:30:45.0000000Z with:
+2026-10-18T15:30:46.0000000Z   name: iOS-keyboard-screenshots
+2026-10-18T15:30:47.0000000Z ##[endgroup]
+2026-10-18T15:30:48.0000000Z Artifact iOS-keyboard-screenshots has been successfully uploaded! Final size is 6303709 bytes. Artifact ID is 12141304622
+2026-10-18T15:30:49.0000000Z ##[group]Run actions/upload-artifact@v4
+2026-10-18T15:30:50.0000000Z with:
+2026-10-18T15:30:51.0000000Z   name: iOS-keyboard-ui-test-results
+2026-10-18T15:30:52.0000000Z ##[endgroup]
+2026-10-18T15:30:53.0000000Z Artifact iOS-keyboard-ui-test-results has been successfully uploaded! Final size is 63557228 bytes. Artifact ID is 12141593700
+2026-10-18T15:30:54.0000000Z Post job cleanup.
+2026-10-18T15:30:55.0000000Z [command]/opt/homebrew/bin/git version
+2026-10-18T15:30:56.0000000Z git version 2.55.0
+2026-10-18T15:30:57.0000000Z Evaluate and set job outputs
+2026-10-18T15:30:58.0000000Z Cleaning up orphan processes
+2026-10-18T15:30:59.0000000Z Terminate orphan process: pid (6644) (DTServiceHub)
+2026-10-18T15:31:00.0000000Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4.

@@ -91,13 +91,19 @@ const ANSI=/\x1b\[[0-9;?]*[A-Za-z]/g;
 const FAILURE=[/^npm ERR! /,/^Error: /,/^(?:[A-Za-z]*Error|AssertionError)(?: \[[A-Z_]+\])?: /,/^Traceback \(most recent call last\):/,/^FAIL(?:ED)?\b/,/^not ok \d+ /,
  /^E {3}/,/\berror TS\d+:/,/: error: /,/^\*\* (?:BUILD|TEST) FAILED \*\*/,/^Test Case '.*' failed /,/^✖ /,/^Process completed with exit code [1-9]\d*\.?$/];
 const SUCCESS=[/^\*\* (?:BUILD|TEST) SUCCEEDED \*\*/,/^OK(?: \(.*\))?$/,/^# fail 0$/,/^All checks passed\b/i,/^✔ /];
-const LIMIT={errors:50,warnings:20,signals:20,tail:30,line:400};
+const LIMIT={errors:50,warnings:20,signals:20,tail:30,line:400,step:150};
+// Where the log moves to the next step. "Run …" groups start ordinary steps; post steps each print
+// "Post job cleanup."; "Complete job" opens with one of two runner lines.
+const COMPLETE=/^(?:Evaluate and set job outputs|Cleaning up orphan processes)$/;
 function parseLog(text){
  const lines=String(text??'').split(/\r?\n/);
  const out={lineCount:0,sections:[],errors:[],warnings:[],signals:[],tests:{passed:0,failed:0,found:false},exitCode:null,tail:[]};
- let section={title:'Set up job',start:1,lines:0,errors:0,warnings:0};out.sections.push(section);
+ const open=(title,n)=>{section={title,start:n,lines:0,errors:0,warnings:0,omitted:0,log:[]};out.sections.push(section)};
+ let section;open('Set up job',1);
  let depth=0;
  const clip=s=>s.length>LIMIT.line?s.slice(0,LIMIT.line-1)+'…':s;
+ // Each step keeps its last LIMIT.step lines for the step view; errors stay listed even when their line scrolls out.
+ const keep=(n,text,kind)=>{section.log.push({n,text:clip(text),kind});if(section.log.length>LIMIT.step){section.log.shift();section.omitted++}};
  for(const raw of lines){
   if(raw===''&&out.lineCount===lines.length-1)break;
   out.lineCount++;
@@ -105,27 +111,45 @@ function parseLog(text){
   const n=out.lineCount;
   if(line.startsWith('##[group]')){
    const title=line.slice(9).trim();
-   // Top-level "Run …" groups start a workflow step; other groups are details inside the current step.
-   if(depth===0&&/^Run /.test(title)){section={title:clip(title.slice(4))||'Step',start:n,lines:0,errors:0,warnings:0};out.sections.push(section)}
-   depth++;continue;
+   if(depth===0&&/^Run /.test(title))open(clip(title.slice(4))||'Step',n);
+   keep(n,title,'group');depth++;continue;
   }
   if(line.startsWith('##[endgroup]')){depth=Math.max(0,depth-1);continue}
+  if(depth===0&&line==='Post job cleanup.')open('Post job cleanup',n);
+  else if(depth===0&&COMPLETE.test(line)&&section.title!=='Complete job')open('Complete job',n);
   section.lines++;
-  let match;
+  const at=out.sections.length-1;
+  let match,kind='';
   if((match=line.match(/^##\[error\](.*)$/))||(match=line.match(/^::error(?: [^:]*)?::(.*)$/))){
-   section.errors++;if(out.errors.length<LIMIT.errors)out.errors.push({line:n,section:section.title,text:clip(match[1].trim())});
+   kind='error';section.errors++;if(out.errors.length<LIMIT.errors)out.errors.push({line:n,section:section.title,at,text:clip(match[1].trim())});
   }else if((match=line.match(/^##\[warning\](.*)$/))||(match=line.match(/^::warning(?: [^:]*)?::(.*)$/))){
-   section.warnings++;if(out.warnings.length<LIMIT.warnings)out.warnings.push({line:n,section:section.title,text:clip(match[1].trim())});
+   kind='warning';section.warnings++;if(out.warnings.length<LIMIT.warnings)out.warnings.push({line:n,section:section.title,at,text:clip(match[1].trim())});
   }else{
    const body=line.trim();
-   if(body&&FAILURE.some(p=>p.test(body))){section.errors++;if(out.errors.length<LIMIT.errors)out.errors.push({line:n,section:section.title,text:clip(body)})}
-   else if(body&&SUCCESS.some(p=>p.test(body))&&out.signals.length<LIMIT.signals)out.signals.push({line:n,section:section.title,text:clip(body)});
+   if(body&&FAILURE.some(p=>p.test(body))){kind='error';section.errors++;if(out.errors.length<LIMIT.errors)out.errors.push({line:n,section:section.title,at,text:clip(body)})}
+   else if(body&&SUCCESS.some(p=>p.test(body))&&out.signals.length<LIMIT.signals)out.signals.push({line:n,section:section.title,at,text:clip(body)});
   }
+  keep(n,match?match[1].trim():line,kind);
   const exit=line.match(/Process completed with exit code (\d+)/);if(exit)out.exitCode=Number(exit[1]);
   countTests(line.trim(),out.tests);
   out.tail.push(clip(line));if(out.tail.length>LIMIT.tail)out.tail.shift();
  }
  return out;
+}
+// Which log section belongs to which step. Steps that ran each print one section, in order, so equal counts
+// pair them up directly. Otherwise (composite actions add "Run" groups) match by name, in order, and leave the
+// rest unmatched rather than guess.
+function stepSections(steps,sections){
+ const ran=(steps||[]).filter(s=>!['skipped','queued','waiting'].includes(s.state)).sort((a,b)=>a.number-b.number);
+ const map={};sections=sections||[];
+ if(ran.length===sections.length){ran.forEach((s,i)=>map[s.number]=i);return map}
+ let from=0;
+ for(const s of ran){
+  const want=s.name.replace(/^Run /,'');
+  const i=sections.findIndex((x,j)=>j>=from&&(x.title===want||x.title===s.name||j===0&&s.name==='Set up job'||/^Post /.test(s.name)&&x.title==='Post job cleanup'));
+  if(i>=0){map[s.number]=i;from=i+1}
+ }
+ return map;
 }
 // Summary lines of node:test, unittest, pytest and jest. Totals add up across suites in one job.
 function countTests(line,tests){
@@ -174,5 +198,5 @@ function latestByWorkflow(runs){
  for(const r of runs||[]){const k=r.workflowId||r.name;if(!seen.has(k))seen.set(k,r)}
  return [...seen.values()];
 }
-root.KappaActions={state,isActive,seconds,formatDuration,normalizeRun,normalizeJob,progress,redact,parseLog:t=>finishTests(parseLog(t)),diffRuns,reconcile,latestByWorkflow};
+root.KappaActions={state,isActive,seconds,formatDuration,normalizeRun,normalizeJob,progress,redact,parseLog:t=>finishTests(parseLog(t)),stepSections,diffRuns,reconcile,latestByWorkflow};
 })(globalThis);

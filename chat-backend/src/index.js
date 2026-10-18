@@ -7,7 +7,7 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
-import {actionsRequest,actionsConfigured} from "./actions.js";
+import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,REGISTRY} from "./providers.js";
@@ -123,7 +123,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -241,6 +241,10 @@ export default {
     if(needsAuthorization(executionPath)&&!(executionPath==="/undo"&&input.confirmed!==true)){
       try{executionAuthorization=await authorize(env,executionPath,input,true)}
       catch(e){return json({error:e.message},403,cors)}
+    }
+    if(executionPath==="/actions/control"){
+      try{const result=await actionsControl(env,input);return json(result.error?{error:result.error}:result.data,result.status,cors)}
+      catch{return json({error:"GitHub request timed out or failed."},502,cors)}
     }
     if (new URL(request.url).pathname === "/guidance") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);

@@ -36,6 +36,16 @@ Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
    saved monitor snapshot against the GitHub API and reports stale/ghost/missing runs.
 10. [x] Tests, `python scripts/bundle-web.py`, docs, deploy path filters.
 
+### Round 2: match the GitHub mobile job screen (owner's screenshot)
+11. [x] **Per-step logs**: the parser splits logs at "Run …" groups, "Post job cleanup." and "Complete job";
+    each section keeps its last 150 lines (`log: [{n, text, kind}]`). `KappaActions.stepSections(steps, sections)`
+    maps steps to sections (by order when counts match, else by name). Checked on the real
+    "iOS build and release / native" job's step list (`tests/fixtures/actions-logs/ios-native-job.*`).
+12. [x] **Re-run / Cancel**: `POST /actions/control` `{repo, runId, action: rerun|rerun-failed|cancel, confirmed}`.
+    It is in `writePaths`, so it needs a confirmed owner authorization (`userAuthorizedFetch`), and uses `GITHUB_JOB_TOKEN`.
+13. [ ] **Three-level UI**: run page → job page ("Workflow / job", "Failed after 8m 5s", step rows with
+    icon, monospace name, duration, chevron) → step log page; floating Re-run menu.
+
 ## Tests performed
 Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
 `npm test` 137 pass, `python scripts/check-web.py` passed.

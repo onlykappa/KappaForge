@@ -142,3 +142,19 @@ export async function actionsRequest(env,body,{fetcher=fetch}={}){
  if(op==="run"){const detail=await runDetail(gh,repo,runId,{attempt});delete detail.changed;return {status:200,data:{repo,...detail}}}
  return {status:200,data:{repo,jobId,...await jobLog(env,repo,jobId,{fetcher})}};
 }
+
+// Re-run or cancel a run: the only writes here. They reach this function only after the Worker has claimed a
+// confirmed owner authorization for /actions/control, and use the job token (the read-only token cannot write).
+const CONTROL={rerun:"rerun","rerun-failed":"rerun-failed-jobs",cancel:"cancel"};
+export async function actionsControl(env,body,{fetcher=fetch}={}){
+ const repo=String(body?.repo||"KappaForge"),action=String(body?.action||""),runId=Number(body?.runId);
+ if(!CONTROL[action])return {status:400,error:"Choose re-run, re-run failed jobs or cancel"};
+ if(!positive(runId))return {status:400,error:"A numeric run id is required"};
+ if(!env?.GITHUB_JOB_TOKEN)return {status:503,error:"GitHub integration is not configured."};
+ if(!(await checkRepo(env,repo)))return {status:400,error:"Choose an allowed repository"};
+ const r=await fetcher(API+repo+"/actions/runs/"+runId+"/"+CONTROL[action],{method:"POST",headers:{...githubHeaders(env,"KappaForge-actions-control"),"Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(10000)});
+ if(r.ok)return {status:202,data:{status:"requested",action,runId}};
+ const detail=String((await r.json().catch(()=>({}))).message||"").slice(0,200);
+ // GitHub answers 403 when a run cannot be re-run yet (still running) or cancelled (already finished).
+ return {status:r.status===404?404:409,error:"GitHub refused to "+(action==="cancel"?"cancel":"re-run")+" this run (HTTP "+r.status+")"+(detail?": "+detail:"")+"."};
+}

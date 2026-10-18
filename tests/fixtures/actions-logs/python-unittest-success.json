@@ -6,21 +6,79 @@
    "start": 1,
    "lines": 0,
    "errors": 0,
-   "warnings": 0
+   "warnings": 0,
+   "omitted": 0,
+   "log": []
   },
   {
    "title": "python -m unittest discover -s tests -v",
    "start": 1,
    "lines": 6,
    "errors": 0,
-   "warnings": 0
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 1,
+     "text": "Run python -m unittest discover -s tests -v",
+     "kind": "group"
+    },
+    {
+     "n": 2,
+     "text": "python -m unittest discover -s tests -v",
+     "kind": ""
+    },
+    {
+     "n": 4,
+     "text": "test_parse (test_actions_log.ActionsLogTests.test_parse) ... ok",
+     "kind": ""
+    },
+    {
+     "n": 5,
+     "text": "----------------------------------------------------------------------",
+     "kind": ""
+    },
+    {
+     "n": 6,
+     "text": "Ran 146 tests in 1.402s",
+     "kind": ""
+    },
+    {
+     "n": 7,
+     "text": "",
+     "kind": ""
+    },
+    {
+     "n": 8,
+     "text": "OK",
+     "kind": ""
+    }
+   ]
   },
   {
    "title": "python3 scripts/dependency-map.py --check || echo \"stale\"",
    "start": 9,
    "lines": 2,
    "errors": 0,
-   "warnings": 0
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 9,
+     "text": "Run python3 scripts/dependency-map.py --check || echo \"stale\"",
+     "kind": "group"
+    },
+    {
+     "n": 11,
+     "text": "Authorization: Bearer ***",
+     "kind": ""
+    },
+    {
+     "n": 12,
+     "text": "dependency_map.json is current",
+     "kind": ""
+    }
+   ]
   }
  ],
  "errors": [],
@@ -29,6 +87,7 @@
   {
    "line": 8,
    "section": "python -m unittest discover -s tests -v",
+   "at": 1,
    "text": "OK"
   }
  ],
