@@ -15,7 +15,9 @@ test('progress is visually separate, readable and HTML-escaped',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\nRead code\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
  assert.match(html,/agent-activity/);
  assert.match(html,/activity-current/);
- assert.match(html,/earlier steps/);
+ assert.match(html,/Previous updates/);
+ assert.match(html,/activity-timeline/);
+ assert.match(html,/Identifying issues/);
  assert.doesNotMatch(html,/<script>/);
  assert.doesNotMatch(html,/data-retry-message/);
 });
