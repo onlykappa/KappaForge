@@ -90,7 +90,7 @@ async function vaultRequest(method,body){
  return result;
 }
 
-let vaultPassphrase="",syncBusy=false;
+let vaultPassphrase="",syncBusy=false,syncPending=false;
 
 const deviceVaultDB="kappaforge-device-keys-v1";
 function deviceDb(){return new Promise((resolve,reject)=>{const r=indexedDB.open(deviceVaultDB,1);r.onupgradeneeded=()=>r.result.createObjectStore("keys");r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
@@ -124,7 +124,10 @@ async function syncVault(){
     const restored=await decryptVault(remote.payload,vaultPassphrase);
     const byId=new Map(chats.map(c=>[c.id,c]));
     for(const c of restored.chats.slice(0,60))if(c&&typeof c.id==="string"&&Array.isArray(c.messages)){
-     const prior=byId.get(c.id);if(!prior||(Number(c.at)||0)>(Number(prior.at)||0))byId.set(c.id,c);
+     const prior=byId.get(c.id);
+     if(!prior)byId.set(c.id,c);
+     // Update in place: a streaming reply or a pending send still holds this object. A chat mid-stream keeps its local copy.
+     else if((Number(c.at)||0)>(Number(prior.at)||0)&&!prior.messages.some(m=>m.streaming)){for(const k of Object.keys(prior))delete prior[k];Object.assign(prior,c)}
     }
     chats=[...byId.values()].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0));
     mergeVaultExtras(restored);
@@ -135,9 +138,10 @@ async function syncVault(){
    catch(e){if(attempt===0&&/409/.test(e.message))continue;throw e}
   }
  }catch(e){vaultPassphrase="";alert("Encrypted sync stopped: "+e.message+". Enable it again in Settings.");}
- finally{syncBusy=false}
+ finally{syncBusy=false;if(syncPending&&vaultPassphrase){syncPending=false;syncVault()}}
 }
-function scheduleVaultSync(){if(vaultPassphrase&&!syncBusy)syncVault()}
+// A save during a running sync is queued, not dropped, so the latest message always reaches the cloud.
+function scheduleVaultSync(){if(!vaultPassphrase)return;if(syncBusy){syncPending=true;return}syncVault()}
 function renderChatText(message){
  const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
  let html="",pos=0,hit;
