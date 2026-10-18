@@ -206,15 +206,15 @@ export default {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await sendGuidance(env, input.task, input.text); return json(result, result.error ? result.status : 200, cors); }
-      catch { return json({ error: "Sending guidance to GitHub failed. Try again in a minute." }, 502, cors); }
+      try { const result = await sendGuidance(env, input.task, input.text); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 200, cors); }
+      catch { await refundAgentRun(env,run); return json({ error: "Sending guidance to GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/retry") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await retryTask(env, input.task); return json(result, result.error ? result.status : 202, cors); }
-      catch { return json({ error: "Starting the retry on GitHub failed. Try again in a minute." }, 502, cors); }
+      try { const result = await retryTask(env, input.task); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 202, cors); }
+      catch { await refundAgentRun(env,run); return json({ error: "Starting the retry on GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/undo") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
@@ -231,19 +231,22 @@ export default {
       const action = new URL(request.url).pathname === "/review" ? "review" : input.decision;
       if (!Number.isSafeInteger(number) || number < 1 || !(await listRepos(env)).includes(repo) || (action !== "review" && input.confirmed !== true))
         return json({ error: "Choose a pull request and confirm the action." }, 400, cors);
+      let fixRun=null;
       try {
         if (action === "fix") {
           const run = await reserveAgentRun(env);
+          fixRun=run;
           if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         }
         const result = action === "review" ? await reviewPR(env, repo, number) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
           action === "close" ? await closePR(env, repo, number) :
           action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+        if(result.error && fixRun)await refundAgentRun(env,fixRun);
         if (!result.error && action === "merge") await notifyOwner(env, "✅ Merged " + repo + " #" + number + ". " + (repo === "KappaForge" ? "KappaForge redeploys now; if anything breaks, use Undo last change on the Dashboard." : "") + "\n" + result.url);
         if (!result.error && action === "close") await notifyOwner(env, "Closed " + repo + " #" + number + " without merging.");
         return json(result, result.error ? result.status : ["fix", "test"].includes(action) ? 202 : 200, cors);
-      } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
+      } catch { if(fixRun)await refundAgentRun(env,fixRun); return json({ error: "GitHub review request failed." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/decisions") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
