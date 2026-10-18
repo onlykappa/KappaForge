@@ -150,4 +150,18 @@ document.getElementById("updates").addEventListener("click",()=>checkAppUpdate(t
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 document.getElementById("personality").value=personality;
 document.getElementById("personality").addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality)});
+// One-time migration of the owner's explicit assistant preferences.
+// Keep user changes editable afterwards, and honor deleted memory tombstones.
+const ownerMemoryNote="Owner preference: Keep replies concise, give specific next actions, autonomously start safe development draft-PR tasks, and only report validated results.";
+if(!localStorage.getItem("kappaforge.ownerprefs.v1")){
+ preferences.autoStart=true;
+ if(preferences.reasoning==="standard")preferences.reasoning="concise";
+ if(!preferences.instructions)preferences.instructions="Be concise and direct. Give clear one-step directions when troubleshooting. For owner-requested software work, run authorized draft tasks without repeating Approve/Cancel prompts. Never claim tests, merges, or releases succeeded without verification.";
+ savePreferences();
+ if(!removedNotes.includes(ownerMemoryNote)&&!savedMemories.includes(ownerMemoryNote)){
+  savedMemories.push(ownerMemoryNote);
+  persistMemories();
+ }
+ localStorage.setItem("kappaforge.ownerprefs.v1","1");
+}
 initInterface();updateConnection();render();activateSavedSync();refreshRepos();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
