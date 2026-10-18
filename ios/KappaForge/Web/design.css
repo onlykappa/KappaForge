@@ -120,3 +120,5 @@
 }
 /* Correct four-column navigation geometry on phones, retaining the existing desktop new-chat action. */
 @media(max-width:840px){.top{grid-template-columns:40px minmax(0,1fr) 38px 38px;gap:5px}.top .header-new{display:none}.top .iconbtn{width:38px;height:38px}.top-title{overflow:hidden}.top-title strong{max-width:100%;text-overflow:ellipsis;overflow:hidden}}
+
+.header-presence.offline i{background:#d7898c}
