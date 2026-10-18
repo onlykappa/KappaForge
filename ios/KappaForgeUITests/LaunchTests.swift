@@ -12,9 +12,16 @@ final class LaunchTests: XCTestCase {
         let settings = web.buttons["Open settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "Shared interface settings button must be accessible")
         settings.tap()
-        XCTAssertTrue(web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Usage & Billing")).firstMatch.waitForExistence(timeout: 10))
-        // Settings opens on its grouped list; "Assistant" is the first group heading.
-        XCTAssertTrue(web.staticTexts["Assistant"].exists)
-        XCTAssertFalse(web.staticTexts["KappaForge could not start"].exists)
+        // The Settings home contains an accessible search field. Section rows and group headings
+        // can be exposed differently by WKWebView accessibility on different simulator runtimes.
+        // HTML input[type=search] is exposed as XCUIElementTypeSearchField, not TextField.
+        let search = web.searchFields["Search settings"]
+        if !search.waitForExistence(timeout: 20) {
+            XCTContext.runActivity(named: "Settings accessibility hierarchy") { activity in
+                activity.add(XCTAttachment(string: app.debugDescription))
+            }
+            XCTFail("Settings search field did not appear. Inspect the attached accessibility hierarchy.")
+        }
+        XCTAssertTrue(web.staticTexts["KappaForge could not start"].exists == false, "App should remain running after opening Settings")
     }
 }
