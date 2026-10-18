@@ -1,3 +1,4 @@
+import './bug-audit.test.mjs';
 import test from 'node:test';
 import {readFileSync as readRenderSource} from 'node:fs';
 import {fileURLToPath as renderFileURLToPath} from 'node:url';
