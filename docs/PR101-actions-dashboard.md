@@ -26,11 +26,11 @@ Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
 5. [x] **Live bridge**: `/actions` `stream` op returns Server-Sent Events. The Worker
    polls GitHub with ETags (304s are free), emits only changes, ends after ~55s so the
    client reconnects. Client falls back to polling when streaming fails.
-6. [ ] **Workflow Monitor** (`preview/app-state.js`): holds runs, applies stream
+6. [x] **Workflow Monitor** (`preview/app-state.js`): holds runs, applies stream
    events, reconnects with backoff, caches last snapshot, drops ghost runs.
-7. [ ] **Status Card + run view** (`preview/ui.js`): status card with progress bar,
+7. [x] **Status Card + run view** (`preview/ui.js`): status card with progress bar,
    run page with jobs, steps, durations, attempts, annotations, parsed log.
-8. [ ] **Dashboard view state** (`preview/app-dashboard.js`): overview ↔ run detail
+8. [x] **Dashboard view state** (`preview/app-dashboard.js`): overview ↔ run detail
    ↔ chat without losing conversation, composer draft or scroll.
 9. [ ] **Post-run verification** (`scripts/verify-actions-state.mjs`): compares a
    saved monitor snapshot against the GitHub API and reports stale/ghost/missing runs.
@@ -45,6 +45,14 @@ Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
   `/actions` route in `index.js`, fixtures + `tests/actions.test.mjs` + `tests/test_actions_log.py`.
   `/actions` body: `{op:"snapshot"|"run"|"log"|"stream", repo, runId?, jobId?, attempt?}`.
   Stream packets (`data:` JSON): `snapshot`, `runs` (`changed`, `removed`), `run` (detail), `ping`, `error`, `end`.
+
+- M2 (frontend): Workflow Monitor at the end of `preview/app-state.js` (`workflowMonitor`, `monitorApply`,
+  `monitorStream`, `monitorPoll`, `monitorWatchRun`, `monitorRunDetail`, `monitorJobLog`, `monitorExport`);
+  renderers at the end of `preview/ui.js` (`statusCard`, `runView`, `jobLogView`); dashboard state manager and
+  Builds panel in `preview/app-dashboard.js` (`dashboardState`, `openRun`, `closeRun`, `buildsPanel`, `runPage`);
+  `viewScroll` + `rememberScroll` in `app-state.js` keep chat and dashboard scroll; styles at the end of
+  `preview/design.css`; tests in `tests/actions-ui.test.mjs`. The old dashboard "Agent activity" feed was replaced
+  by the Builds panel; `refreshActivity` now feeds the monitor.
 
 ## Known issues
 - Logs are only available after a job finishes (GitHub API limitation); the run view shows live step

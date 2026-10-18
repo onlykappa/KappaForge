@@ -127,3 +127,64 @@
 .compose-inner textarea:disabled{opacity:1;-webkit-text-fill-color:transparent}
 .compose-inner textarea:disabled::placeholder{opacity:1;color:var(--faint);-webkit-text-fill-color:var(--faint)}
 .task-offer{align-self:flex-end;color:var(--accent);min-height:36px}
+
+/* GitHub Actions: status cards, live indicator and the run page. Colours follow GitHub's run states. */
+:root{--run-success:#57b88a;--run-failure:#e5737e;--run-running:#d9a441;--run-muted:var(--faint)}
+:root[data-appearance=light]{--run-success:#1a7f37;--run-failure:#cf222e;--run-running:#9a6700}
+@media(prefers-color-scheme:light){:root[data-appearance=system]{--run-success:#1a7f37;--run-failure:#cf222e;--run-running:#9a6700}}
+.run-badge{flex:none;display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid var(--run-muted);position:relative;vertical-align:-3px}
+.run-badge.run-success{background:var(--run-success);border-color:var(--run-success)}
+.run-badge.run-success::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:7px;border:solid var(--bg);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.run-badge.run-failure,.run-badge.run-timed_out{background:var(--run-failure);border-color:var(--run-failure)}
+.run-badge.run-failure::after,.run-badge.run-timed_out::after{content:"×";position:absolute;inset:-4px 0 0;text-align:center;color:var(--bg);font:700 13px/16px -apple-system,sans-serif}
+.run-badge.run-running{border-color:var(--run-running);border-right-color:transparent;animation:run-spin 1s linear infinite}
+.run-badge.run-queued,.run-badge.run-waiting{border-color:var(--run-running);border-style:dotted}
+.run-badge.run-cancelled,.run-badge.run-skipped{border-color:var(--run-muted);background:linear-gradient(135deg,transparent 45%,var(--run-muted) 45% 55%,transparent 55%)}
+.run-badge.run-action_required{border-color:var(--run-running)}
+@keyframes run-spin{to{transform:rotate(360deg)}}
+.live-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);padding:3px 10px;border:1px solid var(--line);border-radius:999px}
+.live-pill i{width:7px;height:7px;border-radius:50%;background:var(--run-muted)}
+.live-pill.live-live i{background:var(--run-success);box-shadow:0 0 0 3px color-mix(in srgb,var(--run-success) 25%,transparent)}
+.live-pill.live-reconnecting i,.live-pill.live-poll i{background:var(--run-running)}
+.builds .control-head{margin-bottom:6px}.builds h3{margin:0}
+.builds-heading{margin:18px 0 8px;font-size:12px;font-weight:650;color:var(--muted);letter-spacing:.3px}
+.status-cards{display:flex;flex-direction:column;gap:8px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.status-card{display:flex;flex-direction:column;gap:4px;width:100%;min-width:0;text-align:left;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:transparent;border-left:3px solid var(--run-muted)}
+.status-card:hover{border-color:var(--line-bright)}.status-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status-card.run-success{border-left-color:var(--run-success)}.status-card.run-failure,.status-card.run-timed_out{border-left-color:var(--run-failure)}
+.status-card.run-running,.status-card.run-queued,.status-card.run-waiting{border-left-color:var(--run-running)}
+.status-card-head{display:flex;align-items:center;gap:8px;min-width:0}
+.status-card-head strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.status-card-time{flex:none;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.status-card-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-card-meta{font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-card.compact .status-card-meta{font-size:11px}
+.status-card-progress{display:flex;flex-direction:column;gap:4px;margin-top:4px}.status-card-progress small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.run-progress{display:block;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.run-progress i{display:block;height:100%;border-radius:inherit;background:var(--run-running);transition:width .4s ease}
+.run-progress.run-success i{background:var(--run-success)}.run-progress.run-failure i,.run-progress.run-timed_out i{background:var(--run-failure)}.run-progress.run-cancelled i,.run-progress.run-skipped i{background:var(--run-muted)}
+.run-back{min-height:36px;color:var(--accent);padding:0}
+.run-page{border-top:3px solid var(--run-muted)}.run-page.run-success{border-top-color:var(--run-success)}.run-page.run-failure{border-top-color:var(--run-failure)}.run-page.run-running,.run-page.run-queued{border-top-color:var(--run-running)}
+.run-title{display:flex;gap:12px;align-items:flex-start}.run-title .run-badge{width:22px;height:22px;margin-top:4px}.run-title .run-badge.run-success::after{left:6px;top:2px;width:5px;height:10px}.run-title .run-badge.run-failure::after{font-size:17px;line-height:22px}
+.run-title h2{margin:2px 0 0;font-size:19px;line-height:1.3;overflow-wrap:anywhere}
+.run-progress-row{display:flex;flex-direction:column;gap:6px;margin:16px 0}.run-progress-row span{font-size:13px;color:var(--muted)}
+.run-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 12px}.run-facts div{min-width:0}.run-facts dt{font-size:11px;color:var(--faint)}.run-facts dd{margin:2px 0 0;font-size:13px;overflow-wrap:anywhere}
+.run-attempts{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.run-attempts button{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:transparent}.run-attempts button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+.run-section{margin:14px 0}.run-section h3{font-size:14px;margin:0 0 10px}.run-section h3 small{color:var(--faint);font-weight:500;margin-left:4px}
+.run-annotations{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.run-annotation{padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--run-running);border-radius:10px;font-size:13px;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}.run-annotation.failure{border-left-color:var(--run-failure)}.run-annotation code{font-size:11px;color:var(--faint)}
+.run-job{border:1px solid var(--line);border-radius:14px;margin:0 0 8px;overflow:hidden}
+.run-job>summary{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;list-style:none}.run-job>summary::-webkit-details-marker{display:none}
+.run-job>summary strong{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}.run-job>summary small,.run-step small{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.run-job>.review-tools,.run-job>.log-summary,.run-job>p{padding:0 14px 12px}
+.run-steps{list-style:none;margin:0;padding:4px 0;border-top:1px solid var(--line)}
+.run-step{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:13px}.run-step span:not(.run-badge){flex:1;min-width:0;overflow-wrap:anywhere}
+.run-step.run-failure{background:color-mix(in srgb,var(--run-failure) 10%,transparent)}.run-step.run-running{background:color-mix(in srgb,var(--run-running) 9%,transparent)}
+.run-step.run-skipped,.run-step.run-queued{color:var(--muted)}
+.log-summary p{font-size:13px;margin:0 0 8px}.log-summary details{margin:8px 0}
+.log-errors{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}.log-errors li{display:flex;flex-direction:column;gap:2px}.log-errors small{color:var(--faint);font-size:11px}
+.log-errors code{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--run-failure);white-space:pre-wrap;overflow-wrap:anywhere}
+.log-sections{margin:6px 0 0;padding-left:20px;font-size:12px}
+.log-tail{margin:6px 0 0;padding:10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
+@media(max-width:600px){.run-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.status-grid{grid-template-columns:minmax(0,1fr)}}

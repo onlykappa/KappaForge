@@ -62,7 +62,7 @@ function toast(message){const el=document.getElementById('toast');el.textContent
 function captureInterfaceScroll(){return {page:document.body.dataset.view,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};}
 const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}));function bindInterface(state={}){
  document.body.dataset.view=view;resizeComposer();
- const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){window.scrollTo({top:document.body.scrollHeight,behavior:'instant'});}
+ const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){const back=state.page!=='chat'&&typeof viewScroll!=='undefined'&&viewScroll.chat?.id===c?.id&&!viewScroll.chat.nearBottom;window.scrollTo({top:back?viewScroll.chat.y:document.body.scrollHeight,behavior:'instant'});}
  if(view==='chat'&&c?.messages.length>uiLastCount&&uiLastChat===c?.id){document.querySelector('.chat-message:last-child')?.classList.add('message-new');}if(view==='chat'){chatObserver.observe(document.getElementById('content'),{childList:true,subtree:true});}else{chatObserver.disconnect();}
  uiLastChat=c?.id;uiLastCount=c?.messages.length||0;
  if(uiLastView!==view&&!matchMedia('(prefers-reduced-motion: reduce)').matches)document.getElementById('content').animate([{opacity:.4,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:170,easing:'ease-out'});uiLastView=view;
@@ -193,4 +193,80 @@ if(window.KappaNativeComposer){
 function focusMessageInput(){
  if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'})}
  else document.getElementById('message').focus({preventScroll:true});
+}
+
+/* GitHub Actions status cards and the run page. Pure renderers: normalised data in (KappaActions), HTML out. */
+const RUN_STATE_LABEL={success:'Success',failure:'Failure',cancelled:'Cancelled',skipped:'Skipped',running:'In progress',queued:'Queued',waiting:'Waiting',timed_out:'Timed out',action_required:'Action required',neutral:'Completed',stale:'Stale'};
+function runBadge(state){return '<span class="run-badge run-'+esc(state||'neutral')+'" role="img" aria-label="'+esc(RUN_STATE_LABEL[state]||'Completed')+'"></span>';}
+// Running items count up from their start; finished ones show GitHub's own duration.
+function runElapsed(item,now=Date.now()){
+ if(KappaActions.isActive(item)){const start=Date.parse(item.startedAt||'');return item.state==='running'&&Number.isFinite(start)?KappaActions.formatDuration(Math.max(0,Math.round((now-start)/1000))):'';}
+ return Number.isFinite(item?.duration)?KappaActions.formatDuration(item.duration):'';
+}
+// Running items carry their start so a one-second ticker can count up without re-rendering the page.
+const runSince=item=>item?.state==='running'&&item.startedAt?' data-since="'+esc(item.startedAt)+'"':'';
+function runAgo(at,now=Date.now()){const t=Date.parse(at||'');if(!Number.isFinite(t))return '';const s=Math.max(0,Math.round((now-t)/1000));return s<60?'just now':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago';}
+function runProgressBar(progress,state){
+ const pct=Math.max(0,Math.min(100,Number(progress?.percent)||0));
+ return '<span class="run-progress run-'+esc(state)+'" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="'+esc(progress?.label||'Progress')+'"><i style="width:'+pct+'%"></i></span>';
+}
+// One run: state, workflow, what triggered it, live progress while active. The whole card opens the run page.
+function statusCard(run,{progress=null,now=Date.now(),compact=false}={}){
+ if(!run)return '';
+ const active=KappaActions.isActive(run),time=runElapsed(run,now);
+ const meta=[run.branch,run.event?run.event.replace(/_/g,' '):'',run.number?'#'+run.number:'',run.attempt>1?'attempt '+run.attempt:''].filter(Boolean).join(' · ');
+ const label=progress?.label||(active?RUN_STATE_LABEL[run.state]:'');
+ return '<button type="button" class="status-card run-'+esc(run.state)+(compact?' compact':'')+'" data-run="'+esc(run.id)+'" aria-label="'+esc(run.name+': '+(RUN_STATE_LABEL[run.state]||run.state)+(label?', '+label:'')+'. Open run details')+'">'+
+  '<span class="status-card-head">'+runBadge(run.state)+'<strong>'+esc(run.name)+'</strong><span class="status-card-time"'+runSince(run)+'>'+esc(time||runAgo(run.createdAt,now))+'</span></span>'+
+  (compact?'':'<span class="status-card-title">'+esc(run.title||run.name)+'</span>')+
+  '<span class="status-card-meta">'+esc(meta)+'</span>'+
+  (active||progress?'<span class="status-card-progress">'+runProgressBar(progress||{percent:0,label},run.state)+'<small>'+esc(label)+'</small></span>':'')+
+ '</button>';
+}
+const RUN_SIZE=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+// The run page, laid out like GitHub's: summary, annotations, jobs with their steps, parsed logs, artifacts.
+function runView(detail,{openJobs=new Map(),logs={},now=Date.now(),attempt=0,loading=false,error=''}={}){
+ const back='<button type="button" class="text-button run-back" data-run-back>← All runs</button>';
+ if(!detail)return back+'<div class="panel run-page">'+(error?'<p class="status-bad">'+esc(error)+'</p><button type="button" class="btn secondary" data-run-retry>Try again</button>':'<p class="muted">Loading run from GitHub…</p>')+'</div>';
+ const run=detail.run,jobs=detail.jobs||[],p=detail.progress||KappaActions.progress(run,jobs);
+ const facts=[
+  ['Status',RUN_STATE_LABEL[run.state]||run.state],
+  ['Total duration',runElapsed(run,now)||'—'],
+  ['Triggered',(run.event||'').replace(/_/g,' ')+(run.actor?' by '+run.actor:'')+(run.createdAt?' · '+runAgo(run.createdAt,now):'')],
+  ['Branch',run.branch||'—'],['Commit',run.sha?run.sha.slice(0,7):'—'],
+  ['Artifacts',String((detail.artifacts||[]).length)]];
+ const attempts=(detail.attempts||[]).length>1?'<div class="run-attempts" role="group" aria-label="Run attempts">'+detail.attempts.map(n=>'<button type="button" data-run-attempt="'+n+'" aria-pressed="'+((attempt||run.attempt)===n)+'">Attempt '+n+'</button>').join('')+'</div>':'';
+ const annotations=(detail.annotations||[]).length?'<section class="run-section"><h3>Annotations <small>'+detail.annotations.length+'</small></h3><ul class="run-annotations">'+detail.annotations.map(a=>'<li class="run-annotation '+esc(a.level)+'"><strong>'+esc(a.job)+(a.title?' · '+esc(a.title):'')+'</strong><span>'+esc(a.message)+'</span>'+(a.path?'<code>'+esc(a.path)+(a.line?':'+esc(a.line):'')+'</code>':'')+'</li>').join('')+'</ul></section>':'';
+ const jobHTML=jobs.map(j=>{
+  // Failing and running jobs start open, like GitHub; the owner's own choice wins after that.
+  const open=openJobs.has(j.id)?openJobs.get(j.id):['failure','timed_out','running'].includes(j.state);
+  const steps=j.steps.map(s=>'<li class="run-step run-'+esc(s.state)+'">'+runBadge(s.state)+'<span>'+esc(s.name)+'</span><small'+runSince(s)+'>'+esc(runElapsed(s,now))+'</small></li>').join('');
+  return '<details class="run-job run-'+esc(j.state)+'" data-job="'+esc(j.id)+'"'+(open?' open':'')+'><summary>'+runBadge(j.state)+'<strong>'+esc(j.name)+'</strong><small>'+esc(runElapsed(j,now))+'</small></summary>'+
+   '<ol class="run-steps">'+(steps||'<li class="muted">Steps appear when a runner picks up this job.</li>')+'</ol>'+
+   '<div class="review-tools">'+(KappaActions.isActive(j)?'<span class="worksmall">Logs are available when this job finishes.</span>':'<button type="button" data-job-log="'+esc(j.id)+'">'+(logs[j.id]?.data?'Hide log summary':'View log summary')+'</button>')+(j.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(j.url)+'">Full log on GitHub ↗</a>':'')+'</div>'+
+   jobLogView(logs[j.id])+'</details>';
+ }).join('');
+ const artifacts=(detail.artifacts||[]).length?'<section class="run-section"><h3>Artifacts</h3>'+detail.artifacts.map(a=>'<div class="row"><div><strong>'+esc(a.name)+'</strong><div class="muted">'+esc(RUN_SIZE(a.size))+(a.expired?' · expired':'')+'</div></div></div>').join('')+'<p class="worksmall">Download artifacts from the run on GitHub.</p></section>':'';
+ return back+'<div class="panel run-page run-'+esc(run.state)+'"><div class="run-title">'+runBadge(run.state)+'<div><span class="eyebrow">'+esc(run.name)+(run.number?' #'+esc(run.number):'')+'</span><h2>'+esc(run.title||run.name)+'</h2></div></div>'+
+  '<div class="run-progress-row">'+runProgressBar(p,run.state)+'<span>'+esc(p.label)+'</span></div>'+
+  '<dl class="run-facts">'+facts.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'+attempts+
+  (error?'<p class="status-bad">'+esc(error)+'</p>':'')+(loading?'<p class="worksmall">Refreshing…</p>':'')+
+  '<div class="review-tools">'+(run.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(run.url)+'">Open on GitHub ↗</a>':'')+(run.prs.length?run.prs.map(n=>'<span class="worksmall">PR #'+esc(n)+'</span>').join(''):'')+'</div></div>'+
+  annotations+'<section class="run-section"><h3>Jobs <small>'+jobs.length+'</small></h3>'+(jobHTML||'<p class="muted">No jobs yet.</p>')+'</section>'+artifacts;
+}
+// A parsed job log: totals, errors grouped by step, the step list with error counts, and the last lines.
+function jobLogView(entry){
+ if(!entry)return '';
+ if(entry.loading)return '<p class="worksmall">Reading the log…</p>';
+ if(entry.error)return '<p class="status-bad">'+esc(entry.error)+'</p>';
+ const d=entry.data;if(!d)return '';
+ if(!d.available)return '<p class="worksmall">'+esc(d.reason||'Log not available.')+'</p>';
+ const tests=d.tests?.found?'<span class="'+(d.tests.failed?'status-bad':'status-good')+'">'+esc(d.tests.passed)+' tests passed · '+esc(d.tests.failed)+' failed</span>':'';
+ const exit=d.exitCode!==null&&d.exitCode!==undefined?'<span class="'+(d.exitCode?'status-bad':'status-good')+'">Exit code '+esc(d.exitCode)+'</span>':'';
+ const errors=d.errors.length?'<ul class="log-errors">'+d.errors.slice(0,15).map(e=>'<li><small>'+esc(e.section)+' · line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('')+'</ul>':'<p class="worksmall status-good">No error lines found.</p>';
+ const sections=d.sections.filter(s=>s.lines).map(s=>'<li class="'+(s.errors?'status-bad':'')+'">'+esc(s.title)+(s.errors?' · '+esc(s.errors)+' error'+(s.errors>1?'s':''):'')+(s.warnings?' · '+esc(s.warnings)+' warning'+(s.warnings>1?'s':''):'')+'</li>').join('');
+ return '<div class="log-summary"><p>'+[tests,exit,d.truncated?'<span class="worksmall">Showing the end of a long log</span>':''].filter(Boolean).join(' · ')+'</p>'+errors+
+  (d.warnings.length?'<details><summary class="worksmall">'+d.warnings.length+' warning'+(d.warnings.length>1?'s':'')+'</summary><ul class="log-errors">'+d.warnings.map(w=>'<li><small>'+esc(w.section)+'</small><code>'+esc(w.text)+'</code></li>').join('')+'</ul></details>':'')+
+  '<details><summary class="worksmall">Steps in this log</summary><ol class="log-sections">'+sections+'</ol></details>'+
+  '<details><summary class="worksmall">Last '+d.tail.length+' lines</summary><pre class="log-tail">'+esc(d.tail.join('\n'))+'</pre></details></div>';
 }
