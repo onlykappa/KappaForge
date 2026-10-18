@@ -13,17 +13,17 @@ Worker over a streamed connection instead of the 90-second poll.
 ## Plan and status
 Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
 
-1. [ ] **Actions service** (`chat-backend/src/actions.js`): list runs, run detail
+1. [x] **Actions service** (`chat-backend/src/actions.js`): list runs, run detail
    (jobs, steps, attempts, artifacts, annotations), job logs. Normalised fields only.
-2. [ ] **Shared rules** (`preview/actions-core.js`, imported by the Worker like
+2. [x] **Shared rules** (`preview/actions-core.js`, imported by the Worker like
    `intent-guard.js`): normalisation, step progress, log parser, run reconciliation.
-3. [ ] **Log parser** (`engine/actions_log.py` + JS twin in `actions-core.js`):
+3. [x] **Log parser** (`engine/actions_log.py` + JS twin in `actions-core.js`):
    sections, `##[error]`/`::error` annotations, failure and success signals,
    "Step 2/5: Linting". Both are checked against the same fixtures in `tests/fixtures/actions-logs/`.
-4. [ ] **Credential scoping**: `/actions` Worker endpoint is read-only, repo
+4. [x] **Credential scoping**: `/actions` Worker endpoint is read-only, repo
    allowlisted, integer ids only, strips signed/download URLs, redacts token-like
    strings in logs, prefers a read-only `GITHUB_ACTIONS_READ_TOKEN` secret.
-5. [ ] **Live bridge**: `/actions` `stream` op returns Server-Sent Events. The Worker
+5. [x] **Live bridge**: `/actions` `stream` op returns Server-Sent Events. The Worker
    polls GitHub with ETags (304s are free), emits only changes, ends after ~55s so the
    client reconnects. Client falls back to polling when streaming fails.
 6. [ ] **Workflow Monitor** (`preview/app-state.js`): holds runs, applies stream
@@ -40,8 +40,17 @@ Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
 Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
 `npm test` 137 pass, `python scripts/check-web.py` passed.
 
+### Milestone log
+- M1 (backend): `chat-backend/src/actions.js`, `preview/actions-core.js`, `engine/actions_log.py`,
+  `/actions` route in `index.js`, fixtures + `tests/actions.test.mjs` + `tests/test_actions_log.py`.
+  `/actions` body: `{op:"snapshot"|"run"|"log"|"stream", repo, runId?, jobId?, attempt?}`.
+  Stream packets (`data:` JSON): `snapshot`, `runs` (`changed`, `removed`), `run` (detail), `ping`, `error`, `end`.
+
 ## Known issues
-None yet.
+- Logs are only available after a job finishes (GitHub API limitation); the run view shows live step
+  progress from the jobs API until then.
+- Optional Worker secret `GITHUB_ACTIONS_READ_TOKEN` (fine-grained, Actions: read) is not configured yet;
+  the Worker falls back to `GITHUB_JOB_TOKEN`.
 
 ## Next task
 The first unchecked item above.

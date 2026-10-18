@@ -7,6 +7,7 @@ import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js"
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
+import {actionsRequest,actionsConfigured} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,REGISTRY} from "./providers.js";
@@ -122,7 +123,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -139,6 +140,15 @@ export default {
       const body=await request.json().catch(()=>({}));
       try{const r=await githubRead(env,body.path);return new Response(r.body,{status:r.status,headers:{"Content-Type":"application/json","Cache-Control":"no-store",...r.headers,...cors}})}
       catch{return json({error:"GitHub request timed out or failed."},502,cors)}
+    }
+    if(new URL(request.url).pathname==="/actions"){
+      if(!actionsConfigured(env))return json({error:"GitHub token not configured"},503,cors);
+      const body=await request.json().catch(()=>({}));
+      try{
+        const result=await actionsRequest(env,body);
+        if(result.stream)return new Response(result.stream,{status:200,headers:{"Content-Type":"text/event-stream","Cache-Control":"no-store","X-Accel-Buffering":"no",...cors}});
+        return json(result.error?{error:result.error}:result.data,result.status,cors);
+      }catch(e){return json({error:e.status===404?"That run or job no longer exists on GitHub.":"GitHub Actions request timed out or failed."},e.status===404?404:502,cors)}
     }
     if(new URL(request.url).pathname==="/memory/search"){
       if(!env.AI)return json({error:"Semantic memory search requires Workers AI."},503,cors);

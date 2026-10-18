@@ -1,0 +1,51 @@
+{
+ "lineCount": 12,
+ "sections": [
+  {
+   "title": "Set up job",
+   "start": 1,
+   "lines": 0,
+   "errors": 0,
+   "warnings": 0
+  },
+  {
+   "title": "python -m unittest discover -s tests -v",
+   "start": 1,
+   "lines": 6,
+   "errors": 0,
+   "warnings": 0
+  },
+  {
+   "title": "python3 scripts/dependency-map.py --check || echo \"stale\"",
+   "start": 9,
+   "lines": 2,
+   "errors": 0,
+   "warnings": 0
+  }
+ ],
+ "errors": [],
+ "warnings": [],
+ "signals": [
+  {
+   "line": 8,
+   "section": "python -m unittest discover -s tests -v",
+   "text": "OK"
+  }
+ ],
+ "tests": {
+  "passed": 146,
+  "failed": 0,
+  "found": true
+ },
+ "exitCode": null,
+ "tail": [
+  "python -m unittest discover -s tests -v",
+  "test_parse (test_actions_log.ActionsLogTests.test_parse) ... ok",
+  "----------------------------------------------------------------------",
+  "Ran 146 tests in 1.402s",
+  "",
+  "OK",
+  "Authorization: Bearer ***",
+  "dependency_map.json is current"
+ ]
+}

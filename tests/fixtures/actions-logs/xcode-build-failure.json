@@ -1,0 +1,65 @@
+{
+ "lineCount": 10,
+ "sections": [
+  {
+   "title": "Set up job",
+   "start": 1,
+   "lines": 0,
+   "errors": 0,
+   "warnings": 0
+  },
+  {
+   "title": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "start": 1,
+   "lines": 5,
+   "errors": 3,
+   "warnings": 0
+  },
+  {
+   "title": "actions/upload-artifact@v4",
+   "start": 8,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 1
+  }
+ ],
+ "errors": [
+  {
+   "line": 3,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "text": "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope"
+  },
+  {
+   "line": 5,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "text": "** BUILD FAILED **"
+  },
+  {
+   "line": 7,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "text": "Process completed with exit code 65."
+  }
+ ],
+ "warnings": [
+  {
+   "line": 10,
+   "section": "actions/upload-artifact@v4",
+   "text": "No files were found with the provided path: build/KappaForge.ipa."
+  }
+ ],
+ "signals": [],
+ "tests": {
+  "passed": 0,
+  "failed": 0,
+  "found": false
+ },
+ "exitCode": 65,
+ "tail": [
+  "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope",
+  "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/App.swift:9:5: warning: variable was never used",
+  "** BUILD FAILED **",
+  "",
+  "##[error]Process completed with exit code 65.",
+  "##[warning]No files were found with the provided path: build/KappaForge.ipa."
+ ]
+}

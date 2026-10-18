@@ -1,0 +1,89 @@
+{
+ "lineCount": 25,
+ "sections": [
+  {
+   "title": "Set up job",
+   "start": 1,
+   "lines": 2,
+   "errors": 0,
+   "warnings": 0
+  },
+  {
+   "title": "actions/checkout@v4",
+   "start": 5,
+   "lines": 4,
+   "errors": 0,
+   "warnings": 0
+  },
+  {
+   "title": "npm test",
+   "start": 11,
+   "lines": 13,
+   "errors": 4,
+   "warnings": 1
+  }
+ ],
+ "errors": [
+  {
+   "line": 16,
+   "section": "npm test",
+   "text": "✖ status card shows the failing step (3.4ms)"
+  },
+  {
+   "line": 17,
+   "section": "npm test",
+   "text": "not ok 2 - status card shows the failing step"
+  },
+  {
+   "line": 18,
+   "section": "npm test",
+   "text": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Failed at/"
+  },
+  {
+   "line": 24,
+   "section": "npm test",
+   "text": "Process completed with exit code 1."
+  }
+ ],
+ "warnings": [
+  {
+   "line": 23,
+   "section": "npm test",
+   "text": "Node.js 20 actions are deprecated."
+  }
+ ],
+ "signals": [
+  {
+   "line": 15,
+   "section": "npm test",
+   "text": "✔ review card tolerates missing results (1.2ms)"
+  }
+ ],
+ "tests": {
+  "passed": 137,
+  "failed": 1,
+  "found": true
+ },
+ "exitCode": 1,
+ "tail": [
+  "Current runner version: '2.320.0'",
+  "Ubuntu",
+  "with:",
+  "  persist-credentials: false",
+  "Syncing repository: onlykappa/KappaForge",
+  "remote: https://***@github.com/onlykappa/KappaForge",
+  "npm test",
+  "shell: /usr/bin/bash -e {0}",
+  "✔ review card tolerates missing results (1.2ms)",
+  "✖ status card shows the failing step (3.4ms)",
+  "not ok 2 - status card shows the failing step",
+  "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Failed at/",
+  "    at TestContext.<anonymous> (file:///home/runner/work/KappaForge/KappaForge/tests/actions.test.mjs:41:9)",
+  "# tests 138",
+  "# pass 137",
+  "# fail 1",
+  "##[warning]Node.js 20 actions are deprecated.",
+  "##[error]Process completed with exit code 1.",
+  "Post job cleanup."
+ ]
+}

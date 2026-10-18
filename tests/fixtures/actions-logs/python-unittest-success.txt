@@ -1,0 +1,12 @@
+2026-10-18T16:50:01.0000000Z ##[group]Run python -m unittest discover -s tests -v
+2026-10-18T16:50:01.0100000Z [36;1mpython -m unittest discover -s tests -v[0m
+2026-10-18T16:50:01.0200000Z ##[endgroup]
+2026-10-18T16:50:03.0000000Z test_parse (test_actions_log.ActionsLogTests.test_parse) ... ok
+2026-10-18T16:50:03.1000000Z ----------------------------------------------------------------------
+2026-10-18T16:50:03.2000000Z Ran 146 tests in 1.402s
+2026-10-18T16:50:03.3000000Z 
+2026-10-18T16:50:03.4000000Z OK
+2026-10-18T16:50:04.0000000Z ##[group]Run python3 scripts/dependency-map.py --check || echo "stale"
+2026-10-18T16:50:04.0100000Z ##[endgroup]
+2026-10-18T16:50:04.5000000Z Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345
+2026-10-18T16:50:05.0000000Z dependency_map.json is current

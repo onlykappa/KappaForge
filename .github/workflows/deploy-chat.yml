@@ -37,7 +37,7 @@ jobs:
       run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
-        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
+        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/actions.test.mjs
       shell: bash
     - name: Verify Wrangler can build Worker
       working-directory: chat-backend
@@ -110,6 +110,7 @@ jobs:
     - config/providers.json
     - config/app.json
     - preview/stream.js
+    - preview/actions-core.js
     - .github/workflows/deploy-chat.yml
     - tests/intelligence.test.mjs
   workflow_dispatch: null
