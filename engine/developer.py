@@ -147,7 +147,14 @@ def project_guidance_report(repo, sha, existing, token):
 
 def project_guide(repo, sha, existing, token):
     """Repository rules, owner preferences, and recorded development lessons."""
-    return project_guidance_report(repo, sha, existing, token)["text"]
+    report = project_guidance_report(repo, sha, existing, token)
+    # Print metadata only: never log instruction contents, secrets, or user memory.
+    for source in report["sources"]:
+        print("Guidance loaded: " + source["path"] + " (" +
+              str(source["characters"]) + " characters, truncated=false)")
+    if not report["sources"]:
+        print("Guidance: no repository instruction files found")
+    return report["text"]
 
 
 def test_workflow(repo, branch, sha):
