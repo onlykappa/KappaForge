@@ -10,7 +10,7 @@ const read=name=>readFileSync(new URL('../preview/'+name,import.meta.url),'utf8'
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ui=read('ui.js');
 const renderers=ui.slice(ui.indexOf('/* GitHub Actions status cards'));
-const sandbox=()=>{const box={esc,KappaActions:K,Date,Math,Number,String,Map,Set};vm.createContext(box);vm.runInContext(renderers,box);return box};
+const sandbox=()=>{const box={esc,KappaActions:K,Date,Math,Number,String,Map,Set,Object,Array};vm.createContext(box);vm.runInContext(renderers,box);return box};
 const URL_RUN='https://github.com/onlykappa/KappaForge/actions/runs/';
 const run=(id,extra={})=>K.normalizeRun({id,name:'KappaForge tests',display_title:'Polish <dashboard>',workflow_id:7,status:'completed',conclusion:'success',event:'pull_request',head_branch:'feat/x',head_sha:'a'.repeat(40),run_attempt:1,run_number:id,
  created_at:'2026-10-18T10:00:00Z',run_started_at:'2026-10-18T10:00:00Z',updated_at:'2026-10-18T10:03:05Z',html_url:URL_RUN+id,actor:{login:'onlykappa'},...extra});
@@ -28,37 +28,45 @@ test('a status card shows state, workflow, trigger and live progress, and opens 
  const done=statusCard(run(6,{run_attempt:2}),{now:Date.parse('2026-10-18T12:00:00Z')});
  assert.match(done,/3m 5s/);assert.match(done,/attempt 2/);assert.doesNotMatch(done,/progressbar/,'finished runs need no bar');
 });
-test('the run page lays out summary, attempts, annotations, jobs with steps and logs like GitHub',()=>{
+test('the run page shows the summary, attempts, annotations, jobs as rows, artifacts and a Re-run menu',()=>{
  const {runView}=sandbox();
  const r=run(5,{conclusion:'failure',run_attempt:2});
- const jobs=[job(11,[step(1,'Set up job','completed','success'),step(2,'Run tests','completed','failure'),step(3,'Upload','completed','skipped')]),
-  job(12,[step(1,'Build','completed','success')],{name:'web',conclusion:'success'})];
- const detail={run:r,jobs,progress:K.progress(r,jobs),attempts:[1,2],annotations:[{job:'unit',level:'failure',title:'Test failed',message:'expected <ok>',path:'tests/a.test.mjs',line:41}],artifacts:[{id:3,name:'evidence',size:2048,expired:false}]};
+ const jobs=[job(11,[step(1,'Set up job','completed','success'),step(2,'Run tests','completed','failure')]),job(12,[step(1,'Build','completed','success')],{name:'web',conclusion:'success'})];
+ const detail={run:r,jobs,attempts:[1,2],annotations:[{job:'unit',level:'failure',title:'Test failed',message:'expected <ok>',path:'tests/a.test.mjs',line:41}],artifacts:[{id:3,name:'evidence',size:2048,expired:false}]};
  const html=runView(detail,{now:Date.parse('2026-10-18T12:00:00Z')});
- assert.match(html,/Failed at unit › Run tests/);
- assert.match(html,/Total duration<\/dt><dd>3m 5s/);
- assert.match(html,/data-run-attempt="1"[^>]*aria-pressed="false"/);assert.match(html,/data-run-attempt="2"[^>]*aria-pressed="true"/);
- assert.match(html,/expected &lt;ok&gt;/);assert.match(html,/tests\/a\.test\.mjs:41/);
- assert.match(html,/data-job="11" open/,'failing jobs start open');assert.doesNotMatch(html,/data-job="12" open/);
- assert.match(html,/run-step run-failure[^]*Run tests/);assert.match(html,/run-step run-skipped/);
- assert.match(html,/evidence[^]*2 KB/);assert.match(html,/data-job-log="11"/);
- assert.doesNotMatch(runView(detail,{openJobs:new Map([[11,false]])}),/data-job="11" open/,'the owner closing a job wins');
+ assert.match(html,/<h2>KappaForge tests<\/h2><span>Failed after 3m 5s<\/span>/);assert.match(html,/data-run-back/);
+ assert.match(html,/data-run-attempt="2"[^>]*aria-pressed="true"/);assert.match(html,/expected &lt;ok&gt;/);
+ assert.match(html,/data-open-job="11"[^]*unit[^]*1m 0s/);assert.match(html,/data-open-job="12"/);
+ assert.match(html,/evidence[^]*2 KB/);
+ assert.match(html,/data-run-control="rerun"[^]*data-run-control="rerun-failed"/);assert.doesNotMatch(html,/data-run-control="cancel"/);
+ const live=runView({run:run(6,{status:'in_progress',conclusion:null}),jobs:[]},{now:Date.parse('2026-10-18T10:01:00Z')});
+ assert.match(live,/data-summary-since="2026-10-18T10:00:00Z">In progress · 1m 0s/);assert.match(live,/data-run-control="cancel"/);assert.doesNotMatch(live,/data-run-control="rerun"/);
  assert.match(runView(null,{error:'GitHub HTTP 502'}),/GitHub HTTP 502[^]*data-run-retry/);
- assert.match(runView(null),/Loading run/);
 });
-test('a running job explains that logs come later; a parsed log shows totals, errors and the tail',()=>{
- const {runView,jobLogView}=sandbox();
- const r=run(5,{status:'in_progress',conclusion:null});
- const jobs=[job(11,[step(1,'Set up job','completed','success'),step(2,'Run tests','in_progress')],{status:'in_progress',conclusion:null,completed_at:null})];
- const html=runView({run:r,jobs,attempts:[1]},{now:Date.parse('2026-10-18T10:02:00Z')});
- assert.match(html,/Step 2\/2: Run tests/);assert.match(html,/Logs are available when this job finishes/);assert.doesNotMatch(html,/data-run-attempt/,'one attempt needs no picker');
- const parsed=K.parseLog(readFileSync(new URL('./fixtures/actions-logs/node-test-failure.txt',import.meta.url),'utf8'));
- const log=jobLogView({data:{available:true,...parsed}});
- assert.match(log,/137 tests passed · 1 failed/);assert.match(log,/Exit code 1/);assert.match(log,/npm test · line 16/);assert.match(log,/Last 19 lines/);
- assert.match(jobLogView({data:{available:false,reason:'Logs appear here when the job finishes.'}}),/when the job finishes/);
- assert.match(jobLogView({error:'Update the Worker'}),/status-bad/);assert.equal(jobLogView(undefined),'');
+test('the job page lists steps like GitHub, and each step opens its own log lines',()=>{
+ const {jobView,stepView}=sandbox();
+ const dir=new URL('./fixtures/actions-logs/',import.meta.url);
+ const real=JSON.parse(readFileSync(new URL('ios-native-job.steps.json',dir),'utf8'));
+ const native=K.normalizeJob({id:117715578272,...real,status:'completed',conclusion:'failure',started_at:'2026-10-18T15:34:00Z',completed_at:'2026-10-18T15:42:05Z',html_url:URL_RUN+'39141116421/job/117715578272'});
+ const detail={run:K.normalizeRun({...run(39141116421),name:'iOS build and release',conclusion:'failure'}),jobs:[native]};
+ const parsed=K.parseLog(readFileSync(new URL('ios-native-job.txt',dir),'utf8'));
+ const html=jobView(detail,native,{log:{data:{available:true,...parsed}}});
+ assert.match(html,/<h2>iOS build and release \/ native<\/h2><span>Failed after 8m 5s<\/span>/);
+ assert.match(html,/data-open-step="1"[^]*gh-row-name mono">Set up job/);
+ assert.match(html,/data-open-step="11"[^]*Boot simulator and verify bundled launch[^]*4 errors/);
+ assert.doesNotMatch(html,/data-open-step="3"/,'a skipped step has no log to open');assert.match(html,/run-skipped[^]*Choose the release version/);
+ assert.match(html,/Exit code 65/);assert.match(html,/Full log on GitHub/);
+ const page=stepView(detail,native,native.steps.find(s=>s.number===11),{log:{data:{available:true,...parsed}}});
+ assert.match(page,/<h2>Boot simulator and verify bundled launch<\/h2>/);
+ assert.match(page,/gh-line group[^]*▸ Run set -Eeuo pipefail/);
+ assert.match(page,/gh-line error"><span class="gh-ln">\d+<\/span><span class="gh-lt">\*\* TEST FAILED \*\*/);
+ assert.doesNotMatch(page,/brew install xcodegen/,'only this step\'s lines');
+ assert.match(stepView(detail,native,native.steps[0],{log:{loading:true}}),/Reading the log/);
+ assert.match(stepView(detail,native,native.steps[0],{log:{data:{available:false,reason:'Logs expired.'}}}),/Logs expired/);
+ const running=K.normalizeJob({id:9,name:'unit',status:'in_progress',started_at:'2026-10-18T10:00:00Z',steps:[step(1,'Set up job','completed','success'),step(2,'Run tests','in_progress')]});
+ const live=jobView({run:run(5,{status:'in_progress',conclusion:null}),jobs:[running]},running,{now:Date.parse('2026-10-18T10:02:00Z')});
+ assert.match(live,/Logs appear when this job finishes/);assert.doesNotMatch(live,/data-open-step/);assert.match(live,/data-since="2026-10-18T10:00:00Z"/);
 });
-
 // The Workflow Monitor from app-state.js, with the browser and the other scripts stubbed.
 function monitor({fetch,githubFetch,saved=null}={}){
  const state=read('app-state.js');

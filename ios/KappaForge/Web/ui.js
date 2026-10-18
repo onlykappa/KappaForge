@@ -224,49 +224,83 @@ function statusCard(run,{progress=null,now=Date.now(),compact=false}={}){
  '</button>';
 }
 const RUN_SIZE=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
-// The run page, laid out like GitHub's: summary, annotations, jobs with their steps, parsed logs, artifacts.
-function runView(detail,{openJobs=new Map(),logs={},now=Date.now(),attempt=0,loading=false,error=''}={}){
- const back='<button type="button" class="text-button run-back" data-run-back>← All runs</button>';
- if(!detail)return back+'<div class="panel run-page">'+(error?'<p class="status-bad">'+esc(error)+'</p><button type="button" class="btn secondary" data-run-retry>Try again</button>':'<p class="muted">Loading run from GitHub…</p>')+'</div>';
+// GitHub's one-line summary under a title: "Failed after 8m 5s", "In progress · 1m 2s", "Queued".
+function runSummary(item,now=Date.now()){
+ const time=runElapsed(item,now),s=item?.state;
+ if(s==='running')return 'In progress'+(time?' · '+time:'');
+ if(s==='queued'||s==='waiting')return RUN_STATE_LABEL[s];
+ if(s==='success')return 'Succeeded'+(time?' in '+time:'');
+ if(s==='skipped')return 'Skipped';
+ return ({failure:'Failed',cancelled:'Cancelled',timed_out:'Timed out'}[s]||RUN_STATE_LABEL[s]||'Completed')+(time?' after '+time:'');
+}
+const CHEVRON='<svg class="gh-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// The page header of the run, job and step pages: a round back button and a centred title with its summary.
+function ghHeader(title,subtitle,back){
+ return '<header class="gh-header"><button type="button" class="gh-back" data-run-back aria-label="'+esc(back)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
+  '<div class="gh-title"><h2>'+esc(title)+'</h2><span'+(subtitle.since?' data-summary-since="'+esc(subtitle.since)+'"':'')+'>'+esc(subtitle.text)+'</span></div><span class="gh-header-end"></span></header>';
+}
+const summaryOf=(item,now)=>({text:runSummary(item,now),since:item?.state==='running'?item.startedAt:''});
+// One tappable row: state icon, name, duration underneath, chevron. Rows without a page are plain.
+function ghRow(item,{attr='',mono=false,now=Date.now(),note=''}={}){
+ const inner=runBadge(item.state)+'<span class="gh-row-text"><span class="gh-row-name'+(mono?' mono':'')+'">'+esc(item.name)+'</span><small'+runSince(item)+'>'+esc(note||runElapsed(item,now)||RUN_STATE_LABEL[item.state]||'')+'</small></span>';
+ return attr?'<button type="button" class="gh-row run-'+esc(item.state)+'" '+attr+'>'+inner+CHEVRON+'</button>':'<div class="gh-row run-'+esc(item.state)+'">'+inner+'</div>';
+}
+// Re-run and cancel, like GitHub's floating button. Every choice is confirmed and authorised before it runs.
+function rerunMenu(run){
+ if(!run)return '';
+ const items=KappaActions.isActive(run)?[['cancel','Cancel run']]:[['rerun','Re-run all jobs'],...(['failure','timed_out','cancelled'].includes(run.state)?[['rerun-failed','Re-run failed jobs']]:[])];
+ return '<details class="gh-fab"><summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'+(KappaActions.isActive(run)?'Cancel':'Re-run')+'<span aria-hidden="true">⌄</span></summary><div class="gh-fab-menu">'+items.map(([a,l])=>'<button type="button" data-run-control="'+a+'">'+esc(l)+'</button>').join('')+'</div></details>';
+}
+// The run page: summary, attempts, annotations, then each job as a row that opens the job page.
+function runView(detail,{now=Date.now(),attempt=0,loading=false,error=''}={}){
+ if(!detail)return ghHeader('Workflow run',{text:error?'Could not load':'Loading…'},'Back to all runs')+'<div class="panel run-page">'+(error?'<p class="status-bad">'+esc(error)+'</p><button type="button" class="btn secondary" data-run-retry>Try again</button>':'<p class="muted">Loading run from GitHub…</p>')+'</div>';
  const run=detail.run,jobs=detail.jobs||[],p=detail.progress||KappaActions.progress(run,jobs);
- const facts=[
-  ['Status',RUN_STATE_LABEL[run.state]||run.state],
-  ['Total duration',runElapsed(run,now)||'—'],
-  ['Triggered',(run.event||'').replace(/_/g,' ')+(run.actor?' by '+run.actor:'')+(run.createdAt?' · '+runAgo(run.createdAt,now):'')],
-  ['Branch',run.branch||'—'],['Commit',run.sha?run.sha.slice(0,7):'—'],
-  ['Artifacts',String((detail.artifacts||[]).length)]];
+ const facts=[['Triggered',(run.event||'').replace(/_/g,' ')+(run.actor?' by '+run.actor:'')+(run.createdAt?' · '+runAgo(run.createdAt,now):'')],
+  ['Branch',run.branch||'—'],['Commit',run.sha?run.sha.slice(0,7):'—'],['Run','#'+(run.number||'—')+(run.attempt>1?' · attempt '+run.attempt:'')]];
  const attempts=(detail.attempts||[]).length>1?'<div class="run-attempts" role="group" aria-label="Run attempts">'+detail.attempts.map(n=>'<button type="button" data-run-attempt="'+n+'" aria-pressed="'+((attempt||run.attempt)===n)+'">Attempt '+n+'</button>').join('')+'</div>':'';
  const annotations=(detail.annotations||[]).length?'<section class="run-section"><h3>Annotations <small>'+detail.annotations.length+'</small></h3><ul class="run-annotations">'+detail.annotations.map(a=>'<li class="run-annotation '+esc(a.level)+'"><strong>'+esc(a.job)+(a.title?' · '+esc(a.title):'')+'</strong><span>'+esc(a.message)+'</span>'+(a.path?'<code>'+esc(a.path)+(a.line?':'+esc(a.line):'')+'</code>':'')+'</li>').join('')+'</ul></section>':'';
- const jobHTML=jobs.map(j=>{
-  // Failing and running jobs start open, like GitHub; the owner's own choice wins after that.
-  const open=openJobs.has(j.id)?openJobs.get(j.id):['failure','timed_out','running'].includes(j.state);
-  const steps=j.steps.map(s=>'<li class="run-step run-'+esc(s.state)+'">'+runBadge(s.state)+'<span>'+esc(s.name)+'</span><small'+runSince(s)+'>'+esc(runElapsed(s,now))+'</small></li>').join('');
-  return '<details class="run-job run-'+esc(j.state)+'" data-job="'+esc(j.id)+'"'+(open?' open':'')+'><summary>'+runBadge(j.state)+'<strong>'+esc(j.name)+'</strong><small>'+esc(runElapsed(j,now))+'</small></summary>'+
-   '<ol class="run-steps">'+(steps||'<li class="muted">Steps appear when a runner picks up this job.</li>')+'</ol>'+
-   '<div class="review-tools">'+(KappaActions.isActive(j)?'<span class="worksmall">Logs are available when this job finishes.</span>':'<button type="button" data-job-log="'+esc(j.id)+'">'+(logs[j.id]?.data?'Hide log summary':'View log summary')+'</button>')+(j.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(j.url)+'">Full log on GitHub ↗</a>':'')+'</div>'+
-   jobLogView(logs[j.id])+'</details>';
- }).join('');
- const artifacts=(detail.artifacts||[]).length?'<section class="run-section"><h3>Artifacts</h3>'+detail.artifacts.map(a=>'<div class="row"><div><strong>'+esc(a.name)+'</strong><div class="muted">'+esc(RUN_SIZE(a.size))+(a.expired?' · expired':'')+'</div></div></div>').join('')+'<p class="worksmall">Download artifacts from the run on GitHub.</p></section>':'';
- return back+'<div class="panel run-page run-'+esc(run.state)+'"><div class="run-title">'+runBadge(run.state)+'<div><span class="eyebrow">'+esc(run.name)+(run.number?' #'+esc(run.number):'')+'</span><h2>'+esc(run.title||run.name)+'</h2></div></div>'+
-  '<div class="run-progress-row">'+runProgressBar(p,run.state)+'<span>'+esc(p.label)+'</span></div>'+
+ const artifacts=(detail.artifacts||[]).length?'<section class="run-section"><h3>Artifacts <small>'+detail.artifacts.length+'</small></h3>'+detail.artifacts.map(a=>'<div class="row"><div><strong>'+esc(a.name)+'</strong><div class="muted">'+esc(RUN_SIZE(a.size))+(a.expired?' · expired':'')+'</div></div></div>').join('')+'<p class="worksmall">Download artifacts from the run on GitHub.</p></section>':'';
+ return ghHeader(run.name,summaryOf(run,now),'Back to all runs')+
+  '<div class="panel run-page run-'+esc(run.state)+'"><div class="run-title">'+runBadge(run.state)+'<h3>'+esc(run.title||run.name)+'</h3></div>'+
+  (KappaActions.isActive(run)?'<div class="run-progress-row">'+runProgressBar(p,run.state)+'<span>'+esc(p.label)+'</span></div>':'')+
   '<dl class="run-facts">'+facts.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'+attempts+
   (error?'<p class="status-bad">'+esc(error)+'</p>':'')+(loading?'<p class="worksmall">Refreshing…</p>':'')+
-  '<div class="review-tools">'+(run.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(run.url)+'">Open on GitHub ↗</a>':'')+(run.prs.length?run.prs.map(n=>'<span class="worksmall">PR #'+esc(n)+'</span>').join(''):'')+'</div></div>'+
-  annotations+'<section class="run-section"><h3>Jobs <small>'+jobs.length+'</small></h3>'+(jobHTML||'<p class="muted">No jobs yet.</p>')+'</section>'+artifacts;
+  '<div class="review-tools">'+(run.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(run.url)+'">Open on GitHub ↗</a>':'')+run.prs.map(n=>'<span class="worksmall">PR #'+esc(n)+'</span>').join('')+'</div></div>'+
+  annotations+'<section class="run-section"><h3>Jobs <small>'+jobs.length+'</small></h3><div class="gh-list">'+(jobs.map(j=>ghRow(j,{attr:'data-open-job="'+esc(j.id)+'"',now})).join('')||'<p class="muted">No jobs yet.</p>')+'</div></section>'+artifacts+rerunMenu(run);
 }
-// A parsed job log: totals, errors grouped by step, the step list with error counts, and the last lines.
-function jobLogView(entry){
- if(!entry)return '';
- if(entry.loading)return '<p class="worksmall">Reading the log…</p>';
- if(entry.error)return '<p class="status-bad">'+esc(entry.error)+'</p>';
- const d=entry.data;if(!d)return '';
- if(!d.available)return '<p class="worksmall">'+esc(d.reason||'Log not available.')+'</p>';
- const tests=d.tests?.found?'<span class="'+(d.tests.failed?'status-bad':'status-good')+'">'+esc(d.tests.passed)+' tests passed · '+esc(d.tests.failed)+' failed</span>':'';
- const exit=d.exitCode!==null&&d.exitCode!==undefined?'<span class="'+(d.exitCode?'status-bad':'status-good')+'">Exit code '+esc(d.exitCode)+'</span>':'';
- const errors=d.errors.length?'<ul class="log-errors">'+d.errors.slice(0,15).map(e=>'<li><small>'+esc(e.section)+' · line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('')+'</ul>':'<p class="worksmall status-good">No error lines found.</p>';
- const sections=d.sections.filter(s=>s.lines).map(s=>'<li class="'+(s.errors?'status-bad':'')+'">'+esc(s.title)+(s.errors?' · '+esc(s.errors)+' error'+(s.errors>1?'s':''):'')+(s.warnings?' · '+esc(s.warnings)+' warning'+(s.warnings>1?'s':''):'')+'</li>').join('');
- return '<div class="log-summary"><p>'+[tests,exit,d.truncated?'<span class="worksmall">Showing the end of a long log</span>':''].filter(Boolean).join(' · ')+'</p>'+errors+
-  (d.warnings.length?'<details><summary class="worksmall">'+d.warnings.length+' warning'+(d.warnings.length>1?'s':'')+'</summary><ul class="log-errors">'+d.warnings.map(w=>'<li><small>'+esc(w.section)+'</small><code>'+esc(w.text)+'</code></li>').join('')+'</ul></details>':'')+
-  '<details><summary class="worksmall">Steps in this log</summary><ol class="log-sections">'+sections+'</ol></details>'+
-  '<details><summary class="worksmall">Last '+d.tail.length+' lines</summary><pre class="log-tail">'+esc(d.tail.join('\n'))+'</pre></details></div>';
+// The job page, like GitHub's: one row per step with its time. Steps that ran open their own log.
+function jobView(detail,job,{log=null,now=Date.now()}={}){
+ if(!detail||!job)return runView(detail,{now});
+ const parsed=log?.data?.available?log.data:null,map=parsed?KappaActions.stepSections(job.steps,parsed.sections):{};
+ const running=KappaActions.isActive(job);
+ const note=running?'<p class="worksmall gh-note">Logs appear when this job finishes. Step times update live.</p>':
+  log?.loading?'<p class="worksmall gh-note">Reading the log…</p>':log?.error?'<p class="status-bad gh-note">'+esc(log.error)+'</p>':log?.data&&!log.data.available?'<p class="worksmall gh-note">'+esc(log.data.reason||'Log not available.')+'</p>':'';
+ const totals=parsed?[parsed.tests?.found?'<span class="'+(parsed.tests.failed?'status-bad':'status-good')+'">'+esc(parsed.tests.passed)+' passed · '+esc(parsed.tests.failed)+' failed</span>':'',parsed.exitCode!==null&&parsed.exitCode!==undefined?'<span class="'+(parsed.exitCode?'status-bad':'status-good')+'">Exit code '+esc(parsed.exitCode)+'</span>':''].filter(Boolean).join(' · '):'';
+ const rows=job.steps.map(s=>{
+  const ran=!['skipped','queued','waiting'].includes(s.state);
+  const errors=parsed&&map[s.number]!==undefined?parsed.sections[map[s.number]].errors:0;
+  return ghRow(s,{mono:true,now,attr:ran&&!running?'data-open-step="'+esc(s.number)+'"':'',note:errors&&s.state!=='success'?(runElapsed(s,now)||'')+' · '+errors+' error'+(errors>1?'s':''):''});
+ }).join('');
+ return ghHeader(detail.run.name+' / '+job.name,summaryOf(job,now),'Back to the run')+note+(totals?'<p class="gh-totals">'+totals+'</p>':'')+
+  '<div class="gh-list gh-steps">'+(rows||'<p class="muted">Steps appear when a runner picks up this job.</p>')+'</div>'+
+  (job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'')+rerunMenu(detail.run);
+}
+// One step's log: line numbers, its Run command, error and warning lines marked, like GitHub's log viewer.
+function stepView(detail,job,step,{log=null,now=Date.now()}={}){
+ if(!detail||!job||!step)return jobView(detail,job,{log,now});
+ const head=ghHeader(step.name,summaryOf(step,now),'Back to '+job.name);
+ if(!log||log.loading)return head+'<p class="worksmall gh-note">Reading the log…</p>';
+ if(log.error)return head+'<p class="status-bad gh-note">'+esc(log.error)+'</p>';
+ if(!log.data?.available)return head+'<p class="worksmall gh-note">'+esc(log.data?.reason||'Log not available.')+'</p>';
+ const at=KappaActions.stepSections(job.steps,log.data.sections)[step.number],section=log.data.sections[at];
+ const link=job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'';
+ if(!section){
+  const errors=log.data.errors.map(e=>'<li><small>'+esc(e.section)+' · line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('');
+  return head+'<p class="worksmall gh-note">This step\'s lines could not be told apart from the rest of the job log'+(errors?'. Errors in the job:':'.')+'</p>'+(errors?'<ul class="log-errors gh-note">'+errors+'</ul>':'')+link;
+ }
+ const shown=new Set(section.log.map(l=>l.n));
+ const earlier=log.data.errors.filter(e=>e.at===at&&!shown.has(e.line));
+ return head+(section.omitted?'<p class="worksmall gh-note">Showing the last '+section.log.length+' of '+(section.log.length+section.omitted)+' lines.</p>':'')+
+  (earlier.length?'<ul class="log-errors gh-note">'+earlier.map(e=>'<li><small>line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('')+'</ul>':'')+
+  '<div class="gh-log" role="log" aria-label="'+esc(step.name)+' log">'+section.log.map(l=>'<div class="gh-line'+(l.kind?' '+esc(l.kind):'')+'"><span class="gh-ln">'+esc(l.n)+'</span><span class="gh-lt">'+(l.kind==='group'?'▸ ':'')+esc(l.text)+'</span></div>').join('')+'</div>'+link+rerunMenu(detail.run);
 }

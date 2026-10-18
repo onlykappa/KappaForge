@@ -197,31 +197,65 @@ function hideReview(number){
  localStorage.setItem("kappaforge.review.hidden",JSON.stringify([...reviewHidden]));
  render();
 }
-// Dashboard view state: which dashboard page is open (the overview or one run). It is kept apart from chat state,
-// so moving between Chat and the dashboard never loses the conversation, the composer draft or either page's scroll.
-const DASHBOARD_KEY="kappaforge.dashboard.v1";
-const dashboardState={mode:"overview",runId:0,attempt:0,openJobs:new Map()};
-try{const saved=JSON.parse(sessionStorage.getItem(DASHBOARD_KEY)||"null");if(saved?.mode==="run"&&Number.isSafeInteger(saved.runId)&&saved.runId>0)Object.assign(dashboardState,{mode:"run",runId:saved.runId})}catch(e){}
-function persistDashboard(){try{sessionStorage.setItem(DASHBOARD_KEY,JSON.stringify({mode:dashboardState.mode,runId:dashboardState.runId}))}catch(e){}}
+// Dashboard view state: which dashboard page is open, from the overview down to one step's log
+// (overview → run → job → step). It is kept apart from chat state, so moving between Chat and the dashboard
+// never loses the conversation, the composer draft or any page's scroll.
+const DASHBOARD_KEY="kappaforge.dashboard.v1",DASHBOARD_LEVELS=["overview","run","job","step"];
+const dashboardState={mode:"overview",runId:0,jobId:0,step:0,attempt:0};
+try{const saved=JSON.parse(sessionStorage.getItem(DASHBOARD_KEY)||"null");if(DASHBOARD_LEVELS.includes(saved?.mode)&&saved.mode!=="overview"&&Number.isSafeInteger(saved.runId)&&saved.runId>0)Object.assign(dashboardState,{mode:saved.mode,runId:saved.runId,jobId:Number(saved.jobId)||0,step:Number(saved.step)||0})}catch(e){}
+if(dashboardState.mode==="job"&&!dashboardState.jobId||dashboardState.mode==="step"&&!(dashboardState.jobId&&dashboardState.step))dashboardState.mode="run";
+function persistDashboard(){try{sessionStorage.setItem(DASHBOARD_KEY,JSON.stringify({mode:dashboardState.mode,runId:dashboardState.runId,jobId:dashboardState.jobId,step:dashboardState.step}))}catch(e){}}
+// Move to another dashboard page, remembering where this one was scrolled.
+function showDashboard(changes){
+ if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY;
+ Object.assign(dashboardState,changes);persistDashboard();
+ if(view!=="home")navigate("home");else render();
+ scrollTo(0,changes.mode==="overview"?viewScroll["home:overview"]||0:0);
+}
 function openRun(id){
  id=Number(id);if(!Number.isSafeInteger(id)||id<=0)return;
- if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY;
- Object.assign(dashboardState,{mode:"run",runId:id,attempt:0,openJobs:new Map()});persistDashboard();
- if(view!=="home")navigate("home");else render();
- scrollTo(0,0);monitorWatchRun(id);
+ showDashboard({mode:"run",runId:id,jobId:0,step:0,attempt:0});monitorWatchRun(id);
 }
-function closeRun(){
- Object.assign(dashboardState,{mode:"overview",runId:0,attempt:0,openJobs:new Map()});persistDashboard();
- monitorWatchRun(0);render();scrollTo(0,viewScroll["home:overview"]||0);
+function currentJob(){const d=dashboardDetail();return d?.jobs?.find(j=>j.id===dashboardState.jobId)||null}
+function openJob(id){
+ showDashboard({mode:"job",jobId:Number(id),step:0});
+ const job=currentJob();if(job&&!KappaActions.isActive(job))monitorJobLog(job.id);
+}
+function openStep(n){showDashboard({mode:"step",step:Number(n)});const job=currentJob();if(job)monitorJobLog(job.id)}
+// Back goes up one level; from a run, back to the overview.
+function dashboardBack(){
+ const m=dashboardState.mode;
+ if(m==="step")showDashboard({mode:"job",step:0});
+ else if(m==="job")showDashboard({mode:"run",jobId:0});
+ else{showDashboard({mode:"overview",runId:0,jobId:0,step:0,attempt:0});monitorWatchRun(0)}
 }
 function selectAttempt(n){
  const latest=workflowMonitor.details[dashboardState.runId]?.data?.run?.attempt;
  dashboardState.attempt=n===latest?0:n;
  if(dashboardState.attempt)monitorRunDetail(dashboardState.runId,n);else render();
 }
-// Hand the run to the chat as a question. An unsent draft is never overwritten.
+function dashboardDetail(){
+ const entry=workflowMonitor.details[dashboardState.runId]||{},attempt=dashboardState.attempt;
+ return attempt&&entry.attemptData?.attempt===attempt?entry.attemptData:entry.data;
+}
+const CONTROL_TEXT={rerun:"Re-run all jobs",["rerun-failed"]:"Re-run failed jobs",cancel:"Cancel"};
+// Re-run or cancel through the owner-authorised control path, after an explicit confirmation.
+async function runControl(action){
+ const run=dashboardDetail()?.run;if(!run||!CONTROL_TEXT[action])return;
+ if(!backend||!access){alert("Connect AI first.");return}
+ const what=CONTROL_TEXT[action]+" for "+run.name+" #"+run.number+(run.branch?" on "+run.branch:"");
+ if(!confirm(what+"?\n\n"+(action==="cancel"?"Jobs stop where they are.":"GitHub starts a new attempt of this run.")))return;
+ try{
+  const response=await userAuthorizedFetch("/actions/control",{repo:workflowMonitor.repo,runId:run.id,action,confirmed:true},"Confirmed "+what);
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||"Request failed (HTTP "+response.status+")");
+  toast(action==="cancel"?"Cancelling run #"+run.number:"Re-run of #"+run.number+" requested");
+  dashboardState.attempt=0;monitorRefresh();setTimeout(()=>monitorRunDetail(run.id),3000);
+ }catch(e){alert((action==="cancel"?"Not cancelled: ":"Not re-run: ")+e.message)}
+}
+// Ask the chat about the run. An unsent draft is never overwritten.
 function askAboutRun(){
- const run=workflowMonitor.details[dashboardState.runId]?.data?.run;if(!run)return;
+ const run=dashboardDetail()?.run;if(!run)return;
  rememberScroll();view="chat";render();
  const box=document.getElementById("message");
  if(box.value.trim())toast("Your draft is kept. Ask about "+run.name+" #"+run.number+" after it.");
@@ -229,10 +263,12 @@ function askAboutRun(){
  focusMessageInput();
 }
 function runPage(){
- const m=workflowMonitor,entry=m.details[dashboardState.runId]||{},attempt=dashboardState.attempt;
- const detail=attempt&&entry.attemptData?.attempt===attempt?entry.attemptData:entry.data;
- return runView(detail,{openJobs:dashboardState.openJobs,logs:m.logs,attempt,loading:entry.loading,error:entry.error})+
-  (detail?'<div class="review-tools"><button type="button" class="btn secondary" data-run-ask>Ask about this run in chat</button></div>'+(detail.limited?'<p class="worksmall">Connect AI to see annotations, artifacts and parsed logs.</p>':''):'');
+ const m=workflowMonitor,entry=m.details[dashboardState.runId]||{},detail=dashboardDetail(),job=currentJob();
+ const log=job?m.logs[job.id]:null;
+ if(dashboardState.mode==="step"&&job)return stepView(detail,job,job.steps.find(s=>s.number===dashboardState.step),{log});
+ if(dashboardState.mode==="job"&&job)return jobView(detail,job,{log});
+ return runView(detail,{attempt:dashboardState.attempt,loading:entry.loading,error:entry.error})+
+  (detail?'<div class="review-tools"><button type="button" class="btn secondary" data-run-ask>Ask about this run in chat</button></div>'+(detail.limited?'<p class="worksmall">Connect AI to see annotations, artifacts and logs.</p>':''):'');
 }
 const MONITOR_MODE={live:"Live",reconnecting:"Reconnecting…",poll:"Polling",idle:"Paused"};
 // Current and latest builds. Cards open the run page.
@@ -277,7 +313,7 @@ function controlCenter(){
  return card("Workspace health",'<div class="control-head"><span class="muted">Live GitHub status</span><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Agent work, reviews, tests and deployments at a glance.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open agent pull requests.</p>')+card("Tests & deployments",(checks?'<div class="status-grid">'+checks+'</div>':'<p class="muted">No recent workflow results.</p>')+'<div class="review-tools"><button type="button" id="undolast" class="review-deny">↶ Undo last change</button></div><p class="worksmall">If a merged change broke something, Undo opens a pull request restoring the previous version.</p>');
 }
 function dashboardSummary(){
- if(dashboardState.mode==="run")return runPage();
+ if(dashboardState.mode!=="overview")return runPage();
  return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Overview</h1><p class="muted">Live builds, reviews, and recent results.</p></div>'+buildsPanel()+controlCenter();
 }
 async function discordRequest(action,payload={}){
@@ -312,7 +348,7 @@ function pluginCatalog(){
  return '<label class="plugin-search-label">Find an integration<input id="pluginsearch" class="plugin-search" placeholder="Search plugins…" autocomplete="off"></label><div id="pluginresults">'+PLUGIN_CATALOG.map((p,i)=>'<div class="plugin-item"><div><strong>'+esc(p.name)+'</strong><p class="muted">'+esc(p.desc)+'</p><small>'+esc(p.status)+'</small></div><div class="plugin-actions"><a href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer">Website ↗</a><button type="button" class="btn secondary" data-plugin-request="'+i+'">Plan</button></div></div>').join("")+'</div>';
 }
 // Running times count up once a second in place, without re-rendering the page.
-setInterval(()=>{if(view!=="home"||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
+setInterval(()=>{if(view!=="home"||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))});document.querySelectorAll("[data-summary-since]").forEach(el=>{const t=Date.parse(el.dataset.summarySince);if(Number.isFinite(t))el.textContent="In progress · "+KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
 let activityLabel="";
 function setActivity(label){activityLabel=label;const el=document.getElementById("activitystatus");if(el){el.hidden=!label;el.textContent=label?"● "+label:"";}}
 function render(){
@@ -336,14 +372,17 @@ if(view==="settings")html=renderSettings();
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 // Stream live Actions updates only while the dashboard is on screen; the 90-second refresh covers the rest.
-if(view==="home"&&!document.hidden){monitorResume();if(dashboardState.mode==="run"&&workflowMonitor.watchRun!==dashboardState.runId)monitorWatchRun(dashboardState.runId)}else monitorPause();
+if(view==="home"&&!document.hidden){monitorResume();if(dashboardState.mode!=="overview"&&workflowMonitor.watchRun!==dashboardState.runId)monitorWatchRun(dashboardState.runId);
+ // A job or step page needs the job's log once the job has finished (also after a reload, or when it finishes while open).
+ const pageJob=["job","step"].includes(dashboardState.mode)?currentJob():null;if(pageJob&&!KappaActions.isActive(pageJob)&&!workflowMonitor.logs[pageJob.id])monitorJobLog(pageJob.id)}else monitorPause();
 document.querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",()=>openRun(b.dataset.run)));
-document.querySelector("[data-run-back]")?.addEventListener("click",closeRun);
+document.querySelector("[data-run-back]")?.addEventListener("click",dashboardBack);
+document.querySelectorAll("[data-open-job]").forEach(b=>b.addEventListener("click",()=>openJob(b.dataset.openJob)));
+document.querySelectorAll("[data-open-step]").forEach(b=>b.addEventListener("click",()=>openStep(b.dataset.openStep)));
+document.querySelectorAll("[data-run-control]").forEach(b=>b.addEventListener("click",()=>{b.closest("details").open=false;runControl(b.dataset.runControl)}));
 document.querySelector("[data-run-retry]")?.addEventListener("click",()=>monitorRunDetail(dashboardState.runId));
 document.querySelector("[data-run-ask]")?.addEventListener("click",askAboutRun);
 document.querySelectorAll("[data-run-attempt]").forEach(b=>b.addEventListener("click",()=>selectAttempt(Number(b.dataset.runAttempt))));
-document.querySelectorAll("details[data-job]").forEach(d=>d.addEventListener("toggle",()=>dashboardState.openJobs.set(Number(d.dataset.job),d.open)));
-document.querySelectorAll("[data-job-log]").forEach(b=>b.addEventListener("click",()=>monitorJobLog(Number(b.dataset.jobLog))));
 document.getElementById("monitorexport")?.addEventListener("click",async()=>{try{await copyInterfaceText(JSON.stringify(monitorExport(),null,1));toast("Workflow state copied. Paste it into a file for scripts/verify-actions-state.mjs.")}catch(e){toast(e.message)}});
 
 document.querySelectorAll("[data-choice]").forEach(b=>b.addEventListener("click",()=>{navigate("chat");document.getElementById("message").value=b.dataset.choice;focusMessageInput()}));

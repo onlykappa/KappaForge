@@ -43,8 +43,12 @@ Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
     "iOS build and release / native" job's step list (`tests/fixtures/actions-logs/ios-native-job.*`).
 12. [x] **Re-run / Cancel**: `POST /actions/control` `{repo, runId, action: rerun|rerun-failed|cancel, confirmed}`.
     It is in `writePaths`, so it needs a confirmed owner authorization (`userAuthorizedFetch`), and uses `GITHUB_JOB_TOKEN`.
-13. [ ] **Three-level UI**: run page → job page ("Workflow / job", "Failed after 8m 5s", step rows with
+13. [x] **Three-level UI**: run page → job page ("Workflow / job", "Failed after 8m 5s", step rows with
     icon, monospace name, duration, chevron) → step log page; floating Re-run menu.
+    `ui.js`: `ghHeader`, `ghRow`, `runView`, `jobView`, `stepView`, `rerunMenu`, `runSummary`.
+    `app-dashboard.js`: `dashboardState.mode` is overview|run|job|step (+ `jobId`, `step`), `showDashboard`,
+    `openJob`, `openStep`, `dashboardBack` (one level up), `runControl`. Browser smoke on a phone walked
+    run → job → step → back, and Re-run went through `/authorize` then `/actions/control`.
 
 ## Tests performed
 Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,

@@ -324,9 +324,10 @@ async function monitorRunDetail(id,attempt=0){
  }catch(e){entry.error=e.message}
  finally{entry.loading=false;monitorChanged()}
 }
+// Loads a finished job's parsed log once; the job and step pages read it from here.
 async function monitorJobLog(jobId){
  const m=workflowMonitor,logs=m.logs;
- if(logs[jobId]?.data){delete logs[jobId];monitorChanged();return}
+ if(logs[jobId]?.data||logs[jobId]?.loading)return;
  if(!backend||!access){logs[jobId]={error:"Connect AI to read parsed logs here, or open the full log on GitHub."};monitorChanged();return}
  logs[jobId]={loading:true};monitorChanged();
  try{const r=await actionsFetch({op:"log",jobId});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(r.status===404?"Update the Worker to read logs here, or open the full log on GitHub.":d.error||"GitHub HTTP "+r.status);logs[jobId]={data:d}}
