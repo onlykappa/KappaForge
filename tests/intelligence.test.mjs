@@ -461,3 +461,16 @@ test('safe tasks can auto-launch while privileged modes need approval',()=>{
  assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,repo:'other/fork'}),false);
  assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,instructions:''}),false);
 });
+
+test('failed task reservation is refunded exactly once and does not exhaust daily limit',async()=>{
+ const state=memoryState();const make=(payload)=>new Request('https://memory.internal/usage/task-reserve',{method:'POST',body:JSON.stringify(payload)});
+ const reserve=await usageStore(state,make({limit:1}));
+ assert.equal(reserve.status,200);
+ const receipt=(await reserve.json()).receipt;assert.match(receipt,/^\\d{4}-\\d{2}-\\d{2}:/);
+ assert.equal((await usageStore(state,make({limit:1}))).status,429);
+ const refund=await usageStore(state,make({action:'refund',receipt}));
+ assert.equal((await refund.json()).refunded,true);
+ assert.equal((await (await usageStore(state,make({action:'refund',receipt}))).json()).refunded,false);
+ assert.equal((await usageStore(state,make({limit:1}))).status,200);
+ assert.equal((await usageStore(state,make({action:'refund',receipt:'bad'}))).status,400);
+});
