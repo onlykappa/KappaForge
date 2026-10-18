@@ -131,6 +131,20 @@ jobs:
           fi
         done
       shell: bash
+    - name: Export keyboard screenshots for inspection
+      if: always()
+      run: |
+        if [ -d /tmp/kappaforge-ui-tests.xcresult ]; then
+          xcrun xcresulttool export attachments --path /tmp/kappaforge-ui-tests.xcresult --output-path /tmp/kappaforge-ui-attachments
+        fi
+    - name: Preserve keyboard screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: iOS-keyboard-screenshots
+        path: /tmp/kappaforge-ui-attachments
+        if-no-files-found: warn
+        retention-days: 14
     - name: Preserve iOS simulator UI test results
       if: always()
       uses: actions/upload-artifact@v4

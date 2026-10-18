@@ -22,6 +22,29 @@ jobs:
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python -m unittest discover -s tests -v
       shell: bash
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - run: npm ci
+    - run: npm test
+    - run: npx playwright install --with-deps chromium webkit
+    - run: npm run test:web
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: browser-regression-evidence
+        path: /tmp/kappaforge-*.png
+        if-no-files-found: warn
 'on':
   push:
     branches:

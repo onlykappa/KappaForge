@@ -97,7 +97,7 @@ async function checkJobResult(){
 }
 async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
- const job=pendingJob,jobChatId=current;pendingJob=null;render();
+ const job=pendingJob,jobChatId=current;job.requestId=job.requestId||crypto.randomUUID();job.conversationId=job.conversationId||jobChatId;pendingJob=null;render();
  try{
  const {requestId,conversationId,...payload}=job;
  const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,"user-request",requestId,conversationId||jobChatId);

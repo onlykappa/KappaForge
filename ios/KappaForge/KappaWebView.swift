@@ -17,7 +17,7 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
         composerEditor.font = .systemFont(ofSize: 16)
         composerEditor.textColor = .label
         composerEditor.tintColor = UIColor(red: 0.65, green: 0.49, blue: 0.94, alpha: 1)
-        composerEditor.textContainerInset = .zero
+        composerEditor.textContainerInset = UIEdgeInsets(top: 2, left: 5, bottom: 4, right: 5)
         composerEditor.textContainer.lineFragmentPadding = 0
         composerEditor.accessibilityLabel = "Message"
         composerEditor.accessibilityIdentifier = "native-composer"
@@ -46,6 +46,12 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
         composerEditor.isHidden = body["hidden"] == "true"
         if composerEditor.isHidden { composerEditor.resignFirstResponder() }
         composerEditor.frame = CGRect(x: x, y: y, width: width, height: height)
+        if let hex = body["color"]?.replacingOccurrences(of: "#", with: ""), hex.count == 6, let rgb = UInt32(hex, radix: 16) {
+            composerEditor.textColor = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        }
+        if let fontSize = Double(body["fontSize"] ?? ""), (12...40).contains(fontSize) {
+            composerEditor.font = .systemFont(ofSize: fontSize)
+        }
         // Ignore stale JS geometry packets containing text from before a UIKit keystroke.
         if Int(body["revision"] ?? "0") == editorRevision, let text = body["text"], composerEditor.text != text {
             composerEditor.text = text
@@ -121,6 +127,7 @@ struct KappaWebView: UIViewRepresentable {
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true, let body = message.body as? [String: String] else { return }
             if body["action"] == "composer" { (message.webView as? KappaChatWebView)?.updateComposer(body) }
+            if body["action"] == "focusComposer" { (message.webView as? KappaChatWebView)?.composerEditor.becomeFirstResponder() }
             if body["action"] == "blurComposer" { (message.webView as? KappaChatWebView)?.composerEditor.resignFirstResponder() }
             if body["action"] == "security" { showSecurity() }
             if body["action"] == "updates" { showUpdates() }

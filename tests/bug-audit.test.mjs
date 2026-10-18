@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const tasks=readFileSync(resolve(root,'preview/app-tasks.js'),'utf8');
@@ -31,7 +32,7 @@ test('failed launch preserves the original task for an explicit retry',async()=>
  const draft={title:'Fix settings',instructions:'Fix settings with tests',mode:'develop',repo:'onlykappa/KappaForge'};
  const chats=[{id:'chat',messages:[]}];
  const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',
-  chats,trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,
+  chats,trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,crypto:webcrypto,crypto:webcrypto,
   localStorage:{setItem(){}},render(){},save(){},
   userAuthorizedFetch:async()=>{throw new Error('Network unavailable')},
   alert(){throw new Error('Unexpected alert')}};
@@ -50,7 +51,7 @@ test('partial GitHub dispatch does not invite creating a duplicate issue',async(
  const draft={title:'Fix settings',instructions:'Fix settings with tests',mode:'develop',repo:'onlykappa/KappaForge'};
  const chats=[{id:'chat',messages:[]}];
  const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',chats,
- trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,
+ trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,crypto:webcrypto,
  localStorage:{setItem(){}},render(){},save(){},
  userAuthorizedFetch:async()=>({ok:false,status:502,json:async()=>({error:'Workflow could not start',issueUrl:'https://github.com/onlykappa/KappaForge/issues/91'})}),
  alert(){throw new Error('Unexpected alert')}};

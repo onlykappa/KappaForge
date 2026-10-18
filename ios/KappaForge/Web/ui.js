@@ -104,7 +104,7 @@ function initInterface(){
  document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
- const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',updateKeyboard);input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
+ const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',()=>{if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'});input.blur()}updateKeyboard()});input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
  window.visualViewport?.addEventListener('resize',updateKeyboard);window.visualViewport?.addEventListener('scroll',updateKeyboard);
  matchMedia('(max-width:840px)').addEventListener('change',()=>setSidebar(!matchMedia('(max-width:840px)').matches));setSidebar(!matchMedia('(max-width:840px)').matches);
  document.addEventListener('click',e=>document.querySelectorAll('details.message-menu[open],details.attachment-menu[open]').forEach(d=>{if(!d.contains(e.target))d.open=false}));
@@ -168,7 +168,7 @@ function syncNativeComposer(){
  if(!editor||!composer)return;
  editor.readOnly=true;editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
  const rect=editor.getBoundingClientRect();
- window.webkit.messageHandlers.kappa.postMessage({action:'composer',text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
+ window.webkit.messageHandlers.kappa.postMessage({action:'composer',color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
 }
 window.receiveNativeComposer=packet=>{
  if(!packet||typeof packet.text!=='string'||!Number.isSafeInteger(packet.revision))return;

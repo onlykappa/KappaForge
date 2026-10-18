@@ -29,6 +29,7 @@ class ExecutionScope:
         now = time.time() if now is None else now
         if issue.get("state") != "open" or issue.get("user", {}).get("login", "").lower() != "onlykappa":
             raise PermissionError("An open owner-authored task is required")
+        self.release_pr = self.release_sha = self.release_node = None
         self.number = int(issue["number"])
         self.body = issue.get("body") or ""
         modes = re.findall(r"^Mode:\s*([\w-]+)\s*$", self.body, re.M | re.I)
@@ -81,6 +82,11 @@ class ExecutionScope:
         if parsed.netloc != "api.github.com":
             raise PermissionError("Execution scope cannot authorize an external endpoint")
         p = parsed.path
+        if self.mode in WRITE_MODES and self.state == "verifying" and self.release_pr and self.release_sha:
+            if p == f"/repos/{self.repo}/pulls/{self.release_pr}/merge" and method == "PUT" and payload == {"sha": self.release_sha, "merge_method": "squash"}:
+                return
+            if p == "/graphql" and method == "POST" and payload == {"query": "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}", "variables": {"id": self.release_node}}:
+                return
         # Reporting is bound to the current task; cannot create child tasks.
         if p == f"/repos/onlykappa/KappaForge/issues/{self.number}/comments" and method == "POST":
             if set(payload or {}) != {"body"} or str(payload["body"]).startswith("Guidance:"):

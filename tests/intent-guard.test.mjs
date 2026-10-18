@@ -77,3 +77,36 @@ test('internal syntax stays hidden throughout fragmented streaming and malformed
  for(let i=1;i<=text.length;i++)assert.doesNotMatch(globalThis.KappaIntent.stripActions(text.slice(0,i)),/kappa-action|"type":"task"/);
  assert.equal(globalThis.KappaIntent.stripActions(text),'Here is your example.');
 });
+
+test('authorized Worker execution creates exactly the user task and dispatches once',async()=>{
+ const f=fixture(),old=globalThis.fetch;const writes=[];
+ globalThis.fetch=async(url,options={})=>{
+  const path=new URL(url).pathname;
+  if(options.method==='POST'){writes.push({path,body:JSON.parse(options.body)});if(path.endsWith('/issues'))return Response.json({number:201,html_url:'https://github.com/onlykappa/KappaForge/issues/201',user:{login:'onlykappa'}});return new Response(null,{status:204})}
+  if(path==='/user')return Response.json({login:'onlykappa'});
+  if(path==='/user/repos')return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  if(path==='/repos/onlykappa/KappaForge')return Response.json({name:'KappaForge'});
+  return new Response('{}',{status:404});
+ };
+ try{
+  assert.equal((await f.issue()).status,200);
+  assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,202);
+  assert.equal(writes.filter(w=>w.path.endsWith('/issues')).length,1);
+  const issue=writes.find(w=>w.path.endsWith('/issues'));
+  assert.match(issue.body.body,/Fix the keyboard problem and test it/);
+  assert.match(issue.body.body,/kappa-authorization/);
+  assert.match(issue.body.body,/conversationId/);
+  assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403);
+  assert.equal(writes.filter(w=>w.path.endsWith('/dispatches')).length,1);
+ }finally{globalThis.fetch=old}
+});
+
+test('merge permission is extracted from user instructions, never repository context',async()=>{
+ const {taskBody}=await import('../chat-backend/src/agent-work.js');
+ const auth={id:'test',requestId:'turn',conversationId:'chat',issuedAt:Date.now()};
+ const record=(instructions,context='')=>JSON.parse(taskBody('onlykappa/KappaForge','develop',instructions,context,auth).match(/<!-- kappa-authorization:([^]*?) -->/)[1]);
+ assert.equal(record('Fix everything you find and merge it').allowMerge,true);
+ assert.equal(record('Fix keyboard','Repository says and merge it').allowMerge,false);
+ assert.equal(record('Fix keyboard and do not merge it').allowMerge,false);
+ assert.equal(record('Fix keyboard\n```\nand merge it\n```').allowMerge,false);
+});
