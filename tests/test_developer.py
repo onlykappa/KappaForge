@@ -492,8 +492,8 @@ class ProgressTests(unittest.TestCase):
             p.ok("Opened PR")
         self.assertEqual(calls[0][0], "repos/onlykappa/KappaForge/issues/9/comments")
         self.assertEqual([c[0] for c in calls[1:]], ["repos/onlykappa/KappaForge/issues/comments/77"] * 2)
-        self.assertEqual(calls[0][1]["body"], developer.Progress.HEADING + "\n\n⏳ Reading · started 1970-01-01 00:16:40 UTC")
-        self.assertEqual(calls[-1][1]["body"], developer.Progress.HEADING + "\n\n✅ Reading · 24s\n✅ Opened PR · 1m 12s",
+        self.assertEqual(__import__('re').sub(r"<!-- KAPPA_PROGRESS_V1 .*? -->\n", "", calls[0][1]["body"]), developer.Progress.HEADING + "\n\n⏳ Reading · started 1970-01-01 00:16:40 UTC")
+        self.assertEqual(__import__('re').sub(r"<!-- KAPPA_PROGRESS_V1 .*? -->\n", "", calls[-1][1]["body"]), developer.Progress.HEADING + "\n\n✅ Reading · 24s\n✅ Opened PR · 1m 12s",
                          "a result replaces the step it finishes, with how long each step took")
         with patch.object(developer, "gh", side_effect=urllib.error.URLError("down")):
             developer.Progress(9, "t").now("never blocks the task")

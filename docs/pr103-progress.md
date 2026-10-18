@@ -39,3 +39,12 @@ Validation: 20 focused Node tests passed (task-progress, task-tracking, chat-act
 
 Next: emit structured snapshots from real Python Progress transitions; add runner event tests, terminal state timing and stale indicators; run full baseline suite and mobile browser tests. Baseline Python suite output is being reviewed separately.
 
+
+## Feature 2 checkpoint: real runner execution snapshots
+Status: implemented and focused contract checks passed. `engine/developer.py::Progress` now publishes versioned JSON snapshots inside its existing edited bot comment. Actual transitions carry stable executed-step IDs, stable pending IDs, per-attempt identity, monotonic revisions, start/end timestamps, explicit failure and testing status, and measured implementation-stage units. Human-readable checklist compatibility is preserved. Raw model design reasoning is no longer copied into the live progress feed. Failed dispatch is blocked, not reported as completed.
+
+Verification: 44 existing developer tests and 3 new runner wire-contract tests passed; 20 focused frontend tests and scripts/check-web.py passed. Snapshot tests verify real Progress calls, failure time freezing, JSON escaping, stable IDs and revision order. Terminal client timing now freezes on test/terminal lifecycle events.
+
+Feature 1 remote commit: `6ee18ff789dd346a1e0e42ab86f764a18782c764`. Feature 2 commit is the commit containing this checkpoint.
+
+Next: review all full-suite results after exact baseline restoration, exercise the real UI in an available browser, add structured-card assertions and connection isolation coverage, and document native/production integration limits. Browser preflight: runtime Playwright exists but its default Chromium and WebKit binaries are absent. Locate an installed browser before attempting screenshots.

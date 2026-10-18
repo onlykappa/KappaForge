@@ -31,7 +31,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 // A task owns one card across comments and retries. Never infer launch from assistant prose.
 function ensureTaskCard(job){
@@ -111,6 +111,7 @@ async function checkJobResult(){
   for(const job of jobs){job.pollError=e.message;ensureTaskCard(job);changed=true;}
 
  }finally{
+  for(const job of jobs){if(job.finished&&!job.finishedAt)job.finishedAt=Date.now()}
   recentJob=trackedJobs.find(j=>j.number===recentJob?.number)||recentJob;persistJobs();jobTrackingBusy=false;if(changed)render();
  }
 }
@@ -206,11 +207,21 @@ async function cancelAuthorizedJob(number){
  const job=trackedJobs.find(j=>j.number===number);if(!job?.authorization)return;
  const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
  const result=await response.json();if(!response.ok){toast(result.error);return;}
- job.finished=true;job.message='cancelled';persistJobs();render();toast('Task cancelled');
+ job.finished=true;job.finishedAt=Date.now();job.message='cancelled';persistJobs();render();toast('Task cancelled');
 }
 function taskCheckpoint(job,status,source='backend'){
- job.lifecycle={status,source,at:Date.now()};persistJobs();
+ job.lifecycle={status,source,at:Date.now()};if(["tests-passed","failed","tests-failed","merged","cancelled","closed"].includes(status))job.finishedAt=Date.now();persistJobs();
 }
 
 
 for(const job of trackedJobs){if(!job.queuedAt)job.queuedAt=job.activeAt||Date.now();if(!job.finished)ensureTaskCard(job)}
+
+// Update freshness without refetching, rerendering the chat, or announcing every timer tick.
+setInterval(()=>{
+ if(document.hidden)return;
+ document.querySelectorAll('[data-task-freshness]').forEach(el=>{
+  const job=trackedJobs.find(j=>j.number===Number(el.dataset.taskFreshness));if(!job)return;
+  const updated=Number(el.dataset.updatedAt),label=updated?new Date(updated).toLocaleTimeString():'not received';
+  el.textContent=job.pollError?'Updates unavailable. Reconnecting automatically.':KappaProgress.stale(job)?'No recent execution update. Last update '+label+'.':'Last update '+label;
+ });
+},1000);
