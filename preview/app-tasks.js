@@ -90,8 +90,8 @@ async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
  const job=pendingJob,jobChatId=current;job.requestId=job.requestId||crypto.randomUUID();job.conversationId=job.conversationId||jobChatId;pendingJob=null;render();
  try{
- const {requestId,conversationId,...payload}=job;
- const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,"user-request",requestId,conversationId||jobChatId);
+ const {requestId,conversationId,authorizationSource,...payload}=job;
+ const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
  recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,authorization:{id:job.requestId,conversationId:job.conversationId||jobChatId},chatId:jobChatId,activeAt:Date.now()};
@@ -147,7 +147,7 @@ function confirmTaskChoices(){
    error.textContent="Continuous coding needs numbered lines starting with Step 1: (15+ characters).";return
  }
  pendingJob={title:text.split("\n")[0].slice(0,105)||"KappaForge task",
-             instructions:text,requestId:crypto.randomUUID(),conversationId:current,
+             instructions:text,requestId:crypto.randomUUID(),conversationId:current,authorizationSource:"user-control",confirmed:true,
              repo,mode,context:KappaJobs.conversationContext(active()?.messages)};
  closeTaskSheet();view="chat";render();
 }

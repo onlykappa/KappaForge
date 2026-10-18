@@ -174,7 +174,7 @@ function syncNativeComposer(){
  if(!editor||!composer)return;
  editor.readOnly=true;editor.disabled=true;editor.tabIndex=-1;editor.style.pointerEvents='none';editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
  const rect=editor.getBoundingClientRect();
- window.webkit.messageHandlers.kappa.postMessage({action:'composer',dark:String(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()==='#000'),color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')||document.querySelector('.main')?.inert||document.querySelector('.layout')?.inert),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
+ window.webkit.messageHandlers.kappa.postMessage({action:'composer',appearance:document.documentElement.dataset.appearance||'dark',dark:String(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()==='#000'),color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')||document.querySelector('.main')?.inert||document.querySelector('.layout')?.inert),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
 }
 window.receiveNativeComposer=packet=>{
  if(!packet||typeof packet.text!=='string'||!Number.isSafeInteger(packet.revision))return;

@@ -9,7 +9,8 @@ export function validateRequest(path,payload,userText,source){
  if(!needsAuthorization(path))throw Error('Unsupported execution endpoint');
  if(source!=='user-request'&&source!=='user-control')throw Error('Only a direct user request or control may authorize work');
  if(path==='/jobs'){
-  if(payload.instructions!==userText||!permits(userText,payload.mode))throw Error('The user request does not authorize this task mode');
+  const explicitControl=source==='user-control'&&payload.confirmed===true&&payload.approved===true;
+  if(payload.instructions!==userText||(!explicitControl&&!permits(userText,payload.mode)))throw Error('The user request does not authorize this task mode');
   if(classify(userText)==='release')throw Error('Use the verified release controls for release actions');
   if(payload.context&&typeof payload.context!=='string')throw Error('Invalid context');
  }else if(source==='user-request'){

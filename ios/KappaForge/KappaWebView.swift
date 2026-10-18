@@ -41,8 +41,9 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
 
     func updateComposer(_ body: [String: String]) {
         let dark = body["dark"] == "true"
-        composerEditor.keyboardAppearance = dark ? .dark : .light
-        window?.rootViewController?.overrideUserInterfaceStyle = dark ? .dark : .light
+        let systemAppearance = body["appearance"] == "system"
+        composerEditor.keyboardAppearance = systemAppearance ? .default : (dark ? .dark : .light)
+        window?.rootViewController?.overrideUserInterfaceStyle = systemAppearance ? .unspecified : (dark ? .dark : .light)
         composerEditor.isHidden = body["hidden"] == "true"
         if composerEditor.isHidden { composerEditor.resignFirstResponder(); return }
         guard let raw = body["frame"], let data = raw.data(using: .utf8),

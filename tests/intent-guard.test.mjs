@@ -117,7 +117,7 @@ test('native bridge disables the WebKit responder and hides UIKit input for moda
  const messages=[],editor={value:'draft',style:{},setAttribute(){},getBoundingClientRect:()=>({x:10,y:700,width:300,height:40})};
  const main={inert:false},layout={inert:false},composer={classList:{contains:()=>false}};
  const box={window:{KappaNativeComposer:true,webkit:{messageHandlers:{kappa:{postMessage:m=>messages.push(m)}}}},nativeComposerRevision:2,
- document:{getElementById:id=>id==='message'?editor:composer,documentElement:{},querySelector:s=>s==='.main'?main:layout},
+ document:{getElementById:id=>id==='message'?editor:composer,documentElement:{dataset:{}},querySelector:s=>s==='.main'?main:layout},
  getComputedStyle:()=>({fontSize:'16px',getPropertyValue:key=>key==='--text'?'#ffffff':'#000'})};
  vm.runInNewContext(fn,box);box.syncNativeComposer();assert.equal(editor.disabled,true);assert.equal(editor.tabIndex,-1);assert.equal(messages.at(-1).hidden,'false');
  main.inert=true;box.syncNativeComposer();assert.equal(messages.at(-1).hidden,'true');
@@ -133,4 +133,12 @@ test('native keyboard geometry converges to one offset across safe-area and refo
  box.updateKeyboard();assert.equal(offset,354,'second viewport event must not double the offset');
  box.window.KappaNativeKeyboardTop=600;box.updateKeyboard();assert.equal(offset,254);
  box.window.KappaNativeComposerFocused=false;box.updateKeyboard();assert.equal(offset,0);assert.equal(opened,false);
+});
+
+test('manual task controls authorize exactly the reviewed job without authorizing plans automatically',()=>{
+ const payload={mode:'develop',instructions:'Keyboard spacing improvement',approved:true,confirmed:true};
+ assert.doesNotThrow(()=>validateRequest('/jobs',payload,payload.instructions,'user-control'));
+ assert.throws(()=>validateRequest('/jobs',{...payload,confirmed:false},payload.instructions,'user-control'));
+ assert.throws(()=>validateRequest('/jobs',payload,payload.instructions,'user-request'));
+ assert.throws(()=>validateRequest('/jobs',{...payload,instructions:'Unrelated work'},payload.instructions,'user-control'));
 });
