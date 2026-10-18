@@ -381,6 +381,35 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
+def diagnose_generation_failure(message, sources):
+    """Provide targeted, source-grounded repair guidance, never a bypass."""
+    if "matched 0 times" in message:
+        paths = list(sources)
+        return ("The previous find string does not occur in the actual source. "
+                "Use only literal text visible in SOURCE FILES; do not invent declarations. "
+                "Existing source paths: " + ", ".join(paths[:15]) + ". "
+                "Replan the edit around an existing class/function or use a genuinely changed, "
+                "fully read file content.")
+    if "Change leaves file unchanged" in message:
+        return ("Your replacement was a no-op. Compare old and proposed content before responding; "
+                "provide an actual behavior-changing edit and a regression test.")
+    if "Repeated path" in message:
+        return ("Consolidate all edits to each path in one files[] entry. Each path must appear once.")
+    if "matched " in message and "times" in message:
+        return ("The find expression is ambiguous. Choose a smaller unique substring in the "
+                "real file, including nearby context as needed.")
+    if "No test was added" in message:
+        return ("Create or modify a real discovered regression test in the same proposal; "
+                "it must exercise the changed behavior rather than check a mock or comment.")
+    if "Syntax check failed" in message:
+        return ("Identify the parser diagnostic and correct the generated syntax while "
+                "preserving the requested functionality.")
+    if "JSON" in message or "Expecting" in message:
+        return ("Return one complete, syntactically valid JSON object with no markdown fences.")
+    return ("Re-evaluate the error and the current source, adjust the implementation, "
+            "and preserve all existing authorization, file scope and test requirements.")
+
+
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False):
     context = ""
     for path, text in sources.items():
@@ -417,13 +446,16 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current default branch):" + context)
     errors = []
-    for attempt in range(3):
-        retry = ("\n\nYour previous answer was rejected: " + "; ".join(errors[-3:]) +
-                 "\nRe-read the SOURCE FILES above before retrying. Every edit.find must be copied verbatim " +
-                 "from the actual source and match exactly once. Do not invent class declarations, " +
-                 "duplicate file entries, or submit unchanged content. If the requested behavior " +
-                 "already exists, change a relevant test or report it in the explanation with " +
-                 "another genuine required code improvement. Fix these errors without expanding scope.") if attempt else ""
+    # Recoverable source/format errors get additional autonomous diagnostic attempts.
+    # Security/scope failures remain limited; never execute or push invalid proposals.
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt + 1) + "/" + str(max_attempts) +
+                 "\nValidator history: " + "; ".join(errors[-3:]) +
+                 "\nRoot-cause guidance: " + diagnose_generation_failure(errors[-1], sources) +
+                 "\nAnalyze why the last proposal failed, choose a different valid edit, and "
+                 "check that each path changes exactly once. Do not ask the owner for guidance "
+                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
         model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed)
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
@@ -437,8 +469,13 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-            errors.append(str(exc)[:300] or type(exc).__name__)
-    raise ValueError("Generated change failed validation after three attempts: " + " | ".join(errors))
+            error = str(exc)[:300] or type(exc).__name__
+            errors.append(error)
+            print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
+            # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
+            if any(x in error for x in ("Blocked path:", "Forbidden path:", "Unsafe path:", "Unauthorized")):
+                break
+    raise ValueError("Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors))
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
