@@ -323,7 +323,7 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
   if(!resp.ok)throw Error(data.error||"Could not plan task (HTTP "+resp.status+")");
   if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
   const p=data.proposal;
-  pendingJob={title:p.title,instructions:String(text).trim(),repo:p.repo,mode:KappaIntent.classify(text)==="investigation"?"audit":p.mode,context,requestId,conversationId};
+  pendingJob={title:String(text).trim().split("\n")[0].slice(0,105),instructions:String(text).trim(),repo:p.repo,mode:KappaIntent.classify(text)==="investigation"?"audit":p.mode,context,requestId,conversationId};
   view="chat";
   // Owner explicitly requested hands-off development. Only safe task modes start
   // automatically; potentially destructive or long-running modes still need review.

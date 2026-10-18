@@ -38,6 +38,10 @@ def complete(run, api):
     checks = api(f'repos/{repo}/commits/{sha}/check-runs?per_page=100')
     if checks.get('total_count', 0) > 100 or any(c.get('status') != 'completed' or c.get('conclusion') not in {'success', 'skipped', 'neutral'} for c in checks.get('check_runs', [])):
         return 'checks_pending_or_failed'
+    files = api(f'repos/{repo}/pulls/{pr['number']}/files?per_page=100')
+    native_changes = repo == 'onlykappa/KappaForge' and (len(files) >= 100 or any(f.get('filename', '').startswith(('ios/', 'preview/', 'config/', 'scripts/', '.github/')) for f in files))
+    if native_changes and not any(c.get('name') == 'native' and c.get('conclusion') == 'success' for c in checks.get('check_runs', [])):
+        return 'native_verification_required'
     statuses = api(f'repos/{repo}/commits/{sha}/status')
     if statuses.get('total_count', 0) > 100 or (statuses.get('statuses') and statuses.get('state') != 'success'):
         return 'statuses_pending_or_failed'

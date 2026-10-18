@@ -3,15 +3,6 @@ let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
-// The chat AI marks requests for work with a kappa-action block; the app carries them out here.
-function chatActionFrom(json){
- try{const a=JSON.parse(json);
-  if(a?.type==="task"&&typeof a.request==="string"&&a.request.trim())return {type:"task",request:a.request.trim().slice(0,3500)};
-  if(a?.type==="retry"&&Number.isSafeInteger(a.task)&&a.task>0)return {type:"retry",task:a.task};
-  if(a?.type==="guidance"&&Number.isSafeInteger(a.task)&&a.task>0&&typeof a.text==="string"&&a.text.trim())return {type:"guidance",task:a.task,text:a.text.trim().slice(0,1500)};
- }catch{}
- return null;
-}
 // Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(reply,typed,chat,offerTask){
  if(!offerTask||!['execution','investigation'].includes(KappaIntent.classify(typed)))return;

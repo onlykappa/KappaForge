@@ -16,6 +16,7 @@ def fixture(merge=True,conclusion='success'):
         if path.endswith('/issues/98'):return issue
         if '/pulls?' in path:return [pr]
         if path.endswith('/pulls/99'):return pr
+        if '/files?' in path:return []
         if '/check-runs?' in path:return {'total_count':1,'check_runs':[{'status':'completed','conclusion':conclusion}]}
         if path.endswith('/status'):return {'total_count':0,'statuses':[]}
         raise AssertionError(path)

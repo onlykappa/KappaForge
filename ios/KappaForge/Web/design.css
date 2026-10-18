@@ -50,7 +50,7 @@
 
 
 /* KappaForge activity cockpit: sourced stage states, collapsible findings and native mobile controls. */
-.header-presence{display:block;font-size:10px;line-height:1.2;color:#999da7;letter-spacing:.01em;margin-top:3px}
+.header-presence{display:block;font-size:10px;line-height:1.2;color:var(--muted);letter-spacing:.01em;margin-top:3px}
 .header-presence i{display:inline-block;width:6px;height:6px;margin-right:5px;vertical-align:1px;border-radius:50%;background:#70bfa0}
 .top-title strong{font-weight:650;font-size:15px}
 
@@ -107,7 +107,7 @@
  .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:#000;min-height:calc(56px + var(--kappa-safe-top))}
  .top-title{text-align:left}
  .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.2px;white-space:nowrap}
- .header-presence{color:#a19dae;font-size:10px}
+ .header-presence{color:var(--muted);font-size:10px}
  .header-presence i{background:#54bd96}
  .content{max-width:100%;padding-left:16px;padding-right:16px}
  .chat-message.is-progress{margin:12px 0 20px;padding:0}

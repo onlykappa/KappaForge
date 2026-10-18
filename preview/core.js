@@ -38,7 +38,7 @@ globalThis.KappaJobs={conciseReport(status,body,source){
  const raw=String(body||'').replace(/<!--[^]*?-->/g,'').replace(/\\n/g,'\n').trim();
  const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
  const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':status==='complete'?'Task complete':'Progress update';
- const useful=lines.filter(x=>/^(?:\*\*(?:Why|What changed|Result|Verification|How to proceed)|[-*] |✅|❌|### )/.test(x)).slice(0,5).map(x=>x.replace(/^###\s*/,''));
+ const useful=lines.filter(x=>!/^### |^```|^<!--/.test(x)).slice(0,5);
  const message=(useful.length?useful:lines.slice(0,2)).join('\n').slice(0,900);
  return '**'+heading+'**\n\n'+message+(source?'\n\n[View full report]('+source+')':'');
 },autoLaunchAllowed(job){
