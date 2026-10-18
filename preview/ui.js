@@ -13,6 +13,7 @@ function setSidebar(open,restoreFocus=false){
  else{sidebar.classList.toggle('open',open);document.body.classList.toggle('sidebar-open',open);sidebar.inert=!open;if(open){sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('role','dialog');}else{sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('role');}}
  document.querySelector('.main').inert=mobile&&open;document.querySelector('.mobile-nav').inert=mobile&&open;if(mobile&&open)document.getElementById('close-sidebar').focus({preventScroll:true});
  document.getElementById('sidebarbackdrop').hidden=!open||!mobile;document.getElementById('menubtn').setAttribute('aria-expanded',String(open));
+ syncNativeComposer();
  if(restoreFocus)document.getElementById('menubtn').focus();
 }
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
@@ -92,8 +93,13 @@ function updateKeyboard(){
  const typing=window.KappaNativeComposer?!!window.KappaNativeComposerFocused:document.activeElement===document.getElementById('message');
  const inset=window.KappaNativeComposer?Number(window.KappaNativeKeyboardInset||0):(vv?Math.max(0,window.innerHeight-vv.height-vv.offsetTop):0);
  const open=typing&&inset>80;
- document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
  document.body.classList.toggle('keyboard-open',open);
+ let appliedInset=inset;
+ if(open&&window.KappaNativeComposer&&Number.isFinite(window.KappaNativeKeyboardTop)){
+  const previous=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset'))||0;
+  appliedInset=Math.max(0,previous+document.getElementById('composer').getBoundingClientRect().bottom-(window.KappaNativeKeyboardTop-4));
+ }
+ document.documentElement.style.setProperty('--keyboard-inset',open?appliedInset+'px':'0px');
  syncNativeComposer();
  // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }
@@ -166,9 +172,9 @@ function syncNativeComposer(){
  if(!window.KappaNativeComposer)return;
  const editor=document.getElementById('message'),composer=document.getElementById('composer');
  if(!editor||!composer)return;
- editor.readOnly=true;editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
+ editor.readOnly=true;editor.disabled=true;editor.tabIndex=-1;editor.style.pointerEvents='none';editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
  const rect=editor.getBoundingClientRect();
- window.webkit.messageHandlers.kappa.postMessage({action:'composer',color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
+ window.webkit.messageHandlers.kappa.postMessage({action:'composer',dark:String(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()==='#000'),color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')||document.querySelector('.main')?.inert||document.querySelector('.layout')?.inert),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
 }
 window.receiveNativeComposer=packet=>{
  if(!packet||typeof packet.text!=='string'||!Number.isSafeInteger(packet.revision))return;
@@ -179,4 +185,9 @@ if(window.KappaNativeComposer){
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){updateKeyboard();syncNativeComposer()}});
  window.addEventListener('pageshow',syncNativeComposer);
  document.addEventListener('pointerdown',event=>{if(!event.target.closest('#composer'))window.webkit.messageHandlers.kappa.postMessage({action:'blurComposer'});},{passive:true});
+}
+
+function focusMessageInput(){
+ if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'})}
+ else document.getElementById('message').focus({preventScroll:true});
 }

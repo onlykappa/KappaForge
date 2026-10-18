@@ -276,9 +276,9 @@ if(view==="settings")html=renderSettings();
 if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 document.getElementById("content").innerHTML=html;
 
-document.querySelectorAll("[data-choice]").forEach(b=>b.addEventListener("click",()=>{navigate("chat");document.getElementById("message").value=b.dataset.choice;document.getElementById("message").focus()}));
+document.querySelectorAll("[data-choice]").forEach(b=>b.addEventListener("click",()=>{navigate("chat");document.getElementById("message").value=b.dataset.choice;focusMessageInput()}));
 document.querySelectorAll("[data-copy-message]").forEach(b=>b.addEventListener("click",async()=>{const m=active()?.messages[Number(b.dataset.copyMessage)];if(m)try{await copyInterfaceText(m.text);toast("Message copied")}catch(e){toast(e.message)}}));
-document.querySelectorAll("[data-repeat-message]").forEach(b=>b.addEventListener("click",()=>{const m=active()?.messages[Number(b.dataset.repeatMessage)];if(m){navigate("chat");document.getElementById("message").value="Explain your last answer in plain English with short, actionable steps.";resizeComposer();document.getElementById("message").focus();}}));
+document.querySelectorAll("[data-repeat-message]").forEach(b=>b.addEventListener("click",()=>{const m=active()?.messages[Number(b.dataset.repeatMessage)];if(m){navigate("chat");document.getElementById("message").value="Explain your last answer in plain English with short, actionable steps.";resizeComposer();focusMessageInput();}}));
 document.querySelectorAll("#indexstatus,#indexrefresh").forEach(b=>b.addEventListener("click",async()=>{const report=document.getElementById("indexreport"),repo=document.getElementById("indexrepo").value;if(!backend||!access){report.textContent="Connect the AI backend first.";return;}const refresh=b.id==="indexrefresh";report.textContent=refresh?"Building repository vectors (may take a while)…":"Checking index status…";b.disabled=true;try{const r=await fetch(backend+"/index",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({repo,action:refresh?"refresh":"status"})});const d=await r.json();if(!r.ok)throw Error(d.error||"Index request failed");report.textContent=repo+": "+(d.status||"unknown")+" · "+(d.count||0)+" chunks · "+(d.sha||"no commit indexed").slice(0,12);}catch(e){report.textContent="Index: "+e.message;}finally{b.disabled=false}}));
 document.getElementById("pluginsearch")?.addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll(".plugin-item").forEach(x=>x.hidden=!x.textContent.toLowerCase().includes(q));});
 document.querySelectorAll("[data-review]").forEach(b=>b.addEventListener("click",()=>submitReviewDecision(Number(b.dataset.review),b.dataset.decision)));
@@ -301,10 +301,10 @@ document.querySelectorAll("[data-plugin-request]").forEach(b=>b.addEventListener
  const plugin=PLUGIN_CATALOG[Number(b.dataset.pluginRequest)];
  if(!plugin)return;
  const draft="Plan a secure, owner-approved "+plugin.name+" integration for KappaForge. Explain permissions, OAuth or app tokens, what will work, and how to test it. Do not claim it is connected and do not request secrets in chat.";
- current=current||null;navigate("chat");document.getElementById("message").value=draft;document.getElementById("message").focus();
+ current=current||null;navigate("chat");document.getElementById("message").value=draft;focusMessageInput();
 }));
 bindSettings();bindInterface(scrollState);
-document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;document.getElementById("message").focus();resizeComposer()});
+document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("feedrefresh")?.addEventListener("click",()=>refreshActivity(true));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});

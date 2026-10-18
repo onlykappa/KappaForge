@@ -32,19 +32,23 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
                 let screenFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
                 let localFrame = self.convert(screenFrame, from: nil)
                 let overlap = note.name == UIResponder.keyboardWillHideNotification ? 0 : max(0, self.bounds.maxY - localFrame.minY)
-                self.evaluateJavaScript("window.KappaNativeKeyboardInset = \(overlap); window.updateKeyboard?.(); window.syncNativeComposer?.();", completionHandler: nil)
+                let keyboardTop = note.name == UIResponder.keyboardWillHideNotification ? "null" : String(localFrame.minY)
+                self.evaluateJavaScript("window.KappaNativeKeyboardInset = \(overlap); window.KappaNativeKeyboardTop = \(keyboardTop); window.updateKeyboard?.(); window.syncNativeComposer?.();", completionHandler: nil)
             })
         }
     }
     deinit { keyboardObservers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     func updateComposer(_ body: [String: String]) {
+        let dark = body["dark"] == "true"
+        composerEditor.keyboardAppearance = dark ? .dark : .light
+        window?.rootViewController?.overrideUserInterfaceStyle = dark ? .dark : .light
+        composerEditor.isHidden = body["hidden"] == "true"
+        if composerEditor.isHidden { composerEditor.resignFirstResponder(); return }
         guard let raw = body["frame"], let data = raw.data(using: .utf8),
               let frame = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
               let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"],
               [x,y,width,height].allSatisfy({ $0.isFinite }), width > 0, height > 0 else { return }
-        composerEditor.isHidden = body["hidden"] == "true"
-        if composerEditor.isHidden { composerEditor.resignFirstResponder() }
         composerEditor.frame = CGRect(x: x, y: y, width: width, height: height)
         if let hex = body["color"]?.replacingOccurrences(of: "#", with: ""), hex.count == 6, let rgb = UInt32(hex, radix: 16) {
             composerEditor.textColor = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)

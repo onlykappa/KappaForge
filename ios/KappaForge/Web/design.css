@@ -104,7 +104,7 @@
 .activity-report code{white-space:pre-wrap;overflow-wrap:anywhere}
 .activity-report pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;overflow:auto}
 @media(max-width:840px){
- .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:#000;min-height:calc(56px + var(--kappa-safe-top))}
+ .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:var(--bg);min-height:calc(56px + var(--kappa-safe-top))}
  .top-title{text-align:left}
  .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.2px;white-space:nowrap}
  .header-presence{color:var(--muted);font-size:10px}
@@ -113,7 +113,7 @@
  .chat-message.is-progress{margin:12px 0 20px;padding:0}
  .chat-message.is-progress .message-stack{width:100%;display:block}
  .composer,.sidebar-collapsed .composer{left:10px;right:10px;padding:0;background:none}
- .compose-inner{background:#181820;border:1px solid rgba(161,139,211,.35);border-radius:23px;box-shadow:none;padding:10px 11px}
+ .compose-inner{background:var(--surface);border:1px solid rgba(161,139,211,.35);border-radius:23px;box-shadow:none;padding:10px 11px}
  .controls{gap:5px}
  .composer-task{background:rgba(255,255,255,.04);border-radius:20px;padding:6px 10px}
  .controls .send-button{background:#865edd}

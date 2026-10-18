@@ -111,11 +111,11 @@ function prepareJob(message){
  document.getElementById("taskrepo").innerHTML=repoOptions(mentionedRepository(text)||"KappaForge","onlykappa/");
  document.getElementById("taskmode").value="audit";
  overlay.hidden=false;document.querySelector(".layout").inert=true;document.querySelector(".mobile-nav").inert=true;updateTaskChoices();
- document.getElementById("taskrepo").focus();
+ syncNativeComposer();document.getElementById("taskrepo").focus();
 }
 function closeTaskSheet(){
  document.getElementById("taskoverlay").hidden=true;document.querySelector(".layout").inert=false;document.querySelector(".mobile-nav").inert=false;
- if(taskFocus?.focus)taskFocus.focus();
+ syncNativeComposer();if(taskFocus?.focus)taskFocus.focus();
 }
 function updateTaskChoices(){
  const repo=document.getElementById("taskrepo").value;

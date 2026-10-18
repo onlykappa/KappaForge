@@ -110,3 +110,27 @@ test('merge permission is extracted from user instructions, never repository con
  assert.equal(record('Fix keyboard and do not merge it').allowMerge,false);
  assert.equal(record('Fix keyboard\n```\nand merge it\n```').allowMerge,false);
 });
+
+test('native bridge disables the WebKit responder and hides UIKit input for modal navigation',()=>{
+ const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
+ const fn=source.slice(source.indexOf('function syncNativeComposer(){'),source.indexOf('window.receiveNativeComposer='));
+ const messages=[],editor={value:'draft',style:{},setAttribute(){},getBoundingClientRect:()=>({x:10,y:700,width:300,height:40})};
+ const main={inert:false},layout={inert:false},composer={classList:{contains:()=>false}};
+ const box={window:{KappaNativeComposer:true,webkit:{messageHandlers:{kappa:{postMessage:m=>messages.push(m)}}}},nativeComposerRevision:2,
+ document:{getElementById:id=>id==='message'?editor:composer,documentElement:{},querySelector:s=>s==='.main'?main:layout},
+ getComputedStyle:()=>({fontSize:'16px',getPropertyValue:key=>key==='--text'?'#ffffff':'#000'})};
+ vm.runInNewContext(fn,box);box.syncNativeComposer();assert.equal(editor.disabled,true);assert.equal(editor.tabIndex,-1);assert.equal(messages.at(-1).hidden,'false');
+ main.inert=true;box.syncNativeComposer();assert.equal(messages.at(-1).hidden,'true');
+ main.inert=false;layout.inert=true;box.syncNativeComposer();assert.equal(messages.at(-1).hidden,'true');
+});
+test('native keyboard geometry converges to one offset across safe-area and refocus changes',()=>{
+ const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
+ const fn=source.slice(source.indexOf('function updateKeyboard(){'),source.indexOf('function initInterface(){'));
+ let offset=0,opened=false;const box={window:{KappaNativeComposer:true,KappaNativeComposerFocused:true,KappaNativeKeyboardInset:350,KappaNativeKeyboardTop:500},
+ document:{body:{classList:{toggle:(name,value)=>opened=value}},documentElement:{style:{setProperty:(key,value)=>offset=parseFloat(value)}},getElementById:()=>({getBoundingClientRect:()=>({bottom:850-offset})})},
+ getComputedStyle:()=>({getPropertyValue:()=>String(offset)}),syncNativeComposer(){}};
+ vm.runInNewContext(fn,box);box.updateKeyboard();assert.equal(offset,354);assert.equal(opened,true);
+ box.updateKeyboard();assert.equal(offset,354,'second viewport event must not double the offset');
+ box.window.KappaNativeKeyboardTop=600;box.updateKeyboard();assert.equal(offset,254);
+ box.window.KappaNativeComposerFocused=false;box.updateKeyboard();assert.equal(offset,0);assert.equal(opened,false);
+});
