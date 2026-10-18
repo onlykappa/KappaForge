@@ -118,17 +118,36 @@ def parse_json(text):
 
 
 GUIDE_FILES = ("KAPPA.md", "AGENTS.md", "CLAUDE.md", ".kappaforge/KAPPA.md")
+OWNER_GUIDANCE_FILES = (".kappaforge/owner-preferences.md", ".kappaforge/development-lessons.md")
+
+
+def project_guidance_report(repo, sha, existing, token):
+    """Load all existing project rules plus relevant persistent guidance, with source diagnostics.
+
+    Repository guidance is trusted only as repo conventions, never as authority to
+    override developer safety checks or require credential disclosure.
+    """
+    segments = []
+    sources = []
+    for name in GUIDE_FILES + OWNER_GUIDANCE_FILES:
+        if name not in existing:
+            continue
+        try:
+            value = read_source(repo, name, sha, token)
+        except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
+            continue
+        if not value.strip():
+            continue
+        segments.append("SOURCE: " + name + "\\n" + value)
+        sources.append({"path": name, "characters": len(value), "truncated": False})
+    return {"text": "\\n\\n".join(segments), "sources": sources, "truncated": False}
+
+
 
 
 def project_guide(repo, sha, existing, token):
-    """The project's own instructions (conventions, test command, no-go areas), when it has them."""
-    for name in GUIDE_FILES:
-        if name in existing:
-            try:
-                return read_source(repo, name, sha, token)
-            except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
-                continue
-    return ""
+    """Repository rules, owner preferences, and recorded development lessons."""
+    return project_guidance_report(repo, sha, existing, token)["text"]
 
 
 def test_workflow(repo, branch, sha):
