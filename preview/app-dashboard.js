@@ -314,7 +314,34 @@ function controlCenter(){
 }
 function dashboardSummary(){
  if(dashboardState.mode!=="overview")return runPage();
- return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Overview</h1><p class="muted">Live builds, reviews, and recent results.</p></div>'+buildsPanel()+controlCenter();
+ return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Overview</h1><p class="muted">Live builds, reviews, and recent results.</p></div>'+agentTasksPanel()+buildsPanel()+controlCenter();
+}
+// The newest checklist message of a task, wherever its conversation is.
+function taskProgressMessage(number){
+ for(const chat of chats){const i=chat.messages.findLastIndex(m=>String(m.progressKey||"").startsWith("progress:"+number+":"));if(i>=0)return {chat,index:i,message:chat.messages[i]}}
+ return null;
+}
+// Running tasks (and the day's finished ones) with their step, progress and time; a row opens the task's card in chat.
+function agentTasksPanel(){
+ const day=Date.now()-86400000;
+ const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
+ const rows=jobs.map(job=>{
+  const found=taskProgressMessage(job.number);if(!found)return "";
+  const model=KappaJobs.taskModel(found.message.text),checks=taskValidation(job),all=[...model.rows,...checks];
+  const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
+  const now=model.current||checks.find(c=>c.state==="current")||model.failed||all.filter(r=>r.state==="done").at(-1);
+  const failed=!!model.failed||["failed","tests-failed"].includes(job.message);
+  const state=job.finished?"done":failed?"failed":model.current||checks.some(c=>c.state==="current")?"current":"done";
+  return '<button type="button" class="agent-task '+state+'" data-open-task="'+esc(job.number)+'"><span class="agent-task-head"><strong>Task #'+esc(job.number)+(model.fix?' · fix '+model.fix.n+' of '+model.fix.of:'')+'</strong><small>'+esc(done+'/'+all.length)+'</small></span>'+
+   '<span class="agent-task-step">'+esc(now?plain(now.title)+(now.detail?': '+clip(plain(now.detail),70):''):'Waiting for the first update')+'</span>'+
+   '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span></button>';
+ }).filter(Boolean);
+ return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
+}
+function openTaskInChat(number){
+ const found=taskProgressMessage(number);if(!found)return;
+ found.message.collapsed=false;current=found.chat.id;navigate("chat");
+ requestAnimationFrame(()=>document.querySelector('[data-message-index="'+found.index+'"]')?.scrollIntoView({block:"center"}));
 }
 async function discordRequest(action,payload={}){
  if(!backend||!access)throw Error("Connect AI before setting up Discord.");
@@ -348,7 +375,7 @@ function pluginCatalog(){
  return '<label class="plugin-search-label">Find an integration<input id="pluginsearch" class="plugin-search" placeholder="Search plugins…" autocomplete="off"></label><div id="pluginresults">'+PLUGIN_CATALOG.map((p,i)=>'<div class="plugin-item"><div><strong>'+esc(p.name)+'</strong><p class="muted">'+esc(p.desc)+'</p><small>'+esc(p.status)+'</small></div><div class="plugin-actions"><a href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer">Website ↗</a><button type="button" class="btn secondary" data-plugin-request="'+i+'">Plan</button></div></div>').join("")+'</div>';
 }
 // Running times (builds on the dashboard, task steps in chat) count up once a second in place, without re-rendering.
-setInterval(()=>{if(!["home","chat"].includes(view)||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))});document.querySelectorAll("[data-summary-since]").forEach(el=>{const t=Date.parse(el.dataset.summarySince);if(Number.isFinite(t))el.textContent="In progress · "+KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
+setInterval(()=>{if(!["home","chat"].includes(view)||document.hidden)return;const now=Date.now();document.querySelectorAll("[data-since]").forEach(el=>{const t=Date.parse(el.dataset.since);if(Number.isFinite(t))el.textContent=KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000))+(Number(el.dataset.base)||0))});document.querySelectorAll("[data-summary-since]").forEach(el=>{const t=Date.parse(el.dataset.summarySince);if(Number.isFinite(t))el.textContent="In progress · "+KappaActions.formatDuration(Math.max(0,Math.round((now-t)/1000)))})},1000);
 let activityLabel="";
 function setActivity(label){activityLabel=label;const el=document.getElementById("activitystatus");if(el){el.hidden=!label;el.textContent=label?"● "+label:"";}}
 function render(){
@@ -374,7 +401,16 @@ document.getElementById("content").innerHTML=html;
 // Stream live Actions updates only while the dashboard is on screen; the 90-second refresh covers the rest.
 if(view==="home"&&!document.hidden){monitorResume();if(dashboardState.mode!=="overview"&&workflowMonitor.watchRun!==dashboardState.runId)monitorWatchRun(dashboardState.runId);
  // A job or step page needs the job's log once the job has finished (also after a reload, or when it finishes while open).
- const pageJob=["job","step"].includes(dashboardState.mode)?currentJob():null;if(pageJob&&!KappaActions.isActive(pageJob))monitorJobLog(pageJob.id)}else monitorPause();
+ const pageJob=["job","step"].includes(dashboardState.mode)?currentJob():null;if(pageJob&&!KappaActions.isActive(pageJob))monitorJobLog(pageJob.id)}
+// Chat keeps the stream while one of its tasks is in validation, so the task card's test and iOS rows stay live.
+else if(view==="chat"&&!document.hidden&&tasksValidating()){if(workflowMonitor.watchRun)monitorWatchRun(0);monitorResume()}else monitorPause();
+document.querySelectorAll("[data-task-review]").forEach(b=>b.addEventListener("click",()=>taskReview(b.dataset.taskReview)));
+document.querySelectorAll("[data-task-retry]").forEach(b=>b.addEventListener("click",()=>taskRetry(Number(b.dataset.taskRetry))));
+document.querySelectorAll("[data-task-guide]").forEach(b=>b.addEventListener("click",()=>taskGuide(Number(b.dataset.taskGuide))));
+document.querySelectorAll("[data-task-copy]").forEach(b=>b.addEventListener("click",()=>taskCopy(Number(b.dataset.taskCopy))));
+document.querySelectorAll("[data-open-task]").forEach(b=>b.addEventListener("click",()=>openTaskInChat(Number(b.dataset.openTask))));
+// The owner's open or folded choice for each task card is kept on its message.
+document.querySelectorAll("details.task-card[data-task-card]").forEach(d=>d.addEventListener("toggle",()=>{const m=active()?.messages[Number(d.dataset.taskCard)];if(m&&m.collapsed!==!d.open){m.collapsed=!d.open;save()}}));
 document.querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",()=>openRun(b.dataset.run)));
 document.querySelector("[data-run-back]")?.addEventListener("click",dashboardBack);
 document.querySelectorAll("[data-open-job]").forEach(b=>b.addEventListener("click",()=>openJob(b.dataset.openJob)));

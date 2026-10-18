@@ -20,53 +20,68 @@ function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!doc
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
 // Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
 // times, a progress card while planned stages are written, and the full report one tap away.
-function renderTaskActivity(m){
- const report=String(m.text||'');
- const steps=KappaJobs.progressSteps(report),rows=taskTimeline(steps),stages=KappaJobs.stageProgress(steps);
+function renderTaskActivity(m,i=-1){
+ const report=String(m.text||''),model=KappaJobs.taskModel(report),{rows,stages,current}=model;
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
- const current=rows.find(r=>r.state==='current'),failedRow=rows.find(r=>r.state==='failed');
- const fail=!!failedRow||lines.some(x=>/\b(?:task failed|tests failed|test dispatch failed|validation failed|blocked by|fatal error)\b/i.test(x));
- const latest=current||failedRow||rows.filter(r=>r.state==='done').at(-1);
+ const fail=!!model.failed||lines.some(x=>/\b(?:task failed|tests failed|test dispatch failed|validation failed|blocked by|fatal error)\b/i.test(x));
+ const latest=current||model.failed||rows.filter(r=>r.state==='done').at(-1);
  const label=latest?latest.title+(latest.detail?': '+latest.detail:''):lines.filter(x=>!/^\*\*KappaForge is working on it\*\*$/.test(x)).at(-1)?.replace(/^[-*✅✔☑⏳❌◻]\s*/,'').replace(/^\*\*|\*\*$/g,'')||'Task update received';
  const headline=label.length>105?label.slice(0,102)+'…':label;
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
- const finished=!current&&!rows.some(r=>r.state==='upcoming')&&rows.length>0;
+ const finished=model.finished;
  const lifecycle=job?.message||'';
  const validationFailed=['failed','tests-failed'].includes(lifecycle);
  const testing=finished&&(job&&!job.finished&&!['tests-passed','merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
  const tag=job?.finished&&lifecycle==='cancelled'?'CANCELLED':job?.finished&&lifecycle==='closed'?'CLOSED':
   fail||validationFailed?'NEEDS ATTENTION':lifecycle==='tests-passed'?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
- const timeline=rows.length?'<ol class="task-steps">'+rows.map(r=>'<li class="task-step '+esc(r.state)+'"><span class="task-dot" aria-hidden="true"></span>'+
-  '<div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),140))+'</small>':'')+'</div>'+
-  '<time'+(r.state==='current'?sinceAttr(r):'')+'>'+esc(r.state==='current'?elapsedSince(r.since):r.time)+'</time>'+
-  '<span class="sr-only">'+({done:'done',current:'in progress',failed:'failed',upcoming:'not started'}[r.state])+'</span></li>').join('')+'</ol>':'';
- const pct=stages?Math.round(stages.done/stages.total*100):0;
+ // After the draft PR: the task's own test and iOS runs, live from the Workflow Monitor (app-tasks.js).
+ const checks=job&&typeof taskValidation==='function'?taskValidation(job):[];
+ const shown=[...rows,...checks];
+ const done=shown.filter(r=>r.state==='done').length,total=shown.length;
+ const pct=total?Math.round(done/total*100):0;
+ // The usual duration covers the agent's own checklist, so it shows only while that is running.
+ const typical=current&&job&&typeof taskTypicalSeconds==='function'?taskTypicalSeconds(model.fix?'fix':job.mode):0;
+ const stalled=!!job&&KappaJobs.stalled({...job,stuckNote:null});
+ const ring='<span class="task-ring" role="img" aria-label="'+done+' of '+total+' steps done"><svg viewBox="0 0 36 36" aria-hidden="true"><circle class="track" cx="18" cy="18" r="15.5"/><circle class="fill" cx="18" cy="18" r="15.5" stroke-dasharray="'+(pct*0.974).toFixed(1)+' 97.4"/></svg><b>'+done+'/'+total+'</b></span>';
+ const spent=model.seconds+(model.since?Math.max(0,(Date.now()-Date.parse(model.since))/1000)||0:0);
+ const totalTime=spent>0?'<time class="task-total"'+(model.since?' data-since="'+esc(model.since)+'" data-base="'+model.seconds+'"':'')+' title="Time spent so far">'+esc(KappaJobs.clock(spent))+'</time>':'';
+ const chipsHTML=r=>r.files?.length?'<span class="task-chips">'+r.files.slice(0,4).map(f=>'<code class="task-chip" title="'+esc(f)+'">'+esc(f.split('/').pop())+'</code>').join('')+(r.files.length>4||r.more?'<span class="task-chip more">+'+(Math.max(0,r.files.length-4)+(r.more||0))+' more</span>':'')+'</span>':'';
+ // Validation rows open their run on the Dashboard; checklist rows are plain.
+ const rowHTML=r=>{
+  const body='<span class="task-dot" aria-hidden="true"></span><div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),140))+'</small>':'')+chipsHTML(r)+
+   (r.progress!==undefined?'<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+r.progress+'" aria-label="'+esc(r.title)+' progress"><i style="width:'+r.progress+'%"></i></span>':'')+'</div>'+
+   '<time'+(r.state==='current'?sinceAttr(r):'')+'>'+esc(r.state==='current'?elapsedSince(r.since):r.time||'')+'</time>'+
+   '<span class="sr-only">'+({done:'done',current:'in progress',failed:'failed',upcoming:'not started'}[r.state])+'</span>';
+  return r.runId?'<li class="task-step '+esc(r.state)+' check"><button type="button" class="task-check-link" data-run="'+esc(r.runId)+'">'+body+'</button></li>':'<li class="task-step '+esc(r.state)+'">'+body+'</li>';
+ };
+ const timeline=shown.length?'<ol class="task-steps">'+shown.map(rowHTML).join('')+'</ol>':'';
+ const stagePct=stages?Math.round(stages.done/stages.total*100):0;
  const stageCard=stages&&!stages.failed&&(stages.current||stages.done<stages.total)?'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>Writing the change</strong>'+(stages.current?'<span class="task-dots" aria-hidden="true"><i></i><i></i><i></i></span>':'')+'</div>'+
   '<div class="task-progress-row"><small>'+esc(clip(plain(stages.label),90))+'</small><time'+(stages.since?' data-since="'+esc(stages.since)+'"':'')+'>'+esc(elapsedSince(stages.since))+'</time></div>'+
-  '<span class="task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="'+esc(stages.total)+'" aria-valuenow="'+esc(stages.done)+'" aria-label="Steps completed"><i style="width:'+pct+'%"></i></span>'+
+  '<span class="task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="'+esc(stages.total)+'" aria-valuenow="'+esc(stages.done)+'" aria-label="Steps completed"><i style="width:'+stagePct+'%"></i></span>'+
   '<small>'+esc(stages.done)+' of '+esc(stages.total)+' steps completed</small></div>':'';
+ const meta=[model.model?'Model '+model.model:'',typical?'Usually takes about '+KappaJobs.clock(typical):''].filter(Boolean).join(' · ');
+ const prNumber=model.pr||Number(String(job?.prUrl||'').match(/\/pull\/(\d+)$/)?.[1]||0)||null;
+ const prRepo=String(job?.prUrl||'').match(/onlykappa\/([A-Za-z0-9_.-]+)\/pull\//)?.[1]||'KappaForge';
+ const live=job&&!job.finished;
+ const actions=taskNum?'<div class="task-actions">'+
+  (prNumber?'<button type="button" data-task-review="'+esc(prRepo+'#'+prNumber)+'">'+uiIcon('reviews')+'Review PR #'+esc(prNumber)+'</button>':'')+
+  (job&&(fail||validationFailed||stalled)&&!job.finished?'<button type="button" data-task-retry="'+esc(taskNum)+'">'+uiIcon('retry')+'Retry</button>':'')+
+  (live?'<button type="button" data-task-guide="'+esc(taskNum)+'">'+uiIcon('chat')+'Send guidance</button>':'')+
+  '<button type="button" data-task-copy="'+esc(i)+'">'+uiIcon('copy')+'Copy summary</button>'+
+  (job?.authorization&&!job.finished?'<button type="button" class="task-cancel" data-cancel-task="'+esc(taskNum)+'">'+uiIcon('stop')+'Cancel task</button>':'')+'</div>':'';
+ // Open while it runs; a finished card folds to its one-line summary unless the owner opened it.
+ const open=m.collapsed===undefined?!(finished&&!testing&&!fail)||!!checks.some(c=>c.state==='current'):!m.collapsed;
  return '<section class="agent-activity'+(fail||validationFailed?' failed':finished&&!testing?' finished':'')+'" aria-label="Task progress">'+
- '<details class="task-card" open><summary><span class="activity-pulse" aria-hidden="true"></span>'+
- '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
- '<span class="activity-tag">'+tag+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
- '<p class="activity-summary">'+esc(headline)+'</p>'+timeline+'</details>'+stageCard+
- (job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
+ '<details class="task-card" data-task-card="'+esc(i)+'"'+(open?' open':'')+'><summary>'+ring+
+ '<span class="task-head"><span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
+ (model.fix?'<span class="task-fix">Fix '+model.fix.n+' of '+model.fix.of+'</span>':'')+'</span>'+
+ '<span class="activity-tag">'+tag+'</span>'+totalTime+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
+ '<p class="activity-summary">'+esc(headline)+'</p>'+(meta?'<p class="task-meta">'+esc(meta)+'</p>':'')+
+ (stalled?'<p class="task-stalled" role="alert">No update for over 15 minutes. The task may be stuck.</p>':'')+timeline+'</details>'+stageCard+actions+
  '<details class="activity-history"><summary>View progress details</summary>'+
  '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
-}
-const stepSeconds=t=>{const m=String(t||'').match(/^(?:(\d+)h )?(?:(\d+)m ?)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
-function taskTimeline(steps){
- // Planned stages fold into one "Writing the change" row; their progress gets its own card below.
- const rows=[];let staged=null;
- for(const s of steps){
-  if(!s.stage){rows.push(s);continue}
-  if(!staged){staged={state:'done',title:'Writing the change',detail:'',time:'',since:'',seconds:0};rows.push(staged)}
-  staged.detail=s.title+': '+s.detail;staged.seconds+=stepSeconds(s.time);
-  if(s.state!=='done'){staged.state=s.state;staged.since=s.since}
- }
- if(staged&&staged.state==='done'&&staged.seconds)staged.time=typeof KappaActions!=='undefined'?KappaActions.formatDuration(staged.seconds):staged.seconds+'s';
- return rows;
 }
 const sinceAttr=s=>s.since?' data-since="'+esc(s.since)+'"':'';
 // Step text arrives as Markdown from GitHub; the card shows it plain.
@@ -95,7 +110,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&KappaIntent.suggestsTask(m.text)?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}

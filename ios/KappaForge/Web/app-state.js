@@ -218,7 +218,9 @@ const workflowMonitor={repo:"KappaForge",runs:[],details:{},logs:{},mode:"idle",
 try{const saved=JSON.parse(localStorage.getItem(MONITOR_KEY)||"null");if(saved?.repo==="KappaForge"&&Array.isArray(saved.runs)){workflowMonitor.runs=saved.runs.filter(r=>r&&Number.isSafeInteger(r.id)&&typeof r.name==="string"&&typeof r.state==="string").slice(0,30);workflowMonitor.lastSync=Number(saved.at)||0;workflowMonitor.cached=workflowMonitor.runs.length>0}}catch(e){}
 function persistMonitor(){try{localStorage.setItem(MONITOR_KEY,JSON.stringify({repo:workflowMonitor.repo,runs:workflowMonitor.runs.slice(0,30),at:workflowMonitor.lastSync}))}catch(e){}}
 let monitorFrame=0;
-function monitorChanged(){if(view!=="home"||monitorFrame)return;monitorFrame=requestAnimationFrame(()=>{monitorFrame=0;if(view==="home")render()})}
+// Redraw the dashboard, or the chat while one of its task cards shows live validation.
+const monitorShown=()=>view==="home"||view==="chat"&&typeof tasksValidating==="function"&&tasksValidating();
+function monitorChanged(){if(!monitorShown()||monitorFrame)return;monitorFrame=requestAnimationFrame(()=>{monitorFrame=0;if(monitorShown())render()})}
 // Owner-facing notice when a run the monitor watched while active finishes.
 function announceRunChanges(before,after){
  const was=new Map(before.map(r=>[r.id,r]));
@@ -247,8 +249,10 @@ function monitorApply(packet){
 }
 // Running cards on the overview show their current step: fetch details for up to three active runs when they change.
 function refreshActiveDetails(){
- const m=workflowMonitor;if(view!=="home"||dashboardState.mode!=="overview")return;
- for(const r of m.runs.filter(KappaActions.isActive).slice(0,3)){const e=m.details[r.id];if(e?.loading||e?.data&&e.data.run?.updatedAt===r.updatedAt&&Date.now()-e.at<30000)continue;monitorRunDetail(r.id)}
+ const m=workflowMonitor,chat=view==="chat"&&typeof tasksValidating==="function"&&tasksValidating();
+ if(!chat&&(view!=="home"||dashboardState.mode!=="overview"))return;
+ // In chat only the tasks' own runs are drawn, so only theirs need steps.
+ for(const r of m.runs.filter(r=>KappaActions.isActive(r)&&(!chat||/ kappa\/dev-\d+ @ /.test(r.title||""))).slice(0,3)){const e=m.details[r.id];if(e?.loading||e?.data&&e.data.run?.updatedAt===r.updatedAt&&Date.now()-e.at<30000)continue;monitorRunDetail(r.id)}
 }
 function actionsFetch(body,signal){return fetch(backend+"/actions",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({repo:workflowMonitor.repo,...body}),signal})}
 // Without the Worker route (not connected, or an older Worker), read the public API through githubFetch.
