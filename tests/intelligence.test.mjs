@@ -486,3 +486,12 @@ test('task updates summarize results and preserve a full report link',()=>{
  assert.match(pending,/Progress update/);
  assert.doesNotMatch(pending,/^\\*\\*Task complete\\*\\*/);
 });
+
+test('PR94 task checkpoints are persisted only for actual task events',()=>{
+ const source=readRenderSource(renderResolve(renderDirname(renderFileURLToPath(import.meta.url)),'../ios/KappaForge/Web/app-tasks.js'),'utf8');
+ assert.match(source,/function taskCheckpoint\(job,status,source=/);
+ assert.match(source,/taskCheckpoint\(recentJob,"waiting","launch"\)/);
+ assert.match(source,/taskCheckpoint\(job,"waiting","resume"\)/);
+ assert.match(source,/taskCheckpoint\(job,report\.status,"issue-comment:"\+comment\.id\)/);
+ assert.match(source,/taskCheckpoint\(job,"progress","issue-comment:"\+comment\.id\)/);
+});

@@ -17,6 +17,7 @@ struct RootView: View {
             KappaWebView(showSecurity: { showUpdatesOnOpen = false; showSettings = true },
                          showUpdates: { showUpdatesOnOpen = true; showSettings = true })
                 .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
                 .allowsHitTesting(security.unlocked && scenePhase == .active)
                 .accessibilityHidden(!security.unlocked || scenePhase != .active)
             if !security.unlocked || scenePhase != .active {

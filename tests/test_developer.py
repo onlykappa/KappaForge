@@ -11,6 +11,27 @@ SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n 
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 class DeveloperValidationTests(unittest.TestCase):
+
+    def test_repeated_invalid_patch_stops_instead_of_retrying_five_times(self):
+        invalid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return a + b"}]}]})
+        with patch.object(developer, "run_model", return_value=("test-model", invalid)) as model:
+            with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
+                developer.generate("key", "fix add", "onlykappa/KappaForge",
+                                   SOURCES, EXISTING)
+        self.assertEqual(model.call_count, 2)
+
+    def test_failed_patch_does_not_prevent_changed_retry(self):
+        no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return a + b"}]}]})
+        valid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with patch.object(developer, "run_model", side_effect=[("test-model", no_op),
+                                                                 ("test-model", valid)]):
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge",
+                                                   SOURCES, EXISTING)
+        self.assertIn("return int(a) + int(b)", changes["app/main.py"])
+
     def test_edits_apply_to_read_files(self):
         changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/main.py", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})

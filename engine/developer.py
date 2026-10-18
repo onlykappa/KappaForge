@@ -390,6 +390,9 @@ def diagnose_generation_failure(message, sources):
                 "Existing source paths: " + ", ".join(paths[:15]) + ". "
                 "Replan the edit around an existing class/function or use a genuinely changed, "
                 "fully read file content.")
+    if "Repeated rejected proposal" in message:
+        return ("The proposed edit was already rejected against the same source. Re-read the "
+                "actual file and switch to a different, source-grounded implementation.")
     if "Change leaves file unchanged" in message:
         return ("Your replacement was a no-op. Compare old and proposed content before responding; "
                 "provide an actual behavior-changing edit and a regression test.")
@@ -446,6 +449,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current default branch):" + context)
     errors = []
+    rejected_signatures = set()
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
     max_attempts = 5
@@ -459,6 +463,12 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed)
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
+            # Identical rejected proposals cannot succeed against unchanged source.
+            # Stop wasting model calls and provide a concrete escalation reason.
+            signature = json.dumps(proposal.get("files", []) if isinstance(proposal, dict) else proposal,
+                                   sort_keys=True, ensure_ascii=False)
+            if signature in rejected_signatures:
+                raise ValueError("Repeated rejected proposal: no source changes since previous validation")
             changes = apply_changes(sources, existing, proposal, budget)
             if require_test and needs_test(changes) and not has_tests(changes):
                 raise ValueError("No test was added or changed: add or update a test that checks the new behaviour "
@@ -469,9 +479,14 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            if "proposal" in locals() and isinstance(proposal, dict):
+                rejected_signatures.add(json.dumps(proposal.get("files", []), sort_keys=True, ensure_ascii=False))
             error = str(exc)[:300] or type(exc).__name__
             errors.append(error)
             print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
+            # Repeating an identical rejected patch requires a new user-visible diagnosis.
+            if "Repeated rejected proposal" in error:
+                break
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
             if any(x in error for x in ("Blocked path:", "Forbidden path:", "Unsafe path:", "Unauthorized")):
                 break

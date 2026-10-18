@@ -20,3 +20,43 @@
 .bubble.streaming{white-space:pre-wrap;min-height:26px}.bubble.streaming::after{content:"";display:inline-block;width:2px;height:1em;margin-left:4px;background:var(--accent);vertical-align:-2px}
 .review-card{margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:16px;overflow-wrap:anywhere}.review-card p{font-size:13px;line-height:1.55;margin:0 0 10px}.review-card p strong{display:block;font-size:12px;margin-bottom:4px}.review-files{font-size:12px!important}
 .review-risks{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:rgba(242,160,169,.08);border:1px solid var(--line)}.review-risks strong{font-size:12px;color:#f2a0a9}.review-risks ul{margin:6px 0 0;padding-left:4px;list-style:none;font-size:12px;line-height:1.6}
+/* PR #94 Phase 1: compact reference-inspired chat chrome and deterministic keyboard placement. */
+@media(max-width:840px){
+ .top{grid-template-columns:38px minmax(0,1fr) 38px 38px;gap:5px;padding-left:max(13px,env(safe-area-inset-left));padding-right:max(13px,env(safe-area-inset-right));background:#000;border-bottom:1px solid rgba(255,255,255,.06)}
+ .top-title{text-align:left;display:flex;flex-direction:column;justify-content:center;line-height:1.2}
+ .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.3px}
+ .connection-state{display:flex;align-items:center;gap:5px;color:#a4a0b4;font-size:10px;margin-top:3px}
+ .online-dot{width:6px;height:6px;background:#43ba88;border-radius:100%}
+ .header-new{display:none}
+ .content{padding-left:20px;padding-right:20px}
+ .composer,.sidebar-collapsed .composer{left:8px;right:8px;bottom:calc(var(--nav-height) + var(--tab-bottom) + 8px);padding:0;background:none}
+ .keyboard-open .composer,.keyboard-open.sidebar-collapsed .composer{bottom:calc(var(--keyboard-inset) + 8px)}
+ .compose-inner{max-width:100%;border-radius:23px;padding:11px 12px;background:#181820;border:1px solid rgba(153,132,205,.38);box-shadow:none}
+ .compose-inner textarea{padding:3px 5px 5px;font-size:16px;line-height:1.45}
+ .controls{gap:6px;margin-top:7px}
+ .composer-task{border:1px solid rgba(255,255,255,.09);border-radius:22px;padding:7px 10px}
+ .controls .send-button{width:38px;height:38px;background:#875dde}
+ .chat-message.from-assistant::before{background:#754aea;color:white;width:23px;height:23px;display:grid;place-items:center;border-radius:9px;left:0;top:0;font-size:14px}
+ .chat-message.from-assistant{padding-left:32px}
+}
+
+/* Keep desktop header columns valid after adding mobile search and overflow actions. */
+@media(min-width:841px){.top{grid-template-columns:44px minmax(0,1fr) 44px 44px 44px}.top-title{text-align:left}.connection-state{display:block;color:var(--muted);font-size:10px}.online-dot{display:inline-block;background:#43ba88;width:6px;height:6px;border-radius:50%;margin-right:5px}}
+
+.connection-state.is-offline .online-dot{background:#e68a87}
+
+/* Real task reports are rendered as compact expandable cards; no speculative stages. */
+.task-report{padding-left:0!important}
+.task-report::before{display:none!important}
+.task-report-card{width:100%;min-width:0;background:#12131b;border:1px solid rgba(163,151,204,.19);border-radius:17px;overflow:hidden}
+.task-report-card>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:68px}
+.task-report-card>summary::-webkit-details-marker{display:none}
+.task-report-mark{display:grid;place-items:center;color:#a083f0;background:rgba(140,105,229,.13);border-radius:11px;width:32px;height:32px;flex:none}
+.task-report-mark svg{width:18px;height:18px}
+.task-report-title{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.task-report-title strong{font-size:13px;color:var(--text)}
+.task-report-title small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-report-chevron{color:var(--muted);transition:transform .2s}
+.task-report-chevron svg{width:15px;height:15px}
+.task-report-card[open] .task-report-chevron{transform:rotate(90deg)}
+.task-report-details{padding:13px 15px 17px;border-top:1px solid var(--line);font-size:12px;overflow-wrap:anywhere;max-height:65vh;overflow:auto}

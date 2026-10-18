@@ -38,6 +38,7 @@ struct KappaWebView: UIViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let view = KappaChatWebView(frame: .zero, configuration: config)
         view.hideKeyboardNavigationBar()
+        context.coordinator.observeEditing(in: view)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isOpaque = false
@@ -75,6 +76,24 @@ struct KappaWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate, WKScriptMessageHandler {
         let showSecurity: () -> Void
         let showUpdates: () -> Void
+        private var editingObservers: [NSObjectProtocol] = []
+        // The actual WebKit text responder is often created after the WebView
+        // loads. Reapply the public UIKit input assistant setting on focus.
+        func observeEditing(in view: KappaChatWebView) {
+            guard editingObservers.isEmpty else { return }
+            for name in [UITextField.textDidBeginEditingNotification, UITextView.textDidBeginEditingNotification] {
+                let token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak view] note in
+                    guard let view, let editor = note.object as? UIView,
+                          editor.isDescendant(of: view) else { return }
+                    view.hideKeyboardNavigationBar()
+                    editor.reloadInputViews()
+                }
+                editingObservers.append(token)
+            }
+        }
+        deinit {
+            editingObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        }
         init(showSecurity: @escaping () -> Void, showUpdates: @escaping () -> Void) {
             self.showSecurity = showSecurity
             self.showUpdates = showUpdates
