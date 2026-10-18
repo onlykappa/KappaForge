@@ -14,8 +14,8 @@ Base: `22871b42f36f4a13ba06c6f8e7a485229051cd47`; branch: `feat/pr103-live-task-
 - [x] Native web bundle synchronized and simulator app compiled.
 - [x] Local regression checks and latest CI unit/browser checks pass.
 - [x] Browser screenshots inspected against reference; these are labeled fixture replays.
-- [~] Actual native simulator progress screenshots: captured and inspected on 3aca42a and 51d5306. Captures for 96695db exist (artifact 12150817152) but are **not yet inspected**: this environment's network policy denies the artifact host `productionresultssa15.blob.core.windows.net`.
-- [x] Native UI tests and device build pass on 96695db: [run 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415) (simulator build, launch/keyboard/progress UI tests, unsigned IPA; release jobs skipped). The reference-alignment commit after it needs its own native run.
+- [x] Actual native simulator progress screenshots captured and inspected on 3aca42a, 51d5306, 96695db and 60dbcab (queued, running, running with keyboard, failed).
+- [x] Native UI tests and device build pass on 96695db: [run 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415) (simulator build, launch/keyboard/progress UI tests, unsigned IPA; release jobs skipped). Also passes on 60dbcab: [run 39167885913](https://github.com/onlykappa/KappaForge/actions/runs/39167885913).
 - [x] Runner-to-poll-to-render fixture evidence recorded.
 - [ ] Production backend task end-to-end test. **Blocked on owner authorization.** Real tasks run `agent.yml` dispatched on `main`, and the app and Worker deploy from `main`, so production exercises none of this branch. Options, each an outward action needing explicit authorization: (a) dispatch `agent.yml` on this branch for one real task (creates a real issue and draft PR, uses one daily agent run); (b) run a branch build of the app against the production Worker (needs the private access token); (c) merge (excluded).
 - [x] Feature checkpoints and progress log committed to draft PR after each implemented feature.
@@ -142,3 +142,23 @@ Remaining gaps:
 - PR #103 (`feat/pr101-actions-live-dashboard`, by another session) rewrites the same chat card
   (`renderTaskActivity`) and conflicts with this branch. Only one of the two should go forward, or one must be
   rebased onto the other.
+
+## Native screenshot inspection: 96695db and 60dbcab
+The owner allowed `*.blob.core.windows.net` in the session environment, and the artifacts downloaded.
+- 96695db: [run 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415), artifact 12150817152.
+- 60dbcab: [run 39167885913](https://github.com/onlykappa/KappaForge/actions/runs/39167885913), artifact 12151731178.
+Both captured the iPhone 16 Pro Max simulator running the real compiled app, with labelled test data
+("Task progress (test data)", "Fixture: …").
+
+Checks, all confirmed in both runs:
+- Complete composer in every state, including keyboard-visible (border, +, model, Plan task, send; with the
+  keyboard open it sits directly above the keyboard).
+- The task heading and status stay visible below the header in all four states.
+- No misleading connection warning: the header shows "Network available" and the card a normal "Last update".
+- 60dbcab queued: the unknown-total bar shows the striped track, with the sweeping chunk caught mid-motion.
+
+Note: in the running capture the bottom progress card sits partly behind the composer, because reading position is
+kept at the card's top rather than jumping to the bottom. Scrolling reveals it.
+
+Remaining gap: the production end-to-end task (owner authorization; see the acceptance list). Choosing between this
+PR and PR #103, which overlaps it, is also still open.
