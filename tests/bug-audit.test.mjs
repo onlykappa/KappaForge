@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import '../preview/task-progress.js';
 import {webcrypto} from 'node:crypto';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -19,7 +20,7 @@ test('resuming a task clears the prior comment cursor',()=>{
  const job={number:31,message:'failed',finished:true,lastReportId:998,stuckNote:50};
  const localStorage={setItem(){}};
  const sandbox={trackedJobs:[job],localStorage,recentJob:null,jobPollAfter:123,
-   persistJobs(){},taskCheckpoint(){},Date,JSON};
+   persistJobs(){},taskCheckpoint(){},save(){},chats:[],KappaProgress:globalThis.KappaProgress,Date,JSON};
  vm.runInNewContext(source,sandbox);
  sandbox.resumeJob(31,'chat');
  assert.equal(job.lastReportId,0);

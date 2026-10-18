@@ -564,16 +564,26 @@ class Progress:
     def __init__(self, number, token, ahead=()):
         self.number, self.token, self.done, self.current, self.comment = number, token, [], "", None
         self.ahead, self.started = list(ahead), Progress.clock()
+        self.ahead_ids = ["planned-" + str(i) for i in range(len(self.ahead))]
+        self.created = self.started
+        self.updated = self.started
+        self.revision = 0
+        self.records = []
+        self.running = None
+        self.status = "running"
+        self.attempt_id = os.environ.get("GITHUB_RUN_ID", "local") + ":" + os.environ.get("GITHUB_RUN_ATTEMPT", "1") + ":" + str(int(self.created * 1000))
         Progress.latest = self
 
     def _finish(self):
         now = Progress.clock()
         spent, self.started = now - self.started, now
+        self.updated = now
         return " · " + took(spent)
 
     def _advance(self, phase):
         if phase and self.ahead:
             self.ahead.pop(0)
+            self.ahead_ids.pop(0)
 
     def now(self, text, phase=False):
         """Start a step; the previous one is marked done. phase=True starts the next upcoming phase."""
@@ -581,13 +591,23 @@ class Progress:
             self.done.append(self.current + self._finish())
         else:
             self.started = Progress.clock()
+        self._record(text, "running")
         self.current = text
         self._advance(phase)
         self._write()
 
-    def ok(self, text, phase=False):
+    def ok(self, text, phase=False, status=None):
         """Record a finished step with its result, replacing the step in progress."""
+        began = self.started
         self.done.append(text + self._finish())
+        if self.running:
+            self.running.update(title=text, status="completed", finishedAt=int(self.updated * 1000))
+            self.running = None
+        else:
+            self.records.append({"id": "step-" + str(len(self.records) + 1), "title": text,
+                                 "status": "completed", "startedAt": int(began * 1000), "finishedAt": int(self.updated * 1000)})
+        if status:
+            self.status = status
         self.current = ""
         self._advance(phase)
         self._write()
@@ -596,15 +616,53 @@ class Progress:
         """Mark the step in progress as failed, so the checklist never stays on ⏳ after a crash."""
         if self.comment or self.current:
             self.failed = (self.current or "Working") + ": " + reason
+            self.updated = Progress.clock()
+            self.status = "failed"
+            if self.running:
+                self.running.update(status="failed", detail=reason, finishedAt=int(self.updated * 1000))
+                self.running = None
             self.current = ""
             self._write()
+
+    def _record(self, text, status):
+        if self.running:
+            self.running.update(status="completed", finishedAt=int(self.started * 1000))
+        self.updated = self.started
+        self.status = "running"
+        self.running = {"id": "step-" + str(len(self.records) + 1), "title": text,
+                        "status": status, "startedAt": int(self.started * 1000), "finishedAt": 0}
+        self.records.append(self.running)
+
+    def snapshot(self):
+        """One durable, ordered snapshot in the existing bot comment, readable after reconnect."""
+        records = [dict(r) for r in self.records]
+        if not getattr(self, "failed", ""):
+            records += [{"id": self.ahead_ids[i], "title": title, "status": "queued"}
+                        for i, title in enumerate(self.ahead)]
+        staged = [(r, re.match(r"Step (\d+) of (\d+): (.*)", r["title"])) for r in records]
+        staged = [(r, m) for r, m in staged if m]
+        units = None
+        if staged:
+            record, match = staged[-1]
+            total, index = int(match[2]), int(match[1])
+            units = {"done": index if record["status"] == "completed" else index - 1,
+                     "total": total, "label": "implementation stages"}
+        return {"version": 1, "taskId": str(self.number), "attemptId": self.attempt_id,
+                "attemptAt": int(self.created * 1000), "revision": self.revision,
+                "status": self.status, "updatedAt": int(self.updated * 1000),
+                "startedAt": int(self.created * 1000),
+                "finishedAt": int(self.updated * 1000) if self.status in ("failed", "completed", "cancelled") else 0,
+                "steps": records, "units": units, "findings": []}
 
     def _write(self):
         since = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(self.started))
         failed = getattr(self, "failed", "")
         lines = (["✅ " + d for d in self.done] + (["⏳ " + self.current + " · started " + since] if self.current else [])
                  + (["❌ " + failed] if failed else []) + ["◻ " + a for a in ([] if failed else self.ahead)])
-        body = self.HEADING + "\n\n" + "\n".join(lines)
+        self.revision += 1
+        # Escape HTML comment terminators in event text, never embed secrets or raw model reasoning.
+        wire = json.dumps(self.snapshot(), ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e")
+        body = self.HEADING + "\n\n<!-- KAPPA_PROGRESS_V1 " + wire + " -->\n" + "\n".join(lines)
         try:
             if self.comment:
                 gh(f"repos/{ROOT}/issues/comments/{self.comment}", self.token, {"body": body}, method="PATCH")
@@ -706,7 +764,7 @@ def produce_development_pr(issue, api_key, token):
             continue
     progress.ok(f"Read {len(sources)} files: {short_list(sources)}")
     if design:
-        progress.ok("Thought it through: " + design[:400])
+        progress.ok("Recorded the implementation plan")
     require_test = has_tests(existing)
     if stages:
         progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
@@ -716,7 +774,7 @@ def produce_development_pr(issue, api_key, token):
                                                            design, require_test)
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
-    progress.ok(f"Wrote the change ({len(changes)} files: {short_list(changes)}) with {model}")
+    progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
     if flags:
         stop_for_flags(repo, number, flags, token)
@@ -736,7 +794,7 @@ def produce_development_pr(issue, api_key, token):
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
     progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (f"tests are running. If they fail I fix them, up to {MAX_FIXES} times"
                 if not validation.startswith("Test dispatch failed") else validation),
-                phase=True)
+                phase=True, status="blocked" if validation.startswith("Test dispatch failed") else "testing")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"
         f"**What this does:** {explanation or summary}\n\n"
@@ -955,7 +1013,7 @@ def fix_pull_request(issue, api_key, token):
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again", phase=True)
+    progress.ok(f"Pushed fix {fixes + 1} of {MAX_FIXES + len(guidance)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

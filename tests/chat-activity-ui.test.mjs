@@ -6,13 +6,14 @@ import {resolve,dirname} from 'node:path';
 import vm from 'node:vm';
 import '../preview/intent-guard.js';
 import '../preview/core.js';
+import '../preview/task-progress.js';
 import '../preview/actions-core.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const source=readFileSync(resolve(root,'preview/ui.js'),'utf8');
 const start=source.indexOf('function renderTaskActivity(');
 const end=source.indexOf('\n\nfunction renderSavedItems(',start);
 assert.ok(start>=0&&end>start);
-const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>',KappaIntent:globalThis.KappaIntent,KappaJobs:globalThis.KappaJobs,KappaActions:globalThis.KappaActions};
+const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>',KappaIntent:globalThis.KappaIntent,KappaJobs:globalThis.KappaJobs,KappaActions:globalThis.KappaActions,KappaProgress:globalThis.KappaProgress};
 vm.runInNewContext(source.slice(start,end),ctx);
 test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
@@ -97,4 +98,48 @@ test('completion follows validation and tracked lifecycle rather than an exhaust
   assert.match(ctx.renderTaskActivity({text,progressKey:'progress:7:1'}),/activity-tag">TESTING/,'older progress messages must not claim tests passed');
   assert.match(ctx.renderTaskActivity({text:'✅ Opened draft PR #7; Test dispatch failed (HTTP 403)',progressKey:'progress:7:1'}),/NEEDS ATTENTION/);
  }finally{delete ctx.trackedJobs}
+});
+
+
+test('structured cards expose truthful units, queued versus active timing and terminal states',()=>{
+ const started=Date.now()-5000;
+ const p=globalThis.KappaProgress.normalize({version:1,taskId:'9',attemptId:'runner:1',attemptAt:started,revision:2,status:'running',updatedAt:started,startedAt:started,steps:[{id:'read',title:'Read <files>',status:'completed',startedAt:started,finishedAt:started+1000},{id:'write',title:'Implementing fixes',status:'running',startedAt:started+1000}],units:{done:1,total:3,label:'implementation stages'}},9);
+ const job={number:9,queuedAt:started-2000,progress:p,message:'progress'};ctx.trackedJobs=[job];
+ try{
+  let html=ctx.renderTaskActivity({text:'',progressKey:'progress:9:live'});
+  assert.match(html,/Working <time data-since=/);assert.match(html,/Queued <time>2s/);
+  assert.match(html,/aria-valuenow="1"/);assert.match(html,/Read &lt;files&gt;/);assert.match(html,/task-step current/);
+  job.progress={...p,units:null};html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/task-bar indeterminate/);assert.doesNotMatch(html,/aria-valuenow=/);
+  job.message='tests-passed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/READY FOR REVIEW/);assert.doesNotMatch(html,/data-since=/);
+  job.message='tests-failed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/NEEDS ATTENTION/);assert.doesNotMatch(html,/data-since=/);
+  job.finished=true;job.message='cancelled';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/CANCELLED/);assert.doesNotMatch(html,/data-since=/);
+ }finally{delete ctx.trackedJobs}
+});
+
+test('structured planned stages read as one Writing the change phase with the current stage on the card',()=>{
+ const t=Date.now()-60000,step=(id,title,status,a,b,detail)=>({id,title,status,startedAt:a?t+a:0,finishedAt:b?t+b:0,...(detail?{detail}:{})});
+ const base={version:1,taskId:'9',attemptId:'runner:1',attemptAt:t,revision:4,status:'running',updatedAt:t+50000,startedAt:t,units:{done:1,total:3,label:'implementation stages'}};
+ const steps=[step('read','Reading project files','completed',1,24000),step('s1','Step 1 of 3: Implement parsing fix','completed',24000,40000),step('s2','Step 2 of 3: Add recovery test','running',40000),step('s3','Step 3 of 3: Update docs','queued'),step('test','Run regression tests','queued')];
+ const job={number:9,queuedAt:t-3000,message:'progress',progress:globalThis.KappaProgress.normalize({...base,steps},9)};ctx.trackedJobs=[job];
+ try{
+  let html=ctx.renderTaskActivity({progressKey:'progress:9:live'});
+  assert.equal((html.match(/class="task-step /g)||[]).length,3,'three stages fold into one row');
+  assert.match(html,/task-step current[^]*<strong>Writing the change<\/strong><small>Step 2 of 3: Add recovery test<\/small><\/div><time data-since="[^"]+"/);
+  assert.doesNotMatch(html,/<strong>Step [0-9] of 3<\/strong>/);
+  assert.match(html,/task-progress-head[^]*<strong>Writing the change<\/strong>[^]*task-progress-row"><small>Add recovery test<\/small><time data-since="/,'phase title, current stage and its own timer');
+  assert.match(html,/aria-valuenow="1"[^]*1 of 3 implementation stages completed/);
+  steps[2]=step('s2','Step 2 of 3: Add recovery test','failed',40000,54000,'Fixture validation failure');
+  job.progress=globalThis.KappaProgress.normalize({...base,revision:5,status:'failed',steps},9);
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'});
+  assert.match(html,/task-step failed[^]*Writing the change<\/strong><small>Step 2 of 3 failed: Fixture validation failure/);
+  assert.doesNotMatch(html,/data-since=/,'a failed phase stops its clock');
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.match(html,/data-task-retry="9"[^]*data-task-guide="9"[^]*data-task-copy="3"/,'a failed live task offers retry, guidance and copy');
+  job.prUrl='https://github.com/onlykappa/KappaForge/pull/12';job.message='tests-failed';
+  ctx.taskValidation=j=>[{title:'Sandbox tests',runId:41,state:'failed',detail:'Tests failed',since:'',time:'2m 1s'}];
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.match(html,/task-step failed check"><button type="button" class="task-check-link" data-run="41">[^]*Sandbox tests/,'validation runs join the step list and open their run');
+  job.finished=true;html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.doesNotMatch(html,/data-task-retry|data-task-guide/,'a finished task only offers copy');
+ }finally{delete ctx.trackedJobs;delete ctx.taskValidation}
 });

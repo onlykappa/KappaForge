@@ -64,4 +64,42 @@ final class LaunchTests: XCTestCase {
         }
     }
 
+    func testTaskProgressScreenshotsInNativeSimulator() {
+        let app = XCUIApplication()
+        for (scenario, tag) in [("queued", "QUEUED"), ("running", "IN PROGRESS"), ("failed", "NEEDS ATTENTION")] {
+            app.terminate()
+            app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = scenario
+            app.launch()
+            let web = app.webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 60))
+            let status = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", tag)).firstMatch
+            XCTAssertTrue(status.waitForExistence(timeout: 60), "Native progress scenario must render: " + scenario)
+            // Exercise real native input before capture so WebKit and UIKit geometry have settled.
+            let editor = app.textViews["native-composer"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 15))
+            editor.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+            if scenario == "running" {
+                let keyboardImage = XCTAttachment(screenshot: app.screenshot())
+                keyboardImage.name = "PR103 progress running keyboard (simulator fixture)"
+                keyboardImage.lifetime = .keepAlways
+                add(keyboardImage)
+            }
+            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
+            // Return to the beginning of the card after keyboard-driven scrolling.
+            web.swipeDown()
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "PR103 progress " + scenario + " (simulator fixture)"
+            image.lifetime = .keepAlways
+            add(image)
+            XCTAssertTrue(app.textViews["native-composer"].exists, "The real native composer remains available")
+            if scenario == "running" {
+                let findings = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Issues found (2)")).firstMatch
+                XCTAssertTrue(findings.exists, "Confirmed fixture findings must render alongside the live timeline")
+            }
+        }
+        app.terminate()
+    }
+
 }
