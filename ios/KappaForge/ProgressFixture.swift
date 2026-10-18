@@ -14,9 +14,7 @@ enum ProgressFixture {
           // This fixture enters the real persisted task model and the production renderer.
           // No network task, model call, authorization or repository mutation is performed.
           backend = ''; access = '';
-          const chat = {id:'simulator-progress-'+scenario,title:'Simulator task progress',at:now,messages:[
-            {role:'assistant',text:'Simulator preview with test data. No development task is running.'}
-          ]};
+          const chat = {id:'simulator-progress-'+scenario,title:'Simulator task progress',at:now,messages:[]};
           chats.unshift(chat); current = chat.id; view = 'chat';
           const failed = scenario === 'failed';
           const steps = [
@@ -37,7 +35,7 @@ enum ProgressFixture {
               {level:'medium',text:'Fixture: reconnect coverage',resolved:false}
             ]
           },103);
-          const job = {number:103,chatId:chat.id,title:'Task progress preview',mode:'develop',message:'progress',
+          const job = {number:103,chatId:chat.id,title:'Task progress (test data)',mode:'develop',message:'progress',
             queuedAt:scenario==='queued'?now-3000:began-3000,activeAt:now,progress};
           trackedJobs = trackedJobs.filter(j=>j.number!==103); trackedJobs.push(job);
           ensureTaskCard(job); persistJobs(); save(); render();

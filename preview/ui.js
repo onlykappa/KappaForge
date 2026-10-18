@@ -140,7 +140,7 @@ async function copyInterfaceText(text){if(navigator.clipboard?.writeText){try{aw
 let toastTimer;
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,2800);}
 function captureInterfaceScroll(){return {page:document.body.dataset.view,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200,progressDetails:Object.fromEntries([...document.querySelectorAll('[data-progress-detail]')].map(el=>[el.dataset.progressDetail,el.open]))};}
-const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.documentElement.scrollHeight-200)window.scrollTo({top:document.body.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})});function bindInterface(state={}){
+const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.documentElement.scrollHeight-32)window.scrollTo({top:document.body.scrollHeight,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})});function bindInterface(state={}){
  document.body.dataset.view=view;resizeComposer();
  document.querySelectorAll('[data-progress-detail]').forEach(el=>{if(Object.hasOwn(state.progressDetails||{},el.dataset.progressDetail))el.open=state.progressDetails[el.dataset.progressDetail]});
  const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){const back=state.page!=='chat'&&typeof viewScroll!=='undefined'&&!!viewScroll.chat&&viewScroll.chat.id===c?.id&&!viewScroll.chat.nearBottom;window.scrollTo({top:back?viewScroll.chat.y:document.body.scrollHeight,behavior:'instant'});}

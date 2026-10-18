@@ -1,20 +1,24 @@
 # PR103: Live task progress
 
-Last updated: 2026-10-18 (initial investigation)
+Last updated: 2026-10-18 (native screenshot verification in progress)
 
 ## Scope and isolation
 Base: `22871b42f36f4a13ba06c6f8e7a485229051cd47`; branch: `feat/pr103-live-task-progress`. Draft only. No merge or release. GitHub returned 404 for both PR and issue 102 at investigation time; do not alter any concurrent task.
 
-## Acceptance and status
-- [ ] Root cause verified and documented (in progress).
-- [ ] Durable structured progress model and real execution events.
-- [ ] Reference timeline, progress bar, elapsed timers and findings.
-- [ ] Failure, retry, blocked, cancellation and stale states.
-- [ ] Reconnect, restart and concurrent task isolation.
-- [ ] Native iOS bundle integration and regression checks.
-- [ ] Real screenshots compared to reference.
-- [ ] End-to-end evidence recorded.
-- [ ] Draft PR synchronized after each feature.
+## Acceptance and current status
+- [x] Root cause verified and documented.
+- [x] Durable structured progress model and real runner execution events.
+- [x] Reference timeline, truthful progress bar, queued/active timers and findings.
+- [x] Failure, retry, blocked, cancellation and stale states.
+- [x] Reconnect, restart, bounded requests and concurrent-task isolation.
+- [x] Native web bundle synchronized and simulator app compiled.
+- [x] Local regression checks and latest CI unit/browser checks pass.
+- [x] Browser screenshots inspected against reference; these are labeled fixture replays.
+- [ ] Actual native simulator progress screenshots captured and inspected.
+- [ ] Latest native UI tests/device build fully verified.
+- [x] Runner-to-poll-to-render fixture evidence recorded.
+- [ ] Production backend task end-to-end test. This draft is not deployed to main; no production task was dispatched against unmerged code.
+- [x] Feature checkpoints and progress log committed to draft PR after each implemented feature.
 
 ## Investigation
 Read KAPPA.md and owner preferences. Existing `engine/developer.py::Progress` edits one bot comment. `preview/app-tasks.js` polls issue comments and `preview/core.js` recognizes progress headings. Existing UI tests already expect timelines, staged bars and findings. Missing-card root cause not yet established. Investigate submission tracking and renderer before changing CSS.
@@ -77,3 +81,11 @@ Also retained findings across subsequent snapshots, avoided duplicate findings c
 Status: local web/configuration/bundle checks and npm tests passed; Swift compilation and actual simulator screenshots are pending the next native CI build. Do not claim the screenshots exist until XCTest and artifact retrieval succeed.
 
 Next: wait for native CI, inspect any compile/test failure, download retained PR103 progress screenshot attachments, display actual images to the user, then synchronize final checklist.
+
+## Verification candidate
+Code candidate: `3aca42aa337248f9249d1eafc0c362b8c1d3686a`. Latest CI unit and browser jobs pass: https://github.com/onlykappa/KappaForge/actions/runs/39163713570 . Native screenshot build: https://github.com/onlykappa/KappaForge/actions/runs/39163713559 . It compiled the Debug simulator application including the new fixture and is running native UI tests. Local result: 178 Node tests and 153 Python tests pass. Native screenshot and full device packaging results are still pending.
+
+## Native screenshot inspection follow-up
+Native run 39163713559 passed simulator compilation and all three UI tests, including queued/running/failed screenshot scenarios. Retrieved artifact 12149822050 and inspected all three actual iPhone 16 Pro Max simulator captures. The running screenshot shows the reference timeline, severity findings with resolution status, determinate purple bar and native composer. Inspection exposed near-bottom auto-scroll pulling the card heading under the sticky header. Tightened the progress mutation observer threshold from 200px to 32px to avoid scrolling a reader who is above the bottom.
+
+The screenshot fixture now identifies test data in the card title, uses the full available viewport, and exercises real keyboard show/dismiss before capture. Added a keyboard-open running capture. This is a visual verification refinement; all earlier screenshots remain actual native captures, not mockups. Updated candidate and refreshed screenshots remain pending the next CI run.
