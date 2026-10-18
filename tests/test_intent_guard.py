@@ -51,3 +51,17 @@ class IntentGuardTests(unittest.TestCase):
         with self.assertRaises(PermissionError):scope.recover('0')
         scope.transition('verifying');scope.transition('completed')
         with self.assertRaises(PermissionError):scope.transition('executing')
+
+    def test_tool_boundary_drives_lifecycle_and_persists_provenance(self):
+        from engine.intent_guard import record_success, report_provenance
+        task=issue('audit');scope=activate(task)
+        url='https://api.github.com/repos/onlykappa/KappaForge/issues/98/comments'
+        payload={'body':'### KappaForge run completed\nRead-only findings'}
+        guard_request(url,payload,'POST',lambda n:task)
+        self.assertEqual(scope.state,'executing')
+        persisted=report_provenance(url,payload)
+        self.assertIn('"state":"completed"',persisted['body'])
+        self.assertIn('authorizationId',persisted['body'])
+        record_success(url,payload)
+        self.assertEqual(scope.state,'completed')
+        with self.assertRaises(PermissionError):guard_request(url,payload,'POST',lambda n:task)

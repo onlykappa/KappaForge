@@ -52,6 +52,8 @@ HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.
            "X-GitHub-Api-Version": "2022-11-28"}
 
 def request(url, payload=None, token=None, method=None):
+    from engine.intent_guard import report_provenance, record_success
+    payload = report_provenance(url, payload)
     headers = dict(HEADERS)
     if token:
         headers["Authorization"] = "Bearer " + token
@@ -68,8 +70,11 @@ def request(url, payload=None, token=None, method=None):
     with urllib.request.urlopen(req, timeout=35) as response:
         body = response.read()
         if not body.strip():
+            record_success(url, payload)
             return {}  # GitHub workflow dispatch returns HTTP 204 with an empty body.
-        return json.loads(body)
+        result = json.loads(body)
+        record_success(url, payload)
+        return result
 
 def github(path, token=None, payload=None):
     return request("https://api.github.com/" + path, payload, token)

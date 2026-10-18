@@ -32,7 +32,7 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
                 let screenFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
                 let localFrame = self.convert(screenFrame, from: nil)
                 let overlap = note.name == UIResponder.keyboardWillHideNotification ? 0 : max(0, self.bounds.maxY - localFrame.minY)
-                let keyboardTop = note.name == UIResponder.keyboardWillHideNotification ? "null" : String(localFrame.minY)
+                let keyboardTop = note.name == UIResponder.keyboardWillHideNotification ? "null" : String(Double(localFrame.minY))
                 self.evaluateJavaScript("window.KappaNativeKeyboardInset = \(overlap); window.KappaNativeKeyboardTop = \(keyboardTop); window.updateKeyboard?.(); window.syncNativeComposer?.();", completionHandler: nil)
             })
         }

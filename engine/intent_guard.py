@@ -138,3 +138,37 @@ def guard_request(url, payload, method, read_current):
         raise PermissionError("Privileged tool invocation has no user-authorized execution scope")
     scope.check_current(read_current(scope.number))
     scope.permit(url, payload, method)
+    if scope.state == "planning":
+        scope.transition("executing")
+
+
+def report_state(scope, body):
+    if body.startswith("### KappaForge task failed"):
+        return "failed"
+    if scope.mode in READ_MODES and (body.startswith(("### KappaForge run completed", "### KappaForge project map complete", "### Continuous task complete")) or "**Status:** All eligible paths processed" in body):
+        return "completed"
+    return scope.state
+
+
+def report_provenance(url, payload):
+    scope = ACTIVE.get()
+    if scope and urlparse(url).path == f"/repos/onlykappa/KappaForge/issues/{scope.number}/comments" and isinstance(payload, dict) and isinstance(payload.get("body"), str):
+        state = report_state(scope, payload["body"])
+        return {**payload, "body": payload["body"] + "\n<!-- kappa-lifecycle:" + json.dumps({"authorizationId": scope.identity, "state": state, "expiresAt": int(scope.expires * 1000)}, separators=(",", ":")) + " -->"}
+    return payload
+
+
+def record_success(url, payload):
+    scope = ACTIVE.get()
+    if not scope:
+        return
+    if urlparse(url).path.endswith("/dispatches") and scope.state == "executing":
+        scope.transition("verifying")
+    body = (payload or {}).get("body", "") if isinstance(payload, dict) else ""
+    state = report_state(scope, body)
+    if state == "completed" and scope.state != "completed":
+        if scope.state == "executing":
+            scope.transition("verifying")
+        scope.transition("completed")
+    elif state == "failed" and scope.state in {"planning", "executing", "verifying"}:
+        scope.transition("failed")
