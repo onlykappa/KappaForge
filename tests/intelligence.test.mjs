@@ -1,3 +1,4 @@
+import './intent-guard.test.mjs';
 import './ios-keyboard-layout.test.mjs';
 import './bug-audit.test.mjs';
 import './chat-activity-ui.test.mjs';
@@ -12,11 +13,27 @@ import './task-autostart.test.mjs';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
-import worker,{KappaMemory} from '../chat-backend/src/index.js';
+import rawWorker,{KappaMemory} from '../chat-backend/src/index.js';
 import {routes,telemetry,usageStore,discover,MODELS,isComplex} from '../chat-backend/src/intelligence.js';
 const C=globalThis.KappaCore;
 const memoryState=()=>{const records=new Map();const storage={get:async k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>{for(const id of Array.isArray(k)?k:[k])records.delete(id)},list:async({prefix='',end,reverse=false,limit=1000}={})=>new Map([...records].filter(([k])=>k.startsWith(prefix)&&(!end||k<end)).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit))};storage.transaction=async f=>f(storage);return {storage,records};};
 const req=(path,body={},token='owner-token')=>new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});
+
+// Existing integration scenarios represent confirmed UI operations. Obtain a real
+// capability through the public endpoint so all previous repository checks still run.
+const authEnvs=new WeakMap();
+const worker={fetch:async(request,env,context)=>{
+ const path=new URL(request.url).pathname;
+ if(['/jobs','/retry','/guidance','/decisions'].includes(path)||(path==='/undo'&&(await request.clone().json()).confirmed===true)){
+  if(!env.MEMORY){if(!authEnvs.has(env)){const vault=new KappaMemory(memoryState());authEnvs.set(env,{...env,MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}})}env=authEnvs.get(env)}
+  const body=await request.clone().json();body.authorization={id:crypto.randomUUID(),requestId:crypto.randomUUID(),conversationId:'integration'};
+  const issue=await rawWorker.fetch(req('/authorize',{path,payload:body,userText:body.instructions||'Confirmed UI control',source:path==='/jobs'?'user-request':'user-control'}),env);
+  // Invalid controls are tested against the authorization boundary itself.
+  if(!issue.ok)return issue;
+  request=req(path,body);
+ }
+ return rawWorker.fetch(request,env,context);
+}};
 
 test('settings validation retains only supported values and zero budgets',()=>{const s=C.settings({model:'fake',routing:'quality',fallback:false,tokenBudget:-1,instructions:'x'.repeat(2200),appearance:'dark',secret:'no'});assert.equal(s.model,'auto');assert.equal(s.fallback,false);assert.equal(s.instructions.length,2000);assert.equal(s.tokenBudget,0);assert.equal(s.routing,'quality');assert.equal(s.secret,undefined)});
 test('usage includes failures, unknown metadata, true totals and UTC boundaries',()=>{const now=Date.UTC(2026,9,16);const sum=C.aggregate([{at:now,model:'a',input:10,output:5,total:18,latency:100,ok:true,cost:null},{at:now+1,model:'a',input:null,output:null,total:null,ok:false,fallback:true,latency:300},{at:now-1,total:100}],{since:now});assert.equal(sum.requests,2);assert.equal(sum.total,18);assert.equal(sum.unknownTokens,1);assert.equal(sum.unknownCosts,2);assert.equal(sum.errors,1);assert.equal(sum.fallbacks,1);assert.equal(sum.averageLatency,200);assert.equal(C.periodStart('month',now),Date.UTC(2026,9,1));assert.equal(C.periodStart('week',now),Date.UTC(2026,9,10))});
@@ -138,7 +155,7 @@ test('review card explains the change, and merge requires passing tests on the e
  try{
   const review=await(await worker.fetch(req('/review',{repo:'KappaForge',prNumber:50}),env)).json();
   assert.equal(review.explanation.what,'Adds a tooltip to refresh.');assert.equal(review.tests.state,'passed');assert.equal(review.canMerge,true);assert.equal(review.canFix,false);assert.equal(review.files[0].name,'preview/ui.js');
-  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head}),env)).status,400,'needs confirmation');
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head}),env)).status,403,'needs confirmation');
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:'d'.repeat(40),confirmed:true}),env)).status,409,'stale review');
   conclusion='failure';
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head,confirmed:true}),env)).status,409,'failed tests');
@@ -300,18 +317,16 @@ test('other repositories are tested in the secret-free project sandbox, with a w
  }finally{globalThis.fetch=original}
 });
 
-test('agent runs (tasks and fixes) share a daily cap',async()=>{
+test('invalid GitHub token does not spend task quota, while confirmed fixes share the cap',async()=>{
  const state=memoryState(),vault=new KappaMemory(state),original=globalThis.fetch;
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-cap',DAILY_TASK_LIMIT:'1',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
- globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
-  if(u.endsWith('/user'))return Response.json({message:'Bad credentials'},{status:401});
-  return new Response('{}',{status:404})};
+ globalThis.fetch=async(url)=>String(url).includes('/user/repos')?Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]):Response.json({message:'Bad credentials'},{status:401});
  const job=()=>worker.fetch(req('/jobs',{approved:true,repo:'onlykappa/KappaForge',mode:'develop',title:'Add tooltip',instructions:'Add a tooltip to refresh.'}),env);
  try{
-  assert.equal((await job()).status,502,'first run is allowed (then fails on the fake token)');
-  const second=await job();assert.equal(second.status,429);assert.match((await second.json()).error,/Daily agent limit reached \(1/);
-  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:5,decision:'fix',confirmed:true}),env)).status,429,'fixes share the cap');
+  assert.equal((await job()).status,502);
+  assert.equal((await job()).status,502,'token failure does not reserve quota');
+  await usageStore(state,new Request('https://memory.internal/usage/task-reserve',{method:'POST',body:JSON.stringify({limit:1})}));
+  assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:5,decision:'fix',confirmed:true}),env)).status,429);
  }finally{globalThis.fetch=original}
 });
 
@@ -329,7 +344,7 @@ test('chat tells the AI how to act, and answers status questions from live agent
   return new Response('{}',{status:404})};
  try{
   await worker.fetch(req('/chat',{messages:[{role:'user',text:'Did the tests pass on my task?'}]}),env);
-  assert.match(system,/kappa-action/);assert.doesNotMatch(system,/cannot execute actions/i);
+  assert.match(system,/Only the application authorization service can launch a task/);assert.doesNotMatch(system,/fenced block marked kappa-action/);assert.doesNotMatch(system,/cannot execute actions/i);
   assert.match(system,/Task #12 "Add live time": latest update: ### KappaForge needs your help/);
   assert.match(system,/PR #50 .*kappa\/dev-12.*tests failure/);assert.doesNotMatch(system,/Human PR/);
   system='';await worker.fetch(req('/chat',{messages:[{role:'user',text:'Write me a haiku'}]}),env);
@@ -469,7 +484,7 @@ test('failed task reservation is refunded exactly once and does not exhaust dail
  const state=memoryState();const make=(payload)=>new Request('https://memory.internal/usage/task-reserve',{method:'POST',body:JSON.stringify(payload)});
  const reserve=await usageStore(state,make({limit:1}));
  assert.equal(reserve.status,200);
- const receipt=(await reserve.json()).receipt;assert.match(receipt,/^\\d{4}-\\d{2}-\\d{2}:/);
+ const receipt=(await reserve.json()).receipt;assert.match(receipt,/^\d{4}-\d{2}-\d{2}:/);
  assert.equal((await usageStore(state,make({limit:1}))).status,429);
  const refund=await usageStore(state,make({action:'refund',receipt}));
  assert.equal((await refund.json()).refunded,true);

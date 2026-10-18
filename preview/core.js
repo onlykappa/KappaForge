@@ -35,12 +35,12 @@ root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersio
 
 // Interpret lifecycle metadata, not words quoted inside an audit's findings.
 globalThis.KappaJobs={conciseReport(status,body,source){
- const raw=String(body||'').replace(/<!--[^]*?-->/g,'').trim();
- const lines=raw.split('\\n').map(x=>x.trim()).filter(Boolean);
+ const raw=String(body||'').replace(/<!--[^]*?-->/g,'').replace(/\\n/g,'\n').trim();
+ const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
  const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':status==='complete'?'Task complete':'Progress update';
- const useful=lines.filter(x=>/^(?:\\*\\*(?:Why|What changed|Result|Verification|How to proceed)|[-*] |✅|❌|### )/.test(x)).slice(0,5).map(x=>x.replace(/^###\\s*/,'')); 
- const message=(useful.length?useful:lines.slice(0,2)).join('\\n').slice(0,900);
- return '**'+heading+'**\\n\\n'+message+(source?'\\n\\n[View full report]('+source+')':'');
+ const useful=lines.filter(x=>/^(?:\*\*(?:Why|What changed|Result|Verification|How to proceed)|[-*] |✅|❌|### )/.test(x)).slice(0,5).map(x=>x.replace(/^###\s*/,''));
+ const message=(useful.length?useful:lines.slice(0,2)).join('\n').slice(0,900);
+ return '**'+heading+'**\n\n'+message+(source?'\n\n[View full report]('+source+')':'');
 },autoLaunchAllowed(job){
  // Never auto-launch long-running, broad, or custom modes; these need explicit review.
  return !!job&&['develop','audit','project-map','code'].includes(job.mode)

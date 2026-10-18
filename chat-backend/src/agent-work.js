@@ -28,9 +28,9 @@ export async function agentWork(env){
 
 // Earlier chat turns go into the issue as background. Every line is quoted so nothing in it can read as one of the
 // issue's control lines (Mode:, Repository:, Allow flagged changes:, Repair files:, Step 1:), which the agent matches at line start.
-export function taskBody(repo,mode,instructions,context){
+export function taskBody(repo,mode,instructions,context,authorization){
  const quoted=typeof context==="string"&&context.trim()?context.trim().slice(0,2000).split("\n").map(l=>"> "+l).join("\n"):"";
- return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat.";
+ return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions.split("\n").map(line=>/^(?:Repository:|Mode:|<!-- kappa-authorization:)/i.test(line)?"> "+line:line).join("\n")+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat."+(authorization?"\n<!-- kappa-authorization:"+JSON.stringify({...authorization,repo,mode,expiresAt:authorization.issuedAt+24*60*60*1000})+" -->":"");
 }
 const CONTINUOUS=/^Mode:\s*(?:continuous|continuous-code|watch)\s*$/mi;
 // The owner's open kappa-task issue with that number, or an error result.

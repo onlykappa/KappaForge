@@ -29,7 +29,7 @@ final class LaunchTests: XCTestCase {
         app.launch()
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 15))
-        let editor = web.textViews["Message"]
+        let editor = app.textViews["native-composer"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15), "Chat composer must expose its text editor")
         editor.tap()
         let keyboard = app.keyboards.firstMatch
@@ -37,9 +37,30 @@ final class LaunchTests: XCTestCase {
         XCTAssertGreaterThan(editor.frame.minY, web.frame.minY + 45, "Composer must remain below navigation header")
         XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard")
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "PR97 keyboard open layout"
+        attachment.name = "PR98 keyboard open layout"
         attachment.lifetime = .keepAlways
         add(attachment)
+        XCTAssertFalse(app.toolbars.buttons["Done"].exists, "Native composer must not show WebKit's navigation accessory")
+        editor.typeText("First line\nSecond line")
+        XCTAssertTrue((editor.value as? String ?? "").contains("Second line"))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        // Public bridge dismisses when tapping outside the composer.
+        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+        let closed = XCTAttachment(screenshot: app.screenshot())
+        closed.name = "PR98 keyboard closed layout"
+        closed.lifetime = .keepAlways
+        add(closed)
+        for _ in 0..<3 {
+            editor.tap()
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+            XCTAssertFalse(app.toolbars.buttons["Done"].exists)
+            XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14)
+            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+        }
     }
 
 }

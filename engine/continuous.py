@@ -102,12 +102,15 @@ def main():
     if not number and scope == "write":
         # Only the isolated write job scans repair previously approved sandbox draft PRs.
         from engine.repair_loop import scan_failures
-        outcomes = scan_failures(token, key, github)
+        # No global repair scan: a failed run is evidence, never authorization.
+        outcomes = []
         print("Bounded independent-test repair scan:", outcomes[:4])
     if not issues:
         print("No owner-authorized continuous/watch issues pending")
         return
     for issue in issues:
+        from engine.intent_guard import activate
+        activate(issue)
         require_scope(mode_of(issue), scope, "continuous")
         body = issue.get("body") or ""
         if re.search(r"^Mode:\s*continuous\s*$", body, re.I | re.M):

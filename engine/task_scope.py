@@ -37,6 +37,8 @@ def main():
         issue = choose_issue(token, allowed_modes=allowed)
         scope, number = "skip", ""
         if issue:
+            from engine.intent_guard import ExecutionScope
+            ExecutionScope(issue)
             mode = mode_of(issue)
             scope = "write" if mode in {"code", "repair", "develop", "continuous-code"} else "read"
             require_scope(mode, scope, family)

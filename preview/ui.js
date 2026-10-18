@@ -29,11 +29,12 @@ function renderTaskActivity(m){
  const headline=label.length>105?label.slice(0,102)+'…':label;
  const fail=lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
+ const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
  return '<section class="agent-activity" aria-label="Task progress">'+
  '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span>'+
  '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
  '<span class="activity-tag">'+(fail?'NEEDS ATTENTION':'IN PROGRESS')+'</span></div>'+
- '<p class="activity-summary">'+esc(headline)+'</p>'+
+ '<p class="activity-summary">'+esc(headline)+'</p>'+(job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
  '<details class="activity-history"><summary>View progress details</summary>'+
  '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
 }
@@ -82,16 +83,18 @@ const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.s
  document.getElementById('profile-save')?.addEventListener('click',()=>{const name=document.getElementById('profile-name').value.trim().slice(0,50);if(!name){toast('Enter a display name.');return;}localProfile={name};localStorage.setItem('kappaforge.profile.v21',JSON.stringify(localProfile));render();toast('Profile saved on this device')});
  document.getElementById('profilelabel').textContent=localProfile.name;
  const model=document.getElementById('composermodel');if(model)model.value=preferences.routing;
+ document.querySelectorAll('[data-cancel-task]').forEach(button=>button.onclick=()=>cancelAuthorizedJob(Number(button.dataset.cancelTask)));
  resizeComposer();
 }
-function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');}
+function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');syncNativeComposer();}
 function updateKeyboard(){
  const vv=window.visualViewport;
- const typing=document.activeElement===document.getElementById('message');
- const inset=vv?Math.max(0,window.innerHeight-vv.height-vv.offsetTop):0;
+ const typing=window.KappaNativeComposer?!!window.KappaNativeComposerFocused:document.activeElement===document.getElementById('message');
+ const inset=window.KappaNativeComposer?Number(window.KappaNativeKeyboardInset||0):(vv?Math.max(0,window.innerHeight-vv.height-vv.offsetTop):0);
  const open=typing&&inset>80;
  document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
  document.body.classList.toggle('keyboard-open',open);
+ syncNativeComposer();
  // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }
 function initInterface(){
@@ -130,7 +133,7 @@ async function receiveAssistant(response,chat,prefix,signal){
   shown=smooth&&!document.hidden?Math.min(full.length,shown+Math.max(4,Math.ceil(remaining/24))):full.length;
   // Do not split a Unicode surrogate pair while revealing a buffered chunk.
   if(shown<full.length&&/[\uD800-\uDBFF]/.test(full[shown-1]))shown++;
-  message.text=prefix+full.slice(0,shown);chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);
+  message.text=prefix+KappaIntent.stripActions(full.slice(0,shown));chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);
   if(view==='chat'&&current===chat.id){const index=chat.messages.indexOf(message),bubble=document.querySelector('[data-message-index="'+index+'"] .bubble');if(bubble)bubble.textContent=message.text;if(nearBottom)scrollTo(0,document.documentElement.scrollHeight);}
   if(Date.now()-lastSave>750){save();lastSave=Date.now();}
  };
@@ -150,9 +153,30 @@ async function receiveAssistant(response,chat,prefix,signal){
   if(typeof terminal.reply!=='string'||!terminal.reply.trim())throw Error('No reply was returned');
   if(!full)full=terminal.reply;
   while(shown<full.length){checkStop();paint();if(shown<full.length)await new Promise(resolve=>setTimeout(resolve,28));}
-  checkStop();message.text=prefix+terminal.reply;return terminal;
+  checkStop();message.text=prefix+KappaIntent.stripActions(terminal.reply);return terminal;
  }catch(error){
-  shown=full.length;message.text=prefix+full+(signal.aborted?'\n\nResponse stopped.':'\n\nResponse interrupted: '+error.message+'. You can retry from the message menu.');
+  shown=full.length;message.text=prefix+KappaIntent.stripActions(full)+(signal.aborted?'\n\nResponse stopped.':'\n\nResponse interrupted: '+error.message+'. You can retry from the message menu.');
   error.reported=true;throw error;
  }finally{clearInterval(timer);delete message.streaming;chat.at=Math.max(Date.now(),(Number(chat.at)||0)+1);save();render();}
+}
+
+// Geometry bridge only. UIKit owns text entry and its keyboard using public APIs.
+let nativeComposerRevision=0;
+function syncNativeComposer(){
+ if(!window.KappaNativeComposer)return;
+ const editor=document.getElementById('message'),composer=document.getElementById('composer');
+ if(!editor||!composer)return;
+ editor.readOnly=true;editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
+ const rect=editor.getBoundingClientRect();
+ window.webkit.messageHandlers.kappa.postMessage({action:'composer',text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
+}
+window.receiveNativeComposer=packet=>{
+ if(!packet||typeof packet.text!=='string'||!Number.isSafeInteger(packet.revision))return;
+ nativeComposerRevision=packet.revision;const editor=document.getElementById('message');editor.value=packet.text;editor.dispatchEvent(new Event('input',{bubbles:true}));
+};
+if(window.KappaNativeComposer){
+ window.addEventListener('resize',syncNativeComposer);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden){updateKeyboard();syncNativeComposer()}});
+ window.addEventListener('pageshow',syncNativeComposer);
+ document.addEventListener('pointerdown',event=>{if(!event.target.closest('#composer'))window.webkit.messageHandlers.kappa.postMessage({action:'blurComposer'});},{passive:true});
 }

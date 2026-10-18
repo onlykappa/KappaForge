@@ -106,7 +106,7 @@ async function submitReviewDecision(number,decision){
  if(!confirm(desc))return;
  if(!backend||!access){alert("Connect AI first.");return}
  try{
-  const response=await fetch(backend+"/decisions",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({prNumber:number,decision,confirmed:true})});
+  const response=await userAuthorizedFetch("/decisions",{prNumber:number,decision,confirmed:true},desc);
   const result=await response.json();
   if(!response.ok)throw Error(result.error||"Could not save decision");
   reviewDecisions[number]=decision;
@@ -120,7 +120,7 @@ async function submitReviewDecision(number,decision){
 let reviewCards={};
 const isDevPR=p=>/^kappa\/(?:dev|revert)-[0-9]+$/.test(p.head?.ref||"");
 async function reviewAction(path,body){
- const response=await fetch(backend+path,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify(body)});
+ const response=path==="/review"?await fetch(backend+path,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify(body)}):await userAuthorizedFetch(path,body,"Confirmed "+(body.decision||"undo")+" control");
  const result=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(result.error||"Request failed (HTTP "+response.status+")");
  return result;
@@ -313,7 +313,8 @@ document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));d
 
 // Why the last automatic planning attempt made no task, for the chat to show.
 let planError="";
-async function proposeTaskAutomatically(text,notify=true,context=""){
+async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current){
+ if(!["execution","investigation"].includes(KappaIntent.classify(text)))return false;
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
@@ -322,7 +323,7 @@ async function proposeTaskAutomatically(text,notify=true,context=""){
   if(!resp.ok)throw Error(data.error||"Could not plan task (HTTP "+resp.status+")");
   if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
   const p=data.proposal;
-  pendingJob={title:p.title,instructions:p.instructions,repo:p.repo,mode:p.mode,context};
+  pendingJob={title:p.title,instructions:String(text).trim(),repo:p.repo,mode:KappaIntent.classify(text)==="investigation"?"audit":p.mode,context,requestId,conversationId};
   view="chat";
   // Owner explicitly requested hands-off development. Only safe task modes start
   // automatically; potentially destructive or long-running modes still need review.

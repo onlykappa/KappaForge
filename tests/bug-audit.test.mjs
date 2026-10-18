@@ -18,7 +18,7 @@ test('resuming a task clears the prior comment cursor',()=>{
  const job={number:31,message:'failed',finished:true,lastReportId:998,stuckNote:50};
  const localStorage={setItem(){}};
  const sandbox={trackedJobs:[job],localStorage,recentJob:null,jobPollAfter:123,
-   persistJobs(){},Date,JSON};
+   persistJobs(){},taskCheckpoint(){},Date,JSON};
  vm.runInNewContext(source,sandbox);
  sandbox.resumeJob(31,'chat');
  assert.equal(job.lastReportId,0);
@@ -33,7 +33,7 @@ test('failed launch preserves the original task for an explicit retry',async()=>
  const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',
   chats,trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,
   localStorage:{setItem(){}},render(){},save(){},
-  fetch:async()=>{throw new Error('Network unavailable')},
+  userAuthorizedFetch:async()=>{throw new Error('Network unavailable')},
   alert(){throw new Error('Unexpected alert')}};
  vm.runInNewContext(source,sandbox);
  await sandbox.launchJob();
@@ -52,7 +52,7 @@ test('partial GitHub dispatch does not invite creating a duplicate issue',async(
  const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',chats,
  trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,
  localStorage:{setItem(){}},render(){},save(){},
- fetch:async()=>({ok:false,status:502,json:async()=>({error:'Workflow could not start',issueUrl:'https://github.com/onlykappa/KappaForge/issues/91'})}),
+ userAuthorizedFetch:async()=>({ok:false,status:502,json:async()=>({error:'Workflow could not start',issueUrl:'https://github.com/onlykappa/KappaForge/issues/91'})}),
  alert(){throw new Error('Unexpected alert')}};
  vm.runInNewContext(source,sandbox);
  await sandbox.launchJob();

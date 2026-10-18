@@ -19,7 +19,7 @@ cleanup = script_module('select-superseded-native')
 simulator = script_module('select-simulator')
 
 def issue(mode):
-    return {'number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
+    return {'state':'open','user':{'login':'onlykappa'},'created_at':'2099-01-01T00:00:00Z','number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
 
 class TaskScopeTests(unittest.TestCase):
     def test_read_scopes_reject_every_code_mode(self):
@@ -54,9 +54,9 @@ class TaskScopeTests(unittest.TestCase):
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'23','KAPPA_TASK_SCOPE':'read'}), patch.object(continuous,'get_issue',return_value=issue('continuous-code')):
             with self.assertRaises(ValueError):continuous.main()
 
-    def test_write_queue_retains_authorized_repair_scan(self):
+    def test_write_queue_cannot_scan_unrelated_repairs(self):
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'','KAPPA_TASK_SCOPE':'write'}), patch.object(continuous,'github',return_value=[]), patch('engine.repair_loop.scan_failures',return_value=[]) as repair:
-            continuous.main();repair.assert_called_once()
+            continuous.main();repair.assert_not_called()
 
 class NativeSelectionTests(unittest.TestCase):
     def test_cleanup_keeps_current_completed_other_workflows_and_branches(self):

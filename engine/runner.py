@@ -58,6 +58,12 @@ def request(url, payload=None, token=None, method=None):
     data = None if payload is None else json.dumps(payload).encode()
     if data is not None:
         headers["Content-Type"] = "application/json"
+    from engine.intent_guard import guard_request
+    def read_current(number):
+        current = urllib.request.Request(f"https://api.github.com/repos/{ROOT}/issues/{number}", headers=headers)
+        with urllib.request.urlopen(current, timeout=35) as response:
+            return json.load(response)
+    guard_request(url, payload, method or ("POST" if payload is not None else "GET"), read_current)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=35) as response:
         body = response.read()
@@ -328,6 +334,8 @@ def main():
     if not issue:
         print("No authorized unprocessed task found.")
         return
+    from engine.intent_guard import activate
+    activate(issue)
     if not os.getenv("GEMINI_API_KEY"):
         if os.getenv("INPUT_ISSUE_NUMBER", "").strip():
             report_failure(issue["number"], token, "GEMINI_API_KEY is missing from the repository's Actions secrets",

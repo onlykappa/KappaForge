@@ -12,29 +12,34 @@ function chatActionFrom(json){
  }catch{}
  return null;
 }
+// Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(reply,typed,chat,offerTask){
- const block=String(reply||"").match(/\x60\x60\x60kappa-action\s*\n([\s\S]*?)\n\x60\x60\x60/),action=block&&chatActionFrom(block[1]);
- const say=text=>{chat.messages.push({role:"assistant",text});chat.at=Date.now();save();render()};
- if(action?.type==="guidance"||action?.type==="retry"){
-  const guidance=action.type==="guidance";
-  try{const r=await fetch(backend+(guidance?"/guidance":"/retry"),{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify(guidance?{task:action.task,text:action.text}:{task:action.task})});const d=await r.json().catch(()=>({}));
-   say(r.ok?(guidance?"💬 ":"🔁 ")+d.message:guidance?"⚠️ Couldn't send your guidance: "+(d.error||"HTTP "+r.status)+" You can also comment \"Guidance: …\" on task #"+action.task+" in GitHub.":"⚠️ Couldn't retry task #"+action.task+": "+(d.error||"HTTP "+r.status));
-   if(r.ok)resumeJob(action.task,chat.id);
-  }catch(e){say("⚠️ Couldn't "+(guidance?"send your guidance":"retry task #"+action.task)+": "+e.message)}
-  return;
+ if(!offerTask||!['execution','investigation'].includes(KappaIntent.classify(typed)))return;
+ const message=[...chat.messages].reverse().find(m=>m.role==='user');
+ if(!message||message.executionHandled)return;
+ message.executionHandled=true;message.requestId=message.requestId||crypto.randomUUID();save();
+ const retry=typed.match(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?(\d+)\s*[.!]?$/i);
+ if(retry){
+  const body={task:Number(retry[1])};
+  const response=await userAuthorizedFetch('/retry',body,typed,'user-request',message.requestId,chat.id);
+  const result=await response.json();if(!response.ok)throw Error(result.error);
+  chat.messages.push({role:'assistant',text:result.message});resumeJob(body.task,chat.id);save();render();return;
  }
- if(action?.type==="task"){
-  if(!await proposeTaskAutomatically(action.request,false,KappaJobs.conversationContext(chat.messages)))return say("⚠️ I couldn't turn that into a task: "+(planError||"the planner didn't see a task in it")+". Tap **Make a task** to set it up by hand.");
-  return;
- }
- // Without an action block (e.g. a fallback model), offer an approval card unless the reply asked the owner a question.
- if(offerTask&&!/\?\s*$/.test(String(reply||"").trim()))await proposeTaskAutomatically(typed,false,KappaJobs.conversationContext(chat.messages));
+ await proposeTaskAutomatically(typed,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id);
+}
+async function userAuthorizedFetch(path,payload,userText,source='user-control',requestId=crypto.randomUUID(),conversationId=current||'controls'){
+ const authorization={id:requestId,requestId,conversationId};
+ const body={...payload,authorization};
+ const options=value=>({method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(value)});
+ const issued=await fetch(backend+'/authorize',options({path,payload:body,userText,source}));
+ if(!issued.ok)return issued;
+ return fetch(backend+path,options(body));
 }
 // Guidance or a retry restarted the task: follow it again, ignoring reports from before now.
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null});persistJobs();jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null});persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 function showProgress(job,commentId,body){
  const target=chats.find(c=>c.id===job.chatId);if(!target)return false;
@@ -64,14 +69,14 @@ async function checkJobResult(){
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
-    if(report.status==="progress"){if(showProgress(job,comment.id,report.body)){changed=true;if(KappaJobs.isNew(job,comment)||job.message==="waiting")job.message="progress"}continue;}
+    if(report.status==="progress"){if(showProgress(job,comment.id,report.body)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if(KappaJobs.isNew(job,comment)||job.message==="waiting")job.message="progress"}continue;}
     // Every poll re-reads all comments: only reports newer than the last handled one (and not from before a retry) change the job.
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
     const text=KappaJobs.conciseReport(report.status,report.body,source);
     changed=jobChatUpdate(job,report.id,text)||changed;
-    job.message=report.status;job.lastReportId=Number(comment.id);
+    job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
    }
@@ -94,11 +99,12 @@ async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
  const job=pendingJob,jobChatId=current;pendingJob=null;render();
  try{
- const response=await fetch(backend+"/jobs",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({...job,approved:true})});
+ const {requestId,conversationId,...payload}=job;
+ const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,"user-request",requestId,conversationId||jobChatId);
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
- recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,chatId:jobChatId,activeAt:Date.now()};
- trackedJobs.push(recentJob);persistJobs();jobPollAfter=0;
+ recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,authorization:{id:job.requestId,conversationId:job.conversationId||jobChatId},chatId:jobChatId,activeAt:Date.now()};
+ if(!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push(recentJob);persistJobs();taskCheckpoint(recentJob,"waiting","launch");jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
  }catch(e){if(!e.url)pendingJob=job;recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
@@ -150,7 +156,7 @@ function confirmTaskChoices(){
    error.textContent="Continuous coding needs numbered lines starting with Step 1: (15+ characters).";return
  }
  pendingJob={title:text.split("\n")[0].slice(0,105)||"KappaForge task",
-             instructions:text.length>=10?text:text+" Please inspect and provide a detailed report.",
+             instructions:text,requestId:crypto.randomUUID(),conversationId:current,
              repo,mode,context:KappaJobs.conversationContext(active()?.messages)};
  closeTaskSheet();view="chat";render();
 }
@@ -187,3 +193,13 @@ async function refreshActivity(force=false){
 function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge development task").slice(0,110),body="Repository: onlykappa/KappaForge\nMode: audit\n\n"+text+"\n\nReview before creating. This browser preview cannot authorize a coding run.";const url="https://github.com/onlykappa/KappaForge/issues/new?"+new URLSearchParams({title,body});window.open(url,"_blank","noopener")}
 // While a task is busy (started or updated in the last 20 minutes), look for progress every 10 seconds instead of every 90.
 setInterval(()=>{if(!document.hidden&&trackedJobs.some(j=>!j.finished&&Date.now()-(j.activeAt||0)<1200000)){jobPollAfter=0;checkJobResult()}},10000);
+
+async function cancelAuthorizedJob(number){
+ const job=trackedJobs.find(j=>j.number===number);if(!job?.authorization)return;
+ const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
+ const result=await response.json();if(!response.ok){toast(result.error);return;}
+ job.finished=true;job.message='cancelled';persistJobs();render();toast('Task cancelled');
+}
+function taskCheckpoint(job,status,source='backend'){
+ job.lifecycle={status,source,at:Date.now()};persistJobs();
+}
