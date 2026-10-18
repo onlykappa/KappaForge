@@ -7,7 +7,8 @@ import os
 import re
 import time
 from engine.intent_guard import MARKER, WRITE_MODES, activate
-from engine.runner import request
+from engine.native_build import title as native_title
+from engine.runner import ROOT, request
 
 
 # GitHub computes mergeability lazily, and the native build usually finishes after the sandbox tests.
@@ -57,7 +58,17 @@ def complete(run, api, wait=time.sleep):
     files = api(f'repos/{repo}/pulls/{pr['number']}/files?per_page=100')
     native_changes = repo == 'onlykappa/KappaForge' and (len(files) >= 100 or any(f.get('filename', '').startswith(('ios/', 'preview/', 'config/', 'scripts/', '.github/')) for f in files))
     if native_changes and not any(c.get('name') == 'native' and c.get('conclusion') == 'success' for c in checks.get('check_runs', [])):
-        return 'native_verification_required'
+        # Agent PRs are built by a dispatched "iOS build <branch> @ <sha>" run, which reports on main's commit.
+        build = None
+        for _ in range(CHECK_POLLS):
+            runs = api(f'repos/{ROOT}/actions/workflows/ios-build.yml/runs?per_page=50').get('workflow_runs', [])
+            build = next((r for r in runs if r.get('display_title') == native_title(branch, sha)
+                          and r.get('event') == 'workflow_dispatch' and r.get('head_branch') == 'main'), None)
+            if build and build.get('status') == 'completed':
+                break
+            wait(POLL_SECONDS)
+        if not build or build.get('conclusion') != 'success':
+            return 'native_verification_required'
     statuses = api(f'repos/{repo}/commits/{sha}/status')
     if statuses.get('total_count', 0) > 100 or (statuses.get('statuses') and statuses.get('state') != 'success'):
         return 'statuses_pending_or_failed'

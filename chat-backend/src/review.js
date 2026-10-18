@@ -69,6 +69,15 @@ export async function testState(env,repo,pr){
  return {state:checks.every(c=>["success","neutral","skipped"].includes(c.conclusion))?"passed":"failed",sha,url:checks[0].html_url};
 }
 
+// Changes bundled into the iPhone app are also built by the agent's dispatched "iOS build <branch> @ <sha>" run.
+const NATIVE_PATHS=["ios/","preview/","scripts/","config/",".github/workflows/ios-build.yml"];
+export async function nativeState(env,branch,sha){
+ const runs=(await read(env,"repos/onlykappa/KappaForge/actions/workflows/ios-build.yml/runs?per_page=50").catch(()=>({}))).workflow_runs||[];
+ const run=runs.find(r=>r.display_title==="iOS build "+branch+" @ "+sha&&r.head_branch==="main"&&r.event==="workflow_dispatch");
+ if(!run)return {state:"none"};
+ return {state:run.status!=="completed"?"running":run.conclusion==="success"?"passed":"failed",url:run.html_url};
+}
+
 export async function reviewPR(env,repo,number){
  const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
  if(pr.state!=="open"||!agentBranch(repo,pr.head?.ref)||pr.head?.repo?.full_name!==pr.base?.repo?.full_name)
@@ -76,17 +85,21 @@ export async function reviewPR(env,repo,number){
  const files=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number+"/files?per_page=50");
  const tests=await testState(env,repo,pr);
  const dev=/^kappa\/dev-\d+$/.test(pr.head.ref),restore=/^kappa\/revert-\d+$/.test(pr.head.ref)&&await exactRestore(env,repo,pr.head.sha);
+ const native=repo===ROOT&&dev&&files.some(f=>NATIVE_PATHS.some(p=>String(f.filename).startsWith(p)))?await nativeState(env,pr.head.ref,pr.head.sha):null;
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
-  explanation:explanation(pr.body),tests,
+  explanation:explanation(pr.body),tests,native,
   risks:restore?[]:[...(tests.noTests?[{level:"medium",text:"This project has no automated tests; merging relies on your review",files:[]}]:[]),...riskScan(files)],files:files.map(f=>({name:f.filename,status:f.status,additions:f.additions,deletions:f.deletions})),
-  canMerge:pr.mergeable!==false&&(restore||dev&&tests.state==="passed"),canFix:dev&&!!tests.sandbox&&tests.state==="failed",canTest:dev&&tests.state!=="running"};
+  canMerge:pr.mergeable!==false&&(restore||dev&&tests.state==="passed"&&(!native||native.state==="passed")),
+  canFix:dev&&(!!tests.sandbox&&tests.state==="failed"||native?.state==="failed"),canTest:dev&&tests.state!=="running"&&native?.state!=="running"};
 }
 
 // Merge only what was reviewed: same head commit, tests passed on it, owner confirmed in the app.
 export async function mergePR(env,repo,number,expectedSha){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
- if(!review.canMerge)return {error:review.tests.state==="passed"?"GitHub reports a merge conflict. Open the PR to resolve it.":"Merge is available only after tests pass on the latest commit (currently "+review.tests.state+").",status:409};
+ if(!review.canMerge)return {error:review.tests.state!=="passed"?"Merge is available only after tests pass on the latest commit (currently "+review.tests.state+").":
+  review.native&&review.native.state!=="passed"?"Merge is available only after the iOS build passes on the latest commit (currently "+review.native.state+").":
+  "GitHub reports a merge conflict. Open the PR to resolve it.",status:409};
  if(expectedSha!==review.tests.sha)return {error:"The pull request changed since you reviewed it. Refresh and review again.",status:409};
  if(review.draft){
   const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
@@ -142,6 +155,10 @@ export async function requestTests(env,repo,number){
  const w=testWorkflow(repo,review.branch,review.tests.sha);
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/"+w.file+"/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:w.inputs})});
  if(!r.ok)return {error:"Tests could not start (GitHub HTTP "+r.status+").",status:502};
+ if(review.native){
+  const n=await api(env,"repos/onlykappa/KappaForge/actions/workflows/ios-build.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{branch:review.branch,candidate_sha:review.tests.sha}})});
+  if(!n.ok)return {error:"Tests started, but the iOS build could not start (GitHub HTTP "+n.status+").",status:502};
+ }
  return {status:"tests_started"};
 }
 
@@ -149,7 +166,7 @@ export async function requestTests(env,repo,number){
 export async function requestFix(env,repo,number){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
- if(!review.canFix)return {error:"Fix it is available for development PRs whose sandbox tests failed on the latest commit.",status:409};
+ if(!review.canFix)return {error:"Fix it is available for development PRs whose tests or iOS build failed on the latest commit.",status:409};
  const issue=review.branch.split("-").pop();
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{issue_number:issue,action:"fix"}})});
  if(!r.ok)return {error:"The fix could not start (GitHub HTTP "+r.status+").",status:502};

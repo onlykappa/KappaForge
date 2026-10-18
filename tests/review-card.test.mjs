@@ -27,3 +27,9 @@ test('review card displays verified tests, escaped risk warnings, and merge cont
  assert.doesNotMatch(html,/<script>/);
  assert.match(html,/data-merge=/);
 });
+test('review card shows the iOS build of app changes with a link to its log and IPA',()=>{
+ assert.match(render({data:{tests:{state:'passed'},native:{state:'failed',url:'https://github.com/run/2'}}}),/iOS build failed[\s\S]*href="https:\/\/github.com\/run\/2"[^>]*>Build log and IPA/);
+ assert.match(render({data:{tests:{state:'passed'},native:{state:'running'}}}),/iOS build is running/);
+ assert.match(render({data:{tests:{state:'passed'},native:{state:'none'}}}),/iOS build has not run/);
+ assert.doesNotMatch(render({data:{tests:{state:'passed'}}}),/iOS build/,'non-app changes have no iOS build line');
+});

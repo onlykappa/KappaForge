@@ -11,6 +11,7 @@ import {dirname as renderDirname,resolve as renderResolve} from 'node:path';
 import './review-card.test.mjs';
 import './task-autostart.test.mjs';
 import './vault-sync.test.mjs';
+import './native-builds.test.mjs';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
@@ -138,7 +139,7 @@ test('every owner repository is in scope, including new ones, and names in chat 
 });
 
 test('review card explains the change, and merge requires passing tests on the exact reviewed commit',async()=>{
- const original=globalThis.fetch,calls=[],head='c'.repeat(40);let conclusion='success';
+ const original=globalThis.fetch,calls=[],head='c'.repeat(40);let conclusion='success',native='success';
  const pr={state:'open',draft:true,node_id:'PR_1',title:'Draft: Add tooltip',html_url:'https://github.com/onlykappa/KappaForge/pull/50',mergeable:true,
   body:'Owner-approved.\n\n## What this does\nAdds a tooltip to refresh.\n\n## Technical summary\nx',
   head:{ref:'kappa/dev-9',sha:head,repo:{full_name:'onlykappa/KappaForge'}},base:{repo:{full_name:'onlykappa/KappaForge'}}};
@@ -147,6 +148,7 @@ test('review card explains the change, and merge requires passing tests on the e
   if(u.endsWith('/pulls/50'))return Response.json(pr);
   if(u.includes('/pulls/50/files'))return Response.json([{filename:'preview/ui.js',status:'modified',additions:3,deletions:1}]);
   if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-9 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion,html_url:'https://github.com/run/1'}]});
+  if(u.includes('ios-build.yml/runs'))return Response.json({workflow_runs:[{display_title:'iOS build kappa/dev-9 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:native,html_url:'https://github.com/run/2'}]});
   if(u.endsWith('/graphql'))return Response.json({data:{markPullRequestReadyForReview:{pullRequest:{isDraft:false}}}});
   if(u.endsWith('/pulls/50/merge'))return Response.json({merged:true});
   if(u.includes('/git/refs/heads/'))return new Response(null,{status:204});
@@ -154,7 +156,13 @@ test('review card explains the change, and merge requires passing tests on the e
   return new Response('{}',{status:404})};
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh'};
  try{
+  // An app change also needs the agent's native iOS build of the same commit to pass.
+  native='failure';
+  let blocked=await(await worker.fetch(req('/review',{repo:'KappaForge',prNumber:50}),env)).json();
+  assert.equal(blocked.native.state,'failed');assert.equal(blocked.canMerge,false);assert.equal(blocked.canFix,true);
+  native='success';
   const review=await(await worker.fetch(req('/review',{repo:'KappaForge',prNumber:50}),env)).json();
+  assert.equal(review.native.state,'passed');assert.equal(review.native.url,'https://github.com/run/2');
   assert.equal(review.explanation.what,'Adds a tooltip to refresh.');assert.equal(review.tests.state,'passed');assert.equal(review.canMerge,true);assert.equal(review.canFix,false);assert.equal(review.files[0].name,'preview/ui.js');
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:head}),env)).status,403,'needs confirmation');
   assert.equal((await worker.fetch(req('/decisions',{repo:'KappaForge',prNumber:50,decision:'merge',headSha:'d'.repeat(40),confirmed:true}),env)).status,409,'stale review');
@@ -511,4 +519,22 @@ test('PR94 task checkpoints are persisted only for actual task events',()=>{
  assert.match(source,/taskCheckpoint\(job,"waiting","resume"\)/);
  assert.match(source,/taskCheckpoint\(job,report\.status,"issue-comment:"\+comment\.id\)/);
  assert.match(source,/taskCheckpoint\(job,"progress","issue-comment:"\+comment\.id\)/);
+});
+
+test('an iOS build question puts the previous and current build history in front of the model',async()=>{
+ const old=globalThis.fetch;let prompt='';
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.endsWith('/models?pageSize=100'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes(':generateContent')){prompt=JSON.parse(init.body).systemInstruction.parts[0].text;return Response.json({candidates:[{content:{parts:[{text:'ok'}]}}]})}
+  if(u.includes('ios-build.yml/runs'))return Response.json({workflow_runs:[{id:5,display_title:'x',event:'push',head_branch:'main',status:'completed',conclusion:'failure',html_url:'https://github.com/run/5'}]});
+  if(u.includes('/runs/5/jobs'))return Response.json({jobs:[{conclusion:'failure',steps:[{name:'Build unsigned iPhone application',conclusion:'failure'}]}]});
+  return new Response('{}',{status:404})};
+ const vault=new KappaMemory(memoryState());
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'k',GITHUB_JOB_TOKEN:'gh',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ try{
+  assert.equal((await worker.fetch(req('/chat',{messages:[{role:'user',text:'Why did the last IPA build fail?'}]}),env)).status,200);
+  assert.match(prompt,/iOS BUILD HISTORY[\s\S]*failed at Build unsigned iPhone application/);
+  await worker.fetch(req('/chat',{messages:[{role:'user',text:'Tell me a joke'}]}),env);
+  assert.doesNotMatch(prompt,/iOS BUILD HISTORY/);
+ }finally{globalThis.fetch=old}
 });
