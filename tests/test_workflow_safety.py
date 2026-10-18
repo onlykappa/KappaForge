@@ -45,6 +45,14 @@ class TaskScopeTests(unittest.TestCase):
             with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=issue('code')), patch('sys.argv',['task_scope']):
                 task_scope.main();self.assertIn('scope='+expected,Path(output.name).read_text())
 
+    def test_expired_task_is_reported_instead_of_failing_silently(self):
+        expired=dict(issue('develop'),created_at='2020-01-01T00:00:00Z')
+        with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=expired), patch('sys.argv',['task_scope']):
+            task_scope.main();written=Path(output.name).read_text()
+        self.assertIn('scope=expired',written);self.assertIn('issue=23',written)
+        workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/agent.yml').read_text()
+        self.assertIn("needs.classify.outputs.scope == 'expired'",workflow)
+
     def test_read_queue_never_scans_repairs_or_runs_continuous_code(self):
         candidates=[issue('watch'),dict(issue('continuous-code'),number=24)]
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'','KAPPA_TASK_SCOPE':'read'}), patch.object(continuous,'github',return_value=candidates), patch.object(continuous,'get_issue',return_value=candidates[0]), patch.object(continuous,'monitor_failures') as watch, patch('engine.repair_loop.scan_failures') as repair, patch('engine.continuous_code.code_one_step') as code:
