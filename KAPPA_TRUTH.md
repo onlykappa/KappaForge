@@ -12,7 +12,7 @@ This document describes how the assistant should evaluate project claims. It is 
 ## Procedure
 - Resolve project and commit first. Respect any active commit lock and never switch branches while locked.
 - Retrieve file structure, relevant functions/imports and changed files before claiming implementation details.
-- For proposed changes, consult dependency_map.json and inspect affected call sites and tests; treat the map as advisory, not a complete dependency graph.
+- For proposed changes, consult dependency_map.json (generated from real imports by scripts/dependency-map.py) and inspect affected call sites and tests; it does not capture runtime edges such as HTTP calls or workflow dispatches.
 - Before responding, check every factual code claim against source evidence. Quote file paths and line ranges when available; otherwise explicitly say verification is incomplete.
 - A commit existing, an issue closing, or an agent reporting success does **not** prove a feature works.
 - Never claim access to uncommitted local changes or internal hidden reasoning. Report only observable evidence and uncertainty.
