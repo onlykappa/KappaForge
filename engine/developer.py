@@ -419,7 +419,11 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     errors = []
     for attempt in range(3):
         retry = ("\n\nYour previous answer was rejected: " + "; ".join(errors[-3:]) +
-                 "\nFix exactly these problems. Do not expand scope.") if attempt else ""
+                 "\nRe-read the SOURCE FILES above before retrying. Every edit.find must be copied verbatim " +
+                 "from the actual source and match exactly once. Do not invent class declarations, " +
+                 "duplicate file entries, or submit unchanged content. If the requested behavior " +
+                 "already exists, change a relevant test or report it in the explanation with " +
+                 "another genuine required code improvement. Fix these errors without expanding scope.") if attempt else ""
         model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed)
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
