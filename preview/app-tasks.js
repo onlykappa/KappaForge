@@ -60,6 +60,7 @@ async function checkJobResult(){
  try{
   for(const job of jobs){
    const [comments,issue]=await Promise.all([api("KappaForge/issues/"+job.number+"/comments?per_page=100",true),api("KappaForge/issues/"+job.number,true)]);
+   if(!Array.isArray(comments)||!issue||typeof issue!=="object")throw Error("Task status response is unavailable or invalid");
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
