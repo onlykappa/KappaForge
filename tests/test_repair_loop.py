@@ -1,5 +1,5 @@
 import unittest
-from engine.repair_loop import candidate, revision_count, MAX_REVISIONS
+from engine.repair_loop import candidate, revision_count, MAX_REVISIONS, repair_diagnosis
 
 class RepairLoopTests(unittest.TestCase):
     def test_matching_failed_approved_sandbox(self):
@@ -24,3 +24,8 @@ class RepairLoopTests(unittest.TestCase):
                   {"body":"<!-- KAPPA_AUTOFIX:kappa/issue-8:102 -->"}]
         self.assertEqual(revision_count(comments,"kappa/issue-7"),2)
         self.assertEqual(MAX_REVISIONS,3)
+
+    def test_repair_diagnosis_does_not_claim_proven_root_cause(self):
+        self.assertIn("Identify failing assertions",repair_diagnosis([{"step":"Run unit tests"}]))
+        self.assertIn("compilation",repair_diagnosis([{"step":"Build app"}]))
+        self.assertIn("Inspect",repair_diagnosis([{"step":"Unexpected runner failure"}]))
