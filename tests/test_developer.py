@@ -17,6 +17,18 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("int(a) + int(b)", changes["app/main.py"])
         self.assertIn("return a - b", changes["app/main.py"])
 
+    def test_guidance_report_includes_preferences_and_lessons(self):
+        entries = {"KAPPA.md": 1, ".kappaforge/owner-preferences.md": 1,
+                   ".kappaforge/development-lessons.md": 1}
+        values = {"KAPPA.md": "policy", ".kappaforge/owner-preferences.md": "concise",
+                  ".kappaforge/development-lessons.md": "verify regression"}
+        with patch.object(developer, "read_source", side_effect=lambda repo, path, sha, token: values[path]):
+            report = developer.project_guidance_report("onlykappa/KappaForge", "sha", entries, "token")
+        self.assertEqual(len(report["sources"]), 3)
+        self.assertTrue(all(not s["truncated"] for s in report["sources"]))
+        self.assertIn("concise", report["text"])
+        self.assertIn("verify regression", report["text"])
+
     def test_full_repository_instructions_reach_planner_and_generator(self):
         guide = "START_RULE\\n" + ("x" * 18000) + "\\nEND_RULE"
         with patch.object(developer, "read_source", return_value=guide):
