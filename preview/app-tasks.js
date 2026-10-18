@@ -25,11 +25,10 @@ async function runChatAction(reply,typed,chat,offerTask){
  }
  if(action?.type==="task"){
   if(!await proposeTaskAutomatically(action.request,false,KappaJobs.conversationContext(chat.messages)))return say("⚠️ I couldn't turn that into a task: "+(planError||"the planner didn't see a task in it")+". Tap **Make a task** to set it up by hand.");
-  if(preferences.autoStart&&pendingJob)await launchJob();
   return;
  }
  // Without an action block (e.g. a fallback model), offer an approval card unless the reply asked the owner a question.
- if(offerTask&&!/\?\s*$/.test(String(reply||"").trim()))await proposeTaskAutomatically(typed,false);
+ if(offerTask&&!/\?\s*$/.test(String(reply||"").trim()))await proposeTaskAutomatically(typed,false,KappaJobs.conversationContext(chat.messages));
 }
 // Guidance or a retry restarted the task: follow it again, ignoring reports from before now.
 function resumeJob(number,chatId){
