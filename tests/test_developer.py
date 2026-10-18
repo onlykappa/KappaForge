@@ -177,7 +177,7 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertEqual(set(changes), {"app/main.py", "tests/test_main.py"})
         self.assertIn("# checked", changes["app/main.py"])
         self.assertTrue(explanation.startswith("Built in 2 stages."))
-        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 3), \
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5), \
                 self.assertRaisesRegex(ValueError, "Stage 2 of 2"):
             developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast", "Test"])
 
