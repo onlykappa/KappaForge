@@ -44,3 +44,18 @@ test('agent work sorts run evidence newest first and checks API comment shape',(
  assert.match(agent,/workflow_runs\|\|\[\]\)\]\.sort\(/);
  assert.match(agent,/Array\.isArray\(comments\)/);
 });
+
+test('partial GitHub dispatch does not invite creating a duplicate issue',async()=>{
+ const source=extract('async function launchJob(','\\nlet taskDraft=');
+ const draft={title:'Fix settings',instructions:'Fix settings with tests',mode:'develop',repo:'onlykappa/KappaForge'};
+ const chats=[{id:'chat',messages:[]}];
+ const sandbox={pendingJob:draft,backend:'https://fixture.test',access:'test',current:'chat',chats,
+ trackedJobs:[],recentJob:null,jobPollAfter:0,Date,JSON,
+ localStorage:{setItem(){}},render(){},save(){},
+ fetch:async()=>({ok:false,status:502,json:async()=>({error:'Workflow could not start',issueUrl:'https://github.com/onlykappa/KappaForge/issues/91'})}),
+ alert(){throw new Error('Unexpected alert')}};
+ vm.runInNewContext(source,sandbox);
+ await sandbox.launchJob();
+ assert.equal(sandbox.pendingJob,null);
+ assert.equal(sandbox.recentJob.url,'https://github.com/onlykappa/KappaForge/issues/91');
+});
