@@ -91,3 +91,30 @@
  .keyboard-open .controls .send-button{width:34px;height:34px}
  .keyboard-open .content{padding-bottom:calc(var(--composer-height) + var(--keyboard-inset) + 28px)}
 }
+
+/* iPhone chat polish: compact real progress with diagnostics on demand. */
+.agent-activity{width:100%;max-width:100%;padding:14px 15px;background:#14151b;border:1px solid rgba(157,145,199,.2);border-radius:16px;overflow:hidden;box-sizing:border-box}
+.activity-top{margin-bottom:9px;display:flex;align-items:center;gap:9px}
+.activity-heading{font-size:13px;color:#f0eef6;font-weight:650}
+.activity-tag{font-size:9px;color:#b8a9f2;white-space:nowrap;letter-spacing:.04em}
+.activity-summary{font-size:12px;line-height:1.5;color:#d0cdd9;margin:0;overflow-wrap:anywhere}
+.activity-history{margin:10px 0 0;font-size:12px}
+.activity-history summary{border-top:1px solid rgba(255,255,255,.08);padding:10px 1px 1px;color:#b8a9f2}
+.activity-report{overflow-wrap:anywhere;white-space:normal;max-height:54vh;overflow:auto;font-size:12px;line-height:1.55;padding-top:11px}
+.activity-report code{white-space:pre-wrap;overflow-wrap:anywhere}
+.activity-report pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;overflow:auto}
+@media(max-width:840px){
+ .top{grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;background:#000;min-height:calc(56px + var(--kappa-safe-top))}
+ .top-title{text-align:left}
+ .top-title strong{font-size:16px;font-weight:650;letter-spacing:-.2px;white-space:nowrap}
+ .header-presence{color:#a19dae;font-size:10px}
+ .header-presence i{background:#54bd96}
+ .content{max-width:100%;padding-left:16px;padding-right:16px}
+ .chat-message.is-progress{margin:12px 0 20px;padding:0}
+ .chat-message.is-progress .message-stack{width:100%;display:block}
+ .composer,.sidebar-collapsed .composer{left:10px;right:10px;padding:0;background:none}
+ .compose-inner{background:#181820;border:1px solid rgba(161,139,211,.35);border-radius:23px;box-shadow:none;padding:10px 11px}
+ .controls{gap:5px}
+ .composer-task{background:rgba(255,255,255,.04);border-radius:20px;padding:6px 10px}
+ .controls .send-button{background:#865edd}
+}
