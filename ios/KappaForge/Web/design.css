@@ -126,3 +126,4 @@
 /* Native UIKit input overlays this disabled geometry anchor; keep its placeholder readable. */
 .compose-inner textarea:disabled{opacity:1;-webkit-text-fill-color:transparent}
 .compose-inner textarea:disabled::placeholder{opacity:1;color:var(--faint);-webkit-text-fill-color:var(--faint)}
+.task-offer{align-self:flex-end;color:var(--accent);min-height:36px}

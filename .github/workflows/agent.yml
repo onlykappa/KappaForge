@@ -37,6 +37,24 @@ jobs:
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python -m engine.task_scope
       shell: bash
+  report-expired:
+    needs: classify
+    if: needs.classify.outputs.scope == 'expired'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+    - name: Tell the owner why automatic work stopped
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ISSUE: ${{ needs.classify.outputs.issue }}
+      run: |-
+        set -Eeuo pipefail
+        [[ "$ISSUE" =~ ^[0-9]+$ ]] || exit 0
+        body=$(printf '### KappaForge task failed\n\nThis task is no longer authorized (it expired, or was not started from a direct request), so automatic work on it, including test fixes, has stopped. Send the request again in chat to start a fresh task.')
+        gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
+      shell: bash
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 12

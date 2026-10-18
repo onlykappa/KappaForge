@@ -45,6 +45,14 @@ class TaskScopeTests(unittest.TestCase):
             with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=issue('code')), patch('sys.argv',['task_scope']):
                 task_scope.main();self.assertIn('scope='+expected,Path(output.name).read_text())
 
+    def test_expired_task_is_reported_instead_of_failing_silently(self):
+        expired=dict(issue('develop'),created_at='2020-01-01T00:00:00Z')
+        with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=expired), patch('sys.argv',['task_scope']):
+            task_scope.main();written=Path(output.name).read_text()
+        self.assertIn('scope=expired',written);self.assertIn('issue=23',written)
+        workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/agent.yml').read_text()
+        self.assertIn("needs.classify.outputs.scope == 'expired'",workflow)
+
     def test_read_queue_never_scans_repairs_or_runs_continuous_code(self):
         candidates=[issue('watch'),dict(issue('continuous-code'),number=24)]
         with patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','GEMINI_API_KEY':'fixture','CONTINUOUS_ISSUE_NUMBER':'','KAPPA_TASK_SCOPE':'read'}), patch.object(continuous,'github',return_value=candidates), patch.object(continuous,'get_issue',return_value=candidates[0]), patch.object(continuous,'monitor_failures') as watch, patch('engine.repair_loop.scan_failures') as repair, patch('engine.continuous_code.code_one_step') as code:
@@ -64,6 +72,8 @@ class NativeSelectionTests(unittest.TestCase):
             return dict({'id':id,'path':'.github/workflows/ios-build.yml','repository':{'full_name':'onlykappa/KappaForge'},'head_branch':'main','head_sha':'a'*40,'status':'in_progress'},**extra)
         rows=[run(1),run(2,head_sha='b'*40),run(3,status='completed'),run(4,head_branch='kappa/issue-23'),run(5,path='.github/workflows/publish-preview.yml'),run(6,repository={'full_name':'someone/else'}),run(7,head_sha='bad'),run('$(exit 1)')]
         self.assertEqual(cleanup.select_runs([{'workflow_runs':rows}, {'workflow_runs':[run(8,status='queued')]}],'b'*40),[1,8])
+        # Agent builds of a branch are dispatched from main but validate that branch, so main moving must not cancel them.
+        self.assertEqual(cleanup.select_runs([{'workflow_runs':[run(9,event='workflow_dispatch')]}],'b'*40),[])
         with self.assertRaises(ValueError):cleanup.select_runs([], 'not-a-sha')
 
     def test_simulator_rejects_unexpected_ids_and_missing_devices(self):
@@ -108,3 +118,34 @@ class BuildSettingsTests(unittest.TestCase):
         self.assertNotIn('fixture-secret-token',text);self.assertNotIn('hidden-value',text)
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(run(lambda:(_ for _ in ()).throw(RuntimeError('missing Node')),'preflight'),1)
+
+
+
+class NativeBuildWorkflowTests(unittest.TestCase):
+    # Plain-text checks: CI's Python has no YAML parser installed.
+    def setUp(self):
+        text = (Path(__file__).resolve().parents[1] / '.github/workflows/ios-build.yml').read_text()
+        self.text = text
+        native = text[text.index('\n  native:\n'):text.index('\n  agent-report:\n')]
+        self.steps = native.split('\n    - ')
+        self.report = text[text.index('\n  agent-report:\n'):text.index('\n  release:\n')]
+
+    def step(self, marker):
+        found = [s for s in self.steps if marker in s]
+        self.assertEqual(len(found), 1, marker)
+        return found[0]
+
+    def test_ipa_is_still_built_when_only_simulator_tests_fail(self):
+        for marker in ['name: Build unsigned iPhone application', 'name: Verify bundle, icon and package unsigned IPA', 'name: KappaForge-unsigned-iPhone-IPA']:
+            self.assertIn("if: ${{ !cancelled() && steps.simulator_build.outcome == 'success' }}", self.step(marker), marker)
+        self.assertIn('id: simulator_build', self.step('name: Build simulator application'))
+        # A failed test still fails the job, so it can never reach the release.
+        self.assertIn('\n  release:\n    if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'\n    needs: native\n', self.text)
+
+    def test_every_shared_web_file_is_verified_in_the_ipa(self):
+        self.assertIn('for SRC in ../preview/*', self.step('name: Verify bundle, icon and package unsigned IPA'))
+
+    def test_agent_builds_are_named_by_commit_and_reported_only_for_the_current_head(self):
+        self.assertIn("format('iOS build {0} @ {1}', inputs.branch, inputs.candidate_sha)", self.text.split('\npermissions:')[0])
+        self.assertIn("startsWith(inputs.branch, 'kappa/dev-')", self.report)
+        self.assertLess(self.report.index('if [ "$head" != "$SHA" ]'), self.report.index('gh workflow run agent.yml'))

@@ -38,7 +38,14 @@ def main():
         scope, number = "skip", ""
         if issue:
             from engine.intent_guard import ExecutionScope
-            ExecutionScope(issue)
+            try:
+                ExecutionScope(issue)
+            except PermissionError as exc:
+                # An explicit run (such as an automatic fix) on an expired task tells the owner why it stopped.
+                print(f"Task #{issue['number']} is no longer authorized: {exc}")
+                with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+                    output.write(f"scope=expired\nissue={int(issue['number'])}\n")
+                return
             mode = mode_of(issue)
             scope = "write" if mode in {"code", "repair", "develop", "continuous-code"} else "read"
             require_scope(mode, scope, family)

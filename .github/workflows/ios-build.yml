@@ -1,4 +1,6 @@
 name: iOS build and release
+# Agent dispatches are named "iOS build <branch> @ <sha>" so the agent and chat can find the build of an exact commit.
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha != '' && format('iOS build {0} @ {1}', inputs.branch, inputs.candidate_sha) || ' ' }}
 permissions:
   contents: read
 jobs:
@@ -96,6 +98,7 @@ jobs:
         xcodegen generate
       shell: bash
     - name: Build simulator application
+      id: simulator_build
       working-directory: ios
       run: |-
         set -Eeuo pipefail
@@ -154,6 +157,9 @@ jobs:
         if-no-files-found: warn
         retention-days: 14
     - name: Build unsigned iPhone application
+      # Runs even when a simulator UI test failed: the device build is its own compile check and the IPA stays inspectable.
+      # The job still fails, so a failed test never reaches the release job.
+      if: ${{ !cancelled() && steps.simulator_build.outcome == 'success' }}
       working-directory: ios
       run: |-
         set -Eeuo pipefail
@@ -161,6 +167,7 @@ jobs:
         xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
       shell: bash
     - name: Verify bundle, icon and package unsigned IPA
+      if: ${{ !cancelled() && steps.simulator_build.outcome == 'success' }}
       working-directory: ios
       run: |
         set -Eeuo pipefail
@@ -169,7 +176,8 @@ jobs:
         APP=build/Build/Products/Release-iphoneos/KappaForge.app
         test -s "$APP/Assets.car"
         test -s "$APP/AppIcon60x60@2x.png"
-        for FILE in index.html app-state.js app-dashboard.js app-tasks.js app-main.js app-config.js core.js design.css ui.js markdown.js settings.js settings.css version.json; do cmp "../preview/$FILE" "$APP/Web/$FILE"; done
+        # Every shared web file, not a hand-kept list, must ship byte-identical in the app.
+        for SRC in ../preview/*; do if [ -f "$SRC" ]; then cmp "$SRC" "$APP/Web/$(basename "$SRC")"; fi; done
         test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = "$(python3 ../scripts/config-value.py iosBundleIdentifier)"
         mkdir -p package/Payload
         cp -R "$APP" package/Payload/
@@ -178,15 +186,55 @@ jobs:
         unzip -t ../KappaForge-unsigned.ipa
       shell: bash
     - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() && steps.simulator_build.outcome == 'success' }}
       with:
         name: KappaForge-unsigned-iPhone-IPA
         path: ios/KappaForge-unsigned.ipa
         if-no-files-found: error
         retention-days: 30
     - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
       with:
         name: iOS-launch-screenshot
         path: /tmp/kappaforge-ios-launch.png
+        if-no-files-found: warn
+  agent-report:
+    # An agent development branch: report the native result on its task, and start a fix when it failed.
+    needs: native
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && startsWith(inputs.branch, 'kappa/dev-') && inputs.candidate_sha != '' && (needs.native.result == 'success' || needs.native.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      issues: write
+      contents: read
+    steps:
+    - name: Report the iOS build on the task and start a fix when it failed
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RESULT: ${{ needs.native.result }}
+        BRANCH: ${{ inputs.branch }}
+        SHA: ${{ inputs.candidate_sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
+        issue="${BASH_REMATCH[1]}"
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 0
+        head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null || true)
+        if [ "$head" != "$SHA" ]; then
+          echo "::notice::$BRANCH moved on; the newer commit's build reports instead."
+          exit 0
+        fi
+        if [ "$RESULT" = success ]; then
+          body=$(printf '### iOS build passed ✅\n\nThe app compiled, its simulator UI tests passed and an unsigned IPA was built for the latest commit of `%s`.\n\n[Build log and IPA](%s)' "$BRANCH" "$RUN_URL")
+        else
+          body=$(printf '### iOS build failed ❌ — fixing\n\nThe native iOS build or its simulator tests failed on the latest commit of `%s`. KappaForge is reading the build log and starting a fix automatically.\n\n[Build log](%s)' "$BRANCH" "$RUN_URL")
+          gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="$issue" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
+        fi
+        gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the iOS build result on task $issue."
+      shell: bash
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: native
@@ -244,6 +292,11 @@ jobs:
         description: Branch to validate (manual runs never publish)
         required: false
         default: main
+        type: string
+      candidate_sha:
+        description: Commit being validated (names the run; set by the agent)
+        required: false
+        default: ''
         type: string
 defaults:
   run:

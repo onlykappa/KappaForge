@@ -41,3 +41,38 @@ class CompletionTests(unittest.TestCase):
         for changes in [{'event':'pull_request'},{'path':'.github/workflows/untrusted.yml'},{'conclusion':'failure'},{'repository':{'full_name':'attacker/repo'}}]:
             run,api,writes,_,_=fixture();run.update(changes)
             self.assertNotEqual(complete(run,api),'merged');self.assertEqual(writes,[])
+    def test_waits_for_github_to_compute_mergeability(self):
+        run,api,writes,_,pr=fixture();pr['mergeable']=None;waits=[]
+        def wait(seconds):
+            waits.append(seconds)
+            if len(waits)==2:pr['mergeable']=True
+        self.assertEqual(complete(run,api,wait),'merged');self.assertEqual(len(waits),2)
+    def test_waits_for_checks_still_running_such_as_the_native_build(self):
+        run,api,writes,_,_=fixture();state={'status':'in_progress','conclusion':None}
+        def checks(path,payload=None,method=None):
+            if '/check-runs?' in path:return {'total_count':1,'check_runs':[{'name':'native',**state}]}
+            return api(path,payload,method)
+        def wait(seconds):state.update(status='completed',conclusion='success')
+        self.assertEqual(complete(run,checks,wait),'merged')
+    def test_gives_up_on_checks_that_never_finish_without_merging(self):
+        run,api,writes,_,_=fixture()
+        def checks(path,payload=None,method=None):
+            if '/check-runs?' in path:return {'total_count':1,'check_runs':[{'name':'native','status':'in_progress'}]}
+            return api(path,payload,method)
+        self.assertEqual(complete(run,checks,lambda s:None),'checks_pending_or_failed');self.assertEqual(writes,[])
+    def native(self, states):
+        """App changes plus the agent's dispatched native build of the exact head commit, one state per lookup."""
+        run,api,writes,_,_=fixture()
+        def with_native(path,payload=None,method=None):
+            if '/files?' in path:return [{'filename':'preview/ui.js'}]
+            if 'ios-build.yml/runs' in path:
+                status,conclusion=states.pop(0) if len(states)>1 else states[0]
+                return {'workflow_runs':[{'display_title':'iOS build kappa/dev-98 @ '+SHA,'event':'workflow_dispatch','head_branch':'main','status':status,'conclusion':conclusion}]}
+            return api(path,payload,method)
+        return run,with_native,writes
+    def test_app_changes_wait_for_the_dispatched_native_build_then_merge(self):
+        run,api,writes=self.native([('in_progress',None),('completed','success')]);waits=[]
+        self.assertEqual(complete(run,api,waits.append),'merged');self.assertTrue(waits)
+    def test_a_failed_native_build_blocks_the_merge(self):
+        run,api,writes=self.native([('completed','failure')])
+        self.assertEqual(complete(run,api,lambda s:None),'native_verification_required');self.assertEqual(writes,[])

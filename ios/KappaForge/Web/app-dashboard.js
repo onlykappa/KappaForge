@@ -147,6 +147,9 @@ function reviewCardHTML(key){
   (d.explanation?.fix?'<p><strong>Latest fix</strong>'+esc(d.explanation.fix)+'</p>':'')+
   (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before.</p>':
    '<p>'+tests+(t.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(t.url)+'">Test log ↗</a>':'')+'</p>')+
+  (d.native?'<p>'+({passed:'<span class="status-good">✅ iOS build passed</span>',failed:'<span class="status-bad">❌ iOS build failed</span>',
+   running:'<span class="status-pending">🔄 iOS build is running</span>'}[d.native.state]||'<span class="worksmall">The iOS build has not run on the latest commit yet</span>')+
+   (d.native.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(d.native.url)+'">Build log and IPA ↗</a>':'')+'</p>':'')+
   (risks?'<div class="review-risks"><strong>⚠ Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
   '<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+

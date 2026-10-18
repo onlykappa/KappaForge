@@ -15,6 +15,7 @@ def select_runs(pages, current_sha):
             if (run.get("path") == ".github/workflows/ios-build.yml"
                     and run.get("repository", {}).get("full_name") == "onlykappa/KappaForge"
                     and run.get("head_branch") == "main"
+                    and run.get("event") != "workflow_dispatch"  # agent builds of other branches
                     and run.get("status") in ACTIVE
                     and re.fullmatch(r"[0-9a-f]{40}", run.get("head_sha", ""))
                     and run["head_sha"] != current_sha

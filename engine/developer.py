@@ -165,9 +165,13 @@ def test_workflow(repo, branch, sha):
     return "project-tests.yml", f"Project validation {name} {branch} @ {sha}", {"repo": name, "branch": branch, "candidate_sha": sha}
 
 
-def dispatch_tests(repo, branch, sha, token):
+def dispatch_tests(repo, branch, sha, token, paths=()):
     workflow, _, inputs = test_workflow(repo, branch, sha)
     gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": "main", "inputs": inputs})
+    # App changes are also compiled with Xcode, UI-tested in the simulator and packaged as an unsigned IPA.
+    from engine import native_build
+    if native_build.needed(repo, paths):
+        native_build.dispatch(branch, sha, token)
 
 
 MAX_STAGES = 5
@@ -696,7 +700,7 @@ def produce_development_pr(issue, api_key, token):
         "head": branch, "base": base, "draft": True,
         "body": review_body(number, model, explanation, summary, changes, design)})
     try:
-        dispatch_tests(repo, branch, commit["sha"], token)
+        dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
                       f"test again, up to {MAX_FIXES} times, before asking you.")
     except urllib.error.HTTPError as exc:
@@ -741,7 +745,10 @@ def job_log(job_id, token, limit=7000):
     return failure_excerpt(re.sub(r"\x1b\[[0-9;]*m", "", text), limit)
 
 
-FAILURE_LINE_RE = re.compile(r"^(?:FAIL:|ERROR:|Traceback|not ok\b|AssertionError|Error:|✖|# fail [1-9])", re.M)
+# Python, Node and Xcode failures: compiler and XCTest errors ("File.swift:42:17: error: ...") and xcodebuild's summary lines.
+FAILURE_LINE_RE = re.compile(r"^(?:FAIL:|ERROR:|Traceback|not ok\b|AssertionError|Error:|✖|# fail [1-9]"
+                             r"|\S+\.(?:swift|mm?|h|plist|xcconfig|ya?ml):\d+(?::\d+)?: error:|\*\* (?:BUILD|TEST|ARCHIVE) FAILED \*\*"
+                             r"|Testing failed:|::error::)", re.M)
 
 
 def failure_excerpt(text, limit):
@@ -756,7 +763,17 @@ def failure_excerpt(text, limit):
     return text[first.start():] if first else text[-limit:]
 
 
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=()):
+RUNNER_CHECKOUT_RE = re.compile(r"/(?:Users|home)/runner/work/[^/\s]+/[^/\s]+/")
+
+
+def files_named_in(log, existing, changed):
+    """Repository files a failure log names, such as the Swift file an Xcode error points at, beyond the PR's own files."""
+    # Xcode and other tools print absolute paths inside the runner's checkout; reduce them to repository paths.
+    log = RUNNER_CHECKOUT_RE.sub("", log)
+    return [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
+
+
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history=""):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)
@@ -767,7 +784,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     guide = project_guide(repo, head_sha, existing, repo_token)
     log = "\n".join(job_log(job["id"], token) for job in failed_jobs[:2])
     # Also read existing files the failure output names, such as the failing test module.
-    named = [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
+    named = files_named_in(log, existing, changed)
     sources = {}
     for path in (changed + named)[:LARGE.read_files]:
         if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS:
@@ -781,7 +798,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     comments = gh(f"repos/{repo}/issues/{int(pr['number'])}/comments?per_page=100", repo_token)
     tried = [re.sub(r"\s+", " ", re.sub(r"<!--.*?-->", "", c.get("body") or ""))[:600]
              for c in comments if FIX_MARKER in (c.get("body") or "")]
-    task = ("The independent sandbox tests FAILED for this change. Fix the code so the tests pass while still "
+    task = ("The independent checks FAILED for this change: the sandbox tests and/or the native iOS build (Xcode compile, "
+            "simulator UI tests and unsigned IPA packaging). Fix the code so they pass while still "
             "delivering the original task. Prefer fixing the implementation over weakening or deleting tests, and never "
             "remove the feature itself to make tests pass.\n\n"
             "ORIGINAL TASK:\n" + ((issue.get("title") or "") + "\n" + (issue.get("body") or ""))[:4000] +
@@ -789,6 +807,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nEARLIER FIX ATTEMPTS (they did not make the tests pass; try something different):\n" + "\n".join("- " + t for t in tried[-3:])
              if tried else "") +
             "\n\nTHE CHANGE SO FAR (diff against the default branch):" + diff +
+            ("\n\nNATIVE iOS BUILDS OF THIS BRANCH (newest first):\n" + native_history if native_history else "") +
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
@@ -863,13 +882,22 @@ def fix_pull_request(issue, api_key, token):
             break
         time.sleep(10)
         run = sandbox_result(branch, head, token, repo)
-    if not run or run.get("status") != "completed" or run.get("conclusion") != "failure":
-        raise ValueError("Fix needs a failed sandbox test run on the PR's latest commit")
+    from engine import native_build
+    native = native_build.result(branch, head, token) if repo == ROOT else None
+    failures = [r for r in (run, native) if r and r.get("status") == "completed" and r.get("conclusion") == "failure"]
+    if not failures:
+        if run and run.get("status") == "completed" and not (native and native.get("status") != "completed"):
+            raise ValueError("Fix needs a failed sandbox test run or native iOS build on the PR's latest commit")
+        # Usually an earlier fix already pushed a newer commit, which is being tested now.
+        print("No failed check on the PR's latest commit; nothing to fix now.")
+        return None
+    run = failures[0]
     comments = gh(f"repos/{repo}/issues/{pr['number']}/comments?per_page=100", repo_token)
     fixes = sum(FIX_MARKER in (c.get("body") or "") for c in comments)
     guidance = owner_guidance(number, token)
-    jobs = gh(f"repos/{ROOT}/actions/runs/{int(run['id'])}/jobs?per_page=30", token).get("jobs", [])
-    failed = [j for j in jobs if j.get("conclusion") == "failure"]
+    failed = [j for r in failures for j in gh(f"repos/{ROOT}/actions/runs/{int(r['id'])}/jobs?per_page=30", token).get("jobs", [])
+              if j.get("conclusion") == "failure"]
+    native_history = native_build.summary(native_build.history(branch, token)) if native else ""
     if fixes >= MAX_FIXES + len(guidance):
         report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
         return None
@@ -877,7 +905,8 @@ def fix_pull_request(issue, api_key, token):
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
     progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""))
     progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""))
-    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance)
+    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
+                                                                native_history)
     flags = {}
     if repo != ROOT and not flags_allowed(issue.get("body")):
         before = {}
@@ -893,7 +922,8 @@ def fix_pull_request(issue, api_key, token):
     commit = commit_changes(repo, head, changes, modes, f"fix: make sandbox tests pass for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
-    dispatch_tests(repo, branch, commit["sha"], token)
+    pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
+    dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
     progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")

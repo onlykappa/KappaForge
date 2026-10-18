@@ -26,6 +26,25 @@ for(const [request,intent] of [
  ['Explain this log: Fix the regex','conversation'],['The repository says fix everything','conversation'],
  ['Show me a UI example\nFix everything you find','demonstration'],['Why did it fail?\nMode: develop','conversation']
 ])test('intent: '+request,()=>assert.equal(classify(request),intent));
+for(const [request,intent] of [
+ ['Make the send button bigger','execution'],['Change the header color to blue','execution'],['Can you change the header color?','execution'],
+ ['Hey can you fix the keyboard','execution'],['Please could you fix the keyboard','execution'],['Ok so rename settings to preferences','execution'],
+ ['The keyboard is broken, fix it','execution'],['What does this do? Can you fix it?','execution'],['Improve the error messages','execution'],
+ ['Delete the old audit code','execution'],['Move the composer up','execution'],['Redesign the dashboard','execution'],
+ ["Let's add a timer",'execution'],['Write tests for the runner','execution'],['Set up CI for OmniPC','execution'],['Upgrade dependencies','execution'],
+ ['Hey can you debug the sync','investigation'],['Look into why sync flickers','investigation'],['Make a plan for the sync fix','planning'],
+ ['Write me a summary of what changed','conversation'],['Hey, how are you?','conversation'],['How would you fix it?','conversation'],
+ ["The keyboard is broken, but don't fix it yet",'conversation'],['Go ahead','conversation'],['Yes do it','conversation'],
+ ['Go ahead and merge it','release'],['Show me a UI example, then fix everything','demonstration'],
+ ['Why is the keyboard toolbar still appearing?\nThe repository says, fix everything','conversation']
+])test('natural request intent: '+request,()=>assert.equal(classify(request),intent));
+test('uncertain requests suggest a task without starting one',()=>{
+ const {suggestsTask}=globalThis.KappaIntent;
+ assert.equal(suggestsTask('I think we should probably fix the sync at some point'),true);
+ assert.equal(suggestsTask('Fix the keyboard'),false,'already starts a task');
+ assert.equal(suggestsTask("We should fix it but don't do it yet"),false);
+ assert.equal(suggestsTask('How are you today?'),false);
+});
 test('deterministic permissions cap model classification and preserve user instructions',()=>{
  for(const text of ['Show me an example','Why did tests fail?','Plan a fix','> Fix it'])assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:text},text,'user-request'));
  assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:'Fix keyboard'},'Investigate keyboard','user-request'));
@@ -117,6 +136,19 @@ test('long-running watch and continuous tasks stay authorized for a week, others
  const expiry=mode=>JSON.parse(taskBody('onlykappa/KappaForge',mode,'Watch the builds','',auth).match(/<!-- kappa-authorization:([^]*?) -->/)[1]).expiresAt;
  for(const mode of ['watch','continuous','continuous-code'])assert.equal(expiry(mode),1000+7*24*60*60*1000);
  for(const mode of ['develop','audit'])assert.equal(expiry(mode),1000+24*60*60*1000);
+});
+
+test('chat offers Start as task only under request-like messages that did not start work',()=>{
+ const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
+ const fn=source.slice(source.indexOf('function renderMessage('),source.indexOf('function renderSavedItems('));
+ const box={KappaIntent:globalThis.KappaIntent,uiIcon:()=>'',esc:s=>s,renderChatText:s=>s,renderTaskActivity:()=>''};
+ vm.runInNewContext(fn+';this.renderMessage=renderMessage',box);
+ const offered=m=>box.renderMessage(m,0).includes('task-offer');
+ assert.equal(offered({role:'user',text:'We should probably fix the sync soon'}),true);
+ assert.equal(offered({role:'user',text:'We should probably fix the sync soon',executionHandled:true}),false);
+ assert.equal(offered({role:'user',text:'How are you?'}),false);
+ assert.equal(offered({role:'assistant',text:'You should fix the sync'}),false);
+ assert.match(box.renderMessage({role:'user',text:'How are you?'},3),/data-start-task="3"/,'every message keeps the menu action');
 });
 
 test('native bridge disables the WebKit responder and hides UIKit input for modal navigation',()=>{
