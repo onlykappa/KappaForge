@@ -116,8 +116,16 @@ jobs:
         xcrun simctl launch "$DEVICE" "$APP_ID"
         sleep 5
         xcrun simctl io "$DEVICE" screenshot /tmp/kappaforge-ios-launch.png
-        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build CODE_SIGNING_ALLOWED=NO test
+        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build -resultBundlePath /tmp/kappaforge-ui-tests.xcresult CODE_SIGNING_ALLOWED=NO test
       shell: bash
+    - name: Preserve iOS simulator UI test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: iOS-keyboard-ui-test-results
+        path: /tmp/kappaforge-ui-tests.xcresult
+        if-no-files-found: warn
+        retention-days: 14
     - name: Build unsigned iPhone application
       working-directory: ios
       run: |-
