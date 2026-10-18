@@ -4,6 +4,7 @@ import {fileURLToPath as renderFileURLToPath} from 'node:url';
 import {dirname as renderDirname,resolve as renderResolve} from 'node:path';
 
 import './review-card.test.mjs';
+import './task-autostart.test.mjs';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
@@ -448,4 +449,14 @@ test('exactly one shared render function remains, owned by dashboard',()=>{
  assert.match(dashboard,/function render\s*\(/);
  assert.doesNotMatch(main,/\bfunction\s+render\s*\(/);
  assert.match(dashboard,/view===["']settings["']/);
+});
+
+test('safe tasks can auto-launch while privileged modes need approval',()=>{
+ const safe={mode:'develop',repo:'onlykappa/KappaForge',instructions:'Fix the settings screen and add a regression test'};
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed(safe),true);
+ for(const mode of ['repair','continuous','continuous-code','watch']){
+  assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,mode}),false);
+ }
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,repo:'other/fork'}),false);
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,instructions:''}),false);
 });

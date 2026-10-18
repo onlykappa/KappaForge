@@ -323,7 +323,13 @@ async function proposeTaskAutomatically(text,notify=true,context=""){
   if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
   const p=data.proposal;
   pendingJob={title:p.title,instructions:p.instructions,repo:p.repo,mode:p.mode,context};
-  view="chat";render();return true;
+  view="chat";
+  // Owner explicitly requested hands-off development. Only safe task modes start
+  // automatically; potentially destructive or long-running modes still need review.
+  if(preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
+   await launchJob();
+  }else render();
+  return true;
  }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
