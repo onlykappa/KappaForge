@@ -237,7 +237,8 @@ function monitorApply(packet){
   m.runs=[...byId.values()].sort((a,b)=>b.id-a.id).slice(0,30);
   announceRunChanges(before,m.runs);m.lastSync=Date.now();m.error="";persistMonitor();monitorChanged();refreshActiveDetails();
  }else if(packet.type==="run"&&packet.run?.id){
-  m.details[packet.run.id]={data:packet,at:Date.now()};
+  const entry=m.details[packet.run.id]||(m.details[packet.run.id]={});
+  Object.assign(entry,{data:packet,at:Date.now(),error:""});
   // The run page and the list must agree: carry the run's newer state into the list.
   const i=m.runs.findIndex(r=>r.id===packet.run.id);if(i>=0&&packet.run.attempt>=m.runs[i].attempt){const before=m.runs.slice();m.runs[i]=packet.run;announceRunChanges(before,m.runs);persistMonitor()}
   m.lastSync=Date.now();monitorChanged();
@@ -260,6 +261,8 @@ async function monitorPoll(){
   // Never let a malformed answer wipe the list.
   if(!Array.isArray(list))throw Error("GitHub returned an unexpected run list. Showing the last known state.");
   monitorApply({type:"snapshot",runs:list.map(KappaActions.normalizeRun).filter(Boolean)});
+  // The list alone cannot refresh the jobs and steps of the run currently on screen.
+  if(m.watchRun&&!m.details[m.watchRun]?.loading)await monitorRunDetail(m.watchRun);
  }catch(e){if(m.mode!=="live"){m.error=e.message;monitorChanged()}}
 }
 async function monitorStream(){
@@ -312,26 +315,33 @@ async function monitorRunDetail(id,attempt=0){
  try{
   if(backend&&access&&m.mode!=="poll"){
    const r=await actionsFetch({op:"run",runId:id,attempt:attempt||undefined});const d=await r.json().catch(()=>({}));
-   if(r.status!==404&&r.status!==503){if(!r.ok)throw Error(d.error||"GitHub HTTP "+r.status);if(attempt)entry.attemptData={...d,attempt};else monitorApply({type:"run",...d});return}
+   if(r.status!==404&&r.status!==503){if(!r.ok)throw Error(d.error||"GitHub HTTP "+r.status);if(attempt)entry.attemptData={...d,attempt,attempts:entry.data?.attempts||d.attempts};else monitorApply({type:"run",...d});return}
   }
   // Public fallback: run and jobs only. Annotations and logs need the Worker.
-  const [run,jobs]=await Promise.all([githubFetch(m.repo+"/actions/runs/"+id).then(r=>r.ok?r.json():Promise.reject(Error("GitHub HTTP "+r.status))),
+  const [run,jobs]=await Promise.all([(attempt?fetch("https://api.github.com/repos/onlykappa/"+m.repo+"/actions/runs/"+id+"/attempts/"+attempt,{headers:{Accept:"application/vnd.github+json"}}):githubFetch(m.repo+"/actions/runs/"+id)).then(r=>r.ok?r.json():Promise.reject(Error("GitHub HTTP "+r.status))),
    fetch("https://api.github.com/repos/onlykappa/"+m.repo+"/actions/runs/"+id+(attempt?"/attempts/"+attempt:"")+"/jobs?per_page=100",{headers:{Accept:"application/vnd.github+json"}}).then(r=>r.ok?r.json():{jobs:[]}).catch(()=>({jobs:[]}))]);
   const nr=KappaActions.normalizeRun(run),nj=(jobs.jobs||[]).map(KappaActions.normalizeJob).filter(Boolean);
   if(!nr)throw Error("Run not found");
   const d={run:nr,jobs:nj,progress:KappaActions.progress(nr,nj),annotations:[],artifacts:[],attempts:Array.from({length:Math.min(nr.attempt,20)},(_,i)=>i+1),limited:true};
-  if(attempt)entry.attemptData={...d,attempt};else monitorApply({type:"run",...d});
+  if(attempt)entry.attemptData={...d,attempt,attempts:entry.data?.attempts||d.attempts};else monitorApply({type:"run",...d});
  }catch(e){entry.error=e.message}
  finally{entry.loading=false;monitorChanged()}
 }
 // Loads a finished job's parsed log once; the job and step pages read it from here.
-async function monitorJobLog(jobId){
- const m=workflowMonitor,logs=m.logs;
- if(logs[jobId]?.data||logs[jobId]?.loading)return;
- if(!backend||!access){logs[jobId]={error:"Connect AI to read parsed logs here, or open the full log on GitHub."};monitorChanged();return}
- logs[jobId]={loading:true};monitorChanged();
- try{const r=await actionsFetch({op:"log",jobId});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(r.status===404?"Update the Worker to read logs here, or open the full log on GitHub.":d.error||"GitHub HTTP "+r.status);logs[jobId]={data:d}}
- catch(e){logs[jobId]={error:e.message}}
+async function monitorJobLog(jobId,{force=false}={}){
+ const m=workflowMonitor,logs=m.logs,previous=logs[jobId];
+ if(previous?.loading||!force&&(previous?.data?.available||previous?.attempts>=3||previous?.retryAt>Date.now()))return;
+ if(!backend||!access){logs[jobId]={error:"Connect AI to read parsed logs here, or open the full log on GitHub.",attempts:3};monitorChanged();return}
+ const attempts=force?1:(previous?.attempts||0)+1;
+ logs[jobId]={loading:true,attempts};monitorChanged();
+ try{const r=await actionsFetch({op:"log",jobId});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(r.status===404?"Update the Worker to read logs here, or open the full log on GitHub.":d.error||"GitHub HTTP "+r.status);logs[jobId]={data:d,attempts}}
+ catch(e){logs[jobId]={error:e.message,attempts}}
+ const entry=logs[jobId];
+ if(!entry.data?.available){
+  entry.retryAt=Date.now()+15000;
+  // Retry temporary log delays at most three times; manual retry is always available.
+  if(attempts<3)setTimeout(()=>{if(logs[jobId]===entry&&!m.paused)monitorChanged()},15000);
+ }
  monitorChanged();
 }
 // For scripts/verify-actions-state.mjs: what this device shows, without credentials.

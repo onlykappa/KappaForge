@@ -119,8 +119,18 @@ Verified against GitHub Actions for commit `fa4454a2141ad2fbd0c73527fb36d4bf6b13
 - Optional Worker secret `GITHUB_ACTIONS_READ_TOKEN` (fine-grained, Actions: read) is not configured yet;
   the Worker falls back to `GITHUB_JOB_TOKEN`.
 
+## Review fixes (2026-10-18)
+- [x] Round 3 completion now follows tracked validation: exhausted generation steps show Testing while checks run,
+  Ready for review after passing checks, and Needs attention on failed validation. Merge and cancellation have distinct states.
+  A failed test dispatch no longer claims tests started.
+- [x] Live run packets preserve the selected historical attempt and in-flight request state. Fallback reads pair
+  historical jobs with historical run metadata.
+- [x] Polling fallback refreshes the watched run's jobs and steps, including its final result.
+- [x] Delayed/unavailable logs use bounded retries (15 seconds, three attempts), and job/step pages offer manual retry.
+- [x] Regression coverage added for each failure path. Native web assets regenerated from preview sources.
+
 ## Next task
-All planned implementation items, including round 3, and CI verification are complete.
+All planned implementation items, including round 3, are implemented. The earlier CI results above cover `fa4454a`; the review-fix commit requires fresh CI before merge and release.
 PR #101 remains open and draft at this verification point. Merge/release and physical-device acceptance
 remain separate steps; no release was published by PR run #148.
 

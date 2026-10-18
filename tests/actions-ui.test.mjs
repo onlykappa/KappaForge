@@ -122,3 +122,52 @@ test('the monitor streams from the Worker and reconnects; an older Worker falls 
  for(let i=0;i<3;i++){failing.box.m.controller=null;await failing.box.monitorStream()}
  assert.equal(failing.box.m.mode,'poll','three failed streams in a row switch to polling');
 });
+
+test('live run packets preserve historical attempt data and in-flight entry state',()=>{
+ const {box}=monitor();box.dashboardState.mode='run';
+ const historical={attempt:1,run:run(9,{run_attempt:1,conclusion:'failure'}),jobs:[{id:11}]};
+ box.m.details[9]={attemptData:historical,loading:true};
+ box.monitorApply({type:'run',run:run(9,{run_attempt:2}),jobs:[{id:22}]});
+ assert.equal(box.m.details[9].attemptData,historical);
+ assert.equal(box.m.details[9].data.run.attempt,2);
+ assert.equal(box.m.details[9].loading,true,'a live packet must not replace the entry an in-flight request owns');
+});
+
+test('fallback polling refreshes the watched run and its jobs, including after completion',async()=>{
+ const calls=[];
+ const remote={id:9,name:'Build',status:'completed',conclusion:'success',run_attempt:2};
+ const {box}=monitor({githubFetch:async path=>{calls.push(path);return Response.json(path.includes('?per_page=')?{workflow_runs:[remote]}:remote)},fetch:async url=>{calls.push(url);return Response.json(url.endsWith('/attempts/1')?{...remote,run_attempt:1,conclusion:'failure'}:{jobs:[{id:22,name:'native',status:'completed',conclusion:'success',steps:[]}]})}});
+ box.dashboardState.mode='job';box.m.mode='poll';box.m.watchRun=9;
+ box.m.details[9]={data:{run:run(9,{status:'in_progress',conclusion:null}),jobs:[]}};
+ await box.monitorPoll();
+ assert.equal(box.m.details[9].data.run.state,'success');
+ assert.equal(box.m.details[9].data.jobs[0].state,'success');
+ assert.ok(calls.includes('KappaForge/actions/runs/9'));
+ await box.monitorRunDetail(9,1);
+ assert.ok(calls.includes('https://api.github.com/repos/onlykappa/KappaForge/actions/runs/9/attempts/1'),'historical jobs must be paired with historical run metadata');
+ assert.equal(box.m.details[9].attemptData.run.attempt,1);
+ assert.equal(box.m.details[9].attemptData.run.state,'failure');
+ assert.deepEqual(Array.from(box.m.details[9].attemptData.attempts),[1,2],'switching to an old attempt keeps the latest attempt selectable');
+});
+
+test('temporarily unavailable logs retry with backoff and a cap, with a manual override',async()=>{
+ let calls=0,ready=false;
+ const {box}=monitor({fetch:async()=>{calls++;return Response.json(ready?{available:true,sections:[]}:{available:false,reason:'Not ready'})}});
+ await box.monitorJobLog(22);await box.monitorJobLog(22);
+ assert.equal(calls,1,'rendering cannot create an immediate retry loop');
+ box.m.logs[22].retryAt=0;await box.monitorJobLog(22);assert.equal(calls,2);
+ box.m.logs[22].retryAt=0;await box.monitorJobLog(22);assert.equal(calls,3);
+ box.m.logs[22].retryAt=0;await box.monitorJobLog(22);assert.equal(calls,3,'automatic retries are bounded');
+ ready=true;await box.monitorJobLog(22,{force:true});assert.equal(calls,4);
+ assert.equal(box.m.logs[22].data.available,true);
+ await box.monitorJobLog(22);assert.equal(calls,4,'successful logs remain cached');
+});
+
+test('job and step pages offer a retry for delayed logs and request errors',()=>{
+ const {jobView,stepView}=sandbox();const j=job(11,[step(1,'Run tests','completed','failure')]);
+ const detail={run:run(5),jobs:[j]};
+ for(const log of [{error:'Offline'},{data:{available:false,reason:'Not ready'}}]){
+  assert.match(jobView(detail,j,{log}),/data-log-retry="11"/);
+  assert.match(stepView(detail,j,j.steps[0],{log}),/data-log-retry="11"/);
+ }
+});

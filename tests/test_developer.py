@@ -336,9 +336,17 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
 
     def test_commits_one_atomic_change_and_reports_back(self):
+        self._exercise_development_pr()
+
+    def test_failed_test_dispatch_is_not_reported_as_running(self):
+        self._exercise_development_pr(dispatch_error=True)
+
+    def _exercise_development_pr(self, dispatch_error=False):
         calls = []
         def fake_gh(path, token, payload=None, method=None):
             calls.append((path, payload))
+            if dispatch_error and path.endswith("/dispatches"):
+                raise urllib.error.HTTPError(path, 403, "refused", {}, None)
             if path.endswith("/git/ref/heads/kappa/dev-9"):
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             responses = {
@@ -379,6 +387,11 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertIn("✅ Read 1 files: `app/main.py`", progress[-1])
         self.assertIn("✅ Opened draft PR", progress[-1])
         self.assertNotIn("⏳", progress[-1])
+        if dispatch_error:
+            self.assertIn("Test dispatch failed (HTTP 403)", progress[-1])
+            self.assertNotIn("tests are running", progress[-1])
+        else:
+            self.assertIn("tests are running", progress[-1])
         pr = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls")
         self.assertTrue(pr["draft"])
         self.assertIn("## What this does\nCast inputs", pr["body"])

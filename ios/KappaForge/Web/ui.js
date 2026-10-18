@@ -25,14 +25,18 @@ function renderTaskActivity(m){
  const steps=KappaJobs.progressSteps(report),rows=taskTimeline(steps),stages=KappaJobs.stageProgress(steps);
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
  const current=rows.find(r=>r.state==='current'),failedRow=rows.find(r=>r.state==='failed');
- const fail=!!failedRow||lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
+ const fail=!!failedRow||lines.some(x=>/\b(?:task failed|tests failed|test dispatch failed|validation failed|blocked by|fatal error)\b/i.test(x));
  const latest=current||failedRow||rows.filter(r=>r.state==='done').at(-1);
  const label=latest?latest.title+(latest.detail?': '+latest.detail:''):lines.filter(x=>!/^\*\*KappaForge is working on it\*\*$/.test(x)).at(-1)?.replace(/^[-*✅✔☑⏳❌◻]\s*/,'').replace(/^\*\*|\*\*$/g,'')||'Task update received';
  const headline=label.length>105?label.slice(0,102)+'…':label;
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
  const finished=!current&&!rows.some(r=>r.state==='upcoming')&&rows.length>0;
- const tag=fail?'NEEDS ATTENTION':finished?'DONE':'IN PROGRESS';
+ const lifecycle=job?.message||'';
+ const validationFailed=['failed','tests-failed'].includes(lifecycle);
+ const testing=finished&&(job&&!job.finished&&!['tests-passed','merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
+ const tag=job?.finished&&lifecycle==='cancelled'?'CANCELLED':job?.finished&&lifecycle==='closed'?'CLOSED':
+  fail||validationFailed?'NEEDS ATTENTION':lifecycle==='tests-passed'?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
  const timeline=rows.length?'<ol class="task-steps">'+rows.map(r=>'<li class="task-step '+esc(r.state)+'"><span class="task-dot" aria-hidden="true"></span>'+
   '<div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),140))+'</small>':'')+'</div>'+
   '<time'+(r.state==='current'?sinceAttr(r):'')+'>'+esc(r.state==='current'?elapsedSince(r.since):r.time)+'</time>'+
@@ -42,7 +46,7 @@ function renderTaskActivity(m){
   '<div class="task-progress-row"><small>'+esc(clip(plain(stages.label),90))+'</small><time'+(stages.since?' data-since="'+esc(stages.since)+'"':'')+'>'+esc(elapsedSince(stages.since))+'</time></div>'+
   '<span class="task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="'+esc(stages.total)+'" aria-valuenow="'+esc(stages.done)+'" aria-label="Steps completed"><i style="width:'+pct+'%"></i></span>'+
   '<small>'+esc(stages.done)+' of '+esc(stages.total)+' steps completed</small></div>':'';
- return '<section class="agent-activity'+(fail?' failed':finished?' finished':'')+'" aria-label="Task progress">'+
+ return '<section class="agent-activity'+(fail||validationFailed?' failed':finished&&!testing?' finished':'')+'" aria-label="Task progress">'+
  '<details class="task-card" open><summary><span class="activity-pulse" aria-hidden="true"></span>'+
  '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
  '<span class="activity-tag">'+tag+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
@@ -322,17 +326,18 @@ function jobView(detail,job,{log=null,now=Date.now()}={}){
   const errors=parsed&&map[s.number]!==undefined?parsed.sections[map[s.number]].errors:0;
   return ghRow(s,{mono:true,now,attr:ran&&!running?'data-open-step="'+esc(s.number)+'"':'',note:errors&&s.state!=='success'?(runElapsed(s,now)||'')+' · '+errors+' error'+(errors>1?'s':''):''});
  }).join('');
- return ghHeader(detail.run.name+' / '+job.name,summaryOf(job,now),'Back to the run')+note+(totals?'<p class="gh-totals">'+totals+'</p>':'')+
+ return ghHeader(detail.run.name+' / '+job.name,summaryOf(job,now),'Back to the run')+note+(log&&!log.loading&&!log.data?.available?logRetryControl(job.id):'')+(totals?'<p class="gh-totals">'+totals+'</p>':'')+
   '<div class="gh-list gh-steps">'+(rows||'<p class="muted">Steps appear when a runner picks up this job.</p>')+'</div>'+
   (job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'')+rerunMenu(detail.run);
 }
+function logRetryControl(jobId){return '<button type="button" class="btn secondary" data-log-retry="'+esc(jobId)+'">Retry log</button>'}
 // One step's log: line numbers, its Run command, error and warning lines marked, like GitHub's log viewer.
 function stepView(detail,job,step,{log=null,now=Date.now()}={}){
  if(!detail||!job||!step)return jobView(detail,job,{log,now});
  const head=ghHeader(step.name,summaryOf(step,now),'Back to '+job.name);
  if(!log||log.loading)return head+'<p class="worksmall gh-note">Reading the log…</p>';
- if(log.error)return head+'<p class="status-bad gh-note">'+esc(log.error)+'</p>';
- if(!log.data?.available)return head+'<p class="worksmall gh-note">'+esc(log.data?.reason||'Log not available.')+'</p>';
+ if(log.error)return head+'<p class="status-bad gh-note">'+esc(log.error)+'</p>'+logRetryControl(job.id);
+ if(!log.data?.available)return head+'<p class="worksmall gh-note">'+esc(log.data?.reason||'Log not available.')+'</p>'+logRetryControl(job.id);
  const at=KappaActions.stepSections(job.steps,log.data.sections)[step.number],section=log.data.sections[at];
  const link=job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'';
  if(!section){

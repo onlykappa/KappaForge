@@ -734,7 +734,8 @@ def produce_development_pr(issue, api_key, token):
                       f"test again, up to {MAX_FIXES} times, before asking you.")
     except urllib.error.HTTPError as exc:
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
-    progress.ok(f"Opened draft PR #{pr.get('number', '')}; tests are running. If they fail I fix them, up to {MAX_FIXES} times",
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (f"tests are running. If they fail I fix them, up to {MAX_FIXES} times"
+                if not validation.startswith("Test dispatch failed") else validation),
                 phase=True)
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"

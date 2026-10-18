@@ -65,7 +65,7 @@ test('the agent checklist becomes a step timeline with times, a live current ste
  assert.match(html,/View progress details/,'the full checklist stays one tap away');
 });
 test('a finished checklist reads Done, a failed one Needs attention with nothing promised after it',()=>{
- const done=ctx.renderTaskActivity({text:'✅ Read KappaForge: 12 source files · 2s\n✅ Opened draft PR #7; tests are running · 3s',progressKey:'progress:7:1'});
+ const done=ctx.renderTaskActivity({text:'✅ Read KappaForge: 12 source files · 2s\n✅ Finished task · 3s',progressKey:'progress:7:1'});
  assert.match(done,/DONE/);assert.match(done,/agent-activity finished/);assert.doesNotMatch(done,/task-progress-card/);
  const failed=ctx.renderTaskActivity({text:'✅ Read KappaForge: 12 source files · 2s\n❌ Choosing which files to read: model unavailable',progressKey:'progress:7:1'});
  assert.match(failed,/NEEDS ATTENTION/);assert.match(failed,/task-step failed[^]*Choosing which files to read[^]*model unavailable/);
@@ -80,4 +80,21 @@ test('audit findings become an Issues found card with severity badges and the re
  assert.match(html,/\+3 more issues/);assert.match(html,/&lt;b&gt;Typo/);assert.doesNotMatch(html,/<b>Typo/);
  assert.equal((html.match(/Crash on malformed JSON/g)||[]).length,1,'findings are not repeated in the report text');
  assert.doesNotMatch(ctx.renderMessage({role:'assistant',text:'- [High] a chat answer that looks like a finding'},4),/issues-card/,'only task reports draw the card');
+});
+
+test('completion follows validation and tracked lifecycle rather than an exhausted checklist',()=>{
+ const text='✅ Read project · 2s\n✅ Opened draft PR #7; tests are running · 3s';
+ const render=(message,finished=false)=>{ctx.trackedJobs=[{number:7,message,finished}];return ctx.renderTaskActivity({text,progressKey:'progress:7:1'})};
+ try{
+  assert.match(render('complete'),/activity-tag">TESTING/);
+  assert.doesNotMatch(render('complete'),/agent-activity finished/);
+  assert.match(render('tests-passed'),/activity-tag">READY FOR REVIEW/);
+  assert.match(render('tests-failed'),/activity-tag">NEEDS ATTENTION/);
+  assert.match(render('merged',true),/activity-tag">DONE/);
+  assert.match(render('cancelled',true),/activity-tag">CANCELLED/);
+  assert.match(render('closed',true),/activity-tag">CLOSED/);
+  delete ctx.trackedJobs;
+  assert.match(ctx.renderTaskActivity({text,progressKey:'progress:7:1'}),/activity-tag">TESTING/,'older progress messages must not claim tests passed');
+  assert.match(ctx.renderTaskActivity({text:'✅ Opened draft PR #7; Test dispatch failed (HTTP 403)',progressKey:'progress:7:1'}),/NEEDS ATTENTION/);
+ }finally{delete ctx.trackedJobs}
 });

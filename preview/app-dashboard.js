@@ -374,12 +374,13 @@ document.getElementById("content").innerHTML=html;
 // Stream live Actions updates only while the dashboard is on screen; the 90-second refresh covers the rest.
 if(view==="home"&&!document.hidden){monitorResume();if(dashboardState.mode!=="overview"&&workflowMonitor.watchRun!==dashboardState.runId)monitorWatchRun(dashboardState.runId);
  // A job or step page needs the job's log once the job has finished (also after a reload, or when it finishes while open).
- const pageJob=["job","step"].includes(dashboardState.mode)?currentJob():null;if(pageJob&&!KappaActions.isActive(pageJob)&&!workflowMonitor.logs[pageJob.id])monitorJobLog(pageJob.id)}else monitorPause();
+ const pageJob=["job","step"].includes(dashboardState.mode)?currentJob():null;if(pageJob&&!KappaActions.isActive(pageJob))monitorJobLog(pageJob.id)}else monitorPause();
 document.querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",()=>openRun(b.dataset.run)));
 document.querySelector("[data-run-back]")?.addEventListener("click",dashboardBack);
 document.querySelectorAll("[data-open-job]").forEach(b=>b.addEventListener("click",()=>openJob(b.dataset.openJob)));
 document.querySelectorAll("[data-open-step]").forEach(b=>b.addEventListener("click",()=>openStep(b.dataset.openStep)));
 document.querySelectorAll("[data-run-control]").forEach(b=>b.addEventListener("click",()=>{b.closest("details").open=false;runControl(b.dataset.runControl)}));
+document.querySelectorAll("[data-log-retry]").forEach(b=>b.addEventListener("click",()=>monitorJobLog(Number(b.dataset.logRetry),{force:true})));
 document.querySelector("[data-run-retry]")?.addEventListener("click",()=>monitorRunDetail(dashboardState.runId));
 document.querySelector("[data-run-ask]")?.addEventListener("click",askAboutRun);
 document.querySelectorAll("[data-run-attempt]").forEach(b=>b.addEventListener("click",()=>selectAttempt(Number(b.dataset.runAttempt))));
