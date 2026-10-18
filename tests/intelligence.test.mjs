@@ -1,6 +1,7 @@
 import './ios-keyboard-layout.test.mjs';
 import './bug-audit.test.mjs';
 import './chat-activity-ui.test.mjs';
+import './pr97-bundle-parity.test.mjs';
 import test from 'node:test';
 import {readFileSync as readRenderSource} from 'node:fs';
 import {fileURLToPath as renderFileURLToPath} from 'node:url';
