@@ -4,6 +4,29 @@ import UniformTypeIdentifiers
 
 // KappaForge's interface is packaged with the application.
 // It never navigates to the GitHub Pages website.
+// Disable the keyboard shortcut bar for chat without using private WebKit APIs.
+final class KappaChatWebView: WKWebView {
+    override var inputAssistantItem: UITextInputAssistantItem {
+        let item = super.inputAssistantItem
+        item.leadingBarButtonGroups = []
+        item.trailingBarButtonGroups = []
+        return item
+    }
+
+    func hideKeyboardNavigationBar() {
+        inputAssistantItem.leadingBarButtonGroups = []
+        inputAssistantItem.trailingBarButtonGroups = []
+        // WebKit routes text input through a descendant responder. Clear its
+        // public assistant groups as well, after the editor becomes active.
+        func clear(in view: UIView) {
+            view.inputAssistantItem.leadingBarButtonGroups = []
+            view.inputAssistantItem.trailingBarButtonGroups = []
+            view.subviews.forEach(clear)
+        }
+        clear(in: self)
+    }
+}
+
 struct KappaWebView: UIViewRepresentable {
     var showSecurity: () -> Void
     var showUpdates: () -> Void
@@ -13,7 +36,8 @@ struct KappaWebView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "kappa")
         config.userContentController.addUserScript(Self.credentialScript())
         config.defaultWebpagePreferences.allowsContentJavaScript = true
-        let view = WKWebView(frame: .zero, configuration: config)
+        let view = KappaChatWebView(frame: .zero, configuration: config)
+        view.hideKeyboardNavigationBar()
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isOpaque = false
@@ -43,7 +67,9 @@ struct KappaWebView: UIViewRepresentable {
         return WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        (webView as? KappaChatWebView)?.hideKeyboardNavigationBar()
+    }
     func makeCoordinator() -> Coordinator { Coordinator(showSecurity: showSecurity, showUpdates: showUpdates) }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate, WKScriptMessageHandler {
