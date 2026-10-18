@@ -1,3 +1,4 @@
+import './ios-keyboard-layout.test.mjs';
 import './bug-audit.test.mjs';
 import './chat-activity-ui.test.mjs';
 import test from 'node:test';
