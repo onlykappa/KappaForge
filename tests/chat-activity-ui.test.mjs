@@ -133,5 +133,13 @@ test('structured planned stages read as one Writing the change phase with the cu
   html=ctx.renderTaskActivity({progressKey:'progress:9:live'});
   assert.match(html,/task-step failed[^]*Writing the change<\/strong><small>Step 2 of 3 failed: Fixture validation failure/);
   assert.doesNotMatch(html,/data-since=/,'a failed phase stops its clock');
- }finally{delete ctx.trackedJobs}
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.match(html,/data-task-retry="9"[^]*data-task-guide="9"[^]*data-task-copy="3"/,'a failed live task offers retry, guidance and copy');
+  job.prUrl='https://github.com/onlykappa/KappaForge/pull/12';job.message='tests-failed';
+  ctx.taskValidation=j=>[{title:'Sandbox tests',runId:41,state:'failed',detail:'Tests failed',since:'',time:'2m 1s'}];
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.match(html,/task-step failed check"><button type="button" class="task-check-link" data-run="41">[^]*Sandbox tests/,'validation runs join the step list and open their run');
+  job.finished=true;html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
+  assert.doesNotMatch(html,/data-task-retry|data-task-guide/,'a finished task only offers copy');
+ }finally{delete ctx.trackedJobs;delete ctx.taskValidation}
 });

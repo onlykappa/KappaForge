@@ -774,7 +774,7 @@ def produce_development_pr(issue, api_key, token):
                                                            design, require_test)
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
-    progress.ok(f"Wrote the change ({len(changes)} files: {short_list(changes)}) with {model}")
+    progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
     if flags:
         stop_for_flags(repo, number, flags, token)
@@ -1013,7 +1013,7 @@ def fix_pull_request(issue, api_key, token):
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again", phase=True, status="testing")
+    progress.ok(f"Pushed fix {fixes + 1} of {MAX_FIXES + len(guidance)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

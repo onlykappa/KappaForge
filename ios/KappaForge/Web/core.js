@@ -60,7 +60,50 @@ function stageProgress(steps){
 // Audit findings, one per line: "- [High] Crash on malformed JSON (path)".
 const FINDING=/^[-*] \[(Critical|High|Medium|Low)\] (.+)$/i;
 function findings(text){return String(text||'').split('\n').map(l=>l.trim().match(FINDING)).filter(Boolean).map(m=>({level:m[1].toLowerCase()==='critical'?'high':m[1].toLowerCase(),text:m[2]}))}
-globalThis.KappaJobs={progressSteps,stageProgress,findings,conciseReport(status,body,source){
+// "24s", "1m 12s", "1h 3m" back to seconds.
+function durationSeconds(t){const m=String(t||'').match(/^(?:(\d+)h )?(?:(\d+)m ?)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0}
+const durationText=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;return h?h+'h '+m+'m':m?m+'m '+r+'s':r+'s'};
+// Backticked paths in a step become chips; "and 4 more" becomes a count; the rest stays as the detail text.
+function chips(text){
+ const files=[...String(text||'').matchAll(/`([^`\n]{1,200})`/g)].map(m=>m[1]);
+ const more=Number(String(text||'').match(/\band (\d+) more\b/)?.[1]||0);
+ if(!files.length)return {files,more:0,rest:String(text||'')};
+ const rest=String(text).replace(/`[^`\n]{1,200}`(?:,\s*)?/g,'').replace(/\s*\band \d+ more\b/,'').replace(/\s+([;,.])/g,'$1').replace(/^[\s;,:]+|[\s;,:]+$/g,'').replace(/\s{2,}/g,' ');
+ return {files,more,rest};
+}
+// One task checklist as the card and the dashboard read it: rows (planned stages folded into one), counts,
+// time spent, the fix round, the PR and the model.
+function taskModel(text){
+ const steps=progressSteps(text),rows=[];let staged=null;
+ for(const s of steps){
+  if(!s.stage){rows.push({...s,...chipFields(s)});continue}
+  if(!staged){staged={state:'done',title:'Writing the change',detail:'',time:'',since:'',files:[],more:0,seconds:0};rows.push(staged)}
+  staged.detail=s.title+': '+s.detail;staged.seconds+=durationSeconds(s.time);
+  if(s.state!=='done'){staged.state=s.state;staged.since=s.since}
+ }
+ if(staged&&staged.state==='done'&&staged.seconds)staged.time=durationText(staged.seconds);
+ const all=steps.map(s=>s.title+': '+s.detail).join('\n');
+ const fix=all.match(/\bfix (\d+) of (\d+)\b/i);
+ const current=rows.find(r=>r.state==='current'),failed=rows.find(r=>r.state==='failed');
+ const done=rows.filter(r=>r.state==='done').length;
+ return {rows,stages:stageProgress(steps),done,total:rows.length,current,failed,
+  finished:rows.length>0&&!current&&!failed&&!rows.some(r=>r.state==='upcoming'),
+  // Time already spent: finished steps (stages counted once), plus the current step from its start.
+  seconds:steps.reduce((a,s)=>a+(s.state==='done'||s.state==='failed'?durationSeconds(s.time):0),0),since:current?.since||'',
+  fix:fix?{n:Number(fix[1]),of:Number(fix[2])}:null,
+  pr:Number(all.match(/\bPR #(\d+)/)?.[1]||0)||null,
+  model:all.match(/\bWrote the change with (\S+?)(?=: |\n|$)/)?.[1]||''};
+}
+function chipFields(s){const c=chips(s.detail);return c.files.length?{detail:c.rest,files:c.files,more:c.more}:{files:[],more:0}}
+// How long tasks usually take on this device: the median of the last 10 finished ones of a mode (3 at least).
+function recordDuration(store,mode,secs){const next={...(store&&typeof store==='object'?store:{})};if(!/^[a-z-]{1,30}$/.test(mode||'')||!(secs>0))return next;next[mode]=[...(Array.isArray(next[mode])?next[mode]:[]),Math.round(secs)].slice(-10);return next}
+function typicalDuration(store,mode){const list=(store?.[mode]||[]).filter(n=>Number.isFinite(n)&&n>0).sort((a,b)=>a-b);return list.length<3?0:list[Math.floor(list.length/2)]}
+// Plain text for Copy summary.
+function taskSummaryText(number,model){
+ const mark={done:'✓',current:'…',failed:'✕',upcoming:'○'};
+ return 'KappaForge task #'+number+(model.fix?' (fix '+model.fix.n+' of '+model.fix.of+')':'')+'\n'+model.rows.map(r=>mark[r.state]+' '+r.title+(r.detail?': '+r.detail:'')+(r.files?.length?' ['+r.files.join(', ')+(r.more?' +'+r.more+' more':'')+']':'')+(r.time?' ('+r.time+')':'')).join('\n');
+}
+globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSeconds,clock:durationText,chips,taskModel,recordDuration,typicalDuration,taskSummaryText,conciseReport(status,body,source){
  const raw=String(body||'').replace(/<!--[^]*?-->/g,'').replace(/\\n/g,'\n').trim();
  const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
  const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':status==='complete'?'Task complete':'Progress update';

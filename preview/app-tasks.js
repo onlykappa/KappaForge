@@ -42,6 +42,84 @@ function ensureTaskCard(job){
  target.messages=target.messages.filter(m=>m===message||!String(m.progressKey||'').startsWith('progress:'+job.number+':'));
  return message;
 }
+// What changed in a task's checklist: announce the new step, tell the owner when it finishes or fails, and
+// remember how long it took so later cards can say how long tasks usually take.
+const TASK_DURATIONS="kappaforge.taskDurations.v1";
+function taskDurations(){try{return JSON.parse(localStorage.getItem(TASK_DURATIONS)||"{}")||{}}catch(e){return {}}}
+function taskTypicalSeconds(mode){return KappaJobs.typicalDuration(taskDurations(),mode||"develop")}
+function taskProgressChanged(job,key,before,after){
+ if(after.current&&after.current.title!==before?.current?.title)announceTask("Task #"+job.number+": "+after.current.title+(after.current.detail?", "+after.current.detail:""));
+ if(after.failed&&!before?.failed)toast("✕ Task #"+job.number+" needs attention: "+after.failed.title);
+ else if(after.finished&&!before?.finished){
+  const last=after.rows.filter(r=>r.state==="done").at(-1);
+  toast("✓ Task #"+job.number+(last?": "+last.title:" finished"));
+  job.timed=job.timed||[];
+  if(!job.timed.includes(key)){
+   job.timed=[...job.timed,key].slice(-10);
+   try{localStorage.setItem(TASK_DURATIONS,JSON.stringify(KappaJobs.recordDuration(taskDurations(),after.fix?"fix":job.mode||"develop",after.seconds)))}catch(e){}
+   persistJobs();
+  }
+ }
+}
+// Step changes for screen readers, in a region of their own (the composer status line belongs to chat replies).
+function announceTask(text){
+ let el=document.getElementById("taskannounce");
+ if(!el){el=document.createElement("div");el.id="taskannounce";el.className="sr-only";el.setAttribute("role","status");el.setAttribute("aria-live","polite");document.body.append(el)}
+ el.textContent=text;
+}
+// A task's own validation after its draft PR: the sandbox tests and the iOS build of kappa/dev-<task>, live from
+// the Workflow Monitor. Without Actions data the tests row follows the task's own test reports.
+function taskValidation(job){
+ if(!job?.prUrl&&!["tests-passed","tests-failed"].includes(job?.message))return [];
+ const branch="kappa/dev-"+job.number,runs=typeof workflowMonitor==="undefined"?[]:workflowMonitor.runs;
+ const newest=prefix=>runs.filter(r=>String(r.title||"").startsWith(prefix+" "+branch+" @ ")).sort((a,b)=>b.id-a.id)[0];
+ const rows=[];
+ for(const [prefix,title] of [["Sandbox validation","Sandbox tests"],["iOS build","iOS build"]]){
+  const run=newest(prefix);
+  if(run){
+   const active=KappaActions.isActive(run),progress=workflowMonitor.details[run.id]?.data?.progress;
+   rows.push({title,runId:run.id,state:active?"current":["failure","timed_out","cancelled","action_required"].includes(run.state)?"failed":"done",
+    detail:active?progress?.label||RUN_STATE_LABEL[run.state]:KappaActions.progress(run,[]).label,
+    since:run.state==="running"?run.startedAt:"",time:run.duration?KappaActions.formatDuration(run.duration):"",progress:active?progress?.percent||0:undefined});
+  }else if(title==="Sandbox tests"){
+   const m=job.message,passed=m==="tests-passed"||job.finished&&m!=="tests-failed";
+   rows.push({title,state:passed?"done":m==="tests-failed"?"failed":"current",detail:passed?"Tests passed":m==="tests-failed"?"Tests failed":"Waiting for the test run",since:"",time:""});
+  }
+ }
+ return rows;
+}
+// The chat keeps live Actions updates while one of its tasks is being validated.
+const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c=>c.id===j.chatId));
+// Card actions. Retry and guidance are confirmed and go through the owner-authorization path, like typing them.
+async function taskRetry(number){
+ const job=trackedJobs.find(j=>j.number===number);if(!job)return;
+ if(!backend||!access){alert("Connect AI first.");return}
+ if(!confirm("Retry task #"+number+"? KappaForge starts a fresh attempt."))return;
+ try{const response=await userAuthorizedFetch("/retry",{task:number},"Confirmed retry of task #"+number);const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
+  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Retry started for task #"+number+"."});resumeJob(number,job.chatId);save();render();toast("Retry started for task #"+number)}
+ catch(e){alert("Retry not started: "+e.message)}
+}
+async function taskGuide(number){
+ const job=trackedJobs.find(j=>j.number===number);if(!job)return;
+ if(!backend||!access){alert("Connect AI first.");return}
+ const text=prompt("Guidance for task #"+number+" (up to 1500 characters). KappaForge uses it in its next attempt or fix.");
+ if(!text||!text.trim())return;
+ try{const response=await userAuthorizedFetch("/guidance",{task:number,text:text.trim().slice(0,1500)},text.trim().slice(0,1500));const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
+  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Guidance saved for task #"+number+"."});if(result.retry||result.fix)resumeJob(number,job.chatId);save();render();toast("Guidance sent to task #"+number)}
+ catch(e){alert("Guidance not sent: "+e.message)}
+}
+async function taskCopy(index){
+ const m=active()?.messages[index],number=String(m?.progressKey||"").match(/progress:(\d+)/)?.[1];if(!m||!number)return;
+ try{await copyInterfaceText(KappaJobs.taskSummaryText(number,KappaJobs.taskModel(m.text)));toast("Task summary copied")}catch(e){toast(e.message)}
+}
+// Review PR opens the agent's review card on the Dashboard; a PR the Dashboard has not listed opens on GitHub.
+function taskReview(key){
+ const [repo,number]=key.split("#"),listed=(data.prs||[]).some(p=>p.repo===repo&&p.number===Number(number));
+ if(!listed){window.open("https://github.com/onlykappa/"+repo+"/pull/"+number,"_blank","noopener");return}
+ showDashboard({mode:"overview",runId:0,jobId:0,step:0,attempt:0});monitorWatchRun(0);
+ if(!reviewCards[key]?.data)openReviewCard(key);
+ requestAnimationFrame(()=>document.querySelector('[data-reviewcard="'+CSS.escape(key)+'"],[data-merge="'+CSS.escape(key)+'"]')?.closest(".workitem")?.scrollIntoView({block:"center"}));
+}
 function updateTaskFindings(job,list){
  const records=new Map((job.findings||[]).map(f=>[f.text,f]));
  for(const f of list||[])records.set(f.text,{...records.get(f.text),...f});
@@ -57,7 +135,9 @@ function showProgress(job,commentId,body,comment={}){
  const message=ensureTaskCard(job);if(!message)return false;
  const text=body.replace(/<!--[^]*?-->/g,'').replace(/^### KappaForge is working on it/,"**KappaForge is working on it**");
  if(!snapshot&&message.text===text)return false;
+ const before=message.text?KappaJobs.taskModel(message.text):null;
  message.text=text;updateTaskFindings(job,[...KappaJobs.findings(text),...(snapshot?.findings||[])]);
+ taskProgressChanged(job,message.progressKey,before,KappaJobs.taskModel(text));
  job.lastProgressAt=updatedAt||Date.now();job.activeAt=job.lastProgressAt;
  if(!snapshot){job.progress=null;job.startedAt=job.startedAt||createdAt;}
  save();persistJobs();return true;
@@ -104,6 +184,7 @@ async function checkJobResult(){
     changed=jobChatUpdate(job,report.id,text)||changed;
     if(job.progress?.status==="queued"&&report.status!=="progress"){job.progress=null;job.startedAt=Date.parse(comment.created_at||comment.updated_at)||Date.now()}
     job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);job.lastReportAt=Date.parse(comment.updated_at||comment.created_at)||Date.now();
+    if(["tests-passed","tests-failed"].includes(report.status))toast((report.status==="tests-passed"?"✓ Task #"+job.number+": tests passed":"✕ Task #"+job.number+": tests failed"));
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
    }

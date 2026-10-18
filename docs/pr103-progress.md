@@ -17,7 +17,8 @@ Base: `22871b42f36f4a13ba06c6f8e7a485229051cd47`; branch: `feat/pr103-live-task-
 - [x] Actual native simulator progress screenshots captured and inspected on 3aca42a, 51d5306, 96695db and 60dbcab (queued, running, running with keyboard, failed).
 - [x] Native UI tests and device build pass on 96695db: [run 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415) (simulator build, launch/keyboard/progress UI tests, unsigned IPA; release jobs skipped). Also passes on 60dbcab: [run 39167885913](https://github.com/onlykappa/KappaForge/actions/runs/39167885913).
 - [x] Runner-to-poll-to-render fixture evidence recorded.
-- [ ] Production backend task end-to-end test. **Blocked on owner authorization.** Real tasks run `agent.yml` dispatched on `main`, and the app and Worker deploy from `main`, so production exercises none of this branch. Options, each an outward action needing explicit authorization: (a) dispatch `agent.yml` on this branch for one real task (creates a real issue and draft PR, uses one daily agent run); (b) run a branch build of the app against the production Worker (needs the private access token); (c) merge (excluded).
+- [x] PR #103 (`feat/pr101-actions-live-dashboard`) merged into this branch at the owner's request (keep #102, fold #103 in, then close #103). See "PR #103 folded in" below.
+- [ ] Production backend task end-to-end test. **Owner decision (2026-10-18): test once the IPA from this branch is built and installed.** Real tasks run `agent.yml` dispatched on `main`, and the app and Worker deploy from `main`, so production exercises none of this branch. Options, each an outward action needing explicit authorization: (a) dispatch `agent.yml` on this branch for one real task (creates a real issue and draft PR, uses one daily agent run); (b) run a branch build of the app against the production Worker (needs the private access token); (c) merge (excluded).
 - [x] Feature checkpoints and progress log committed to draft PR after each implemented feature.
 
 ## Investigation
@@ -162,3 +163,32 @@ kept at the card's top rather than jumping to the bottom. Scrolling reveals it.
 
 Remaining gap: the production end-to-end task (owner authorization; see the acceptance list). Choosing between this
 PR and PR #103, which overlaps it, is also still open.
+
+## PR #103 folded in
+The owner chose to keep #102 and fold in whatever #103 added. `origin/feat/pr101-actions-live-dashboard` (b853f3a) was merged into this branch, so its history is kept.
+- **Kept from #102:**
+  - one task card per task (`ensureTaskCard`) and structured snapshots (`showProgress` with `KappaProgress`);
+  - `renderExecutionActivity` for every task that has a snapshot or queue time;
+  - the queued `startedAt` reset;
+  - the testing status on pushed fixes.
+- **Added from #103:**
+  - the legacy checklist card, now `renderTaskActivity`'s fallback: ring, total time, file chips, fix badge, stalled notice, collapse memory;
+  - `taskProgressChanged` (step announcements, finish/failure toasts, durations), now called from #102's `showProgress`;
+  - the toasts for passed and failed tests;
+  - `taskValidation` (Sandbox and iOS runs) and `tasksValidating`;
+  - Retry, Send guidance, Copy summary and Review PR;
+  - the Dashboard "Agent tasks" panel;
+  - "Pushed fix N of M" and "Wrote the change with <model>" wording;
+  - `docs/live-task-progress.md`.
+- **New in the merge:** the structured card (`renderExecutionActivity`) also lists the task's validation runs in its step list, each opening its run, plus a Retry / Send guidance / Copy summary row. Retry appears only when the task failed or went stale; guidance only while it is unfinished.
+- **Removed:** `taskTimeline` and `stepSeconds`, which became unused because #103's `KappaJobs.taskModel` folds stages itself.
+- **Tests:**
+  - `npm test` 187 pass; Python 153 OK; `check-web` passed; dependency map current;
+  - `tests/task-panel.test.mjs` now loads #102's `ensureTaskCard` and `showProgress`, with the real `task-progress.js`;
+  - new assertions in `tests/chat-activity-ui.test.mjs` cover the structured card's actions and validation rows;
+  - `npm run test:web` desktop PASS; the phone pass needs WebKit, which is unavailable locally, so CI covers it;
+  - `tests/ui-chat.test.mjs` needs jsdom, which is not installed locally; it fails the same way before the merge.
+- **Next:**
+  - check CI and the native screenshots on the merge commit;
+  - close #103 and delete its branch;
+  - run the production end-to-end test with the branch IPA, once the owner installs it.
