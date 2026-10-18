@@ -33,5 +33,5 @@ export async function nativeBuilds(env,limit=8){
  }));
  return "iOS BUILD HISTORY (ios-build.yml: Xcode compile, simulator UI tests, unsigned IPA; newest first, retrieved now):\n"+
   (lines.join("\n")||"No iOS builds found.")+
-  "\nAnswer iOS build and IPA questions from this list only. An unsigned IPA must be signed before it installs on an iPhone.";
+  "\nAnswer iOS build and IPA questions from this list only. KappaForge is a personal app: the owner installs the unsigned IPA with Sideloadly (signed with their own Apple ID), not through TestFlight or the App Store.";
 }

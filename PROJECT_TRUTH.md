@@ -6,6 +6,7 @@ This file is a user-editable reference loaded from the KappaForge `main` branch 
 - Repository: `onlykappa/KappaForge`
 - Source of truth for published code: repository commits and file contents
 - Functional status: verify actual GitHub Actions runs and user testing before claiming success
+- iPhone distribution: a personal app, not an App Store or TestFlight app. The owner installs the unsigned IPA from the `ios-build` workflow with Sideloadly, which signs it with their own Apple ID. Do not propose App Store, TestFlight or distribution-certificate signing.
 
 ## APK Revival
 - Repository: `onlykappa/Apk-revival`
