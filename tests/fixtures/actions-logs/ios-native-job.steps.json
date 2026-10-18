@@ -1,0 +1,165 @@
+{
+ "name": "native",
+ "steps": [
+  {
+   "number": 1,
+   "name": "Set up job",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:34:53Z",
+   "completed_at": "2026-10-18T15:34:53Z"
+  },
+  {
+   "number": 2,
+   "name": "Run actions/checkout@v4",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:34:53Z",
+   "completed_at": "2026-10-18T15:34:56Z"
+  },
+  {
+   "number": 3,
+   "name": "Choose the release version (next patch when the configured one is already published)",
+   "status": "completed",
+   "conclusion": "skipped",
+   "started_at": "2026-10-18T15:34:56Z",
+   "completed_at": "2026-10-18T15:34:56Z"
+  },
+  {
+   "number": 4,
+   "name": "Install XcodeGen",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:34:56Z",
+   "completed_at": "2026-10-18T15:34:59Z"
+  },
+  {
+   "number": 5,
+   "name": "Preflight native tools and build settings",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:34:59Z",
+   "completed_at": "2026-10-18T15:34:59Z"
+  },
+  {
+   "number": 6,
+   "name": "Verify native update contract",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:34:59Z",
+   "completed_at": "2026-10-18T15:35:00Z"
+  },
+  {
+   "number": 7,
+   "name": "Verify shared source and bundle latest interface",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:35:00Z",
+   "completed_at": "2026-10-18T15:35:01Z"
+  },
+  {
+   "number": 8,
+   "name": "Generate KappaForge app icon",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:35:01Z",
+   "completed_at": "2026-10-18T15:35:10Z"
+  },
+  {
+   "number": 9,
+   "name": "Generate native project",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:35:10Z",
+   "completed_at": "2026-10-18T15:35:11Z"
+  },
+  {
+   "number": 10,
+   "name": "Build simulator application",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:35:11Z",
+   "completed_at": "2026-10-18T15:35:38Z"
+  },
+  {
+   "number": 11,
+   "name": "Boot simulator and verify bundled launch",
+   "status": "completed",
+   "conclusion": "failure",
+   "started_at": "2026-10-18T15:35:38Z",
+   "completed_at": "2026-10-18T15:42:16Z"
+  },
+  {
+   "number": 12,
+   "name": "Export keyboard screenshots for inspection",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:42:16Z",
+   "completed_at": "2026-10-18T15:42:22Z"
+  },
+  {
+   "number": 13,
+   "name": "Preserve keyboard screenshots",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:42:22Z",
+   "completed_at": "2026-10-18T15:42:24Z"
+  },
+  {
+   "number": 14,
+   "name": "Preserve iOS simulator UI test results",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:42:24Z",
+   "completed_at": "2026-10-18T15:42:28Z"
+  },
+  {
+   "number": 15,
+   "name": "Build unsigned iPhone application",
+   "status": "completed",
+   "conclusion": "skipped",
+   "started_at": "2026-10-18T15:42:28Z",
+   "completed_at": "2026-10-18T15:42:28Z"
+  },
+  {
+   "number": 16,
+   "name": "Verify bundle, icon and package unsigned IPA",
+   "status": "completed",
+   "conclusion": "skipped",
+   "started_at": "2026-10-18T15:42:28Z",
+   "completed_at": "2026-10-18T15:42:28Z"
+  },
+  {
+   "number": 17,
+   "name": "Run actions/upload-artifact@v4",
+   "status": "completed",
+   "conclusion": "skipped",
+   "started_at": "2026-10-18T15:42:28Z",
+   "completed_at": "2026-10-18T15:42:28Z"
+  },
+  {
+   "number": 18,
+   "name": "Run actions/upload-artifact@v4",
+   "status": "completed",
+   "conclusion": "skipped",
+   "started_at": "2026-10-18T15:42:28Z",
+   "completed_at": "2026-10-18T15:42:28Z"
+  },
+  {
+   "number": 36,
+   "name": "Post Run actions/checkout@v4",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:42:28Z",
+   "completed_at": "2026-10-18T15:42:30Z"
+  },
+  {
+   "number": 37,
+   "name": "Complete job",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-10-18T15:42:30Z",
+   "completed_at": "2026-10-18T15:42:44Z"
+  }
+ ]
+}

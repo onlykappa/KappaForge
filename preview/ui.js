@@ -18,29 +18,74 @@ function setSidebar(open,restoreFocus=false){
 }
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
+// Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
+// times, a progress card while planned stages are written, and the full report one tap away.
 function renderTaskActivity(m){
  const report=String(m.text||'');
+ const steps=KappaJobs.progressSteps(report),rows=taskTimeline(steps),stages=KappaJobs.stageProgress(steps);
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
- // Only explicit progress lines are candidates. Never interpret an arbitrary
- // bullet or the last paragraph as an authoritative completed stage.
- const stages=/^(?:Reading project files|Identifying issues|Implementing fixes|Running tests|Building iOS app|Pushing pull request)\b/i;
- const steps=lines.filter(x=>stages.test(x.replace(/^[✅✔☑]\s*/,''))||/^Step \d+ of \d+:/i.test(x));
- const latest=steps.at(-1)||lines.find(x=>/^[✅✔☑]\s+/.test(x))||'Task update received';
- const label=latest.replace(/^[-*]\s*/, '').replace(/^\*\*|\*\*$/g,'').replace(/^[✅✔☑]\s*/,'');
+ const current=rows.find(r=>r.state==='current'),failedRow=rows.find(r=>r.state==='failed');
+ const fail=!!failedRow||lines.some(x=>/\b(?:task failed|tests failed|test dispatch failed|validation failed|blocked by|fatal error)\b/i.test(x));
+ const latest=current||failedRow||rows.filter(r=>r.state==='done').at(-1);
+ const label=latest?latest.title+(latest.detail?': '+latest.detail:''):lines.filter(x=>!/^\*\*KappaForge is working on it\*\*$/.test(x)).at(-1)?.replace(/^[-*✅✔☑⏳❌◻]\s*/,'').replace(/^\*\*|\*\*$/g,'')||'Task update received';
  const headline=label.length>105?label.slice(0,102)+'…':label;
- const fail=lines.some(x=>/\b(?:task failed|tests failed|validation failed|blocked by|fatal error)\b/i.test(x));
  const taskNum=String(m.progressKey||'').match(/progress:(\d+)/)?.[1]||'';
  const job=typeof trackedJobs==='undefined'?null:trackedJobs.find(j=>j.number===Number(taskNum));
- return '<section class="agent-activity" aria-label="Task progress">'+
- '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span>'+
+ const finished=!current&&!rows.some(r=>r.state==='upcoming')&&rows.length>0;
+ const lifecycle=job?.message||'';
+ const validationFailed=['failed','tests-failed'].includes(lifecycle);
+ const testing=finished&&(job&&!job.finished&&!['tests-passed','merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
+ const tag=job?.finished&&lifecycle==='cancelled'?'CANCELLED':job?.finished&&lifecycle==='closed'?'CLOSED':
+  fail||validationFailed?'NEEDS ATTENTION':lifecycle==='tests-passed'?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
+ const timeline=rows.length?'<ol class="task-steps">'+rows.map(r=>'<li class="task-step '+esc(r.state)+'"><span class="task-dot" aria-hidden="true"></span>'+
+  '<div class="task-step-text"><strong>'+esc(plain(r.title))+'</strong>'+(r.detail?'<small>'+esc(clip(plain(r.detail),140))+'</small>':'')+'</div>'+
+  '<time'+(r.state==='current'?sinceAttr(r):'')+'>'+esc(r.state==='current'?elapsedSince(r.since):r.time)+'</time>'+
+  '<span class="sr-only">'+({done:'done',current:'in progress',failed:'failed',upcoming:'not started'}[r.state])+'</span></li>').join('')+'</ol>':'';
+ const pct=stages?Math.round(stages.done/stages.total*100):0;
+ const stageCard=stages&&!stages.failed&&(stages.current||stages.done<stages.total)?'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>Writing the change</strong>'+(stages.current?'<span class="task-dots" aria-hidden="true"><i></i><i></i><i></i></span>':'')+'</div>'+
+  '<div class="task-progress-row"><small>'+esc(clip(plain(stages.label),90))+'</small><time'+(stages.since?' data-since="'+esc(stages.since)+'"':'')+'>'+esc(elapsedSince(stages.since))+'</time></div>'+
+  '<span class="task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="'+esc(stages.total)+'" aria-valuenow="'+esc(stages.done)+'" aria-label="Steps completed"><i style="width:'+pct+'%"></i></span>'+
+  '<small>'+esc(stages.done)+' of '+esc(stages.total)+' steps completed</small></div>':'';
+ return '<section class="agent-activity'+(fail||validationFailed?' failed':finished&&!testing?' finished':'')+'" aria-label="Task progress">'+
+ '<details class="task-card" open><summary><span class="activity-pulse" aria-hidden="true"></span>'+
  '<span class="activity-heading">Development task'+(taskNum?' #'+esc(taskNum):'')+'</span>'+
- '<span class="activity-tag">'+(fail?'NEEDS ATTENTION':'IN PROGRESS')+'</span></div>'+
- '<p class="activity-summary">'+esc(headline)+'</p>'+(job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
+ '<span class="activity-tag">'+tag+'</span><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
+ '<p class="activity-summary">'+esc(headline)+'</p>'+timeline+'</details>'+stageCard+
+ (job?.authorization&&!job.finished?'<button type="button" data-cancel-task="'+esc(taskNum)+'">Cancel task</button>':'')+
  '<details class="activity-history"><summary>View progress details</summary>'+
  '<div class="activity-report markdown">'+renderChatText(report)+'</div></details></section>';
 }
+const stepSeconds=t=>{const m=String(t||'').match(/^(?:(\d+)h )?(?:(\d+)m ?)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0};
+function taskTimeline(steps){
+ // Planned stages fold into one "Writing the change" row; their progress gets its own card below.
+ const rows=[];let staged=null;
+ for(const s of steps){
+  if(!s.stage){rows.push(s);continue}
+  if(!staged){staged={state:'done',title:'Writing the change',detail:'',time:'',since:'',seconds:0};rows.push(staged)}
+  staged.detail=s.title+': '+s.detail;staged.seconds+=stepSeconds(s.time);
+  if(s.state!=='done'){staged.state=s.state;staged.since=s.since}
+ }
+ if(staged&&staged.state==='done'&&staged.seconds)staged.time=typeof KappaActions!=='undefined'?KappaActions.formatDuration(staged.seconds):staged.seconds+'s';
+ return rows;
+}
+const sinceAttr=s=>s.since?' data-since="'+esc(s.since)+'"':'';
+// Step text arrives as Markdown from GitHub; the card shows it plain.
+const plain=t=>String(t||'').replace(/`([^`]*)`/g,'$1').replace(/\*\*([^*]*)\*\*/g,'$1');
+const clip=(t,n)=>t.length>n?t.slice(0,n-1)+'…':t;
+// The current step's time so far; the one-second ticker keeps it counting from here.
+function elapsedSince(since){const t=Date.parse(since||'');return Number.isFinite(t)&&typeof KappaActions!=='undefined'?KappaActions.formatDuration(Math.max(0,Math.round((Date.now()-t)/1000))):''}
+// Audit findings as GitHub-style severity rows: the first five, then "+N more issues".
+function findingsCard(list){
+ if(!list.length)return '';
+ return '<details class="issues-card" open><summary><span aria-hidden="true">'+uiIcon('search')+'</span><strong>Issues found ('+list.length+')</strong><span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><ul>'+
+  list.slice(0,5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul>'+
+  (list.length>5?'<details class="issues-more"><summary>+'+(list.length-5)+' more issue'+(list.length>6?'s':'')+'</summary><ul>'+list.slice(5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span></li>').join('')+'</ul></details>':'')+'</details>';
+}
+
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
+ // Task reports carry audit findings; they become an Issues found card under the report.
+ const issues=m.jobReport&&!user?KappaJobs.findings(m.text):[];
  const actions=m.streaming||progress?'':user?'':'<div class="quick-actions" aria-label="Message actions">'+
  '<button type="button" data-copy-message="'+i+'" aria-label="Copy response" title="Copy">'+uiIcon('copy')+'</button>'+
  '<button type="button" data-save-message="'+i+'" aria-label="'+(m.saved?'Unsave':'Save')+' response" title="'+(m.saved?'Unsave':'Save')+'">'+uiIcon('saved')+'</button>'+
@@ -50,7 +95,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&KappaIntent.suggestsTask(m.text)?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(m.text))+'</div>')+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}
@@ -62,7 +107,7 @@ function toast(message){const el=document.getElementById('toast');el.textContent
 function captureInterfaceScroll(){return {page:document.body.dataset.view,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};}
 const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}));function bindInterface(state={}){
  document.body.dataset.view=view;resizeComposer();
- const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){window.scrollTo({top:document.body.scrollHeight,behavior:'instant'});}
+ const c=active();if(view==='chat'&&(state.page!=='chat'||uiLastChat!==c?.id||state.nearBottom)){const back=state.page!=='chat'&&typeof viewScroll!=='undefined'&&!!viewScroll.chat&&viewScroll.chat.id===c?.id&&!viewScroll.chat.nearBottom;window.scrollTo({top:back?viewScroll.chat.y:document.body.scrollHeight,behavior:'instant'});}
  if(view==='chat'&&c?.messages.length>uiLastCount&&uiLastChat===c?.id){document.querySelector('.chat-message:last-child')?.classList.add('message-new');}if(view==='chat'){chatObserver.observe(document.getElementById('content'),{childList:true,subtree:true});}else{chatObserver.disconnect();}
  uiLastChat=c?.id;uiLastCount=c?.messages.length||0;
  if(uiLastView!==view&&!matchMedia('(prefers-reduced-motion: reduce)').matches)document.getElementById('content').animate([{opacity:.4,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:170,easing:'ease-out'});uiLastView=view;
@@ -193,4 +238,115 @@ if(window.KappaNativeComposer){
 function focusMessageInput(){
  if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'})}
  else document.getElementById('message').focus({preventScroll:true});
+}
+
+/* GitHub Actions status cards and the run page. Pure renderers: normalised data in (KappaActions), HTML out. */
+const RUN_STATE_LABEL={success:'Success',failure:'Failure',cancelled:'Cancelled',skipped:'Skipped',running:'In progress',queued:'Queued',waiting:'Waiting',timed_out:'Timed out',action_required:'Action required',neutral:'Completed',stale:'Stale'};
+function runBadge(state){return '<span class="run-badge run-'+esc(state||'neutral')+'" role="img" aria-label="'+esc(RUN_STATE_LABEL[state]||'Completed')+'"></span>';}
+// Running items count up from their start; finished ones show GitHub's own duration.
+function runElapsed(item,now=Date.now()){
+ if(KappaActions.isActive(item)){const start=Date.parse(item.startedAt||'');return item.state==='running'&&Number.isFinite(start)?KappaActions.formatDuration(Math.max(0,Math.round((now-start)/1000))):'';}
+ return Number.isFinite(item?.duration)?KappaActions.formatDuration(item.duration):'';
+}
+// Running items carry their start so a one-second ticker can count up without re-rendering the page.
+const runSince=item=>item?.state==='running'&&item.startedAt?' data-since="'+esc(item.startedAt)+'"':'';
+function runAgo(at,now=Date.now()){const t=Date.parse(at||'');if(!Number.isFinite(t))return '';const s=Math.max(0,Math.round((now-t)/1000));return s<60?'just now':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago';}
+function runProgressBar(progress,state){
+ const pct=Math.max(0,Math.min(100,Number(progress?.percent)||0));
+ return '<span class="run-progress run-'+esc(state)+'" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="'+esc(progress?.label||'Progress')+'"><i style="width:'+pct+'%"></i></span>';
+}
+// One run: state, workflow, what triggered it, live progress while active. The whole card opens the run page.
+function statusCard(run,{progress=null,now=Date.now(),compact=false}={}){
+ if(!run)return '';
+ const active=KappaActions.isActive(run),time=runElapsed(run,now);
+ const meta=[run.branch,run.event?run.event.replace(/_/g,' '):'',run.number?'#'+run.number:'',run.attempt>1?'attempt '+run.attempt:''].filter(Boolean).join(' · ');
+ const label=progress?.label||(active?RUN_STATE_LABEL[run.state]:'');
+ return '<button type="button" class="status-card run-'+esc(run.state)+(compact?' compact':'')+'" data-run="'+esc(run.id)+'" aria-label="'+esc(run.name+': '+(RUN_STATE_LABEL[run.state]||run.state)+(label?', '+label:'')+'. Open run details')+'">'+
+  '<span class="status-card-head">'+runBadge(run.state)+'<strong>'+esc(run.name)+'</strong><span class="status-card-time"'+runSince(run)+'>'+esc(time||runAgo(run.createdAt,now))+'</span></span>'+
+  (compact?'':'<span class="status-card-title">'+esc(run.title||run.name)+'</span>')+
+  '<span class="status-card-meta">'+esc(meta)+'</span>'+
+  (active||progress?'<span class="status-card-progress">'+runProgressBar(progress||{percent:0,label},run.state)+'<small>'+esc(label)+'</small></span>':'')+
+ '</button>';
+}
+const RUN_SIZE=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+// GitHub's one-line summary under a title: "Failed after 8m 5s", "In progress · 1m 2s", "Queued".
+function runSummary(item,now=Date.now()){
+ const time=runElapsed(item,now),s=item?.state;
+ if(s==='running')return 'In progress'+(time?' · '+time:'');
+ if(s==='queued'||s==='waiting')return RUN_STATE_LABEL[s];
+ if(s==='success')return 'Succeeded'+(time?' in '+time:'');
+ if(s==='skipped')return 'Skipped';
+ return ({failure:'Failed',cancelled:'Cancelled',timed_out:'Timed out'}[s]||RUN_STATE_LABEL[s]||'Completed')+(time?' after '+time:'');
+}
+const CHEVRON='<svg class="gh-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// The page header of the run, job and step pages: a round back button and a centred title with its summary.
+function ghHeader(title,subtitle,back){
+ return '<header class="gh-header"><button type="button" class="gh-back" data-run-back aria-label="'+esc(back)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
+  '<div class="gh-title"><h2>'+esc(title)+'</h2><span'+(subtitle.since?' data-summary-since="'+esc(subtitle.since)+'"':'')+'>'+esc(subtitle.text)+'</span></div><span class="gh-header-end"></span></header>';
+}
+const summaryOf=(item,now)=>({text:runSummary(item,now),since:item?.state==='running'?item.startedAt:''});
+// One tappable row: state icon, name, duration underneath, chevron. Rows without a page are plain.
+function ghRow(item,{attr='',mono=false,now=Date.now(),note=''}={}){
+ const inner=runBadge(item.state)+'<span class="gh-row-text"><span class="gh-row-name'+(mono?' mono':'')+'">'+esc(item.name)+'</span><small'+runSince(item)+'>'+esc(note||runElapsed(item,now)||RUN_STATE_LABEL[item.state]||'')+'</small></span>';
+ return attr?'<button type="button" class="gh-row run-'+esc(item.state)+'" '+attr+'>'+inner+CHEVRON+'</button>':'<div class="gh-row run-'+esc(item.state)+'">'+inner+'</div>';
+}
+// Re-run and cancel, like GitHub's floating button. Every choice is confirmed and authorised before it runs.
+function rerunMenu(run){
+ if(!run)return '';
+ const items=KappaActions.isActive(run)?[['cancel','Cancel run']]:[['rerun','Re-run all jobs'],...(['failure','timed_out','cancelled'].includes(run.state)?[['rerun-failed','Re-run failed jobs']]:[])];
+ return '<details class="gh-fab"><summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'+(KappaActions.isActive(run)?'Cancel':'Re-run')+'<span aria-hidden="true">⌄</span></summary><div class="gh-fab-menu">'+items.map(([a,l])=>'<button type="button" data-run-control="'+a+'">'+esc(l)+'</button>').join('')+'</div></details>';
+}
+// The run page: summary, attempts, annotations, then each job as a row that opens the job page.
+function runView(detail,{now=Date.now(),attempt=0,loading=false,error=''}={}){
+ if(!detail)return ghHeader('Workflow run',{text:error?'Could not load':'Loading…'},'Back to all runs')+'<div class="panel run-page">'+(error?'<p class="status-bad">'+esc(error)+'</p><button type="button" class="btn secondary" data-run-retry>Try again</button>':'<p class="muted">Loading run from GitHub…</p>')+'</div>';
+ const run=detail.run,jobs=detail.jobs||[],p=detail.progress||KappaActions.progress(run,jobs);
+ const facts=[['Triggered',(run.event||'').replace(/_/g,' ')+(run.actor?' by '+run.actor:'')+(run.createdAt?' · '+runAgo(run.createdAt,now):'')],
+  ['Branch',run.branch||'—'],['Commit',run.sha?run.sha.slice(0,7):'—'],['Run','#'+(run.number||'—')+(run.attempt>1?' · attempt '+run.attempt:'')]];
+ const attempts=(detail.attempts||[]).length>1?'<div class="run-attempts" role="group" aria-label="Run attempts">'+detail.attempts.map(n=>'<button type="button" data-run-attempt="'+n+'" aria-pressed="'+((attempt||run.attempt)===n)+'">Attempt '+n+'</button>').join('')+'</div>':'';
+ const annotations=(detail.annotations||[]).length?'<section class="run-section"><h3>Annotations <small>'+detail.annotations.length+'</small></h3><ul class="run-annotations">'+detail.annotations.map(a=>'<li class="run-annotation '+esc(a.level)+'"><strong>'+esc(a.job)+(a.title?' · '+esc(a.title):'')+'</strong><span>'+esc(a.message)+'</span>'+(a.path?'<code>'+esc(a.path)+(a.line?':'+esc(a.line):'')+'</code>':'')+'</li>').join('')+'</ul></section>':'';
+ const artifacts=(detail.artifacts||[]).length?'<section class="run-section"><h3>Artifacts <small>'+detail.artifacts.length+'</small></h3>'+detail.artifacts.map(a=>'<div class="row"><div><strong>'+esc(a.name)+'</strong><div class="muted">'+esc(RUN_SIZE(a.size))+(a.expired?' · expired':'')+'</div></div></div>').join('')+'<p class="worksmall">Download artifacts from the run on GitHub.</p></section>':'';
+ return ghHeader(run.name,summaryOf(run,now),'Back to all runs')+
+  '<div class="panel run-page run-'+esc(run.state)+'"><div class="run-title">'+runBadge(run.state)+'<h3>'+esc(run.title||run.name)+'</h3></div>'+
+  (KappaActions.isActive(run)?'<div class="run-progress-row">'+runProgressBar(p,run.state)+'<span>'+esc(p.label)+'</span></div>':'')+
+  '<dl class="run-facts">'+facts.map(([k,v])=>'<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'+attempts+
+  (error?'<p class="status-bad">'+esc(error)+'</p>':'')+(loading?'<p class="worksmall">Refreshing…</p>':'')+
+  '<div class="review-tools">'+(run.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(run.url)+'">Open on GitHub ↗</a>':'')+run.prs.map(n=>'<span class="worksmall">PR #'+esc(n)+'</span>').join('')+'</div></div>'+
+  annotations+'<section class="run-section"><h3>Jobs <small>'+jobs.length+'</small></h3><div class="gh-list">'+(jobs.map(j=>ghRow(j,{attr:'data-open-job="'+esc(j.id)+'"',now})).join('')||'<p class="muted">No jobs yet.</p>')+'</div></section>'+artifacts+rerunMenu(run);
+}
+// The job page, like GitHub's: one row per step with its time. Steps that ran open their own log.
+function jobView(detail,job,{log=null,now=Date.now()}={}){
+ if(!detail||!job)return runView(detail,{now});
+ const parsed=log?.data?.available?log.data:null,map=parsed?KappaActions.stepSections(job.steps,parsed.sections):{};
+ const running=KappaActions.isActive(job);
+ const note=running?'<p class="worksmall gh-note">Logs appear when this job finishes. Step times update live.</p>':
+  log?.loading?'<p class="worksmall gh-note">Reading the log…</p>':log?.error?'<p class="status-bad gh-note">'+esc(log.error)+'</p>':log?.data&&!log.data.available?'<p class="worksmall gh-note">'+esc(log.data.reason||'Log not available.')+'</p>':'';
+ const totals=parsed?[parsed.tests?.found?'<span class="'+(parsed.tests.failed?'status-bad':'status-good')+'">'+esc(parsed.tests.passed)+' passed · '+esc(parsed.tests.failed)+' failed</span>':'',parsed.exitCode!==null&&parsed.exitCode!==undefined?'<span class="'+(parsed.exitCode?'status-bad':'status-good')+'">Exit code '+esc(parsed.exitCode)+'</span>':''].filter(Boolean).join(' · '):'';
+ const rows=job.steps.map(s=>{
+  const ran=!['skipped','queued','waiting'].includes(s.state);
+  const errors=parsed&&map[s.number]!==undefined?parsed.sections[map[s.number]].errors:0;
+  return ghRow(s,{mono:true,now,attr:ran&&!running?'data-open-step="'+esc(s.number)+'"':'',note:errors&&s.state!=='success'?(runElapsed(s,now)||'')+' · '+errors+' error'+(errors>1?'s':''):''});
+ }).join('');
+ return ghHeader(detail.run.name+' / '+job.name,summaryOf(job,now),'Back to the run')+note+(log&&!log.loading&&!log.data?.available?logRetryControl(job.id):'')+(totals?'<p class="gh-totals">'+totals+'</p>':'')+
+  '<div class="gh-list gh-steps">'+(rows||'<p class="muted">Steps appear when a runner picks up this job.</p>')+'</div>'+
+  (job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'')+rerunMenu(detail.run);
+}
+function logRetryControl(jobId){return '<button type="button" class="btn secondary" data-log-retry="'+esc(jobId)+'">Retry log</button>'}
+// One step's log: line numbers, its Run command, error and warning lines marked, like GitHub's log viewer.
+function stepView(detail,job,step,{log=null,now=Date.now()}={}){
+ if(!detail||!job||!step)return jobView(detail,job,{log,now});
+ const head=ghHeader(step.name,summaryOf(step,now),'Back to '+job.name);
+ if(!log||log.loading)return head+'<p class="worksmall gh-note">Reading the log…</p>';
+ if(log.error)return head+'<p class="status-bad gh-note">'+esc(log.error)+'</p>'+logRetryControl(job.id);
+ if(!log.data?.available)return head+'<p class="worksmall gh-note">'+esc(log.data?.reason||'Log not available.')+'</p>'+logRetryControl(job.id);
+ const at=KappaActions.stepSections(job.steps,log.data.sections)[step.number],section=log.data.sections[at];
+ const link=job.url?'<div class="review-tools"><a target="_blank" rel="noopener noreferrer" href="'+esc(job.url)+'">Full log on GitHub ↗</a></div>':'';
+ if(!section){
+  const errors=log.data.errors.map(e=>'<li><small>'+esc(e.section)+' · line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('');
+  return head+'<p class="worksmall gh-note">This step\'s lines could not be told apart from the rest of the job log'+(errors?'. Errors in the job:':'.')+'</p>'+(errors?'<ul class="log-errors gh-note">'+errors+'</ul>':'')+link;
+ }
+ const shown=new Set(section.log.map(l=>l.n));
+ const earlier=log.data.errors.filter(e=>e.at===at&&!shown.has(e.line));
+ return head+(section.omitted?'<p class="worksmall gh-note">Showing the last '+section.log.length+' of '+(section.log.length+section.omitted)+' lines.</p>':'')+
+  (earlier.length?'<ul class="log-errors gh-note">'+earlier.map(e=>'<li><small>line '+esc(e.line)+'</small><code>'+esc(e.text)+'</code></li>').join('')+'</ul>':'')+
+  '<div class="gh-log" role="log" aria-label="'+esc(step.name)+' log">'+section.log.map(l=>'<div class="gh-line'+(l.kind?' '+esc(l.kind):'')+'"><span class="gh-ln">'+esc(l.n)+'</span><span class="gh-lt">'+(l.kind==='group'?'▸ ':'')+esc(l.text)+'</span></div>').join('')+'</div>'+link+rerunMenu(detail.run);
 }

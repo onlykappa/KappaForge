@@ -160,25 +160,13 @@ document.addEventListener("keydown",e=>{
  if(e.key==="Escape")closeTaskSheet();
  if(e.key==="Tab"){const items=[...document.querySelectorAll(".task-sheet select,.task-sheet button")].filter(el=>!el.disabled);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
 });
-function activityPanel(){
- const entries=activity.runs.slice(0,6).map(r=>{
-   const dot=r.status!=="completed"?"🔄":r.conclusion==="success"?"✅":r.conclusion==="failure"?"❌":"◯";
-   const detail=r.status==="completed"?(r.conclusion||"finished"):r.status;
-   return '<div class="feed-entry"><span class="feed-dot">'+dot+'</span><div style="min-width:0;flex:1"><a href="'+esc(r.html_url)+'" target="_blank" rel="noopener noreferrer">'+esc(r.name||"Workflow run")+'</a><small>'+esc(detail)+' · '+esc(r.head_branch||"main")+'</small></div></div>';
- }).join("");
- return '<section class="feed" aria-label="Live GitHub activity"><div class="feed-head"><div><strong>◉ Agent activity</strong><div><small>'+esc(activity.last?"Checked "+activity.last.toLocaleTimeString():"Checking GitHub…")+' · refreshes every 90s</small></div></div><div class="feed-tools"><button type="button" id="feedrefresh" '+(activity.busy?"disabled":"")+' aria-label="Refresh agent activity">↻ Refresh</button></div></div><div class="feed-list">'+(entries||'<div class="feed-empty">No GitHub runs loaded yet.</div>')+'</div>'+(activity.error?'<div class="feed-error">'+esc(activity.error)+'</div>':'')+'</section>';
-}
+// The 90-second refresh and the Refresh buttons. A live stream already delivers changes, so only poll without one.
 async function refreshActivity(force=false){
  if(activity.busy||document.hidden||(!force&&view!=="home"))return;
+ if(!force&&backend&&access&&workflowMonitor.mode!=="poll"&&!workflowMonitor.paused)return;
  activity.busy=true;
- try {
-  const response=await githubFetch("KappaForge/actions/runs?per_page=12");
-  if(!response.ok)throw Error(response.status===403?"GitHub rate limit reached. Try again later.":"GitHub API HTTP "+response.status);
-  const result=await response.json();
-  activity.runs=(result.workflow_runs||[]).filter(r=>r&&typeof r.html_url==="string"&&r.html_url.startsWith("https://github.com/onlykappa/KappaForge/actions/runs/"));
-  activity.last=new Date();activity.error="";
- }catch(e){activity.error=e.message;}
- finally {activity.busy=false;if(view==="home")render()}
+ try{await (force?monitorRefresh():monitorPoll());activity.last=new Date();activity.error=workflowMonitor.error}
+ finally{activity.busy=false}
 }
 
 function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge development task").slice(0,110),body="Repository: onlykappa/KappaForge\nMode: audit\n\n"+text+"\n\nReview before creating. This browser preview cannot authorize a coding run.";const url="https://github.com/onlykappa/KappaForge/issues/new?"+new URLSearchParams({title,body});window.open(url,"_blank","noopener")}

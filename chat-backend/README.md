@@ -11,11 +11,20 @@ This first live-chat backend uses a Cloudflare Worker, separate from the GitHub 
 4. In the Worker's **Settings > Variables and Secrets**, create **encrypted secrets**:
    - `GEMINI_API_KEY`: your Gemini API key. Do not copy it into GitHub Pages or frontend code.
    - `CHAT_ACCESS_TOKEN`: generate a **new**, long, random, unique value of at least 32 characters. Do not reuse your GitHub password or Gemini key. Keep this private.
+   - Optional `GITHUB_ACTIONS_READ_TOKEN`: a fine-grained GitHub token limited to your repositories with only **Actions: read** (and Metadata: read). The live Builds dashboard (`/actions`) uses it instead of `GITHUB_JOB_TOKEN`, so reading build status never runs with write permissions. Without it, `/actions` falls back to `GITHUB_JOB_TOKEN`.
 5. Copy your Worker URL (typically `https://kappaforge-chat.<account>.workers.dev`).
 6. Open [KappaForge Preview](https://onlykappa.github.io/KappaForge/), tap **Connect AI**, and enter that URL and the access token.
 7. Send a message. The Worker responds using `gemini-2.5-flash-lite` if your API account supports it.
 
 No GitHub Actions workflow secrets are exposed. The iOS SwiftUI native app is not yet connected. This is for the web preview only.
+
+## Live GitHub Actions (`/actions`)
+
+`POST /actions` with the usual bearer token and `{op, repo, runId?, jobId?, attempt?}`:
+`snapshot` (recent runs), `run` (jobs, steps, attempts, annotations, artifacts), `log` (a parsed, redacted job log
+summary) and `stream` (Server-Sent Events: a snapshot, then only changes, for about 55 seconds before the client
+reconnects). Every operation is read-only, limited to the owner's repositories and integer ids, and never returns
+tokens, signed log URLs or artifact download URLs. Polling uses ETags, so unchanged answers do not use rate limit.
 
 ## Security and limitations
 

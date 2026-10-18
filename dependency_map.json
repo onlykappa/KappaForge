@@ -3,11 +3,12 @@
  "repository": "onlykappa/KappaForge",
  "generated_by": "scripts/dependency-map.py from real imports; CI fails when it is stale",
  "modules": [
+  {"path":"chat-backend/src/actions.js","depends_on":["chat-backend/src/github.js","chat-backend/src/repos.js","preview/actions-core.js"],"tests":["tests/actions.test.mjs"]},
   {"path":"chat-backend/src/agent-work.js","depends_on":["chat-backend/src/github.js","chat-backend/src/review.js"],"tests":["tests/bug-audit.test.mjs","tests/intelligence.test.mjs","tests/intent-guard.test.mjs"]},
   {"path":"chat-backend/src/github.js","depends_on":[],"tests":["tests/intelligence.test.mjs"]},
-  {"path":"chat-backend/src/index.js","depends_on":["chat-backend/src/agent-work.js","chat-backend/src/github.js","chat-backend/src/intelligence.js","chat-backend/src/intent-guard.js","chat-backend/src/native-builds.js","chat-backend/src/project-health.js","chat-backend/src/providers.js","chat-backend/src/repos.js","chat-backend/src/review.js","chat-backend/src/streaming.js","chat-backend/src/time.js","chat-backend/src/vector-index.js","config/app.json"],"tests":["tests/intelligence.test.mjs","tests/intent-guard.test.mjs"]},
+  {"path":"chat-backend/src/index.js","depends_on":["chat-backend/src/actions.js","chat-backend/src/agent-work.js","chat-backend/src/github.js","chat-backend/src/intelligence.js","chat-backend/src/intent-guard.js","chat-backend/src/native-builds.js","chat-backend/src/project-health.js","chat-backend/src/providers.js","chat-backend/src/repos.js","chat-backend/src/review.js","chat-backend/src/streaming.js","chat-backend/src/time.js","chat-backend/src/vector-index.js","config/app.json"],"tests":["tests/chat-activity-ui.test.mjs","tests/intelligence.test.mjs","tests/intent-guard.test.mjs"]},
   {"path":"chat-backend/src/intelligence.js","depends_on":[],"tests":["tests/intelligence.test.mjs"]},
-  {"path":"chat-backend/src/intent-guard.js","depends_on":["preview/intent-guard.js"],"tests":["tests/chat-activity-ui.test.mjs","tests/intent-guard.test.mjs","tests/task-autostart.test.mjs"]},
+  {"path":"chat-backend/src/intent-guard.js","depends_on":["preview/intent-guard.js"],"tests":["tests/actions.test.mjs","tests/chat-activity-ui.test.mjs","tests/intent-guard.test.mjs","tests/task-autostart.test.mjs"]},
   {"path":"chat-backend/src/native-builds.js","depends_on":["chat-backend/src/github.js"],"tests":["tests/native-builds.test.mjs"]},
   {"path":"chat-backend/src/project-health.js","depends_on":["chat-backend/src/repos.js"]},
   {"path":"chat-backend/src/providers.js","depends_on":["config/providers.json"],"tests":["tests/intelligence.test.mjs"]},
@@ -16,6 +17,7 @@
   {"path":"chat-backend/src/streaming.js","depends_on":["preview/stream.js"],"tests":["tests/intelligence.test.mjs"]},
   {"path":"chat-backend/src/time.js","depends_on":[],"tests":["tests/intelligence.test.mjs"]},
   {"path":"chat-backend/src/vector-index.js","depends_on":["chat-backend/src/github.js","chat-backend/src/repos.js"]},
+  {"path":"engine/actions_log.py","depends_on":[],"tests":["tests/test_actions_log.py"]},
   {"path":"engine/authorized_completion.py","depends_on":["engine/intent_guard.py","engine/native_build.py","engine/runner.py"],"tests":["tests/test_authorized_completion.py"]},
   {"path":"engine/coder.py","depends_on":["engine/runner.py"],"tests":["tests/test_coder.py"]},
   {"path":"engine/continuous.py","depends_on":["engine/continuous_code.py","engine/full_reader.py","engine/intent_guard.py","engine/repair_loop.py","engine/runner.py","engine/task_scope.py","tools/diagnostics.py"]},
@@ -32,7 +34,7 @@
   {"path":"engine/self_repair.py","depends_on":["engine/coder.py","engine/runner.py"]},
   {"path":"engine/task_scope.py","depends_on":["engine/intent_guard.py","engine/runner.py","tools/diagnostics.py"]},
   {"path":"ios/KappaForge/KappaWebView.swift","depends_on":["ios/KappaForge/Web/ (byte-identical copy of preview/ via scripts/bundle-web.py)"]},
-  {"path":"preview/index.html","depends_on":["preview/app-config.js","preview/intent-guard.js","preview/stream.js","preview/core.js","preview/markdown.js","preview/settings.js","preview/ui.js","preview/app-state.js","preview/app-dashboard.js","preview/app-tasks.js","preview/app-main.js"]},
+  {"path":"preview/index.html","depends_on":["preview/app-config.js","preview/intent-guard.js","preview/stream.js","preview/core.js","preview/actions-core.js","preview/markdown.js","preview/settings.js","preview/ui.js","preview/app-state.js","preview/app-dashboard.js","preview/app-tasks.js","preview/app-main.js"]},
   {"path":"tools/build_config.py","depends_on":[]},
   {"path":"tools/diagnostics.py","depends_on":[],"tests":["tests/test_workflow_safety.py"]}
  ]

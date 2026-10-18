@@ -544,26 +544,52 @@ def commit_changes(repo, parent, changes, modes, message, token):
     return gh(f"repos/{repo}/git/commits", token, {"message": message, "tree": tree["sha"], "parents": [parent]})
 
 
+def took(seconds):
+    """A step's time the way GitHub shows it: 9s, 1m 12s, 1h 3m."""
+    seconds = max(0, int(seconds))
+    h, m, s = seconds // 3600, seconds % 3600 // 60, seconds % 60
+    return f"{h}h {m}m" if h else f"{m}m {s}s" if m else f"{s}s"
+
+
 class Progress:
-    """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort."""
+    """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort.
+
+    Lines: "✅ done · 24s", "⏳ current · started <UTC time>", "❌ failed", and "◻ upcoming" for the phases still
+    ahead. The chat reads them into its step timeline; on GitHub they read as a plain checklist.
+    """
     HEADING = "### KappaForge is working on it"
     latest = None  # The run's checklist, so a crash anywhere can still be marked on it.
+    clock = time.time
 
-    def __init__(self, number, token):
+    def __init__(self, number, token, ahead=()):
         self.number, self.token, self.done, self.current, self.comment = number, token, [], "", None
+        self.ahead, self.started = list(ahead), Progress.clock()
         Progress.latest = self
 
-    def now(self, text):
-        """Start a step; the previous one is marked done."""
+    def _finish(self):
+        now = Progress.clock()
+        spent, self.started = now - self.started, now
+        return " · " + took(spent)
+
+    def _advance(self, phase):
+        if phase and self.ahead:
+            self.ahead.pop(0)
+
+    def now(self, text, phase=False):
+        """Start a step; the previous one is marked done. phase=True starts the next upcoming phase."""
         if self.current:
-            self.done.append(self.current)
+            self.done.append(self.current + self._finish())
+        else:
+            self.started = Progress.clock()
         self.current = text
+        self._advance(phase)
         self._write()
 
-    def ok(self, text):
+    def ok(self, text, phase=False):
         """Record a finished step with its result, replacing the step in progress."""
-        self.done.append(text)
+        self.done.append(text + self._finish())
         self.current = ""
+        self._advance(phase)
         self._write()
 
     def fail(self, reason):
@@ -574,8 +600,11 @@ class Progress:
             self._write()
 
     def _write(self):
-        body = (self.HEADING + "\n\n" + "\n".join("✅ " + d for d in self.done) + ("\n⏳ " + self.current if self.current else "")
-                + ("\n❌ " + self.failed if getattr(self, "failed", "") else ""))
+        since = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(self.started))
+        failed = getattr(self, "failed", "")
+        lines = (["✅ " + d for d in self.done] + (["⏳ " + self.current + " · started " + since] if self.current else [])
+                 + (["❌ " + failed] if failed else []) + ["◻ " + a for a in ([] if failed else self.ahead)])
+        body = self.HEADING + "\n\n" + "\n".join(lines)
         try:
             if self.comment:
                 gh(f"repos/{ROOT}/issues/comments/{self.comment}", self.token, {"body": body}, method="PATCH")
@@ -660,12 +689,12 @@ def produce_development_pr(issue, api_key, token):
     task = ((issue.get("title") or "") + "\n" + body
             + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:])
                if guidance else ""))
-    progress = Progress(number, token)
+    progress = Progress(number, token, ahead=["Choose which files to read", "Write the change", "Open a draft PR and start the tests"])
     progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     guide = project_guide(repo, sha, existing, repo_token)
     progress.ok(f"Read {repo}: {len(existing)} source files" + (" and its project instructions" if guide else ""))
-    progress.now("Choosing which files to read")
+    progress.now("Choosing which files to read", phase=True)
     # Source code only goes to fallback providers allowed for this repository's visibility.
     allowed = code_providers(is_private(repo, repo_token))
     sources = {}
@@ -680,9 +709,9 @@ def produce_development_pr(issue, api_key, token):
         progress.ok("Thought it through: " + design[:400])
     require_test = has_tests(existing)
     if stages:
-        progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)))
+        progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
     else:
-        progress.now("Writing the change")
+        progress.now("Writing the change", phase=True)
     model, summary, changes, explanation = build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress,
                                                            design, require_test)
     if stages:
@@ -705,7 +734,9 @@ def produce_development_pr(issue, api_key, token):
                       f"test again, up to {MAX_FIXES} times, before asking you.")
     except urllib.error.HTTPError as exc:
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
-    progress.ok(f"Opened draft PR #{pr.get('number', '')}; tests are running. If they fail I fix them, up to {MAX_FIXES} times")
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (f"tests are running. If they fail I fix them, up to {MAX_FIXES} times"
+                if not validation.startswith("Test dispatch failed") else validation),
+                phase=True)
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"
         f"**What this does:** {explanation or summary}\n\n"
@@ -901,10 +932,10 @@ def fix_pull_request(issue, api_key, token):
     if fixes >= MAX_FIXES + len(guidance):
         report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
         return None
-    progress = Progress(number, token)
+    progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
     progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""))
-    progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""))
+    progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""), phase=True)
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
                                                                 native_history)
     flags = {}
@@ -924,7 +955,7 @@ def fix_pull_request(issue, api_key, token):
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again")
+    progress.ok(f"Pushed fix {fixes + 1} ({short_list(changes)}); tests are running again", phase=True)
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

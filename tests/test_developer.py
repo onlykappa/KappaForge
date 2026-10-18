@@ -336,9 +336,17 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
 
     def test_commits_one_atomic_change_and_reports_back(self):
+        self._exercise_development_pr()
+
+    def test_failed_test_dispatch_is_not_reported_as_running(self):
+        self._exercise_development_pr(dispatch_error=True)
+
+    def _exercise_development_pr(self, dispatch_error=False):
         calls = []
         def fake_gh(path, token, payload=None, method=None):
             calls.append((path, payload))
+            if dispatch_error and path.endswith("/dispatches"):
+                raise urllib.error.HTTPError(path, 403, "refused", {}, None)
             if path.endswith("/git/ref/heads/kappa/dev-9"):
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             responses = {
@@ -379,6 +387,11 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertIn("✅ Read 1 files: `app/main.py`", progress[-1])
         self.assertIn("✅ Opened draft PR", progress[-1])
         self.assertNotIn("⏳", progress[-1])
+        if dispatch_error:
+            self.assertIn("Test dispatch failed (HTTP 403)", progress[-1])
+            self.assertNotIn("tests are running", progress[-1])
+        else:
+            self.assertIn("tests are running", progress[-1])
         pr = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls")
         self.assertTrue(pr["draft"])
         self.assertIn("## What this does\nCast inputs", pr["body"])
@@ -470,16 +483,34 @@ class ProgressTests(unittest.TestCase):
         def gh(path, token, payload=None, method=None):
             calls.append((path, payload, method))
             return {"id": 77}
-        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh):
+        clock = iter([1000, 1000, 1024, 1096])
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), \
+                patch.object(developer.Progress, "clock", lambda: next(clock)):
             p = developer.Progress(9, "t")
             p.now("Reading")
             p.now("Writing")
             p.ok("Opened PR")
         self.assertEqual(calls[0][0], "repos/onlykappa/KappaForge/issues/9/comments")
         self.assertEqual([c[0] for c in calls[1:]], ["repos/onlykappa/KappaForge/issues/comments/77"] * 2)
-        self.assertEqual(calls[-1][1]["body"], developer.Progress.HEADING + "\n\n✅ Reading\n✅ Opened PR", "a result replaces the step it finishes")
+        self.assertEqual(calls[0][1]["body"], developer.Progress.HEADING + "\n\n⏳ Reading · started 1970-01-01 00:16:40 UTC")
+        self.assertEqual(calls[-1][1]["body"], developer.Progress.HEADING + "\n\n✅ Reading · 24s\n✅ Opened PR · 1m 12s",
+                         "a result replaces the step it finishes, with how long each step took")
         with patch.object(developer, "gh", side_effect=urllib.error.URLError("down")):
             developer.Progress(9, "t").now("never blocks the task")
+
+    def test_upcoming_phases_are_listed_until_reached_and_hidden_after_a_failure(self):
+        bodies = []
+        with patch.object(developer, "gh", side_effect=lambda path, token, payload=None, method=None: bodies.append(payload["body"]) or {"id": 5}), \
+                patch.object(developer.Progress, "clock", lambda: 0):
+            p = developer.Progress(9, "t", ahead=["Choose files", "Write the change"])
+            p.now("Reading the code")
+            self.assertTrue(bodies[-1].endswith("⏳ Reading the code · started 1970-01-01 00:00:00 UTC\n◻ Choose files\n◻ Write the change"))
+            p.now("Choosing which files to read", phase=True)
+            self.assertIn("✅ Reading the code · 0s\n⏳ Choosing which files to read", bodies[-1])
+            self.assertTrue(bodies[-1].endswith("\n◻ Write the change"))
+            p.fail("model unavailable")
+            self.assertTrue(bodies[-1].endswith("❌ Choosing which files to read: model unavailable"), "nothing is promised after a failure")
+        self.assertEqual([developer.took(s) for s in (0, 9, 72, 3780)], ["0s", "9s", "1m 12s", "1h 3m"])
 
 
 class OwnerRequestedFixTests(unittest.TestCase):

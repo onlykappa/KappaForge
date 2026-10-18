@@ -205,5 +205,144 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);let 
 function save(){try{localStorage.setItem(key,JSON.stringify(chats))}catch(e){console.warn("Browser storage unavailable")}scheduleVaultSync()}
 function fresh(){closeNavigation();const c={id:uid(),title:"New conversation",messages:[],at:Date.now()};chats.unshift(c);current=c.id;save();view="chat";render();document.getElementById("message").focus()}
 function active(){return chats.find(c=>c.id===current)}
-function navigate(v){if(v==="settings"&&view!=="settings")settingsSection="";view=v;closeNavigation();render();const title=document.querySelector("#content h1,#content h2")||document.getElementById("heading");title.setAttribute("tabindex","-1");title.focus({preventScroll:true});if(v==="home"){load();refreshActivity(true)}}
+// Where each page was scrolled, so moving between Chat and the dashboard returns to the same place.
+const viewScroll={};
+function rememberScroll(){if(view==="chat")viewScroll.chat={id:current,y:scrollY,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};else if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY}
+function navigate(v){if(v==="settings"&&view!=="settings")settingsSection="";rememberScroll();view=v;closeNavigation();render();if(v==="home")scrollTo(0,viewScroll["home:"+dashboardState.mode]||0);const title=document.querySelector("#content h1,#content h2")||document.getElementById("heading");title.setAttribute("tabindex","-1");title.focus({preventScroll:true});if(v==="home"){load();refreshActivity()}}
 function history(){const q=conversationSearch.trim().toLowerCase();const matches=chats.filter(c=>!q||(c.title+" "+c.messages.map(m=>m.text).join(" ")).toLowerCase().includes(q));document.getElementById("history").innerHTML=matches.map(c=>'<button class="history '+(c.id===current&&view==="chat"?'active':'')+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")||'<p class="history-empty">'+(q?'No matching conversations':'Your conversations will appear here.')+'</p>';}
+// Workflow Monitor: live GitHub Actions state for the dashboard. It streams changes from the Worker's /actions
+// route, falls back to polling when streaming is unavailable, keeps the last snapshot for an instant first paint,
+// and checks every fresh snapshot against what it shows, so stale or ghost runs never linger.
+const MONITOR_KEY="kappaforge.actions.v1";
+const workflowMonitor={repo:"KappaForge",runs:[],details:{},logs:{},mode:"idle",error:"",lastSync:0,lastCheck:null,watchRun:0,attempt:0,retry:0,controller:null,timer:0,paused:true,cached:false};
+try{const saved=JSON.parse(localStorage.getItem(MONITOR_KEY)||"null");if(saved?.repo==="KappaForge"&&Array.isArray(saved.runs)){workflowMonitor.runs=saved.runs.filter(r=>r&&Number.isSafeInteger(r.id)&&typeof r.name==="string"&&typeof r.state==="string").slice(0,30);workflowMonitor.lastSync=Number(saved.at)||0;workflowMonitor.cached=workflowMonitor.runs.length>0}}catch(e){}
+function persistMonitor(){try{localStorage.setItem(MONITOR_KEY,JSON.stringify({repo:workflowMonitor.repo,runs:workflowMonitor.runs.slice(0,30),at:workflowMonitor.lastSync}))}catch(e){}}
+let monitorFrame=0;
+function monitorChanged(){if(view!=="home"||monitorFrame)return;monitorFrame=requestAnimationFrame(()=>{monitorFrame=0;if(view==="home")render()})}
+// Owner-facing notice when a run the monitor watched while active finishes.
+function announceRunChanges(before,after){
+ const was=new Map(before.map(r=>[r.id,r]));
+ for(const r of after){const old=was.get(r.id);if(old&&KappaActions.isActive(old)&&!KappaActions.isActive(r))toast((r.state==="success"?"✓ ":r.state==="failure"?"✕ ":"")+r.name+" "+(RUN_STATE_LABEL[r.state]||r.state).toLowerCase()+(r.branch?" · "+r.branch:""))}
+}
+function monitorApply(packet){
+ const m=workflowMonitor;if(!packet||typeof packet!=="object")return;
+ if(packet.type==="snapshot"&&Array.isArray(packet.runs)){
+  const runs=packet.runs.filter(r=>r&&Number.isSafeInteger(r.id));
+  m.lastCheck={...KappaActions.reconcile(m.runs,runs),at:Date.now()};
+  if(!m.cached)announceRunChanges(m.runs,runs);
+  m.runs=runs;m.cached=false;m.lastSync=Date.now();m.error="";persistMonitor();monitorChanged();refreshActiveDetails();
+ }else if(packet.type==="runs"){
+  const before=m.runs,changed=(packet.changed||[]).filter(r=>r&&Number.isSafeInteger(r.id)),removed=new Set(packet.removed||[]);
+  const byId=new Map(before.filter(r=>!removed.has(r.id)).map(r=>[r.id,r]));for(const r of changed)byId.set(r.id,r);
+  m.runs=[...byId.values()].sort((a,b)=>b.id-a.id).slice(0,30);
+  announceRunChanges(before,m.runs);m.lastSync=Date.now();m.error="";persistMonitor();monitorChanged();refreshActiveDetails();
+ }else if(packet.type==="run"&&packet.run?.id){
+  const entry=m.details[packet.run.id]||(m.details[packet.run.id]={});
+  Object.assign(entry,{data:packet,at:Date.now(),error:""});
+  // The run page and the list must agree: carry the run's newer state into the list.
+  const i=m.runs.findIndex(r=>r.id===packet.run.id);if(i>=0&&packet.run.attempt>=m.runs[i].attempt){const before=m.runs.slice();m.runs[i]=packet.run;announceRunChanges(before,m.runs);persistMonitor()}
+  m.lastSync=Date.now();monitorChanged();
+ }else if(packet.type==="ping"){m.lastSync=Date.now()}
+ else if(packet.type==="error"){m.error=packet.error||"GitHub request failed";monitorChanged()}
+}
+// Running cards on the overview show their current step: fetch details for up to three active runs when they change.
+function refreshActiveDetails(){
+ const m=workflowMonitor;if(view!=="home"||dashboardState.mode!=="overview")return;
+ for(const r of m.runs.filter(KappaActions.isActive).slice(0,3)){const e=m.details[r.id];if(e?.loading||e?.data&&e.data.run?.updatedAt===r.updatedAt&&Date.now()-e.at<30000)continue;monitorRunDetail(r.id)}
+}
+function actionsFetch(body,signal){return fetch(backend+"/actions",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({repo:workflowMonitor.repo,...body}),signal})}
+// Without the Worker route (not connected, or an older Worker), read the public API through githubFetch.
+async function monitorPoll(){
+ const m=workflowMonitor;
+ try{
+  const r=await githubFetch(m.repo+"/actions/runs?per_page=20");
+  if(!r.ok)throw Error(r.status===403?"GitHub rate limit reached. Showing the last known state.":"GitHub HTTP "+r.status);
+  const list=(await r.json())?.workflow_runs;
+  // Never let a malformed answer wipe the list.
+  if(!Array.isArray(list))throw Error("GitHub returned an unexpected run list. Showing the last known state.");
+  monitorApply({type:"snapshot",runs:list.map(KappaActions.normalizeRun).filter(Boolean)});
+  // The list alone cannot refresh the jobs and steps of the run currently on screen.
+  if(m.watchRun&&!m.details[m.watchRun]?.loading)await monitorRunDetail(m.watchRun);
+ }catch(e){if(m.mode!=="live"){m.error=e.message;monitorChanged()}}
+}
+async function monitorStream(){
+ const m=workflowMonitor;
+ if(m.paused||m.controller)return;
+ clearTimeout(m.timer);
+ if(!backend||!access||m.mode==="poll"){
+  m.mode="poll";await monitorPoll();
+  if(!m.paused)m.timer=setTimeout(()=>{if(backend&&access&&m.mode==="poll"&&m.retry<6)m.mode="idle";monitorStream()},m.runs.some(KappaActions.isActive)?15000:60000);
+  return;
+ }
+ const controller=new AbortController();m.controller=controller;let ended="";
+ try{
+  const r=await actionsFetch({op:"stream",runId:m.watchRun||undefined},controller.signal);
+  if(r.status===404||r.status===503)ended="unsupported";
+  else if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||"Live updates unavailable (HTTP "+r.status+")");
+  else{m.mode="live";monitorChanged();
+  for await(const packet of KappaStream.sse(r.body)){monitorApply(packet);if(packet.type==="end"){ended=packet.reason;break}}
+  m.retry=ended==="error"?m.retry+1:0;}
+ }catch(e){if(!controller.signal.aborted){m.error=e.message;m.retry++}}
+ finally{
+  if(m.controller===controller)m.controller=null;
+  // An older Worker without /actions: poll instead, now.
+  if(ended==="unsupported"&&!m.paused){m.mode="poll";m.retry=0;setTimeout(monitorStream,0)}
+  else if(!controller.signal.aborted&&!m.paused){
+   // Three failed streams in a row: poll for a while, then try streaming again.
+   if(m.retry>=3){m.mode="poll";m.retry=0}
+   else m.mode=m.retry?"reconnecting":"live";
+   monitorChanged();
+   m.timer=setTimeout(monitorStream,m.retry?Math.min(30000,1000*2**m.retry):250);
+  }
+ }
+}
+// A manual refresh: a fresh stream (which starts with a full snapshot) when connected, otherwise one poll.
+async function monitorRefresh(){
+ const m=workflowMonitor;
+ if(backend&&access&&m.mode!=="poll"&&!m.paused){m.controller?.abort();m.controller=null;clearTimeout(m.timer);m.timer=0;return monitorStream()}
+ return monitorPoll();
+}
+function monitorResume(){const m=workflowMonitor;if(!m.paused)return;m.paused=false;if(m.mode==="poll"&&backend&&access)m.mode="idle";monitorStream()}
+function monitorPause(){const m=workflowMonitor;m.paused=true;clearTimeout(m.timer);m.timer=0;m.controller?.abort();m.controller=null;if(m.mode!=="poll")m.mode="idle"}
+// Watching a run adds its jobs and steps to the stream. Fetch it once now so the page paints immediately.
+async function monitorWatchRun(id,attempt=0){
+ const m=workflowMonitor;m.watchRun=Number(id)||0;m.attempt=attempt;
+ if(m.controller){m.controller.abort();m.controller=null;clearTimeout(m.timer);if(!m.paused)setTimeout(monitorStream,0)}
+ if(m.watchRun)await monitorRunDetail(m.watchRun,attempt);
+}
+async function monitorRunDetail(id,attempt=0){
+ const m=workflowMonitor,entry=m.details[id]||(m.details[id]={});entry.loading=true;entry.error="";monitorChanged();
+ try{
+  if(backend&&access&&m.mode!=="poll"){
+   const r=await actionsFetch({op:"run",runId:id,attempt:attempt||undefined});const d=await r.json().catch(()=>({}));
+   if(r.status!==404&&r.status!==503){if(!r.ok)throw Error(d.error||"GitHub HTTP "+r.status);if(attempt)entry.attemptData={...d,attempt,attempts:entry.data?.attempts||d.attempts};else monitorApply({type:"run",...d});return}
+  }
+  // Public fallback: run and jobs only. Annotations and logs need the Worker.
+  const [run,jobs]=await Promise.all([(attempt?fetch("https://api.github.com/repos/onlykappa/"+m.repo+"/actions/runs/"+id+"/attempts/"+attempt,{headers:{Accept:"application/vnd.github+json"}}):githubFetch(m.repo+"/actions/runs/"+id)).then(r=>r.ok?r.json():Promise.reject(Error("GitHub HTTP "+r.status))),
+   fetch("https://api.github.com/repos/onlykappa/"+m.repo+"/actions/runs/"+id+(attempt?"/attempts/"+attempt:"")+"/jobs?per_page=100",{headers:{Accept:"application/vnd.github+json"}}).then(r=>r.ok?r.json():{jobs:[]}).catch(()=>({jobs:[]}))]);
+  const nr=KappaActions.normalizeRun(run),nj=(jobs.jobs||[]).map(KappaActions.normalizeJob).filter(Boolean);
+  if(!nr)throw Error("Run not found");
+  const d={run:nr,jobs:nj,progress:KappaActions.progress(nr,nj),annotations:[],artifacts:[],attempts:Array.from({length:Math.min(nr.attempt,20)},(_,i)=>i+1),limited:true};
+  if(attempt)entry.attemptData={...d,attempt,attempts:entry.data?.attempts||d.attempts};else monitorApply({type:"run",...d});
+ }catch(e){entry.error=e.message}
+ finally{entry.loading=false;monitorChanged()}
+}
+// Loads a finished job's parsed log once; the job and step pages read it from here.
+async function monitorJobLog(jobId,{force=false}={}){
+ const m=workflowMonitor,logs=m.logs,previous=logs[jobId];
+ if(previous?.loading||!force&&(previous?.data?.available||previous?.attempts>=3||previous?.retryAt>Date.now()))return;
+ if(!backend||!access){logs[jobId]={error:"Connect AI to read parsed logs here, or open the full log on GitHub.",attempts:3};monitorChanged();return}
+ const attempts=force?1:(previous?.attempts||0)+1;
+ logs[jobId]={loading:true,attempts};monitorChanged();
+ try{const r=await actionsFetch({op:"log",jobId});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(r.status===404?"Update the Worker to read logs here, or open the full log on GitHub.":d.error||"GitHub HTTP "+r.status);logs[jobId]={data:d,attempts}}
+ catch(e){logs[jobId]={error:e.message,attempts}}
+ const entry=logs[jobId];
+ if(!entry.data?.available){
+  entry.retryAt=Date.now()+15000;
+  // Retry temporary log delays at most three times; manual retry is always available.
+  if(attempts<3)setTimeout(()=>{if(logs[jobId]===entry&&!m.paused)monitorChanged()},15000);
+ }
+ monitorChanged();
+}
+// For scripts/verify-actions-state.mjs: what this device shows, without credentials.
+function monitorExport(){return {repo:workflowMonitor.repo,exportedAt:new Date().toISOString(),lastSync:workflowMonitor.lastSync?new Date(workflowMonitor.lastSync).toISOString():null,mode:workflowMonitor.mode,runs:workflowMonitor.runs}}

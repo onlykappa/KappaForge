@@ -1,0 +1,25 @@
+2026-10-18T16:40:01.1000000Z Current runner version: '2.320.0'
+2026-10-18T16:40:01.2000000Z ##[group]Operating System
+2026-10-18T16:40:01.2100000Z Ubuntu
+2026-10-18T16:40:01.2200000Z ##[endgroup]
+2026-10-18T16:40:02.0000000Z ##[group]Run actions/checkout@v4
+2026-10-18T16:40:02.0100000Z with:
+2026-10-18T16:40:02.0200000Z   persist-credentials: false
+2026-10-18T16:40:02.0300000Z ##[endgroup]
+2026-10-18T16:40:03.0000000Z Syncing repository: onlykappa/KappaForge
+2026-10-18T16:40:03.1000000Z remote: https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz0123456789@github.com/onlykappa/KappaForge
+2026-10-18T16:40:10.0000000Z ##[group]Run npm test
+2026-10-18T16:40:10.0100000Z [36;1mnpm test[0m
+2026-10-18T16:40:10.0200000Z shell: /usr/bin/bash -e {0}
+2026-10-18T16:40:10.0300000Z ##[endgroup]
+2026-10-18T16:40:12.0000000Z ✔ review card tolerates missing results (1.2ms)
+2026-10-18T16:40:12.1000000Z ✖ status card shows the failing step (3.4ms)
+2026-10-18T16:40:12.2000000Z not ok 2 - status card shows the failing step
+2026-10-18T16:40:12.3000000Z AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Failed at/
+2026-10-18T16:40:12.4000000Z     at TestContext.<anonymous> (file:///home/runner/work/KappaForge/KappaForge/tests/actions.test.mjs:41:9)
+2026-10-18T16:40:12.5000000Z # tests 138
+2026-10-18T16:40:12.5100000Z # pass 137
+2026-10-18T16:40:12.5200000Z # fail 1
+2026-10-18T16:40:12.6000000Z ##[warning]Node.js 20 actions are deprecated.
+2026-10-18T16:40:12.7000000Z ##[error]Process completed with exit code 1.
+2026-10-18T16:40:13.0000000Z Post job cleanup.

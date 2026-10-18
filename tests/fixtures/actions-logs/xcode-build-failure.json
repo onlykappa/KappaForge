@@ -1,0 +1,135 @@
+{
+ "lineCount": 12,
+ "sections": [
+  {
+   "title": "Set up job",
+   "start": 1,
+   "lines": 0,
+   "errors": 0,
+   "warnings": 0,
+   "omitted": 0,
+   "log": []
+  },
+  {
+   "title": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "start": 1,
+   "lines": 7,
+   "errors": 4,
+   "warnings": 0,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 1,
+     "text": "Run xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+     "kind": "group"
+    },
+    {
+     "n": 3,
+     "text": "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope",
+     "kind": "error"
+    },
+    {
+     "n": 4,
+     "text": "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/App.swift:9:5: warning: variable was never used",
+     "kind": ""
+    },
+    {
+     "n": 5,
+     "text": "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).",
+     "kind": "error"
+    },
+    {
+     "n": 6,
+     "text": "Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).",
+     "kind": ""
+    },
+    {
+     "n": 7,
+     "text": "** BUILD FAILED **",
+     "kind": "error"
+    },
+    {
+     "n": 8,
+     "text": "",
+     "kind": ""
+    },
+    {
+     "n": 9,
+     "text": "Process completed with exit code 65.",
+     "kind": "error"
+    }
+   ]
+  },
+  {
+   "title": "actions/upload-artifact@v4",
+   "start": 10,
+   "lines": 1,
+   "errors": 0,
+   "warnings": 1,
+   "omitted": 0,
+   "log": [
+    {
+     "n": 10,
+     "text": "Run actions/upload-artifact@v4",
+     "kind": "group"
+    },
+    {
+     "n": 12,
+     "text": "No files were found with the provided path: build/KappaForge.ipa.",
+     "kind": "warning"
+    }
+   ]
+  }
+ ],
+ "errors": [
+  {
+   "line": 3,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "at": 1,
+   "text": "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope"
+  },
+  {
+   "line": 5,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "at": 1,
+   "text": "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds)."
+  },
+  {
+   "line": 7,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "at": 1,
+   "text": "** BUILD FAILED **"
+  },
+  {
+   "line": 9,
+   "section": "xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge build",
+   "at": 1,
+   "text": "Process completed with exit code 65."
+  }
+ ],
+ "warnings": [
+  {
+   "line": 12,
+   "section": "actions/upload-artifact@v4",
+   "at": 2,
+   "text": "No files were found with the provided path: build/KappaForge.ipa."
+  }
+ ],
+ "signals": [],
+ "tests": {
+  "passed": 0,
+  "failed": 0,
+  "found": false
+ },
+ "exitCode": 65,
+ "tail": [
+  "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope",
+  "/Users/runner/work/KappaForge/KappaForge/ios/KappaForge/App.swift:9:5: warning: variable was never used",
+  "Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).",
+  "Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).",
+  "** BUILD FAILED **",
+  "",
+  "##[error]Process completed with exit code 65.",
+  "##[warning]No files were found with the provided path: build/KappaForge.ipa."
+ ]
+}
