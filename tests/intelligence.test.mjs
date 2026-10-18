@@ -433,3 +433,13 @@ test('the AI is told the owner\'s local date, time and timezone, with safe fallb
   assert.equal(r.status,200,'a full-length message is still accepted');assert.match(system,/Current date and time for the owner: .*\(Asia\/Tokyo;/);
  }finally{globalThis.fetch=original}
 });
+
+test('safe tasks can auto-launch while privileged modes need approval',()=>{
+ const safe={mode:'develop',repo:'onlykappa/KappaForge',instructions:'Fix the settings screen and add a regression test'};
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed(safe),true);
+ for(const mode of ['repair','continuous','continuous-code','watch']){
+  assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,mode}),false);
+ }
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,repo:'other/fork'}),false);
+ assert.equal(globalThis.KappaJobs.autoLaunchAllowed({...safe,instructions:''}),false);
+});
