@@ -32,8 +32,8 @@ test('compact header and composer are accessible and functional',()=>{
 });
 
 test('progress and final task reports use real stored report data',()=>{
- assert.match(ui,/function renderTaskReport\(m,i\)/);
- assert.match(ui,/if\(m\.progressKey\|\|m\.jobReport\)return renderTaskReport/);
+ assert.match(ui,/function renderTaskActivity\(m\)/);
+ assert.match(ui,/progress\?renderTaskActivity\(m\)/);
  assert.match(ui,/renderChatText\(report\)/);
  assert.doesNotMatch(ui,/fake progress|simulated test result/i);
 });
