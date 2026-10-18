@@ -115,3 +115,23 @@ test('structured cards expose truthful units, queued versus active timing and te
   job.finished=true;job.message='cancelled';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/CANCELLED/);assert.doesNotMatch(html,/data-since=/);
  }finally{delete ctx.trackedJobs}
 });
+
+test('structured planned stages read as one Writing the change phase with the current stage on the card',()=>{
+ const t=Date.now()-60000,step=(id,title,status,a,b,detail)=>({id,title,status,startedAt:a?t+a:0,finishedAt:b?t+b:0,...(detail?{detail}:{})});
+ const base={version:1,taskId:'9',attemptId:'runner:1',attemptAt:t,revision:4,status:'running',updatedAt:t+50000,startedAt:t,units:{done:1,total:3,label:'implementation stages'}};
+ const steps=[step('read','Reading project files','completed',1,24000),step('s1','Step 1 of 3: Implement parsing fix','completed',24000,40000),step('s2','Step 2 of 3: Add recovery test','running',40000),step('s3','Step 3 of 3: Update docs','queued'),step('test','Run regression tests','queued')];
+ const job={number:9,queuedAt:t-3000,message:'progress',progress:globalThis.KappaProgress.normalize({...base,steps},9)};ctx.trackedJobs=[job];
+ try{
+  let html=ctx.renderTaskActivity({progressKey:'progress:9:live'});
+  assert.equal((html.match(/class="task-step /g)||[]).length,3,'three stages fold into one row');
+  assert.match(html,/task-step current[^]*<strong>Writing the change<\/strong><small>Step 2 of 3: Add recovery test<\/small><\/div><time data-since="[^"]+"/);
+  assert.doesNotMatch(html,/<strong>Step [0-9] of 3<\/strong>/);
+  assert.match(html,/task-progress-head[^]*<strong>Writing the change<\/strong>[^]*task-progress-row"><small>Add recovery test<\/small><time data-since="/,'phase title, current stage and its own timer');
+  assert.match(html,/aria-valuenow="1"[^]*1 of 3 implementation stages completed/);
+  steps[2]=step('s2','Step 2 of 3: Add recovery test','failed',40000,54000,'Fixture validation failure');
+  job.progress=globalThis.KappaProgress.normalize({...base,revision:5,status:'failed',steps},9);
+  html=ctx.renderTaskActivity({progressKey:'progress:9:live'});
+  assert.match(html,/task-step failed[^]*Writing the change<\/strong><small>Step 2 of 3 failed: Fixture validation failure/);
+  assert.doesNotMatch(html,/data-since=/,'a failed phase stops its clock');
+ }finally{delete ctx.trackedJobs}
+});

@@ -292,3 +292,11 @@ button.gh-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}but
 
 /* Keep the complete fixed composer in one WebKit compositing layer on short native chats. */
 .composer{transform:translateZ(0);isolation:isolate;-webkit-backface-visibility:hidden;backface-visibility:hidden}
+/* An unknown total reads as unknown in any still frame (Reduce Motion, a stale connection, a screenshot): a striped
+   track, with the sweeping chunk starting off-track so it only appears while it moves. */
+.task-bar.indeterminate{background:repeating-linear-gradient(135deg,rgba(157,145,199,.16) 0 6px,rgba(157,145,199,.06) 6px 12px)}
+.task-bar.indeterminate i{transform:translateX(-105%)}
+@media(prefers-reduced-motion:reduce){.task-bar.indeterminate i{visibility:hidden}}
+.agent-activity.stale .task-bar.indeterminate i{visibility:hidden}
+/* Headings take focus only so screen readers announce the new page; they are not controls, so no focus ring. */
+h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{outline:none}

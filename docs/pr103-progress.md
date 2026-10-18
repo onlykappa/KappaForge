@@ -1,6 +1,6 @@
 # PR103: Live task progress
 
-Last updated: 2026-10-18 (native screenshot verification in progress)
+Last updated: 2026-10-18 (96695db native CI passed; reference alignment corrections pending native recapture)
 
 ## Scope and isolation
 Base: `22871b42f36f4a13ba06c6f8e7a485229051cd47`; branch: `feat/pr103-live-task-progress`. Draft only. No merge or release. GitHub returned 404 for both PR and issue 102 at investigation time; do not alter any concurrent task.
@@ -14,10 +14,10 @@ Base: `22871b42f36f4a13ba06c6f8e7a485229051cd47`; branch: `feat/pr103-live-task-
 - [x] Native web bundle synchronized and simulator app compiled.
 - [x] Local regression checks and latest CI unit/browser checks pass.
 - [x] Browser screenshots inspected against reference; these are labeled fixture replays.
-- [ ] Actual native simulator progress screenshots captured and inspected.
-- [ ] Latest native UI tests/device build fully verified.
+- [~] Actual native simulator progress screenshots: captured and inspected on 3aca42a and 51d5306. Captures for 96695db exist (artifact 12150817152) but are **not yet inspected**: this environment's network policy denies the artifact host `productionresultssa15.blob.core.windows.net`.
+- [x] Native UI tests and device build pass on 96695db: [run 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415) (simulator build, launch/keyboard/progress UI tests, unsigned IPA; release jobs skipped). The reference-alignment commit after it needs its own native run.
 - [x] Runner-to-poll-to-render fixture evidence recorded.
-- [ ] Production backend task end-to-end test. This draft is not deployed to main; no production task was dispatched against unmerged code.
+- [ ] Production backend task end-to-end test. **Blocked on owner authorization.** Real tasks run `agent.yml` dispatched on `main`, and the app and Worker deploy from `main`, so production exercises none of this branch. Options, each an outward action needing explicit authorization: (a) dispatch `agent.yml` on this branch for one real task (creates a real issue and draft PR, uses one daily agent run); (b) run a branch build of the app against the production Worker (needs the private access token); (c) merge (excluded).
 - [x] Feature checkpoints and progress log committed to draft PR after each implemented feature.
 
 ## Investigation
@@ -97,3 +97,48 @@ The screenshot fixture now identifies test data in the card title, uses the full
 Run 39164348877 passed the expanded native UI tests and exported four actual captures, including keyboard-open. Inspection showed the active card still being pulled beneath the sticky header by a second near-bottom threshold in captureInterfaceScroll (the mutation observer threshold had already been narrowed). Tightened the render-state threshold to the same 32px. The test fixture now suppresses live polling of the unrelated issue number used as test data; prior captures truthfully showed a reconnect warning from that fixture request, not a production execution failure.
 
 Queued/failed native captures also exposed WebKit not painting the complete fixed composer on short chats. Promoted the whole composer to an isolated compositing layer; this keeps its border, controls and native input anchor together. This correction requires refreshed actual native images, not a claim of a passing screenshot from earlier code. Final code and screenshots are pending the next CI run.
+
+
+## 96695db verification and reference alignment
+CI on `96695db`:
+- [KappaForge tests 39165126406](https://github.com/onlykappa/KappaForge/actions/runs/39165126406): unit and web jobs passed.
+- [iOS build 39165126415](https://github.com/onlykappa/KappaForge/actions/runs/39165126415): the native job passed every step
+  (simulator build, bundled launch and progress/keyboard UI tests, screenshot export, unsigned IPA); release jobs skipped.
+- Artifacts: `iOS-keyboard-screenshots` 12150817152 and `iOS-keyboard-ui-test-results` 12150443892.
+
+Native screenshot inspection for 96695db is **not done**. The session environment denies
+`productionresultssa15.blob.core.windows.net` (proxy 403), so the artifact cannot be downloaded here.
+These remain unverified on 96695db and need those captures (or a later run's):
+- the complete composer painting;
+- the heading staying visible;
+- no reconnect warning in the labelled fixture.
+
+Reference comparison was done on the same shared renderer instead: the fixture replay from `tests/web-regression.cjs`,
+in Chromium at the iPhone 16 Pro Max viewport (430x932). Every screenshot shows labelled fixture data
+("Task progress fixture", "Fixture: …"); none is a production task. Material differences found and corrected:
+1. Planned stages showed as separate "Step 1 of 3" / "Step 2 of 3" timeline rows, and the progress card repeated
+   "Step 2 of 3: …" as its title. The reference has one phase row and a phase-titled card with the current item and
+   its own timer. Fix: the structured path folds stages into one "Writing the change" row (the legacy path already
+   did). The card is titled "Writing the change", with the current stage and its own live timer on the line below.
+   A failed stage reads "Step N of M failed: <reason>" and its clock stops.
+2. When it cannot animate (Reduce Motion, stale connection, any still frame), the indeterminate bar showed a solid
+   32% fill that read as real progress. Fix: an unknown total now shows a striped empty track; the sweeping chunk
+   starts off-track and is hidden under Reduce Motion or staleness. The indeterminate semantics stay (no
+   `aria-valuenow`).
+3. The page heading, focused programmatically for screen readers, showed a browser focus ring. Fix: no ring on
+   `tabindex="-1"` headings; the focus rings on controls are unchanged.
+
+Validation after the corrections:
+- `npm test` 179/179; all Node test files 288/288; Python suite OK; check-web and dependency-map current.
+- `npm run test:web` desktop PASS, including the runner-snapshot fixture replay.
+- The same replay at 430x932 passed its progress assertions.
+- New test: structured stages fold into one phase row; the card shows the phase, the current stage and its timer;
+  a failed stage names its reason and stops its clock.
+
+Remaining gaps:
+- Inspect the native captures (96695db and the next run, on the commit carrying these corrections) once the
+  artifact host is reachable or the owner attaches them.
+- The production end-to-end task, pending owner authorization (see the acceptance list).
+- PR #103 (`feat/pr101-actions-live-dashboard`, by another session) rewrites the same chat card
+  (`renderTaskActivity`) and conflicts with this branch. Only one of the two should go forward, or one must be
+  rebased onto the other.

@@ -72,13 +72,28 @@ function renderExecutionActivity(m,job){
  const times=KappaProgress.timing({...p,finishedAt:p.finishedAt||job.finishedAt},job.queuedAt,now),duration=ms=>KappaActions.formatDuration(Math.round(ms/1000));
  const id=String(job.number),unit=p.units,percent=unit?Math.round(unit.done/unit.total*100):0;
  const timing='<div class="task-timing"><span>Queued <time'+(!p.startedAt&&!ended?' data-since="'+new Date(job.queuedAt||now).toISOString()+'"':'')+'>'+duration(times.queuedMs)+'</time></span><span>Working <time'+(p.startedAt&&!ended?' data-since="'+new Date(p.startedAt).toISOString()+'"':'')+'>'+duration(times.activeMs)+'</time></span></div>';
- const rows=p.steps.map(r=>{
+ // Planned stages ("Step 2 of 3: …") read as one "Writing the change" phase, as in the reference design; the card
+ // below carries the current stage, its own timer and the measured count.
+ const STAGE=/^Step (\d+) of (\d+): (.*)$/,staged=p.steps.filter(r=>STAGE.test(r.title));
+ const stageRun=staged.find(r=>r.status==='running'),stageBad=staged.find(r=>r.status==='failed'||r.status==='blocked');
+ const stageNext=stageRun||stageBad||staged.find(r=>r.status==='queued')||staged.at(-1);
+ const shown=[];
+ for(const r of p.steps){
+  if(!STAGE.test(r.title)){shown.push(r);continue}
+  if(r!==staged[0])continue;
+  const lead=stageBad||stageRun||stageNext,m=lead.title.match(STAGE),done=staged.every(x=>x.status==='completed');
+  shown.push({id:'stages',title:'Writing the change',status:stageBad?stageBad.status:done?'completed':stageRun||staged.some(x=>x.status==='completed')?'running':'queued',
+   detail:'Step '+m[1]+' of '+m[2]+(stageBad?' failed: '+(stageBad.detail||m[3]):': '+m[3]),
+   startedAt:staged.find(x=>x.startedAt)?.startedAt||0,finishedAt:done?staged.at(-1).finishedAt:stageBad?stageBad.finishedAt:0});
+ }
+ const rows=shown.map(r=>{
   const state=({completed:'done',running:'current',queued:'upcoming',skipped:'skipped',failed:'failed',cancelled:'cancelled',blocked:'blocked'})[r.status]||'upcoming';
   const cut=r.title.indexOf(': '),title=cut>0?r.title.slice(0,cut):r.title,detail=r.detail||(cut>0?r.title.slice(cut+2):'');
   const seconds=r.displayTime||(r.startedAt?duration(Math.max(0,(r.finishedAt||p.finishedAt||job.finishedAt||now)-r.startedAt)):'');
   return '<li class="task-step '+state+'"><span class="task-dot" aria-hidden="true"></span><div class="task-step-text"><strong>'+esc(plain(title))+'</strong>'+(detail?'<small>'+esc(clip(plain(detail),180))+'</small>':'')+'</div><time'+(r.status==='running'&&!ended&&r.startedAt?' data-since="'+new Date(r.startedAt).toISOString()+'"':'')+'>'+esc(seconds)+'</time><span class="sr-only">'+esc(r.status)+'</span></li>';
  }).join('');
- const bar=ended?'':'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>'+esc(headline)+'</strong></div>'+
+ const bar=ended?'':'<div class="task-progress-card"><div class="task-progress-head"><span class="task-progress-icon" aria-hidden="true">'+uiIcon('tasks')+'</span><strong>'+esc(unit&&staged.length?'Writing the change':headline)+'</strong></div>'+
+  (unit&&stageNext?'<div class="task-progress-row"><small>'+esc(clip(plain(stageNext.title.match(STAGE)[3]),90))+'</small><time'+(stageRun?.startedAt?' data-since="'+new Date(stageRun.startedAt).toISOString()+'">'+esc(duration(Math.max(0,now-stageRun.startedAt))):'>')+'</time></div>':'')+
   '<span class="task-bar'+(!unit?' indeterminate':'')+'" role="progressbar" aria-label="'+esc(unit?unit.label:'Task progress, total work unknown')+'"'+(unit?' aria-valuemin="0" aria-valuemax="'+unit.total+'" aria-valuenow="'+unit.done+'"':'')+'><i'+(unit?' style="width:'+percent+'%"':'')+'></i></span><small>'+esc(unit?unit.done+' of '+unit.total+' '+unit.label+' completed':status==='queued'?'Queued. Timing begins when execution starts.':'Total work is not yet measurable')+'</small></div>';
  const fresh='<p class="task-freshness" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
  const reports=String(m.text||'').replace(/<!--[^]*?-->/g,'');
