@@ -85,6 +85,11 @@ struct KappaWebView: UIViewRepresentable {
         config.websiteDataStore = .default()
         config.userContentController.add(context.coordinator, name: "kappa")
         config.userContentController.addUserScript(Self.credentialScript())
+        #if DEBUG && targetEnvironment(simulator)
+        if let fixture = ProgressFixture.script() {
+            config.userContentController.addUserScript(fixture)
+        }
+        #endif
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let view = KappaChatWebView(frame: .zero, configuration: config)
         view.configureComposer()

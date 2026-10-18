@@ -7,7 +7,7 @@ import '../preview/task-progress.js';
 import '../preview/core.js';
 function setup(){
  const chats=[{id:'chat',messages:[]}],storage=new Map(),element={addEventListener(){}};
- const c={Date,console,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
+ const c={Date,console,AbortController,setTimeout,clearTimeout,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
  vm.createContext(c);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),c);return {c,chats,run:code=>vm.runInContext(code,c)};
 }
 test('confirmed launch immediately adds one queued card to its original chat',async()=>{
@@ -49,4 +49,18 @@ test('saved snapshots survive app restart with their original timestamps',()=>{
  const context={...c,localStorage:{getItem:()=>saved,setItem(){}},chats:[{id:'chat',messages:[]}]};vm.createContext(context);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),context);
  assert.equal(vm.runInContext('trackedJobs[0].progress.attemptAt',context),1234);
  assert.equal(context.chats[0].messages.length,1);
+});
+
+test('findings persist through later progress snapshots with no repeated findings',()=>{
+ const {run}=setup();run("trackedJobs.push({number:9,chatId:'chat'})");
+ run("showProgress(trackedJobs[0],1,'⏳ Reading\\n- [High] Confirmed fixture issue')");
+ run("showProgress(trackedJobs[0],1,'⏳ Writing')");
+ assert.equal(run('trackedJobs[0].findings.length'),1);
+ run("updateTaskFindings(trackedJobs[0],[{level:'high',text:'Confirmed fixture issue',resolved:true}])");
+ assert.equal(run('trackedJobs[0].findings.length'),1);assert.equal(run('trackedJobs[0].findings[0].resolved'),true);
+});
+test('hung progress requests abort so subsequent tasks can still refresh',async()=>{
+ const {c,run}=setup();c.setTimeout=callback=>{callback();return 0};
+ c.githubFetch=async(path,signal)=>{if(signal.aborted)throw new DOMException('Timeout','AbortError');return {ok:true,json:async()=>[]}};
+ await assert.rejects(run("taskRead('KappaForge/issues/9')"),{name:'AbortError'});
 });

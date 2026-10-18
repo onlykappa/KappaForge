@@ -1,3 +1,4 @@
+import './native-progress-fixture.test.mjs';
 import './task-progress.test.mjs';
 import './task-tracking.test.mjs';
 import './intent-guard.test.mjs';

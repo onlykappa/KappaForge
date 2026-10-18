@@ -68,3 +68,12 @@ Review fixes: failed independent-test reports freeze timers even while the task 
 Local final verification before this visual refinement: npm test 175/175 and required Node/intelligence suite 148/148 passed. Full Python suite 153/153 passed. check-web and dependency-map checks passed. Latest screenshot/detail refinements require the next CI run. Native run 39163299925 compiled simulator successfully and is running launch/keyboard tests; full native completion remains pending.
 
 Next: verify final CI commit, inspect refreshed mobile findings screenshot and native build artifacts, update this log's acceptance checklist accurately. Draft only.
+
+## Feature 5 checkpoint: native simulator screenshot scenarios
+User requested actual simulator screenshots to review without installing another IPA. Added Debug-simulator-only ProgressFixture.swift and XCTest scenarios for queued, running (timeline/findings/bar), and failed states. These invoke the real persisted progress model, production renderer, WKWebView and native UITextView composer. They contain explicitly labeled deterministic data and do not start a development task. Release/iPhone builds cannot compile the fixture implementation. XCTest saves screenshots as retained attachments, exported by the existing iOS workflow.
+
+Also retained findings across subsequent snapshots, avoided duplicate findings cards in task reports, and bounded each progress request with an abort timeout so a hung network request cannot block other tracked tasks indefinitely. Added behavioral coverage for persistence of findings and aborted reads.
+
+Status: local web/configuration/bundle checks and npm tests passed; Swift compilation and actual simulator screenshots are pending the next native CI build. Do not claim the screenshots exist until XCTest and artifact retrieval succeed.
+
+Next: wait for native CI, inspect any compile/test failure, download retained PR103 progress screenshot attachments, display actual images to the user, then synchronize final checklist.

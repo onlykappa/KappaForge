@@ -3,13 +3,13 @@ const card=(title,body)=>'<div class="panel"><h3>'+esc(title)+'</h3>'+body+'</di
 const row=(name,subtitle,url)=>'<div class="row"><div><strong>'+esc(name)+'</strong><div class="muted">'+esc(subtitle)+'</div></div><a href="'+esc(url)+'" target="_blank" rel="noopener">↗</a></div>';
 const requestCache=new Map();
 // Browser GitHub calls share a 60/hour anonymous limit. When connected, read through the Worker's token instead.
-async function githubFetch(p){
+async function githubFetch(p,signal){
  if(backend&&access){
-  const r=await fetch(backend+"/github",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({path:p})});
+  const r=await fetch(backend+"/github",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({path:p}),signal});
   // 404/503: older Worker or no GITHUB_JOB_TOKEN configured; use the browser's own quota.
   if(![404,503].includes(r.status))return r;
  }
- return fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"}});
+ return fetch("https://api.github.com/repos/onlykappa/"+p,{headers:{Accept:"application/vnd.github+json"},signal});
 }
 const api=async (p,force=false)=>{
  const now=Date.now(),hit=requestCache.get(p);

@@ -64,4 +64,27 @@ final class LaunchTests: XCTestCase {
         }
     }
 
+    func testTaskProgressScreenshotsInNativeSimulator() {
+        let app = XCUIApplication()
+        for (scenario, tag) in [("queued", "QUEUED"), ("running", "IN PROGRESS"), ("failed", "NEEDS ATTENTION")] {
+            app.terminate()
+            app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = scenario
+            app.launch()
+            let web = app.webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 60))
+            let status = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", tag)).firstMatch
+            XCTAssertTrue(status.waitForExistence(timeout: 60), "Native progress scenario must render: " + scenario)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "PR103 progress " + scenario + " (simulator fixture)"
+            image.lifetime = .keepAlways
+            add(image)
+            XCTAssertTrue(app.textViews["native-composer"].exists, "The real native composer remains available")
+            if scenario == "running" {
+                let findings = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Issues found (2)")).firstMatch
+                XCTAssertTrue(findings.exists, "Confirmed fixture findings must render alongside the live timeline")
+            }
+        }
+        app.terminate()
+    }
+
 }

@@ -42,6 +42,11 @@ function ensureTaskCard(job){
  target.messages=target.messages.filter(m=>m===message||!String(m.progressKey||'').startsWith('progress:'+job.number+':'));
  return message;
 }
+function updateTaskFindings(job,list){
+ const records=new Map((job.findings||[]).map(f=>[f.text,f]));
+ for(const f of list||[])records.set(f.text,{...records.get(f.text),...f});
+ job.findings=[...records.values()].slice(0,40);
+}
 function showProgress(job,commentId,body,comment={}){
  const updatedAt=Date.parse(comment.updated_at||comment.created_at||'')||0;
  const createdAt=Date.parse(comment.created_at||'')||0;
@@ -52,14 +57,15 @@ function showProgress(job,commentId,body,comment={}){
  const message=ensureTaskCard(job);if(!message)return false;
  const text=body.replace(/<!--[^]*?-->/g,'').replace(/^### KappaForge is working on it/,"**KappaForge is working on it**");
  if(!snapshot&&message.text===text)return false;
- message.text=text;
+ message.text=text;updateTaskFindings(job,[...KappaJobs.findings(text),...(snapshot?.findings||[])]);
  job.lastProgressAt=updatedAt||Date.now();job.activeAt=job.lastProgressAt;
  if(!snapshot){job.progress=null;job.startedAt=job.startedAt||createdAt;}
  save();persistJobs();return true;
 }
 async function taskRead(path){
  // Unlike dashboard caches, task recovery must expose fetch failures and retry explicitly.
- const response=await githubFetch(path);if(!response.ok)throw Error('Task updates unavailable (HTTP '+response.status+')');return response.json();
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+ try{const response=await githubFetch(path,controller.signal);if(!response.ok)throw Error('Task updates unavailable (HTTP '+response.status+')');return await response.json()}finally{clearTimeout(timer)}
 }
 async function taskComments(number){
  const comments=[];
@@ -93,6 +99,7 @@ async function checkJobResult(){
     if(!KappaJobs.isNew(job,comment))continue;
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
+    updateTaskFindings(job,KappaJobs.findings(report.body));
     const text=KappaJobs.conciseReport(report.status,report.body,source);
     changed=jobChatUpdate(job,report.id,text)||changed;
     if(job.progress?.status==="queued"&&report.status!=="progress"){job.progress=null;job.startedAt=Date.parse(comment.created_at||comment.updated_at)||Date.now()}
