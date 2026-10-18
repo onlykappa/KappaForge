@@ -9,7 +9,7 @@ const source=readFileSync(resolve(root,'preview/ui.js'),'utf8');
 const start=source.indexOf('function renderTaskActivity(');
 const end=source.indexOf('\n\nfunction renderSavedItems(',start);
 assert.ok(start>=0&&end>start);
-const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>s,uiIcon:()=>'<svg></svg>'};
+const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>'};
 vm.runInNewContext(source.slice(start,end),ctx);
 test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
