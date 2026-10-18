@@ -1,0 +1,50 @@
+# PR #101 handoff: live GitHub Actions dashboard
+
+## Goal
+Make the Dashboard a live view of GitHub Actions: current build status, latest
+builds per workflow, and a run page that shows jobs, steps, durations, attempts,
+annotations and parsed logs the way GitHub does. Updates are pushed from the
+Worker over a streamed connection instead of the 90-second poll.
+
+## Branch and commit
+- Branch: `feat/pr101-actions-live-dashboard`
+- Last pushed commit SHA: see the PR's commit list (this file is updated with each milestone).
+
+## Plan and status
+Status keys: `[x]` done and tested, `[~]` in progress, `[ ]` not started.
+
+1. [ ] **Actions service** (`chat-backend/src/actions.js`): list runs, run detail
+   (jobs, steps, attempts, artifacts, annotations), job logs. Normalised fields only.
+2. [ ] **Shared rules** (`preview/actions-core.js`, imported by the Worker like
+   `intent-guard.js`): normalisation, step progress, log parser, run reconciliation.
+3. [ ] **Log parser** (`engine/actions_log.py` + JS twin in `actions-core.js`):
+   sections, `##[error]`/`::error` annotations, failure and success signals,
+   "Step 2/5: Linting". Both are checked against the same fixtures in `tests/fixtures/actions-logs/`.
+4. [ ] **Credential scoping**: `/actions` Worker endpoint is read-only, repo
+   allowlisted, integer ids only, strips signed/download URLs, redacts token-like
+   strings in logs, prefers a read-only `GITHUB_ACTIONS_READ_TOKEN` secret.
+5. [ ] **Live bridge**: `/actions` `stream` op returns Server-Sent Events. The Worker
+   polls GitHub with ETags (304s are free), emits only changes, ends after ~55s so the
+   client reconnects. Client falls back to polling when streaming fails.
+6. [ ] **Workflow Monitor** (`preview/app-state.js`): holds runs, applies stream
+   events, reconnects with backoff, caches last snapshot, drops ghost runs.
+7. [ ] **Status Card + run view** (`preview/ui.js`): status card with progress bar,
+   run page with jobs, steps, durations, attempts, annotations, parsed log.
+8. [ ] **Dashboard view state** (`preview/app-dashboard.js`): overview ↔ run detail
+   ↔ chat without losing conversation, composer draft or scroll.
+9. [ ] **Post-run verification** (`scripts/verify-actions-state.mjs`): compares a
+   saved monitor snapshot against the GitHub API and reports stale/ghost/missing runs.
+10. [ ] Tests, `python scripts/bundle-web.py`, docs, deploy path filters.
+
+## Tests performed
+Baseline on `main` @ 6e80959: `python -m unittest discover -s tests` 145 OK,
+`npm test` 137 pass, `python scripts/check-web.py` passed.
+
+## Known issues
+None yet.
+
+## Next task
+The first unchecked item above.
+
+## Safety notes
+No tokens or secrets are stored in this file, the PR, or the browser.
