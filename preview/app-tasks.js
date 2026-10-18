@@ -34,7 +34,7 @@ async function runChatAction(reply,typed,chat,offerTask){
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now()});persistJobs();jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),resumedAt:Date.now(),lastReportId:0,stuckNote:null});persistJobs();jobPollAfter=0;
 }
 function showProgress(job,commentId,body){
  const target=chats.find(c=>c.id===job.chatId);if(!target)return false;
@@ -60,6 +60,7 @@ async function checkJobResult(){
  try{
   for(const job of jobs){
    const [comments,issue]=await Promise.all([api("KappaForge/issues/"+job.number+"/comments?per_page=100",true),api("KappaForge/issues/"+job.number,true)]);
+   if(!Array.isArray(comments)||!issue||typeof issue!=="object")throw Error("Task status response is unavailable or invalid");
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
     // The agent's step-by-step checklist is one comment it keeps editing; show it as one chat message that updates in place.
@@ -100,7 +101,7 @@ async function launchJob(){
  trackedJobs.push(recentJob);persistJobs();jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
  checkJobResult();
- }catch(e){recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
+ }catch(e){if(!e.url)pendingJob=job;recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
  render();
 }
 let taskDraft="",taskFocus=null;

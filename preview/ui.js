@@ -17,7 +17,38 @@ function setSidebar(open,restoreFocus=false){
 }
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
-function renderMessage(m,i){return '<article class="chat-message '+(m.role==='user'?'from-user':'from-assistant')+'" data-message-index="'+i+'">'+(m.role==='assistant'?'':'')+'<div class="bubble '+(m.role==='user'?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(m.role==='assistant'&&!m.streaming?renderChatText(m.text):esc(m.text))+'</div>'+(m.streaming?'':'<details class="message-menu"><summary aria-label="Message actions">'+uiIcon('more')+'</summary><div class="message-action-popover"><button type="button" data-copy-message="'+i+'">'+uiIcon('copy')+'Copy</button><button type="button" data-save-message="'+i+'">'+uiIcon('saved')+(m.saved?'Unsave':'Save message')+'</button>'+(m.role==='assistant'?'<button type="button" data-retry-message="'+i+'">'+uiIcon('retry')+'Retry response</button><button type="button" data-repeat-message="'+i+'">'+uiIcon('spark')+'Explain simply</button>':'')+'</div></details>')+'</article>';}
+function renderTaskActivity(m){
+ const raw=String(m.text||'').replace(/^\\*\\*KappaForge is working on it\\*\\*/i,'').trim();
+ const lines=raw.split(/\\n+/).map(x=>x.replace(/^[-*]\\s*/,'').trim()).filter(Boolean);
+ const steps=[...new Set(lines.filter(x=>!/^KappaForge is working on it/i.test(x)))];
+ const current=steps.at(-1)||'Reading project files';
+ const complete=steps.slice(0,-1);
+ const stages=['Reading project files','Identifying issues','Implementing fixes','Running tests','Building iOS app','Pushing pull request'];
+ const classify=x=>/read|source files|project instructions|choosing which files/i.test(x)?0:/analyz|identif|inspect|investigat|audit/i.test(x)?1:/implement|edit|fix|correct|patch|generat|commit/i.test(x)?2:/test|validat|unit|regression/i.test(x)?3:/simulator|ios|build/i.test(x)?4:/push|pull request|publish/i.test(x)?5:-1;
+ const active=classify(current);
+ const tracked=active<0?0:active;
+ const timeline=stages.map((name,i)=>'<li class="'+(i<tracked?'done':i===tracked?'current':'upcoming')+'"><span class="activity-node"></span><span>'+esc(name)+'</span></li>').join('');
+ const issueLines=steps.filter(x=>/^(?:high|medium|low|critical)\\s*[:—-]|(?:bug|issue)\\s*#?\\d+\\s*[:—-]/i.test(x));
+ return '<section class="agent-activity" aria-label="Agent development progress" aria-live="polite">'+
+ '<div class="activity-top"><span class="activity-pulse" aria-hidden="true"></span><span class="activity-heading">Starting bug audit</span><span class="activity-tag">LIVE</span></div>'+
+ '<ol class="activity-timeline">'+timeline+'</ol>'+
+ '<div class="activity-current"><strong>'+esc(current)+'</strong></div>'+
+ (complete.length?'<details class="activity-history"><summary>Previous updates ('+complete.length+')</summary><ol>'+complete.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol></details>':'')+
+ (issueLines.length?'<details class="activity-findings"><summary>Issues found ('+issueLines.length+')</summary><ul>'+issueLines.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></details>':'')+
+ '</section>';
+}
+
+function renderMessage(m,i){
+ const user=m.role==='user',progress=!!m.progressKey;
+ const actions=m.streaming||progress?'':user?'':'<div class="quick-actions" aria-label="Message actions">'+
+ '<button type="button" data-copy-message="'+i+'" aria-label="Copy response" title="Copy">'+uiIcon('copy')+'</button>'+
+ '<button type="button" data-save-message="'+i+'" aria-label="'+(m.saved?'Unsave':'Save')+' response" title="'+(m.saved?'Unsave':'Save')+'">'+uiIcon('saved')+'</button>'+
+ '<button type="button" data-retry-message="'+i+'" aria-label="Retry response" title="Retry">'+uiIcon('retry')+'</button>'+
+ '<details class="message-menu"><summary aria-label="More actions">'+uiIcon('more')+'</summary><div class="message-action-popover"><button type="button" data-repeat-message="'+i+'">'+uiIcon('spark')+'Explain simply</button></div></details></div>';
+ const userMenu=user&&!m.streaming?'<details class="message-menu"><summary aria-label="Message actions">'+uiIcon('more')+'</summary><div class="message-action-popover"><button type="button" data-copy-message="'+i+'">'+uiIcon('copy')+'Copy</button><button type="button" data-save-message="'+i+'">'+uiIcon('saved')+'Save message</button></div></details>':'';
+ return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
+ '<div class="message-stack">'+(progress?renderTaskActivity(m):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(m.text))+'</div>')+actions+'</div>'+userMenu+'</article>';
+}
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}
 function renderProfile(){return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Account & profile</h1><p class="muted">Personal details and connection controls, in one place.</p></div><section class="panel profile-card"><span class="profile-avatar">'+esc(localProfile.name.slice(0,1).toUpperCase())+'</span><h2>'+esc(localProfile.name)+'</h2><p class="muted">A local personal profile. This is not a separate sign-in account.</p><label class="s-select-label">Display name<input id="profile-name" value="'+esc(localProfile.name)+'" maxlength="50" autocomplete="nickname"></label><button class="btn" id="profile-save">Save profile</button></section><section class="panel"><h3>AI connection</h3><p>'+esc(capabilities?'Backend configuration verified this session':backend&&access?'Credentials saved on this device':'Not configured on this device')+'</p><button class="btn secondary" data-setting-jump="overview">Manage connection</button> <button class="btn secondary" data-setting-jump="privacy">Privacy & security</button></section>';}

@@ -13,10 +13,11 @@ export async function agentWork(env){
   get(env,ROOT+"/pulls?state=open&per_page=30"),
   get(env,ROOT+"/actions/workflows/sandbox-tests.yml/runs?per_page=30").catch(()=>({workflow_runs:[]})),
   get(env,ROOT+"/actions/workflows/project-tests.yml/runs?per_page=30").catch(()=>({workflow_runs:[]}))]);
- const runs=[...(sandbox.workflow_runs||[]),...(project.workflow_runs||[])];
+ const runs=[...(sandbox.workflow_runs||[]),...(project.workflow_runs||[])].sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0));
  const testsFor=branch=>{const run=runs.find(r=>new RegExp(" "+branch.replace(/[.*+?^${}()|[\]\\/]/g,"\\$&")+" @ ").test(r.display_title||""));return run?(run.status==="completed"?run.conclusion:"running"):"not run"};
  const tasks=await Promise.all(issues.filter(i=>!i.pull_request).slice(0,4).map(async i=>{
   const comments=i.comments?await get(env,ROOT+"/issues/"+i.number+"/comments?per_page=100").catch(()=>[]):[];
+  if(!Array.isArray(comments))return "- Task #"+i.number+" (updates unavailable)";
   const last=[...comments].reverse().find(c=>/github-actions|onlykappa/i.test(c.user?.login||""));
   return "- Task #"+i.number+" \""+short(i.title,80)+"\""+(last?": latest update: "+short(last.body,240):": no updates yet");
  }));

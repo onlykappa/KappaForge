@@ -90,7 +90,16 @@ async function reserveAgentRun(env) {
   const limit = env.DAILY_TASK_LIMIT === undefined ? 100 : Math.max(0, Number(env.DAILY_TASK_LIMIT) || 0);
   const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
   const r = await stub.fetch("https://memory.internal/usage/task-reserve", { method: "POST", body: JSON.stringify({ limit }) });
-  return { allowed: r.ok, limit };
+  const data = await r.json().catch(()=>({}));
+  return { allowed: r.ok && data.allowed === true, limit, receipt: data.receipt };
+}
+async function refundAgentRun(env, run) {
+  if(!env.MEMORY||!run?.receipt)return;
+  try {
+    const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+    await stub.fetch("https://memory.internal/usage/task-reserve",{method:"POST",
+      body:JSON.stringify({action:"refund",receipt:run.receipt})});
+  }catch(e){console.warn("Unable to refund failed agent reservation",String(e?.message||e));}
 }
 function safeEqual(a, b) {
   const enc = new TextEncoder();
@@ -197,15 +206,15 @@ export default {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await sendGuidance(env, input.task, input.text); return json(result, result.error ? result.status : 200, cors); }
-      catch { return json({ error: "Sending guidance to GitHub failed. Try again in a minute." }, 502, cors); }
+      try { const result = await sendGuidance(env, input.task, input.text); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 200, cors); }
+      catch { await refundAgentRun(env,run); return json({ error: "Sending guidance to GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/retry") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await retryTask(env, input.task); return json(result, result.error ? result.status : 202, cors); }
-      catch { return json({ error: "Starting the retry on GitHub failed. Try again in a minute." }, 502, cors); }
+      try { const result = await retryTask(env, input.task); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 202, cors); }
+      catch { await refundAgentRun(env,run); return json({ error: "Starting the retry on GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/undo") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
@@ -222,19 +231,22 @@ export default {
       const action = new URL(request.url).pathname === "/review" ? "review" : input.decision;
       if (!Number.isSafeInteger(number) || number < 1 || !(await listRepos(env)).includes(repo) || (action !== "review" && input.confirmed !== true))
         return json({ error: "Choose a pull request and confirm the action." }, 400, cors);
+      let fixRun=null;
       try {
         if (action === "fix") {
           const run = await reserveAgentRun(env);
+          fixRun=run;
           if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         }
         const result = action === "review" ? await reviewPR(env, repo, number) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
           action === "close" ? await closePR(env, repo, number) :
           action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+        if(result.error && fixRun)await refundAgentRun(env,fixRun);
         if (!result.error && action === "merge") await notifyOwner(env, "✅ Merged " + repo + " #" + number + ". " + (repo === "KappaForge" ? "KappaForge redeploys now; if anything breaks, use Undo last change on the Dashboard." : "") + "\n" + result.url);
         if (!result.error && action === "close") await notifyOwner(env, "Closed " + repo + " #" + number + " without merging.");
         return json(result, result.error ? result.status : ["fix", "test"].includes(action) ? 202 : 200, cors);
-      } catch { return json({ error: "GitHub review request failed." }, 502, cors); }
+      } catch { if(fixRun)await refundAgentRun(env,fixRun); return json({ error: "GitHub review request failed." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/decisions") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
@@ -296,8 +308,6 @@ export default {
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
-      const run = await reserveAgentRun(env);
-      if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
       const issueBody = taskBody(repo, mode, instructions, input.context);
       try {
@@ -315,9 +325,13 @@ export default {
           return json({ error: "Token authenticated as onlykappa, but KappaForge repository access returned HTTP " +
             repoResponse.status + ": " + String(info.message || "Access denied").slice(0, 160) }, 502, cors);
         }
+        const run = await reserveAgentRun(env);
+        if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
+        try {
         const created = await fetch(endpoint + "/issues", { method: "POST", headers,
           body: JSON.stringify({ title, body: issueBody, labels: ["kappa-task"] }) });
         if (!created.ok) {
+          await refundAgentRun(env,run);
           const details = await created.json().catch(() => ({}));
           const reason = typeof details.message === "string" ? details.message.slice(0, 180) : "Permission denied";
           const required = created.headers.get("x-accepted-github-permissions") || "not provided";
@@ -326,13 +340,16 @@ export default {
         const issue = await created.json();
         // KappaForge's agent accepts issues authored by onlykappa. Require an owner-authored
         // issue rather than weakening its authorization policy for bot identities.
-        if (issue.user?.login?.toLowerCase() !== "onlykappa")
+        if (issue.user?.login?.toLowerCase() !== "onlykappa"){
+          await refundAgentRun(env,run);
           return json({ error: "Issue #" + issue.number + " was created, but its author is not the authorized repository owner. Agent was not launched.", issueUrl: issue.html_url }, 409, cors);
+        }
         const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
         const dispatched = await fetch(endpoint + "/actions/workflows/" + workflowName + "/dispatches",
           { method: "POST", headers, body: JSON.stringify({ ref: "main", inputs: { issue_number: String(issue.number) } }) });
-        if (!dispatched.ok) return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);
+        if (!dispatched.ok){await refundAgentRun(env,run);return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);}
         return json({ issueNumber: issue.number, issueUrl: issue.html_url, status: "dispatched" }, 202, cors);
+        } catch(e) {await refundAgentRun(env,run);throw e;}
       } catch { return json({ error: "GitHub job request failed." }, 502, cors); }
     }
     const planning = new URL(request.url).pathname === "/plan";
