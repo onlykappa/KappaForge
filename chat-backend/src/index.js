@@ -90,7 +90,16 @@ async function reserveAgentRun(env) {
   const limit = env.DAILY_TASK_LIMIT === undefined ? 100 : Math.max(0, Number(env.DAILY_TASK_LIMIT) || 0);
   const stub = env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
   const r = await stub.fetch("https://memory.internal/usage/task-reserve", { method: "POST", body: JSON.stringify({ limit }) });
-  return { allowed: r.ok, limit };
+  const data = await r.json().catch(()=>({}));
+  return { allowed: r.ok && data.allowed === true, limit, receipt: data.receipt };
+}
+async function refundAgentRun(env, run) {
+  if(!env.MEMORY||!run?.receipt)return;
+  try {
+    const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+    await stub.fetch("https://memory.internal/usage/task-reserve",{method:"POST",
+      body:JSON.stringify({action:"refund",receipt:run.receipt})});
+  }catch(e){console.warn("Unable to refund failed agent reservation",String(e?.message||e));}
 }
 function safeEqual(a, b) {
   const enc = new TextEncoder();
@@ -296,8 +305,6 @@ export default {
       const headers = { "Authorization": "Bearer " + env.GITHUB_JOB_TOKEN,
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
-      const run = await reserveAgentRun(env);
-      if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
       const issueBody = taskBody(repo, mode, instructions, input.context);
       try {
@@ -315,9 +322,13 @@ export default {
           return json({ error: "Token authenticated as onlykappa, but KappaForge repository access returned HTTP " +
             repoResponse.status + ": " + String(info.message || "Access denied").slice(0, 160) }, 502, cors);
         }
+        const run = await reserveAgentRun(env);
+        if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
+        try {
         const created = await fetch(endpoint + "/issues", { method: "POST", headers,
           body: JSON.stringify({ title, body: issueBody, labels: ["kappa-task"] }) });
         if (!created.ok) {
+          await refundAgentRun(env,run);
           const details = await created.json().catch(() => ({}));
           const reason = typeof details.message === "string" ? details.message.slice(0, 180) : "Permission denied";
           const required = created.headers.get("x-accepted-github-permissions") || "not provided";
@@ -326,13 +337,16 @@ export default {
         const issue = await created.json();
         // KappaForge's agent accepts issues authored by onlykappa. Require an owner-authored
         // issue rather than weakening its authorization policy for bot identities.
-        if (issue.user?.login?.toLowerCase() !== "onlykappa")
+        if (issue.user?.login?.toLowerCase() !== "onlykappa"){
+          await refundAgentRun(env,run);
           return json({ error: "Issue #" + issue.number + " was created, but its author is not the authorized repository owner. Agent was not launched.", issueUrl: issue.html_url }, 409, cors);
+        }
         const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
         const dispatched = await fetch(endpoint + "/actions/workflows/" + workflowName + "/dispatches",
           { method: "POST", headers, body: JSON.stringify({ ref: "main", inputs: { issue_number: String(issue.number) } }) });
-        if (!dispatched.ok) return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);
+        if (!dispatched.ok){await refundAgentRun(env,run);return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);}
         return json({ issueNumber: issue.number, issueUrl: issue.html_url, status: "dispatched" }, 202, cors);
+        } catch(e) {await refundAgentRun(env,run);throw e;}
       } catch { return json({ error: "GitHub job request failed." }, 502, cors); }
     }
     const planning = new URL(request.url).pathname === "/plan";
