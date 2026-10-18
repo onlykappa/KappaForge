@@ -10,7 +10,7 @@ from engine.coder import gh, validate_files
 from engine.runner import ROOT, run_model
 
 BRANCH = re.compile(r"^kappa/(?:issue-\d+|cont-\d+-\d+)$")
-MAX_REVISIONS = 2
+MAX_REVISIONS = 3
 MARKER = "<!-- KAPPA_AUTOFIX:"
 
 def candidate(run):
@@ -21,6 +21,15 @@ def candidate(run):
 
 def revision_count(comments,branch):
     return sum(MARKER+branch+":" in (c.get("body") or "") for c in comments)
+
+
+def repair_diagnosis(evidence):
+    """Classify CI evidence; don't imply the step name proves a root cause."""
+    names=" ".join(e.get("step","") for e in evidence).lower()
+    if "syntax" in names or "lint" in names:return "Investigate syntax or lint diagnostics before changing code."
+    if "test" in names:return "Identify failing assertions and compare expected behavior with implementation."
+    if "build" in names or "compile" in names:return "Check compilation and API compatibility; preserve existing behavior."
+    return "Inspect the failing step and previous attempted corrections before selecting a minimal fix."
 
 
 def failure_evidence(jobs):
@@ -70,6 +79,9 @@ def revise_failed_run(run,token,key):
             "A failed step name does not identify the root cause; make minimal evidence-based corrections. "
             "Failed job and step metadata (not full logs): "+json.dumps(errors)+"\n"
             "Original owner-approved sandbox files: "+json.dumps(source)[:42000])
+    # A failed sandbox run contains no credentials. Preserve bounded, safe repair history.
+    prompt += "\\nDiagnosis: "+repair_diagnosis(errors)
+    prompt += "\\nDo not repeat unchanged output or invent missing declarations. Verify changes are real."
     model, answer=run_model(key,prompt,max_output_tokens=8192)
     try:
         fixed=validate_files(json.loads(answer.strip().removeprefix("```json").removesuffix("```").strip())["files"])
@@ -79,6 +91,7 @@ def revise_failed_run(run,token,key):
             if p.endswith(".py"):ast.parse(body,filename=p)
     except (ValueError,KeyError,TypeError,SyntaxError,json.JSONDecodeError):
         return {"status":"bad_repair"}
+    if all(next(body for p,body in fixed if p==item["path"])==item["content"] for item in source):return {"status":"unchanged_repair"}
     # Record attempt BEFORE changing source so retries cannot bypass the cap.
     gh(f"repos/{ROOT}/issues/{pr['number']}/comments",token,
        {"body":f"Autofix attempt for failed run {run['id']} using {model}. "
@@ -90,6 +103,11 @@ def revise_failed_run(run,token,key):
            {"branch":branch,"sha":existing["sha"],
             "message":f"fix: bounded sandbox validation retry for PR #{pr['number']}",
             "content":base64.b64encode(body.encode()).decode()},method="PUT")
+    gh(f"repos/{ROOT}/issues/{pr['number']}/comments",token,
+       {"body":"### KappaForge auto-repair in progress\\n\\nDiagnosed failed CI step and applied a bounded correction. Re-running sandbox validation.\\n\\n"
+               +f"**Diagnosis:** {repair_diagnosis(errors)}\\n"
+               +f"**Changed files:** {len(fixed)}\\n"
+               +f"**Verification:** Pending sandbox tests."})
     gh(f"repos/{ROOT}/actions/workflows/sandbox-tests.yml/dispatches",token,
        {"ref":"main","inputs":{"branch":branch,"candidate_sha":gh(f"repos/{ROOT}/git/ref/heads/{branch}",token)["object"]["sha"]}})
     return {"status":"revised","branch":branch}
