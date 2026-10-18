@@ -34,7 +34,13 @@ root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersio
 })(globalThis);
 
 // Interpret lifecycle metadata, not words quoted inside an audit's findings.
-globalThis.KappaJobs={report(comment){
+globalThis.KappaJobs={autoLaunchAllowed(job){
+ // Never auto-launch long-running, broad, or custom modes; these need explicit review.
+ return !!job&&['develop','audit','project-map','code'].includes(job.mode)
+  &&typeof job.instructions==='string'&&job.instructions.trim().length>=10
+  &&typeof job.repo==='string'&&/^onlykappa\\/[A-Za-z0-9_.-]+$/.test(job.repo)
+  &&job.instructions.length<=3500;
+},report(comment){
  if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string')return null;
  const body=comment.body.replace(/<!--[\s\S]*?-->/g,'').replace(/\\`/g,'`').trim();
  const heading=body.split('\n')[0];let status;
