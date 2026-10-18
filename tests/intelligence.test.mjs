@@ -1,3 +1,4 @@
+import './ios-keyboard-layout.test.mjs';
 import './bug-audit.test.mjs';
 import './chat-activity-ui.test.mjs';
 import test from 'node:test';
@@ -474,4 +475,14 @@ test('failed task reservation is refunded exactly once and does not exhaust dail
  assert.equal((await (await usageStore(state,make({action:'refund',receipt}))).json()).refunded,false);
  assert.equal((await usageStore(state,make({limit:1}))).status,200);
  assert.equal((await usageStore(state,make({action:'refund',receipt:'bad'}))).status,400);
+});
+
+test('task updates summarize results and preserve a full report link',()=>{
+ const complete=globalThis.KappaJobs.conciseReport('tests-passed','### Tests passed\\n\\n**Verification:** Unit checks passed\\nNo failures','https://github.com/onlykappa/KappaForge/issues/91');
+ assert.match(complete,/Tests passed/);
+ assert.match(complete,/Verification/);
+ assert.match(complete,/View full report/);
+ const pending=globalThis.KappaJobs.conciseReport('partial','### KappaForge auto-repair in progress\\n\\n**Verification:** Pending sandbox tests','https://github.com/onlykappa/KappaForge/issues/91');
+ assert.match(pending,/Progress update/);
+ assert.doesNotMatch(pending,/^\\*\\*Task complete\\*\\*/);
 });
