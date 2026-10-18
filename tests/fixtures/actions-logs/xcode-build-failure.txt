@@ -2,6 +2,8 @@
 2026-10-18T17:00:00.0100000Z ##[endgroup]
 2026-10-18T17:02:00.0000000Z /Users/runner/work/KappaForge/KappaForge/ios/KappaForge/KappaWebView.swift:42:17: error: cannot find 'bridge' in scope
 2026-10-18T17:02:00.1000000Z /Users/runner/work/KappaForge/KappaForge/ios/KappaForge/App.swift:9:5: warning: variable was never used
+2026-10-18T17:02:00.5000000Z Test Case '-[KappaForgeUITests.LaunchTests testBundledInterfaceLaunchAndSettings]' failed (47.198 seconds).
+2026-10-18T17:02:00.6000000Z Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' passed (36.619 seconds).
 2026-10-18T17:02:01.0000000Z ** BUILD FAILED **
 2026-10-18T17:02:01.1000000Z 
 2026-10-18T17:02:01.2000000Z ##[error]Process completed with exit code 65.

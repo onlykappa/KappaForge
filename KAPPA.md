@@ -63,6 +63,7 @@ preview/ contains the web-based interface used within the native application.
 * app-main.js: Attachments, messaging, startup.
 * settings.js: Application settings.
 * ui.js: Shared interface functionality.
+* actions-core.js: Shared GitHub Actions rules (run states, step progress, log parsing, reconciliation), also imported by the Worker; engine/actions_log.py is its Python twin.
 * core.js: Core browser functionality.
 * markdown.js: Markdown processing.
 * stream.js: Streaming response functionality.

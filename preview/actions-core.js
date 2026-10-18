@@ -89,7 +89,7 @@ function redact(text){let out=String(text??'');for(const [pattern,to] of SECRETS
 const STAMP=/^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?/;
 const ANSI=/\x1b\[[0-9;?]*[A-Za-z]/g;
 const FAILURE=[/^npm ERR! /,/^Error: /,/^(?:[A-Za-z]*Error|AssertionError)(?: \[[A-Z_]+\])?: /,/^Traceback \(most recent call last\):/,/^FAIL(?:ED)?\b/,/^not ok \d+ /,
- /^E {3}/,/\berror TS\d+:/,/: error: /,/^\*\* (?:BUILD|TEST) FAILED \*\*/,/^✖ /,/^Process completed with exit code [1-9]\d*\.?$/];
+ /^E {3}/,/\berror TS\d+:/,/: error: /,/^\*\* (?:BUILD|TEST) FAILED \*\*/,/^Test Case '.*' failed /,/^✖ /,/^Process completed with exit code [1-9]\d*\.?$/];
 const SUCCESS=[/^\*\* (?:BUILD|TEST) SUCCEEDED \*\*/,/^OK(?: \(.*\))?$/,/^# fail 0$/,/^All checks passed\b/i,/^✔ /];
 const LIMIT={errors:50,warnings:20,signals:20,tail:30,line:400};
 function parseLog(text){

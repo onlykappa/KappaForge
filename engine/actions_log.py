@@ -22,7 +22,7 @@ STAMP = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 FAILURE = [re.compile(p) for p in (
     r"^npm ERR! ", r"^Error: ", r"^(?:[A-Za-z]*Error|AssertionError)(?: \[[A-Z_]+\])?: ", r"^Traceback \(most recent call last\):",
-    r"^FAIL(?:ED)?\b", r"^not ok \d+ ", r"^E {3}", r"\berror TS\d+:", r": error: ", r"^\*\* (?:BUILD|TEST) FAILED \*\*", r"^✖ ",
+    r"^FAIL(?:ED)?\b", r"^not ok \d+ ", r"^E {3}", r"\berror TS\d+:", r": error: ", r"^\*\* (?:BUILD|TEST) FAILED \*\*", r"^Test Case '.*' failed ", r"^✖ ",
     r"^Process completed with exit code [1-9]\d*\.?$")]
 SUCCESS = [re.compile(p, f) for p, f in (
     (r"^\*\* (?:BUILD|TEST) SUCCEEDED \*\*", 0), (r"^OK(?: \(.*\))?$", 0), (r"^# fail 0$", 0), (r"^All checks passed\b", re.I), (r"^✔ ", 0))]

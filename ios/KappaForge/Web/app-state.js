@@ -208,7 +208,7 @@ function active(){return chats.find(c=>c.id===current)}
 // Where each page was scrolled, so moving between Chat and the dashboard returns to the same place.
 const viewScroll={};
 function rememberScroll(){if(view==="chat")viewScroll.chat={id:current,y:scrollY,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};else if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY}
-function navigate(v){if(v==="settings"&&view!=="settings")settingsSection="";rememberScroll();view=v;closeNavigation();render();if(v==="home")scrollTo(0,viewScroll["home:"+dashboardState.mode]||0);const title=document.querySelector("#content h1,#content h2")||document.getElementById("heading");title.setAttribute("tabindex","-1");title.focus({preventScroll:true});if(v==="home"){load();refreshActivity(true)}}
+function navigate(v){if(v==="settings"&&view!=="settings")settingsSection="";rememberScroll();view=v;closeNavigation();render();if(v==="home")scrollTo(0,viewScroll["home:"+dashboardState.mode]||0);const title=document.querySelector("#content h1,#content h2")||document.getElementById("heading");title.setAttribute("tabindex","-1");title.focus({preventScroll:true});if(v==="home"){load();refreshActivity()}}
 function history(){const q=conversationSearch.trim().toLowerCase();const matches=chats.filter(c=>!q||(c.title+" "+c.messages.map(m=>m.text).join(" ")).toLowerCase().includes(q));document.getElementById("history").innerHTML=matches.map(c=>'<button class="history '+(c.id===current&&view==="chat"?'active':'')+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")||'<p class="history-empty">'+(q?'No matching conversations':'Your conversations will appear here.')+'</p>';}
 // Workflow Monitor: live GitHub Actions state for the dashboard. It streams changes from the Worker's /actions
 // route, falls back to polling when streaming is unavailable, keeps the last snapshot for an instant first paint,
@@ -256,8 +256,11 @@ async function monitorPoll(){
  try{
   const r=await githubFetch(m.repo+"/actions/runs?per_page=20");
   if(!r.ok)throw Error(r.status===403?"GitHub rate limit reached. Showing the last known state.":"GitHub HTTP "+r.status);
-  monitorApply({type:"snapshot",runs:((await r.json()).workflow_runs||[]).map(KappaActions.normalizeRun).filter(Boolean)});
- }catch(e){m.error=e.message;monitorChanged()}
+  const list=(await r.json())?.workflow_runs;
+  // Never let a malformed answer wipe the list.
+  if(!Array.isArray(list))throw Error("GitHub returned an unexpected run list. Showing the last known state.");
+  monitorApply({type:"snapshot",runs:list.map(KappaActions.normalizeRun).filter(Boolean)});
+ }catch(e){if(m.mode!=="live"){m.error=e.message;monitorChanged()}}
 }
 async function monitorStream(){
  const m=workflowMonitor;
@@ -289,6 +292,12 @@ async function monitorStream(){
    m.timer=setTimeout(monitorStream,m.retry?Math.min(30000,1000*2**m.retry):250);
   }
  }
+}
+// A manual refresh: a fresh stream (which starts with a full snapshot) when connected, otherwise one poll.
+async function monitorRefresh(){
+ const m=workflowMonitor;
+ if(backend&&access&&m.mode!=="poll"&&!m.paused){m.controller?.abort();m.controller=null;clearTimeout(m.timer);m.timer=0;return monitorStream()}
+ return monitorPoll();
 }
 function monitorResume(){const m=workflowMonitor;if(!m.paused)return;m.paused=false;if(m.mode==="poll"&&backend&&access)m.mode="idle";monitorStream()}
 function monitorPause(){const m=workflowMonitor;m.paused=true;clearTimeout(m.timer);m.timer=0;m.controller?.abort();m.controller=null;if(m.mode!=="poll")m.mode="idle"}

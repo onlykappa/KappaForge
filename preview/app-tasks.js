@@ -163,9 +163,9 @@ document.addEventListener("keydown",e=>{
 // The 90-second refresh and the Refresh buttons. A live stream already delivers changes, so only poll without one.
 async function refreshActivity(force=false){
  if(activity.busy||document.hidden||(!force&&view!=="home"))return;
- if(!force&&workflowMonitor.mode==="live")return;
+ if(!force&&backend&&access&&workflowMonitor.mode!=="poll"&&!workflowMonitor.paused)return;
  activity.busy=true;
- try{await monitorPoll();activity.last=new Date();activity.error=workflowMonitor.error}
+ try{await (force?monitorRefresh():monitorPoll());activity.last=new Date();activity.error=workflowMonitor.error}
  finally{activity.busy=false}
 }
 

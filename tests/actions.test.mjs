@@ -143,3 +143,23 @@ test('a GitHub failure ends the stream with an error the client can show',async(
  const packets=[];for await(const p of KappaStream.sse(streamActions({},'KappaForge',{fetcher,sleep:async()=>{}})))packets.push(p);
  assert.deepEqual(packets.map(p=>p.type),['error','end']);assert.match(packets[0].error,/rate limit/);
 });
+test('post-run verification confirms ghosts one by one and ignores runs that started after the snapshot',async()=>{
+ const {verify,describe}=await import('../scripts/verify-actions-state.mjs');
+ const remote=[raw(9,{created_at:'2026-10-18T11:00:00Z'}),raw(8,{status:'in_progress',conclusion:null}),raw(7)];
+ const {fetcher,calls}=github([
+  [/actions\/runs\?per_page=/,()=>Response.json({workflow_runs:remote})],
+  [/actions\/runs\/6$/,()=>new Response('{}',{status:404})],
+  [/actions\/runs\/5$/,()=>Response.json(raw(5,{conclusion:'failure'}))]]);
+ const shown=[K.normalizeRun(raw(8)),K.normalizeRun(raw(7)),{...K.normalizeRun(raw(6)),createdAt:'2026-10-18T10:00:08Z'},{...K.normalizeRun(raw(5)),createdAt:'2026-10-18T10:00:09Z'}];
+ const report=await verify({repo:'KappaForge',lastSync:'2026-10-18T10:30:00Z',runs:shown},{token:'t',fetcher,now:Date.parse('2026-10-18T10:31:00Z')});
+ assert.deepEqual(report.ghosts,[6],'run 6 is gone from GitHub');
+ assert.deepEqual(report.stale.map(s=>s.id),[8,5],'run 5 was only older than the page, but its result changed');
+ assert.deepEqual(report.missing,[],'run 9 started after the snapshot');
+ assert.equal(report.ok,false);assert.equal(report.age,60);
+ assert.ok(calls.every(c=>c.headers.Authorization==='Bearer t'));
+ const text=describe(report);
+ assert.match(text,/ghost  #6/);assert.match(text,/stale  #8: status completed → in_progress/);
+ const clean=await verify({repo:'KappaForge',runs:remote.map(K.normalizeRun)},{fetcher});
+ assert.equal(clean.ok,true);assert.match(describe(clean),/matches GitHub \(3 runs checked\)/);
+ await assert.rejects(verify({runs:[]},{repo:'../x',fetcher}),/Invalid repository/);
+});
