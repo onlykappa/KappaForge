@@ -76,7 +76,15 @@ const chatObserver=new MutationObserver(()=>window.scrollTo({top:document.body.s
  resizeComposer();
 }
 function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');}
-function updateKeyboard(){const vv=window.visualViewport;const inset=vv?Math.max(0,innerHeight-vv.height-vv.offsetTop):0;const typing=document.activeElement===document.getElementById('message');document.documentElement.style.setProperty('--keyboard-inset',typing?inset+'px':'0px');document.body.classList.toggle('keyboard-open',typing&&inset>80);}
+function updateKeyboard(){
+ const vv=window.visualViewport;
+ const typing=document.activeElement===document.getElementById('message');
+ const inset=vv?Math.max(0,window.innerHeight-vv.height-vv.offsetTop):0;
+ const open=typing&&inset>80;
+ document.documentElement.style.setProperty('--keyboard-inset',open?inset+'px':'0px');
+ document.body.classList.toggle('keyboard-open',open);
+ if(open&&view==='chat')document.getElementById('composer')?.scrollIntoView({block:'nearest',behavior:'instant'});
+}
 function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
  if(uiInitialized)return;uiInitialized=true;
