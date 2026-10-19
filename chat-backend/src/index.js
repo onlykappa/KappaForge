@@ -216,6 +216,15 @@ export default {
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
     const executionPath=new URL(request.url).pathname;
+    if(executionPath==="/weather"){
+      const {lat,lon,units}=await request.json().catch(()=>({}));
+      if(!lat||!lon)return json({error:"Location required"},400,cors);
+      try{
+        const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=${units==='C'?'celsius':'fahrenheit'}&wind_speed_unit=${units==='C'?'kmh':'mph'}&timezone=auto`);
+        if(!res.ok)throw Error("Weather API failed");
+        return json(await res.json(),200,cors);
+      }catch(e){return json({error:"Weather unavailable"},502,cors);}
+    }
     if(executionPath==="/authorize"){
       try{
         if(!input.payload||typeof input.userText!=="string"||input.userText.length>3500||
