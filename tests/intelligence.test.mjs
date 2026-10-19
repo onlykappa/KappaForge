@@ -634,3 +634,93 @@ test('a model chosen in Settings that is no longer offered falls back to Automat
   assert.equal(strict.status,422,'with fallback off the owner asked for that model only');
  }finally{globalThis.fetch=old}
 });
+
+test('weather endpoint returns current conditions and forecast with imperial units',async()=>{
+ const old=globalThis.fetch;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'test'};
+ globalThis.fetch=async url=>{
+  if(String(url).includes('api.open-meteo.com')){
+   return Response.json({
+    current_weather:{temperature:72,windspeed:8,weathercode:0,time:'2026-10-19T14:00'},
+    daily:{temperature_2m_max:[78],temperature_2m_min:[55],precipitation_probability_max:[10],windspeed_10m_max:[12],weathercode:[0]}
+   });
+  }
+  return new Response('{}',{status:404});
+ };
+ try{
+  const r=await worker.fetch(req('/weather',{latitude:37.7749,longitude:-122.4194,units:'imperial'}),env);
+  assert.equal(r.status,200);
+  const data=await r.json();
+  assert.equal(data.current_weather.temperature,72);
+  assert.equal(data.current_weather.windspeed,8);
+  assert.equal(data.daily.temperature_2m_max[0],78);
+  assert.equal(data.daily.temperature_2m_min[0],55);
+  assert.equal(data.daily.precipitation_probability_max[0],10);
+  assert.equal(data.daily.windspeed_10m_max[0],12);
+ }finally{globalThis.fetch=old}
+});
+
+test('weather endpoint returns metric units when requested',async()=>{
+ const old=globalThis.fetch;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'test'};
+ globalThis.fetch=async url=>{
+  if(String(url).includes('api.open-meteo.com')){
+   return Response.json({
+    current_weather:{temperature:22,windspeed:13,weathercode:0,time:'2026-10-19T14:00'},
+    daily:{temperature_2m_max:[26],temperature_2m_min:[13],precipitation_probability_max:[10],windspeed_10m_max:[19],weathercode:[0]}
+   });
+  }
+  return new Response('{}',{status:404});
+ };
+ try{
+  const r=await worker.fetch(req('/weather',{latitude:37.7749,longitude:-122.4194,units:'metric'}),env);
+  assert.equal(r.status,200);
+  const data=await r.json();
+  assert.equal(data.current_weather.temperature,22);
+  assert.equal(data.current_weather.windspeed,13);
+  assert.equal(data.daily.temperature_2m_max[0],26);
+  assert.equal(data.daily.windspeed_10m_max[0],19);
+ }finally{globalThis.fetch=old}
+});
+
+test('weather endpoint rejects invalid coordinates',async()=>{
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'test'};
+ const r=await worker.fetch(req('/weather',{latitude:'invalid',longitude:-122.4194}),env);
+ assert.equal(r.status,400);
+ const data=await r.json();
+ assert.match(data.error,/Valid latitude and longitude required/);
+});
+
+test('weather endpoint handles Open-Meteo errors gracefully',async()=>{
+ const old=globalThis.fetch;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'test'};
+ globalThis.fetch=async url=>{
+  if(String(url).includes('api.open-meteo.com')){
+   return new Response('Service Unavailable',{status:503});
+  }
+  return new Response('{}',{status:404});
+ };
+ try{
+  const r=await worker.fetch(req('/weather',{latitude:37.7749,longitude:-122.4194,units:'imperial'}),env);
+  assert.equal(r.status,502);
+  const data=await r.json();
+  assert.match(data.error,/Weather service unavailable/);
+ }finally{globalThis.fetch=old}
+});
+
+test('weather endpoint handles network timeout',async()=>{
+ const old=globalThis.fetch;
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'test'};
+ globalThis.fetch=async url=>{
+  if(String(url).includes('api.open-meteo.com')){
+   throw new Error('Timeout');
+  }
+  return new Response('{}',{status:404});
+ };
+ try{
+  const r=await worker.fetch(req('/weather',{latitude:37.7749,longitude:-122.4194,units:'imperial'}),env);
+  assert.equal(r.status,502);
+  const data=await r.json();
+  assert.match(data.error,/Weather service unavailable/);
+ }finally{globalThis.fetch=old}
+});
