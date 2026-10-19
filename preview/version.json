@@ -1,5 +1,5 @@
 {
   "version": "2.2.9",
   "released": "2026-10-19",
-  "notes": "Chat now uses every current Gemini Flash model (3.5 to 3.8) instead of an old fixed list, and stops retrying retired or rate-limited models on every message (gemini-2.5-flash had 101 failed attempts). New: Actions \u2192 Check AI providers asks every model the agent can use for one word and shows which ones really answer."
+  "notes": "Chat now uses every current Gemini Flash model (3.5 to 3.8) instead of an old fixed list, and stops retrying retired or rate-limited models on every message (gemini-2.5-flash had 101 failed attempts). A model picked in Settings that is no longer offered falls back to Automatic instead of blocking chat. The agent fetches model lists once per run instead of before every call, and skips retired models. New: Actions \u2192 Check AI providers shows which models really answer."
 }

@@ -17,6 +17,10 @@ def response(data):
     return result
 
 class ModelRoutingTests(unittest.TestCase):
+    def setUp(self):
+        runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.EXHAUSTED.clear()
+
     def test_approved_models_only(self):
         available = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash", "other"}
         self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-flash"])
@@ -144,6 +148,10 @@ if __name__ == "__main__":
 
 
 class CutOffAnswerTests(unittest.TestCase):
+    def setUp(self):
+        runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.EXHAUSTED.clear()
+
     def test_strongest_flash_model_goes_first(self):
         available = {"gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"}
         self.assertEqual(runner.select_models(available)[:2], ["gemini-3-flash", "gemini-2.5-flash"])
@@ -198,6 +206,7 @@ class RateLimits(unittest.TestCase):
     """Task #123 spent ~15 s on each of five rate-limited models on every call; they now rest instead."""
 
     def setUp(self):
+        runner._lists.clear()
         runner.EXHAUSTED.clear()
         runner.COOLDOWN.clear()
         self.addCleanup(runner.EXHAUSTED.clear)
@@ -249,6 +258,7 @@ class StrongModelsBeforeLite(unittest.TestCase):
         "weakp": {"kind": "openai", "base": "https://weak.example/v1", "context": 100000, "models": ["small-1"]}}}
 
     def setUp(self):
+        runner._lists.clear()
         runner.EXHAUSTED.clear()
         runner.COOLDOWN.clear()
         self.addCleanup(runner.EXHAUSTED.clear)
@@ -304,6 +314,10 @@ class BestModelsFirst(StrongModelsBeforeLite):
 class ProviderCheck(unittest.TestCase):
     """The "Check AI providers" workflow: which models really answer, without printing keys."""
 
+    def setUp(self):
+        runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.EXHAUSTED.clear()
+
     def test_missing_keys_answers_and_failures_are_reported(self):
         from engine import provider_check
 
@@ -324,3 +338,30 @@ class ProviderCheck(unittest.TestCase):
         self.assertIn("GEMINI_API_KEY is not set", text)
         self.assertIn("1 model answered", text)
         self.assertNotIn("secret-", text)
+
+
+class ModelListsAndRetiredModels(unittest.TestCase):
+    """Model lists are fetched once per run, and a retired model (404) is not asked again on every call."""
+
+    def setUp(self):
+        runner._lists.clear()
+        runner.EXHAUSTED.clear()
+        runner.COOLDOWN.clear()
+        self.addCleanup(runner._lists.clear)
+        self.addCleanup(runner.EXHAUSTED.clear)
+
+    def test_one_list_per_run_and_404_models_rest(self):
+        asked = []
+        def urlopen(req, timeout=None):
+            asked.append(req.full_url)
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/" + m, "supportedGenerationMethods": ["generateContent"]}
+                                            for m in ("gemini-2.5-flash", "gemini-3-flash-lite")]})
+            if "gemini-2.5-flash:" in req.full_url:
+                raise urllib.error.HTTPError(req.full_url, 404, "gone", {}, io.BytesIO(b""))
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "ok"}]}}]})
+        with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            for _ in range(3):
+                self.assertEqual(runner.run_model("key", "p", allowed=set()), ("gemini-3-flash-lite", "ok"))
+        self.assertEqual(sum("/models?" in u for u in asked), 1, "the model list is fetched once")
+        self.assertEqual(sum("gemini-2.5-flash:" in u for u in asked), 1, "a retired model is asked once, not every call")

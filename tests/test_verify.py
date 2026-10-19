@@ -133,6 +133,11 @@ def response(data):
 
 
 class JsonMode(unittest.TestCase):
+    def setUp(self):
+        from engine import runner
+        runner._lists.clear()
+        runner.EXHAUSTED.clear()
+
     def test_gemini_is_asked_for_json_when_the_caller_needs_it(self):
         from engine import runner
         sent = []

@@ -632,8 +632,12 @@ export default {
       // A Gemini outage or exhausted key should not block the free fallback providers.
       const available=awake(await discover(env).catch(()=>[]));
       const manualGemini=typeof prefs.model==="string"&&prefs.model!=="auto"&&!prefs.model.includes(":");
-      if(manualGemini&&!available.includes(prefs.model))return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
-      const candidates=await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia);
+      let candidates=manualGemini&&!available.includes(prefs.model)?[]:await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia);
+      // A model chosen in Settings that is no longer offered (retired or renamed) falls back to Automatic when
+      // fallback is on, instead of refusing every message; with fallback off the owner asked for that model only.
+      if(!candidates.length&&prefs.fallback!==false&&prefs.model&&prefs.model!=="auto"){
+        candidates=await fallbackRoutes(env,routes(available,{...prefs,model:"auto"},isComplex(input)),{...prefs,model:"auto"},chat.hasMedia);
+      }
       if(!candidates.length)return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));

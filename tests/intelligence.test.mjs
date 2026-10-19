@@ -619,3 +619,17 @@ test('chat finds every current Flash model instead of a stale fixed list, and re
   assert.deepEqual(awake(['gemini-2.5-flash']),['gemini-2.5-flash'],'with nothing else left it is tried anyway');
  }finally{globalThis.fetch=old}
 });
+test('a model chosen in Settings that is no longer offered falls back to Automatic instead of refusing every message',async()=>{
+ const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);const asked=[];
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'retired-choice-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async url=>{url=String(url);
+  if(url.includes('/models?'))return Response.json({models:[{name:'models/gemini-3.5-flash-lite',supportedGenerationMethods:['generateContent']}]});
+  if(url.includes(':generateContent')){asked.push(url.split('/models/')[1].split(':')[0]);return Response.json({candidates:[{content:{parts:[{text:'Still here'}]}}]})}
+  return new Response('{}',{status:404})};
+ try{
+  const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:true}}),env);
+  assert.equal(r.status,200);assert.equal((await r.json()).reply,'Still here');assert.deepEqual(asked,['gemini-3.5-flash-lite']);
+  const strict=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:false}}),env);
+  assert.equal(strict.status,422,'with fallback off the owner asked for that model only');
+ }finally{globalThis.fetch=old}
+});
