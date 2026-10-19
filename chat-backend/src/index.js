@@ -122,7 +122,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/weather"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
@@ -134,6 +134,18 @@ export default {
       try{const report=await projectHealth(env,body.repo);return json(report,report.status||200,cors)}catch{return json({error:"GitHub diagnostics timed out or failed. Existing repository data is unchanged."},502,cors)}
     }
     if(new URL(request.url).pathname==="/repos")return json({owner:"onlykappa",repos:await listRepos(env)},200,cors);
+    if(new URL(request.url).pathname==="/weather"){
+      const body=await request.json().catch(()=>({}));
+      const lat=Number(body.latitude),lon=Number(body.longitude),units=body.units==="metric"?"metric":"imperial";
+      if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude and longitude required"},400,cors);
+      try{
+        const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&temperature_unit=${units==="metric"?"celsius":"fahrenheit"}&windspeed_unit=${units==="metric"?"kmh":"mph"}&precipitation_unit=inch`;
+        const res=await fetch(url,{signal:AbortSignal.timeout(10000)});
+        if(!res.ok)throw Error("Open-Meteo HTTP "+res.status);
+        const data=await res.json();
+        return json(data,200,cors);
+      }catch(e){return json({error:"Weather service unavailable: "+e.message},502,cors);}
+    }
     if(new URL(request.url).pathname==="/github"){
       if(!env.GITHUB_JOB_TOKEN)return json({error:"GitHub token not configured"},503,cors);
       const body=await request.json().catch(()=>({}));
