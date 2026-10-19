@@ -214,6 +214,7 @@ export default {
       if (raw.length > 4500000) return json({ error: "Request too large" }, 413, cors);
       input = JSON.parse(raw);
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
+    if(!input||typeof input!=="object"||Array.isArray(input))return json({error:"Expected a JSON object"},new URL(request.url).pathname==="/authorize"?403:400,cors);
     const executionPath=new URL(request.url).pathname;
     if(executionPath==="/authorize"){
       try{
@@ -249,14 +250,14 @@ export default {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await sendGuidance(env, input.task, input.text); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 200, cors); }
+      try { const result = await sendGuidance(env, input.task, input.text, executionAuthorization); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 200, cors); }
       catch { await refundAgentRun(env,run); return json({ error: "Sending guidance to GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/retry") {
       if (!env.GITHUB_JOB_TOKEN) return json({ error: "GitHub integration is not configured." }, 503, cors);
       const run = await reserveAgentRun(env);
       if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
-      try { const result = await retryTask(env, input.task); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 202, cors); }
+      try { const result = await retryTask(env, input.task, executionAuthorization); if(result.error)await refundAgentRun(env,run); return json(result, result.error ? result.status : 202, cors); }
       catch { await refundAgentRun(env,run); return json({ error: "Starting the retry on GitHub failed. Try again in a minute." }, 502, cors); }
     }
     if (new URL(request.url).pathname === "/undo") {
@@ -371,8 +372,13 @@ export default {
         // The same request sent again within minutes (double taps, a retried send) joins the task it already started.
         const sameRequest = issueBody.split("\n\nConversation context")[0].split("\n\nApproved from KappaForge Chat.")[0];
         const recent = await fetch(endpoint + "/issues?labels=kappa-task&state=open&sort=created&direction=desc&per_page=10", { headers }).then(r => r.ok ? r.json() : []).catch(() => []);
-        const duplicate = Array.isArray(recent) && recent.find(i => !i.pull_request && Date.now() - Date.parse(i.created_at || 0) < 3 * 60 * 1000 && typeof i.body === "string" && i.body.startsWith(sameRequest));
-        if (duplicate) return json({ issueNumber: duplicate.number, issueUrl: duplicate.html_url, status: "existing" }, 200, cors);
+        const duplicate = Array.isArray(recent) && recent.find(i => !i.pull_request && Date.now() - Date.parse(i.created_at || 0) < 3 * 60 * 1000 && typeof i.body === "string" && i.body.split("\n\nConversation context")[0].split("\n\nApproved from KappaForge Chat.")[0]===sameRequest);
+        if (duplicate) {
+          const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
+          const bound=await stub.fetch("https://memory.internal/authorization/bind",{method:"POST",body:JSON.stringify({id:executionAuthorization.id,conversationId:executionAuthorization.conversationId,issueNumber:duplicate.number})});
+          if(!bound.ok)return json({error:"Request cancelled before joining the existing task"},409,cors);
+          return json({ issueNumber: duplicate.number, issueUrl: duplicate.html_url, status: "existing" }, 200, cors);
+        }
         const run = await reserveAgentRun(env);
         if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         try {
@@ -437,7 +443,7 @@ export default {
         }
         messages.push({ role: m.role === "assistant" ? "model" : "user", parts });
       }
-      if (messages.at(-1).role !== "user") return json({ error: "Last message must be user" }, 400, cors);
+      if (!messages.length || messages.at(-1).role !== "user") return json({ error: "Last message must be user" }, 400, cors);
     }
 
 
@@ -673,19 +679,19 @@ export default {
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
-        let result;try{result=await response.json()}finally{clearTimeout(timeout)}
+        let result;try{result=await response.json()}catch{await record(null,false);continue}finally{clearTimeout(timeout)}
         if(!gemini)result=normalizeResult(route,result);
-        const usage=await record(result,!!result.candidates?.[0]?.content?.parts?.some(p=>p.text));
-        const answer = result.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim();
+        const parts=result?.candidates?.[0]?.content?.parts;
+        const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {
-          if (!planning) return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);
+          if (!planning) {const usage=await record(result,true);return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);}
           let proposal;
           try { proposal = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
-          catch { return json({ error: "Planner returned invalid JSON." }, 502, cors); }
+          catch { await record(result,false);continue; }
           const repos = (await listRepos(env)).map(name => "onlykappa/" + name);
           const modes = ["audit", "code", "develop", "repair", "continuous", "continuous-code", "watch", "project-map"];
-          if (!proposal || typeof proposal.isTask !== "boolean") return json({ error: "Invalid planner response." }, 502, cors);
-          if (!proposal.isTask) return json({ isTask: false }, 200, cors);
+          if (!proposal || typeof proposal.isTask !== "boolean") {await record(result,false);continue;}
+          if (!proposal.isTask) {await record(result,true);return json({ isTask: false }, 200, cors);}
           if (!repos.includes(proposal.repo) || !modes.includes(proposal.mode) ||
               (!["audit","project-map","develop"].includes(proposal.mode) && proposal.repo !== "onlykappa/KappaForge") ||
               typeof proposal.instructions !== "string" || proposal.instructions.trim().length < 10 ||
@@ -695,12 +701,14 @@ export default {
             return json({ error: "Repair requires a specific source file." }, 422, cors);
           if (proposal.mode === "continuous-code" && !/^Step 1:\s*.{15,}$/im.test(proposal.instructions))
             return json({ error: "Continuous coding requires explicit numbered steps." }, 422, cors);
+          await record(result,true);
           return json({ isTask: true, proposal: {
             repo: "onlykappa/"+(mentionedRepo(input.request,repos.map(repo=>repo.split("/")[1]))||"KappaForge"), mode: classify(input.request)==="investigation"?"audit":proposal.mode,
-            title: proposal.title.trim().length >= 5 && proposal.title.trim().length <= 105 ? proposal.title.trim() : requestText(input.request).split("\n")[0].slice(0, 105),
+            title: proposal.title.trim().length >= 5 && proposal.title.trim().length <= 105 ? proposal.title.trim() : input.request.trim().split("\n")[0].slice(0, 105),
             instructions: input.request.trim()
           } }, 200, cors);
         }
+        await record(result,false);
       }
       return json({ error: "All approved AI routes unavailable (last HTTP " + lastStatus + "). Free daily limits may be used up; add another provider key or try later." }, 502, cors);
     } catch {

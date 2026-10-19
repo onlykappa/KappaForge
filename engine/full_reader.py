@@ -35,7 +35,7 @@ def status_from_comments(comments, sha, issue_number):
         if found:
             try:
                 obj = json.loads(found.group(1))
-                if obj.get("sha") == sha and obj.get("issue") == issue_number:
+                if (sha is None or obj.get("sha") == sha) and obj.get("issue") == issue_number:
                     return obj
             except (ValueError, TypeError):
                 continue
@@ -48,8 +48,12 @@ def inspect_batch(repo, issue_number, branch, token, api_key, get, model, commen
         raise ValueError("Invalid repository")
     info = get("repos/" + repo)
     ref = parse_branch("Branch: " + branch) if branch else info["default_branch"]
-    ref_data = get("repos/" + repo + "/commits/" + urllib.parse.quote(ref, safe=""))
-    sha = ref_data["sha"]
+    # Resume the original immutable snapshot even if its branch has moved between batches.
+    prior = status_from_comments(comments, None, issue_number)
+    sha = prior.get("sha") if prior else None
+    if not sha:
+        ref_data = get("repos/" + repo + "/commits/" + urllib.parse.quote(ref, safe=""))
+        sha = ref_data["sha"]
     tree = get("repos/" + repo + "/git/trees/" + sha + "?recursive=1")
     if tree.get("truncated"):
         raise RuntimeError("Git tree truncated: audit cannot claim full coverage")

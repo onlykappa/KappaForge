@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
+from engine.verify import open_problems as requirements_open, review_record
 
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
@@ -478,13 +479,18 @@ def repair_evidence(exc):
         return ""
     # Search the entire file, not only task-keyword excerpts. Minified JS often has one enormous line;
     # locate a real substring within it rather than showing only that line's first 80 characters.
-    wanted = exc.find[:2000]
+    wanted = exc.find
     center = 0
     for width in (120, 60, 30, 15, 7):
-        candidates = (exc.text.find(wanted[i:i + width]) for i in range(0, max(1, len(wanted) - width + 1), width))
-        found = next((p for p in candidates if p >= 0), None)
+        candidates = ((i, exc.text.find(wanted[i:i + width])) for i in range(0, max(1, min(len(wanted), 2000) - width + 1), width))
+        found = next(((i, p) for i, p in candidates if p >= 0), None)
         if found is not None:
-            center = found
+            i, p = found
+            aligned = max(0, p - i)
+            actual = exc.text[aligned:aligned + len(wanted)]
+            # Focus on the divergence, even when a minified edit shares thousands of leading characters.
+            difference = next((n for n, (a, b) in enumerate(zip(wanted, actual)) if a != b), min(len(wanted), len(actual)))
+            center = min(len(exc.text), aligned + difference)
             break
     start, end = max(0, center - 600), min(len(exc.text), center + 2000)
     evidence = exc.text[start:end]
@@ -524,7 +530,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         '"files":[{"path":"existing/file.py","edits":[{"find":"exact unique text from the file","replace":"new text"}]},'
         '{"path":"new/file.py","content":"full file"}]}\n'
         "Rules: each find must be copied exactly from the file below and occur exactly once; keep finds "
-        "short but unique. Use content only for new files or a full rewrite of a file shown below. "
+        "short but unique, preferably under 300 characters; split long minified handlers into small edits. "
+        "Use content only for new files or a full rewrite of a file shown below. "
         + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
         f"At most {budget.changed_files} files. Never edit .github/, deployment config, lockfiles, secrets "
         "or the agent's own guardrail files. Never weaken authentication or authorization. "
@@ -784,7 +791,9 @@ class Progress:
         every few seconds; the next step change carries anything held back."""
         if self.activity and self.activity[-1]["text"] == text[:240]:
             return
-        line = {"kind": kind, "text": text[:240], "at": int(time.time() * 1000)}
+        if write:
+            self.updated = max(self.updated, Progress.clock())
+        line = {"kind": kind, "text": text[:240], "at": int(getattr(self, "updated", time.time()) * 1000)}
         # Models asked one after another collapse into the latest, so a busy task doesn't push its first lines
         # ("Read 10 files", "Planned 3 steps") out of the feed.
         if text.startswith("Asking ") and self.activity and self.activity[-1]["text"].startswith("Asking "):
@@ -940,17 +949,26 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         return cache.get(path, "")
 
     reqs, problems = [], []
+    outstanding = list(UNFINISHED)
+    previous_review_problems = []
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
-        if not round_:
-            problems = list(UNFINISHED) + problems
         review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
         files_needed = []
         if review:
             reqs, found, files_needed = review
-            problems += [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
-                         for r in reqs if r.get("met") is not True] + found
+            previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
+                                       for r in reqs if r.get("met") is not True] + found
+            if not reqs:
+                previous_review_problems.append("Requirement review returned no requirements; verification is incomplete")
+            elif not previous_review_problems:
+                outstanding = []
+        else:
+            problems.append("Requirement review unavailable; task completion is not verified")
+        if require_test and needs_test(changes) and not has_tests(changes):
+            problems.append("No test proves the change works yet: add or update a regression test")
+        problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
         if not problems or round_ == MAX_CHECK_ROUNDS:
             break
         progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
@@ -1039,6 +1057,7 @@ def produce_development_pr(issue, api_key, token):
     progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress)
+    explanation = explanation or summary
     if verdict and open_problems and explanation:
         # The model describes what it meant to build; with problems open that description is not a fact.
         explanation = (verdict + "\n\nWhat the agent says it did (not verified): " + explanation)[:2000]
@@ -1055,7 +1074,7 @@ def produce_development_pr(issue, api_key, token):
     pr = gh(f"repos/{repo}/pulls", repo_token, {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
         "head": branch, "base": base, "draft": True,
-        "body": review_body(number, model, explanation, summary, changes, design)})
+        "body": review_body(number, model, explanation, summary, changes, design, open_problems)})
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
@@ -1076,14 +1095,14 @@ def produce_development_pr(issue, api_key, token):
     return pr["html_url"]
 
 
-def review_body(number, model, explanation, summary, changes, design=""):
+def review_body(number, model, explanation, summary, changes, design="", problems=()):
     # The app shows the "What this does" section on its review card; keep the heading stable.
     # Fixes read the design notes back from here.
     return (f"Owner-approved development for {ROOT}#{number}. Model: `{model}`\n\n"
             f"## What this does\n{explanation or summary}\n\n## Technical summary\n{summary}\n\n"
             + (f"## Design notes\n{design}\n\n" if design else "") +
             "## Changed files\n" + "\n".join("- `" + p + "`" for p in changes) +
-            "\n\n**AI-generated. Merge only after the sandbox tests pass and you have read the summary.**")
+            "\n\n**AI-generated. Merge only after the sandbox tests pass and you have read the summary.**\n\n" + review_record(problems))
 
 
 def job_log(job_id, token, limit=7000):
@@ -1173,8 +1192,23 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
+    pending = requirements_open(pr)
+    if pending:
+        if not failed_jobs:
+            task = task.replace("The independent checks FAILED for this change:", "Complete this unfinished change; the available checks may pass:", 1)
+        task = ("Complete the original task's unfinished requirements, even if the existing tests pass.\n"
+                + "\n".join("- " + p for p in pending) + "\n\n" + task)
     allowed = code_providers(is_private(repo, repo_token))
     model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
+    if pending:
+        prior = list(UNFINISHED)
+        UNFINISHED[:] = pending
+        try:
+            changes, verdict, remaining = check_the_work(api_key, task, repo, head_sha, repo_token, sources, existing,
+                                                        changes, guide, allowed, design, has_tests(existing), Progress.latest)
+        finally:
+            UNFINISHED[:] = prior
+        explanation = verdict + "\n\n" + explanation + "\n\n" + review_record(remaining)
     return model, summary, changes, explanation, modes
 
 
@@ -1246,14 +1280,18 @@ def fix_pull_request(issue, api_key, token):
         run = sandbox_result(branch, head, token, repo)
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
+    pending = requirements_open(pr)
+    if pending and any(r and r.get("status") != "completed" for r in (run, native)):
+        print("Verification is still running; wait before repairing unfinished requirements.")
+        return None
     failures = [r for r in (run, native) if r and r.get("status") == "completed" and r.get("conclusion") == "failure"]
-    if not failures:
+    if not failures and not pending:
         if run and run.get("status") == "completed" and not (native and native.get("status") != "completed"):
             raise ValueError("Fix needs a failed sandbox test run or native iOS build on the PR's latest commit")
         # Usually an earlier fix already pushed a newer commit, which is being tested now.
         print("No failed check on the PR's latest commit; nothing to fix now.")
         return None
-    run = failures[0]
+    run = failures[0] if failures else {"id": "requirements-review"}
     comments = gh(f"repos/{repo}/issues/{pr['number']}/comments?per_page=100", repo_token)
     fixes = sum(FIX_MARKER in (c.get("body") or "") for c in comments)
     guidance = owner_guidance(number, token)
@@ -1265,7 +1303,7 @@ def fix_pull_request(issue, api_key, token):
         return None
     progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
-    progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
+    progress.ok(("Requirements are unfinished" if pending else "Tests failed") + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
     progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""), phase=True)
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
                                                                 native_history)
@@ -1285,12 +1323,20 @@ def fix_pull_request(issue, api_key, token):
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
+    if pending:
+        previous = re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get("body") or "")
+        previous = re.split(r"\n\n## Latest fix\n", previous, maxsplit=1)[0]
+        title = re.sub(r"^Draft(?: \(incomplete\))?:\s*", "", pr.get("title") or issue.get("title") or "Task")
+        gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {
+            "title": "Draft" + (" (incomplete)" if requirements_open({"body": explanation}) else "") + ": " + title,
+            "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
     progress.ok(f"Pushed fix {fixes + 1} of {MAX_FIXES + len(guidance)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]
-    gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {"body": previous + "\n\n## Latest fix\n" + (explanation or summary)}, method="PATCH")
+    if not pending:
+        gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {"body": previous + "\n\n## Latest fix\n" + (explanation or summary)}, method="PATCH")
     gh(f"repos/{repo}/issues/{pr['number']}/comments", repo_token,
        {"body": f"### Fix applied after failed run {run['id']} ({model})\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": f"### KappaForge fix ready\n\n{note}\n\n{pr['html_url']}"})

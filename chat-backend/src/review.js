@@ -89,14 +89,16 @@ export async function reviewPR(env,repo,number){
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
   explanation:explanation(pr.body),tests,native,
   risks:restore?[]:[...(tests.noTests?[{level:"medium",text:"This project has no automated tests; merging relies on your review",files:[]}]:[]),...riskScan(files)],files:files.map(f=>({name:f.filename,status:f.status,additions:f.additions,deletions:f.deletions})),
-  canMerge:pr.mergeable!==false&&(restore||dev&&tests.state==="passed"&&(!native||native.state==="passed")),
-  canFix:dev&&(!!tests.sandbox&&tests.state==="failed"||native?.state==="failed"),canTest:dev&&tests.state!=="running"&&native?.state!=="running"};
+  incomplete:incomplete(pr),
+  canMerge:!incomplete(pr)&&pr.mergeable!==false&&(restore||dev&&tests.state==="passed"&&(!native||native.state==="passed")),
+  canFix:dev&&(incomplete(pr)||!!tests.sandbox&&tests.state==="failed"||native?.state==="failed")&&tests.state!=="running"&&native?.state!=="running",canTest:dev&&tests.state!=="running"&&native?.state!=="running"};
 }
 
 // Merge only what was reviewed: same head commit, tests passed on it, owner confirmed in the app.
 export async function mergePR(env,repo,number,expectedSha){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
+ if(review.incomplete)return {error:"Requirements are unfinished. Use Fix it to complete the task and rerun verification before merging.",status:409};
  if(!review.canMerge)return {error:review.tests.state!=="passed"?"Merge is available only after tests pass on the latest commit (currently "+review.tests.state+").":
   review.native&&review.native.state!=="passed"?"Merge is available only after the iOS build passes on the latest commit (currently "+review.native.state+").":
   "GitHub reports a merge conflict. Open the PR to resolve it.",status:409};
@@ -166,9 +168,16 @@ export async function requestTests(env,repo,number){
 export async function requestFix(env,repo,number){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
- if(!review.canFix)return {error:"Fix it is available for development PRs whose tests or iOS build failed on the latest commit.",status:409};
+ if(!review.canFix)return {error:"Fix it requires unfinished requirements or failed checks, with no verification still running.",status:409};
  const issue=review.branch.split("-").pop();
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{issue_number:issue,action:"fix"}})});
  if(!r.ok)return {error:"The fix could not start (GitHub HTTP "+r.status+").",status:502};
  return {status:"fix_started",issue:Number(issue)};
+}
+
+// Keep legacy incomplete drafts blocked until a fresh requirements review is persisted.
+export function incomplete(pr){
+ const body=String(pr.body||''),matches=[...body.matchAll(/<!-- KAPPA_REVIEW_V1 (.*?) -->/g)];
+ if(matches.length){try{const r=JSON.parse(matches.at(-1)[1]);return !(r.complete===true&&Array.isArray(r.problems)&&r.problems.length===0)}catch{return true}}
+ return /^Draft\s*\(incomplete\)/i.test(pr.title||'')||/(?:\*\*Not finished|^Not finished:)/m.test(body);
 }

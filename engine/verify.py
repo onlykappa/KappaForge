@@ -232,3 +232,28 @@ def report(reqs, problems):
     for p in problems:
         lines.append("- Problem: " + p[:300])
     return "\n".join(lines)
+
+
+MARKER = "KAPPA_REVIEW_V1"
+
+
+def review_record(problems):
+    return "<!-- " + MARKER + " " + json.dumps({"complete": not problems, "problems": list(problems)},
+                                               ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e") + " -->"
+
+
+def open_problems(pr):
+    body = pr.get("body") or ""
+    matches = re.findall(r"<!-- " + MARKER + r" (.*?) -->", body)
+    if matches:
+        try:
+            record = json.loads(matches[-1])
+            if record.get("complete") is True and record.get("problems") == []:
+                return []
+            problems = record.get("problems")
+            return problems if isinstance(problems, list) and problems and all(isinstance(p, str) for p in problems) else ["Requirement verification is incomplete"]
+        except (ValueError, AttributeError):
+            return ["Invalid requirement verification record"]
+    if re.match(r"Draft\s*\(incomplete\)", pr.get("title") or "", re.I) or re.search(r"(?:\*\*Not finished|^Not finished:)", body, re.M):
+        return ["The previous attempt reported unfinished requirements; recheck the original task"]
+    return []

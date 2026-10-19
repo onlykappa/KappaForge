@@ -1,3 +1,4 @@
+import './cloud.mjs';
 import './native-progress-fixture.test.mjs';
 import './task-progress.test.mjs';
 import './task-tracking.test.mjs';
@@ -350,8 +351,8 @@ test('chat tells the AI how to act, and answers status questions from live agent
   if(u.includes(':generateContent')){system=JSON.parse(init.body).systemInstruction.parts.map(p=>p.text).join('\n');return Response.json({candidates:[{content:{parts:[{text:'Tests passed.'}]}}]})}
   if(u.includes('/issues?labels=kappa-task'))return Response.json([{number:12,title:'Add live time',comments:1}]);
   if(u.endsWith('/issues/12/comments?per_page=100'))return Response.json([{user:{login:'github-actions[bot]'},body:'### KappaForge needs your help\n\nI tried 3 fixes'}]);
-  if(u.includes('/pulls?state=open'))return Response.json([{number:50,title:'Draft: Add live time',draft:true,head:{ref:'kappa/dev-12'}},{number:9,title:'Human PR',head:{ref:'feature'}}]);
-  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-12 @ '+'a'.repeat(40),status:'completed',conclusion:'failure'}]});
+  if(u.includes('/pulls?state=open'))return Response.json([{number:50,title:'Draft: Add live time',draft:true,head:{ref:'kappa/dev-12',sha:'a'.repeat(40)}},{number:9,title:'Human PR',head:{ref:'feature'}}]);
+  if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-12 @ '+'a'.repeat(40),status:'completed',conclusion:'failure',head_branch:'main',event:'workflow_dispatch'}]});
   if(u.includes('project-tests.yml/runs'))return Response.json({workflow_runs:[]});
   return new Response('{}',{status:404})};
  try{

@@ -205,7 +205,7 @@ class SimulatedTask(unittest.TestCase):
         flagged = {r["title"].split(";")[0].split(":")[0]: r["status"] for r in snapshot["steps"]}
         self.assertEqual(flagged["Step 3 of 3 could not be written"], "blocked")
         self.assertEqual(flagged["Could not write the test yet"], "blocked")
-        self.assertEqual(flagged["Found 3 problems"], "blocked")
+        self.assertTrue(any(status == "blocked" for title, status in flagged.items() if title.startswith("Found ")), "unfinished work and unmet requirements stay blocked")
         self.assertEqual(flagged["Read 2 files"], "completed")
 
         # Tests were dispatched for the draft, and the final report says what is not finished.
