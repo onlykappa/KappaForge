@@ -340,3 +340,5 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{ou
 .history-delete{position:absolute;top:50%;right:4px;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);opacity:0}
 .history-item:hover .history-delete,.history-delete:focus-visible{opacity:1}.history-delete:hover{color:var(--bad,#ff3b30);background:rgba(128,128,150,.12)}
 @media (hover:none){.history-delete{opacity:.7}}
+/* Approve or Deny card for a task the owner hasn't confirmed yet. */
+.approval-actions{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 2px}.approval-actions .btn{min-width:104px}

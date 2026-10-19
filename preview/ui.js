@@ -211,7 +211,8 @@ const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.do
  window.addEventListener('online',syncNetworkStatus);
  window.addEventListener('offline',syncNetworkStatus);
  syncNetworkStatus();
- document.querySelectorAll('[data-start-task]').forEach(b=>b.onclick=()=>{const m=active()?.messages[Number(b.dataset.startTask)];if(m){m.executionHandled=true;save();prepareJob(m.text,'develop')}});
+ // Start as task: the planner fills in repository, mode and title; the manual form only if planning can't run.
+ document.querySelectorAll('[data-start-task]').forEach(b=>b.onclick=async()=>{const c=active(),m=c?.messages[Number(b.dataset.startTask)];if(!m)return;m.executionHandled=true;m.offerTask=false;save();render();if(await proposeTaskAutomatically(m.text,true,KappaJobs.conversationContext(c.messages.slice(0,c.messages.indexOf(m))),crypto.randomUUID(),c.id,{explicit:true})){m.taskStarted=true;save()}else prepareJob(m.text,'develop')});
  document.querySelectorAll('[data-save-message]').forEach(b=>b.onclick=()=>{const m=active()?.messages[Number(b.dataset.saveMessage)];if(m){m.saved=!m.saved;active().at=Date.now();save();render();toast(m.saved?'Message saved':'Message unsaved')}});
  document.querySelectorAll('[data-retry-message]').forEach(b=>b.onclick=()=>{if(sending)return;const messages=active()?.messages||[];const last=messages.slice(0,Number(b.dataset.retryMessage)).reverse().find(m=>m.role==='user');if(!last)return;if(/\[Attached:/.test(last.text)){document.getElementById('message').value=last.text;toast('Reattach the original files, then send to retry.');return;}document.getElementById('message').value=last.text;document.getElementById('form').requestSubmit();});
  document.querySelectorAll('[data-copy-code]').forEach(b=>b.onclick=async()=>{try{await copyInterfaceText(b.closest('.code-block').querySelector('code').textContent);toast('Code copied')}catch(e){toast(e.message)}});

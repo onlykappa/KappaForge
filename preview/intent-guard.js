@@ -4,7 +4,7 @@
  // Greetings and polite openers carry no intent; strip them so "Hey can you fix it" reads as "fix it".
  const OPENER=/^(?:(?:hey|hi|hello|ok(?:ay)?|yo|so|alright|right|now|kappa(?:forge)?)\b[\s,!.:-]*|(?:please|pls|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?|i\s+(?:want|need|would like)\s+(?:you\s+)?to\s+|i'd like\s+(?:you\s+)?to\s+|(?:let's|lets|let us)\s+|go ahead and\s+)/i;
  const NEGATION=/\b(?:do not|don't|dont|never|no need to|stop|cancel|not yet)\b/i;
- const EXECUTION=/^(?:fix|implement|build|create|add|update|remove|repair|refactor|optimi[sz]e|test|run|retry|try again|continue implementing|make|change|modify|edit|improve|rename|move|delete|redesign|rewrite|write (?:unit |integration )?(?:tests?|code|a (?:test|script|function|feature|module|component|migration)|docs|documentation)|set up|setup|upgrade|bump|migrate|convert|replace|clean ?up|enhance|tweak|adjust|polish|finish|resolve|port|integrate|enable|disable|restyle|simplify|speed up|install|configure|wire up|hook up|swap|increase|decrease|reduce|hide)\b/i;
+ const EXECUTION=/^(?:fix|implement|build|create|add|update|remove|repair|refactor|optimi[sz]e|test|run|retry|try again|continue implementing|make|change|modify|edit|improve|rename|move|delete|redesign|rewrite|write (?:unit |integration )?(?:tests?|code|a (?:test|script|function|feature|module|component|migration)|docs|documentation)|set up|setup|upgrade|bump|migrate|convert|replace|clean ?up|enhance|tweak|adjust|polish|finish|resolve|port|integrate|enable|disable|restyle|simplify|speed up|install|configure|wire up|hook up|swap|increase|decrease|reduce|hide|start (?:working on|on|building|implementing|coding))\b/i;
  // "Here is your first official task:" / "New task:" only introduces the request that follows it.
  const LEADER=/^(?:here(?:'s| is)\s+(?:your|a|the|my)\s+(?:[a-z]+\s+){0,3}(?:task|request|job|assignment)|(?:(?:new|next|your|first)\s+)?(?:task|request|job|assignment))\s*[:.!\-\u2013\u2014]\s*/i;
  function core(text){let t=text.trim(),prev;do{prev=t;t=t.replace(OPENER,'').trim()}while(t!==prev);return t}
@@ -43,7 +43,14 @@
  function stripActions(text){
   return String(text||'').replace(/```kappa-action\b[\s\S]*?(?:```|$)/gi,'').replace(/\bkappa-action\b[\s\S]*$/gi,'').replace(/(?:`{1,3})?kappa(?:-a(?:c(?:t(?:i(?:o(?:n)?)?)?)?)?)?$/i,'').trimEnd();
  }
+ // "Please start a task for me", "do it", "go ahead", "yes, start it": a short go-ahead that names no change of its own.
+ // It refers to the change the owner described just before; on its own it is still conversation.
+ function goAhead(request){
+  const t=core(String(request||'').trim()).replace(/[.!\s]+$/,'');
+  if(!t||t.length>80||NEGATION.test(t)||/\?$/.test(t))return false;
+  return /^(?:(?:yes|yeah|yep|sure|ok(?:ay)?|great|perfect)\b[\s,!.]*)?(?:please\s+)?(?:go ahead|do it|do that|proceed|ship it|let'?s do it|(?:start|make|create|open|launch|run|kick off|begin)\s+(?:it|that|this|the task|a task|the work|working)(?:\s+(?:for me|now|please))*)$/i.test(t);
+ }
  // The request itself, without a "Here is your task:" leader: what a task's title should say.
  const requestText=text=>String(text||'').trim().replace(LEADER,'').trim();
- root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText};
+ root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText,goAhead};
 })(globalThis);

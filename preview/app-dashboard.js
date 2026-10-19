@@ -515,7 +515,7 @@ if(view==="saved")html=renderSavedItems();
 if(view==="profile")html=renderProfile();
 if(view==="help")html=renderHelp();
 
-if(view==="chat"&&pendingJob)html+=jobApproval();
+if(view==="chat"&&pendingJob&&(!pendingJob.conversationId||pendingJob.conversationId===current))html+=jobApproval();
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
@@ -584,37 +584,44 @@ bindSettings();bindShell();bindDashboard();bindInterface(scrollState);
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
-document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
+document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
+document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
 }
 
 
 // Why the last automatic planning attempt made no task, for the chat to show.
 let planError="";
-async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current){
- if(!["execution","investigation"].includes(KappaIntent.classify(text)))return false;
+// explicit: the owner asked for a task (Plan task, "start a task"), so any text is planned and a planner miss falls back to a
+// develop task, launched as the owner's own control. approval: an uncertain request is planned into an Approve/Deny card only.
+async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false}={}){
+ const intent=KappaIntent.classify(text);
+ if(!explicit&&!approval&&!["execution","investigation"].includes(intent))return false;
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
-  const intent=KappaIntent.classify(text),title=KappaIntent.requestText(text).split("\n")[0].slice(0,105);
+  const title=KappaIntent.requestText(text).split("\n")[0].slice(0,105);
   // A direct request ("Add …", "Fix …") is the owner's decision; the planner only picks the repository and mode,
   // so its "not a task", bad output or an outage falls back to a develop task instead of dropping the request.
-  const fallback=reason=>{if(intent!=="execution")throw Error(reason);return {repo:"onlykappa/"+(mentionedRepository(text)||"KappaForge"),mode:"develop"}};
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
+  const fallback=reason=>{if(intent!=="execution"&&!explicit)throw Error(reason);return {repo:"onlykappa/"+(mentionedRepository(text)||"KappaForge"),mode:"develop"}};
+  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,explicit:explicit||approval,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
   const data=await resp.json().catch(()=>({}));
   let p=data.proposal;
   if(!resp.ok)p=fallback(data.error||"Could not plan task (HTTP "+resp.status+")");
-  else if(!data.isTask){if(intent!=="execution"){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}p=fallback("")}
-  pendingJob={title:title.length>=5?title:"KappaForge task",instructions:String(text).trim(),repo:p.repo,mode:intent==="investigation"?"audit":p.mode,context,requestId,conversationId};
+  else if(!data.isTask){if(intent!=="execution"&&!explicit){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}p=fallback("")}
+  const planned=String(p.title||"").trim();
+  pendingJob={title:planned.length>=5&&planned.length<=105?planned:title.length>=5?title:"KappaForge task",instructions:String(text).trim(),repo:p.repo,mode:intent==="investigation"?"audit":p.mode,context,requestId,conversationId,
+   ...(explicit?{authorizationSource:"user-control",confirmed:true}:{})};
   // Owner explicitly requested hands-off development. Only safe task modes start
-  // automatically; potentially destructive or long-running modes still need review (shown in the chat).
-  if(preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
+  // automatically; uncertain requests and potentially destructive or long-running modes wait for Approve (shown in the chat).
+  if(!approval&&preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
    await launchJob();
-  }else{view="chat";render()}
+  }else{view="chat";if(conversationId&&chats.some(c=>c.id===conversationId))current=conversationId;render()}
   return true;
  }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
- return '<div class="panel" style="border:2px solid #5456b9"><span class="pill">Approval required</span><h3>Launch KappaForge job?</h3><p><strong>'+esc(pendingJob.title)+'</strong></p><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p style="white-space:pre-wrap">'+esc(pendingJob.instructions)+'</p><button class="btn" id="approvejob">Approve & Launch</button> <button class="btn secondary" id="canceljob">Cancel</button><p class="muted">This creates a GitHub task and starts the agent. Code changes arrive as pull requests; nothing merges until you review it and tap Merge.</p></div>';
+ const brief=pendingJob.instructions.length>400?pendingJob.instructions.slice(0,399)+"…":pendingJob.instructions;
+ return '<section class="panel task-approval" role="alertdialog" aria-labelledby="approvaltitle" aria-describedby="approvalbody"><span class="pill">Start this task?</span><h3 id="approvaltitle">'+esc(pendingJob.title)+'</h3><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p id="approvalbody" style="white-space:pre-wrap">'+esc(brief)+'</p><div class="approval-actions"><button class="btn" id="approvejob">Approve</button><button class="btn secondary" id="canceljob">Deny</button></div><p class="muted">Approve creates the task and starts the agent. Changes arrive as a draft pull request; nothing merges until you tap Merge.</p></section>';
 }
 function jobResult(){
  if(!recentJob)return "";

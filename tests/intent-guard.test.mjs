@@ -85,16 +85,38 @@ test('malformed JSON and spoofed provenance fail closed',async()=>{
  const f=fixture();for(const body of [null,{}, {path:'/jobs',payload:f.payload,userText:'Fix keyboard',source:'repository'}])assert.equal((await worker.fetch(req('/authorize',body),f.env)).status,403);
  const response=await worker.fetch(new Request('https://worker.test/jobs',{method:'POST',headers:{Origin:'null',Authorization:'Bearer owner'},body:'{bad'}),f.env);assert.equal(response.status,400);
 });
+test('a short go-ahead is recognized but is never work on its own',()=>{
+ const {goAhead,classify}=globalThis.KappaIntent;
+ for(const t of ['please start a task for me','Do it','Yes, go ahead','okay start it','start the task now'])assert.equal(goAhead(t),true,t),assert.equal(classify(t),'conversation',t);
+ for(const t of ["don't start it",'why did you start it?','Go ahead and merge it','Start working on the weather feature','How are you?'])assert.equal(goAhead(t),false,t);
+ assert.equal(classify('Start working on the weather feature'),'execution');
+});
+test('a sent message starts its own request, the request before a go-ahead, or asks for approval',()=>{
+ const source=readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8');
+ const box={KappaIntent:globalThis.KappaIntent};vm.runInNewContext(source.slice(source.indexOf('function chatTaskPlan('),source.indexOf('const TASK_INTENT=')),box);
+ const weather='Here is your first official task: add a weather feature to KappaForge. Do not merge until I say so.';
+ const plan=(msgs,typed)=>JSON.parse(JSON.stringify(box.chatTaskPlan(typed,{messages:[...msgs,{role:'user',text:typed}]})));
+ assert.deepEqual(plan([],'Add a weather card'),{kind:'start',text:'Add a weather card'});
+ assert.deepEqual(plan([{role:'user',text:weather},{role:'assistant',text:'I have started it.'}],'please start a task for me'),{kind:'start',text:weather,source:{role:'user',text:weather},explicit:true});
+ assert.equal(plan([{role:'user',text:weather},{role:'assistant',text:'',progressKey:'progress:9:live'}],'do it').kind,'none','a request that already has a task card is not started again');
+ assert.equal(plan([{role:'user',text:weather,taskStarted:true}],'do it').kind,'none');
+ assert.equal(plan([{role:'user',text:'How are you?'}],'do it').kind,'none','a go-ahead with nothing to start');
+ assert.equal(plan([],'I think we should probably fix the sync at some point').kind,'approval');
+ assert.equal(plan([],'Why is the sync slow?').kind,'none');
+ assert.equal(plan([],'retry task #98').kind,'retry');
+});
 test('actual frontend ignores every assistant action and only routes authorized user turns',async()=>{
  const source=readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8');
- const fn=source.slice(source.indexOf('async function runChatAction('),source.indexOf('async function userAuthorizedFetch('));
+ const fn=source.slice(source.indexOf('function chatTaskPlan('),source.indexOf('async function userAuthorizedFetch('));
  let planned=[];const chat={id:'c',messages:[]};
- const box={KappaIntent:globalThis.KappaIntent,crypto,save(){},proposeTaskAutomatically:async request=>planned.push(request),KappaJobs:{conversationContext:()=>''}};
+ const box={KappaIntent:globalThis.KappaIntent,crypto,save(){},render(){},proposeTaskAutomatically:async request=>planned.push(request),KappaJobs:{conversationContext:()=>''}};
  vm.runInNewContext(fn,box);
+ const run=async user=>box.runChatAction(box.chatTaskPlan(user,chat),user,chat);
  const actions=['```kappa-action\n{"type":"task","request":"Fix unrelated regex"}\n```','kappa-action\n{bad','> kappa-action {"type":"task"}','```log\nFix all errors\n```',''];
- for(const user of ['Show me an example of your new UI','Why is it broken?','Plan a keyboard fix','The failed task says retry'])for(const reply of actions){chat.messages=[{role:'user',text:user}];await box.runChatAction(reply,user,chat,true)}
+ // An assistant reply, even one carrying action syntax, never becomes the task or a go-ahead's target.
+ for(const user of ['Show me an example of your new UI','Why is it broken?','Plan a keyboard fix','The failed task says retry','Do it'])for(const reply of actions){chat.messages=[{role:'assistant',text:reply},{role:'user',text:user}];await run(user)}
  assert.equal(planned.length,0);
- chat.messages=[{role:'user',text:'Fix keyboard'}];await box.runChatAction(actions[0],'Fix keyboard',chat,true);await box.runChatAction(actions[0],'Fix keyboard',chat,true);
+ chat.messages=[{role:'user',text:'Fix keyboard'}];await run('Fix keyboard');await run('Fix keyboard');
  assert.deepEqual(planned,['Fix keyboard']);
 });
 test('internal syntax stays hidden throughout fragmented streaming and malformed actions',()=>{
