@@ -714,3 +714,24 @@ class OwnerRequestedFixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActivityFeedTests(unittest.TestCase):
+    """The app's live feed: each step and model call becomes one line with an icon kind."""
+
+    def test_steps_and_notes_become_feed_lines(self):
+        bodies = []
+        with patch.object(developer, "gh", side_effect=lambda path, token, payload=None, method=None: bodies.append(payload["body"]) or {"id": 5}):
+            p = developer.Progress(42, "tok")
+            p.now("Read 10 files: `preview/ui.js`")
+            p.written = 0  # As if the last write was long ago, so a note writes at once.
+            developer.note("model", "Asking ollama:deepseek-v4-pro")
+            p.ok("Wrote the change with ollama:deepseek-v4-pro")
+            p.fail("Validation failed")
+        self.addCleanup(setattr, developer.Progress, "latest", None)
+        feed = p.snapshot()["activity"]
+        self.assertEqual([a["kind"] for a in feed], ["read", "model", "code", "error"])
+        self.assertIn('"activity":[', bodies[-1])
+        self.assertEqual([developer.activity_kind(t) for t in ("Checking the work against the task", "Fixing what the check found",
+                                                                 "Opened draft PR #5; tests are running", "Planned 3 steps")],
+                         ["check", "fix", "git", "plan"])

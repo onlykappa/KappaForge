@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
 
 ROOT = "onlykappa/KappaForge"
@@ -498,6 +499,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
+        note("code", "Writing code" + (f" (attempt {attempt + 1} of {max_attempts})" if attempt else ""))
         model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed, json_mode=True,
                                   **({"skip": tuple(avoid)} if avoid else {}))
         try:
@@ -529,6 +531,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if problems:
                 raise ValueError("Syntax check failed: " + "; ".join(problems))
             text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
+            note("code", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}: " + ", ".join(list(changes)[:4]))
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             if "proposal" in locals() and isinstance(proposal, dict):
@@ -536,6 +539,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             error = str(exc)[:300] or type(exc).__name__
             errors.append(error)
             print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
+            note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             # A model repeating a rejected answer is asked no more; the remaining attempts go to other models
             # (task #123 stopped at attempt 2 of 5 on this).
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
@@ -592,6 +596,31 @@ def took(seconds):
     return f"{h}h {m}m" if h else f"{m}m {s}s" if m else f"{s}s"
 
 
+ACTIVITY_LINES = 40
+ACTIVITY_WRITE_SECONDS = 4
+ACTIVITY_KINDS = (("error", r"\bfail|could not|problem|rejected"), ("read", r"^read|choos|look"), ("plan", r"plan|design"),
+                  ("check", r"^check|review|verif"), ("fix", r"\bfix"), ("git", r"\bpr\b|pull request|push|commit|branch"),
+                  ("test", r"\btest"), ("build", r"build|compil|ios"), ("code", r"writ|step \d|stage|cod|chang"))
+
+
+def activity_kind(text):
+    """The feed icon for a progress line: reading, planning, coding, checking, fixing, testing, building, git, error."""
+    return next((kind for kind, pattern in ACTIVITY_KINDS if re.search(pattern, text, re.I)), "work")
+
+
+def note(kind, text):
+    """Add a line to the running task's live activity feed, if there is one."""
+    if Progress.latest:
+        Progress.latest.act(kind, text)
+
+
+def _asking(model):
+    note("model", "Asking " + model)
+
+
+runner_module.ON_ASK = _asking
+
+
 class Progress:
     """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort.
 
@@ -612,6 +641,8 @@ class Progress:
         self.records = []
         self.running = None
         self.status = "running"
+        self.activity = []
+        self.written = 0
         self.attempt_id = os.environ.get("GITHUB_RUN_ID", "local") + ":" + os.environ.get("GITHUB_RUN_ATTEMPT", "1") + ":" + str(int(self.created * 1000))
         Progress.latest = self
 
@@ -635,6 +666,7 @@ class Progress:
         self._record(text, "running")
         self.current = text
         self._advance(phase)
+        self.act(activity_kind(text), text, write=False)
         self._write()
 
     def ok(self, text, phase=False, status=None):
@@ -651,6 +683,7 @@ class Progress:
             self.status = status
         self.current = ""
         self._advance(phase)
+        self.act("error" if status == "blocked" else activity_kind(text), text, write=False)
         self._write()
 
     def fail(self, reason):
@@ -663,6 +696,16 @@ class Progress:
                 self.running.update(status="failed", detail=reason, finishedAt=int(self.updated * 1000))
                 self.running = None
             self.current = ""
+            self.act("error", self.failed, write=False)
+            self._write()
+
+    def act(self, kind, text, write=True):
+        """One line of the live activity feed the app shows ("Writing code with deepseek-v4-pro"). Writes at most
+        every few seconds; the next step change carries anything held back."""
+        if self.activity and self.activity[-1]["text"] == text[:240]:
+            return
+        self.activity = (self.activity + [{"kind": kind, "text": text[:240], "at": int(time.time() * 1000)}])[-ACTIVITY_LINES:]
+        if write and time.monotonic() - self.written >= ACTIVITY_WRITE_SECONDS:
             self._write()
 
     def _record(self, text, status):
@@ -693,7 +736,7 @@ class Progress:
                 "status": self.status, "updatedAt": int(self.updated * 1000),
                 "startedAt": int(self.created * 1000),
                 "finishedAt": int(self.updated * 1000) if self.status in ("failed", "completed", "cancelled") else 0,
-                "steps": records, "units": units, "findings": []}
+                "steps": records, "units": units, "findings": [], "activity": list(self.activity)}
 
     def _write(self):
         since = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(self.started))
@@ -701,6 +744,7 @@ class Progress:
         lines = (["✅ " + d for d in self.done] + (["⏳ " + self.current + " · started " + since] if self.current else [])
                  + (["❌ " + failed] if failed else []) + ["◻ " + a for a in ([] if failed else self.ahead)])
         self.revision += 1
+        self.written = time.monotonic()
         # Escape HTML comment terminators in event text, never embed secrets or raw model reasoning.
         wire = json.dumps(self.snapshot(), ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e")
         body = self.HEADING + "\n\n<!-- KAPPA_PROGRESS_V1 " + wire + " -->\n" + "\n".join(lines)

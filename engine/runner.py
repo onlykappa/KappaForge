@@ -262,6 +262,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
             if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time():
                 continue
             limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
+            asking(name)
             while True:
                 payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
                            "max_tokens": limit, "temperature": 0.2}
@@ -285,6 +286,18 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     errors.append(name + ": " + type(exc).__name__)
                 break
     return None
+
+# Called with each model's name just before it is asked, so the task's live feed can show who is working.
+ON_ASK = None
+
+
+def asking(name):
+    if ON_ASK:
+        try:
+            ON_ASK(name)
+        except Exception:  # The feed is best effort and never stops a model call.
+            pass
+
 
 # Models that answered 429 after their retries, skipped for the rest of this run (daily quota) or for a minute
 # (per-minute quota). Task #123 spent about 15 s on each of five rate-limited models on every single call.
@@ -343,6 +356,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
 
 def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
     """One Gemini model's answer as (model, text), or None with the reason added to errors."""
+    asking(model)
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
     payload = {"contents": [{"parts": [{"text": prompt}]}],
                "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens,
