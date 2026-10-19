@@ -269,8 +269,28 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None):
                 break
     return None
 
-def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False):
-    """Gemini first, then free fallback providers; `allowed` limits which fallbacks may see this prompt."""
+# Models that answered 429 after their retries, skipped for the rest of this run (daily quota) or for a minute
+# (per-minute quota). Task #123 spent about 15 s on each of five rate-limited models on every single call.
+EXHAUSTED = set()
+COOLDOWN = {}
+COOLDOWN_SECONDS = 60
+
+
+def rate_limited(model, exc):
+    try:
+        body = exc.read().decode("utf-8", "replace") if exc.fp else ""
+    except (OSError, ValueError, AttributeError):
+        body = ""
+    if re.search(r"per ?day|PerDay|daily", body, re.I):
+        EXHAUSTED.add(model)
+    else:
+        COOLDOWN[model] = time.time() + COOLDOWN_SECONDS
+
+
+def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
+    """Gemini first, then free fallback providers; `allowed` limits which fallbacks may see this prompt.
+
+    `skip` names models not to ask this time (one that just repeated a rejected answer)."""
     errors = []
     try:
         available = discover_models(api_key)
@@ -282,7 +302,14 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
         raise RuntimeError("No approved Flash model supports generateContent for this key. "
                            "Available model IDs: " + ", ".join(sorted(available)[:20]))
     print("Approved Gemini fallback models: " + ", ".join(candidates))
+    resting = [m for m in candidates if m in EXHAUSTED or COOLDOWN.get(m, 0) > time.time()]
+    if all(m in resting or m in skip for m in candidates):
+        resting = [m for m in resting if m in EXHAUSTED]  # Nothing else left: a minute's cooldown is worth retrying.
+    if resting:
+        errors.append("rate-limited earlier, not asked: " + ", ".join(resting))
     for model in candidates:
+        if model in skip or model in resting:
+            continue
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens,
@@ -320,6 +347,8 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
                     delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
                     time.sleep(min(delay, 60))
                     continue
+                if exc.code == 429:
+                    rate_limited(model, exc)
                 errors.append(model + ": HTTP " + str(exc.code))
                 break
             except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:

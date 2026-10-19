@@ -77,6 +77,7 @@ class CheckTheWork(unittest.TestCase):
             return "gemini", "", fixes.pop(0), ""
 
         progress = self.Progress()
+        developer.UNFINISHED.clear()
         sources = {"preview/app-main.js": "// app\n"}
         with patch.object(developer, "run_model", model), patch.object(developer, "generate", generate), \
                 patch.object(developer, "read_source", lambda repo, path, sha, token: "const defaults={a:1};" if path == "preview/core.js" else ""):
@@ -99,7 +100,8 @@ class CheckTheWork(unittest.TestCase):
 
     def test_problems_that_stay_are_reported_not_hidden(self):
         unmet = {"requirements": [{"text": "Use real weather in replies", "met": False}], "problems": ["/weather is never called"]}
-        (changes, verdict, problems), prompts, progress = self.run_check([unmet, unmet, unmet], [{}, {}])
+        rounds = developer.MAX_CHECK_ROUNDS
+        (changes, verdict, problems), prompts, progress = self.run_check([unmet] * (rounds + 1), [{}] * rounds)
         self.assertEqual(len(prompts), developer.MAX_CHECK_ROUNDS)
         self.assertTrue(problems)
         self.assertIn("- Not done: Use real weather in replies", verdict)

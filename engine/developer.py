@@ -209,6 +209,8 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
         'Return ONLY JSON {"read":["path", ...]' + (',"stages":["what stage 1 does", ...],"design":"your design notes"' if with_stages else '') + '} with at most ' + str(limit) + " paths "
         "most important first "
         "copied exactly from the listing. " + (
+            "Never make a stage for bundling or syncing the iOS web copies; that happens automatically. Put each "
+            "part's tests in the stage that builds it. "
             f"Give stages only when the change is too big to make at once (several separate parts or more than about "
             f"{LARGE.changed_files} files): 2-{MAX_STAGES} short, ordered descriptions that each leave the code working. "
             "Otherwise give one stage. "
@@ -376,14 +378,16 @@ def mirror_ios_copies(repo, changes, existing):
     return mirrored
 
 
-def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False):
+def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False, allow_empty=False):
     """Try the large budget on Gemini alone; if Gemini can't answer, re-plan at the small size for any provider."""
     try:
-        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, set(), LARGE, design, require_test)
+        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, set(), LARGE, design,
+                                                             require_test, allow_empty)
     except RuntimeError as exc:
         print("Large-budget Gemini route unavailable, using fallback-sized limits: " + str(exc)[:300])
         small = dict(list(sources.items())[:SMALL.read_files])
-        model, summary, changes, explanation = generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL, design, require_test)
+        model, summary, changes, explanation = generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL, design,
+                                                             require_test, allow_empty)
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -417,6 +421,10 @@ def diagnose_generation_failure(message, sources):
     if "Repeated rejected proposal" in message:
         return ("The proposed edit was already rejected against the same source. Re-read the "
                 "actual file and switch to a different, source-grounded implementation.")
+    if "No files changed" in message or "changed files" in message:
+        return ("Your files list was empty or too long. Return between 1 and the allowed number of entries, each a real "
+                "edit to a file shown in SOURCE FILES or a new file. The iOS web copies are bundled automatically, so "
+                "\"bundle\" or \"sync\" work needs no edit; put your effort into the code and tests this step asks for.")
     if "Change leaves file unchanged" in message:
         return ("Your replacement was a no-op. Compare old and proposed content before responding; "
                 "provide an actual behavior-changing edit and a regression test.")
@@ -437,7 +445,7 @@ def diagnose_generation_failure(message, sources):
             "and preserve all existing authorization, file scope and test requirements.")
 
 
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
     context = ""
     for path, text in sources.items():
         if len(text) > budget.file_chars:
@@ -464,6 +472,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "or the agent's own guardrail files. Never weaken authentication or authorization. "
         "Before writing, think it through: where each part of your change runs and what information is available "
         "there, and every case it must handle (every request, not just the first; limits; missing data). "
+        + ("If this step is already done by the files below or needs no edit (the iOS web copies are bundled "
+           "automatically), return \"files\":[] and say why in summary. " if allow_empty else "")
         + ("Add or update a test that checks the new behaviour itself: it must fail without your change and pass "
            "with it. A code change without such a test is rejected (docs, styles and text-only changes need none). " if require_test else "Add or update tests when the repository has them. ") +
         "Do not claim tests ran. "
@@ -476,6 +486,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current default branch):" + context)
     errors = []
     rejected_signatures = set()
+    avoid = set()  # Models that repeated a rejected answer: the next attempt asks another one.
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
     max_attempts = 5
@@ -486,14 +497,24 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed, json_mode=True)
+        model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed, json_mode=True,
+                                  **({"skip": tuple(avoid)} if avoid else {}))
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
+            if isinstance(proposal, dict) and proposal.get("files") == []:
+                # Asked twice and still nothing to change: the step was already done (task #123's "bundle the web
+                # assets" stage needs no edit). Without allow_empty an empty answer is a failed attempt.
+                if allow_empty and errors and errors[-1].startswith("No files changed"):
+                    text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
+                    return model, text("summary")[:3000] or "Nothing to change in this step.", {}, text("explanation")[:2000]
+                raise ValueError("No files changed: the files list was empty" + (
+                    "; if this step truly needs no edit, answer files: [] again and say why" if allow_empty else ""))
             # Identical rejected proposals cannot succeed against unchanged source.
             # Stop wasting model calls and provide a concrete escalation reason.
             signature = json.dumps(proposal.get("files", []) if isinstance(proposal, dict) else proposal,
                                    sort_keys=True, ensure_ascii=False)
             if signature in rejected_signatures:
+                avoid.add(model)
                 raise ValueError("Repeated rejected proposal: no source changes since previous validation")
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
@@ -514,9 +535,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             error = str(exc)[:300] or type(exc).__name__
             errors.append(error)
             print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
-            # Repeating an identical rejected patch requires a new user-visible diagnosis.
-            if "Repeated rejected proposal" in error:
-                break
+            # A model repeating a rejected answer is asked no more; the remaining attempts go to other models
+            # (task #123 stopped at attempt 2 of 5 on this).
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
             if any(x in error for x in ("Blocked path:", "Forbidden path:", "Unsafe path:", "Unauthorized")):
                 break
@@ -697,12 +717,18 @@ def short_list(paths, n=4):
     return shown + (f" and {len(paths) - n} more" if len(paths) > n else "")
 
 
+# Stages build_in_stages could not write; check_the_work starts from them.
+UNFINISHED = []
+
+
 def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress=None, design="", require_test=False):
     """One change, or several stages built in order on top of each other and delivered as one commit."""
+    UNFINISHED.clear()
     if not stages:
         return generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test)
     # Tests may come in any stage; a final stage adds them only if none did.
     current, files, combined, summaries, explanations, model = dict(sources), dict(existing), {}, [], [], ""
+    unfinished = UNFINISHED
     for i, stage in enumerate(stages, 1):
         if progress:
             progress.now(f"Step {i} of {len(stages)}: {stage[:160]}")
@@ -710,9 +736,22 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
                 + ("Earlier stages are already applied to the files below: " + "; ".join(stages[:i - 1]) + "\n" if i > 1 else "")
                 + "Later stages (do not do them yet): " + ("; ".join(stages[i:]) or "none"))
         try:
-            model, summary, changes, explanation = generate(api_key, step, repo, current, files, guide, allowed, design)
+            model, summary, changes, explanation = generate(api_key, step, repo, current, files, guide, allowed, design,
+                                                            allow_empty=True)
         except ValueError as exc:
-            raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {exc}") from exc
+            if not combined:
+                raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {exc}") from exc
+            # Keep what earlier stages built: checking the work sends what is missing back for a fix, and anything
+            # still missing is reported on a draft PR instead of the whole task failing.
+            unfinished.append(f"Step {i} of {len(stages)} was not done ({stage[:200]}): {str(exc)[:300]}")
+            if progress:
+                progress.ok(f"Step {i} of {len(stages)} could not be written; moving on and fixing it when checking the work")
+            continue
+        if not changes:
+            if progress:
+                progress.ok(f"Step {i} of {len(stages)}: nothing to change ({summary[:120]})")
+            summaries.append(f"Stage {i}: {summary}")
+            continue
         for path, text in changes.items():
             current[path], files[path] = text, len(text)
         combined.update(changes)
@@ -739,7 +778,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     return model, "\n".join(summaries)[:3000], combined, explanation[:2000]
 
 
-MAX_CHECK_ROUNDS = 2
+MAX_CHECK_ROUNDS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress):
@@ -761,6 +800,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
+        if not round_:
+            problems = list(UNFINISHED) + problems
         review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
         files_needed = []
         if review:

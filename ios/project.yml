@@ -18,7 +18,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge
         SWIFT_VERSION: '5.9'
-        MARKETING_VERSION: '2.2.6'
+        MARKETING_VERSION: '2.2.7'
         CURRENT_PROJECT_VERSION: '20'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'

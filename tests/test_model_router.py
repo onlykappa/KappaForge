@@ -191,3 +191,47 @@ class FailureReportTests(unittest.TestCase):
         self.assertIn("**What to do:** reply with guidance.", payload["body"])
         self.assertIn("<!-- KAPPA_FAILED:77 -->", payload["body"])
         self.assertNotIn("secret-key-123", payload["body"])
+
+
+class RateLimits(unittest.TestCase):
+    """Task #123 spent ~15 s on each of five rate-limited models on every call; they now rest instead."""
+
+    def setUp(self):
+        runner.EXHAUSTED.clear()
+        runner.COOLDOWN.clear()
+        self.addCleanup(runner.EXHAUSTED.clear)
+        self.addCleanup(runner.COOLDOWN.clear)
+
+    def run_calls(self, body, calls=2, skip=()):
+        asked = []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/" + m, "supportedGenerationMethods": ["generateContent"]}
+                                            for m in ("gemini-3-flash", "gemini-3-flash-lite")]})
+            model = req.full_url.split("/models/")[1].split(":")[0]
+            asked.append(model)
+            if model == "gemini-3-flash":
+                raise urllib.error.HTTPError(req.full_url, 429, "quota", {}, io.BytesIO(body))
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "ok"}]}}]})
+        with patch.dict(os.environ, {k: "" for k in KEYS}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), \
+                patch("engine.runner.time.sleep"):
+            results = [runner.run_model("key", "p", skip=skip) for _ in range(calls)]
+        return asked, results
+
+    def test_a_daily_quota_skips_the_model_for_the_rest_of_the_run(self):
+        asked, results = self.run_calls(b'{"error":{"details":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel"}]}}')
+        self.assertEqual(results, [("gemini-3-flash-lite", "ok")] * 2)
+        self.assertEqual(asked.count("gemini-3-flash"), 3, "retried on the first call only")
+        self.assertIn("gemini-3-flash", runner.EXHAUSTED)
+
+    def test_a_per_minute_limit_rests_for_a_minute(self):
+        asked, _ = self.run_calls(b"{}")
+        self.assertEqual(asked.count("gemini-3-flash"), 3)
+        self.assertGreater(runner.COOLDOWN["gemini-3-flash"], 0)
+        runner.COOLDOWN["gemini-3-flash"] = 0
+        asked, _ = self.run_calls(b"{}", calls=1)
+        self.assertEqual(asked.count("gemini-3-flash"), 3, "asked again once the minute is over")
+
+    def test_skipped_models_are_not_asked(self):
+        asked, results = self.run_calls(b"{}", calls=1, skip=("gemini-3-flash",))
+        self.assertEqual(asked, ["gemini-3-flash-lite"])

@@ -12,14 +12,41 @@ EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 class DeveloperValidationTests(unittest.TestCase):
 
-    def test_repeated_invalid_patch_stops_instead_of_retrying_five_times(self):
+    def test_a_repeated_rejected_patch_moves_on_to_another_model(self):
+        """Task #123 stopped at attempt 2 of 5 when a model repeated itself; now the other attempts ask other models."""
         invalid = json.dumps({"files": [{"path": "app/main.py", "edits": [
             {"find": "return a + b", "replace": "return a + b"}]}]})
-        with patch.object(developer, "run_model", return_value=("test-model", invalid)) as model:
+        valid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        calls = []
+
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+            calls.append(tuple(skip))
+            return ("other-model", valid) if "lite" in skip else ("lite", invalid)
+        with patch.object(developer, "run_model", side_effect=model):
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertEqual(calls, [(), (), ("lite",)])
+        with patch.object(developer, "run_model", return_value=("test-model", invalid)) as ai:
             with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
-                developer.generate("key", "fix add", "onlykappa/KappaForge",
-                                   SOURCES, EXISTING)
-        self.assertEqual(model.call_count, 2)
+                developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertEqual(ai.call_count, 5)
+
+    def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
+        """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
+        first = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        empty = json.dumps({"summary": "Bundling is automatic", "files": []})
+        with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", empty), ("flash", empty)]) as ai:
+            _, summary, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None,
+                                                               ["Cast", "Bundle web assets"])
+        self.assertEqual(set(changes), {"app/main.py"})
+        self.assertIn("Stage 2: Bundling is automatic", summary)
+        self.assertIn("return \"files\":[] and say why", ai.call_args_list[1][0][1])
+        self.assertIn("bundled automatically", ai.call_args_list[2][0][1], "the second ask explains the empty answer")
+        with patch.object(developer, "run_model", return_value=("flash", empty)):
+            with self.assertRaisesRegex(ValueError, "No files changed"):
+                developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
         no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
@@ -198,8 +225,14 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertEqual(set(changes), {"app/main.py", "tests/test_main.py"})
         self.assertIn("# checked", changes["app/main.py"])
         self.assertTrue(explanation.startswith("Built in 2 stages."))
-        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5), \
-                self.assertRaisesRegex(ValueError, "Stage 2 of 2"):
+        # A later stage that can't be written keeps the earlier stages; checking the work starts from what's missing.
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5):
+            _, _, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast", "Test"])
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertEqual(len(developer.UNFINISHED), 1)
+        self.assertTrue(developer.UNFINISHED[0].startswith("Step 2 of 2 was not done (Test)"))
+        with patch.object(developer, "run_model", return_value=("flash", "not json")), \
+                self.assertRaisesRegex(ValueError, "Stage 1 of 2"):
             developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast", "Test"])
 
     def test_planner_gives_stages_only_for_big_changes(self):
