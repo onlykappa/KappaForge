@@ -354,3 +354,9 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{ou
 .feed-item.live .feed-icon{color:#e5e5ea}
 @keyframes feed-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
 @media (prefers-reduced-motion:reduce){.feed-item.live .feed-text{animation:none;-webkit-text-fill-color:currentColor;background:none}}
+/* Older feed lines fold into one quiet line, not a bar. */
+.task-feed{margin-top:14px}.task-feed .activity-feed{margin-top:12px}
+.feed-earlier>summary{list-style:none;display:flex;align-items:center;gap:12px;color:#8e8e93;font-size:13px;cursor:pointer;padding:2px 0}
+.feed-earlier>summary::-webkit-details-marker{display:none}
+.feed-earlier>summary svg{width:20px;height:20px;flex:0 0 22px}
+.feed-earlier[open]>summary span::after{content:" · hide"}

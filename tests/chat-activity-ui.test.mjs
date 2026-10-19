@@ -159,3 +159,12 @@ test('the live feed shows the agent\'s own activity, collapses passed-over model
  assert.doesNotMatch(ctx.activityFeed(items,false),/ live"/,'nothing shimmers once the task ended');
  assert.match(ctx.activityFeed([{kind:'error',text:'Step 2 failed'}],true),/feed-item error"/,'a failure never shimmers');
 });
+test('only the latest three actions show; the rest fold into one small line that stays open across updates',()=>{
+ const items=Array.from({length:10},(_,i)=>({kind:'code',text:'Action '+i}));
+ const html=ctx.activityFeed(items,true,'777');
+ assert.match(html,/<details class="feed-earlier" data-progress-detail="777:feed"><summary>[^]*7 earlier actions<\/span><\/summary>/);
+ const visible=html.slice(html.indexOf('</details>'));
+ assert.equal((visible.match(/class="feed-item/g)||[]).length,3);
+ assert.match(visible,/Action 7[^]*Action 8[^]*feed-item code live[^]*Action 9/,'the newest is last and live');
+ assert.doesNotMatch(ctx.activityFeed(items.slice(0,3),true,'1'),/feed-earlier/,'three or fewer: nothing folded');
+});

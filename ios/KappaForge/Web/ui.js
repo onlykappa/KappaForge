@@ -88,7 +88,7 @@ function renderTaskActivity(m,i=-1){
  '<span class="activity-tag">'+tag+'</span>'+totalTime+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
  '<p class="activity-summary">'+esc(headline)+'</p>'+(meta?'<p class="task-meta">'+esc(meta)+'</p>':'')+
  (stalled?'<p class="task-stalled" role="alert">No update for over 15 minutes. The task may be stuck.</p>':'')+timeline+'</details>'+stageCard+actions+
- activityFeed(shown.map(r=>({kind:activityKind(r.title),text:r.title+(r.detail?': '+r.detail:''),state:r.state})),!finished||testing)+'</section>';
+ activityFeed(shown.map(r=>({kind:activityKind(r.title),text:r.title+(r.detail?': '+r.detail:''),state:r.state})),!finished||testing,taskNum||String(i))+'</section>';
 }
 // Structured snapshots are preferred; legacy checklist comments remain readable after an app upgrade.
 function renderExecutionActivity(m,job,i=-1){
@@ -147,7 +147,7 @@ function renderExecutionActivity(m,job,i=-1){
  return '<section class="agent-activity'+(failed?' failed':ended?' finished'+(status==='cancelled'||status==='closed'?' stopped':''):status==='testing'||validation.some(r=>r.state==='current')?' testing':'')+(stale||unavailable?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary>'+heroRing(doneSteps,allSteps)+'<span class="activity-pulse" aria-hidden="true"></span><span class="activity-tag" role="status">'+esc(labels[status]||'IN PROGRESS')+'</span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="task-sub">Task #'+esc(id)+(allSteps?' · '+doneSteps+' of '+allSteps+' steps':'')+'</span>'+clock+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+checks+'</ol>'+bar+fresh+'</details>'+findingsCard(findings)+
   (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
   (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+actions+
-  activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'))+'</section>';
+  activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'),id)+'</section>';
 }
 
 // Live activity feed (replaces the old "View progress details" report): one icon and one line per thing the agent
@@ -164,14 +164,19 @@ function feedItems(p,validation=[]){
  for(const r of validation)if(r.state!=='upcoming')items.push({kind:r.state==='failed'?'error':/ios|build|native/i.test(r.title)?'build':'test',text:r.title+(r.detail?': '+r.detail:''),state:r.state});
  return items;
 }
-function activityFeed(items,live){
+// Only the latest few lines show, like a terminal: they replace each other as the agent works. Everything before
+// folds into one small "N earlier actions" line that opens in place (kept open across live updates).
+const FEED_VISIBLE=3;
+function activityFeed(items,live,id=''){
  const shown=items.filter(a=>a.state!=='upcoming');
  if(!shown.length)return '';
- const last=shown.length-1;
- return '<ol class="activity-feed" aria-label="What the agent is doing" aria-live="polite">'+shown.map((a,i)=>{
+ const last=shown.length-1,cut=Math.max(0,shown.length-FEED_VISIBLE);
+ const line=(a,i)=>{
   const now=live&&i===last&&a.kind!=='error'&&a.state!=='done';
   return '<li class="feed-item '+esc(a.kind)+(now?' live':'')+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span>'+(now?'<span class="sr-only">in progress</span>':'')+'</li>';
- }).join('')+'</ol>';
+ };
+ const earlier=cut?'<details class="feed-earlier" data-progress-detail="'+esc(id)+':feed"><summary>'+uiIcon('more')+'<span>'+cut+' earlier action'+(cut===1?'':'s')+'</span></summary><ol class="activity-feed">'+shown.slice(0,cut).map(line).join('')+'</ol></details>':'';
+ return '<div class="task-feed" aria-label="What the agent is doing">'+earlier+'<ol class="activity-feed" aria-live="polite">'+shown.slice(cut).map((a,j)=>line(a,cut+j)).join('')+'</ol></div>';
 }
 
 // The task card's large ring: steps done out of all known steps; a dashed track while the total is unknown.
