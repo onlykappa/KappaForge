@@ -724,3 +724,26 @@ test('weather endpoint handles network timeout',async()=>{
   assert.match(data.error,/Weather service unavailable/);
  }finally{globalThis.fetch=old}
 });
+
+test('frontend permission denied sets denied state and does not mark permanent on timeout/unavailable',async()=>{
+ globalThis.weatherPermissionState=null;
+ globalThis.localStorage={getItem:()=>null,setItem:()=>()=>null};
+ let errCode=1;
+ globalThis.navigator={geolocation:{getCurrentPosition:(succ,fail)=>fail({code:errCode,message:'denied'})}};
+ try{
+  await getWeatherLocation();
+  assert.fail('should throw');
+ }catch(e){
+  assert.equal(e.message,'Permission denied');
+  assert.equal(globalThis.weatherPermissionState,'denied');
+ }
+ globalThis.weatherPermissionState=null;
+ errCode=2;
+ try{
+  await getWeatherLocation();
+  assert.fail('should throw');
+ }catch(e){
+  assert.match(e.message,/Location unavailable/);
+  assert.notEqual(globalThis.weatherPermissionState,'denied');
+ }
+});

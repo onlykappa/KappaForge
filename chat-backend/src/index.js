@@ -136,13 +136,26 @@ export default {
     if(new URL(request.url).pathname==="/repos")return json({owner:"onlykappa",repos:await listRepos(env)},200,cors);
     if(new URL(request.url).pathname==="/weather"){
       const body=await request.json().catch(()=>({}));
-      const lat=Number(body.latitude),lon=Number(body.longitude),units=body.units==="metric"?"metric":"imperial";
-      if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude and longitude required"},400,cors);
+      let lat=Number(body.latitude),lon=Number(body.longitude),units=body.units==="metric"?"metric":"imperial";
+      if((!Number.isFinite(lat)||!Number.isFinite(lon))&&typeof body.city==="string"&&body.city.trim()){
+        try{
+          const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(body.city.trim())}&count=1`,{signal:AbortSignal.timeout(6000)});
+          const geoData=await geoRes.json();
+          if(geoData.results&&geoData.results.length>0){
+            lat=geoData.results[0].latitude;
+            lon=geoData.results[0].longitude;
+          }
+        }catch(e){}
+      }
+      if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude, longitude or city required"},400,cors);
       try{
-        const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&temperature_unit=${units==="metric"?"celsius":"fahrenheit"}&windspeed_unit=${units==="metric"?"kmh":"mph"}&precipitation_unit=inch`;
+        const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&current=apparent_temperature&temperature_unit=${units==="metric"?"celsius":"fahrenheit"}&windspeed_unit=${units==="metric"?"kmh":"mph"}&precipitation_unit=inch`;
         const res=await fetch(url,{signal:AbortSignal.timeout(10000)});
         if(!res.ok)throw Error("Open-Meteo HTTP "+res.status);
         const data=await res.json();
+        const conditionsMap={0:"Clear sky",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Depositing rime fog",51:"Light drizzle",53:"Moderate drizzle",55:"Dense drizzle",61:"Slight rain",63:"Moderate rain",65:"Heavy rain",71:"Slight snow",73:"Moderate snow",75:"Heavy snow",95:"Thunderstorm"};
+        const code=data.current_weather?.weathercode;
+        data.current_weather_text=conditionsMap[code]||"Fair";
         return json(data,200,cors);
       }catch(e){return json({error:"Weather service unavailable: "+e.message},502,cors);}
     }
