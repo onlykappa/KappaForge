@@ -128,6 +128,12 @@ document.getElementById("new").addEventListener("click",fresh);document.getEleme
 document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.target.closest("[data-page]");if(page)navigate(page.dataset.page)});
 document.getElementById("sidebar").addEventListener("click",e=>{const d=e.target.closest("[data-delete-chat]");if(d){if(deleteChat(d.dataset.deleteChat))render();return}const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
 document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
+function isWeatherQuery(text){return /\b(weather|temperature|rain|forecast|humidity|wind|storm|snow|sunny|cloudy|precipitation|degrees|fahrenheit|celsius|hot|cold|freezing)\b/i.test(text)};
+function requestLocationPermission(){return new Promise((resolve,reject)=>{if(!navigator.geolocation){reject(new Error("Geolocation not supported"));return}
+navigator.geolocation.getCurrentPosition(pos=>resolve({latitude:pos.coords.latitude,longitude:pos.coords.longitude}),err=>{if(err.code===err.PERMISSION_DENIED){reject(new Error("Permission denied"))}else{reject(new Error("Location unavailable: "+err.message))}},{enableHighAccuracy:true,timeout:10000,maximumAge:0})})};
+async function getWeatherLocation(){if(weatherPermissionState==="granted"){try{return await requestLocationPermission()}catch(e){weatherPermissionState="denied";localStorage.setItem("kappaforge.weather.permission",JSON.stringify(weatherPermissionState));throw e}}
+if(weatherPermissionState==="denied"){throw new Error("Permission denied")}
+try{const coords=await requestLocationPermission();weatherPermissionState="granted";localStorage.setItem("kappaforge.weather.permission",JSON.stringify(weatherPermissionState));return coords}catch(e){weatherPermissionState="denied";localStorage.setItem("kappaforge.weather.permission",JSON.stringify(weatherPermissionState));throw e}}
 
 // render() is owned by app-dashboard.js; do not shadow it here.
 const APP_VERSION=KappaConfig.version;

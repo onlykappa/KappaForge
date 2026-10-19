@@ -1,11 +1,11 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherUnits:'imperial'};
 function settings(value={}){
  const s={...defaults};
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
- for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark']}))if(values.includes(value[k]))s[k]=value[k];
+ for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark'],weatherUnits:['imperial','metric']}))if(values.includes(value[k]))s[k]=value[k];
  // Gemini model IDs, or provider:model for the free fallback providers (e.g. groq:llama-3.3-70b-versatile).
  if(typeof value.model==='string'&&/^(auto|gemini-[a-z0-9.-]+|[a-z-]{2,20}:[A-Za-z0-9@/._:-]{1,120})$/.test(value.model))s.model=value.model;
  if(Array.isArray(value.disabledProviders))s.disabledProviders=[...new Set(value.disabledProviders.filter(p=>typeof p==='string'&&/^[a-z-]{2,20}$/.test(p)))].slice(0,20);
