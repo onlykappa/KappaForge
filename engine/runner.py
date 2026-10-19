@@ -45,9 +45,6 @@ def read_token(repo, token=None):
     return token if repo == ROOT else os.getenv("KAPPA_CODER_TOKEN") or token
 
 TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M | re.I)
-# Restrict unattended automation to Flash-class models; no paid Pro fallback.
-# Strongest first: the lite models write noticeably weaker code and only answer when the others cannot.
-PREFERRED_MODELS = ["gemini-3-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.1",
            "X-GitHub-Api-Version": "2022-11-28"}
 
@@ -187,9 +184,18 @@ def discover_models(api_key):
             break
     return available
 
+# Flash-class model IDs only (never Pro, image, audio, live or experimental variants), so newly released or renamed
+# Flash models are found by discovery instead of a hard-coded list that goes stale: task #111 was written by the
+# weakest model because gemini-2.5-flash and gemini-2.5-flash-lite answered HTTP 404.
+FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$")
+
+
 def select_models(available):
-    """Use a small explicit allowlist so discovery cannot route to billable Pro models."""
-    return [name for name in PREFERRED_MODELS if name in available]
+    """Discovered Flash models, strongest first: full Flash before Lite, newer before older, stable before preview."""
+    def rank(name):
+        m = FLASH_RE.match(name)
+        return (bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
+    return sorted((name for name in available if FLASH_RE.match(name)), key=rank)
 
 def provider_headers(p):
     """Bearer auth when a key is set; providers without a key field (or keyOptional) also answer anonymously."""

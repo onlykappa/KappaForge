@@ -719,6 +719,64 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     return model, "\n".join(summaries)[:3000], combined, explanation[:2000]
 
 
+MAX_CHECK_ROUNDS = 2
+
+
+def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress):
+    """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
+
+    Returns the final changes, a one-paragraph verdict for the owner, and the problems still open."""
+    from engine import verify
+    cache = dict(sources)
+
+    def read(path):
+        if path not in cache and path in existing:
+            try:
+                cache[path] = read_source(repo, path, sha, repo_token)
+            except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
+                cache[path] = ""
+        return cache.get(path, "")
+
+    reqs, problems = [], []
+    for round_ in range(MAX_CHECK_ROUNDS + 1):
+        progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
+        problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing)
+        review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
+        files_needed = []
+        if review:
+            reqs, found, files_needed = review
+            problems += [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
+                         for r in reqs if r.get("met") is not True] + found
+        if not problems or round_ == MAX_CHECK_ROUNDS:
+            break
+        progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]))
+        progress.now(f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
+        # The fix sees every file the problems name, the change so far, and the files it already touched.
+        named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
+        current = {path: read(path) for path in (set(sources) | named)}
+        current.update(changes)
+        sizes = dict(existing)
+        sizes.update({path: len(text) for path, text in changes.items()})
+        fix_task = (task + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
+                    "against the task found these problems. Fix every one of them now, editing the real code paths they "
+                    "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20]))
+        try:
+            _, _, more, _ = generate(api_key, fix_task, repo, current, sizes, guide, allowed, design, require_test)
+        except ValueError as exc:
+            print("Self-review fix failed: " + str(exc)[:300])
+            break
+        changes = {path: text for path, text in {**changes, **more}.items() if text != (sources.get(path) if path in sources else read(path))}
+    if problems:
+        progress.ok(f"Checked the work: {len(problems)} problem{'s' if len(problems) != 1 else ''} still open (listed on the PR)",
+                    status="blocked")
+    else:
+        progress.ok("Checked the work against the task" + (f": all {len(reqs)} requirements met" if reqs else ""))
+    verdict = verify.report(reqs, [p for p in problems if not p.startswith("Requirement not met: ")])
+    if problems and not verdict:
+        verdict = "\n".join("- Problem: " + p[:300] for p in problems)
+    return changes, verdict, problems
+
+
 def produce_development_pr(issue, api_key, token):
     if (issue.get("user") or {}).get("login", "").lower() != OWNER:
         raise ValueError("Only the repository owner can request development")
@@ -775,6 +833,11 @@ def produce_development_pr(issue, api_key, token):
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
     progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
+    changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
+                                                     allowed, design, require_test, progress)
+    if verdict:
+        explanation = (verdict + "\n\n" + (explanation or ""))[:2000]
+        summary = (verdict + "\n" + summary)[:3000]
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
     if flags:
         stop_for_flags(repo, number, flags, token)
@@ -783,7 +846,7 @@ def produce_development_pr(issue, api_key, token):
     commit = commit_changes(repo, sha, changes, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", repo_token)
     gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
     pr = gh(f"repos/{repo}/pulls", repo_token, {
-        "title": f"Draft: {(issue.get('title') or 'KappaForge task')[:90]}",
+        "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
         "head": branch, "base": base, "draft": True,
         "body": review_body(number, model, explanation, summary, changes, design)})
     try:
@@ -797,6 +860,8 @@ def produce_development_pr(issue, api_key, token):
                 phase=True, status="blocked" if validation.startswith("Test dispatch failed") else "testing")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
         f"KappaForge generated a draft PR: {pr['html_url']}\n\n"
+        + (f"**Not finished:** checking the work against the task left {len(open_problems)} problem(s) open; they are listed "
+           "below and on the PR. Send guidance or ask me to fix it.\n\n" if open_problems else "") +
         f"**What this does:** {explanation or summary}\n\n"
         f"**Repository:** `{repo}` | **Model:** `{model}` | Read {len(sources)} files, changed {len(changes)}.\n\n"
         f"{validation} Review it on the Dashboard; nothing merges until you tap Merge.")})

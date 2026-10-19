@@ -433,8 +433,8 @@ class OtherRepositoryTests(unittest.TestCase):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
         everything = set(PROVIDERS["order"])
-        # File choice may use any allowed provider; the change itself is tried large on Gemini alone first.
-        self.assertEqual(allowances, [everything, set()], "owner allows every fallback provider by default")
+        # File choice and checking the work may use any allowed provider; the change itself is tried large on Gemini alone first.
+        self.assertEqual(allowances, [everything, set(), everything], "owner allows every fallback provider by default")
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})

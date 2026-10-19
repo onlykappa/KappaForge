@@ -1,7 +1,7 @@
 {
   "version": "2.2.4",
   "released": "2026-10-19",
-  "notes": "One request, one task: Plan task shows it is planning and ignores repeat taps, a request that already has a task says so, and the backend joins a duplicate sent within minutes. Briefs whose request is on a later line now start on their own. Cancelled tasks look cancelled, not successful.",
+  "notes": "One request, one task: Plan task shows it is planning and ignores repeat taps, and duplicates join the task already running. Briefs whose request is on a later line start on their own. The agent now checks its work against your task before opening a PR, fixes what it finds, and says plainly what is still not done; it also uses the newest Flash models and runs its own tests.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",
