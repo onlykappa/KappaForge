@@ -269,7 +269,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None):
                 break
     return None
 
-def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
+def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False):
     """Gemini first, then free fallback providers; `allowed` limits which fallbacks may see this prompt."""
     errors = []
     try:
@@ -285,7 +285,9 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
     for model in candidates:
         url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
         payload = {"contents": [{"parts": [{"text": prompt}]}],
-                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens}}
+                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens,
+                                        # Answers carrying code inside JSON strings often broke JSON ("Expecting ','").
+                                        **({"responseMimeType": "application/json"} if json_mode else {})}}
         headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
         grown = False
         # Provider outages are transient. Retry only 429/5xx; an invalid
@@ -306,6 +308,8 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
                     errors.append(model + ": answer cut off at the output limit")
                     continue
                 if output:
+                    if errors:
+                        print("Used " + model + " after: " + "; ".join(errors)[:600])
                     return model, output
                 errors.append(model + ": empty response")
                 break

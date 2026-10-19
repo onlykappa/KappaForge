@@ -1,7 +1,7 @@
 {
-  "version": "2.2.5",
+  "version": "2.2.6",
   "released": "2026-10-19",
-  "notes": "Chats with a cancelled task no longer fail with \u201cInvalid message\u201d. Tasks started on GitHub or another device now show under Running and Agent tasks. The agent retries a dropped AI connection instead of failing the task.",
+  "notes": "Dashboard shows a task's real state (a failed fix is no longer \u201cFinished\u201d), task runs no longer count as failing checks, and tapping a task started on GitHub opens it in a chat with its reports. Long chat replies no longer time out mid-answer. The agent fixes PRs more reliably: it is shown the real text to edit, asks for strict JSON and logs why a model was skipped.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",

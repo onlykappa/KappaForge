@@ -170,7 +170,7 @@ def parse_review(output):
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's requirement-by-requirement verdict; None when no model could review (never blocks on that)."""
     try:
-        _, output = run_model(api_key, review_prompt(task, diff_text(read, changes), paths), max_output_tokens=4000, allowed=allowed)
+        _, output = run_model(api_key, review_prompt(task, diff_text(read, changes), paths), max_output_tokens=4000, allowed=allowed, json_mode=True)
         return parse_review(output)
     except Exception:  # No model, a refusal or bad JSON: the wiring checks still ran; a review never blocks the task.
         return None

@@ -69,7 +69,7 @@ class CheckTheWork(unittest.TestCase):
     def run_check(self, reviews, fixes):
         reviews, fixes, prompts = list(reviews), list(fixes), []
 
-        def model(api_key, prompt, max_output_tokens=0, allowed=None):
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False):
             return "gemini", json.dumps(reviews.pop(0))
 
         def generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test):
@@ -109,3 +109,42 @@ class CheckTheWork(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnchorHint(unittest.TestCase):
+    """A find copied from a diff's removed line gets the real current text back (PR #121's fixes failed 5 times on it)."""
+
+    def test_the_closest_real_lines_are_shown_exactly(self):
+        sources = {"chat-backend/src/index.js": 'const a = 1;\n    if (request.method !== "POST" || !["/chat", "/weather"].includes(path))\n      return json({ error: "Not found" }, 404, cors);\n'}
+        message = 'Edit text must match exactly once in chat-backend/src/index.js (matched 0 times):     if (request.method !== "POST" || !["/chat"].includes(path))'
+        hint = developer.diagnose_generation_failure(message, sources)
+        self.assertIn("never copy a line from a diff that starts with '-'", hint)
+        self.assertIn('    if (request.method !== "POST" || !["/chat", "/weather"].includes(path))', hint)
+
+    def test_no_hint_when_nothing_is_close(self):
+        self.assertEqual(developer.closest_text("Edit text must match exactly once in a.js (matched 0 times): zzzz qqqq", {"a.js": "const x = 1;"}), "")
+
+
+def response(data):
+    from unittest.mock import MagicMock
+    result = MagicMock()
+    result.__enter__.return_value = result
+    result.__exit__.return_value = False
+    result.read.return_value = json.dumps(data).encode()
+    return result
+
+
+class JsonMode(unittest.TestCase):
+    def test_gemini_is_asked_for_json_when_the_caller_needs_it(self):
+        from engine import runner
+        sent = []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/gemini-3-flash", "supportedGenerationMethods": ["generateContent"]}]})
+            sent.append(json.loads(req.data)["generationConfig"])
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "{}"}]}}]})
+        with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            runner.run_model("key", "p", json_mode=True)
+            runner.run_model("key", "p")
+        self.assertEqual(sent[0].get("responseMimeType"), "application/json")
+        self.assertNotIn("responseMimeType", sent[1])

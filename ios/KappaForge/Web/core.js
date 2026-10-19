@@ -106,7 +106,9 @@ function taskSummaryText(number,model){
 globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSeconds,clock:durationText,chips,taskModel,recordDuration,typicalDuration,taskSummaryText,conciseReport(status,body,source){
  const raw=String(body||'').replace(/<!--[^]*?-->/g,'').replace(/\\n/g,'\n').trim();
  const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
- const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':status==='complete'?'Task complete':'Progress update';
+ // A draft PR is a step, not the end: say so, and say plainly when checking the work left problems open.
+ const draft=status==='complete'&&/generated a draft PR/i.test(raw);
+ const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':draft?(/\*\*Not finished:\*\*/.test(raw)?'Draft PR opened · not finished':'Draft PR opened'):status==='complete'?'Task complete':'Progress update';
  const issues=lines.filter(x=>FINDING.test(x));
  const useful=lines.filter(x=>!/^### |^#### Findings|^```|^<!--/.test(x)&&!FINDING.test(x)).slice(0,5);
  const message=(useful.length?useful:lines.slice(0,2)).join('\n').slice(0,900);
