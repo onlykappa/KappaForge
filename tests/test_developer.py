@@ -735,3 +735,19 @@ class ActivityFeedTests(unittest.TestCase):
         self.assertEqual([developer.activity_kind(t) for t in ("Checking the work against the task", "Fixing what the check found",
                                                                  "Opened draft PR #5; tests are running", "Planned 3 steps")],
                          ["check", "fix", "git", "plan"])
+
+
+class StageRecoveryTests(unittest.TestCase):
+    def test_a_failed_test_stage_keeps_the_change_for_the_work_check(self):
+        """Task #125's final "write a test" stage failing threw away three finished stages."""
+        first = json.dumps({"summary": "Cast", "files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5):
+            _, _, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None,
+                                                         ["Cast"], require_test=True)
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertTrue(developer.UNFINISHED[0].startswith("No test proves the change works yet"))
+
+    def test_syntax_errors_say_what_and_where_not_the_node_version(self):
+        message = developer.syntax_error("tests/a.test.mjs", "import x from 'y';\nconst a = ;\n")
+        self.assertEqual(message, "tests/a.test.mjs: SyntaxError: Unexpected token ';' (line 2)")

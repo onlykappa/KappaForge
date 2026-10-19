@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 ACTIVE = ContextVar("execution_scope", default=None)
 READ_MODES = {"analysis", "audit", "project-map", "continuous", "watch"}
 WRITE_MODES = {"develop", "code", "repair", "continuous-code"}
+# Autonomous retries allowed per task, across all its stages, fixes and tests (each round also has its own limit).
+TOTAL_RECOVERIES = 40
 # Monitoring and multi-step coding run on a schedule for days; everything else expires after one.
 LONG_RUNNING_MODES = {"continuous", "watch", "continuous-code"}
 MARKER = re.compile(r"^<!-- kappa-authorization:(\{[^\n]+\}) -->$", re.M)
@@ -57,6 +59,7 @@ class ExecutionScope:
         self.digest = hashlib.sha256(self.body.encode()).hexdigest()
         self.state = "authorized"
         self.recoveries = 0
+        self.round_recoveries = {}
         self.rejected = set()
         # Learned from GitHub responses: progress comments this task posted and PRs on its own branch.
         self.own_comments = set()
@@ -69,10 +72,15 @@ class ExecutionScope:
             raise PermissionError("Invalid execution lifecycle transition")
         self.state = state
 
-    def recover(self, signature, limit=5):
-        if self.state in {"cancelled", "completed", "failed"} or signature in self.rejected or self.recoveries >= limit:
+    def recover(self, signature, limit=5, round_id=0, total=TOTAL_RECOVERIES):
+        """Bound autonomous retries: `limit` per generation round (one stage, fix or test) and `total` per task.
+        Task #125 failed in its last stage because one budget of 5 was shared by every stage of the task."""
+        used = self.round_recoveries.get(round_id, 0)
+        if (self.state in {"cancelled", "completed", "failed"} or (round_id, signature) in self.rejected
+                or used >= limit or self.recoveries >= total):
             raise PermissionError("Recovery budget exhausted or rejected edit repeated")
-        self.rejected.add(signature)
+        self.rejected.add((round_id, signature))
+        self.round_recoveries[round_id] = used + 1
         self.recoveries += 1
 
     def check_current(self, current, now=None):

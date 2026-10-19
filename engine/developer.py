@@ -8,6 +8,7 @@ import ast
 import collections
 import difflib
 import base64
+import itertools
 import json
 import os
 import re
@@ -309,7 +310,12 @@ def syntax_error(path, text):
                     handle.write(text)
                 result = subprocess.run(["node", "--check", file], capture_output=True, text=True, timeout=30)
                 if result.returncode:
-                    return path + ": " + (result.stderr.strip().splitlines() or ["syntax error"])[-1][:200]
+                    # Node ends its report with its version ("Node.js v22.23.3"), which task #125 got back instead of
+                    # the error: return where it is and what it is.
+                    lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+                    number = next((line.rsplit(":", 1)[1] for line in lines if line.startswith(file + ":")), "")
+                    what = next((line for line in lines if re.match(r"\w*Error\b", line)), lines[0] if lines else "syntax error")
+                    return f"{path}: {what[:200]}" + (f" (line {number})" if number else "")
     except (SyntaxError, ValueError) as exc:
         return path + ": " + type(exc).__name__ + " " + str(exc)[:200]
     return None
@@ -447,6 +453,9 @@ def diagnose_generation_failure(message, sources):
             "and preserve all existing authorization, file scope and test requirements.")
 
 
+GENERATION_ROUNDS = itertools.count(1)
+
+
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
     context = ""
     for path, text in sources.items():
@@ -488,6 +497,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current default branch):" + context)
     errors = []
     rejected_signatures = set()
+    round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
     avoid = set()  # Models that repeated a rejected answer: the next attempt asks another one.
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
@@ -522,7 +532,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
             if scope is not None and attempt:
-                scope.recover(signature)
+                scope.recover(signature, round_id=round_id)
             changes = apply_changes(sources, existing, proposal, budget)
             if require_test and needs_test(changes) and not has_tests(changes):
                 raise ValueError("No test was added or changed: add or update a test that checks the new behaviour "
@@ -811,10 +821,15 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         try:
             model, summary, changes, explanation = generate(api_key, final, repo, current, files, guide, allowed, design, True)
         except ValueError as exc:
-            raise ValueError(f"Adding a test for the change failed: {exc}") from exc
-        combined.update(changes)
-        summaries.append(f"Tests: {summary}")
-        explanations.append(explanation or summary)
+            # Keep the change: checking the work asks again for the test, and a draft PR reports it if still missing.
+            UNFINISHED.append(f"No test proves the change works yet: writing one failed ({str(exc)[:300]}). Add a test "
+                              "that fails without the change and passes with it")
+            if progress:
+                progress.ok("Could not write the test yet; moving on and adding it when checking the work")
+        else:
+            combined.update(changes)
+            summaries.append(f"Tests: {summary}")
+            explanations.append(explanation or summary)
     # Files a later stage changed back to their original text drop out of the commit.
     combined = {p: t for p, t in combined.items() if t != sources.get(p)}
     if not combined:

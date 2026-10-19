@@ -1,5 +1,7 @@
 # KappaForge v3 roadmap: more models, fewer limits
 
+Version 3 builds on 2.2.8, which already ships the new routing below together with the live task activity feed.
+
 **Goal:** a task never stops because one provider hit its limit, and code is written by the strongest free model available at that moment.
 
 ## Why
@@ -24,7 +26,7 @@ The best free coding models are no longer Gemini Flash. These are SWE-bench Veri
 
 **OmniRoute** was considered and deferred. It routes between the same free tiers KappaForge already reaches, at the cost of about 550 MB installed on every run. It stays an option for a self-hosted server with subscription accounts (3.3).
 
-## 3.0: strong models before Flash-Lite (this release)
+## Shipped early in 2.2.8: strong models before Flash-Lite
 
 - **Routing order:**
   1. Full-size Gemini Flash.
