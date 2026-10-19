@@ -138,3 +138,28 @@ test('the dashboard lists running tasks first with their step and progress; each
  assert.match(html,/agent-task done" data-open-task="7"/);assert.doesNotMatch(html,/data-open-task="5"/,'older finished tasks drop off');
  box.trackedJobs=[];assert.equal(box.agentTasksPanel(),'','no panel without tasks');
 });
+
+// A failed task finishes, but must read as failed with its reason, not as a green step still being written.
+test('finished tasks show how they ended; failures stay red with the failing step',()=>{
+ const dash=read('app-dashboard.js');
+ const failedList='### KappaForge is working on it\n\n✅ Read project · 2s\n✅ Planned 2 steps · 1s\n❌ Step 1 of 2: Update the regex: failed validation';
+ const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,taskValidation:()=>[],
+  chats:[{id:'c',messages:[{role:'assistant',text:failedList,progressKey:'progress:98:1'},{role:'assistant',text:'✅ Read project · 2s\n✅ Opened draft PR #7 · 3s',progressKey:'progress:7:1'}]}],
+  trackedJobs:[{number:98,finished:true,message:'failed',activeAt:Date.now()},{number:7,finished:true,message:'merged',activeAt:Date.now()-1000}]};
+ vm.createContext(box);vm.runInContext(slice(dash,'function taskProgressMessage(','\nfunction openTaskInChat('),box);
+ const html=box.agentTasksPanel();
+ assert.match(html,/agent-task failed" data-open-task="98"[^]*Failed: Writing the change: Step 1 of 2: Update the regex/);
+ assert.match(html,/agent-task done" data-open-task="7"[^]*Merged/);
+ const label=n=>({labels:[{name:'kappa-Task'}]});
+ assert.equal(box.taskStatusText({repo:'KappaForge',number:98,...label()}),'Failed · ask to retry or send guidance');
+ assert.equal(box.taskStatusText({repo:'KappaForge',number:99,...label()}),'No live updates on this device');
+ box.trackedJobs.push({number:100,message:'progress'});assert.equal(box.taskStatusText({repo:'KappaForge',number:100}),'Running');
+});
+
+// Chat replies that claim work no task backs: "I am working on Task #106" when #106 was never created.
+test('assistant claims of running work are recognized with the task numbers they name',()=>{
+ assert.deepEqual(J.workClaims('I am working on **Task #106** ("Add a weather feature"). Once tests pass, I will open the draft PR.').numbers,[106]);
+ assert.deepEqual(J.workClaims("I'm on it.").numbers,[]);
+ assert.equal(J.workClaims('Task #98 failed at step 1. Ask me to retry task #98.'),null,'reporting a real result is not a claim');
+ assert.equal(J.workClaims('Here is a plan:\n```\nI am working on it\n```'),null,'code blocks are ignored');
+});

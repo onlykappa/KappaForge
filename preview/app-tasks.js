@@ -19,6 +19,17 @@ async function runChatAction(reply,typed,chat,offerTask){
  const planned=await proposeTaskAutomatically(typed,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id);
  if(!planned){chat.messages.push({role:"assistant",text:"Task did not start: "+(planError||"automatic planning was unavailable")+". Use Plan task to review and retry."});save();render();}
 }
+// The chat model can't start work, yet sometimes says it has ("I am working on Task #106"). When a reply claims work
+// that no tracked task backs, say so in the chat instead of leaving the owner waiting on progress that never comes.
+function checkWorkClaims(reply,chat,launchedBefore){
+ const claim=KappaJobs.workClaims(reply);if(!claim||!chat)return;
+ const launched=trackedJobs.length>launchedBefore||!!pendingJob;
+ const unknown=claim.numbers.filter(n=>!trackedJobs.some(j=>j.number===n));
+ if(launched&&!unknown.length)return;
+ if(!unknown.length&&claim.numbers.length&&claim.numbers.every(n=>trackedJobs.some(j=>j.number===n&&!j.finished)))return;
+ chat.messages.push({role:"assistant",workCheck:true,text:"**Note:** "+(unknown.length?"Task "+unknown.map(n=>"#"+n).join(", ")+" doesn't exist. ":"")+"No task is running for this, so no progress will appear. To start the work, describe it as a request (for example \u201cAdd a weather feature to KappaForge\u201d) or tap **Plan task**."});
+ save();render();
+}
 async function userAuthorizedFetch(path,payload,userText,source='user-control',requestId=crypto.randomUUID(),conversationId=current||'controls'){
  const authorization={id:requestId,requestId,conversationId};
  const body={...payload,authorization};

@@ -1,7 +1,7 @@
 {
-  "version": "2.2.0",
+  "version": "2.2.1",
   "released": "2026-10-19",
-  "notes": "New Apple-style design: floating tab bar, graphite look, a Dashboard with repository picker and pull request activity, and live task cards with a progress ring and timer.",
+  "notes": "Dashboard counts every pull request from the last 7 days and shows what is open now; failed tasks show as failed; the Tasks tab shows each task's status; chat no longer leaves you waiting on tasks that were never started.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",

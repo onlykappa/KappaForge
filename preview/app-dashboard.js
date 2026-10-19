@@ -316,11 +316,23 @@ let dashboardTab=(()=>{try{return sessionStorage.getItem("kappaforge.dashboardTa
 let dashboardRepo=(()=>{try{return localStorage.getItem("kappaforge.dashboardRepo")||"KappaForge"}catch(e){return "KappaForge"}})();
 let repoSheetOpen=false,sheetShown="";
 const pullsData={};
+// Newest-first GitHub list pages until one reaches past the window (stamp is each item's sort date), so a busy
+// week is counted whole instead of stopping at one page. Ten pages of 100 at most.
+async function pagesSince(path,stamp,since,force){
+ const all=[];
+ for(let page=1;page<=10;page++){
+  const batch=await api(path+(path.endsWith("?")?"":"&")+"per_page=100&page="+page,force);
+  if(!Array.isArray(batch))break;all.push(...batch);
+  if(batch.length<100||(Date.parse(stamp(batch.at(-1))||"")||0)<since)break;
+ }
+ return all;
+}
 async function loadPulls(repo,force=false){
  const entry=pullsData[repo]||(pullsData[repo]={});
  if(entry.loading||(!force&&entry.at&&Date.now()-entry.at<300000))return;
  entry.loading=true;entry.error="";
- try{const [prs,commits]=await Promise.all([api(repo+"/pulls?state=all&sort=updated&direction=desc&per_page=50",force),api(repo+"/commits?per_page=50",force).catch(()=>[])]);entry.prs=prs;entry.commits=commits;entry.at=Date.now()}
+ const since=Date.now()-7*86400000;
+ try{const [prs,commits]=await Promise.all([pagesSince(repo+"/pulls?state=all&sort=updated&direction=desc",p=>p.updated_at,since,force),pagesSince(repo+"/commits?",c=>c?.commit?.committer?.date||c?.commit?.author?.date,since,force).catch(()=>[])]);entry.prs=prs;entry.commits=commits;entry.at=Date.now()}
  catch(e){entry.error=e.message}finally{entry.loading=false;if(view==="home")render()}
 }
 function setDashboardTab(tab){dashboardTab=tab;try{sessionStorage.setItem("kappaforge.dashboardTab",tab)}catch(e){}render();scrollTo(0,0)}
@@ -363,10 +375,12 @@ function pullsView(){
  const a=KappaPulls.activity(entry.prs,entry.commits,{days:7});
  const tile=(icon,tone,label,n,sub)=>'<div class="ios-widget"><span class="ios-widget-label '+tone+'">'+uiIcon(icon)+esc(label)+'</span><b>'+esc(n)+'</b><small>'+esc(sub)+'</small></div>';
  const nums=l=>l.slice(0,4).map(p=>"#"+p.number).join(" · ");
+ // Open now is every open PR (the dashboard's open list), not only ones touched this week.
+ const open=data.loaded?(data.prs||[]).filter(p=>p.repo===dashboardRepo):a.open;
  const pushedRows=a.pushed.slice(0,8).map(c=>iosRow({tag:c.url?"a":"div",attrs:c.url?'href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer"':'',icon:"commit",title:esc(c.message),sub:'<span class="sha">'+esc(c.sha)+'</span> · '+esc([c.author,ago(c.at)].filter(Boolean).join(" · ")),chevron:!!c.url})).join("");
- return '<h2 class="ios-gh">Pull requests · last 7 days</h2><div class="ios-widgets">'+tile("reviews","st-ok","Opened",a.opened.length,nums(a.opened)||"None")+tile("merge","st-info","Merged",a.merged.length,nums(a.merged)||"None")+
+ return '<h2 class="ios-gh">Pull requests · last 7 days</h2><div class="ios-widgets">'+tile("reviews","st-ok","Open now",open.length,nums(open)||"Nothing open")+tile("merge","st-info","Merged",a.merged.length,nums(a.merged)||"None")+
   tile("pr-closed","st-bad","Closed",a.closed.length,a.closed.length?nums(a.closed)+" · not merged":"None")+tile("commit","","Pushed",a.pushed.length,"commits to the default branch")+'</div>'+
-  '<h2 class="ios-gh">Opened · '+a.opened.length+'</h2><div class="ios-group icons">'+(a.opened.map(p=>pullRow(p,p.createdAt)).join("")||'<p class="ios-empty">No pull requests opened in the last 7 days.</p>')+'</div>'+
+  '<h2 class="ios-gh">Opened this week · '+a.opened.length+'</h2><div class="ios-group icons">'+(a.opened.map(p=>pullRow(p,p.createdAt)).join("")||'<p class="ios-empty">No pull requests opened in the last 7 days.</p>')+'</div>'+
   '<h2 class="ios-gh">Merged and closed · '+a.ended.length+'</h2><div class="ios-group icons">'+(a.ended.map(p=>pullRow(p,p.mergedAt||p.closedAt)).join("")||'<p class="ios-empty">Nothing merged or closed in the last 7 days.</p>')+'</div>'+
   '<h2 class="ios-gh">Pushed · '+a.pushed.length+' commits</h2><div class="ios-group icons">'+(pushedRows||'<p class="ios-empty">No commits pushed to the default branch in the last 7 days.</p>')+'</div>'+
   '<p class="ios-gf">Pushed lists commits on '+esc(dashboardRepo)+"'s default branch. Updated "+esc(ago(entry.at))+'.</p>';
@@ -415,6 +429,16 @@ function taskProgressMessage(number){
  for(const chat of chats){const i=chat.messages.findLastIndex(m=>String(m.progressKey||"").startsWith("progress:"+number+":"));if(i>=0)return {chat,index:i,message:chat.messages[i]}}
  return null;
 }
+// One line of truth for an open task issue: what its agent last reported, from this device's tracking.
+function taskStatusText(issue){
+ const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
+ if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
+ if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
+ if(job.message==="tests-passed")return "Tests passed · ready for review";
+ if(job.finished)return TASK_ENDED[job.message]||"Finished";
+ return KappaProgress.stale(job)?"No update for a while · may be stuck":job.message==="waiting"?"Queued":"Running";
+}
+const TASK_ENDED={merged:"Merged",closed:"Closed without merging",cancelled:"Cancelled",complete:"Finished","tests-passed":"Tests passed"};
 // Running tasks (and the day's finished ones) with their step, progress and time; a row opens the task's card in chat.
 function agentTasksPanel(){
  const day=Date.now()-86400000;
@@ -426,11 +450,14 @@ function agentTasksPanel(){
   const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
   const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
   const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
-  const now=model.current||checks.find(c=>c.state==="current")||model.failed||all.filter(r=>r.state==="done").at(-1);
-  const failed=!!model.failed||["failed","tests-failed"].includes(job.message);
-  const state=job.finished?"done":failed?"failed":model.current||checks.some(c=>c.state==="current")?"current":"done";
+  const failed=!!model.failed||["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed";
+  // A failed task stays red and says why, finished or not; a finished one never shows a step as still running.
+  const now=failed?model.failed||checks.find(c=>c.state==="failed"):model.current||checks.find(c=>c.state==="current")||all.filter(r=>r.state==="done").at(-1);
+  const state=failed?"failed":job.finished?"done":model.current||checks.some(c=>c.state==="current")?"current":"done";
+  const step=now?plain(now.title)+(now.detail?': '+clip(plain(now.detail),70):''):'';
+  const label=failed?"Failed"+(step?": "+step:""):job.finished?(TASK_ENDED[job.message]||"Finished"):step||"Waiting for the first update";
   return '<button type="button" class="agent-task '+state+'" data-open-task="'+esc(job.number)+'"><span class="agent-task-head"><strong>Task #'+esc(job.number)+(model.fix?' · fix '+model.fix.n+' of '+model.fix.of:'')+'</strong><small>'+esc(done+'/'+all.length)+'</small></span>'+
-   '<span class="agent-task-step">'+esc(now?plain(now.title)+(now.detail?': '+clip(plain(now.detail),70):''):'Waiting for the first update')+'</span>'+
+   '<span class="agent-task-step">'+esc(label)+'</span>'+
    '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span></button>';
  }).filter(Boolean);
  return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
@@ -492,7 +519,7 @@ if(view==="chat"&&pendingJob)html+=jobApproval();
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
-if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
+if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+(data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
