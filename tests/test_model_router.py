@@ -299,3 +299,28 @@ class BestModelsFirst(StrongModelsBeforeLite):
         answer, asked, _ = self.route("short prompt")
         self.assertEqual(answer, ("gemini-3-flash-lite", "lite"))
         self.assertEqual(asked[0], "gemini-3-flash", "full-size Flash is next, then Flash-Lite")
+
+
+class ProviderCheck(unittest.TestCase):
+    """The "Check AI providers" workflow: which models really answer, without printing keys."""
+
+    def test_missing_keys_answers_and_failures_are_reported(self):
+        from engine import provider_check
+
+        def urlopen(req, timeout=None):
+            if req.full_url.endswith("/models"):
+                return response({"data": [{"id": "deepseek-v4-pro"}]})
+            if "ollama" in req.full_url:
+                return response({"choices": [{"message": {"content": "OK"}}]})
+            raise urllib.error.HTTPError(req.full_url, 429, "quota", {}, io.BytesIO(b""))
+        env = {k: "" for k in KEYS}
+        env.update({"OLLAMA_API_KEY": "secret-ollama", "NVIDIA_API_KEY": "secret-nvidia"})
+        with patch.dict(os.environ, env), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            rows = provider_check.check_provider("ollama") + provider_check.check_provider("nvidia") + provider_check.check_provider("groq")
+            text = provider_check.report(rows + provider_check.check_gemini(""))
+        self.assertIn("| ollama (strong) | `deepseek-v4-pro` | ✅ ok |", text)
+        self.assertIn("| nvidia (strong) | `deepseek-v4-pro` | ❌ failed | HTTP 429 (rate-limited) |", text)
+        self.assertIn("add the GROQ_API_KEY secret", text)
+        self.assertIn("GEMINI_API_KEY is not set", text)
+        self.assertIn("1 model answered", text)
+        self.assertNotIn("secret-", text)

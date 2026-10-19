@@ -1,0 +1,36 @@
+name: Check AI providers
+run-name: Check which AI models the agent can reach
+# One tiny request to every model the coding agent would use, with the agent's own secrets. The result is a table
+# in the run's summary. Keys are never printed.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Ask every model for one word
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+        ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+        LLM7_API_KEY: ${{ secrets.LLM7_API_KEY }}
+        UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
+        REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+      shell: bash
+      run: |-
+        set -Eeuo pipefail
+        python -m engine.provider_check

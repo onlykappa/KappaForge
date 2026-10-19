@@ -3,7 +3,7 @@ import {streamReply} from "./streaming.js";
 import {getTimeContext} from "./time.js";
 import {projectHealth} from "./project-health.js";
 import {nativeBuilds,NATIVE_QUESTION} from "./native-builds.js";
-import {discover,routes,telemetry,usageStore,isComplex} from "./intelligence.js";
+import {discover,routes,telemetry,usageStore,isComplex,rest,awake} from "./intelligence.js";
 import {indexStore,refreshIndex,searchIndex} from "./vector-index.js";
 import {listRepos,mentionedRepo,defaultBranch,isRepoName} from "./repos.js";
 import {githubHeaders,githubRead} from "./github.js";
@@ -61,7 +61,6 @@ export class KappaMemory {
 const ORIGIN = "https://onlykappa.github.io";
 // Longest task request/instructions accepted from the app (the app trims to the same limit).
 const TASK_LIMIT = 3500;
-const PREFERRED_MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
 function json(data, status = 200, cors = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -631,7 +630,7 @@ export default {
     try {
       const prefs=input.preferences||{},chat=toChat(payload);
       // A Gemini outage or exhausted key should not block the free fallback providers.
-      const available=await discover(env).catch(()=>[]);
+      const available=awake(await discover(env).catch(()=>[]));
       const manualGemini=typeof prefs.model==="string"&&prefs.model!=="auto"&&!prefs.model.includes(":");
       if(manualGemini&&!available.includes(prefs.model))return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
       const candidates=await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia);
@@ -660,6 +659,7 @@ export default {
         lastStatus = response.status;
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
+          if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           if (!gemini || [404, 429, 500, 502, 503].includes(response.status)) continue;
           return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
