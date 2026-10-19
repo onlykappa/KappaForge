@@ -1,7 +1,7 @@
 """Owner-approved development on real source files.
 
 Reads the target repository, lets the model choose which files it needs, asks for
-precise find/replace edits, validates them and opens a draft PR as one commit.
+precise find/replace edits, validates them and saves stages on an incomplete draft PR.
 Generated code is only parsed for syntax here, never executed; review and CI stay separate.
 """
 import ast
@@ -866,8 +866,8 @@ def short_list(paths, n=4):
 UNFINISHED = []
 
 
-def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress=None, design="", require_test=False):
-    """One change, or several stages built in order on top of each other and delivered as one commit."""
+def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress=None, design="", require_test=False, checkpoint=None):
+    """Build stages in order; optionally checkpoint each validated stage before starting the next."""
     UNFINISHED.clear()
     if not stages:
         return generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test)
@@ -903,6 +903,8 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         writer = model  # The model credited with the change wrote some of it, not just answered last.
         summaries.append(f"Stage {i} (written by {model}): {summary}")
         explanations.append(explanation or summary)
+        if checkpoint:
+            checkpoint(writer, "\n".join(summaries)[:3000], dict(combined), "\n".join(explanations)[:2000])
     if require_test and needs_test(combined) and not has_tests(combined):
         if progress:
             progress.now("Writing a test that proves the change works")
@@ -922,6 +924,8 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
             writer = writer or model
             summaries.append(f"Tests: {summary}")
             explanations.append(explanation or summary)
+            if checkpoint:
+                checkpoint(writer, "\n".join(summaries)[:3000], dict(combined), "\n".join(explanations)[:2000])
     # Files a later stage changed back to their original text drop out of the commit.
     combined = {p: t for p, t in combined.items() if t != sources.get(p)}
     if not combined:
@@ -1021,8 +1025,8 @@ def produce_development_pr(issue, api_key, token):
         if open_prs:
             raise ValueError(f"This task already has an open PR ({open_prs[0].get('html_url', branch)}); use Fix it "
                              "or close that PR before starting over")
-        # A branch from an earlier attempt that never got (or no longer has) a PR: start over cleanly.
-        gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, method="DELETE")
+        # Do not destroy saved code after a crash between saving a branch and opening its PR.
+        raise ValueError(f"Saved branch {branch} exists without an open PR. Review it and open a draft PR before continuing; it was retained.")
     guidance = owner_guidance(number, token)
     task = ((issue.get("title") or "") + "\n" + body
             + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:])
@@ -1050,8 +1054,32 @@ def produce_development_pr(issue, api_key, token):
         progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
     else:
         progress.now("Writing the change", phase=True)
+    saved = {"sha": sha, "pr": None, "changes": {}}
+
+    def checkpoint(model, summary, changes, explanation):
+        # Save only validated proposals, never code from a rejected answer. The marker blocks merge even if CI passes.
+        if repo != ROOT and not flags_allowed(body) and flagged_changes(sources, changes):
+            return
+        delta = {p: t for p, t in changes.items() if t != saved["changes"].get(p, sources.get(p))}
+        if not delta:
+            return
+        commit = commit_changes(repo, saved["sha"], delta, modes, f"KappaForge: save validated stage for {ROOT}#{number}", repo_token)
+        if saved["sha"] == sha:
+            gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
+        else:
+            gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
+        saved["sha"], saved["changes"] = commit["sha"], dict(changes)
+        if not saved["pr"]:
+            saved["pr"] = gh(f"repos/{repo}/pulls", repo_token, {
+                "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}",
+                "head": branch, "base": base, "draft": True,
+                "body": review_body(number, model, explanation, summary, changes, design,
+                                    ["Saved implementation checkpoint. Complete the original task and verify every requirement before merging; use Fix it if interrupted."])})
+        progress.act("write", "Saved validated stage on draft PR " + saved["pr"]["html_url"])
+        progress.saved_pr = saved["pr"]["html_url"]
+
     model, summary, changes, explanation = build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress,
-                                                           design, require_test)
+                                                           design, require_test, checkpoint=checkpoint)
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
     progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
@@ -1068,13 +1096,21 @@ def produce_development_pr(issue, api_key, token):
     if flags:
         stop_for_flags(repo, number, flags, token)
         return None
-    # One atomic commit on a fresh branch; the default branch is never written.
-    commit = commit_changes(repo, sha, changes, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", repo_token)
-    gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
-    pr = gh(f"repos/{repo}/pulls", repo_token, {
+    # Include reversions made during review so a checkpoint can never leak an obsolete edit into the final PR.
+    delta = {p: changes.get(p, sources.get(p, "")) for p in set(changes) | set(saved["changes"])
+             if changes.get(p, sources.get(p, "")) != saved["changes"].get(p, sources.get(p, ""))}
+    commit = commit_changes(repo, saved["sha"], delta, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", repo_token)
+    if saved["pr"]:
+        gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
+    else:
+        gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
+    payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
-        "head": branch, "base": base, "draft": True,
-        "body": review_body(number, model, explanation, summary, changes, design, open_problems)})
+        "body": review_body(number, model, explanation, summary, changes, design, open_problems)}
+    if saved["pr"]:
+        pr = gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, payload, method="PATCH")
+    else:
+        pr = gh(f"repos/{repo}/pulls", repo_token, {**payload, "head": branch, "base": base, "draft": True})
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "

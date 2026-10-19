@@ -263,6 +263,24 @@ def code_providers(private=False):
 # Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
 FALLBACK_MAX_TOKENS = 8192
 
+# Leave ten minutes for GitHub writes and failure reporting before the six-hour job hard stop.
+TASK_DEADLINE = None
+MODEL_DEADLINE = None
+
+
+class TaskTimeExpired(Exception):
+    """Stop generating while there is still time to preserve and explain the work."""
+
+
+def model_timeout(limit=120):
+    now = time.monotonic()
+    if TASK_DEADLINE is not None and TASK_DEADLINE <= now:
+        raise TaskTimeExpired("Model work reached its 5-hour-50-minute budget. Saved draft stages are retained; use Fix it to continue.")
+    if MODEL_DEADLINE is not None and MODEL_DEADLINE <= now:
+        raise RuntimeError("Model routes reached their shared four-minute budget")
+    remaining = [limit] + [d - now for d in (TASK_DEADLINE, MODEL_DEADLINE) if d is not None]
+    return max(0.1, min(remaining))
+
 def fits(p, prompt, max_output_tokens):
     """Whether a prompt plus room for the answer fits the provider's context window (about 3.5 characters a token)."""
     return len(prompt) / 3.5 + min(max_output_tokens, p.get("maxOutput", max_output_tokens)) <= p.get("context", 32768)
@@ -293,7 +311,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                 req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
                                              {"Content-Type": "application/json", **provider_headers(p)})
                 try:
-                    with urllib.request.urlopen(req, timeout=300 if limit > FALLBACK_MAX_TOKENS else 180) as response:
+                    with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                         data = json.load(response)
                     output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
                     if output.strip():
@@ -308,6 +326,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     errors.append(name + ": HTTP " + str(exc.code))
                 except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
                     errors.append(name + ": " + type(exc).__name__)
+                    COOLDOWN[name] = time.time() + 300
                 break
     return None
 
@@ -345,6 +364,17 @@ def rate_limited(model, exc):
 
 
 def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
+    global MODEL_DEADLINE
+    previous = MODEL_DEADLINE
+    MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
+    try:
+        model_timeout()
+        return _run_model(api_key, prompt, max_output_tokens, allowed, json_mode, skip)
+    finally:
+        MODEL_DEADLINE = previous
+
+
+def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     """Gemini first, then free fallback providers; `allowed` limits which fallbacks may see this prompt.
 
     `skip` names models not to ask this time (one that just repeated a rejected answer)."""
@@ -398,7 +428,7 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
         try:
             req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
             # Long replies (large-budget development) take minutes to generate.
-            with urllib.request.urlopen(req, timeout=100 if payload["generationConfig"]["maxOutputTokens"] <= 16384 else 420) as response:
+            with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                 data = json.load(response)
             candidates_out = data.get("candidates") or []
             parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
@@ -418,7 +448,7 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
                 # Per-minute quotas reset slowly; honor the provider's Retry-After when given.
                 retry_after = (exc.headers or {}).get("Retry-After", "")
                 delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
-                time.sleep(min(delay, 60))
+                time.sleep(min(delay, 60, model_timeout()))
                 continue
             if exc.code in (404, 429):
                 rate_limited(model, exc)
@@ -427,10 +457,9 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
         except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
             # A dropped or cut-off connection mid-answer is transient too (task #119 failed after 13 minutes on
             # "Remote end closed connection without response"): retry, then move on to the next model.
-            if attempt < 2:
-                time.sleep(2 * (attempt + 1))
-                continue
+            COOLDOWN[model] = time.time() + 300
             errors.append(model + ": " + type(exc).__name__)
+            return None
     return None
 
 FAILED_MARKER = "<!-- KAPPA_FAILED:"
@@ -490,6 +519,8 @@ def main():
             return
         from engine.developer import Progress, fix_pull_request, produce_development_pr
         fixing = os.getenv("INPUT_ACTION", "").strip() == "fix"
+        global TASK_DEADLINE
+        TASK_DEADLINE = time.monotonic() + 350 * 60
         try:
             if fixing:
                 url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
@@ -499,11 +530,16 @@ def main():
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
         except Exception as exc:
             reason = str(exc)[:900] or type(exc).__name__
+            saved_pr = getattr(Progress.latest, "saved_pr", "")
+            if saved_pr:
+                reason += " Validated stages are saved at " + saved_pr + "; tap Fix it to continue from those files."
             if Progress.latest:
                 Progress.latest.fail(reason[:300])
             report_failure(issue["number"], token, reason, "reply in chat with guidance (what to do differently) and ask "
                            "me to try again" + (", or tap Fix it on the Dashboard" if fixing else ""))
             raise
+        finally:
+            TASK_DEADLINE = None
         return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":

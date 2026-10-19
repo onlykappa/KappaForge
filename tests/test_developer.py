@@ -351,7 +351,7 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(ValueError, "KAPPA_CODER_TOKEN"):
             produce_development_pr(issue, "key", "token")
 
-    def test_refuses_a_branch_with_an_open_pr_but_clears_a_leftover_one(self):
+    def test_refuses_a_branch_with_an_open_pr_and_preserves_a_leftover_one(self):
         def with_pr(path, token, payload=None, method=None):
             return [{"html_url": "https://github.com/onlykappa/KappaForge/pull/5"}] if "/pulls?" in path else {"object": {"sha": "a" * 40}}
         with patch.object(developer, "gh", side_effect=with_pr), self.assertRaisesRegex(ValueError, "already has an open PR"):
@@ -364,9 +364,9 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             if "/issues/9/comments" in path:
                 raise RuntimeError("stop here")
             return {"object": {"sha": "a" * 40}}
-        with patch.object(developer, "gh", side_effect=leftover), self.assertRaisesRegex(RuntimeError, "stop here"):
+        with patch.object(developer, "gh", side_effect=leftover), self.assertRaisesRegex(ValueError, "was retained"):
             produce_development_pr(self.issue(), "key", "token")
-        self.assertIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
+        self.assertNotIn(("repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9", "DELETE"), calls)
 
     def test_commits_one_atomic_change_and_reports_back(self):
         self._exercise_development_pr()
