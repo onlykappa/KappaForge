@@ -108,6 +108,125 @@ class CheckTheWork(unittest.TestCase):
         self.assertIn("- Problem: /weather is never called", verdict)
         self.assertEqual(progress.lines[-1][0], "blocked")
 
+    def test_a_rejected_repair_does_not_abandon_the_remaining_rounds(self):
+        pending = ([{"text": "Use the weather", "met": False}], ["consumer missing"], [])
+        complete = ([{"text": "Use the weather", "met": True}], [], [])
+        sources = {'app/main.js': 'export function weather(){return 1;}'}
+        changes = {'app/main.js': 'export function weather(){return 2;}'}
+        repaired = {'app/main.js': 'export function weather(){return 3;}'}
+        progress = self.Progress()
+        developer.UNFINISHED.clear()
+        with patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(verify, 'model_review', side_effect=[pending, pending, complete]), \
+                patch.object(developer, 'generate', side_effect=[ValueError('Edit text matched 0 times'),
+                                                                 ('model', '', repaired, '')]) as generate:
+            final, _, problems = developer.check_the_work('k', 'task', ROOT, 'sha', 'token', sources,
+                                                           {p: len(t) for p, t in sources.items()}, changes,
+                                                           '', None, '', False, progress)
+        self.assertEqual(problems, [])
+        self.assertEqual(final, repaired)
+        self.assertEqual(generate.call_count, 2)
+        self.assertIn('Edit text matched 0 times', generate.call_args.args[1])
+
+    def test_repair_reuses_existing_candidate_tests_but_requires_initial_coverage(self):
+        for with_tests in (False, True):
+            with self.subTest(with_tests=with_tests):
+                changes = {'app/main.js': 'export function x(){return 2;}'}
+                if with_tests:
+                    changes['tests/x.test.mjs'] = "import '../app/main.js';"
+                progress = self.Progress()
+                developer.UNFINISHED.clear()
+                with patch.object(verify, 'wiring_problems', side_effect=lambda *a: []), \
+                        patch.object(verify, 'model_review', side_effect=[([], ['fix consumer'], []),
+                                                                         ([{'text': 'x', 'met': True}], [], [])]), \
+                        patch.object(developer, 'generate', return_value=('model', '',
+                                     {} if with_tests else {'tests/x.test.mjs': "import '../app/main.js';"}, '')) as generate:
+                    developer.check_the_work('k', 'task', ROOT, 'sha', 'token', {}, {}, changes,
+                                             '', None, '', True, progress)
+                self.assertEqual(generate.call_args_list[0].args[-1], not with_tests)
+
+
+class DeliveryQualityRegressions(unittest.TestCase):
+    def test_permission_test_cannot_hide_behind_an_unrelated_worker_import(self):
+        old = {'preview/app-main.js': '// app', 'tests/intelligence.test.mjs': "import worker from '../chat-backend/src/index.js';"}
+        changes = {'preview/app-main.js': 'async function getWeatherLocation(){return navigator.geolocation;}',
+                   'tests/intelligence.test.mjs': old['tests/intelligence.test.mjs']
+                   + '\nglobalThis.navigator={};\nawait getWeatherLocation();'}
+        found = verify.test_binding_problems(lambda p: old.get(p, ''), changes, set(old) | {'chat-backend/src/index.js'})
+        self.assertTrue(any('getter-only' in p for p in found))
+        self.assertTrue(any('does not load its production module' in p for p in found))
+
+    def test_real_helper_imports_and_vm_source_fixtures_are_accepted(self):
+        production = {'preview/weather.js': 'export async function location(){return 1;}'}
+        fixtures = ["import {location} from '../preview/weather.js'; await location();",
+                    "const source=readFileSync(resolve(root,'preview/weather.js'),'utf8'); await location();",
+                    "import '../preview/weather.js'; await location();"]
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture):
+                self.assertEqual(verify.test_binding_problems(lambda p: '',
+                                 {**production, 'tests/weather.test.mjs': fixture}, production), [])
+
+    def test_transitive_import_is_loaded_and_rhs_call_is_not_a_definition(self):
+        old = {'preview/bridge.js': "import './weather.js';"}
+        production = {'preview/weather.js': 'function location(){return 1;}'}
+        for imported, expected in [("../preview/bridge.js", False), ("../preview/other.js", True)]:
+            test = f"import '{imported}';\nconst result=await location();"
+            found = verify.test_binding_problems(lambda p: old.get(p, ''),
+                                                 {**production, 'tests/x.test.mjs': test}, set(old) | set(production))
+            self.assertEqual(bool(found), expected)
+
+    def test_early_route_body_read_is_not_falsely_reported_as_a_second_read(self):
+        route = 'if(pathname === "/weather"){const body=await request.json();return response(body);}\n'
+        new = route + WORKER.replace('"/plan"]', '"/plan", "/weather"]')
+        self.assertFalse(any('second request.json()' in p for p in verify.worker_problems({verify.WORKER: WORKER}, {verify.WORKER: new})))
+        self.assertTrue(any('second request.json()' in p for p in verify.worker_problems({verify.WORKER: WORKER},
+                                                                                     {verify.WORKER: WORKER + route})))
+
+    def test_review_sees_current_globals_load_order_and_unchanged_dependencies(self):
+        sources = {'preview/index.html': '<script src="settings.js"></script><script src="app-main.js"></script>',
+                   'preview/settings.js': "let preferences={weatherUnits:'imperial'};",
+                   'preview/app-state.js': 'let weatherPermissionState=null;',
+                   'KAPPA.md': 'Classic scripts share globals in load order.',
+                   'chat-backend/src/index.js': "import {consume} from './consumer.js'; consume(input.weather);",
+                   'chat-backend/src/consumer.js': 'export function consume(data){return data;}'}
+        changes = {'preview/app-main.js': 'show(preferences.weatherUnits);',
+                   'chat-backend/src/index.js': sources['chat-backend/src/index.js']}
+        text, _ = verify.review_sources(lambda p: sources.get(p, ''), changes, set(sources) | set(changes))
+        for value in sources.values():
+            self.assertIn(value, text)
+        self.assertIn('CURRENT SOURCE preview/settings.js (COMPLETE)', text)
+
+    def test_review_context_is_bounded_and_labels_missing_evidence(self):
+        changes = {'app/a.js': 'x' * 120000, 'app/b.js': 'y' * 120000}
+        text, _ = verify.review_sources(lambda p: '', changes, changes, limit=3000)
+        self.assertLessEqual(len(text), 3200)
+        self.assertIn('PARTIAL:', text)
+        self.assertIn('request this file', text)
+
+    def test_reviewer_can_inspect_a_missing_file_before_making_its_verdict(self):
+        replies = [json.dumps({'requirements': [{'text': 'weather', 'met': False}], 'problems': [],
+                               'files_to_inspect': ['ios/Bridge.swift']}),
+                   json.dumps({'requirements': [{'text': 'weather', 'met': True}], 'problems': [], 'files_to_inspect': []})]
+        prompts = []
+        def model(key, prompt, **kwargs):
+            prompts.append(prompt)
+            return 'model', replies.pop(0)
+        sources = {'ios/Bridge.swift': 'func promptBridge() {}'}
+        result = verify.model_review(model, 'key', 'weather', lambda p: sources.get(p, ''),
+                                     {'preview/app-main.js': 'prompt()'}, set(sources) | {'preview/app-main.js'})
+        self.assertEqual(result[1], [])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn('func promptBridge()', prompts[1])
+
+    def test_unresolved_evidence_and_malformed_review_cannot_pass(self):
+        def model(key, prompt, **kwargs):
+            return 'model', json.dumps({'requirements': [{'text': 'weather', 'met': True}],
+                                        'problems': [], 'files_to_inspect': ['app/unknown.js']})
+        result = verify.model_review(model, 'key', 'task', lambda p: '', {}, ['app/unknown.js'])
+        self.assertTrue(result[1])
+        with self.assertRaises(ValueError):
+            verify.parse_review('{"requirements":[],"problems":"not a list"}')
+
 
 class AnchorHint(unittest.TestCase):
     """A find copied from a diff's removed line gets the real current text back (PR #121's fixes failed 5 times on it)."""
