@@ -248,6 +248,13 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
     return paths, stages if len(stages) > 1 else [], design
 
 
+class EditMismatch(ValueError):
+    """Keep the failing edit's actual source, including earlier edits in this proposal."""
+    def __init__(self, path, find, text, count):
+        super().__init__(f"Edit text must match exactly once in {path} (matched {count} times): " + find[:80])
+        self.path, self.find, self.text, self.count = path, find, text, count
+
+
 def apply_changes(sources, existing, proposal, budget=SMALL):
     """Return {path: new_text} after strict validation of the model's proposal."""
     if not isinstance(proposal, dict) or not isinstance(proposal.get("files"), list):
@@ -270,12 +277,14 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
             if not isinstance(edits, list) or not edits:
                 raise ValueError("Empty edit list: " + path)
             for edit in edits:
+                if not isinstance(edit, dict):
+                    raise ValueError("Each edit needs find and replace text: " + path)
                 find, replace = (edit or {}).get("find"), (edit or {}).get("replace")
                 if not isinstance(find, str) or not isinstance(replace, str) or not find:
                     raise ValueError("Each edit needs find and replace text: " + path)
                 count = text.count(find)
                 if count != 1:
-                    raise ValueError(f"Edit text must match exactly once in {path} (matched {count} times): " + find[:80])
+                    raise EditMismatch(path, find, text, count)
                 text = text.replace(find, replace)
         elif isinstance(entry.get("content"), str):
             # Whole-file writes are for new files, or files the model has actually read in full.
@@ -457,12 +466,44 @@ def diagnose_generation_failure(message, sources):
             "and preserve all existing authorization, file scope and test requirements.")
 
 
+def repair_evidence(exc):
+    """Bounded evidence for the next model, never an automatically fuzzy-applied patch."""
+    if isinstance(exc, json.JSONDecodeError):
+        snippet = exc.doc[max(0, exc.pos - 160):exc.pos + 160]
+        return (f"JSON parser: {exc.msg} at line {exc.lineno}, column {exc.colno}. "
+                "The last response was not applied. Return the complete corrected proposal, keeping edits small. "
+                "Escape quotes, backslashes and newlines inside JSON strings. Do not truncate or continue the JSON. "
+                "Response near the error (JSON-escaped): " + json.dumps(snippet))
+    if not isinstance(exc, EditMismatch):
+        return ""
+    # Search the entire file, not only task-keyword excerpts. Minified JS often has one enormous line;
+    # locate a real substring within it rather than showing only that line's first 80 characters.
+    wanted = exc.find[:2000]
+    center = 0
+    for width in (120, 60, 30, 15, 7):
+        candidates = (exc.text.find(wanted[i:i + width]) for i in range(0, max(1, len(wanted) - width + 1), width))
+        found = next((p for p in candidates if p >= 0), None)
+        if found is not None:
+            center = found
+            break
+    start, end = max(0, center - 600), min(len(exc.text), center + 2000)
+    evidence = exc.text[start:end]
+    return (f"Re-read {exc.path}: the rejected find occurs {exc.count} times. "
+            "Below is literal source near the closest shared text, for diagnosis only; it is not a validated match. "
+            "Copy a unique anchor exactly and implement against the real code. "
+            "This is the source at the failing edit, after any earlier edits in that file. "
+            "No edits from the rejected proposal were saved. Resubmit every required edit against SOURCE FILES, "
+            "in order. Never replace a whole file from an excerpt.\n<<< CURRENT SOURCE >>>\n" + evidence +
+            "\n<<< END SOURCE >>>")
+
+
 GENERATION_ROUNDS = itertools.count(1)
 MODEL_FAILURES_BEFORE_SWITCH = 2
 
 
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
     context = ""
+    shown_sources = {}
     for path, text in sources.items():
         if len(text) > budget.file_chars:
             block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
@@ -470,8 +511,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         else:
             block = f"\n===== FILE {path} =====\n{text}\n"
         if len(context) + len(block) > budget.context_chars:
-            break
+            continue
         context += block
+        shown_sources[path] = text
     instruction = (
         "You are KappaForge, a careful senior engineer implementing an owner-approved change in "
         + repo + ". Make the smallest complete change that fully implements the task, matching the "
@@ -501,6 +543,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current default branch):" + context)
     errors = []
+    evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
     avoid = set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
@@ -512,6 +555,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt + 1) + "/" + str(max_attempts) +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
                  "\nRoot-cause guidance: " + diagnose_generation_failure(errors[-1], sources) +
+                 ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
@@ -524,6 +568,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if not errors:
                 raise  # Nothing could answer at all: generate() tries again at the size every provider takes.
             break  # Every model that answered was switched away from: the step failed with the reasons below.
+        proposal = None  # A malformed response must not inherit the previous attempt's parsed proposal.
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
             if isinstance(proposal, dict) and proposal.get("files") == []:
@@ -545,7 +590,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             scope = ACTIVE.get()
             if scope is not None and attempt:
                 scope.recover(signature, round_id=round_id)
-            changes = apply_changes(sources, existing, proposal, budget)
+            changes = apply_changes(shown_sources, existing, proposal, budget)
             if require_test and needs_test(changes) and not has_tests(changes):
                 raise ValueError("No test was added or changed: add or update a test that checks the new behaviour "
                                  "(it must fail without your change and pass with it)")
@@ -556,6 +601,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             note("code", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}: " + ", ".join(list(changes)[:4]))
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            evidence = repair_evidence(exc)
             if "proposal" in locals() and isinstance(proposal, dict):
                 rejected_signatures.add(json.dumps(proposal.get("files", []), sort_keys=True, ensure_ascii=False))
             error = str(exc)[:300] or type(exc).__name__
