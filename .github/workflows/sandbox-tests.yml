@@ -41,7 +41,10 @@ jobs:
       run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
-        node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
+        # Every Node test, including any the agent just wrote, except those needing browser packages this
+        # dependency-free sandbox doesn't install (they run in the web CI job).
+        mapfile -t node_tests < <(grep -L -E "from ['\"](jsdom|playwright)" tests/*.test.mjs)
+        node --test "${node_tests[@]}" chat-backend/vector-index.test.mjs
       shell: bash
     - name: Check repair engine syntax
       run: |-
@@ -58,6 +61,7 @@ jobs:
     permissions:
       actions: write
       issues: write
+      pull-requests: read
     steps:
     - name: Start an automatic fix for a failed agent development PR
       # Only reads the branch name; the agent fixes it from KappaForge's trusted main, at most a few times per PR.
@@ -80,7 +84,11 @@ jobs:
       run: |
         [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
         issue="${BASH_REMATCH[1]}"
-        if [ "$RESULT" = success ]; then
+        # The agent marks a PR "Draft (incomplete)" when checking its work against the task left problems open.
+        title=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json title -q '.[0].title' 2>/dev/null || true)
+        if [ "$RESULT" = success ] && [[ "$title" == "Draft (incomplete)"* ]]; then
+          body=$(printf '### Tests passed ✅ — but the work is not finished\n\nTests passed on the latest commit of `%s`, but checking the work against the task left problems open; they are listed on the PR. Send guidance or ask me to fix it before merging.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
+        elif [ "$RESULT" = success ]; then
           body=$(printf '### Tests passed ✅ — ready to merge\n\nAll tests passed on the latest commit of `%s`. Review and merge it on the Dashboard.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
         else
           body=$(printf '### Tests failed ❌ — fixing\n\nTests failed on the latest commit of `%s`. KappaForge is starting a fix automatically; if it gets stuck it will ask for your guidance.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")

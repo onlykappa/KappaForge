@@ -21,6 +21,12 @@ class ModelRoutingTests(unittest.TestCase):
         available = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash", "other"}
         self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-flash"])
 
+    def test_new_flash_models_are_found_without_a_hard_coded_name(self):
+        # Task #111 ran on the weakest model because the named 2.5 models had gone; discovery now finds the current ones.
+        available = {"gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3-pro-preview",
+                     "gemini-2.5-flash-image", "gemini-2.0-flash-exp", "gemini-3-flash-live"}
+        self.assertEqual(runner.select_models(available), ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"])
+
     def test_no_unapproved_fallback(self):
         self.assertEqual(runner.select_models({"gemini-2.5-pro"}), [])
 

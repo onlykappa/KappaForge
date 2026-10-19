@@ -388,6 +388,28 @@ test('the chat model is told whether a task is starting, and Plan task plans any
  }finally{globalThis.fetch=original}
 });
 
+test('the same task sent twice within minutes joins the first instead of starting another',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),created=[];let open=[];
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-dup',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.endsWith('/user'))return Response.json({login:'onlykappa'});
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  if(u.includes('/issues?labels=kappa-task&state=open&sort=created'))return Response.json(open);
+  if(u.endsWith('/KappaForge/issues')&&init.method==='POST'){const body=JSON.parse(init.body).body,n=200+created.length;created.push(n);open=[{number:n,html_url:'https://github.com/onlykappa/KappaForge/issues/'+n,created_at:new Date().toISOString(),body}];return Response.json({number:n,html_url:open[0].html_url,user:{login:'onlykappa'}})}
+  if(u.endsWith('/repos/onlykappa/KappaForge'))return Response.json({name:'KappaForge'});
+  if(init.method==='POST')return new Response(null,{status:204});
+  return new Response('{}',{status:404})};
+ const payload=()=>({repo:'onlykappa/KappaForge',mode:'develop',title:'Add a weather feature',instructions:'Add a weather feature to KappaForge.',approved:true,confirmed:true,authorization:{id:crypto.randomUUID(),requestId:crypto.randomUUID(),conversationId:'chat-dup'}});
+ const launch=async()=>{const p=payload();assert.equal((await worker.fetch(req('/authorize',{path:'/jobs',payload:p,userText:p.instructions,source:'user-control'}),env)).status,200);return (await worker.fetch(req('/jobs',p),env)).json()};
+ try{
+  const first=await launch(),second=await launch();
+  assert.equal(first.status,'dispatched');assert.equal(second.status,'existing');assert.equal(second.issueNumber,first.issueNumber);
+  assert.deepEqual(created,[200],'only one GitHub task was created');
+  open[0].created_at=new Date(Date.now()-10*60*1000).toISOString();
+  assert.equal((await launch()).status,'dispatched','the same request later is a new task');
+ }finally{globalThis.fetch=original}
+});
+
 test('owner guidance reaches only open KappaForge tasks and starts a fix when the latest tests failed',async()=>{
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),posted=[],dispatched=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-guide',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};

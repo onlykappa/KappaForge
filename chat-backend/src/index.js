@@ -369,6 +369,11 @@ export default {
           return json({ error: "Token authenticated as onlykappa, but KappaForge repository access returned HTTP " +
             repoResponse.status + ": " + String(info.message || "Access denied").slice(0, 160) }, 502, cors);
         }
+        // The same request sent again within minutes (double taps, a retried send) joins the task it already started.
+        const sameRequest = issueBody.split("\n\nConversation context")[0].split("\n\nApproved from KappaForge Chat.")[0];
+        const recent = await fetch(endpoint + "/issues?labels=kappa-task&state=open&sort=created&direction=desc&per_page=10", { headers }).then(r => r.ok ? r.json() : []).catch(() => []);
+        const duplicate = Array.isArray(recent) && recent.find(i => !i.pull_request && Date.now() - Date.parse(i.created_at || 0) < 3 * 60 * 1000 && typeof i.body === "string" && i.body.startsWith(sameRequest));
+        if (duplicate) return json({ issueNumber: duplicate.number, issueUrl: duplicate.html_url, status: "existing" }, 200, cors);
         const run = await reserveAgentRun(env);
         if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         try {

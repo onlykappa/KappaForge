@@ -231,3 +231,7 @@ body.sheet-open{overflow:hidden}
 .chat-edit-row{display:flex;align-items:center}.chat-edit-row .ios-row{flex:1;min-width:0}
 .chat-delete{flex:none;align-self:stretch;min-width:76px;margin:0;border:0;background:var(--bad);color:#fff;font-size:var(--t-sub);font-weight:600}
 .chat-edit-row+.chat-edit-row .chat-delete{box-shadow:inset 0 .5px 0 rgba(255,255,255,.35)}.chat-edit-row+.chat-edit-row .ios-row::before{content:"";position:absolute;top:0;right:0;left:57px;height:.5px;background:var(--sep)}
+/* A cancelled or closed task ended without succeeding: neutral, never the success green. */
+.agent-activity.finished.stopped .task-hero-ring .fill,.agent-activity.finished.stopped .task-card>summary>.task-ring .fill{stroke:var(--label-2)}
+.agent-activity.finished.stopped .task-card .activity-tag{color:var(--label-2)!important;background:var(--fill)}
+.agent-activity.finished.stopped .task-clock,.agent-activity.finished.stopped .activity-tag{color:var(--label-2)}

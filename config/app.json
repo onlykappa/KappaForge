@@ -1,7 +1,7 @@
 {
-  "version": "2.2.3",
+  "version": "2.2.4",
   "released": "2026-10-19",
-  "notes": "Clear requests start a task on their own; \u201cstart a task\u201d or \u201cdo it\u201d starts the change you just described; uncertain requests show an Approve or Deny card. Paste any prompt and tap Plan task: the AI fills in the repository, type and title. Chat no longer claims to be working when no task is running.",
+  "notes": "One request, one task: Plan task shows it is planning and ignores repeat taps, and duplicates join the task already running. Briefs whose request is on a later line start on their own. The agent now checks its work against your task before opening a PR, fixes what it finds, and says plainly what is still not done; it also uses the newest Flash models and runs its own tests.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",

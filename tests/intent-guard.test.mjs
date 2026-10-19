@@ -40,7 +40,10 @@ for(const [request,intent] of [
  ['Here is your first official task: add a weather feature to KappaForge. Open it as a draft PR and do not merge until I say so.','execution'],
  ['Here is your first official task.\nAdd a weather feature to KappaForge.','execution'],['New task: fix the keyboard','execution'],
  ['Here is your task: merge the verified PR','release'],["The keyboard is broken, don't fix it, just tell me why",'conversation'],
- ['Do not merge it, fix the keyboard','execution']
+ ['Do not merge it, fix the keyboard','execution'],
+ ['Here is your first official job. start a fress pr start as a draft get it done and let me know when to review \n\n\nAdd a weather feature to KappaForge.\n\n1. Ask for my location','execution'],
+ ['Hey there!\n\nAdd a weather card','execution'],['Open a draft PR for the weather card','execution'],
+ ['What does this mean?\n- Fix the regex','conversation'],["How are you?\nDon't fix anything",'conversation']
 ])test('natural request intent: '+request,()=>assert.equal(classify(request),intent));
 test('uncertain requests suggest a task without starting one',()=>{
  const {suggestsTask}=globalThis.KappaIntent;
@@ -93,7 +96,7 @@ test('a short go-ahead is recognized but is never work on its own',()=>{
 });
 test('a sent message starts its own request, the request before a go-ahead, or asks for approval',()=>{
  const source=readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8');
- const box={KappaIntent:globalThis.KappaIntent};vm.runInNewContext(source.slice(source.indexOf('function chatTaskPlan('),source.indexOf('const TASK_INTENT=')),box);
+ const box={KappaIntent:globalThis.KappaIntent};vm.runInNewContext(source.slice(source.indexOf('function requestHasTask('),source.indexOf('const TASK_INTENT=')),box);
  const weather='Here is your first official task: add a weather feature to KappaForge. Do not merge until I say so.';
  const plan=(msgs,typed)=>JSON.parse(JSON.stringify(box.chatTaskPlan(typed,{messages:[...msgs,{role:'user',text:typed}]})));
  assert.deepEqual(plan([],'Add a weather card'),{kind:'start',text:'Add a weather card'});
@@ -107,7 +110,7 @@ test('a sent message starts its own request, the request before a go-ahead, or a
 });
 test('actual frontend ignores every assistant action and only routes authorized user turns',async()=>{
  const source=readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8');
- const fn=source.slice(source.indexOf('function chatTaskPlan('),source.indexOf('async function userAuthorizedFetch('));
+ const fn=source.slice(source.indexOf('function requestHasTask('),source.indexOf('async function userAuthorizedFetch('));
  let planned=[];const chat={id:'c',messages:[]};
  const box={KappaIntent:globalThis.KappaIntent,crypto,save(){},render(){},proposeTaskAutomatically:async request=>planned.push(request),KappaJobs:{conversationContext:()=>''}};
  vm.runInNewContext(fn,box);
