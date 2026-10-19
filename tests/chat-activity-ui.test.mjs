@@ -19,7 +19,7 @@ test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
  assert.match(html,/agent-activity/);
  assert.match(html,/activity-summary/);
- assert.match(html,/activity-feed[^]*Reading 137 source files/,'what the agent did shows as a live feed, no extra tap');
+ assert.match(html,/<details class="task-feed"[^>]*><summary class="feed-item read"[^]*Reading 137 source files/,'the current action shows as one line');
  assert.doesNotMatch(html,/View progress details/);
  assert.match(html,/Development task #88/);
  assert.doesNotMatch(html,/<script>/);
@@ -65,7 +65,7 @@ test('the agent checklist becomes a step timeline with times, a live current ste
  assert.match(html,/IN PROGRESS/);assert.match(html,/activity-summary">Writing the change: Step 2 of 3/);
  assert.match(html,/task-progress-card[^]*Writing the change[^]*Refund quota when a task fails[^]*aria-valuenow="1"[^]*width:33%[^]*1 of 3 steps completed/);
  assert.doesNotMatch(html,/View progress details/);
- assert.match(html,/feed-item read[^]*Read KappaForge: 132 source files[^]*feed-item plan[^]*Planned 3 steps[^]*feed-item code live[^]*Step 2 of 3: Refund quota/,'the feed shows each thing done, the current one live');
+ assert.match(html,/<summary class="feed-item code live"[^]*Writing the change: Step 2 of 3: Refund quota[^]*<\/summary><ol class="activity-feed">[^]*feed-item read[^]*Read KappaForge: 132 source files[^]*feed-item plan[^]*Planned 3 steps/,'one live line; tapping it shows what came before');
  assert.doesNotMatch(html,/feed-item[^>]*>[^]*Open a draft PR and start the tests<\/span><\/li><\/ol>/,'upcoming steps are not in the feed');
 });
 test('a finished checklist reads Done, a failed one Needs attention with nothing promised after it',()=>{
@@ -159,12 +159,11 @@ test('the live feed shows the agent\'s own activity, collapses passed-over model
  assert.doesNotMatch(ctx.activityFeed(items,false),/ live"/,'nothing shimmers once the task ended');
  assert.match(ctx.activityFeed([{kind:'error',text:'Step 2 failed'}],true),/feed-item error"/,'a failure never shimmers');
 });
-test('only the latest three actions show; the rest fold into one small line that stays open across updates',()=>{
+test('the feed is one line with a chevron; tapping it opens every earlier action, kept open across updates',()=>{
  const items=Array.from({length:10},(_,i)=>({kind:'code',text:'Action '+i}));
  const html=ctx.activityFeed(items,true,'777');
- assert.match(html,/<details class="feed-earlier" data-progress-detail="777:feed"><summary>[^]*7 earlier actions<\/span><\/summary>/);
- const visible=html.slice(html.indexOf('</details>'));
- assert.equal((visible.match(/class="feed-item/g)||[]).length,3);
- assert.match(visible,/Action 7[^]*Action 8[^]*feed-item code live[^]*Action 9/,'the newest is last and live');
- assert.doesNotMatch(ctx.activityFeed(items.slice(0,3),true,'1'),/feed-earlier/,'three or fewer: nothing folded');
+ assert.match(html,/^<details class="task-feed" data-progress-detail="777:feed"><summary class="feed-item code live"[^]*Action 9[^]*feed-chevron[^]*Show all 10 actions<\/span><\/summary>/);
+ assert.equal((html.match(/<li class="feed-item/g)||[]).length,9,'the nine before it open underneath');
+ assert.doesNotMatch(ctx.activityFeed(items,false,'777'),/ live"/,'nothing shimmers once the task ended');
+ assert.doesNotMatch(ctx.activityFeed(items.slice(0,1),true,'1'),/<ol/,'a single action has nothing to open');
 });

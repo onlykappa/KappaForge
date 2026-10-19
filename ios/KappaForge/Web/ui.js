@@ -164,19 +164,17 @@ function feedItems(p,validation=[]){
  for(const r of validation)if(r.state!=='upcoming')items.push({kind:r.state==='failed'?'error':/ios|build|native/i.test(r.title)?'build':'test',text:r.title+(r.detail?': '+r.detail:''),state:r.state});
  return items;
 }
-// Only the latest few lines show, like a terminal: they replace each other as the agent works. Everything before
-// folds into one small "N earlier actions" line that opens in place (kept open across live updates).
-const FEED_VISIBLE=3;
+// One line, like a chat assistant's working indicator: the current action with its icon (shimmering while it runs)
+// and a chevron. Tapping it opens everything the agent did, in order; it stays open across live updates.
 function activityFeed(items,live,id=''){
  const shown=items.filter(a=>a.state!=='upcoming');
  if(!shown.length)return '';
- const last=shown.length-1,cut=Math.max(0,shown.length-FEED_VISIBLE);
- const line=(a,i)=>{
-  const now=live&&i===last&&a.kind!=='error'&&a.state!=='done';
-  return '<li class="feed-item '+esc(a.kind)+(now?' live':'')+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span>'+(now?'<span class="sr-only">in progress</span>':'')+'</li>';
- };
- const earlier=cut?'<details class="feed-earlier" data-progress-detail="'+esc(id)+':feed"><summary>'+uiIcon('more')+'<span>'+cut+' earlier action'+(cut===1?'':'s')+'</span></summary><ol class="activity-feed">'+shown.slice(0,cut).map(line).join('')+'</ol></details>':'';
- return '<div class="task-feed" aria-label="What the agent is doing">'+earlier+'<ol class="activity-feed" aria-live="polite">'+shown.slice(cut).map((a,j)=>line(a,cut+j)).join('')+'</ol></div>';
+ const last=shown.at(-1),now=live&&last.kind!=='error'&&last.state!=='done';
+ const line=a=>'<li class="feed-item '+esc(a.kind)+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span></li>';
+ return '<details class="task-feed" data-progress-detail="'+esc(id)+':feed"><summary class="feed-item '+esc(last.kind)+(now?' live':'')+'" aria-live="polite">'+
+  '<span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[last.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(last.text),140))+'</span>'+
+  '<span class="feed-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span><span class="sr-only">'+(now?'in progress. ':'')+'Show all '+shown.length+' actions</span></summary>'+
+  (shown.length>1?'<ol class="activity-feed">'+shown.slice(0,-1).map(line).join('')+'</ol>':'')+'</details>';
 }
 
 // The task card's large ring: steps done out of all known steps; a dashed track while the total is unknown.
