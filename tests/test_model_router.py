@@ -159,7 +159,7 @@ class CutOffAnswerTests(unittest.TestCase):
                 return response({"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": '{"read": ['}]}}]})
             return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": '{"read": []}'}]}}]})
         with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            model, output = runner.run_model("key", "plan", max_output_tokens=8000)
+            model, output = runner.run_model("key", "plan", max_output_tokens=8000, allowed=set())  # Gemini only.
         self.assertEqual((model, output), ("gemini-3-flash", '{"read": []}'))
         self.assertEqual(sent, [8000, 32000])
 
@@ -284,3 +284,18 @@ class StrongModelsBeforeLite(unittest.TestCase):
         answer, asked, _ = self.route("x" * 5000)
         self.assertEqual(answer, ("gemini-3-flash-lite", "lite"))
         self.assertNotIn("https://strong.example", asked)
+
+
+class BestModelsFirst(StrongModelsBeforeLite):
+    """The owner's order (2.2.8): the best free coding models first, then Gemini, falling down the list mid-task."""
+
+    def test_the_strong_provider_answers_before_gemini(self):
+        answer, asked, _ = self.route("short prompt", max_output_tokens=150)
+        self.assertEqual(answer, ("strongp:coder-1", "strong"))
+        self.assertEqual(asked, ["https://strong.example"], "Gemini is not asked while the best model answers")
+
+    def test_a_rate_limited_strong_provider_hands_over_to_gemini(self):
+        runner.COOLDOWN["strongp:coder-1"] = runner.time.time() + 60
+        answer, asked, _ = self.route("short prompt")
+        self.assertEqual(answer, ("gemini-3-flash-lite", "lite"))
+        self.assertEqual(asked[0], "gemini-3-flash", "full-size Flash is next, then Flash-Lite")

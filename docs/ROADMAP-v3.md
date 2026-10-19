@@ -29,8 +29,8 @@ The best free coding models are no longer Gemini Flash. These are SWE-bench Veri
 ## Shipped early in 2.2.8: strong models before Flash-Lite
 
 - **Routing order:**
-  1. Full-size Gemini Flash.
-  2. Strong providers: Ollama Cloud (DeepSeek V4 Pro, Kimi K3), NVIDIA NIM (Nemotron 3 Ultra), Kilo's free pool (Nemotron, Laguna, North Code), UnoRouter.
+  1. Strong providers, the best free coding models: Ollama Cloud (DeepSeek V4 Pro, Kimi K3), NVIDIA NIM (Nemotron 3 Ultra), Kilo's free pool (Nemotron, Laguna, North Code), UnoRouter.
+  2. Full-size Gemini Flash.
   3. Gemini Flash-Lite.
   4. The rest: Mistral, Groq, OpenRouter, Requesty, Z AI, Cerebras, LLM7, OVH.
 - **Large prompts can leave Gemini.** Large code-writing prompts may go to any allowed provider whose context window fits them, not to Gemini alone.

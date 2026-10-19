@@ -339,9 +339,10 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
         errors.append("rate-limited earlier, not asked: " + ", ".join(resting))
     full = [m for m in candidates if not FLASH_RE.match(m).group(2)]
     lite = [m for m in candidates if m not in full]
-    # Strongest first: full-size Flash, then the strong free coding models (task #123 ran entirely on Flash-Lite while
-    # they sat unused), then Flash-Lite, then every other free provider. Each tier only takes prompts that fit it.
-    for tier in (full, "strong", lite, "rest"):
+    # Best first: the strongest free coding models (DeepSeek V4 Pro, Kimi K3, Nemotron 3 Ultra; task #123 ran entirely
+    # on Flash-Lite while they sat unused), then full-size Flash, then Flash-Lite, then every other free provider. A
+    # model that is rate-limited, down or too small for the prompt hands the call to the next one, mid-task.
+    for tier in ("strong", full, lite, "rest"):
         if isinstance(tier, str):
             answer = run_fallback_providers(prompt, max_output_tokens, errors, allowed, tier=tier, skip=skip)
         else:
