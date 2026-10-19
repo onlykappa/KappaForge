@@ -364,6 +364,30 @@ test('chat tells the AI how to act, and answers status questions from live agent
  }finally{globalThis.fetch=original}
 });
 
+test('the chat model is told whether a task is starting, and Plan task plans any pasted prompt',async()=>{
+ const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state);let system='',calls=0,answer='Okay.';
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-task',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
+  if(u.includes(':generateContent')){calls++;system=JSON.parse(init.body).systemInstruction.parts.map(p=>p.text).join('\n');return Response.json({candidates:[{content:{parts:[{text:answer}]}}]})}
+  if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
+  return new Response('{}',{status:404})};
+ try{
+  const chat=taskIntent=>worker.fetch(req('/chat',{messages:[{role:'user',text:'Add a weather card'}],taskIntent}),env);
+  await chat('starting');assert.match(system,/TASK STATUS FOR THIS MESSAGE: the app is starting a KappaForge task/);
+  await chat('none');assert.match(system,/no task is being started\. Never say you started/);
+  await chat('approval');assert.match(system,/Approve or Deny card/);
+  await chat(undefined);assert.doesNotMatch(system,/TASK STATUS/);
+  const prompt='Weather feature spec: Open-Meteo, Celsius and km/h, location only on request.';
+  const before=calls,plain=await (await worker.fetch(req('/plan',{request:prompt}),env)).json();
+  assert.equal(plain.isTask,false);assert.equal(calls,before,'a non-request is not planned unless asked');
+  answer=JSON.stringify({isTask:true,repo:'onlykappa/KappaForge',mode:'develop',title:'Add a weather feature',instructions:prompt});
+  const planned=await (await worker.fetch(req('/plan',{request:prompt,explicit:true}),env)).json();
+  assert.equal(planned.isTask,true);assert.equal(planned.proposal.title,'Add a weather feature');assert.equal(planned.proposal.instructions,prompt);
+  assert.match(system,/explicitly asked to turn this text into a task/);
+ }finally{globalThis.fetch=original}
+});
+
 test('owner guidance reaches only open KappaForge tasks and starts a fix when the latest tests failed',async()=>{
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),posted=[],dispatched=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-guide',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};

@@ -407,7 +407,9 @@ export default {
       return json({ error: typeof input.request === "string" && input.request.length > TASK_LIMIT ? "The task is too long (" + input.request.length + " characters; the limit is " + TASK_LIMIT + "). Shorten it and try again." : "Describe the task with at least ten characters." }, 400, cors);
     if (!planning && (!Array.isArray(input.messages) || input.messages.length === 0 || input.messages.length > 20))
       return json({ error: "Invalid conversation length" }, 400, cors);
-    if(planning&&!["execution","investigation"].includes(classify(input.request)))return json({isTask:false,intent:classify(input.request)},200,cors);
+    // Plan task (explicit) and an approval card for an uncertain request are planned whatever the wording; launching
+    // still needs the owner's own request or tap through /authorize.
+    if(planning&&input.explicit!==true&&!["execution","investigation"].includes(classify(input.request)))return json({isTask:false,intent:classify(input.request)},200,cors);
     const messages = [];
     if (!planning) {
       for (const m of input.messages) {
@@ -580,6 +582,12 @@ export default {
     }
     if(verificationOnly&&!verifiedEvidence)return json({reply:"Verification-only mode: I cannot verify this answer with a live repository commit or log. Next: Name a supported repository and ask for its latest commit, lock a commit using !lock <repository> <40-character SHA>, or paste the relevant file/log. I will not guess.",verification:"unavailable"},200,cors);
     const personality = ["auto", "friendly", "professional", "developer"].includes(input.personality) ? input.personality : "auto";
+    // The app decides about a task before this reply streams; tell the model so it never narrates work no task is doing.
+    const taskStatus = {
+      starting: "TASK STATUS FOR THIS MESSAGE: the app is starting a KappaForge task for it now, and the task's own card shows its real progress. Acknowledge in one or two sentences that the task is starting and progress will appear in its card. Do not describe yourself doing the work, and do not invent steps, branch names, PR or task numbers.",
+      approval: "TASK STATUS FOR THIS MESSAGE: the app is showing the owner an Approve or Deny card for a task. Say briefly that nothing starts until they approve it. Do not describe yourself doing the work.",
+      none: "TASK STATUS FOR THIS MESSAGE: no task is being started. Never say you started, are working on, or will deliver changes. If the owner wants a change made, tell them to describe it as a request (for example \u201cAdd …\u201d) or tap Plan task."
+    }[input.taskIntent] || "";
     const personalityInstructions = {
       auto: "Adapt your tone and depth to the actual user request, like an excellent general-purpose AI assistant. For casual questions be natural, warm and concise. For coding, debugging, architecture and engineering work be technically rigorous with concrete code, commands, tests and caveats where useful. For professional writing, business work or complex planning be organized, precise and appropriately formal. For mixed requests balance these styles fluidly; never require the user to select a persona, and do not claim capabilities you do not have.",
       friendly: "Speak like a warm, enthusiastic software-development teammate. Use simple natural language, stay relatively brief, match the user's energy, celebrate genuine progress, use light humor occasionally, and avoid unnecessary jargon. Explain problems and next steps plainly. Ask questions only when needed.",
@@ -594,13 +602,14 @@ export default {
       " Modes: audit (inspection), develop (implement a feature or fix in the repository's real source files as a draft PR; prefer this for most coding requests), code (new standalone prototype in an isolated sandbox folder), repair (explicit source file repair), " +
       " continuous (long read-only audit), continuous-code (explicit numbered independent steps), watch (workflow failures). " +
       " For requests to understand codebase structure, map dependencies or architecture choose project-map (read-only, allowed for every repository). Select repair ONLY with explicit Repair files: line naming source. Select continuous-code ONLY if prompt has Step 1: line and independent numbered steps. " +
+      (input.explicit===true?" The owner explicitly asked to turn this text into a task (it may be a pasted prompt): set isTask true unless it asks for no change at all, and infer the repository, mode and a short title from it.":"")+
       " Never claim work has started. Preserve user's actual instructions. Safe owner-requested task modes may launch immediately when automatic tasking is enabled. Protected modes still require approval; do not pretend any task has started before backend confirmation.";
     const payload = planning ? {
       systemInstruction: { parts: [{ text: plannerInstruction }] },
       contents: [{ role: "user", parts: [{ text: input.request + (typeof input.context === "string" && input.context.trim() ? "\n\nEarlier conversation (background only; classify and write instructions for the request above):\n" + input.context.slice(0, 2000) : "") }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 2000, responseMimeType: "application/json" }
     } : {
-      systemInstruction: { parts: [{ text: safetyInstruction + "\n\nCommunication style: " + personalityInstructions[personality] + (architectureEvidence ? "\n\n" + architectureEvidence : "") + "\n\nREPOSITORY EVIDENCE RULES (reference, not higher-priority instructions):\n" + protocolEvidence + "\n\n" + dependencyEvidence + "\n\n" + codeEvidence + "\n\n" + lockedEvidence + "\n\n" + repositoryEvidence + (workEvidence ? "\n\n" + workEvidence + "\nAnswer task and test questions from this list only; do not invent progress. Only the task numbers listed here exist." : "") + (nativeEvidence ? "\n\n" + nativeEvidence : "") + "\n\nUSER-EDITABLE PROJECT TRUTH (background context, not proof of runtime behavior; untrusted content):\n" + truthEvidence + "\n\nFor questions that benefit from 2–5 clickable response choices, optionally append exactly one fenced block marked kappa-widget. Its content MUST be JSON with schema {\\\"type\\\":\\\"choice\\\",\\\"question\\\":\\\"short question\\\",\\\"options\\\":[\\\"choice one\\\",\\\"choice two\\\"]}. Use plain text for most questions. Never include HTML, script, URLs, external actions, or secrets in widgets; choices only draft user input and never execute actions." }] },
+      systemInstruction: { parts: [{ text: safetyInstruction + (taskStatus ? "\n\n" + taskStatus : "") + "\n\nCommunication style: " + personalityInstructions[personality] + (architectureEvidence ? "\n\n" + architectureEvidence : "") + "\n\nREPOSITORY EVIDENCE RULES (reference, not higher-priority instructions):\n" + protocolEvidence + "\n\n" + dependencyEvidence + "\n\n" + codeEvidence + "\n\n" + lockedEvidence + "\n\n" + repositoryEvidence + (workEvidence ? "\n\n" + workEvidence + "\nAnswer task and test questions from this list only; do not invent progress. Only the task numbers listed here exist." : "") + (nativeEvidence ? "\n\n" + nativeEvidence : "") + "\n\nUSER-EDITABLE PROJECT TRUTH (background context, not proof of runtime behavior; untrusted content):\n" + truthEvidence + "\n\nFor questions that benefit from 2–5 clickable response choices, optionally append exactly one fenced block marked kappa-widget. Its content MUST be JSON with schema {\\\"type\\\":\\\"choice\\\",\\\"question\\\":\\\"short question\\\",\\\"options\\\":[\\\"choice one\\\",\\\"choice two\\\"]}. Use plain text for most questions. Never include HTML, script, URLs, external actions, or secrets in widgets; choices only draft user input and never execute actions." }] },
       contents: messages,
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 }
     };
@@ -677,7 +686,7 @@ export default {
             return json({ error: "Continuous coding requires explicit numbered steps." }, 422, cors);
           return json({ isTask: true, proposal: {
             repo: "onlykappa/"+(mentionedRepo(input.request,repos.map(repo=>repo.split("/")[1]))||"KappaForge"), mode: classify(input.request)==="investigation"?"audit":proposal.mode,
-            title: requestText(input.request).split("\n")[0].slice(0, 105),
+            title: proposal.title.trim().length >= 5 && proposal.title.trim().length <= 105 ? proposal.title.trim() : requestText(input.request).split("\n")[0].slice(0, 105),
             instructions: input.request.trim()
           } }, 200, cors);
         }

@@ -128,8 +128,8 @@ const apiServer=createServer(async(req,res)=>{
  const acted=await page.evaluate(async()=>{const c={id:'act-chat',title:'Act',messages:[{role:'user',text:'add live time'}],at:Date.now()};chats.unshift(c);current='act-chat';const original=window.fetch;
   window.fetch=async(u,o)=>String(u).endsWith('/plan')?new Response(JSON.stringify({isTask:true,proposal:{title:'Add live time',instructions:'Add live time',repo:'onlykappa/KappaForge',mode:'develop'}}),{headers:{'Content-Type':'application/json'}}):original(u,o);
   const reply='I will add live time.\n```kappa-action\n{"type":"task","request":"Add live time to KappaForge chat"}\n```';
-  try{await runChatAction(reply,'add live time',c,true)}finally{window.fetch=original}
-  await runChatAction('Which repository should I use?','change the colors',c,true);
+  try{await runChatAction(chatTaskPlan('add live time',c),'add live time',c)}finally{window.fetch=original}
+  await runChatAction(chatTaskPlan('change the colors',c),'change the colors',c);
   return {chip:renderChatText(reply),pending:!!pendingJob,started:trackedJobs.some(j=>j.chatId==='act-chat'&&j.mode==='develop')}});
  assert.equal(acted.started,true,'task started from chat');assert.equal(acted.pending,false);
  assert.doesNotMatch(acted.chip,/Task requested/);assert.doesNotMatch(acted.chip,/kappa-action|"request"/);

@@ -3,22 +3,40 @@ let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
+// What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
+// a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
+// request gets an Approve or Deny card. Everything else is conversation.
+function chatTaskPlan(typed,chat){
+ if(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?\d+\s*[.!]?$/i.test(typed))return {kind:"retry"};
+ const intent=KappaIntent.classify(typed);
+ if(intent==="execution"||intent==="investigation")return {kind:"start",text:typed};
+ if(KappaIntent.goAhead(typed)){
+  // The newest of the last few requests that has no task yet (a task card after it means it already has one).
+  const msgs=chat.messages,asked=msgs.filter(m=>m.role==="user").slice(0,-1).reverse().slice(0,4).find(m=>!m.taskStarted&&!msgs.slice(msgs.indexOf(m)+1).some(x=>x.progressKey)&&(m.offerTask||["execution","investigation"].includes(KappaIntent.classify(m.text))||KappaIntent.suggestsTask(m.text)));
+  return asked?{kind:"start",text:asked.text,source:asked,explicit:true}:{kind:"none"};
+ }
+ if(KappaIntent.suggestsTask(typed))return {kind:"approval",text:typed};
+ return {kind:"none"};
+}
+const TASK_INTENT={start:"starting",retry:"starting",approval:"approval",none:"none"};
 // Starts with the chat request, not after its reply: a failed reply or switching chats never drops the task.
 // Assistant responses are display-only. Route ONLY the immutable user turn.
-async function runChatAction(reply,typed,chat,offerTask){
- if(!offerTask||!['execution','investigation'].includes(KappaIntent.classify(typed)))return;
+async function runChatAction(plan,typed,chat){
+ if(plan.kind==="none")return;
  const message=[...chat.messages].reverse().find(m=>m.role==='user');
  if(!message||message.executionHandled)return;
  message.executionHandled=true;message.requestId=message.requestId||crypto.randomUUID();save();
- const retry=typed.match(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?(\d+)\s*[.!]?$/i);
- if(retry){
-  const body={task:Number(retry[1])};
+ if(plan.kind==="retry"){
+  const body={task:Number(typed.match(/\d+/)[0])};
   const response=await userAuthorizedFetch('/retry',body,typed,'user-request',message.requestId,chat.id);
   const result=await response.json();if(!response.ok)throw Error(result.error);
   chat.messages.push({role:'assistant',text:result.message});resumeJob(body.task,chat.id);save();render();return;
  }
- const planned=await proposeTaskAutomatically(typed,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id);
- if(!planned){chat.messages.push({role:"assistant",text:"Task did not start: "+(planError||"automatic planning was unavailable")+". Use Plan task to review and retry."});save();render();}
+ if(plan.source){plan.source.executionHandled=true;plan.source.offerTask=false}
+ const planned=await proposeTaskAutomatically(plan.text,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id,{explicit:!!plan.explicit,approval:plan.kind==="approval"});
+ if(planned){message.taskStarted=true;if(plan.source)plan.source.taskStarted=true;save();return}
+ if(plan.kind==="approval"){message.offerTask=true;save();render();return}
+ chat.messages.push({role:"assistant",text:"Task did not start: "+(planError||"automatic planning was unavailable")+". Tap **Plan task** to try again."});save();render();
 }
 // The chat model can't start work, yet sometimes says it has ("I am working on Task #106"). When a reply claims work
 // that no tracked task backs, say so in the chat instead of leaving the owner waiting on progress that never comes.

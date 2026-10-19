@@ -1,7 +1,7 @@
 {
-  "version": "2.2.2",
+  "version": "2.2.3",
   "released": "2026-10-19",
-  "notes": "Task requests start reliably: they start alongside the chat reply, \u201cHere is your task: \u2026\u201d and \u201cdo not merge until I say so\u201d no longer stop them, and a planner hiccup can't drop them. Delete conversations from Chats \u2192 Edit (or the sidebar on iPad and desktop); deletions sync across devices.",
+  "notes": "Clear requests start a task on their own; \u201cstart a task\u201d or \u201cdo it\u201d starts the change you just described; uncertain requests show an Approve or Deny card. Paste any prompt and tap Plan task: the AI fills in the repository, type and title. Chat no longer claims to be working when no task is running.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",
