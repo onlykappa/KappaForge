@@ -145,6 +145,16 @@ class CheckTheWork(unittest.TestCase):
                                              '', None, '', True, progress)
                 self.assertEqual(generate.call_args_list[0].args[-1], not with_tests)
 
+    def test_security_rejection_does_not_gain_more_repair_rounds(self):
+        developer.UNFINISHED.clear()
+        with patch.object(verify, 'wiring_problems', side_effect=lambda *a: []), \
+                patch.object(verify, 'model_review', return_value=([{'text': 'x', 'met': False}], [], [])), \
+                patch.object(developer, 'generate', side_effect=ValueError('Protected path cannot be changed')) as generate:
+            _, _, problems = developer.check_the_work('k', 'task', ROOT, 'sha', 'token', {}, {}, {},
+                                                      '', None, '', False, self.Progress())
+        generate.assert_called_once()
+        self.assertTrue(problems)
+
 
 class DeliveryQualityRegressions(unittest.TestCase):
     def test_permission_test_cannot_hide_behind_an_unrelated_worker_import(self):

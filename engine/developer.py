@@ -1007,6 +1007,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                                      require_test and not has_tests(changes))
         except ValueError as exc:
             print("Self-review fix failed: " + str(exc)[:300])
+            if any(marker in str(exc).lower() for marker in ('blocked path', 'forbidden path', 'unsafe path',
+                                                              'protected path', 'unauthorized', 'authorization expired')):
+                # Only source/format failures get more review rounds. Never turn
+                # a security or authorization rejection into another attempt.
+                break
             repair_failures.append(str(exc)[:1000])
             progress.ok(f"Repair round {round_ + 1} could not be applied; preserving the candidate and trying the next bounded round",
                         warn=True)
