@@ -4,7 +4,7 @@
  // Greetings and polite openers carry no intent; strip them so "Hey can you fix it" reads as "fix it".
  const OPENER=/^(?:(?:hey|hi|hello|ok(?:ay)?|yo|so|alright|right|now|kappa(?:forge)?)\b[\s,!.:-]*|(?:please|pls|kindly)\s+|(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?|i\s+(?:want|need|would like)\s+(?:you\s+)?to\s+|i'd like\s+(?:you\s+)?to\s+|(?:let's|lets|let us)\s+|go ahead and\s+)/i;
  const NEGATION=/\b(?:do not|don't|dont|never|no need to|stop|cancel|not yet)\b/i;
- const EXECUTION=/^(?:fix|implement|build|create|add|update|remove|repair|refactor|optimi[sz]e|test|run|retry|try again|continue implementing|make|change|modify|edit|improve|rename|move|delete|redesign|rewrite|write (?:unit |integration )?(?:tests?|code|a (?:test|script|function|feature|module|component|migration)|docs|documentation)|set up|setup|upgrade|bump|migrate|convert|replace|clean ?up|enhance|tweak|adjust|polish|finish|resolve|port|integrate|enable|disable|restyle|simplify|speed up|install|configure|wire up|hook up|swap|increase|decrease|reduce|hide|start (?:working on|on|building|implementing|coding))\b/i;
+ const EXECUTION=/^(?:fix|implement|build|create|add|update|remove|repair|refactor|optimi[sz]e|test|run|retry|try again|continue implementing|make|change|modify|edit|improve|rename|move|delete|redesign|rewrite|write (?:unit |integration )?(?:tests?|code|a (?:test|script|function|feature|module|component|migration)|docs|documentation)|set up|setup|upgrade|bump|migrate|convert|replace|clean ?up|enhance|tweak|adjust|polish|finish|resolve|port|integrate|enable|disable|restyle|simplify|speed up|install|configure|wire up|hook up|swap|increase|decrease|reduce|hide|start (?:working on|on|building|implementing|coding)|(?:start|open|make|create) (?:a |an )?(?:new |fresh |\w+ )?(?:draft )?(?:pr|pull request))\b/i;
  // "Here is your first official task:" / "New task:" only introduces the request that follows it.
  const LEADER=/^(?:here(?:'s| is)\s+(?:your|a|the|my)\s+(?:[a-z]+\s+){0,3}(?:task|request|job|assignment)|(?:(?:new|next|your|first)\s+)?(?:task|request|job|assignment))\s*[:.!\-\u2013\u2014]\s*/i;
  function core(text){let t=text.trim(),prev;do{prev=t;t=t.replace(OPENER,'').trim()}while(t!==prev);return t}
@@ -29,6 +29,14 @@
   for(const clause of clauses(text).slice(1)){
    if(NEGATION.test(clause))continue;
    const intent=classifyClause(core(clause));
+   if(intent==='execution'||intent==='investigation')return intent;
+  }
+  // A pasted brief often opens with a greeting or "here's the job" line and states the work on a later line
+  // ("…\n\nAdd a weather feature to KappaForge."). Only a later line that itself starts with the request counts.
+  for(const line of text.split('\n').slice(1,8)){
+   const t=line.trim().replace(LEADER,'').trim();
+   if(!t||/^(?:[-*#|]|\d+[.)])/.test(t)||NEGATION.test(clauses(t)[0]))continue;
+   const intent=classifyClause(core(clauses(t)[0]));
    if(intent==='execution'||intent==='investigation')return intent;
   }
   return 'conversation';

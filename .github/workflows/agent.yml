@@ -107,6 +107,8 @@ jobs:
           const issue_number = Number(raw);
           const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
           if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
+          // A closed task was cancelled or closed by its owner; stopping it is not a failure to report.
+          if (issue.state === 'closed') return;
           const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           await github.rest.issues.createComment({...context.repo, issue_number,
             body: `### KappaForge task failed\n\nThe agent stopped before producing a final report. Earlier findings remain available.\n\n[Open the failed workflow](${url}) to inspect the failing step, correct the reported configuration or execution error, then retry.`});
@@ -174,6 +176,8 @@ jobs:
           const issue_number = Number(raw);
           const issue = (await github.rest.issues.get({...context.repo, issue_number})).data;
           if (issue.user.login !== 'onlykappa' || !issue.labels.some(l => l.name.toLowerCase() === 'kappa-task')) return;
+          // A closed task was cancelled or closed by its owner; stopping it is not a failure to report.
+          if (issue.state === 'closed') return;
           const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           // The agent already explained the failure itself on this run; don't add a vaguer second report.
           const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number, per_page: 100});

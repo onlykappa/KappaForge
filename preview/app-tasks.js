@@ -1,18 +1,20 @@
 /* KappaForge app: Task tracking, the task sheet and the activity panel. Classic script: shares globals with the other app-*.js files and loads in order. */
 let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.jobs.v2")||"[]");if(Array.isArray(stored))trackedJobs=stored.filter(j=>Number.isInteger(j.number)&&j.number>0)}catch{}
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
-let jobPollAfter=0;
+let jobPollAfter=0,planningTask=false;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
 // request gets an Approve or Deny card. Everything else is conversation.
+// A request already has a task when it started one, or when a task card follows it in its chat.
+function requestHasTask(chat,message){return !!message.taskStarted||chat.messages.slice(chat.messages.indexOf(message)+1).some(x=>x.progressKey)}
 function chatTaskPlan(typed,chat){
  if(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?\d+\s*[.!]?$/i.test(typed))return {kind:"retry"};
  const intent=KappaIntent.classify(typed);
  if(intent==="execution"||intent==="investigation")return {kind:"start",text:typed};
  if(KappaIntent.goAhead(typed)){
-  // The newest of the last few requests that has no task yet (a task card after it means it already has one).
-  const msgs=chat.messages,asked=msgs.filter(m=>m.role==="user").slice(0,-1).reverse().slice(0,4).find(m=>!m.taskStarted&&!msgs.slice(msgs.indexOf(m)+1).some(x=>x.progressKey)&&(m.offerTask||["execution","investigation"].includes(KappaIntent.classify(m.text))||KappaIntent.suggestsTask(m.text)));
+  // The newest of the last few requests that has no task yet.
+  const asked=chat.messages.filter(m=>m.role==="user").slice(0,-1).reverse().slice(0,4).find(m=>!requestHasTask(chat,m)&&(m.offerTask||["execution","investigation"].includes(KappaIntent.classify(m.text))||KappaIntent.suggestsTask(m.text)));
   return asked?{kind:"start",text:asked.text,source:asked,explicit:true}:{kind:"none"};
  }
  if(KappaIntent.suggestsTask(typed))return {kind:"approval",text:typed};
@@ -243,6 +245,9 @@ async function launchJob(){
  const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
+ // The Worker hands back a task this request already started (status "existing"): follow that one, never a second card.
+ const known=trackedJobs.find(j=>j.number===data.issueNumber);
+ if(known){recentJob=known;toast("Already running as task #"+known.number);render();return}
  recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,authorization:{id:job.requestId,conversationId:job.conversationId||jobChatId},chatId:jobChatId,activeAt:Date.now(),queuedAt:Date.now(),title:job.title,progress:KappaProgress.queued(data.issueNumber)};
  ensureTaskCard(recentJob);save();
  if(!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push(recentJob);persistJobs();taskCheckpoint(recentJob,"waiting","launch");jobPollAfter=0;
