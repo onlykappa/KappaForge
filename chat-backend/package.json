@@ -1,7 +1,7 @@
 {
   "name": "kappaforge-worker",
   "private": true,
-  "version": "2.1.3",
+  "version": "2.2.0",
   "scripts": {
     "build:check": "wrangler deploy --dry-run --outdir /tmp/kappaforge-worker-check",
     "deploy": "wrangler deploy --config wrangler.toml"
