@@ -153,13 +153,13 @@ function renderExecutionActivity(m,job,i=-1){
 // Live activity feed (replaces the old "View progress details" report): one icon and one line per thing the agent
 // did or is doing, newest last, the current one shimmering. The agent's own feed (snapshot.activity, 3.0+) is
 // preferred; older snapshots and checklists fall back to their steps. The task's test and iOS runs follow.
-const ACTIVITY_KINDS=[['error',/\bfail|could not|problem|rejected|blocked/i],['read',/^read|choos|look/i],['plan',/plan|design/i],['check',/^check|review|verif/i],['fix',/\bfix/i],['git',/\bpr\b|pull request|push|commit|branch/i],['test',/\btest/i],['build',/build|compil|\bios\b/i],['code',/writ|step \d|stage|cod|chang/i]];
-const ACTIVITY_ICONS={read:'file',plan:'tasks',code:'code',check:'check',fix:'retry',test:'flask',build:'hammer',git:'commit',model:'spark',error:'warn',work:'terminal'};
+const ACTIVITY_KINDS=[['error',/\bfailed\b|\bcould not\b|\bproblems? (?:still )?open|^found \d+ problems?|\brejected\b|\bblocked\b/i],['read',/^read|\bchoos|\blook/i],['plan',/\bplan|\bdesign/i],['check',/^check|\breview|\bverif/i],['git',/\bpr\b|\bpull request|\bpush|\bcommit|\bbranch/i],['fix',/\bfix/i],['test',/\btest/i],['build',/\bbuild|\bcompil|\bios\b/i],['code',/\bwrit|\bstep \d|\bstage|\bcod|\bchang/i]];
+const ACTIVITY_ICONS={more:'more',read:'file',plan:'tasks',code:'code',check:'check',fix:'retry',test:'flask',build:'hammer',git:'commit',model:'spark',error:'warn',work:'terminal'};
 function activityKind(text){return (ACTIVITY_KINDS.find(([,re])=>re.test(String(text||'')))||['work'])[0]}
 function feedItems(p,validation=[]){
  let items=(p.activity||[]).filter(a=>a&&typeof a.text==='string').map(a=>({kind:ACTIVITY_ICONS[a.kind]?a.kind:'work',text:a.text,at:a.at}));
  // Model attempts that were passed over collapse into the one that answered (or is being asked).
- items=items.filter((a,i)=>!(a.kind==='model'&&items[i+1]?.kind==='model'));
+ items=items.filter((a,i)=>!(/^Asking /.test(a.text)&&/^Asking /.test(items[i+1]?.text||'')));
  if(!items.length)items=(p.steps||[]).filter(r=>r.status!=='queued').map(r=>({kind:r.status==='failed'||r.status==='blocked'?'error':activityKind(r.title),text:r.title+(r.detail?': '+r.detail:'')}));
  for(const r of validation)if(r.state!=='upcoming')items.push({kind:r.state==='failed'?'error':/ios|build|native/i.test(r.title)?'build':'test',text:r.title+(r.detail?': '+r.detail:''),state:r.state});
  return items;

@@ -1,7 +1,7 @@
 {
   "version": "2.2.9",
   "released": "2026-10-19",
-  "notes": "Chat now uses every current Gemini Flash model (3.5 to 3.8) instead of an old fixed list, and stops retrying retired or rate-limited models on every message (gemini-2.5-flash had 101 failed attempts). A model picked in Settings that is no longer offered falls back to Automatic instead of blocking chat. The agent fetches model lists once per run instead of before every call, and skips retired models. New: Actions \u2192 Check AI providers shows which models really answer.",
+  "notes": "Chat now uses every current Gemini Flash model (3.5 to 3.8) and stops retrying retired or rate-limited models (gemini-2.5-flash had 101 failed attempts); a model picked in Settings that is no longer offered falls back to Automatic. The agent no longer stops when every model is busy mid-step, fetches model lists once per run, skips retired models, credits the model that really wrote the change, and marks steps that could not be done for attention instead of with a green check. The live feed keeps how a task started and gives every line the right icon. New: Actions \u2192 Check AI providers shows which models really answer.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",

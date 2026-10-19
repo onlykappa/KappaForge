@@ -766,3 +766,24 @@ class ModelSwitchTests(unittest.TestCase):
             model_used, _, changes, _ = developer.generate("key", "fix", "onlykappa/KappaForge", SOURCES, EXISTING)
         self.assertEqual(model_used, "strong")
         self.assertEqual(calls, [(), (), ("lite",)], "two different bad answers are enough to switch")
+
+
+class ActivityFeedEdgeTests(unittest.TestCase):
+    def test_icons_follow_meaning_not_file_names_or_asides(self):
+        kinds = [developer.activity_kind(t) for t in (
+            "Wrote the change with gemini-3.5-flash-lite: 1 file `preview/core.js`",
+            "Opened draft PR #900; tests are running. If they fail I fix them",
+            "Checked the work: 3 problems still open (listed on the PR)")]
+        self.assertEqual(kinds, ["code", "git", "error"], "preview/ isn't a review; 'if they fail' isn't a failure")
+
+    def test_a_long_feed_keeps_its_start_and_the_latest(self):
+        p = developer.Progress.__new__(developer.Progress)
+        p.activity, p.written, p._write = [], 0, lambda: None
+        p.act("read", "Read 10 files", write=False)
+        for i in range(100):
+            p.act("model", "Asking a", write=False)
+            p.act("fix", f"rejected {i}", write=False)
+        self.assertEqual(len(p.activity), developer.ACTIVITY_LINES)
+        self.assertEqual(p.activity[0]["text"], "Read 10 files")
+        self.assertEqual([a["kind"] for a in p.activity].count("more"), 1)
+        self.assertEqual(p.activity[-1]["text"], "rejected 99")

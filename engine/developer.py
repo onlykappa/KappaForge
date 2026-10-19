@@ -394,8 +394,12 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
     except RuntimeError as exc:
         print("Large-budget Gemini route unavailable, using fallback-sized limits: " + str(exc)[:300])
         small = dict(list(sources.items())[:SMALL.read_files])
-        model, summary, changes, explanation = generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL, design,
-                                                             require_test, allow_empty)
+        try:
+            model, summary, changes, explanation = generate_with(api_key, task, repo, small, existing, guide, allowed, SMALL, design,
+                                                                 require_test, allow_empty)
+        except RuntimeError as exc:
+            # No model left to ask: a failed step, which the stages and the work check move past, never a crash.
+            raise ValueError("No AI model could answer this step: " + str(exc)[:300]) from exc
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -511,9 +515,15 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        note("code", "Writing code" + (f" (attempt {attempt + 1} of {max_attempts})" if attempt else ""))
-        model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed, json_mode=True,
-                                  **({"skip": tuple(avoid)} if avoid else {}))
+        if not attempt:  # A retry is already announced by its "rejected …; trying again" line.
+            note("code", "Writing code")
+        try:
+            model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed,
+                                      json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
+        except RuntimeError:
+            if not errors:
+                raise  # Nothing could answer at all: generate() tries again at the size every provider takes.
+            break  # Every model that answered was switched away from: the step failed with the reasons below.
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
             if isinstance(proposal, dict) and proposal.get("files") == []:
@@ -551,12 +561,13 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             error = str(exc)[:300] or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
+
+            print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
+            note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             failures[model] += 1
             if failures[model] >= MODEL_FAILURES_BEFORE_SWITCH and model not in avoid:
                 avoid.add(model)
                 note("model", f"Switching away from {model} after {failures[model]} rejected answers")
-            print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
-            note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             # A model repeating a rejected answer is asked no more; the remaining attempts go to other models
             # (task #123 stopped at attempt 2 of 5 on this).
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
@@ -613,11 +624,14 @@ def took(seconds):
     return f"{h}h {m}m" if h else f"{m}m {s}s" if m else f"{s}s"
 
 
-ACTIVITY_LINES = 40
+ACTIVITY_LINES = 60
+ACTIVITY_HEAD = 8
 ACTIVITY_WRITE_SECONDS = 4
-ACTIVITY_KINDS = (("error", r"\bfail|could not|problem|rejected"), ("read", r"^read|choos|look"), ("plan", r"plan|design"),
-                  ("check", r"^check|review|verif"), ("fix", r"\bfix"), ("git", r"\bpr\b|pull request|push|commit|branch"),
-                  ("test", r"\btest"), ("build", r"build|compil|ios"), ("code", r"writ|step \d|stage|cod|chang"))
+# Word boundaries matter: "preview/core.js" is not a review, "explanation" is not a plan.
+ACTIVITY_KINDS = (("error", r"\bfailed\b|\bcould not\b|\bproblems? (?:still )?open|^found \d+ problems?|\brejected\b"),
+                  ("read", r"^read|\bchoos|\blook"), ("plan", r"\bplan|\bdesign"), ("check", r"^check|\breview|\bverif"),
+                  ("git", r"\bpr\b|\bpull request|\bpush|\bcommit|\bbranch"), ("fix", r"\bfix"), ("test", r"\btest"),
+                  ("build", r"\bbuild|\bcompil|\bios\b"), ("code", r"\bwrit|\bstep \d|\bstage|\bcod|\bchang"))
 
 
 def activity_kind(text):
@@ -686,21 +700,24 @@ class Progress:
         self.act(activity_kind(text), text, write=False)
         self._write()
 
-    def ok(self, text, phase=False, status=None):
-        """Record a finished step with its result, replacing the step in progress."""
+    def ok(self, text, phase=False, status=None, warn=False):
+        """Record a finished step with its result, replacing the step in progress. warn=True marks a step that
+        ended without doing its job (a step that could not be written, problems found): the card shows it as
+        needing attention, not with a green check."""
         began = self.started
         self.done.append(text + self._finish())
+        state = "blocked" if warn else "completed"
         if self.running:
-            self.running.update(title=text, status="completed", finishedAt=int(self.updated * 1000))
+            self.running.update(title=text, status=state, finishedAt=int(self.updated * 1000))
             self.running = None
         else:
             self.records.append({"id": "step-" + str(len(self.records) + 1), "title": text,
-                                 "status": "completed", "startedAt": int(began * 1000), "finishedAt": int(self.updated * 1000)})
+                                 "status": state, "startedAt": int(began * 1000), "finishedAt": int(self.updated * 1000)})
         if status:
             self.status = status
         self.current = ""
         self._advance(phase)
-        self.act("error" if status == "blocked" else activity_kind(text), text, write=False)
+        self.act("error" if status == "blocked" or warn else activity_kind(text), text, write=False)
         self._write()
 
     def fail(self, reason):
@@ -721,7 +738,18 @@ class Progress:
         every few seconds; the next step change carries anything held back."""
         if self.activity and self.activity[-1]["text"] == text[:240]:
             return
-        self.activity = (self.activity + [{"kind": kind, "text": text[:240], "at": int(time.time() * 1000)}])[-ACTIVITY_LINES:]
+        line = {"kind": kind, "text": text[:240], "at": int(time.time() * 1000)}
+        # Models asked one after another collapse into the latest, so a busy task doesn't push its first lines
+        # ("Read 10 files", "Planned 3 steps") out of the feed.
+        if text.startswith("Asking ") and self.activity and self.activity[-1]["text"].startswith("Asking "):
+            self.activity = self.activity[:-1]
+        self.activity = self.activity + [line]
+        if len(self.activity) > ACTIVITY_LINES:
+            # Keep how it started (reading, the plan) and the latest; the middle folds into one "…" line.
+            head = self.activity[:ACTIVITY_HEAD]
+            marker = head[-1] if head[-1]["kind"] == "more" else None
+            head = head if marker else head[:-1] + [{"kind": "more", "text": "…", "at": head[-1]["at"]}]
+            self.activity = head + self.activity[-(ACTIVITY_LINES - ACTIVITY_HEAD):]
         if write and time.monotonic() - self.written >= ACTIVITY_WRITE_SECONDS:
             self._write()
 
@@ -789,7 +817,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     if not stages:
         return generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test)
     # Tests may come in any stage; a final stage adds them only if none did.
-    current, files, combined, summaries, explanations, model = dict(sources), dict(existing), {}, [], [], ""
+    current, files, combined, summaries, explanations, model, writer = dict(sources), dict(existing), {}, [], [], "", ""
     unfinished = UNFINISHED
     for i, stage in enumerate(stages, 1):
         if progress:
@@ -807,7 +835,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
             # still missing is reported on a draft PR instead of the whole task failing.
             unfinished.append(f"Step {i} of {len(stages)} was not done ({stage[:200]}): {str(exc)[:300]}")
             if progress:
-                progress.ok(f"Step {i} of {len(stages)} could not be written; moving on and fixing it when checking the work")
+                progress.ok(f"Step {i} of {len(stages)} could not be written; moving on and fixing it when checking the work", warn=True)
             continue
         if not changes:
             if progress:
@@ -817,6 +845,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         for path, text in changes.items():
             current[path], files[path] = text, len(text)
         combined.update(changes)
+        writer = model  # The model credited with the change wrote some of it, not just answered last.
         summaries.append(f"Stage {i} (written by {model}): {summary}")
         explanations.append(explanation or summary)
     if require_test and needs_test(combined) and not has_tests(combined):
@@ -832,9 +861,10 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
             UNFINISHED.append(f"No test proves the change works yet: writing one failed ({str(exc)[:300]}). Add a test "
                               "that fails without the change and passes with it")
             if progress:
-                progress.ok("Could not write the test yet; moving on and adding it when checking the work")
+                progress.ok("Could not write the test yet; moving on and adding it when checking the work", warn=True)
         else:
             combined.update(changes)
+            writer = writer or model
             summaries.append(f"Tests: {summary}")
             explanations.append(explanation or summary)
     # Files a later stage changed back to their original text drop out of the commit.
@@ -842,7 +872,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     if not combined:
         raise ValueError("The stages left every file unchanged")
     explanation = f"Built in {len(stages)} stages. " + " ".join(explanations)
-    return model, "\n".join(summaries)[:3000], combined, explanation[:2000]
+    return writer or model, "\n".join(summaries)[:3000], combined, explanation[:2000]
 
 
 MAX_CHECK_ROUNDS = 3
@@ -877,7 +907,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                          for r in reqs if r.get("met") is not True] + found
         if not problems or round_ == MAX_CHECK_ROUNDS:
             break
-        progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]))
+        progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
         progress.now(f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
         # The fix sees every file the problems name, the change so far, and the files it already touched.
         named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
@@ -896,7 +926,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         changes = {path: text for path, text in {**changes, **more}.items() if text != (sources.get(path) if path in sources else read(path))}
     if problems:
         progress.ok(f"Checked the work: {len(problems)} problem{'s' if len(problems) != 1 else ''} still open (listed on the PR)",
-                    status="blocked")
+                    status="blocked", warn=True)
     else:
         progress.ok("Checked the work against the task" + (f": all {len(reqs)} requirements met" if reqs else ""))
     verdict = verify.report(reqs, [p for p in problems if not p.startswith("Requirement not met: ")])
@@ -960,7 +990,7 @@ def produce_development_pr(issue, api_key, token):
                                                            design, require_test)
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
-    progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
+    progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress)
     if verdict and open_problems and explanation:
@@ -1189,7 +1219,7 @@ def fix_pull_request(issue, api_key, token):
         return None
     progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
-    progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""))
+    progress.ok("Tests failed" + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
     progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""), phase=True)
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
                                                                 native_history)

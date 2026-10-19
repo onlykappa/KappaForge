@@ -63,8 +63,8 @@ class CheckTheWork(unittest.TestCase):
         def now(self, text, phase=False):
             self.lines.append(("now", text))
 
-        def ok(self, text, phase=False, status=None):
-            self.lines.append((status or "ok", text))
+        def ok(self, text, phase=False, status=None, warn=False):
+            self.lines.append((status or ("warn" if warn else "ok"), text))
 
     def run_check(self, reviews, fixes):
         reviews, fixes, prompts = list(reviews), list(fixes), []
