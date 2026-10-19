@@ -94,7 +94,7 @@ jobs:
       run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
-        python -m engine.runner
+        PYTHONUNBUFFERED=1 python -m engine.runner
       shell: bash
     - name: Report task execution failure
       if: failure() && inputs.issue_number != ''
@@ -127,7 +127,7 @@ jobs:
   code:
     runs-on: ubuntu-latest
     # Staged builds make several long model calls (up to 7 minutes each) plus a test stage.
-    timeout-minutes: 45
+    timeout-minutes: 360
     steps:
     - uses: actions/checkout@v4
       with:
@@ -165,7 +165,7 @@ jobs:
       run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
-        python -m engine.runner
+        PYTHONUNBUFFERED=1 python -m engine.runner
       shell: bash
     - name: Report task execution failure
       if: (failure() || cancelled()) && inputs.issue_number != ''
@@ -185,6 +185,25 @@ jobs:
           const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
           // The agent already explained the failure itself on this run; don't add a vaguer second report.
           const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number, per_page: 100});
+          // Finalize the live card even when Python was killed before its exception handler ran.
+          for (const comment of comments) {
+            if (comment.user?.type !== 'Bot') continue;
+            const match = (comment.body || '').match(/<!-- KAPPA_PROGRESS_V1 ([\s\S]*?) -->/);
+            if (!match) continue;
+            let state;
+            try { state = JSON.parse(match[1]); } catch { continue; }
+            if (!String(state.attemptId || '').startsWith(`${context.runId}:${process.env.GITHUB_RUN_ATTEMPT}:`) ||
+                String(state.taskId) !== String(issue_number) || state.status !== 'running') continue;
+            const now = Date.now();
+            state.status = 'failed';
+            state.updatedAt = state.finishedAt = now;
+            state.revision = Number(state.revision || 0) + 1;
+            state.steps = (state.steps || []).filter(s => s.status !== 'queued').map(s =>
+              s.status === 'running' ? {...s, status: 'failed', finishedAt: now, detail: 'Workflow stopped before completion'} : s);
+            state.activity = [...(state.activity || []), {kind: 'error', at: now, text: 'Workflow stopped; saved draft stages remain available. Use Fix it on an existing draft.'}].slice(-60);
+            await github.rest.issues.updateComment({...context.repo, comment_id: comment.id,
+              body: comment.body.replace(match[0], `<!-- KAPPA_PROGRESS_V1 ${JSON.stringify(state)} -->`)});
+          }
           if (comments.some(c => (c.body || '').includes(`<!-- KAPPA_FAILED:${context.runId} -->`))) return;
           await github.rest.issues.createComment({...context.repo, issue_number,
             body: `### KappaForge task failed\n\n**Why:** the agent ${'${{ job.status }}' === 'cancelled' ? 'ran out of time or was stopped' : 'crashed'} before it could explain.\n\n**What to do:** reply in chat asking me to try again, ideally with guidance on a smaller first step. [Workflow log](${url})`});

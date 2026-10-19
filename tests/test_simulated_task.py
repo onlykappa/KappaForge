@@ -76,6 +76,9 @@ class World:
         if path == f"repos/{REPO}/pulls":
             self.prs.append(payload)
             return {"html_url": f"https://github.com/{REPO}/pull/900", "number": 900}
+        if path == f"repos/{REPO}/pulls/900" and method == "PATCH":
+            self.prs[-1].update(payload)
+            return {"html_url": f"https://github.com/{REPO}/pull/900", "number": 900}
         if path.endswith("/dispatches"):
             self.dispatches.append(path)
             return {}
@@ -142,8 +145,16 @@ class World:
 
 
 class SimulatedTask(unittest.TestCase):
-    def run_task(self):
+    def run_task(self, interrupt=False):
         world = World()
+        self.world = world
+        answer = world.answer
+        def interrupted(model, prompt):
+            if 'THIS IS STAGE 2' in prompt:
+                raise runner.TaskTimeExpired('task budget reached')
+            return answer(model, prompt)
+        if interrupt:
+            world.answer = interrupted
         for cache in (runner._lists, runner.EXHAUSTED, runner.COOLDOWN):
             cache.clear()
         developer.UNFINISHED.clear()
@@ -159,6 +170,19 @@ class SimulatedTask(unittest.TestCase):
                 patch("engine.native_build.dispatch"):
             url = developer.produce_development_pr(TASK, "sim-gemini", "sim-token")
         return world, url, scope
+
+    def test_timeout_retains_an_incomplete_draft_with_validated_source(self):
+        with self.assertRaises(runner.TaskTimeExpired):
+            self.run_task(interrupt=True)
+        world = self.world
+        self.assertEqual(len(world.prs), 1)
+        self.assertTrue(world.prs[0]['draft'])
+        self.assertTrue(developer.requirements_open(world.prs[0]))
+        tree = next(p for path, p in world.writes if path.endswith('/git/trees'))['tree']
+        self.assertIn("weatherUnits:'F'", tree[0]['content'])
+        self.assertTrue(any(path.endswith('/git/refs') for path, _ in world.writes))
+        self.assertFalse(any('/refs/heads/main' in path for path, _ in world.writes))
+        self.assertFalse(world.dispatches)
 
     def test_the_whole_task_gets_through_every_failure_and_opens_an_honest_draft(self):
         world, url, scope = self.run_task()

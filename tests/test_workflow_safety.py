@@ -1,6 +1,8 @@
 """Regression tests for least-privilege task routing and bounded cleanup."""
 import importlib.util
 import os
+import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +24,38 @@ def issue(mode):
     return {'state':'open','user':{'login':'onlykappa'},'created_at':'2099-01-01T00:00:00Z','number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
 
 class TaskScopeTests(unittest.TestCase):
+    def test_killed_workflow_finalizes_only_its_own_running_bot_snapshot(self):
+        workflow = (ROOT / '.github/workflows/agent.yml').read_text()
+        script = workflow.split('// Finalize the live card', 1)[1].split('if (comments.some', 1)[0]
+        script = '// Finalize the live card' + script
+        state = {'taskId':'23', 'attemptId':'100:2:123', 'status':'running', 'revision':4,
+                 'steps':[{'status':'running'}, {'status':'queued'}], 'activity':[]}
+        def comment(id, state, bot=True):
+            return {'id':id,'user':{'type':'Bot' if bot else 'User'},
+                    'body':'<!-- KAPPA_PROGRESS_V1 '+json.dumps(state)+' -->'}
+        comments = [comment(1,state), comment(2,{**state,'attemptId':'100:1:123'}),
+                    comment(3,state,False), comment(4,{**state,'status':'completed'})]
+        harness = """
+        const assert = require('node:assert/strict');
+        process.env.GITHUB_RUN_ATTEMPT = '2';
+        const updates = [];
+        const github = {rest:{issues:{updateComment:async p=>updates.push(p)}}};
+        const context = {runId:100,repo:{owner:'onlykappa',repo:'KappaForge'}};
+        const issue_number = 23;
+        const comments = COMMENTS;
+        (async()=>{ SCRIPT
+          assert.equal(updates.length,1);
+          assert.equal(updates[0].comment_id,1);
+          const state = JSON.parse(updates[0].body.match(/KAPPA_PROGRESS_V1 (.*?) -->/)[1]);
+          assert.equal(state.status,'failed');
+          assert.equal(state.steps.length,1);
+          assert.equal(state.steps[0].status,'failed');
+          assert.equal(state.revision,5);
+          assert.ok(state.finishedAt>0);
+        })().catch(e=>{console.error(e);process.exitCode=1});
+        """.replace('COMMENTS', json.dumps(comments)).replace('SCRIPT', script)
+        subprocess.run(['node','-'],input=harness,text=True,capture_output=True,check=True)
+
     def test_read_scopes_reject_every_code_mode(self):
         for family, modes in [('agent', ['code','repair','continuous-code']), ('continuous',['code','repair','continuous-code'])]:
             for mode in modes:

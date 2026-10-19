@@ -7,6 +7,35 @@ from engine import developer, verify, continuous, full_reader, project_index, se
 
 
 class CloudAuditTests(unittest.TestCase):
+    def test_expired_task_stops_before_any_model_request_and_restores_route_budget(self):
+        runner = developer.runner_module
+        with patch.object(runner, 'TASK_DEADLINE', 99), patch.object(runner, 'MODEL_DEADLINE', None), \
+                patch.object(runner.time, 'monotonic', return_value=100), patch.object(runner, '_run_model') as call:
+            with self.assertRaises(runner.TaskTimeExpired):
+                runner.run_model('key', 'task')
+            call.assert_not_called()
+            self.assertIsNone(runner.MODEL_DEADLINE)
+
+    def test_request_timeout_cannot_exceed_either_remaining_budget(self):
+        runner = developer.runner_module
+        with patch.object(runner, 'TASK_DEADLINE', 160), patch.object(runner, 'MODEL_DEADLINE', 107), \
+                patch.object(runner.time, 'monotonic', return_value=100):
+            self.assertEqual(runner.model_timeout(), 7)
+        with patch.object(runner, 'TASK_DEADLINE', None), patch.object(runner, 'MODEL_DEADLINE', 99), \
+                patch.object(runner.time, 'monotonic', return_value=100):
+            with self.assertRaisesRegex(RuntimeError, 'shared four-minute'):
+                runner.model_timeout()
+
+    def test_validated_stage_is_checkpointed_before_next_stage_times_out(self):
+        saved = []
+        with patch.object(developer, 'generate', side_effect=[('model', 'first', {'app.py': 'x = 2\n'}, 'first'),
+                  developer.runner_module.TaskTimeExpired('budget')]):
+            with self.assertRaises(developer.runner_module.TaskTimeExpired):
+                developer.build_in_stages('key', 'task', developer.ROOT, {'app.py':'x = 1\n'}, {'app.py':6},
+                    '', None, ['first', 'second'], checkpoint=lambda *args: saved.append(args))
+        self.assertEqual(saved[0][2], {'app.py':'x = 2\n'})
+        self.assertEqual(len(saved), 1)
+
     def tearDown(self):
         developer.UNFINISHED.clear()
         developer.Progress.latest = None
