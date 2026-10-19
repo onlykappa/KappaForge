@@ -222,3 +222,5 @@ body.sheet-open{overflow:hidden}
 @media(max-width:840px){.compose-inner textarea{font-size:1rem;line-height:1.35}}
 /* On iPhone the root size is Body as set by Dynamic Type, so every rem in the ramp scales with it. */
 @supports(font:-apple-system-body){@media(max-width:840px){html{font:-apple-system-body;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}}}
+/* Status text under the inline title sits on translucent glass; keep it at least 4.5:1 in both themes. */
+.top-title .header-presence{color:color-mix(in srgb,var(--text) 72%,transparent)!important}
