@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
 import rawWorker,{KappaMemory} from '../chat-backend/src/index.js';
-import {routes,telemetry,usageStore,discover,MODELS,isComplex} from '../chat-backend/src/intelligence.js';
+import {routes,telemetry,usageStore,discover,MODELS,isComplex,rest,awake} from '../chat-backend/src/intelligence.js';
 const C=globalThis.KappaCore;
 const memoryState=()=>{const records=new Map();const storage={get:async k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>{for(const id of Array.isArray(k)?k:[k])records.delete(id)},list:async({prefix='',end,reverse=false,limit=1000}={})=>new Map([...records].filter(([k])=>k.startsWith(prefix)&&(!end||k<end)).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit))};storage.transaction=async f=>f(storage);return {storage,records};};
 const req=(path,body={},token='owner-token')=>new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});
@@ -604,5 +604,32 @@ test('an iOS build question puts the previous and current build history in front
   assert.match(prompt,/iOS BUILD HISTORY[\s\S]*failed at Build unsigned iPhone application/);
   await worker.fetch(req('/chat',{messages:[{role:'user',text:'Tell me a joke'}]}),env);
   assert.doesNotMatch(prompt,/iOS BUILD HISTORY/);
+ }finally{globalThis.fetch=old}
+});
+test('chat finds every current Flash model instead of a stale fixed list, and rests models that fail',async()=>{
+ const old=globalThis.fetch;
+ const names=['gemini-3.8-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-3.1-flash-lite-preview','gemini-3-pro','gemini-3.5-flash','text-embedding-4'];
+ globalThis.fetch=async()=>Response.json({models:names.map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
+ try{
+  const found=await discover({GEMINI_API_KEY:'newer-key'});
+  assert.deepEqual(found,['gemini-3.5-flash-lite','gemini-3.1-flash-lite-preview','gemini-3.8-flash','gemini-3.5-flash','gemini-2.5-flash'],'lite first for quick replies, newest first, no Pro or embeddings');
+  assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.8-flash','quality and complex requests start with the strongest Flash');
+  rest('gemini-2.5-flash',404);rest('gemini-3.5-flash-lite',429);rest('gemini-3.8-flash',500);
+  assert.deepEqual(awake(found),['gemini-3.1-flash-lite-preview','gemini-3.8-flash','gemini-3.5-flash'],'a retired or rate-limited model is skipped');
+  assert.deepEqual(awake(['gemini-2.5-flash']),['gemini-2.5-flash'],'with nothing else left it is tried anyway');
+ }finally{globalThis.fetch=old}
+});
+test('a model chosen in Settings that is no longer offered falls back to Automatic instead of refusing every message',async()=>{
+ const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);const asked=[];
+ const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'retired-choice-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ globalThis.fetch=async url=>{url=String(url);
+  if(url.includes('/models?'))return Response.json({models:[{name:'models/gemini-3.5-flash-lite',supportedGenerationMethods:['generateContent']}]});
+  if(url.includes(':generateContent')){asked.push(url.split('/models/')[1].split(':')[0]);return Response.json({candidates:[{content:{parts:[{text:'Still here'}]}}]})}
+  return new Response('{}',{status:404})};
+ try{
+  const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:true}}),env);
+  assert.equal(r.status,200);assert.equal((await r.json()).reply,'Still here');assert.deepEqual(asked,['gemini-3.5-flash-lite']);
+  const strict=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:false}}),env);
+  assert.equal(strict.status,422,'with fallback off the owner asked for that model only');
  }finally{globalThis.fetch=old}
 });

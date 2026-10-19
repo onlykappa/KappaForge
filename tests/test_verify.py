@@ -63,8 +63,8 @@ class CheckTheWork(unittest.TestCase):
         def now(self, text, phase=False):
             self.lines.append(("now", text))
 
-        def ok(self, text, phase=False, status=None):
-            self.lines.append((status or "ok", text))
+        def ok(self, text, phase=False, status=None, warn=False):
+            self.lines.append((status or ("warn" if warn else "ok"), text))
 
     def run_check(self, reviews, fixes):
         reviews, fixes, prompts = list(reviews), list(fixes), []
@@ -133,6 +133,11 @@ def response(data):
 
 
 class JsonMode(unittest.TestCase):
+    def setUp(self):
+        from engine import runner
+        runner._lists.clear()
+        runner.EXHAUSTED.clear()
+
     def test_gemini_is_asked_for_json_when_the_caller_needs_it(self):
         from engine import runner
         sent = []

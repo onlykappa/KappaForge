@@ -162,7 +162,27 @@ def repo_context(repo):
             continue
     return "\n\n".join(parts)[:45000]
 
+# Model lists are fetched once per run (ten minutes at most), not before every model call: a task makes hundreds.
+LIST_SECONDS = 600
+_lists = {}
+
+
+def cached(key, fetch):
+    hit = _lists.get(key)
+    if hit and time.time() - hit[0] < LIST_SECONDS:
+        return hit[1]
+    value = fetch()
+    if value:  # An empty list may be a passing outage; ask again next time.
+        _lists[key] = (time.time(), value)
+    return value
+
+
 def discover_models(api_key):
+    """Which generateContent models this key can access, asked once per run."""
+    return set(cached(("gemini", api_key), lambda: fetch_gemini_models(api_key)))
+
+
+def fetch_gemini_models(api_key):
     """Ask Google which generateContent models this key can access."""
     available = set()
     page_token = None
@@ -213,6 +233,10 @@ def provider_models(pid):
         return []
     if p.get("models"):
         return p["models"][:PROVIDERS["maxModelsPerProvider"]]
+    return cached(("provider", pid, os.getenv(p["key"], "") if p.get("key") else ""), lambda: list_provider_models(pid, p))
+
+
+def list_provider_models(pid, p):
     req = urllib.request.Request(p["base"] + "/models", headers=provider_headers(p))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
@@ -279,7 +303,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
                         limit = FALLBACK_MAX_TOKENS
                         continue
-                    if exc.code == 429:
+                    if exc.code in (404, 429):
                         rate_limited(name, exc)
                     errors.append(name + ": HTTP " + str(exc.code))
                 except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
@@ -307,6 +331,9 @@ COOLDOWN_SECONDS = 60
 
 
 def rate_limited(model, exc):
+    if exc.code == 404:  # Retired or renamed (gemini-2.5-flash answered 404 on every call): skip it for this run.
+        EXHAUSTED.add(model)
+        return
     try:
         body = exc.read().decode("utf-8", "replace") if exc.fp else ""
     except (OSError, ValueError, AttributeError):
@@ -393,7 +420,7 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
                 delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
                 time.sleep(min(delay, 60))
                 continue
-            if exc.code == 429:
+            if exc.code in (404, 429):
                 rate_limited(model, exc)
             errors.append(model + ": HTTP " + str(exc.code))
             return None

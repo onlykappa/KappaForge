@@ -88,7 +88,7 @@ function renderTaskActivity(m,i=-1){
  '<span class="activity-tag">'+tag+'</span>'+totalTime+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary>'+
  '<p class="activity-summary">'+esc(headline)+'</p>'+(meta?'<p class="task-meta">'+esc(meta)+'</p>':'')+
  (stalled?'<p class="task-stalled" role="alert">No update for over 15 minutes. The task may be stuck.</p>':'')+timeline+'</details>'+stageCard+actions+
- activityFeed(shown.map(r=>({kind:activityKind(r.title),text:r.title+(r.detail?': '+r.detail:''),state:r.state})),!finished||testing)+'</section>';
+ activityFeed(shown.map(r=>({kind:activityKind(r.title),text:r.title+(r.detail?': '+r.detail:''),state:r.state})),!finished||testing,taskNum||String(i))+'</section>';
 }
 // Structured snapshots are preferred; legacy checklist comments remain readable after an app upgrade.
 function renderExecutionActivity(m,job,i=-1){
@@ -147,31 +147,34 @@ function renderExecutionActivity(m,job,i=-1){
  return '<section class="agent-activity'+(failed?' failed':ended?' finished'+(status==='cancelled'||status==='closed'?' stopped':''):status==='testing'||validation.some(r=>r.state==='current')?' testing':'')+(stale||unavailable?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary>'+heroRing(doneSteps,allSteps)+'<span class="activity-pulse" aria-hidden="true"></span><span class="activity-tag" role="status">'+esc(labels[status]||'IN PROGRESS')+'</span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="task-sub">Task #'+esc(id)+(allSteps?' · '+doneSteps+' of '+allSteps+' steps':'')+'</span>'+clock+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+checks+'</ol>'+bar+fresh+'</details>'+findingsCard(findings)+
   (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
   (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+actions+
-  activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'))+'</section>';
+  activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'),id)+'</section>';
 }
 
 // Live activity feed (replaces the old "View progress details" report): one icon and one line per thing the agent
 // did or is doing, newest last, the current one shimmering. The agent's own feed (snapshot.activity, 3.0+) is
 // preferred; older snapshots and checklists fall back to their steps. The task's test and iOS runs follow.
-const ACTIVITY_KINDS=[['error',/\bfail|could not|problem|rejected|blocked/i],['read',/^read|choos|look/i],['plan',/plan|design/i],['check',/^check|review|verif/i],['fix',/\bfix/i],['git',/\bpr\b|pull request|push|commit|branch/i],['test',/\btest/i],['build',/build|compil|\bios\b/i],['code',/writ|step \d|stage|cod|chang/i]];
-const ACTIVITY_ICONS={read:'file',plan:'tasks',code:'code',check:'check',fix:'retry',test:'flask',build:'hammer',git:'commit',model:'spark',error:'warn',work:'terminal'};
+const ACTIVITY_KINDS=[['error',/\bfailed\b|\bcould not\b|\bproblems? (?:still )?open|^found \d+ problems?|\brejected\b|\bblocked\b/i],['read',/^read|\bchoos|\blook/i],['plan',/\bplan|\bdesign/i],['check',/^check|\breview|\bverif/i],['git',/\bpr\b|\bpull request|\bpush|\bcommit|\bbranch/i],['fix',/\bfix/i],['test',/\btest/i],['build',/\bbuild|\bcompil|\bios\b/i],['code',/\bwrit|\bstep \d|\bstage|\bcod|\bchang/i]];
+const ACTIVITY_ICONS={more:'more',read:'file',plan:'tasks',code:'code',check:'check',fix:'retry',test:'flask',build:'hammer',git:'commit',model:'spark',error:'warn',work:'terminal'};
 function activityKind(text){return (ACTIVITY_KINDS.find(([,re])=>re.test(String(text||'')))||['work'])[0]}
 function feedItems(p,validation=[]){
  let items=(p.activity||[]).filter(a=>a&&typeof a.text==='string').map(a=>({kind:ACTIVITY_ICONS[a.kind]?a.kind:'work',text:a.text,at:a.at}));
  // Model attempts that were passed over collapse into the one that answered (or is being asked).
- items=items.filter((a,i)=>!(a.kind==='model'&&items[i+1]?.kind==='model'));
+ items=items.filter((a,i)=>!(/^Asking /.test(a.text)&&/^Asking /.test(items[i+1]?.text||'')));
  if(!items.length)items=(p.steps||[]).filter(r=>r.status!=='queued').map(r=>({kind:r.status==='failed'||r.status==='blocked'?'error':activityKind(r.title),text:r.title+(r.detail?': '+r.detail:'')}));
  for(const r of validation)if(r.state!=='upcoming')items.push({kind:r.state==='failed'?'error':/ios|build|native/i.test(r.title)?'build':'test',text:r.title+(r.detail?': '+r.detail:''),state:r.state});
  return items;
 }
-function activityFeed(items,live){
+// One line, like a chat assistant's working indicator: the current action with its icon (shimmering while it runs)
+// and a chevron. Tapping it opens everything the agent did, in order; it stays open across live updates.
+function activityFeed(items,live,id=''){
  const shown=items.filter(a=>a.state!=='upcoming');
  if(!shown.length)return '';
- const last=shown.length-1;
- return '<ol class="activity-feed" aria-label="What the agent is doing" aria-live="polite">'+shown.map((a,i)=>{
-  const now=live&&i===last&&a.kind!=='error'&&a.state!=='done';
-  return '<li class="feed-item '+esc(a.kind)+(now?' live':'')+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span>'+(now?'<span class="sr-only">in progress</span>':'')+'</li>';
- }).join('')+'</ol>';
+ const last=shown.at(-1),now=live&&last.kind!=='error'&&last.state!=='done';
+ const line=a=>'<li class="feed-item '+esc(a.kind)+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span></li>';
+ return '<details class="task-feed" data-progress-detail="'+esc(id)+':feed"><summary class="feed-item '+esc(last.kind)+(now?' live':'')+'" aria-live="polite">'+
+  '<span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[last.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(last.text),140))+'</span>'+
+  '<span class="feed-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span><span class="sr-only">'+(now?'in progress. ':'')+'Show all '+shown.length+' actions</span></summary>'+
+  (shown.length>1?'<ol class="activity-feed">'+shown.slice(0,-1).map(line).join('')+'</ol>':'')+'</details>';
 }
 
 // The task card's large ring: steps done out of all known steps; a dashed track while the total is unknown.

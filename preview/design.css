@@ -354,3 +354,14 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{ou
 .feed-item.live .feed-icon{color:#e5e5ea}
 @keyframes feed-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
 @media (prefers-reduced-motion:reduce){.feed-item.live .feed-text{animation:none;-webkit-text-fill-color:currentColor;background:none}}
+/* The feed is one line (current action, chevron); tapping it opens the full history underneath. */
+.task-feed{margin-top:14px}
+.task-feed>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:22px minmax(0,1fr) 16px;align-items:center;gap:12px}
+.task-feed>summary::-webkit-details-marker{display:none}
+.task-feed>summary .feed-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-feed[open]>summary .feed-text{white-space:normal}
+.feed-chevron{display:grid;place-items:center;color:#8e8e93;transition:transform .2s ease}
+.feed-chevron svg{width:15px;height:15px}
+.task-feed[open] .feed-chevron{transform:rotate(90deg)}
+.task-feed .activity-feed{margin:14px 0 0;padding-left:0;opacity:.85}
+@media (prefers-reduced-motion:reduce){.feed-chevron{transition:none}}

@@ -1,4 +1,12 @@
 export const MODELS=['gemini-3.1-flash-lite','gemini-3-flash','gemini-2.5-flash-lite','gemini-2.5-flash'];
+export const FLASH=/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$/;
+const MAX_GEMINI=8;
+function rank(name){const m=name.match(FLASH);return (m[2]?0:1000)-Number(m[1])*10+(m[3]?1:0)}
+// Models that just failed rest instead of costing every message an attempt: a retired one (404) for an hour,
+// a rate-limited one (429) for a minute. Per Worker isolate; a cold start simply tries them again.
+const resting=new Map();
+export function rest(model,status){if(status===404||status===429)resting.set(model,Date.now()+(status===404?3600000:60000))}
+export function awake(models){const up=models.filter(m=>!(resting.get(m)>Date.now()));return up.length?up:models}
 // Discovery is a provider call; caching it keeps each chat message to one Gemini request.
 let discovered={key:'',at:0,models:null};
 export async function discover(env){
@@ -11,7 +19,10 @@ export async function discover(env){
   const data=await r.json();for(const m of data.models||[])if(m.supportedGenerationMethods?.includes('generateContent'))available.add(m.name.replace(/^models\//,''));
   pageToken=data.nextPageToken||'';if(!pageToken)break;
  }
- const models=MODELS.filter(m=>available.has(m));
+ // Every discovered Flash model, like the coding agent (engine/runner.py FLASH_RE), not a fixed list that went
+ // stale: chat kept calling gemini-2.5-flash (101 attempts, 0 tokens) and never used 3.5-3.8 Flash. Lite first
+ // for quick replies (routes() moves full-size Flash first for quality or complex requests), newest first.
+ const models=[...available].filter(m=>FLASH.test(m)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
  if(models.length)discovered={key:env.GEMINI_API_KEY,at:Date.now(),models};
  return models;
 }

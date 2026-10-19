@@ -1,7 +1,7 @@
 {
-  "version": "2.2.8",
+  "version": "2.2.9",
   "released": "2026-10-19",
-  "notes": "Tasks show a live activity feed under the task card (what the agent is reading, which model it asks, writing code, checking, testing, building) instead of View progress details. Code is now written by the best free coding models first (DeepSeek V4 Pro and Kimi K3 on Ollama Cloud, Nemotron 3 Ultra on NVIDIA and Kilo), then Gemini Flash, then Flash-Lite and the rest, switching down the list mid-task whenever a model is rate-limited or down. It switches to another model mid-task when one keeps giving bad answers. Each step gets its own 5 retries (task #125 stopped when one shared budget ran out), a failed test step keeps the finished work, and syntax errors name the line.",
+  "notes": "Chat now uses every current Gemini Flash model (3.5 to 3.8) and stops retrying retired or rate-limited models (gemini-2.5-flash had 101 failed attempts); a model picked in Settings that is no longer offered falls back to Automatic. The agent no longer stops when every model is busy mid-step, fetches model lists once per run, skips retired models, credits the model that really wrote the change, and marks steps that could not be done for attention instead of with a green check. The live feed under a task is one line showing what the agent is doing right now (tap it to see everything it did) and gives every line the right icon. New: Actions \u2192 Check AI providers shows which models really answer.",
   "repository": "onlykappa/KappaForge",
   "iosBundleIdentifier": "com.onlykappa.KappaForge",
   "webSource": "preview",
