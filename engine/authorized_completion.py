@@ -9,6 +9,7 @@ import time
 from engine.intent_guard import MARKER, WRITE_MODES, activate
 from engine.native_build import title as native_title
 from engine.runner import ROOT, request
+from engine.verify import open_problems
 
 
 # GitHub computes mergeability lazily, and the native build usually finishes after the sandbox tests.
@@ -39,6 +40,8 @@ def complete(run, api, wait=time.sleep):
     if len(prs) != 1:
         return 'no_unique_pr'
     pr = api(f'repos/{repo}/pulls/{prs[0]["number"]}')
+    if open_problems(pr):
+        return 'requirements_incomplete'
     for _ in range(MERGEABLE_POLLS):
         if pr.get('mergeable') is not None:
             break

@@ -5,7 +5,7 @@ diagnosis is read-only and produces reviewable recommendations, never code pushe
 """
 import os
 import re
-from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model
+from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model, read_token
 from engine.full_reader import inspect_batch
 
 MAX_BATCHES_PER_RUN = 3
@@ -26,7 +26,8 @@ def continuous_audit(issue, token, api_key):
         allowed = code_providers(is_private(target.group(1), token))
         state, note, complete = inspect_batch(
             target.group(1), issue["number"], branch, token, api_key,
-            github, lambda key, prompt: run_model(key, prompt, allowed=allowed), comments)
+            lambda path: github(path, read_token(target.group(1), token)),
+            lambda key, prompt: run_model(key, prompt, allowed=allowed), comments)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
         print(f"Continuous audit checkpoint {state.get('next', 0)}/{state.get('files_total', 0)}")
         if complete:

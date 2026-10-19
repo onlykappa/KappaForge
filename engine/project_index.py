@@ -48,7 +48,7 @@ def index_repository(repo,token,github,reader,ref="main"):
     files=[]
     for path in ranked[:MAX_READ_FILES]:
         try:
-            source=reader(repo,path,ref)
+            source=reader(repo,path,sha)
             if source:files.append(summarize_source(path,source))
         except (ValueError,KeyError,UnicodeError):continue
     counts=dict(Counter(p.rsplit(".",1)[-1] for p in paths).most_common(10))
