@@ -65,15 +65,17 @@ class CloudAuditTests(unittest.TestCase):
             def ok(self,*a,**k): pass
         sources = {'app.py':'value = 1\n'}
         developer.UNFINISHED[:] = ['Step 2 was not done: add the API client']
-        reviews = [([{'text':'API client','met':False}], [], []), None]
+        reviews = [([{'text':'API client','met':False}], [], [])] + [None] * developer.MAX_CHECK_ROUNDS
         with patch.object(verify,'wiring_problems',return_value=[]), patch.object(verify,'model_review',side_effect=reviews), \
-             patch.object(developer,'generate',side_effect=[('model','docs',{'README.md':'notes'},''),ValueError('cannot repair')]):
+             patch.object(developer,'generate',side_effect=[('model','docs',{'README.md':'notes'},'')]
+                          + [ValueError('cannot repair')] * (developer.MAX_CHECK_ROUNDS - 1)) as generate:
             _, _, problems = developer.check_the_work('key','Add API','onlykappa/KappaForge','a'*40,'token',sources,
                 {'app.py':10}, {'app.py':'value = 2\n'}, '',None,'',True,Progress())
         self.assertTrue(any('Step 2' in p for p in problems))
         self.assertTrue(any('API client' in p for p in problems))
         self.assertTrue(any('unavailable' in p for p in problems))
         self.assertTrue(any('No test' in p for p in problems))
+        self.assertEqual(generate.call_count, developer.MAX_CHECK_ROUNDS)
 
     def test_requirement_repair_rechecks_before_clearing_incomplete_state(self):
         from test_developer import OwnerRequestedFixTests
@@ -86,7 +88,8 @@ class CloudAuditTests(unittest.TestCase):
             return result
         def answer(key,prompt,**kwargs):
             if 'You are reviewing a change' in prompt:
-                return 'model', json.dumps({'requirements':[{'text':'Add feature','met':True}], 'problems':[]})
+                return 'model', json.dumps({'requirements':[{'text':'Add feature','met':True,
+                    'evidence':{'path':'app/main.py','quote':'return int(a) + int(b)'}}], 'problems':[]})
             return case.answer()
         with patch.object(developer,'gh',side_effect=incomplete_gh),patch.object(developer.native_build if hasattr(developer,'native_build') else __import__('engine.native_build',fromlist=['gh']),'gh',side_effect=incomplete_gh), \
              patch.object(developer,'run_model',side_effect=answer):
