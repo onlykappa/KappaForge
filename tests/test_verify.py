@@ -227,6 +227,23 @@ class DeliveryQualityRegressions(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify.parse_review('{"requirements":[],"problems":"not a list"}')
 
+    def test_followup_expands_a_partial_new_file_and_uses_the_candidate(self):
+        changes = {'app/new.js': 'a' * 95000 + '\nconsumer(weather);'}
+        context, _ = verify.review_sources(lambda p: 'obsolete', changes, [], limit=110000)
+        self.assertNotIn('consumer(weather)', context)
+        expanded, _ = verify.review_sources(lambda p: 'obsolete', changes, [], ['app/new.js'], limit=110000)
+        self.assertIn('consumer(weather)', expanded)
+        self.assertNotIn('obsolete', expanded)
+        self.assertIn('(COMPLETE)', expanded)
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            return 'model', json.dumps({'requirements': [{'text': 'consume', 'met': len(calls) == 2}],
+                                       'problems': [], 'files_to_inspect': ['app/new.js'] if len(calls) == 1 else []})
+        verdict = verify.model_review(model, 'key', 'task', lambda p: '', changes, [])
+        self.assertEqual(verdict[1], [])
+        self.assertIn('consumer(weather)', calls[1])
+
 
 class AnchorHint(unittest.TestCase):
     """A find copied from a diff's removed line gets the real current text back (PR #121's fixes failed 5 times on it)."""

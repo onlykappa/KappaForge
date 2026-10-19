@@ -261,7 +261,7 @@ def review_sources(read, changes, paths, requested=(), limit=220000):
             if dependency in known and dependency not in seen:
                 queue.append(dependency)
         available = max(0, limit - used - len(path) - 90)
-        take = min(len(text), 90000, available)
+        take = min(len(text), limit if path in requested else 90000, available)
         label = 'COMPLETE' if take == len(text) else f'PARTIAL: {take}/{len(text)} chars; request this file if evidence is missing'
         block = f'\n===== CURRENT SOURCE {path} ({label}) =====\n' + text[:take] + '\n'
         if not take:
@@ -330,8 +330,9 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             needed = raw.get('files_to_inspect', [])
             if not isinstance(needed, list):
                 needed = []
-            requested = list(dict.fromkeys(p for p in needed if isinstance(p, str) and p in paths))[:8]
-            unavailable = [p for p in needed if not isinstance(p, str) or p not in paths]
+            known = set(paths) | set(changes)
+            requested = list(dict.fromkeys(p for p in needed if isinstance(p, str) and p in known))[:8]
+            unavailable = [p for p in needed if not isinstance(p, str) or p not in known]
             if unavailable:
                 reqs, problems, files = result
                 result = reqs, problems + ['Review requested unavailable source; verification is incomplete: '
