@@ -375,7 +375,7 @@ function buildsView(){
 }
 function iosSheet(title,body,{detent="medium",closeAttr="data-sheet-close",heading=true}={}){
  const enter=sheetShown!==title;sheetShown=title;
- return '<button type="button" class="ios-scrim'+(enter?' enter':'')+'" '+closeAttr+' aria-label="Close" tabindex="-1"></button><section class="ios-sheet '+detent+(enter?' enter':'')+'" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'+
+ return '<button type="button" class="ios-scrim'+(enter?' enter':'')+'" '+closeAttr+' aria-hidden="true" tabindex="-1"></button><section class="ios-sheet '+detent+(enter?' enter':'')+'" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'+
   '<button type="button" class="ios-grabber" data-sheet-detent aria-label="Resize sheet"><i></i></button><div class="ios-sheet-head">'+(heading?'<h2>'+esc(title)+'</h2>':'<span></span>')+'<button type="button" class="ios-close" '+closeAttr+' aria-label="Close">'+uiIcon("close")+'</button></div><div class="ios-sheet-body">'+body+'</div></section>';
 }
 function repoSheet(){

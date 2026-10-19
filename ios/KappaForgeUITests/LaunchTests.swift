@@ -113,6 +113,8 @@ final class LaunchTests: XCTestCase {
         app.launch()
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 60))
+        // Segments (aria-pressed) and the picker (aria-haspopup) are not exposed as plain buttons, so match by label.
+        func element(_ predicate: NSPredicate) -> XCUIElement { web.descendants(matching: .any).matching(predicate).firstMatch }
         func capture(_ name: String) {
             sleep(1)
             let image = XCTAttachment(screenshot: app.screenshot())
@@ -131,12 +133,12 @@ final class LaunchTests: XCTestCase {
             button.tap()
             capture(name)
             if tab == "Dashboard" {
-                let pulls = web.buttons["Pull requests"]
+                let pulls = element(NSPredicate(format: "label == %@", "Pull requests"))
                 XCTAssertTrue(pulls.waitForExistence(timeout: 15))
                 pulls.tap()
                 sleep(4)
                 capture("dashboard pull requests")
-                let picker = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "onlykappa/")).firstMatch
+                let picker = element(NSPredicate(format: "label CONTAINS %@", "onlykappa/"))
                 XCTAssertTrue(picker.waitForExistence(timeout: 15), "The repository picker must be accessible")
                 picker.tap()
                 capture("repository picker")
