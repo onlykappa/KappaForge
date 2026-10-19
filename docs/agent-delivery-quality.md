@@ -19,14 +19,23 @@ The engine now:
   not proof that code is missing. Reviews must trace fetched data into its final
   consumer and distinguish concrete defects from style preferences.
 * Checks that new JavaScript tests load the production module containing new
-  bare-called functions, including transitive imports and source-reading fixtures.
-  An unrelated existing import no longer automatically satisfies that check.
-* Detects direct assignments to Node's getter-only global navigator in new tests.
+  bare-called functions through named imports, re-exports or require bindings.
+  Side-effect imports and reading a file as text do not bind its functions.
+  VM/browser fixtures call helpers through their explicit context objects.
+* Detects direct assignments to Node's getter-only global navigator in new tests,
+  while ignoring comments and quoted VM fixture code.
 * Distinguishes early-return route body reads from a second read after the common
   Worker parser.
 * Preserves rejected-repair diagnostics and continues within the existing bounded
   review budget. Candidate tests remain subject to review and independent CI;
   every follow-up edit need not introduce another redundant test.
+* Requires structured source evidence for every met requirement and checks each
+  literal quote against the current candidate file. Unavailable source requests
+  survive follow-up inspection; requirements cannot disappear from that pass.
+
+JavaScript checks are conservative lexical analysis, not a full control-flow or
+module linker. Independent runtime tests remain necessary. Executable fixtures
+compare the checker's import and VM decisions with actual Node behavior.
 
 Generated code is still syntax-checked, never executed in the credentialed model
 generation process. Behavioral tests run in the independent secret-free sandbox.

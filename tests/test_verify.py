@@ -70,7 +70,11 @@ class CheckTheWork(unittest.TestCase):
         reviews, fixes, prompts = list(reviews), list(fixes), []
 
         def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False):
-            return "gemini", json.dumps(reviews.pop(0))
+            review = reviews.pop(0)
+            for requirement in review.get('requirements', []):
+                if requirement.get('met'):
+                    requirement['evidence'] = {'path': 'preview/app-main.js', 'quote': 'function show(){}'}
+            return "gemini", json.dumps(review)
 
         def generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test):
             prompts.append((task, dict(sources)))
@@ -164,23 +168,22 @@ class DeliveryQualityRegressions(unittest.TestCase):
                    + '\nglobalThis.navigator={};\nawait getWeatherLocation();'}
         found = verify.test_binding_problems(lambda p: old.get(p, ''), changes, set(old) | {'chat-backend/src/index.js'})
         self.assertTrue(any('getter-only' in p for p in found))
-        self.assertTrue(any('does not load its production module' in p for p in found))
+        self.assertTrue(any('does not bind it from its production module' in p for p in found))
 
     def test_real_helper_imports_and_vm_source_fixtures_are_accepted(self):
         production = {'preview/weather.js': 'export async function location(){return 1;}'}
         fixtures = ["import {location} from '../preview/weather.js'; await location();",
-                    "const source=readFileSync(resolve(root,'preview/weather.js'),'utf8'); await location();",
-                    "import '../preview/weather.js'; await location();"]
+                    "const source=readFileSync(resolve(root,'preview/weather.js'),'utf8'); vm.runInContext(source,context); await context.location();"]
         for fixture in fixtures:
             with self.subTest(fixture=fixture):
                 self.assertEqual(verify.test_binding_problems(lambda p: '',
                                  {**production, 'tests/weather.test.mjs': fixture}, production), [])
 
     def test_transitive_import_is_loaded_and_rhs_call_is_not_a_definition(self):
-        old = {'preview/bridge.js': "import './weather.js';"}
-        production = {'preview/weather.js': 'function location(){return 1;}'}
+        old = {'preview/bridge.js': "export {location} from './weather.js';"}
+        production = {'preview/weather.js': 'export function location(){return 1;}'}
         for imported, expected in [("../preview/bridge.js", False), ("../preview/other.js", True)]:
-            test = f"import '{imported}';\nconst result=await location();"
+            test = f"import {{location}} from '{imported}';\nconst result=await location();"
             found = verify.test_binding_problems(lambda p: old.get(p, ''),
                                                  {**production, 'tests/x.test.mjs': test}, set(old) | set(production))
             self.assertEqual(bool(found), expected)
@@ -216,7 +219,9 @@ class DeliveryQualityRegressions(unittest.TestCase):
     def test_reviewer_can_inspect_a_missing_file_before_making_its_verdict(self):
         replies = [json.dumps({'requirements': [{'text': 'weather', 'met': False}], 'problems': [],
                                'files_to_inspect': ['ios/Bridge.swift']}),
-                   json.dumps({'requirements': [{'text': 'weather', 'met': True}], 'problems': [], 'files_to_inspect': []})]
+                   json.dumps({'requirements': [{'text': 'weather', 'met': True,
+                               'evidence': {'path': 'ios/Bridge.swift', 'quote': 'func promptBridge() {}'}}],
+                               'problems': [], 'files_to_inspect': []})]
         prompts = []
         def model(key, prompt, **kwargs):
             prompts.append(prompt)
@@ -230,7 +235,7 @@ class DeliveryQualityRegressions(unittest.TestCase):
 
     def test_unresolved_evidence_and_malformed_review_cannot_pass(self):
         def model(key, prompt, **kwargs):
-            return 'model', json.dumps({'requirements': [{'text': 'weather', 'met': True}],
+            return 'model', json.dumps({'requirements': [{'text': 'weather', 'met': False}],
                                         'problems': [], 'files_to_inspect': ['app/unknown.js']})
         result = verify.model_review(model, 'key', 'task', lambda p: '', {}, ['app/unknown.js'])
         self.assertTrue(result[1])
@@ -248,7 +253,8 @@ class DeliveryQualityRegressions(unittest.TestCase):
         calls = []
         def model(key, prompt, **kwargs):
             calls.append(prompt)
-            return 'model', json.dumps({'requirements': [{'text': 'consume', 'met': len(calls) == 2}],
+            return 'model', json.dumps({'requirements': [{'text': 'consume', 'met': len(calls) == 2,
+                                       'evidence': {'path': 'app/new.js', 'quote': 'consumer(weather);'}}],
                                        'problems': [], 'files_to_inspect': ['app/new.js'] if len(calls) == 1 else []})
         verdict = verify.model_review(model, 'key', 'task', lambda p: '', changes, [])
         self.assertEqual(verdict[1], [])

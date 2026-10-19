@@ -400,7 +400,8 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         answers = [("flash", json.dumps({"read": ["app/main.py"]})),
                    ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "edits": [
                        {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))]
-        answers.append(("flash", json.dumps({"requirements":[{"text":"Cast inputs","met":True}],"problems":[]})))
+        answers.append(("flash", json.dumps({"requirements":[{"text":"Cast inputs","met":True,
+            "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})))
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=answers):
             url = produce_development_pr(self.issue(), "key", "token")
         self.assertEqual(url, "https://github.com/onlykappa/KappaForge/pull/50")
@@ -459,7 +460,8 @@ class OtherRepositoryTests(unittest.TestCase):
             prompts.append(prompt)
             allowances.append(allowed)
             if "You are reviewing a change" in prompt:
-                return "flash", json.dumps({"requirements":[{"text":"Fix adding","met":True}],"problems":[]})
+                return "flash", json.dumps({"requirements":[{"text":"Fix adding","met":True,
+                    "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})
             if len(prompts) == 1:
                 return "flash", json.dumps({"read": ["app/main.py"]})
             return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
@@ -504,7 +506,8 @@ class FlaggedChangeTests(unittest.TestCase):
             return {}
         answers = [("flash", json.dumps({"read": ["app/main.py"]})), ("flash", json.dumps({"summary": "x", "files": [
             {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return a + b  # os.environ['SECRET']"}]}]}))]
-        answers.append(("flash", json.dumps({"requirements":[{"text":"Change adding","met":True}],"problems":[]})))
+        answers.append(("flash", json.dumps({"requirements":[{"text":"Change adding","met":True,
+            "evidence":{"path":"app/main.py","quote":"return a + b"}}],"problems":[]})))
         issue = {"number": 9, "title": "t", "user": {"login": "onlykappa"}, "body": "Repository: onlykappa/OmniPC\nMode: develop\n\nx"}
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=answers):
