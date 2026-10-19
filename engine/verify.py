@@ -129,9 +129,44 @@ def misuse_problems(changes):
     return problems
 
 
-def wiring_problems(repo, root, read, sources, changes, all_paths):
+LISTENER_RE = re.compile(r"""\.addEventListener\(\s*['"]([\w-]+)['"]""")
+PY_DEF_RE = re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(", re.M)
+
+
+def removed_problems(read, changes, task=""):
+    """Existing functions and event listeners the change deleted though the task never asked for that (PR #121
+    silently dropped the chat box's Enter-to-send listener)."""
+    problems = []
+    for path, text in changes.items():
+        if TEST_RE.search(path):
+            continue
+        old = read(path) or ""
+        if not old:
+            continue
+        if re.search(r"\.[cm]?js$", path):
+            before = {m.group(1) or m.group(2) for m in JS_FUNC_RE.finditer(old)} - {None}
+            after = {m.group(1) or m.group(2) for m in JS_FUNC_RE.finditer(text)} - {None}
+            for name in sorted(before - after):
+                if name not in task:
+                    problems.append(f"{path}: the existing function {name} was removed, but the task does not ask for "
+                                    "that and other code may still rely on it: put it back unchanged")
+            kept = LISTENER_RE.findall(text)
+            for event in sorted(set(LISTENER_RE.findall(old))):
+                if LISTENER_RE.findall(old).count(event) > kept.count(event) and event not in task:
+                    lines = [line.strip() for line in old.splitlines() if re.search(r"addEventListener\(\s*['\"]" + event, line) and line not in text]
+                    problems.append(f'{path}: an existing "{event}" event listener was removed ({(lines or [""])[0][:120]}), so '
+                                    "that behavior stops working, though the task does not ask for it: put it back unchanged")
+        elif path.endswith(".py"):
+            for name in sorted(set(PY_DEF_RE.findall(old)) - set(PY_DEF_RE.findall(text))):
+                if name not in task:
+                    problems.append(f"{path}: the existing function {name} was removed, but the task does not ask for "
+                                    "that and other code may still rely on it: put it back unchanged")
+    return problems
+
+
+def wiring_problems(repo, root, read, sources, changes, all_paths, task=""):
     """Deterministic checks; the KappaForge-specific ones run only on KappaForge itself."""
-    problems = tests_without_real_code(changes, all_paths) + misuse_problems(changes)
+    problems = tests_without_real_code(changes, all_paths) + misuse_problems(changes) + removed_problems(read, changes, task)
     if repo == root:
         problems += worker_problems(sources, changes) + preference_problems(read, changes) + unused_problems(read, changes, all_paths)
     return problems
@@ -148,7 +183,9 @@ def diff_text(read, changes, limit=40000):
 def review_prompt(task, diff, paths):
     return (
         "You are reviewing a change another engineer wrote for this task. Be strict: the owner will test it on a phone. "
-        "For EVERY requirement in the task, decide from the diff whether it is fully implemented and actually reachable "
+        "List the task's requirements one entry per distinct ask: every numbered or bulleted item and every sentence that "
+        "asks for something is its own entry, never merged into a broad summary like \"Add the feature\". "
+        "For EVERY requirement, decide from the diff whether it is fully implemented and actually reachable "
         "at runtime (wired up, called, saved, sent where it is needed), not just mentioned. Also list concrete defects: "
         "code that cannot run, data that is fetched but never used, settings that are not saved, tests that do not test "
         "the real code. Return ONLY strict JSON:\n"
@@ -177,10 +214,17 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
 
 
 def report(reqs, problems):
-    """One honest line for the owner, plus the unmet requirements and remaining problems."""
+    """One honest line for the owner, plus the unmet requirements and remaining problems.
+
+    With anything still open the headline says Not finished, so a review that ticked every requirement can't read as
+    done while a problem remains (PR #121 said "2 of 2 requirements met" above a route nothing called)."""
     met = [r for r in reqs if r.get("met") is True]
+    open_count = len(reqs) - len(met) + len(problems)
     lines = []
-    if reqs:
+    if open_count:
+        lines.append(f"Not finished: {open_count} problem{'s' if open_count != 1 else ''} still open."
+                     + (f" The review marked {len(met)} of {len(reqs)} requirements met, but that is not verified while problems remain." if reqs else ""))
+    elif reqs:
         lines.append(f"Checked against the task: {len(met)} of {len(reqs)} requirements met.")
     for r in reqs:
         if r.get("met") is not True:

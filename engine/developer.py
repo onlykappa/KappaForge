@@ -760,7 +760,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     reqs, problems = [], []
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
-        problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing)
+        problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
         review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
         files_needed = []
         if review:
@@ -855,7 +855,10 @@ def produce_development_pr(issue, api_key, token):
     progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress)
-    if verdict:
+    if verdict and open_problems and explanation:
+        # The model describes what it meant to build; with problems open that description is not a fact.
+        explanation = (verdict + "\n\nWhat the agent says it did (not verified): " + explanation)[:2000]
+    elif verdict:
         explanation = (verdict + "\n\n" + (explanation or ""))[:2000]
         summary = (verdict + "\n" + summary)[:3000]
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
