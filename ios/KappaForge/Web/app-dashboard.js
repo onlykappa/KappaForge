@@ -418,7 +418,10 @@ function agentTasksPanel(){
  const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
  const rows=jobs.map(job=>{
   const found=taskProgressMessage(job.number);if(!found)return "";
-  const model=KappaJobs.taskModel(found.message.text),checks=taskValidation(job),all=[...model.rows,...checks];
+  const parsed=KappaJobs.taskModel(found.message.text),checks=taskValidation(job);
+  // Tasks with execution snapshots report their own steps; older tasks keep the parsed checklist.
+  const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
+  const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
   const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
   const now=model.current||checks.find(c=>c.state==="current")||model.failed||all.filter(r=>r.state==="done").at(-1);
   const failed=!!model.failed||["failed","tests-failed"].includes(job.message);
@@ -489,7 +492,7 @@ if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKS
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
-if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
+if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 if(view!=="home")document.body.classList.remove("sheet-open");
 // Live updates re-render the sheet; keep its scroll position while it shows the same page.
 const sheetBody=document.querySelector(".ios-sheet-body"),sheetKey=[dashboardState.mode,dashboardState.runId,dashboardState.jobId,dashboardState.step,repoSheetOpen].join(":"),sheetTop=sheetBody&&render.sheetKey===sheetKey?sheetBody.scrollTop:0;render.sheetKey=sheetKey;

@@ -75,3 +75,15 @@ test('the interface uses the graphite accent and keeps glass accessible',()=>{
  const swift=readFileSync(new URL('../ios/KappaForge/KappaWebView.swift',import.meta.url),'utf8');
  assert.match(swift,/reduceTransparencyStatusDidChangeNotification/);assert.match(swift,/classList\.toggle\('rt', \\\(UIAccessibility\.isReduceTransparencyEnabled\)\)/);
 });
+
+// app-dashboard.js: the Agent tasks panel reads execution snapshots when a task has them.
+test('the dashboard task row counts snapshot steps instead of showing 0/0',()=>{
+ const dash=read('app-dashboard.js'),start=dash.indexOf('function taskProgressMessage('),end=dash.indexOf('\nfunction openTaskInChat(');
+ const box={esc,KappaJobs:{taskModel:()=>({rows:[],current:null,failed:null,fix:null})},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,taskValidation:()=>[],
+  chats:[{id:'c',messages:[{role:'assistant',text:'card',progressKey:'progress:103:1'}]}],
+  trackedJobs:[{number:103,message:'progress',activeAt:Date.now(),progress:{status:'running',steps:[{title:'Reading project files',status:'completed'},{title:'Identifying issues',status:'completed'},{title:'Implementing fixes',detail:'Adding coverage',status:'running'},{title:'Running regression tests',status:'queued'}]}}]};
+ vm.createContext(box);vm.runInContext(dash.slice(start,end),box);
+ const html=box.agentTasksPanel();
+ assert.match(html,/agent-task current" data-open-task="103">[^]*Task #103[^]*2\/4[^]*Implementing fixes: Adding coverage/);
+ assert.match(html,/aria-valuenow="50"/);
+});
