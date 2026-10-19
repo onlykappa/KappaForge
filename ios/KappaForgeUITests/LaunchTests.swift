@@ -142,7 +142,9 @@ final class LaunchTests: XCTestCase {
                 XCTAssertTrue(picker.waitForExistence(timeout: 15), "The repository picker must be accessible")
                 picker.tap()
                 capture("repository picker")
-                web.buttons["Close"].firstMatch.tap()
+                let close = element(NSPredicate(format: "label == %@", "Close"))
+                XCTAssertTrue(close.waitForExistence(timeout: 15), "The repository sheet must open with a Close button")
+                close.tap()
             }
         }
         app.terminate()

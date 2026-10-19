@@ -87,3 +87,14 @@ test('the dashboard task row counts snapshot steps instead of showing 0/0',()=>{
  assert.match(html,/agent-task current" data-open-task="103">[^]*Task #103[^]*2\/4[^]*Implementing fixes: Adding coverage/);
  assert.match(html,/aria-valuenow="50"/);
 });
+
+// app-dashboard.js: a failed pull request load waits for Try again instead of reloading on every render.
+test('a failed pull request load is not retried on render',()=>{
+ const dash=read('app-dashboard.js'),start=dash.indexOf('const PR_LOOK='),end=dash.indexOf('\nfunction buildsView(');
+ let loads=0;const box={esc,uiIcon:()=>'',iosRow:()=>'',ago:()=>'',dashboardRepo:'KappaForge',loadPulls:()=>{loads++},pullsData:{KappaForge:{error:'GitHub HTTP 403'}}};
+ vm.createContext(box);vm.runInContext(dash.slice(start,end),box);
+ for(let i=0;i<3;i++)assert.match(box.pullsView(),/Couldn't load pull requests: GitHub HTTP 403[^]*data-pulls-retry/);
+ assert.equal(loads,0,'no request while the error is shown');
+ box.pullsData={KappaForge:{loading:true}};box.pullsView();assert.equal(loads,0,'no second request while one is in flight');
+ box.pullsData={};box.pullsView();assert.equal(loads,1,'first view starts one load');
+});

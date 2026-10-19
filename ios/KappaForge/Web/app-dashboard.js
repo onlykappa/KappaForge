@@ -357,7 +357,9 @@ function pullRow(p,stamp){
 }
 function pullsView(){
  const entry=pullsData[dashboardRepo];
- if(!entry?.at){loadPulls(dashboardRepo);return '<p class="ios-empty">'+(entry?.error?"Couldn't load pull requests: "+esc(entry.error):"Loading pull requests for "+esc(dashboardRepo)+"…")+'</p>'}
+ // A failed load waits for the owner to retry; loading again on every render would loop against the API.
+ if(!entry?.at&&entry?.error)return '<p class="ios-empty">Couldn\'t load pull requests: '+esc(entry.error)+'</p><button type="button" class="btn secondary" data-pulls-retry>Try again</button>';
+ if(!entry?.at){if(!entry?.loading)loadPulls(dashboardRepo);return '<p class="ios-empty">Loading pull requests for '+esc(dashboardRepo)+'…</p>'}
  const a=KappaPulls.activity(entry.prs,entry.commits,{days:7});
  const tile=(icon,tone,label,n,sub)=>'<div class="ios-widget"><span class="ios-widget-label '+tone+'">'+uiIcon(icon)+esc(label)+'</span><b>'+esc(n)+'</b><small>'+esc(sub)+'</small></div>';
  const nums=l=>l.slice(0,4).map(p=>"#"+p.number).join(" · ");
@@ -395,6 +397,7 @@ function dashboardSummary(){
 function bindDashboard(){
  document.querySelectorAll("[data-dash-tab]").forEach(b=>b.addEventListener("click",()=>setDashboardTab(b.dataset.dashTab)));
  document.querySelector("[data-repo-open]")?.addEventListener("click",()=>{repoSheetOpen=true;render()});
+ document.querySelector("[data-pulls-retry]")?.addEventListener("click",()=>{delete pullsData[dashboardRepo];loadPulls(dashboardRepo,true);render()});
  document.querySelectorAll("[data-repo-close]").forEach(b=>b.addEventListener("click",()=>{repoSheetOpen=false;render()}));
  document.querySelectorAll("[data-pick-repo]").forEach(b=>b.addEventListener("click",()=>setDashboardRepo(b.dataset.pickRepo)));
  document.querySelectorAll("[data-run-close]").forEach(b=>b.addEventListener("click",()=>showDashboard({mode:"overview"})));
