@@ -756,7 +756,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         for path, text in changes.items():
             current[path], files[path] = text, len(text)
         combined.update(changes)
-        summaries.append(f"Stage {i}: {summary}")
+        summaries.append(f"Stage {i} (written by {model}): {summary}")
         explanations.append(explanation or summary)
     if require_test and needs_test(combined) and not has_tests(combined):
         if progress:

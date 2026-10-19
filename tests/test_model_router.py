@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from engine import runner
 
 KEYS = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
-        "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY")
+        "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "UNOROUTER_API_KEY", "REQUESTY_API_KEY")
 
 def response(data):
     result = MagicMock()
@@ -93,9 +93,9 @@ class ModelRoutingTests(unittest.TestCase):
                 return response({"choices": [{"message": {"content": "free pool answer"}}]})
             raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
         with patch.dict(os.environ, {k: "" for k in KEYS}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            self.assertEqual(runner.provider_models("kilo"), ["kilo-auto/free", "poolside/laguna-s-2.1:free"])
+            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free"], "coding models first")
             self.assertEqual(runner.provider_models("zai"), [], "keyed providers stay off without a key")
-            self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:kilo-auto/free", "free pool answer"))
+            self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:poolside/laguna-s-2.1:free", "free pool answer"))
         self.assertTrue(all(auth is None for _, auth in requests))
 
     def test_fixed_free_list_and_optional_keys(self):
@@ -132,7 +132,8 @@ class ModelRoutingTests(unittest.TestCase):
             if body["max_tokens"] > runner.FALLBACK_MAX_TOKENS:
                 raise urllib.error.HTTPError(url, 400, "max_tokens too large", {}, io.BytesIO(b""))
             return response({"choices": [{"message": {"content": "ok"}}]})
-        with patch.dict(os.environ, {"GROQ_API_KEY": "k"}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "k"}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), \
+                patch.dict(runner.PROVIDERS["providers"]["groq"], {"maxOutput": 65536}):
             self.assertIsNone(runner.run_fallback_providers("x", 16384, [], allowed=set()))
             self.assertEqual(sent, [])
             self.assertEqual(runner.run_fallback_providers("x", 16384, [], allowed={"groq"}), ("groq:llama-3.3-70b-versatile", "ok"))
@@ -208,6 +209,8 @@ class RateLimits(unittest.TestCase):
             if "/models?" in req.full_url:
                 return response({"models": [{"name": "models/" + m, "supportedGenerationMethods": ["generateContent"]}
                                             for m in ("gemini-3-flash", "gemini-3-flash-lite")]})
+            if "generativelanguage" not in req.full_url:  # Keyless free providers are out of this test.
+                raise urllib.error.HTTPError(req.full_url, 404, "missing", {}, io.BytesIO(b""))
             model = req.full_url.split("/models/")[1].split(":")[0]
             asked.append(model)
             if model == "gemini-3-flash":

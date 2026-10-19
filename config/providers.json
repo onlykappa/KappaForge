@@ -1,6 +1,6 @@
 {
-  "note": "Free-tier LLM providers tried in order after Gemini. Keyed providers are used only when their key is configured; ones without a key (or with keyOptional) also work anonymously. Models are discovered live unless a fixed free list is given. Source list: https://github.com/mnfst/awesome-free-llm-apis. Limits change often; see README.",
-  "order": ["workers-ai", "groq", "cerebras", "openrouter", "mistral", "nvidia", "ollama", "zai", "kilo", "llm7", "ovh"],
+  "note": "Free-tier LLM providers tried in order after Gemini. Keyed providers are used only when their key is configured; ones without a key (or with keyOptional) also work anonymously. Models are discovered live unless a fixed free list is given. Source list: https://github.com/mnfst/awesome-free-llm-apis. Limits change often; see README. Agent routing (v3): full-size Gemini Flash, then providers marked strong (best free coding models), then Flash-Lite, then the rest; each provider only gets prompts that fit its context window (tokens) and answers up to maxOutput.",
+  "order": ["workers-ai", "ollama", "nvidia", "kilo", "unorouter", "mistral", "groq", "openrouter", "requesty", "zai", "cerebras", "llm7", "ovh"],
   "maxModelsPerProvider": 2,
   "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|vision|vl-|-vl|safety|prompt-guard",
   "providers": {
@@ -17,7 +17,9 @@
       "base": "https://api.groq.com/openai/v1",
       "key": "GROQ_API_KEY",
       "signup": "https://console.groq.com/keys",
-      "prefer": ["kimi-k2", "gpt-oss-120b", "llama-3.3-70b", "qwen"]
+      "prefer": ["gpt-oss-120b", "qwen3.8", "kimi-k2", "llama-3.3-70b"],
+      "context": 131072,
+      "maxOutput": 8192
     },
     "cerebras": {
       "name": "Cerebras",
@@ -25,7 +27,9 @@
       "base": "https://api.cerebras.ai/v1",
       "key": "CEREBRAS_API_KEY",
       "signup": "https://cloud.cerebras.ai",
-      "prefer": ["qwen-3-coder", "gpt-oss", "glm", "qwen", "llama"]
+      "prefer": ["qwen-3-coder", "gpt-oss", "glm", "qwen", "llama"],
+      "context": 65536,
+      "maxOutput": 8192
     },
     "openrouter": {
       "name": "OpenRouter (free models)",
@@ -34,7 +38,9 @@
       "key": "OPENROUTER_API_KEY",
       "signup": "https://openrouter.ai/settings/keys",
       "freeOnly": true,
-      "prefer": ["nemotron-3-ultra", "nemotron-3-super", "qwen3.8", "laguna-s", "gemma-4-31b", "qwen3-coder", "deepseek", "gpt-oss"]
+      "prefer": ["nemotron-3-ultra", "nemotron-3-super", "qwen3.8", "laguna-s", "gemma-4-31b", "qwen3-coder", "deepseek", "gpt-oss"],
+      "context": 131072,
+      "maxOutput": 16384
     },
     "mistral": {
       "name": "Mistral",
@@ -42,7 +48,9 @@
       "base": "https://api.mistral.ai/v1",
       "key": "MISTRAL_API_KEY",
       "signup": "https://console.mistral.ai/api-keys",
-      "prefer": ["codestral-latest", "mistral-medium-latest", "mistral-small-latest"]
+      "prefer": ["mistral-medium", "codestral-latest", "mistral-large", "mistral-small-latest"],
+      "context": 128000,
+      "maxOutput": 32768
     },
     "nvidia": {
       "name": "NVIDIA NIM",
@@ -50,7 +58,10 @@
       "base": "https://integrate.api.nvidia.com/v1",
       "key": "NVIDIA_API_KEY",
       "signup": "https://build.nvidia.com",
-      "prefer": ["nemotron-3-ultra", "deepseek-v4", "nemotron-3-super", "qwen3-coder", "gemma-4-31b", "llama-3.3-70b"]
+      "prefer": ["nemotron-3-ultra", "deepseek-v4", "nemotron-3-super", "qwen3-coder", "gemma-4-31b", "llama-3.3-70b"],
+      "strong": true,
+      "context": 1000000,
+      "maxOutput": 65536
     },
     "ollama": {
       "name": "Ollama Cloud",
@@ -58,7 +69,10 @@
       "base": "https://ollama.com/v1",
       "key": "OLLAMA_API_KEY",
       "signup": "https://ollama.com/settings/keys",
-      "prefer": ["deepseek-v4-pro", "kimi-k3", "qwen3.5", "deepseek-v4-flash", "gpt-oss:120b"]
+      "prefer": ["deepseek-v4-pro", "kimi-k3", "qwen3.5", "minimax-m3", "deepseek-v4-flash", "gpt-oss:120b"],
+      "strong": true,
+      "context": 131072,
+      "maxOutput": 32768
     },
     "zai": {
       "name": "Z AI (GLM Flash)",
@@ -66,14 +80,19 @@
       "base": "https://api.z.ai/api/paas/v4",
       "key": "ZAI_API_KEY",
       "signup": "https://z.ai/manage-apikey/apikey-list",
-      "models": ["glm-4.7-flash"]
+      "models": ["glm-4.7-flash"],
+      "context": 200000,
+      "maxOutput": 32768
     },
     "kilo": {
       "name": "Kilo Code free pool (no key)",
       "kind": "openai",
       "base": "https://api.kilo.ai/api/gateway",
       "freeOnly": true,
-      "prefer": ["kilo-auto/free", "nemotron-3-ultra", "qwen3.8", "laguna-s"]
+      "prefer": ["nemotron-3-ultra", "laguna-s", "north-mini-code", "qwen3.8", "kilo-auto/free"],
+      "strong": true,
+      "context": 131072,
+      "maxOutput": 32768
     },
     "llm7": {
       "name": "LLM7.io (key optional)",
@@ -82,13 +101,40 @@
       "key": "LLM7_API_KEY",
       "keyOptional": true,
       "signup": "https://token.llm7.io",
-      "prefer": ["deepseek-v4", "gpt-oss", "minimax"]
+      "prefer": ["deepseek-v4", "gpt-oss", "minimax"],
+      "context": 32768,
+      "maxOutput": 8192
     },
     "ovh": {
       "name": "OVHcloud AI Endpoints (no key, EU)",
       "kind": "openai",
       "base": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
-      "prefer": ["qwen3.5-397b", "gpt-oss-120b", "qwen3.8"]
+      "prefer": ["qwen3.5-397b", "gpt-oss-120b", "qwen3.8"],
+      "context": 131072,
+      "maxOutput": 32768
+    },
+    "unorouter": {
+      "name": "UnoRouter (free models)",
+      "kind": "openai",
+      "base": "https://api.unorouter.com/v1",
+      "key": "UNOROUTER_API_KEY",
+      "signup": "https://unorouter.com",
+      "freeOnly": true,
+      "strong": true,
+      "context": 131072,
+      "maxOutput": 32768,
+      "prefer": ["deepseek-v4-pro", "glm-5", "kimi", "qwen3.5", "nemotron-3-ultra"]
+    },
+    "requesty": {
+      "name": "Requesty (free models)",
+      "kind": "openai",
+      "base": "https://router.requesty.ai/v1",
+      "key": "REQUESTY_API_KEY",
+      "signup": "https://www.requesty.ai/free-models",
+      "freeOnly": true,
+      "context": 131072,
+      "maxOutput": 16384,
+      "prefer": ["nemotron-3-ultra", "gemma-4-31b", "leanstral"]
     }
   }
 }

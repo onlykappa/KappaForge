@@ -1,5 +1,5 @@
 {
-  "version": "2.2.7",
+  "version": "3.0.0",
   "released": "2026-10-19",
-  "notes": "The agent pushes through more problems: a step with nothing to change (like bundling) no longer fails the task, all 5 attempts are used with a different model when one repeats itself, a step that still fails keeps the earlier work and gets fixed while checking it (now 3 rounds), and rate-limited models rest instead of slowing every call."
+  "notes": "KappaForge 3: many more AI models. When Gemini\u2019s strong models hit their limits, the agent now writes code with the best free coding models (DeepSeek V4 Pro and Kimi K3 on Ollama Cloud, Nemotron 3 Ultra on NVIDIA and Kilo) before falling back to Flash-Lite. Every provider only gets prompts that fit it, rate-limited models rest, and UnoRouter and Requesty can be added. Roadmap: docs/ROADMAP-v3.md."
 }
