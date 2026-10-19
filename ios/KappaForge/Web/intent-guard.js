@@ -32,7 +32,7 @@
  // A request-like message that is not certain enough to start work: offer a Start as task button instead.
  function suggestsTask(request){
   const text=String(request||'').trim();
-  return classify(text)==='conversation'&&!NEGATION.test(text)&&/\b(?:fix|implement|build|add|change|improve|update|remove|refactor|repair|redesign|rename|delete|move)\b/i.test(text);
+  return classify(text)==='conversation'&&!NEGATION.test(text)&&/\b(?:fix|implement|build|add|change|improve|update|remove|refactor|repair|redesign|rename|delete|move|feature)\b/i.test(text);
  }
  function permits(request,mode){const intent=classify(request);return intent==='execution'||intent==='release'?true:intent==='investigation'&&READ.has(mode)}
  function stripActions(text){

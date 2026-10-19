@@ -142,4 +142,12 @@ finishes(job,status){if(job?.mode==='watch'||!['failed','complete'].includes(sta
 stalled(job,now=Date.now()){return !!job&&!job.finished&&!['watch','continuous','continuous-code'].includes(job.mode)&&['waiting','progress','tests-failed'].includes(job.message)&&Number(job.activeAt)>0&&now-job.activeAt>=900000&&job.stuckNote!==job.activeAt},
 // The last few chat turns, newest kept, trimmed to max characters in total, as background for a task.
 conversationContext(messages,count=6,max=1500){const turns=(Array.isArray(messages)?messages:[]).filter(m=>(m?.role==='user'||m?.role==='assistant')&&typeof m.text==='string'&&m.text.trim()&&!m.progressKey&&!m.jobReport).slice(-count).map(m=>(m.role==='user'?'Owner: ':'KappaForge: ')+m.text.replace(/\x60\x60\x60kappa-(?:action|widget)[\s\S]*?\x60\x60\x60/g,'').replace(/\s+/g,' ').trim()).filter(t=>!/^\w+: $/.test(t));const out=[];let left=max;for(const t of turns.reverse()){if(left<40)break;const piece=t.length>left?t.slice(0,left-1)+'…':t;out.unshift(piece);left-=piece.length+1}return out.join('\n')},
+// Task numbers an assistant reply says it is working on, has started or will deliver ("I am working on Task #106",
+// "I'll open the draft PR"). Replies are prose from a model that cannot start work, so these are checked against real tasks.
+workClaims(reply){
+ const text=String(reply||'').replace(/```[\s\S]*?```/g,'');
+ const claims=/\b(?:i(?:'m| am| have|'ve)?\s+(?:now\s+|currently\s+|already\s+)?(?:working on|started|starting|finali[sz]ing|implementing|building|running|launched|kicked off|begun|on it)|i(?:'ll| will)\s+(?:open|create|push|submit)\s+(?:the\s+|a\s+)?(?:draft\s+)?(?:pr|pull request)|(?:task|job)\s*#\d+\s+(?:is|has)\s+(?:now\s+)?(?:running|started|in progress|underway))\b/i.test(text);
+ if(!claims)return null;
+ return {numbers:[...new Set([...text.matchAll(/\b(?:task|job|issue)\s*#(\d+)/gi)].map(m=>Number(m[1])))]};
+},
 isSubmission(message){return message?.role==='assistant'&&/^Development job #\d+ submitted\. I will bring agent findings into this conversation automatically\. You can keep chatting while it runs\.$/.test(message.text)}};
