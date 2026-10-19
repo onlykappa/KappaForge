@@ -1,0 +1,228 @@
+/* KappaForge 2.2: iOS layer (Direction A). Loaded after design.css.
+   Graphite accent; colour only for state. Glass is limited to the top bar, the tab bar, the composer and sheets;
+   content stays solid. html.rt (set natively when Reduce Transparency is on) makes every glass surface solid. */
+:root{
+ --spring:cubic-bezier(.32,.72,0,1);--spring-ms:350ms;
+ /* Apple type ramp against Body (1rem). On iPhone the root size follows Dynamic Type. */
+ --t-large:2rem;--t-title2:1.294rem;--t-head:1rem;--t-body:1rem;--t-sub:.882rem;--t-foot:.765rem;--t-cap:.706rem;--t-cap2:.647rem;
+ --on-accent:#000;--ok:#30d158;--warn:#ff9f0a;--bad:#ff453a;--info:#0a84ff;
+ --cell:#1c1c1e;--cell-2:#2c2c2e;--fill:rgba(118,118,128,.24);--fill-2:rgba(118,118,128,.18);--fill-3:rgba(118,118,128,.12);
+ --label-2:rgba(235,235,245,.6);--label-3:rgba(235,235,245,.3);--sep:rgba(84,84,88,.6);--sq:#3a3a3c;--on-sq:#f2f2f7;
+ --ios-glass:rgba(24,24,26,.74);--ios-glass-solid:#161618;--glass-edge:rgba(255,255,255,.1);--glass-shadow:0 10px 30px rgba(0,0,0,.45);--scrim:rgba(0,0,0,.48);
+ --tabbar-h:62px;
+ /* Text in a status colour uses Apple's increased-contrast variants so it passes 4.5:1 on tinted fills. */
+ --ok-text:#30db5b;--warn-text:#ffb340;--bad-text:#ff6961;--info-text:#409cff;
+}
+:root[data-appearance=light]{--ok-text:#248a3d;--warn-text:#c93400;--bad-text:#d70015;--info-text:#0040dd;--on-accent:#fff;--ok:#34c759;--warn:#ff9500;--bad:#ff3b30;--info:#007aff;--bg:#f2f2f7;--cell:#fff;--cell-2:#f2f2f7;--fill:rgba(120,120,128,.2);--fill-2:rgba(120,120,128,.16);--fill-3:rgba(118,118,128,.12);--label-2:rgba(60,60,67,.6);--label-3:rgba(60,60,67,.3);--sep:rgba(60,60,67,.29);--sq:#e5e5ea;--on-sq:#1c1c1e;--ios-glass:rgba(249,249,251,.78);--ios-glass-solid:#f9f9fb;--glass-edge:rgba(0,0,0,.08);--glass-shadow:0 10px 30px rgba(0,0,0,.12);--scrim:rgba(0,0,0,.25)}
+@media(prefers-color-scheme:light){:root[data-appearance=system]{--ok-text:#248a3d;--warn-text:#c93400;--bad-text:#d70015;--info-text:#0040dd;--on-accent:#fff;--ok:#34c759;--warn:#ff9500;--bad:#ff3b30;--info:#007aff;--bg:#f2f2f7;--cell:#fff;--cell-2:#f2f2f7;--fill:rgba(120,120,128,.2);--fill-2:rgba(120,120,128,.16);--fill-3:rgba(118,118,128,.12);--label-2:rgba(60,60,67,.6);--label-3:rgba(60,60,67,.3);--sep:rgba(60,60,67,.29);--sq:#e5e5ea;--on-sq:#1c1c1e;--ios-glass:rgba(249,249,251,.78);--ios-glass-solid:#f9f9fb;--glass-edge:rgba(0,0,0,.08);--glass-shadow:0 10px 30px rgba(0,0,0,.12);--scrim:rgba(0,0,0,.25)}}
+/* Filled controls sit on the graphite accent, so their text takes the accent's counterpart. */
+.btn:not(.secondary):not(.new-chat),.controls .send-button{color:var(--on-accent)}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* Glass surfaces (≤3 per screen) */
+.ios-glass{background:var(--ios-glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%)}
+.rt .ios-glass,.rt .mobile-nav,.rt .ios-sheet,.rt .compose-inner,.rt .top{background:var(--ios-glass-solid)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+@media(prefers-reduced-transparency:reduce){.ios-glass,.mobile-nav,.ios-sheet{background:var(--ios-glass-solid)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}}
+
+/* Large title (collapses into the inline title on scroll) */
+.large-title{font-size:var(--t-large);font-weight:700;letter-spacing:.011em;line-height:1.2;margin:4px 0 10px;text-wrap:balance}
+@media(min-width:841px){.large-title{display:none}}
+
+/* Segmented control */
+.ios-seg{display:flex;padding:2px;margin:0 0 14px;border-radius:9px;background:var(--fill-3)}
+.ios-seg button{flex:1;min-height:32px;border:0;border-radius:7px;background:transparent;color:var(--text);font-size:var(--t-foot);font-weight:500;padding:4px 6px}
+.ios-seg button[aria-pressed=true]{background:var(--cell-2);font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+:root[data-appearance=light] .ios-seg button[aria-pressed=true]{background:#fff}
+@media(prefers-color-scheme:light){:root[data-appearance=system] .ios-seg button[aria-pressed=true]{background:#fff}}
+
+/* Inset grouped lists */
+.ios-gh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:var(--t-foot);color:var(--label-2);text-transform:uppercase;letter-spacing:.01em;padding:18px 16px 7px;margin:0}
+.ios-gh button,.ios-gh select{text-transform:none;font-size:var(--t-foot);color:var(--text);background:transparent;border:0;font-weight:500;min-height:32px;padding:0}
+.ios-gf{font-size:var(--t-foot);color:var(--label-2);padding:7px 16px 0;margin:0}
+.ios-group{border-radius:12px;background:var(--cell);overflow:hidden;margin:0}
+.ios-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 14px 0 16px;border:0;background:transparent;color:var(--text);text-align:left;text-decoration:none;font:inherit}
+a.ios-row:hover{text-decoration:none}
+button.ios-row:active,a.ios-row:active{background:var(--fill-3)}
+.ios-row+.ios-row::before{content:"";position:absolute;top:0;right:0;left:var(--sep-left,16px);height:.5px;background:var(--sep)}
+.ios-group.icons .ios-row{--sep-left:57px}
+.ios-row-text{flex:1;min-width:0;padding:11px 0;display:flex;flex-direction:column;gap:1px}
+.ios-row-text b{font-weight:400;font-size:var(--t-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ios-row-text small{font-size:var(--t-sub);color:var(--label-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ios-row-value{color:var(--label-2);white-space:nowrap;font-variant-numeric:tabular-nums;font-size:var(--t-body)}
+.ios-chev{flex:none;width:14px;height:14px;color:var(--label-3)}
+.ios-sq{flex:none;width:29px;height:29px;border-radius:7px;display:grid;place-items:center;background:var(--sq);color:var(--on-sq)}
+.ios-sq svg{width:18px;height:18px;stroke-width:2}
+.ios-sq.ok{color:var(--ok)}.ios-sq.warn{color:var(--warn)}.ios-sq.bad{color:var(--bad)}.ios-sq.info{color:var(--info)}
+.st-ok{color:var(--ok-text)}.st-warn{color:var(--warn-text)}.st-bad{color:var(--bad-text)}.st-info{color:var(--info-text)}.st-muted{color:var(--label-2)}
+.ios-bar{display:block;height:4px;border-radius:2px;background:var(--fill);overflow:hidden;margin:7px 0 2px}
+.ios-bar i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+.ios-bar.warn i{background:var(--warn)}
+.ios-empty{padding:14px 16px;color:var(--label-2);font-size:var(--t-sub);margin:0}
+.ios-search{display:flex;align-items:center;gap:6px;height:36px;border-radius:10px;background:var(--fill-3);color:var(--label-2);padding:0 9px;margin:0 0 6px}
+.ios-search svg{width:17px;height:17px}
+.ios-search input{flex:1;min-width:0;border:0;background:transparent;outline:none;font-size:var(--t-body);color:var(--text)}
+.ios-search input::placeholder{color:var(--label-2)}
+.ios-profile .ios-row-text b{font-size:var(--t-title2);font-weight:600}
+.ios-avatar{flex:none;width:58px;height:58px;border-radius:29px;display:grid;place-items:center;background:linear-gradient(160deg,#8e8e93,#3a3a3c);color:#fff;font-weight:600;font-size:var(--t-title2);margin:8px 0}
+
+/* Dashboard: repository picker and 2-column widgets */
+.repo-picker{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin:0 0 10px;padding:6px 12px 6px 7px;border:0;border-radius:12px;background:var(--cell);color:var(--text);text-align:left}
+.repo-picker span:nth-child(2){flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.repo-picker small{font-size:var(--t-cap);color:var(--label-2)}
+.repo-picker b{font-size:var(--t-sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ios-widgets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ios-widget{display:flex;flex-direction:column;gap:1px;min-width:0;min-height:44px;padding:11px 13px 12px;border:0;border-radius:14px;background:var(--cell);color:var(--text);text-align:left}
+.ios-widget-label{display:flex;align-items:center;gap:5px;font-size:var(--t-foot);font-weight:600}
+.ios-widget-label svg{width:15px;height:15px;stroke-width:2.2}
+.ios-widget b{font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif;font-size:var(--t-large);font-weight:700;line-height:1.1;margin-top:4px;font-variant-numeric:tabular-nums}
+.ios-widget small{font-size:var(--t-foot);color:var(--label-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live-dot{display:inline-flex;align-items:center;gap:6px;font-size:var(--t-foot);font-weight:600;color:var(--label-2)}
+.live-dot i{width:7px;height:7px;border-radius:50%;background:var(--label-3)}
+.live-dot.live-live i{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.live-dot.live-reconnecting i,.live-dot.live-poll i{background:var(--warn)}
+.dash-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pr-num{color:var(--label-2);font-variant-numeric:tabular-nums}
+.sha{font:500 var(--t-cap)/1 ui-monospace,"SF Mono",Menlo,monospace;color:var(--text)}
+
+/* Sheets with medium and large detents */
+.ios-scrim{position:fixed;inset:0;z-index:60;background:var(--scrim);border:0;padding:0}
+.ios-sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;display:flex;flex-direction:column;max-width:720px;margin:0 auto;border-radius:14px 14px 0 0;background:var(--ios-glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:0 -.5px 0 var(--glass-edge),0 -10px 40px rgba(0,0,0,.3);padding-bottom:var(--safe-bottom);height:calc(50% + 40px);transition:height var(--spring-ms) var(--spring)}
+.ios-sheet.large{height:calc(100% - var(--kappa-safe-top) - 10px)}
+.ios-sheet.enter{animation:sheet-in var(--spring-ms) var(--spring)}
+.ios-scrim.enter{animation:fade-in var(--spring-ms) ease}
+@keyframes sheet-in{from{transform:translateY(100%)}to{transform:none}}
+.ios-grabber{flex:none;display:block;width:100%;height:20px;border:0;background:transparent;padding:5px 0 0;touch-action:none;cursor:grab}
+.ios-grabber i{display:block;width:36px;height:5px;margin:0 auto;border-radius:3px;background:var(--label-3)}
+.ios-sheet-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 16px 10px}
+.ios-sheet-head h2{margin:0;font-size:var(--t-head);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ios-close{flex:none;width:30px;height:30px;min-height:30px;border-radius:15px;border:0;background:var(--fill-2);color:var(--label-2);display:grid;place-items:center;padding:0;margin:7px}
+.ios-close svg{width:14px;height:14px;stroke-width:2.6}
+.ios-sheet-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 16px 16px;-webkit-overflow-scrolling:touch}
+.ios-sheet .ios-group{background:var(--cell-2)}
+:root[data-appearance=light] .ios-sheet .ios-group{background:var(--cell)}
+@media(prefers-color-scheme:light){:root[data-appearance=system] .ios-sheet .ios-group{background:var(--cell)}}
+body.sheet-open{overflow:hidden}
+
+/* Chat task card, Today layout: large ring, title, live timer, steps and capsule actions */
+.task-card{background:var(--cell)!important;border:0!important;border-radius:20px!important;box-shadow:none!important;padding:16px!important}
+.task-card>summary{display:grid!important;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;column-gap:14px;row-gap:0}
+.task-hero-ring{grid-row:span 3;position:relative;width:58px;height:58px}
+.task-hero-ring svg{width:58px;height:58px;transform:rotate(-90deg)}
+.task-hero-ring circle{fill:none;stroke-width:7}
+.task-hero-ring .track{stroke:var(--fill)}
+.task-hero-ring .fill{stroke:var(--accent);stroke-linecap:round;transition:stroke-dasharray .4s ease}
+.task-hero-ring.unknown .track{stroke-dasharray:4 5}
+.agent-activity.finished .task-hero-ring .fill{stroke:var(--ok)}.agent-activity.failed .task-hero-ring .fill{stroke:var(--bad)}.agent-activity.testing .task-hero-ring .fill{stroke:var(--warn)}
+.task-card .activity-tag{justify-self:start;grid-column:2;margin:0!important;font-size:var(--t-cap)!important;font-weight:600;letter-spacing:.02em!important;padding:2px 8px;border-radius:7px;color:var(--text)!important;background:var(--fill-2)}
+.agent-activity.finished .task-card .activity-tag{color:var(--ok-text)!important;background:color-mix(in srgb,var(--ok) 16%,transparent)}
+.agent-activity.failed .task-card .activity-tag{color:var(--bad-text)!important;background:color-mix(in srgb,var(--bad) 16%,transparent)}
+.agent-activity.testing .task-card .activity-tag{color:var(--warn-text)!important;background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.task-card .activity-heading{grid-column:2;font-size:var(--t-head)!important;font-weight:600!important;line-height:1.25;color:var(--text)!important;margin-top:3px;overflow-wrap:anywhere}
+.task-sub{grid-column:2;font-size:var(--t-foot);color:var(--label-2);font-variant-numeric:tabular-nums}
+.task-clock{grid-column:3;grid-row:1 / span 2;align-self:start;font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif;font-size:var(--t-title2);font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+.agent-activity.finished .task-clock{color:var(--ok-text)}.agent-activity.failed .task-clock{color:var(--bad-text)}.agent-activity.testing .task-clock{color:var(--warn-text)}
+.task-card .task-chevron{grid-column:3;grid-row:3;justify-self:end;margin:0}
+/* Explicit placement so the execution card and the legacy checklist card share one header layout. */
+.task-card>summary>.activity-tag{grid-row:1}.task-card>summary>.activity-heading,.task-card>summary>.task-head{grid-column:2;grid-row:2}.task-card>summary>.task-sub{grid-row:3}
+.task-card>summary>.task-ring{grid-column:1;grid-row:1 / span 3;width:58px;height:58px}
+.task-card>summary>.task-ring svg{width:58px;height:58px}.task-card>summary>.task-ring circle{stroke-width:4.4}
+.task-card>summary>.task-ring .track{stroke:var(--fill)}.task-card>summary>.task-ring .fill{stroke:var(--accent)}
+.agent-activity.finished .task-card>summary>.task-ring .fill{stroke:var(--ok)}.agent-activity.failed .task-card>summary>.task-ring .fill{stroke:var(--bad)}
+.task-card>summary>.task-ring b{font-size:var(--t-foot);color:var(--text)}
+.task-card .task-head .activity-heading{font-size:var(--t-head);font-weight:600;color:var(--text)}
+.task-card>summary>.task-total{grid-column:3;grid-row:1 / span 2;align-self:start;font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif;font-size:var(--t-title2);font-weight:700;color:var(--text)}
+.task-card .task-fix{color:var(--warn-text);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.task-card .activity-pulse{display:none}
+.task-card .activity-summary{font-size:var(--t-sub)!important;color:var(--label-2)!important;margin:12px 0 0!important}
+.task-card .task-timing{font-size:var(--t-foot);color:var(--label-2);gap:14px;margin:6px 0 0}
+.task-card .task-timing time{color:var(--text)}
+.task-card .task-steps{margin:12px 0 0;display:flex;flex-direction:column;gap:2px}
+.task-card .task-step{padding:6px 0;gap:10px;background:none!important;box-shadow:none!important;border-radius:0}
+.task-card .task-step:not(:last-child)::before{display:none}
+.task-card .task-dot{width:18px;height:18px;margin-top:1px;border:1.5px solid var(--label-3);background:transparent!important;box-shadow:none!important;animation:none!important}
+.task-card .task-step.done .task-dot{background:var(--ok)!important;border-color:var(--ok)}
+.task-card .task-step.done .task-dot::after{left:5px;top:1.5px;width:4px;height:8px;border-color:#fff}
+.task-card .task-step.failed .task-dot{background:var(--bad)!important;border-color:var(--bad)}
+.task-card .task-step.failed .task-dot::after{color:#fff;font-size:14px;line-height:16px}
+.task-card .task-step.current .task-dot{border:2.5px solid var(--accent)}
+.task-card .task-step.current .task-dot::after{content:"";position:absolute;inset:0;margin:auto;width:40%;height:40%;border-radius:50%;background:var(--accent)}
+.task-card .task-step.upcoming .task-dot{width:18px;height:18px;margin:1px 0 0}
+.task-card .task-step-text strong{font-size:var(--t-sub)!important;font-weight:500!important;color:var(--text)!important}
+.task-card .task-step.upcoming strong{color:var(--label-2)!important;font-weight:400!important}
+.task-card .task-step-text small,.task-card .task-step time{font-size:var(--t-foot)!important;color:var(--label-2)!important}
+.task-card .task-step.failed small{color:var(--bad-text)!important}
+.task-card .task-check-link{padding:0;gap:10px}
+.task-card .task-check-link:hover{background:none}
+.task-progress-card,.issues-card{background:var(--cell)!important;border:0!important;border-radius:16px!important;box-shadow:none!important}
+.task-bar{background:var(--fill)!important}.task-bar i{background:var(--accent)!important}
+.agent-activity.testing .task-bar i{background:var(--warn)!important}
+.task-bar.indeterminate{background:repeating-linear-gradient(135deg,var(--fill) 0 6px,var(--fill-3) 6px 12px)!important}
+.task-chip{background:var(--fill-3)!important;color:var(--text)!important}
+.task-freshness{font-size:var(--t-foot)!important;color:var(--label-2)!important}
+.task-actions{gap:8px!important}
+.task-actions button{min-height:36px!important;padding:0 13px!important;border:0!important;border-radius:18px!important;background:var(--fill-2)!important;color:var(--text)!important;font-size:var(--t-sub)!important;font-weight:600}
+.task-actions button[data-task-retry],.task-actions button[data-task-review]{background:var(--accent-fill)!important;color:var(--on-accent)!important}
+.task-actions .task-cancel,.agent-activity [data-cancel-task]{color:var(--bad-text)!important}
+.task-actions .task-cancel{background:color-mix(in srgb,var(--bad) 15%,transparent)!important}
+.task-result-link{color:var(--text)!important}
+
+/* Phones: tab bar, pushed views, collapsing title, composer above everything it could hide */
+.mobile-nav{display:none}
+@media(max-width:840px){
+ html{font-size:17px}
+ .sidebar,.sidebar-backdrop,.swipe-edge,#headersearch,#headermore{display:none!important}
+ .main{margin-left:0}
+ .mobile-nav{display:flex;position:fixed;z-index:30;transform:none;width:auto;border:0;align-items:stretch;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:max(10px,calc(var(--safe-bottom) - 12px));height:var(--tabbar-h);padding:4px;border-radius:31px;background:var(--ios-glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:0 0 0 .5px var(--glass-edge),var(--glass-shadow)}
+ .mobile-nav button{flex:1;min-width:0;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;border-radius:27px;background:transparent;color:var(--label-2);font-size:var(--t-cap2);font-weight:500;position:relative;padding:0}
+ .mobile-nav button svg{width:25px;height:25px;stroke-width:1.75}
+ .mobile-nav button[aria-current=page]{color:var(--text);background:var(--fill-3)}
+ .mobile-nav .tab-badge{position:absolute;top:3px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:600;line-height:17px;text-align:center}
+ body.pushed .mobile-nav,body.keyboard-open .mobile-nav,body.sheet-open .mobile-nav{display:none}
+ body:not(.pushed) .content{padding-bottom:calc(var(--tabbar-h) + var(--safe-bottom) + 28px)}
+ /* Header: transparent over a large title; glass with the inline title once it collapses, or on pushed views */
+ .top{display:flex!important;align-items:center;gap:4px;min-height:calc(44px + var(--kappa-safe-top))!important;padding:var(--kappa-safe-top) 8px 0!important;background:transparent!important;border:0!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;transition:background .2s ease}
+ body.pushed .top,body.title-collapsed .top{background:var(--ios-glass)!important;-webkit-backdrop-filter:blur(30px) saturate(180%)!important;backdrop-filter:blur(30px) saturate(180%)!important;box-shadow:0 .5px 0 var(--sep)!important}
+ .top-title{position:absolute;left:50%;transform:translateX(-50%);max-width:calc(100% - 210px);text-align:center!important;pointer-events:none}
+ .top-title strong{display:block;font-size:min(var(--t-head),19px)!important;font-weight:600}
+ .top-title .header-presence{font-size:min(var(--t-cap),13px)!important}
+ body:not(.pushed):not(.title-collapsed) .top-title{opacity:0}
+ body:not(.pushed) .top-title .header-presence{display:none}
+ .top-title{transition:opacity .2s ease}
+ #menubtn{width:auto;min-width:44px;padding:0 8px 0 2px;gap:2px;color:var(--text);font-size:min(var(--t-body),19px);font-weight:400}
+ #menubtn svg{width:22px;height:22px;stroke-width:2.2}
+ body:not(.pushed) #menubtn{visibility:hidden}
+ .top .header-new{display:inline-flex!important;margin-left:auto}
+ body:not([data-view=chat]):not([data-view=chats]) .top .header-new{visibility:hidden}
+ /* The chat is a pushed view: the composer replaces the tab bar. */
+ .content{padding-top:4px}
+ .large-title{margin-top:0}
+ .page-heading>.eyebrow,.page-heading>h1{display:none}
+ .ios-sheet{max-width:none}
+}
+@media(prefers-reduced-motion:reduce){.ios-sheet,.ios-sheet.enter,.ios-scrim.enter{animation:none!important;transition:none!important}.top,.top-title{transition:none!important}}
+
+/* The dashboard's Agent tasks panel as an inset grouped list (markup unchanged). */
+.agent-tasks.panel{background:transparent;border:0;box-shadow:none;padding:0;margin:0}
+.agent-tasks h3{font-size:var(--t-foot);font-weight:400;color:var(--label-2);text-transform:uppercase;letter-spacing:.01em;padding:18px 16px 7px;margin:0}
+.agent-task-list{gap:0!important;border-radius:12px;background:var(--cell);overflow:hidden}
+.agent-task{position:relative;border:0!important;border-radius:0!important;background:transparent!important;padding:11px 16px!important;min-height:44px;gap:2px!important}
+.agent-task+.agent-task::before{content:"";position:absolute;top:0;right:0;left:16px;height:.5px;background:var(--sep)}
+.agent-task-head strong{font-size:var(--t-body);font-weight:400}
+.agent-task-head small,.agent-task-step{font-size:var(--t-sub)!important;color:var(--label-2)!important}
+.agent-task.failed .agent-task-step{color:var(--bad-text)!important}
+.agent-task .task-bar.mini{height:4px;margin-top:6px}
+.agent-task.done .task-bar i{background:var(--ok)!important}.agent-task.failed .task-bar i{background:var(--bad)!important}
+/* The measured progress sits inside the task card, under the steps. */
+.task-card .task-progress-card{background:transparent!important;padding:10px 0 0!important;margin-top:6px;border-top:.5px solid var(--sep)!important;border-radius:0!important}
+.task-card .task-progress-head strong{font-size:var(--t-sub);color:var(--text)}
+.task-card .task-progress-icon{color:var(--label-2)}
+.task-card .task-progress-row small,.task-card .task-progress-card>small{font-size:var(--t-foot);color:var(--label-2)}
+.task-result-link{display:inline-flex!important;align-items:center;gap:6px;align-self:flex-start;min-height:36px!important;padding:0 14px;border-radius:18px;background:var(--accent-fill);color:var(--on-accent)!important;font-size:var(--t-sub)!important;font-weight:600;text-decoration:none!important}
+/* The native composer copies this size; Body (1rem) follows Dynamic Type. */
+@media(max-width:840px){.compose-inner textarea{font-size:1rem;line-height:1.35}}
+/* On iPhone the root size is Body as set by Dynamic Type, so every rem in the ramp scales with it. */
+@supports(font:-apple-system-body){@media(max-width:840px){html{font:-apple-system-body;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}}}
+/* Status text under the inline title sits on translucent glass; keep it at least 4.5:1 in both themes. */
+.top-title .header-presence{color:color-mix(in srgb,var(--text) 72%,transparent)!important}
+/* Long run or branch names stay inside their widget. */
+.ios-widget{overflow:hidden}.ios-widget small{display:block;max-width:100%}

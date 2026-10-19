@@ -210,7 +210,6 @@ function showDashboard(changes){
  if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY;
  Object.assign(dashboardState,changes);persistDashboard();
  if(view!=="home")navigate("home");else render();
- scrollTo(0,changes.mode==="overview"?viewScroll["home:overview"]||0:0);
 }
 function openRun(id){
  id=Number(id);if(!Number.isSafeInteger(id)||id<=0)return;
@@ -312,9 +311,104 @@ function controlCenter(){
  const checks=[lastTest,latestDeploy].filter(r=>r&&Number.isSafeInteger(r.id)&&r.state).map(r=>statusCard(r,{compact:true})).join("");
  return card("Workspace health",'<div class="control-head"><span class="muted">Live GitHub status</span><button class="btn secondary" id="controlrefresh" type="button">↻ Refresh</button></div><p class="worksmall">Agent work, reviews, tests and deployments at a glance.</p>'+tiles+failures)+card("Code reviews & approvals",review||'<p class="muted">No open agent pull requests.</p>')+card("Tests & deployments",(checks?'<div class="status-grid">'+checks+'</div>':'<p class="muted">No recent workflow results.</p>')+'<div class="review-tools"><button type="button" id="undolast" class="review-deny">↶ Undo last change</button></div><p class="worksmall">If a merged change broke something, Undo opens a pull request restoring the previous version.</p>');
 }
+// Dashboard: repository picker, Today | Pull requests | Builds. Run details open in a sheet over it.
+let dashboardTab=(()=>{try{return sessionStorage.getItem("kappaforge.dashboardTab")||"today"}catch(e){return "today"}})();
+let dashboardRepo=(()=>{try{return localStorage.getItem("kappaforge.dashboardRepo")||"KappaForge"}catch(e){return "KappaForge"}})();
+let repoSheetOpen=false,sheetShown="";
+const pullsData={};
+async function loadPulls(repo,force=false){
+ const entry=pullsData[repo]||(pullsData[repo]={});
+ if(entry.loading||(!force&&entry.at&&Date.now()-entry.at<300000))return;
+ entry.loading=true;entry.error="";
+ try{const [prs,commits]=await Promise.all([api(repo+"/pulls?state=all&sort=updated&direction=desc&per_page=50",force),api(repo+"/commits?per_page=50",force).catch(()=>[])]);entry.prs=prs;entry.commits=commits;entry.at=Date.now()}
+ catch(e){entry.error=e.message}finally{entry.loading=false;if(view==="home")render()}
+}
+function setDashboardTab(tab){dashboardTab=tab;try{sessionStorage.setItem("kappaforge.dashboardTab",tab)}catch(e){}render();scrollTo(0,0)}
+function setDashboardRepo(repo){dashboardRepo=repo;repoSheetOpen=false;try{localStorage.setItem("kappaforge.dashboardRepo",repo)}catch(e){}if(dashboardTab==="pulls")loadPulls(repo);render()}
+const ago=t=>runAgo(new Date(t).toISOString());
+function todayView(){
+ const runs=workflowMonitor.runs,repoPrs=(data.prs||[]).filter(p=>p.repo===dashboardRepo),now=Date.now();
+ const running=trackedJobs.filter(j=>!j.finished);
+ const latest=KappaActions.latestByWorkflow(runs.filter(r=>!KappaActions.isActive(r)));
+ const failing=latest.filter(r=>r.state==="failure"||r.state==="timed_out");
+ const review=repoPrs.filter(p=>p.draft||isDevPR(p));
+ const start=new Date();start.setHours(0,0,0,0);
+ const today=runs.filter(r=>Date.parse(r.createdAt)>=start.getTime()),passed=today.filter(r=>r.state==="success").length,failed=today.filter(r=>r.state==="failure").length;
+ const widget=(attrs,icon,tone,label,n,sub)=>'<button type="button" class="ios-widget" '+attrs+'><span class="ios-widget-label '+tone+'">'+uiIcon(icon)+esc(label)+'</span><b>'+esc(n)+'</b><small>'+esc(sub)+'</small></button>';
+ const widgets='<div class="ios-widgets">'+
+  widget(running[0]?'data-open-task="'+esc(running[0].number)+'"':'disabled',"bolt","","Running",running.length,running.map(j=>"#"+j.number).join(" · ")||"No tasks running")+
+  widget(failing[0]?'data-run="'+esc(failing[0].id)+'"':'disabled',"cross",failing.length?"st-bad":"","Failing checks",failing.length,failing[0]?failing[0].name+" · "+(failing[0].branch||""):"All checks passing")+
+  widget('data-page="reviews"',"reviews","","To review",review.length,review.map(p=>"#"+p.number).join(" · ")||"Nothing waiting")+
+  widget('data-dash-tab="builds"',"check",today.length?"st-ok":"","Builds today",today.length,today.length?passed+" passed · "+failed+" failed":"No runs yet today")+'</div>';
+ const attention=[
+  ...failing.map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',icon:"cross",tone:"bad",title:esc(r.name)+" failed",sub:esc([r.branch,r.sha.slice(0,7),r.duration?KappaActions.formatDuration(r.duration):""].filter(Boolean).join(" · ")),value:esc(runAgo(r.updatedAt,now))})),
+  ...trackedJobs.filter(j=>!j.finished&&(["failed","tests-failed"].includes(j.message)||j.progress?.status==="failed")).map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"warn",tone:"bad",title:"Task #"+esc(j.number)+" needs attention",sub:esc(clip(j.title||"",80))})),
+  ...trackedJobs.filter(j=>!j.finished&&j.message==="tests-passed").map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"reviews",tone:"ok",title:"Task #"+esc(j.number)+" is ready for review",sub:"Tests passed"}))
+ ].join("");
+ const builds=latest.slice(0,6).map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',title:esc(r.name),sub:esc([r.branch,r.sha.slice(0,7)].filter(Boolean).join(" · ")),value:esc(r.duration?KappaActions.formatDuration(r.duration):runAgo(r.updatedAt,now))}).replace('<span class="ios-row-text">',runBadge(r.state)+'<span class="ios-row-text">')).join("");
+ return widgets+agentTasksPanel()+(attention?'<h2 class="ios-gh">Needs attention</h2><div class="ios-group icons">'+attention+'</div>':'')+
+  (dashboardRepo==="KappaForge"&&builds?'<h2 class="ios-gh">Latest per workflow <span class="live-dot live-'+esc(workflowMonitor.mode)+'"><i aria-hidden="true"></i>'+esc(MONITOR_MODE[workflowMonitor.mode]||"")+'</span></h2><div class="ios-group">'+builds+'</div>':'');
+}
+const PR_LOOK={open:["reviews","ok","Open"],draft:["reviews","","Draft"],merged:["merge","info","Merged"],closed:["pr-closed","bad","Closed"]};
+function pullRow(p,stamp){
+ const [icon,tone,label]=PR_LOOK[p.state];
+ const sub=(p.state==="open"||p.state==="draft"?'<span class="'+(tone?"st-"+tone:"st-muted")+'">'+label+'</span> · ':label+' · ')+esc([p.branch,ago(stamp)].filter(Boolean).join(" · "));
+ return iosRow({tag:p.url?"a":"div",attrs:p.url?'href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer"':'',icon,tone,title:'<span class="pr-num">#'+esc(p.number)+'</span> '+esc(p.title),sub,chevron:!!p.url});
+}
+function pullsView(){
+ const entry=pullsData[dashboardRepo];
+ // A failed load waits for the owner to retry; loading again on every render would loop against the API.
+ if(!entry?.at&&entry?.error)return '<p class="ios-empty">Couldn\'t load pull requests: '+esc(entry.error)+'</p><button type="button" class="btn secondary" data-pulls-retry>Try again</button>';
+ if(!entry?.at){if(!entry?.loading)loadPulls(dashboardRepo);return '<p class="ios-empty">Loading pull requests for '+esc(dashboardRepo)+'…</p>'}
+ const a=KappaPulls.activity(entry.prs,entry.commits,{days:7});
+ const tile=(icon,tone,label,n,sub)=>'<div class="ios-widget"><span class="ios-widget-label '+tone+'">'+uiIcon(icon)+esc(label)+'</span><b>'+esc(n)+'</b><small>'+esc(sub)+'</small></div>';
+ const nums=l=>l.slice(0,4).map(p=>"#"+p.number).join(" · ");
+ const pushedRows=a.pushed.slice(0,8).map(c=>iosRow({tag:c.url?"a":"div",attrs:c.url?'href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer"':'',icon:"commit",title:esc(c.message),sub:'<span class="sha">'+esc(c.sha)+'</span> · '+esc([c.author,ago(c.at)].filter(Boolean).join(" · ")),chevron:!!c.url})).join("");
+ return '<h2 class="ios-gh">Pull requests · last 7 days</h2><div class="ios-widgets">'+tile("reviews","st-ok","Opened",a.opened.length,nums(a.opened)||"None")+tile("merge","st-info","Merged",a.merged.length,nums(a.merged)||"None")+
+  tile("pr-closed","st-bad","Closed",a.closed.length,a.closed.length?nums(a.closed)+" · not merged":"None")+tile("commit","","Pushed",a.pushed.length,"commits to the default branch")+'</div>'+
+  '<h2 class="ios-gh">Opened · '+a.opened.length+'</h2><div class="ios-group icons">'+(a.opened.map(p=>pullRow(p,p.createdAt)).join("")||'<p class="ios-empty">No pull requests opened in the last 7 days.</p>')+'</div>'+
+  '<h2 class="ios-gh">Merged and closed · '+a.ended.length+'</h2><div class="ios-group icons">'+(a.ended.map(p=>pullRow(p,p.mergedAt||p.closedAt)).join("")||'<p class="ios-empty">Nothing merged or closed in the last 7 days.</p>')+'</div>'+
+  '<h2 class="ios-gh">Pushed · '+a.pushed.length+' commits</h2><div class="ios-group icons">'+(pushedRows||'<p class="ios-empty">No commits pushed to the default branch in the last 7 days.</p>')+'</div>'+
+  '<p class="ios-gf">Pushed lists commits on '+esc(dashboardRepo)+"'s default branch. Updated "+esc(ago(entry.at))+'.</p>';
+}
+function buildsView(){
+ if(dashboardRepo!=="KappaForge")return '<p class="ios-empty">Live builds are available for KappaForge. Pick KappaForge to see its runs.</p>';
+ return buildsPanel()+controlCenter();
+}
+function iosSheet(title,body,{detent="medium",closeAttr="data-sheet-close",heading=true}={}){
+ const enter=sheetShown!==title;sheetShown=title;
+ return '<button type="button" class="ios-scrim'+(enter?' enter':'')+'" '+closeAttr+' aria-hidden="true" tabindex="-1"></button><section class="ios-sheet '+detent+(enter?' enter':'')+'" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'+
+  '<button type="button" class="ios-grabber" data-sheet-detent aria-label="Resize sheet"><i></i></button><div class="ios-sheet-head">'+(heading?'<h2>'+esc(title)+'</h2>':'<span></span>')+'<button type="button" class="ios-close" '+closeAttr+' aria-label="Close">'+uiIcon("close")+'</button></div><div class="ios-sheet-body">'+body+'</div></section>';
+}
+function repoSheet(){
+ return iosSheet("Repository",'<div class="ios-group icons">'+knownRepos.map(n=>{const open=(data.prs||[]).filter(p=>p.repo===n).length;
+  return iosRow({attrs:'data-pick-repo="'+esc(n)+'"'+(n===dashboardRepo?' aria-current="true"':''),icon:"repo",title:"onlykappa/"+esc(n),sub:open+" open PR"+(open===1?"":"s"),value:n===dashboardRepo?'<span aria-label="Selected">'+uiIcon("check")+'</span>':"",chevron:false})}).join("")+'</div><p class="ios-gf">Repositories you own, most recently pushed first.</p>',{closeAttr:"data-repo-close"});
+}
 function dashboardSummary(){
- if(dashboardState.mode!=="overview")return runPage();
- return '<div class="page-heading"><span class="eyebrow">YOUR WORKSPACE</span><h1>Overview</h1><p class="muted">Live builds, reviews, and recent results.</p></div>'+agentTasksPanel()+buildsPanel()+controlCenter();
+ const runOpen=dashboardState.mode!=="overview";
+ const tabs=[["today","Today"],["pulls","Pull requests"],["builds","Builds"]];
+ const body=dashboardTab==="pulls"?pullsView():dashboardTab==="builds"?buildsView():todayView();
+ const sheet=runOpen?iosSheet(dashboardState.mode==="run"?"Workflow run":dashboardState.mode==="job"?"Job":"Step",runPage(),{detent:"large",closeAttr:"data-run-close",heading:false}):repoSheetOpen?repoSheet():"";
+ if(!sheet)sheetShown="";
+ document.body.classList.toggle("sheet-open",!!sheet);
+ return '<button type="button" class="repo-picker" data-repo-open aria-haspopup="dialog"><span class="ios-sq" aria-hidden="true">'+uiIcon("repo")+'</span><span><small>Repository</small><b>onlykappa/'+esc(dashboardRepo)+'</b></span>'+iosChev.replace('ios-chev"','ios-chev" style="transform:rotate(90deg)"')+'</button>'+
+  '<div class="ios-seg" role="group" aria-label="Dashboard view">'+tabs.map(([k,l])=>'<button type="button" data-dash-tab="'+k+'" aria-pressed="'+(dashboardTab===k)+'">'+l+'</button>').join("")+'</div>'+body+sheet;
+}
+function bindDashboard(){
+ document.querySelectorAll("[data-dash-tab]").forEach(b=>b.addEventListener("click",()=>setDashboardTab(b.dataset.dashTab)));
+ document.querySelector("[data-repo-open]")?.addEventListener("click",()=>{repoSheetOpen=true;render()});
+ document.querySelector("[data-pulls-retry]")?.addEventListener("click",()=>{delete pullsData[dashboardRepo];loadPulls(dashboardRepo,true);render()});
+ document.querySelectorAll("[data-repo-close]").forEach(b=>b.addEventListener("click",()=>{repoSheetOpen=false;render()}));
+ document.querySelectorAll("[data-pick-repo]").forEach(b=>b.addEventListener("click",()=>setDashboardRepo(b.dataset.pickRepo)));
+ document.querySelectorAll("[data-run-close]").forEach(b=>b.addEventListener("click",()=>showDashboard({mode:"overview"})));
+ // Dragging the grabber up opens the large detent; down shrinks to medium, then closes.
+ document.querySelectorAll("[data-sheet-detent]").forEach(g=>{
+  const sheet=g.closest(".ios-sheet");let y0=null;
+  g.addEventListener("click",()=>sheet.classList.toggle("large"));
+  g.addEventListener("pointerdown",e=>{y0=e.clientY;g.setPointerCapture?.(e.pointerId)});
+  g.addEventListener("pointerup",e=>{if(y0===null)return;const dy=e.clientY-y0;y0=null;if(Math.abs(dy)<24)return;
+   if(dy<0)sheet.classList.add("large");else if(sheet.classList.contains("large"))sheet.classList.remove("large");else sheet.parentElement.querySelector(".ios-scrim")?.click()});
+ });
 }
 // The newest checklist message of a task, wherever its conversation is.
 function taskProgressMessage(number){
@@ -327,7 +421,10 @@ function agentTasksPanel(){
  const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
  const rows=jobs.map(job=>{
   const found=taskProgressMessage(job.number);if(!found)return "";
-  const model=KappaJobs.taskModel(found.message.text),checks=taskValidation(job),all=[...model.rows,...checks];
+  const parsed=KappaJobs.taskModel(found.message.text),checks=taskValidation(job);
+  // Tasks with execution snapshots report their own steps; older tasks keep the parsed checklist.
+  const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
+  const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
   const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
   const now=model.current||checks.find(c=>c.state==="current")||model.failed||all.filter(r=>r.state==="done").at(-1);
   const failed=!!model.failed||["failed","tests-failed"].includes(job.message);
@@ -381,10 +478,12 @@ function setActivity(label){activityLabel=label;const el=document.getElementById
 function render(){
 const scrollState=captureInterfaceScroll();
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
-document.getElementById("heading").textContent=view==="chat"?"KappaForge":({home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings",saved:"Saved items",profile:"Account & profile",help:"Help & about"})[view];
+document.getElementById("heading").textContent=view==="chat"?"KappaForge":({home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings",saved:"Saved items",profile:"Account & profile",help:"Help & about",chats:"Chats",more:"More"})[view];
 document.getElementById("composer").classList.toggle("hide",view!=="chat");
 let html="";const c=active();
 if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>KappaJobs.isSubmission(m)?"":renderMessage(m,i)).join(""):'<div class="welcome"><span class="welcome-symbol">'+uiIcon('spark')+'</span><h1>A little clarity.<br>A lot of possibility.</h1><p class="muted">Think it through, make a plan, or build what comes next.</p><div class="welcome-hints"><button data-draft="Help me think through an idea">Explore an idea</button><button data-draft="Help me plan a project">Plan a project</button><button data-draft="Help me debug my code">Work on code</button></div></div>';}
+if(view==="chats")html=renderChatList();
+if(view==="more")html=renderMorePage();
 if(view==="saved")html=renderSavedItems();
 if(view==="profile")html=renderProfile();
 if(view==="help")html=renderHelp();
@@ -396,8 +495,13 @@ if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKS
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo,x.html_url)).join("")||'<p class="muted">No tasks loaded.</p>');
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
-if(data.error&&view!=="chat")html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
-document.getElementById("content").innerHTML=html;
+if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
+if(view!=="home")document.body.classList.remove("sheet-open");
+// Live updates re-render the sheet; keep its scroll position while it shows the same page.
+const sheetBody=document.querySelector(".ios-sheet-body"),sheetKey=[dashboardState.mode,dashboardState.runId,dashboardState.jobId,dashboardState.step,repoSheetOpen].join(":"),sheetTop=sheetBody&&render.sheetKey===sheetKey?sheetBody.scrollTop:0;render.sheetKey=sheetKey;
+document.getElementById("content").innerHTML=largeTitle()+html;
+const nextSheet=document.querySelector(".ios-sheet-body");if(nextSheet)nextSheet.scrollTop=sheetTop;
+applyShell();
 // Stream live Actions updates only while the dashboard is on screen; the 90-second refresh covers the rest.
 if(view==="home"&&!document.hidden){monitorResume();if(dashboardState.mode!=="overview"&&workflowMonitor.watchRun!==dashboardState.runId)monitorWatchRun(dashboardState.runId);
  // A job or step page needs the job's log once the job has finished (also after a reload, or when it finishes while open).
@@ -449,7 +553,7 @@ document.querySelectorAll("[data-plugin-request]").forEach(b=>b.addEventListener
  const draft="Plan a secure, owner-approved "+plugin.name+" integration for KappaForge. Explain permissions, OAuth or app tokens, what will work, and how to test it. Do not claim it is connected and do not request secrets in chat.";
  current=current||null;navigate("chat");document.getElementById("message").value=draft;focusMessageInput();
 }));
-bindSettings();bindInterface(scrollState);
+bindSettings();bindShell();bindDashboard();bindInterface(scrollState);
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
