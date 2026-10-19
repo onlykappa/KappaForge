@@ -1,5 +1,5 @@
 {
   "version": "2.2.8",
   "released": "2026-10-19",
-  "notes": "Tasks show a live activity feed under the task card (what the agent is reading, which model it asks, writing code, checking, testing, building) instead of View progress details. When Gemini\u2019s strong models hit their limits, code is now written by the best free coding models (DeepSeek V4 Pro and Kimi K3 on Ollama Cloud, Nemotron 3 Ultra on NVIDIA and Kilo) before Flash-Lite. Each step gets its own 5 retries (task #125 stopped when one shared budget ran out), a failed test step keeps the finished work, and syntax errors name the line."
+  "notes": "Tasks show a live activity feed under the task card (what the agent is reading, which model it asks, writing code, checking, testing, building) instead of View progress details. When Gemini\u2019s strong models hit their limits, code is now written by the best free coding models (DeepSeek V4 Pro and Kimi K3 on Ollama Cloud, Nemotron 3 Ultra on NVIDIA and Kilo) before Flash-Lite. It switches to another model mid-task when one keeps giving bad answers. Each step gets its own 5 retries (task #125 stopped when one shared budget ran out), a failed test step keeps the finished work, and syntax errors name the line."
 }

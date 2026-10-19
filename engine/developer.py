@@ -454,6 +454,7 @@ def diagnose_generation_failure(message, sources):
 
 
 GENERATION_ROUNDS = itertools.count(1)
+MODEL_FAILURES_BEFORE_SWITCH = 2
 
 
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
@@ -498,7 +499,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     errors = []
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
-    avoid = set()  # Models that repeated a rejected answer: the next attempt asks another one.
+    avoid = set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
+    failures = collections.Counter()
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
     max_attempts = 5
@@ -548,6 +550,11 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 rejected_signatures.add(json.dumps(proposal.get("files", []), sort_keys=True, ensure_ascii=False))
             error = str(exc)[:300] or type(exc).__name__
             errors.append(error)
+            # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
+            failures[model] += 1
+            if failures[model] >= MODEL_FAILURES_BEFORE_SWITCH and model not in avoid:
+                avoid.add(model)
+                note("model", f"Switching away from {model} after {failures[model]} rejected answers")
             print(f"Validation attempt {attempt + 1}/{max_attempts} failed: {error[:180]}")
             note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             # A model repeating a rejected answer is asked no more; the remaining attempts go to other models

@@ -751,3 +751,18 @@ class StageRecoveryTests(unittest.TestCase):
     def test_syntax_errors_say_what_and_where_not_the_node_version(self):
         message = developer.syntax_error("tests/a.test.mjs", "import x from 'y';\nconst a = ;\n")
         self.assertEqual(message, "tests/a.test.mjs: SyntaxError: Unexpected token ';' (line 2)")
+
+
+class ModelSwitchTests(unittest.TestCase):
+    def test_a_model_whose_answers_keep_failing_is_swapped_mid_task(self):
+        bad = [json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "missing " + str(i), "replace": "x"}]}]}) for i in range(2)]
+        good = json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        calls = []
+
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+            calls.append(tuple(skip))
+            return ("strong", good) if "lite" in skip else ("lite", bad[len(calls) - 1])
+        with patch.object(developer, "run_model", side_effect=model):
+            model_used, _, changes, _ = developer.generate("key", "fix", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertEqual(model_used, "strong")
+        self.assertEqual(calls, [(), (), ("lite",)], "two different bad answers are enough to switch")
