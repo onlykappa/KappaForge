@@ -379,9 +379,10 @@ def mirror_ios_copies(repo, changes, existing):
 
 
 def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False, allow_empty=False):
-    """Try the large budget on Gemini alone; if Gemini can't answer, re-plan at the small size for any provider."""
+    """Try the large budget first (Gemini, or a strong provider whose context window it fits); if nothing can answer
+    it, re-plan at the small size for any provider."""
     try:
-        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, set(), LARGE, design,
+        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, LARGE, design,
                                                              require_test, allow_empty)
     except RuntimeError as exc:
         print("Large-budget Gemini route unavailable, using fallback-sized limits: " + str(exc)[:300])

@@ -184,13 +184,13 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("do not invent declarations", help_text)
         self.assertIn("KappaWebView.swift", help_text)
 
-    def test_large_budget_on_gemini_then_small_budget_for_fallbacks(self):
+    def test_large_budget_first_then_small_budget_for_fallbacks(self):
         good = json.dumps({"summary": "Cast inputs", "files": [
             {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", return_value=("flash", good)) as ai:
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, allowed={"groq"})
         self.assertEqual(ai.call_args.kwargs["max_output_tokens"], developer.LARGE.output_tokens)
-        self.assertEqual(ai.call_args.kwargs["allowed"], set(), "large prompts only go to Gemini")
+        self.assertEqual(ai.call_args.kwargs["allowed"], {"groq"}, "a provider the large prompt fits may answer it too")
         self.assertIn(f"At most {developer.LARGE.changed_files} files", ai.call_args[0][1])
         # Gemini out of quota: re-planned at fallback size for the providers allowed for this repository.
         with patch.object(developer, "run_model", side_effect=[RuntimeError("quota"), ("groq:llama", good)]) as ai:
@@ -466,8 +466,8 @@ class OtherRepositoryTests(unittest.TestCase):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
         everything = set(PROVIDERS["order"])
-        # File choice and checking the work may use any allowed provider; the change itself is tried large on Gemini alone first.
-        self.assertEqual(allowances, [everything, set(), everything], "owner allows every fallback provider by default")
+        # Every step may use any allowed provider: a strong one comes before Flash-Lite when the prompt fits it.
+        self.assertEqual(allowances, [everything] * 3, "owner allows every fallback provider by default")
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})
