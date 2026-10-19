@@ -1317,9 +1317,10 @@ def fix_pull_request(issue, api_key, token):
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
     pending = requirements_open(pr)
-    if pending and any(r and r.get("status") != "completed" for r in (run, native)):
-        print("Verification is still running; wait before repairing unfinished requirements.")
-        return None
+    # An unfinished requirement is already actionable, as is a completed failed
+    # check. Waiting for an unrelated in-flight check can strand this repair:
+    # a successful native build does not dispatch another fix. Older checks stay
+    # tied to their candidate SHA; the repaired commit gets fresh verification.
     failures = [r for r in (run, native) if r and r.get("status") == "completed" and r.get("conclusion") == "failure"]
     if not failures and not pending:
         if run and run.get("status") == "completed" and not (native and native.get("status") != "completed"):
