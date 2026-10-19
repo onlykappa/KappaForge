@@ -6,6 +6,19 @@ function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
 // request gets an Approve or Deny card. Everything else is conversation.
+// Tasks started outside this device (on GitHub, from another device, or by an assistant working on the repository) are
+// followed too, so Running and Agent tasks show them. They have no chat card here and open on GitHub. Open kappa-task
+// issues from the last week only.
+function adoptRepositoryTasks(issues){
+ let added=false;
+ for(const i of issues||[]){
+  if(i.repo!=="KappaForge"||i.pull_request||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))||trackedJobs.some(j=>j.number===i.number))continue;
+  const created=Date.parse(i.created_at||"")||0;if(Date.now()-created>7*86400000)continue;
+  trackedJobs.push({number:i.number,title:String(i.title||"").slice(0,120),url:i.html_url,chatId:null,adopted:true,message:"waiting",queuedAt:created,activeAt:Date.parse(i.updated_at||"")||created,progress:null});
+  added=true;
+ }
+ if(added){persistJobs();jobPollAfter=0;checkJobResult()}
+}
 // A request already has a task when it started one, or when a task card follows it in its chat.
 function requestHasTask(chat,message){return !!message.taskStarted||chat.messages.slice(chat.messages.indexOf(message)+1).some(x=>x.progressKey)}
 function chatTaskPlan(typed,chat){
@@ -166,7 +179,8 @@ function showProgress(job,commentId,body,comment={}){
  const snapshot=KappaProgress.decode(body,job.number);
  if(snapshot){const next=KappaProgress.reconcile(job.progress,snapshot,job.resumedAt||0);if(next===job.progress)return false;job.progress=next;}
  else if(updatedAt&&updatedAt<=(job.lastProgressAt||0))return false;
- const message=ensureTaskCard(job);if(!message)return false;
+ // A task followed from GitHub has no chat card: its snapshot alone updates the Dashboard.
+ const message=ensureTaskCard(job);if(!message){if(snapshot&&job.adopted){job.lastProgressAt=updatedAt||Date.now();job.activeAt=job.lastProgressAt;persistJobs();return true}return false}
  const text=body.replace(/<!--[^]*?-->/g,'').replace(/^### KappaForge is working on it/,"**KappaForge is working on it**");
  if(!snapshot&&message.text===text)return false;
  const before=message.text?KappaJobs.taskModel(message.text):null;

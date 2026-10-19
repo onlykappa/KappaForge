@@ -1,5 +1,5 @@
 {
-  "version": "2.2.4",
+  "version": "2.2.5",
   "released": "2026-10-19",
-  "notes": "One request, one task: Plan task shows it is planning and ignores repeat taps, and duplicates join the task already running. Briefs whose request is on a later line start on their own. The agent now checks its work against your task before opening a PR, fixes what it finds, and says plainly what is still not done; it also uses the newest Flash models and runs its own tests."
+  "notes": "Chats with a cancelled task no longer fail with \u201cInvalid message\u201d. Tasks started on GitHub or another device now show under Running and Agent tasks. The agent retries a dropped AI connection instead of failing the task."
 }

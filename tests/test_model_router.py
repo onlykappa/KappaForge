@@ -162,6 +162,21 @@ class CutOffAnswerTests(unittest.TestCase):
         self.assertEqual((model, output), ("gemini-3-flash", '{"read": []}'))
         self.assertEqual(sent, [8000, 32000])
 
+    def test_a_dropped_connection_mid_answer_is_retried_not_fatal(self):
+        # Task #119 failed after 13 minutes on "Remote end closed connection without response".
+        import http.client
+        calls = []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/gemini-3-flash", "supportedGenerationMethods": ["generateContent"]}]})
+            calls.append(1)
+            if len(calls) == 1:
+                raise http.client.RemoteDisconnected("Remote end closed connection without response")
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "done"}]}}]})
+        with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), patch("engine.runner.time.sleep"):
+            self.assertEqual(runner.run_model("key", "write"), ("gemini-3-flash", "done"))
+        self.assertEqual(len(calls), 2)
+
 
 class FailureReportTests(unittest.TestCase):
     def test_the_task_gets_the_real_reason_and_next_step_without_secrets(self):

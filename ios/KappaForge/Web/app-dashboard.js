@@ -42,6 +42,7 @@ async function load(force=false){
     api("KappaForge/actions/runs?per_page=10",force)
    ]);
    data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};
+   adoptRepositoryTasks(data.issues);
    lastDashboardFetch=Date.now();
   }catch(e){data.error=e.message}
   finally{if(["home","projects","tasks","reviews"].includes(view))render();dashboardLoading=null}
@@ -444,8 +445,9 @@ function agentTasksPanel(){
  const day=Date.now()-86400000;
  const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
  const rows=jobs.map(job=>{
-  const found=taskProgressMessage(job.number);if(!found)return "";
-  const parsed=KappaJobs.taskModel(found.message.text),checks=taskValidation(job);
+  // A task started elsewhere (GitHub, another device) has no chat card here; its own progress snapshot still shows.
+  const found=taskProgressMessage(job.number);if(!found&&!job.adopted)return "";
+  const parsed=KappaJobs.taskModel(found?.message.text||""),checks=taskValidation(job);
   // Tasks with execution snapshots report their own steps; older tasks keep the parsed checklist.
   const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
   const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
@@ -463,7 +465,8 @@ function agentTasksPanel(){
  return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
 }
 function openTaskInChat(number){
- const found=taskProgressMessage(number);if(!found)return;
+ const found=taskProgressMessage(number);
+ if(!found){const job=trackedJobs.find(j=>j.number===number);if(job?.url)window.open(job.url,"_blank","noopener");return}
  found.message.collapsed=false;current=found.chat.id;navigate("chat");
  requestAnimationFrame(()=>document.querySelector('[data-message-index="'+found.index+'"]')?.scrollIntoView({block:"center"}));
 }
