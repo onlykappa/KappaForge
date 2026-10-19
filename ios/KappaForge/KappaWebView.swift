@@ -37,6 +37,12 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
             })
         }
     }
+    // WKWebView has no CSS media query for Reduce Transparency; html.rt makes every glass surface solid.
+    func observeReduceTransparency() {
+        keyboardObservers.append(NotificationCenter.default.addObserver(forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.evaluateJavaScript(KappaWebView.reduceTransparencySource(), completionHandler: nil)
+        })
+    }
     deinit { keyboardObservers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     func updateComposer(_ body: [String: String]) {
@@ -85,6 +91,7 @@ struct KappaWebView: UIViewRepresentable {
         config.websiteDataStore = .default()
         config.userContentController.add(context.coordinator, name: "kappa")
         config.userContentController.addUserScript(Self.credentialScript())
+        config.userContentController.addUserScript(WKUserScript(source: Self.reduceTransparencySource(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         #if DEBUG && targetEnvironment(simulator)
         if let fixture = ProgressFixture.script() {
             config.userContentController.addUserScript(fixture)
@@ -93,6 +100,7 @@ struct KappaWebView: UIViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let view = KappaChatWebView(frame: .zero, configuration: config)
         view.configureComposer()
+        view.observeReduceTransparency()
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isOpaque = false
@@ -112,6 +120,10 @@ struct KappaWebView: UIViewRepresentable {
         }
         view.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
         return view
+    }
+
+    static func reduceTransparencySource() -> String {
+        "document.documentElement.classList.toggle('rt', \(UIAccessibility.isReduceTransparencyEnabled));"
     }
 
     static func credentialScript() -> WKUserScript {

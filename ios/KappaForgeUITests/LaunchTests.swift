@@ -7,11 +7,15 @@ final class LaunchTests: XCTestCase {
         let web = app.webViews.firstMatch
         // The first launch on a freshly booted simulator renders the bundled interface slowly (about 40s observed in CI).
         XCTAssertTrue(web.waitForExistence(timeout: 60), "Bundled WKWebView must load")
-        let navigation = web.buttons["Open navigation"]
-        XCTAssertTrue(navigation.waitForExistence(timeout: 60), "Shared interface navigation must render")
-        navigation.tap()
-        let settings = web.buttons["Open settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 15), "Shared interface settings button must be accessible")
+        // Phones: the chat is a pushed view. Back leads to Chats; Settings lives under the More tab.
+        let back = web.buttons["Back to Chats"]
+        XCTAssertTrue(back.waitForExistence(timeout: 60), "Shared interface back button must render")
+        back.tap()
+        let more = web.buttons["More"]
+        XCTAssertTrue(more.waitForExistence(timeout: 15), "The tab bar must be accessible")
+        more.tap()
+        let settings = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings")).firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), "The More page must list Settings")
         settings.tap()
         // The Settings home contains an accessible search field. Section rows and group headings
         // can be exposed differently by WKWebView accessibility on different simulator runtimes.
@@ -66,7 +70,7 @@ final class LaunchTests: XCTestCase {
 
     func testTaskProgressScreenshotsInNativeSimulator() {
         let app = XCUIApplication()
-        for (scenario, tag) in [("queued", "QUEUED"), ("running", "IN PROGRESS"), ("failed", "NEEDS ATTENTION")] {
+        for (scenario, tag) in [("queued", "QUEUED"), ("running", "IN PROGRESS"), ("failed", "NEEDS ATTENTION"), ("testing", "TESTING"), ("ready", "READY FOR REVIEW")] {
             app.terminate()
             app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = scenario
             app.launch()
@@ -81,7 +85,7 @@ final class LaunchTests: XCTestCase {
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
             if scenario == "running" {
                 let keyboardImage = XCTAttachment(screenshot: app.screenshot())
-                keyboardImage.name = "PR103 progress running keyboard (simulator fixture)"
+                keyboardImage.name = "PR104 task card running keyboard (simulator fixture)"
                 keyboardImage.lifetime = .keepAlways
                 add(keyboardImage)
             }
@@ -90,7 +94,7 @@ final class LaunchTests: XCTestCase {
             // Return to the beginning of the card after keyboard-driven scrolling.
             web.swipeDown()
             let image = XCTAttachment(screenshot: app.screenshot())
-            image.name = "PR103 progress " + scenario + " (simulator fixture)"
+            image.name = "PR104 task card " + scenario + " (simulator fixture)"
             image.lifetime = .keepAlways
             add(image)
             XCTAssertTrue(app.textViews["native-composer"].exists, "The real native composer remains available")
@@ -102,4 +106,43 @@ final class LaunchTests: XCTestCase {
         app.terminate()
     }
 
+
+    func testRedesignScreenshotsInNativeSimulator() {
+        let app = XCUIApplication()
+        app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = "running"
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 60))
+        func capture(_ name: String) {
+            sleep(1)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "PR104 " + name + " (simulator fixture)"
+            image.lifetime = .keepAlways
+            add(image)
+        }
+        let back = web.buttons["Back to Chats"]
+        XCTAssertTrue(back.waitForExistence(timeout: 60))
+        back.tap()
+        XCTAssertTrue(web.searchFields["Search conversations"].waitForExistence(timeout: 15), "The Chats list must render")
+        capture("chats")
+        for (tab, name) in [("Dashboard", "dashboard today"), ("More", "more")] {
+            let button = web.buttons[tab]
+            XCTAssertTrue(button.waitForExistence(timeout: 15), "Tab must be accessible: " + tab)
+            button.tap()
+            capture(name)
+            if tab == "Dashboard" {
+                let pulls = web.buttons["Pull requests"]
+                XCTAssertTrue(pulls.waitForExistence(timeout: 15))
+                pulls.tap()
+                sleep(4)
+                capture("dashboard pull requests")
+                let picker = web.buttons.matching(NSPredicate(format: "label CONTAINS %@", "onlykappa/")).firstMatch
+                XCTAssertTrue(picker.waitForExistence(timeout: 15), "The repository picker must be accessible")
+                picker.tap()
+                capture("repository picker")
+                web.buttons["Close"].firstMatch.tap()
+            }
+        }
+        app.terminate()
+    }
 }

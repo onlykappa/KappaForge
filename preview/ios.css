@@ -218,3 +218,7 @@ body.sheet-open{overflow:hidden}
 .task-card .task-progress-icon{color:var(--label-2)}
 .task-card .task-progress-row small,.task-card .task-progress-card>small{font-size:var(--t-foot);color:var(--label-2)}
 .task-result-link{display:inline-flex!important;align-items:center;gap:6px;align-self:flex-start;min-height:36px!important;padding:0 14px;border-radius:18px;background:var(--accent-fill);color:var(--on-accent)!important;font-size:var(--t-sub)!important;font-weight:600;text-decoration:none!important}
+/* The native composer copies this size; Body (1rem) follows Dynamic Type. */
+@media(max-width:840px){.compose-inner textarea{font-size:1rem;line-height:1.35}}
+/* On iPhone the root size is Body as set by Dynamic Type, so every rem in the ramp scales with it. */
+@supports(font:-apple-system-body){@media(max-width:840px){html{font:-apple-system-body;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}}}
