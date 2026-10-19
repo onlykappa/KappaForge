@@ -3,6 +3,7 @@ let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
+// Starts with the chat request, not after its reply: a failed reply or switching chats never drops the task.
 // Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(reply,typed,chat,offerTask){
  if(!offerTask||!['execution','investigation'].includes(KappaIntent.classify(typed)))return;
@@ -177,7 +178,8 @@ function jobChatUpdate(job,signature,body,quiet=false){
 }
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
- const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0)&&chats.some(c=>c.id===j.chatId));if(!jobs.length)return;
+ // Tracked even when its chat was deleted or replaced by a sync, so Running never counts a task nobody follows.
+ const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0));if(!jobs.length)return;
  jobTrackingBusy=true;let changed=false;
  try{
   for(const job of jobs){

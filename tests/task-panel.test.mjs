@@ -156,6 +156,17 @@ test('finished tasks show how they ended; failures stay red with the failing ste
  box.trackedJobs.push({number:100,message:'progress'});assert.equal(box.taskStatusText({repo:'KappaForge',number:100}),'Running');
 });
 
+// app-state.js: a choice widget the model fenced as json still renders as buttons; other json stays code.
+test('choice widgets render from kappa-widget or json fences',()=>{
+ const src=read('app-state.js');
+ const box={esc,KappaIntent:globalThis.KappaIntent,KappaMarkdown:{render:t=>'<md>'+t+'</md>'}};
+ vm.createContext(box);vm.runInContext(slice(src,'function renderChatText(','\nasync function manageMemory('),box);
+ const widget='{"type":"choice","question":"How would you like to proceed?","options":["Start it","Not now"]}';
+ assert.match(box.renderChatText('Pick one:\n```json\n'+widget+'\n```'),/class="widget-choice" data-choice="Start it"/);
+ assert.match(box.renderChatText('```kappa-widget\n'+widget+'\n```'),/widget-choice/);
+ assert.match(box.renderChatText('```json\n{"a":1}\n```'),/<md>```json/,'ordinary json is a code block, not escaped text');
+});
+
 // Chat replies that claim work no task backs: "I am working on Task #106" when #106 was never created.
 test('assistant claims of running work are recognized with the task numbers they name',()=>{
  assert.deepEqual(J.workClaims('I am working on **Task #106** ("Add a weather feature"). Once tests pass, I will open the draft PR.').numbers,[106]);

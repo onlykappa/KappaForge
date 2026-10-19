@@ -43,5 +43,7 @@
  function stripActions(text){
   return String(text||'').replace(/```kappa-action\b[\s\S]*?(?:```|$)/gi,'').replace(/\bkappa-action\b[\s\S]*$/gi,'').replace(/(?:`{1,3})?kappa(?:-a(?:c(?:t(?:i(?:o(?:n)?)?)?)?)?)?$/i,'').trimEnd();
  }
- root.KappaIntent={classify,permits,stripActions,suggestsTask};
+ // The request itself, without a "Here is your task:" leader: what a task's title should say.
+ const requestText=text=>String(text||'').trim().replace(LEADER,'').trim();
+ root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText};
 })(globalThis);

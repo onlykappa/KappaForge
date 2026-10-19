@@ -1,5 +1,5 @@
 import '../../preview/intent-guard.js';
-export const {classify,permits}=globalThis.KappaIntent;
+export const {classify,permits,requestText}=globalThis.KappaIntent;
 const writePaths=new Set(['/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
 export const needsAuthorization=path=>writePaths.has(path);
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).filter(k=>k!=='authorization').sort().map(k=>[k,canonical(value[k])])):value;

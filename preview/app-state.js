@@ -143,14 +143,15 @@ async function syncVault(){
 // A save during a running sync is queued, not dropped, so the latest message always reaches the cloud.
 function scheduleVaultSync(){if(!vaultPassphrase)return;if(syncBusy){syncPending=true;return}syncVault()}
 function renderChatText(message){
- const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
+ const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60(kappa-widget|json)\s*\n([\s\S]*?)\n\x60\x60\x60/g;
  let html="",pos=0,hit;
  while((hit=regex.exec(text))){
   html+=KappaMarkdown.render(text.slice(pos,hit.index));
-  try{const w=JSON.parse(hit[1]);
+  // Models sometimes fence a choice widget as json; any other json block stays a normal code block.
+  try{const w=JSON.parse(hit[2]);
    if(w.type!=="choice"||typeof w.question!=="string"||w.question.length>200||!Array.isArray(w.options)||w.options.length<2||w.options.length>5||w.options.some(o=>typeof o!=="string"||o.length>100))throw Error("unsupported");
    html+='<div class="answer-widget"><strong>'+esc(w.question)+'</strong><div class="widget-choices">'+w.options.map(o=>'<button type="button" class="widget-choice" data-choice="'+esc(o)+'">'+esc(o)+'</button>').join("")+'</div></div>';
-  }catch(e){html+=esc(hit[0])}
+  }catch(e){html+=hit[1]==="json"?KappaMarkdown.render(hit[0]):esc(hit[0])}
   pos=regex.lastIndex;
  }
  return html+KappaMarkdown.render(text.slice(pos));

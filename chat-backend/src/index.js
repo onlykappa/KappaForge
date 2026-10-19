@@ -677,7 +677,7 @@ export default {
             return json({ error: "Continuous coding requires explicit numbered steps." }, 422, cors);
           return json({ isTask: true, proposal: {
             repo: "onlykappa/"+(mentionedRepo(input.request,repos.map(repo=>repo.split("/")[1]))||"KappaForge"), mode: classify(input.request)==="investigation"?"audit":proposal.mode,
-            title: input.request.trim().split("\n")[0].slice(0, 105),
+            title: requestText(input.request).split("\n")[0].slice(0, 105),
             instructions: input.request.trim()
           } }, 200, cors);
         }

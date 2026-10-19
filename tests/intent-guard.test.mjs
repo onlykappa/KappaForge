@@ -49,6 +49,7 @@ test('uncertain requests suggest a task without starting one',()=>{
  assert.equal(suggestsTask("We should fix it but don't do it yet"),false);
  assert.equal(suggestsTask('How are you today?'),false);
  assert.equal(suggestsTask('I think we should add a weather feature, but do not merge it'),true,'a negation only cancels its own clause');
+ assert.equal(globalThis.KappaIntent.requestText('Here is your first official task: add a weather feature'),'add a weather feature');
 });
 test('deterministic permissions cap model classification and preserve user instructions',()=>{
  for(const text of ['Show me an example','Why did tests fail?','Plan a fix','> Fix it'])assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:text},text,'user-request'));
