@@ -198,3 +198,26 @@ test('open repository tasks started elsewhere are followed and shown without a c
  job.progress={steps:[{title:'Writing the change',detail:'Remote end closed connection without response',status:'failed'}]};
  assert.match(box.agentTasksPanel(),/agent-task failed" data-open-task="119"[^]*Failed: Writing the change: Remote end closed/);
 });
+
+// 2.2.5 adopted #119 without its mode, so its "draft PR" report marked it Finished and hid the failure after it.
+test('adopted tasks keep their mode, and ones adopted without it are read again',()=>{
+ const tasks=read('app-tasks.js'),checked=[];
+ const box={JSON,Date,String,Number,trackedJobs:[{number:119,adopted:true,finished:true,message:'complete',lastReportId:9}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
+ vm.createContext(box);vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
+ const now=new Date().toISOString(),label=[{name:'kappa-task'}];
+ box.adoptRepositoryTasks([{repo:'KappaForge',number:119,labels:label,created_at:now,body:'Repository: onlykappa/KappaForge\nMode: develop\n\nAdd weather'},
+  {repo:'KappaForge',number:122,labels:label,created_at:now,body:'Repository: onlykappa/KappaForge\nMode: audit\n\nCheck'}]);
+ const [old,fresh]=box.trackedJobs;
+ assert.equal(old.mode,'develop');assert.equal(old.finished,false);assert.equal(old.lastReportId,0,'its reports are read again');
+ assert.equal(fresh.mode,'audit');assert.equal(checked.length,1);
+ // A develop task with an open PR is not finished by its "draft PR" report, so the later test failure still counts.
+ assert.equal(J.finishes({mode:'develop',prUrl:'https://github.com/onlykappa/KappaForge/pull/121'},'complete'),false);
+ box.adoptRepositoryTasks([{repo:'KappaForge',number:119,labels:label,created_at:now,body:'Mode: develop'}]);
+ assert.equal(checked.length,1,'nothing to re-read the second time');
+});
+
+test('a draft PR report reads as a step, and as not finished when the work check left problems',()=>{
+ assert.match(J.conciseReport('complete','KappaForge generated a draft PR: x\n\n**Not finished:** 1 problem open.',''),/^\*\*Draft PR opened · not finished\*\*/);
+ assert.match(J.conciseReport('complete','KappaForge generated a draft PR: x',''),/^\*\*Draft PR opened\*\*/);
+ assert.match(J.conciseReport('complete','### KappaForge run completed\nAll good',''),/^\*\*Task complete\*\*/);
+});

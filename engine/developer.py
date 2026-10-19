@@ -6,6 +6,7 @@ Generated code is only parsed for syntax here, never executed; review and CI sta
 """
 import ast
 import collections
+import difflib
 import base64
 import json
 import os
@@ -223,7 +224,8 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
     for attempt in range(2):
         try:
             plan = parse_json(run_model(api_key, prompt + ("\n\nYour last answer was not valid JSON. Reply with the JSON "
-                                                           "object only." if attempt else ""), max_output_tokens=8000, allowed=allowed)[1])
+                                                           "object only." if attempt else ""), max_output_tokens=8000, allowed=allowed,
+                                       json_mode=True)[1])
             chosen = plan.get("read", []) if isinstance(plan, dict) else []
             if isinstance(chosen, list) and chosen:
                 break
@@ -385,15 +387,33 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
+def closest_text(message, sources, context=3):
+    """For "find matched 0 times", the lines of the file most like the failed find, copied exactly."""
+    found = re.search(r"in (\S+) \(matched 0 times\): (.+)", message)
+    if not found or found.group(1) not in sources:
+        return ""
+    lines = sources[found.group(1)].splitlines()
+    wanted = found.group(2).strip().splitlines()[0][:80]
+    stripped = [line.strip()[:len(wanted) + 20] for line in lines]
+    match = difflib.get_close_matches(wanted, stripped, n=1, cutoff=0.5)
+    if not match:
+        return ""
+    i = stripped.index(match[0])
+    block = "\n".join(lines[max(0, i - context):i + context + 1])
+    return (f" The closest text that really is in {found.group(1)} now (copy your find from it exactly, "
+            f"characters and indentation included):\n<<<\n{block[:3000]}\n>>>")
+
+
 def diagnose_generation_failure(message, sources):
     """Provide targeted, source-grounded repair guidance, never a bypass."""
     if "matched 0 times" in message:
         paths = list(sources)
         return ("The previous find string does not occur in the actual source. "
-                "Use only literal text visible in SOURCE FILES; do not invent declarations. "
+                "Use only literal text visible in SOURCE FILES; do not invent declarations, and never copy a line "
+                "from a diff that starts with '-' (it was removed and no longer exists). "
                 "Existing source paths: " + ", ".join(paths[:15]) + ". "
                 "Replan the edit around an existing class/function or use a genuinely changed, "
-                "fully read file content.")
+                "fully read file content." + closest_text(message, sources))
     if "Repeated rejected proposal" in message:
         return ("The proposed edit was already rejected against the same source. Re-read the "
                 "actual file and switch to a different, source-grounded implementation.")
@@ -466,7 +486,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed)
+        model, output = run_model(api_key, instruction + retry, max_output_tokens=budget.output_tokens, allowed=allowed, json_mode=True)
         try:
             proposal = redirect_ios_copies(repo, parse_json(output))
             # Identical rejected proposals cannot succeed against unchanged source.
@@ -740,7 +760,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     reqs, problems = [], []
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
-        problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing)
+        problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
         review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
         files_needed = []
         if review:
@@ -835,7 +855,10 @@ def produce_development_pr(issue, api_key, token):
     progress.ok(f"Wrote the change with {model}: {len(changes)} files {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress)
-    if verdict:
+    if verdict and open_problems and explanation:
+        # The model describes what it meant to build; with problems open that description is not a fact.
+        explanation = (verdict + "\n\nWhat the agent says it did (not verified): " + explanation)[:2000]
+    elif verdict:
         explanation = (verdict + "\n\n" + (explanation or ""))[:2000]
         summary = (verdict + "\n" + summary)[:3000]
     flags = flagged_changes(sources, changes) if repo != ROOT and not flags_allowed(body) else {}
@@ -960,7 +983,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nDESIGN NOTES (from planning):\n" + design[:2000] if design else "") +
             ("\n\nEARLIER FIX ATTEMPTS (they did not make the tests pass; try something different):\n" + "\n".join("- " + t for t in tried[-3:])
              if tried else "") +
-            "\n\nTHE CHANGE SO FAR (diff against the default branch):" + diff +
+            "\n\nTHE CHANGE SO FAR (diff against the default branch; lines starting with '-' no longer exist, so every "
+            "find must be copied from SOURCE FILES below, which hold the branch as it is now):" + diff +
             ("\n\nNATIVE iOS BUILDS OF THIS BRANCH (newest first):\n" + native_history if native_history else "") +
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +

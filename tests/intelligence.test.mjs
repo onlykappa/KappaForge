@@ -413,6 +413,22 @@ test('the same task sent twice within minutes joins the first instead of startin
  }finally{globalThis.fetch=original}
 });
 
+test('a streaming reply is cut off only after silence, never for being long',async()=>{
+ const {streamReply}=await import('../chat-backend/src/streaming.js');
+ // Like a fetch body: aborting the request ends the stream with an error.
+ const sse=(gaps,signal)=>new Response(new ReadableStream({async start(c){const e=new TextEncoder();
+  for(const [i,gap] of gaps.entries()){await new Promise(r=>setTimeout(r,gap));if(signal.aborted){c.error(new DOMException('aborted','AbortError'));return}
+   c.enqueue(e.encode('data: '+JSON.stringify({candidates:[{content:{parts:[{text:'part'+i+' '}]},...(i===gaps.length-1?{finishReason:'STOP'}:{})}]})+'\n\n'))}c.close()}}));
+ const run=async(gaps,idleMs)=>{const abort=new AbortController();
+  const body=streamReply(sse(gaps,abort.signal),{record:async()=>({}),model:'m',routing:{},abort,timeout:setTimeout(()=>{},0),idleMs});
+  const text=await new Response(body).text();return text.trim().split('\n').map(l=>JSON.parse(l)).at(-1)};
+ // Six chunks 30 ms apart (180 ms in all) with a 60 ms silence limit: a long reply that keeps arriving completes.
+ const long=await run([30,30,30,30,30,30],60);
+ assert.equal(long.type,'done');assert.match(long.reply,/part5/);
+ const stalled=await run([10,150],60);
+ assert.equal(stalled.type,'error');assert.equal(stalled.error,'Response stopped or timed out.');
+});
+
 test('owner guidance reaches only open KappaForge tasks and starts a fix when the latest tests failed',async()=>{
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),posted=[],dispatched=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-guide',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};

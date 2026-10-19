@@ -341,9 +341,10 @@ function setDashboardRepo(repo){dashboardRepo=repo;repoSheetOpen=false;try{local
 const ago=t=>runAgo(new Date(t).toISOString());
 function todayView(){
  const runs=workflowMonitor.runs,repoPrs=(data.prs||[]).filter(p=>p.repo===dashboardRepo),now=Date.now();
- const running=trackedJobs.filter(j=>!j.finished);
+ const running=trackedJobs.filter(j=>!j.finished&&!["failed","tests-failed"].includes(j.message)&&j.progress?.status!=="failed");
  const latest=KappaActions.latestByWorkflow(runs.filter(r=>!KappaActions.isActive(r)));
- const failing=latest.filter(r=>r.state==="failure"||r.state==="timed_out");
+ // Agent task runs show under Agent tasks with their own reason; failing checks are the project's CI.
+ const failing=latest.filter(r=>(r.state==="failure"||r.state==="timed_out")&&!/(?:^|\/)(?:agent|continuous)\.yml$/.test(r.path||""));
  const review=repoPrs.filter(p=>p.draft||isDevPR(p));
  const start=new Date();start.setHours(0,0,0,0);
  const today=runs.filter(r=>Date.parse(r.createdAt)>=start.getTime()),passed=today.filter(r=>r.state==="success").length,failed=today.filter(r=>r.state==="failure").length;
@@ -466,7 +467,14 @@ function agentTasksPanel(){
 }
 function openTaskInChat(number){
  const found=taskProgressMessage(number);
- if(!found){const job=trackedJobs.find(j=>j.number===number);if(job?.url)window.open(job.url,"_blank","noopener");return}
+ if(!found){
+  // A task started on GitHub or another device gets a chat of its own the first time it is opened, filled from its
+  // reports (window.open is blocked inside the iPhone app, so a link would do nothing).
+  const job=trackedJobs.find(j=>j.number===number);if(!job)return;
+  const c={id:uid(),title:("Task #"+job.number+(job.title?": "+job.title:"")).slice(0,60),messages:[],at:Date.now()};chats.unshift(c);
+  Object.assign(job,{chatId:c.id,lastReportId:0,lastProgressAt:0,delivered:[],pollAfter:0,finished:false,finishedAt:0,progress:null});
+  persistJobs();save();current=c.id;ensureTaskCard(job);navigate("chat");jobPollAfter=0;checkJobResult();return;
+ }
  found.message.collapsed=false;current=found.chat.id;navigate("chat");
  requestAnimationFrame(()=>document.querySelector('[data-message-index="'+found.index+'"]')?.scrollIntoView({block:"center"}));
 }

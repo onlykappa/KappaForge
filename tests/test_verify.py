@@ -69,7 +69,7 @@ class CheckTheWork(unittest.TestCase):
     def run_check(self, reviews, fixes):
         reviews, fixes, prompts = list(reviews), list(fixes), []
 
-        def model(api_key, prompt, max_output_tokens=0, allowed=None):
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False):
             return "gemini", json.dumps(reviews.pop(0))
 
         def generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test):
@@ -105,6 +105,89 @@ class CheckTheWork(unittest.TestCase):
         self.assertIn("- Not done: Use real weather in replies", verdict)
         self.assertIn("- Problem: /weather is never called", verdict)
         self.assertEqual(progress.lines[-1][0], "blocked")
+
+
+class AnchorHint(unittest.TestCase):
+    """A find copied from a diff's removed line gets the real current text back (PR #121's fixes failed 5 times on it)."""
+
+    def test_the_closest_real_lines_are_shown_exactly(self):
+        sources = {"chat-backend/src/index.js": 'const a = 1;\n    if (request.method !== "POST" || !["/chat", "/weather"].includes(path))\n      return json({ error: "Not found" }, 404, cors);\n'}
+        message = 'Edit text must match exactly once in chat-backend/src/index.js (matched 0 times):     if (request.method !== "POST" || !["/chat"].includes(path))'
+        hint = developer.diagnose_generation_failure(message, sources)
+        self.assertIn("never copy a line from a diff that starts with '-'", hint)
+        self.assertIn('    if (request.method !== "POST" || !["/chat", "/weather"].includes(path))', hint)
+
+    def test_no_hint_when_nothing_is_close(self):
+        self.assertEqual(developer.closest_text("Edit text must match exactly once in a.js (matched 0 times): zzzz qqqq", {"a.js": "const x = 1;"}), "")
+
+
+def response(data):
+    from unittest.mock import MagicMock
+    result = MagicMock()
+    result.__enter__.return_value = result
+    result.__exit__.return_value = False
+    result.read.return_value = json.dumps(data).encode()
+    return result
+
+
+class JsonMode(unittest.TestCase):
+    def test_gemini_is_asked_for_json_when_the_caller_needs_it(self):
+        from engine import runner
+        sent = []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/gemini-3-flash", "supportedGenerationMethods": ["generateContent"]}]})
+            sent.append(json.loads(req.data)["generationConfig"])
+            return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "{}"}]}}]})
+        with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            runner.run_model("key", "p", json_mode=True)
+            runner.run_model("key", "p")
+        self.assertEqual(sent[0].get("responseMimeType"), "application/json")
+        self.assertNotIn("responseMimeType", sent[1])
+
+
+class HonestVerdict(unittest.TestCase):
+    """PR #121 said "2 of 2 requirements met" above an open problem; the headline now says Not finished."""
+
+    def test_open_problems_lead_the_verdict(self):
+        text = verify.report([{"text": "a", "met": True}, {"text": "b", "met": True}], ["/weather is never called"])
+        self.assertTrue(text.startswith("Not finished: 1 problem still open."))
+        self.assertNotIn("Checked against the task", text)
+
+    def test_unmet_requirements_count_as_open(self):
+        self.assertTrue(verify.report([{"text": "a", "met": False}], []).startswith("Not finished: 1 problem still open."))
+
+    def test_a_clean_check_reads_as_met(self):
+        self.assertEqual(verify.report([{"text": "a", "met": True}], []), "Checked against the task: 1 of 1 requirements met.")
+
+    def test_the_review_lists_every_ask_separately(self):
+        self.assertIn("one entry per distinct ask", verify.review_prompt("t", "", []))
+
+
+class RemovedCode(unittest.TestCase):
+    """PR #121 deleted the chat box's Enter-to-send listener and nothing noticed."""
+
+    OLD = ('function send(){}\nfunction keep(){}\n'
+           'input.addEventListener("keydown",e=>{if(e.key==="Enter")send()});\nbtn.addEventListener("click",send);\n')
+
+    def found(self, new, task="Add weather"):
+        return verify.removed_problems(lambda p: self.OLD, {"preview/app-main.js": new}, task)
+
+    def test_a_deleted_listener_and_function_are_found(self):
+        text = "\n".join(self.found('function send(){}\nbtn.addEventListener("click",send);\n'))
+        self.assertIn('"keydown" event listener was removed', text)
+        self.assertIn("existing function keep was removed", text)
+
+    def test_edits_that_keep_everything_pass(self):
+        self.assertEqual(self.found(self.OLD + "function weather(){}\n"), [])
+
+    def test_removal_the_task_asks_for_is_allowed(self):
+        self.assertEqual(self.found(self.OLD.replace("function keep(){}\n", ""), "Remove keep() now that it is unused"), [])
+
+    def test_python_defs_are_checked_too(self):
+        found = verify.removed_problems(lambda p: "def a():\n    pass\ndef b():\n    pass\n", {"engine/x.py": "def a():\n    pass\n"})
+        self.assertEqual(len(found), 1)
+        self.assertIn("function b was removed", found[0])
 
 
 if __name__ == "__main__":

@@ -12,9 +12,13 @@ function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(
 function adoptRepositoryTasks(issues){
  let added=false;
  for(const i of issues||[]){
-  if(i.repo!=="KappaForge"||i.pull_request||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))||trackedJobs.some(j=>j.number===i.number))continue;
+  if(i.repo!=="KappaForge"||i.pull_request||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||"")))continue;
+  // Its mode decides when it is finished: a develop task keeps going while its PR is open (fixes, test results).
+  const mode=(String(i.body||"").match(/^Mode:\s*([\w-]+)\s*$/mi)||[])[1]||"develop",known=trackedJobs.find(j=>j.number===i.number);
+  // Adopted before the mode was read (2.2.5): read its reports again, so a later failure isn't hidden behind "Finished".
+  if(known){if(known.adopted&&!known.mode){Object.assign(known,{mode,finished:false,finishedAt:0,lastReportId:0,lastProgressAt:0,delivered:[],pollAfter:0,message:"waiting"});added=true}continue}
   const created=Date.parse(i.created_at||"")||0;if(Date.now()-created>7*86400000)continue;
-  trackedJobs.push({number:i.number,title:String(i.title||"").slice(0,120),url:i.html_url,chatId:null,adopted:true,message:"waiting",queuedAt:created,activeAt:Date.parse(i.updated_at||"")||created,progress:null});
+  trackedJobs.push({number:i.number,title:String(i.title||"").slice(0,120),url:i.html_url,mode,chatId:null,adopted:true,message:"waiting",queuedAt:created,activeAt:Date.parse(i.updated_at||"")||created,progress:null});
   added=true;
  }
  if(added){persistJobs();jobPollAfter=0;checkJobResult()}

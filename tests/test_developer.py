@@ -169,7 +169,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", side_effect=[RuntimeError("quota"), ("groq:llama", good)]) as ai:
             model, *_ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, allowed={"groq"})
         self.assertEqual(model, "groq:llama")
-        self.assertEqual(ai.call_args.kwargs, {"max_output_tokens": developer.SMALL.output_tokens, "allowed": {"groq"}})
+        self.assertEqual(ai.call_args.kwargs, {"max_output_tokens": developer.SMALL.output_tokens, "allowed": {"groq"}, "json_mode": True})
         self.assertIn(f"At most {developer.SMALL.changed_files} files", ai.call_args[0][1])
 
     def test_large_budget_shows_big_files_whole_and_allows_more_files(self):
@@ -421,7 +421,7 @@ class OtherRepositoryTests(unittest.TestCase):
             if path.startswith("repos/onlykappa/KappaForge/issues/9/comments?"):
                 return []
             return {"sha": "c" * 40}
-        def model(key, prompt, max_output_tokens=0, allowed=None):
+        def model(key, prompt, max_output_tokens=0, allowed=None, json_mode=False):
             prompts.append(prompt)
             allowances.append(allowed)
             if len(prompts) == 1:
