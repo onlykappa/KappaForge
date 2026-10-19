@@ -378,6 +378,9 @@ test('the chat model is told whether a task is starting, and Plan task plans any
   await chat('none');assert.match(system,/no task is being started\. Never say you started/);
   await chat('approval');assert.match(system,/Approve or Deny card/);
   await chat(undefined);assert.doesNotMatch(system,/TASK STATUS/);
+  // An empty task card from an older app (a task cancelled before its first update) no longer breaks the chat.
+  const withBlank=await worker.fetch(req('/chat',{messages:[{role:'user',text:'Add a weather card'},{role:'assistant',text:''},{role:'user',text:'how is 119 coming'}]}),env);
+  assert.equal(withBlank.status,200,'a blank assistant turn is skipped, not "Invalid message"');
   const prompt='Weather feature spec: Open-Meteo, Celsius and km/h, location only on request.';
   const before=calls,plain=await (await worker.fetch(req('/plan',{request:prompt}),env)).json();
   assert.equal(plain.isTask,false);assert.equal(calls,before,'a non-request is not planned unless asked');

@@ -177,3 +177,24 @@ test('assistant claims of running work are recognized with the task numbers they
  assert.equal(J.workClaims('Task #98 failed at step 1. Ask me to retry task #98.'),null,'reporting a real result is not a claim');
  assert.equal(J.workClaims('Here is a plan:\n```\nI am working on it\n```'),null,'code blocks are ignored');
 });
+
+// A task started on GitHub (or another device) shows on the Dashboard from its own progress snapshot.
+test('open repository tasks started elsewhere are followed and shown without a chat card',()=>{
+ const tasks=read('app-tasks.js'),dash=read('app-dashboard.js');
+ const checked=[];
+ const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
+  taskValidation:()=>[],chats:[],trackedJobs:[{number:98,finished:true}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
+ vm.createContext(box);
+ vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
+ vm.runInContext(slice(dash,'function taskProgressMessage(','\nfunction openTaskInChat('),box);
+ const now=new Date().toISOString(),label=[{name:'kappa-Task'}];
+ box.adoptRepositoryTasks([{repo:'KappaForge',number:119,title:'Add a weather feature',html_url:'https://github.com/onlykappa/KappaForge/issues/119',labels:label,created_at:now,updated_at:now},
+  {repo:'KappaForge',number:98,labels:label,created_at:now},{repo:'KappaForge',number:120,labels:[{name:'bug'}],created_at:now},
+  {repo:'OmniPC',number:7,labels:label,created_at:now},{repo:'KappaForge',number:60,labels:label,created_at:new Date(Date.now()-9*86400000).toISOString()}]);
+ assert.deepEqual(box.trackedJobs.map(j=>j.number),[98,119],'only new, recent KappaForge tasks are adopted');
+ assert.equal(checked.length,1,'their status is fetched right away');
+ const job=box.trackedJobs[1];assert.equal(job.chatId,null);assert.equal(job.adopted,true);
+ job.message='failed';job.finished=true;job.activeAt=Date.now();
+ job.progress={steps:[{title:'Writing the change',detail:'Remote end closed connection without response',status:'failed'}]};
+ assert.match(box.agentTasksPanel(),/agent-task failed" data-open-task="119"[^]*Failed: Writing the change: Remote end closed/);
+});

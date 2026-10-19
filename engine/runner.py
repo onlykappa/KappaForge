@@ -1,4 +1,5 @@
 """Conservative KappaForge v0.1 task runner: read-only target inspection."""
+import http.client
 import json
 import os
 import re
@@ -175,6 +176,8 @@ def discover_models(api_key):
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
             raise RuntimeError("Gemini model discovery failed (HTTP %s). Check Gemini API project and key permissions." % exc.code) from None
+        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Gemini model discovery failed (" + type(exc).__name__ + ")") from None
         for item in data.get("models", []):
             name = item.get("name", "").removeprefix("models/")
             if "generateContent" in item.get("supportedGenerationMethods", []):
@@ -214,7 +217,7 @@ def provider_models(pid):
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
             ids = [m.get("id") for m in json.load(response).get("data", []) if isinstance(m.get("id"), str)]
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError):
         return []
     ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or re.search(r"[:/]free$", m))]
     def rank(m):
@@ -261,7 +264,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None):
                         limit = FALLBACK_MAX_TOKENS
                         continue
                     errors.append(pid + ":" + model + ": HTTP " + str(exc.code))
-                except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+                except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
                     errors.append(pid + ":" + model + ": " + type(exc).__name__)
                 break
     return None
@@ -315,7 +318,9 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None):
                     continue
                 errors.append(model + ": HTTP " + str(exc.code))
                 break
-            except (urllib.error.URLError, TimeoutError) as exc:
+            except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+                # A dropped or cut-off connection mid-answer is transient too (task #119 failed after 13 minutes on
+                # "Remote end closed connection without response"): retry, then move on to the next model.
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))
                     continue

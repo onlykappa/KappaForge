@@ -418,6 +418,8 @@ export default {
     const messages = [];
     if (!planning) {
       for (const m of input.messages) {
+        // An empty assistant turn (an older app sent blank task cards) is skipped, not a reason to refuse the chat.
+        if (m && m.role === "assistant" && typeof m.text === "string" && !m.text.trim()) continue;
         if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim() || m.text.length > 3500)
           return json({ error: "Invalid message" }, 400, cors);
         const parts = [{ text: m.text }];
