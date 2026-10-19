@@ -1,7 +1,7 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,temperatureUnit:'fahrenheit',windUnit:'mph'};
 function settings(value={}){
  const s={...defaults};
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
@@ -11,6 +11,8 @@ function settings(value={}){
  if(Array.isArray(value.disabledProviders))s.disabledProviders=[...new Set(value.disabledProviders.filter(p=>typeof p==='string'&&/^[a-z-]{2,20}$/.test(p)))].slice(0,20);
  if(typeof value.fallback==='boolean')s.fallback=value.fallback;
  if(typeof value.autoStart==='boolean')s.autoStart=value.autoStart;
+ if(['fahrenheit','celsius'].includes(value.temperatureUnit))s.temperatureUnit=value.temperatureUnit;
+ if(['mph','kmh'].includes(value.windUnit))s.windUnit=value.windUnit;
  for(const k of ['tokenBudget','requestBudget'])if(Number.isSafeInteger(value[k])&&value[k]>=0)s[k]=value[k];
  if(Number.isFinite(value.alertPercent))s.alertPercent=Math.max(1,Math.min(100,value.alertPercent));
  return s;

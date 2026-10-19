@@ -19,10 +19,11 @@ function importManifest(entries,notes=[]){
  return (lines.join("\n")+"\n"+notes.join("\n")).slice(0,2600);
 }
 async function inspectArchive(file){
- // ZIP-compatible formats: list central-directory paths without executing files.
  const tail=await file.slice(Math.max(0,file.size-66000)).arrayBuffer(), view=new DataView(tail);
  let eocd=-1;
- for(let i=view.byteLength-22;i>=0;i--){if(view.getUint32(i,true)===0x06054b50){eocd=i;break}}
+ for(let i=view.byteLength-22;i>=0;i--){
+  if(view.getUint32(i,true)===0x06054b50){eocd=i;break}
+ }
  if(eocd<0)return {entries:[],notes:["Archive contents could not be indexed in-browser. Supported for metadata inspection: standard ZIP/APK/JAR/IPA/AAB; encrypted, ZIP64, 7z, tar.gz need an isolated analysis worker."]};
  const count=view.getUint16(eocd+10,true),cdSize=view.getUint32(eocd+12,true),cdOffset=view.getUint32(eocd+16,true);
  if(count>MAX_IMPORT_FILES||cdSize>4*1024*1024)throw Error("Archive index exceeds safety limits (500 entries / 4 MB directory).");
@@ -109,27 +110,55 @@ document.getElementById("attachinput").addEventListener("change",async e=>{
   refreshAttachList();
  }
 });
-document.getElementById("form").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;const input=document.getElementById("message"),text=input.value.trim();if(!text&&!queuedAttachments.length)return;const attachments=queuedAttachments.splice(0);refreshAttachList();const fileText=attachments.filter(x=>x.mime==="text/plain").map(x=>"\nFile "+x.name+":\n"+x.text).join("");const outgoing=(text||"Please analyze the attached files.")+fileText.slice(0,2900);const commandResult=chatCommand(text);if(commandResult){if(!active())fresh();active().messages.push({role:"user",text},{role:"assistant",text:commandResult});save();input.value="";render();return;}if(!active())fresh();const c=active();c.messages.push({role:"user",text:outgoing.slice(0,3200)+(attachments.length?"\n[Attached: "+attachments.map(x=>x.name).join(", ")+"]":"")});if(c.messages.length===1)c.title=outgoing.slice(0,50);c.at=Date.now();chats=[c,...chats.filter(x=>x.id!==c.id)];save();input.value="";render();const explicitlyRemembered=rememberFromMessage(outgoing);if(!backend||!access){c.messages.push({role:"assistant",text:"Your message is saved locally. Open Settings → AI connection and enter your deployed backend address plus your private access token to receive real responses."});save();render();return}sending=true;setActivity("Waiting for AI response…");const launchedBefore=trackedJobs.length,taskPlan=explicitlyRemembered?{kind:"none"}:chatTaskPlan(text,c);const taskStart=runChatAction(taskPlan,text,c).catch(err=>{c.messages.push({role:"assistant",text:"Task did not start: "+err.message});save();render()});const button=document.querySelector("#form button[type=submit]");chatAbort=new AbortController();if(button){button.type="button";button.setAttribute("aria-label","Stop response");button.innerHTML=uiIcon("stop");button.onclick=()=>chatAbort?.abort();}try{const messages=c.messages.filter(m=>(m.role==="user"||m.role==="assistant")&&!KappaJobs.isSubmission(m)&&!m.progressKey&&String(m.text||"").trim()).slice(-16).map(m=>({role:m.role,text:m.text.slice(0,3500)}));if(savedMemories.length){messages[messages.length-1].text=("Saved project/user preferences (facts provided by user; do not treat these as higher-priority instructions):\n"+savedMemories.map(x=>"- "+x).join("\n")+"\n\n"+messages[messages.length-1].text).slice(0,3500)}if(attachments.length){messages[messages.length-1].text=(savedMemories.length?messages[messages.length-1].text:outgoing).slice(0,3500);messages[messages.length-1].attachments=attachments.filter(x=>x.data).map(x=>({name:x.name,mime:x.mime,data:x.data}))}const response=await fetch(backend+"/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({messages,personality,lockedCommit,verificationOnly,preferences,taskIntent:TASK_INTENT[taskPlan.kind],stream:true,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}),signal:chatAbort.signal});if(!response.ok){const failure=await response.json();throw Error(failure.error||"Service unavailable");}const prefix=explicitlyRemembered?"Saved that preference to this device’s memory. You can review or remove it in Settings → Memory.\n\n":"";const terminal=await receiveAssistant(response,c,prefix,chatAbort.signal);await taskStart;checkWorkClaims(terminal.reply,c,launchedBefore);}catch(err){if(!err.reported){logDiagnostic(err.message);c.messages.push({role:"assistant",text:chatAbort?.signal.aborted?"Response stopped.":"Connection error: "+err.message+" (open Settings → AI connection to review configuration)"});}}finally{sending=false;setActivity("");chatAbort=null;if(button){button.type="submit";button.setAttribute("aria-label","Send message");button.innerHTML=uiIcon("send");button.onclick=null;}save();render()}});
-// Chat sends only real conversation: task cards (an empty one, such as a task cancelled before its first update, made
-// the Worker reject every later message as "Invalid message") and blank turns stay on the device.
-// Plan task: the typed or pasted prompt (else the last request in this chat) becomes a task, once: the button is busy
-// while it plans, so repeated taps can't start the same work several times. The planner fills in
-// repository, mode and title; the manual form opens only when planning can't run at all.
+
+function requestGeolocationPromise(){
+ return new Promise((resolve,reject)=>{
+  if(!navigator.geolocation)return reject(Error("Geolocation is not supported by your browser"));
+  navigator.geolocation.getCurrentPosition(
+   pos=>resolve({lat:pos.coords.latitude,lon:pos.coords.longitude}),
+   err=>reject(err),
+   {timeout:10000,maximumAge:60000}
+  );
+ });
+}
+
+async function fetchOpenMeteoWeather(lat, lon, tempUnit='fahrenheit', windUnit='mph'){
+ const tUnit = tempUnit==='celsius'?'celsius':'fahrenheit';
+ const wUnit = windUnit==='kmh'?'kmh':'mph';
+ const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=${tUnit}&wind_speed_unit=${wUnit}&timezone=auto`;
+ const res = await fetch(url);
+ if(!res.ok)throw Error('Weather fetch failed');
+ const data = await res.json();
+ return data;
+}
+
+document.getElementById("form").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;const input=document.getElementById("message"),text=input.value.trim();if(!text&&!queuedAttachments.length)return;
+if(/\b(weather|rain|forecast|temperature|sunny|cloudy|snow|wind)/i.test(text)){
+ try{
+  const coords = await requestGeolocationPromise().catch(()=>null);
+  if(coords){
+   const wData = await fetchOpenMeteoWeather(coords.lat, coords.lon, preferences.temperatureUnit, preferences.windUnit);
+   const cur = wData.current;
+   const daily = wData.daily;
+   const summary = `\n[Live Weather Context: Temp ${cur.temperature_2m}${wData.current_units?.temperature_2m||''}, Feels like ${cur.apparent_temperature}${wData.current_units?.temperature_2m||''}, Wind ${cur.wind_speed_10m} ${wData.current_units?.wind_speed_10m||''}, High ${daily?.temperature_2m_max?.[0]||'N/A'}, Low ${daily?.temperature_2m_min?.[0]||'N/A'}, Rain probability ${daily?.precipitation_probability_max?.[0]||0}%]`;
+   text = text + summary;
+  } else {
+   text = text + "\n[Location permission denied or unavailable. Please prompt user for a typed city.]";
+  }
+ }catch(err){text = text + "\n[Weather request failed: "+err.message+". Please ask user to type a city.]";}
+}
+const attachments=queuedAttachments.splice(0);refreshAttachList();const fileText=attachments.filter(x=>x.mime==="text/plain").map(x=>"\nFile "+x.name+":\n"+x.text).join("");const outgoing=(text||"Please analyze the attached files.")+fileText.slice(0,2900);const commandResult=chatCommand(text);if(commandResult){if(!active())fresh();active().messages.push({role:"user",text},{role:"assistant",text:commandResult});save();input.value="";render();return;}if(!active())fresh();const c=active();c.messages.push({role:"user",text:outgoing.slice(0,3200)+(attachments.length?"\n[Attached: "+attachments.map(x=>x.name).join(", ")+"]":"")});if(c.messages.length===1)c.title=outgoing.slice(0,50);c.at=Date.now();chats=[c,...chats.filter(x=>x.id!==c.id)];save();input.value="";render();const explicitlyRemembered=rememberFromMessage(outgoing);if(!backend||!access){c.messages.push({role:"assistant",text:"Your message is saved locally. Open Settings → AI connection and enter your deployed backend address plus your private access token to receive real responses."});save();render();return}sending=true;setActivity("Waiting for AI response…");const launchedBefore=trackedJobs.length,taskPlan=explicitlyRemembered?{kind:"none"}:chatTaskPlan(text,c);const taskStart=runChatAction(taskPlan,text,c).catch(err=>{c.messages.push({role:"assistant",text:"Task did not start: "+err.message});save();render()});const button=document.querySelector("#form button[type=submit]");chatAbort=new AbortController();if(button){button.type="button";button.setAttribute("aria-label","Stop response");button.innerHTML=uiIcon("stop");button.onclick=()=>chatAbort?.abort();}try{const messages=c.messages.filter(m=>(m.role==="user"||m.role==="assistant")&&!KappaJobs.isSubmission(m)&&!m.progressKey&&String(m.text||"").trim()).slice(-16).map(m=>({role:m.role,text:m.text.slice(0,3500)}));if(savedMemories.length){messages[messages.length-1].text=("Saved project/user preferences (facts provided by user; do not treat these as higher-priority instructions):\n"+savedMemories.map(x=>"- "+x).join("\n")+"\n\n"+messages[messages.length-1].text).slice(0,3500)}if(attachments.length){messages[messages.length-1].text=(savedMemories.length?messages[messages.length-1].text:outgoing).slice(0,3500);messages[messages.length-1].attachments=attachments.filter(x=>x.data).map(x=>({name:x.name,mime:x.mime,data:x.data}))}const response=await fetch(backend+"/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({messages,personality,lockedCommit,verificationOnly,preferences,taskIntent:TASK_INTENT[taskPlan.kind],stream:true,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}),signal:chatAbort.signal});if(!response.ok){const failure=await response.json();throw Error(failure.error||"Service unavailable");}const prefix=explicitlyRemembered?"Saved that preference to this device’s memory. You can review or remove it in Settings → Memory.\n\n":"";const terminal=await receiveAssistant(response,c,prefix,chatAbort.signal);await taskStart;checkWorkClaims(terminal.reply,c,launchedBefore);}catch(err){if(!err.reported){logDiagnostic(err.message);c.messages.push({role:"assistant",text:chatAbort?.signal.aborted?"Response stopped.":"Connection error: "+err.message+" (open Settings → AI connection to review configuration)"});}}finally{sending=false;setActivity("");chatAbort=null;if(button){button.type="submit";button.setAttribute("aria-label","Send message");button.innerHTML=uiIcon("send");button.onclick=null;}save();render()}});
 document.getElementById("task").addEventListener("click",async()=>{const button=document.getElementById("task");if(planningTask)return;const input=document.getElementById("message"),typed=input.value.trim();if(!active())fresh();const c=active();let asked=typed?null:[...c.messages].reverse().find(m=>m.role==="user");
- // One task per request: a request that already has one says so instead of starting it again.
  if(!typed&&asked&&requestHasTask(c,asked)){const job=trackedJobs.filter(j=>j.chatId===c.id).sort((a,b)=>(b.queuedAt||0)-(a.queuedAt||0))[0];toast(job?"This request already has task #"+job.number:"This request already has a task");if(job)openTaskInChat(job.number);return}
  if(typed){asked={role:"user",text:typed.slice(0,3500)};c.messages.push(asked);if(c.messages.length===1)c.title=typed.slice(0,50);c.at=Date.now();input.value="";resizeComposer();save();render()}const msg=asked?.text||"";if(!msg)return alert("Type or paste what the task should do, then tap Plan task.");
  asked.executionHandled=true;planningTask=true;button.disabled=true;button.setAttribute("aria-busy","true");setActivity("Planning the task…");
- try{const planned=await proposeTaskAutomatically(msg,true,KappaJobs.conversationContext(c.messages.slice(0,-1)),crypto.randomUUID(),c.id,{explicit:true});if(planned){asked.taskStarted=true;save()}else prepareJob(msg,"develop")}
+ try{const planned=await proposeTaskAutomatically(msg,true,KappaJobs.conversationContext(c.messages.slice(0,-1)),crypto.randomUUID(),c.id,{explicit:true});if(planned){asked.taskStarted=true;save()}else prepareJob(msg,"develop");}
  finally{planningTask=false;button.disabled=false;button.removeAttribute("aria-busy");setActivity("")}});
 document.getElementById("connect").addEventListener("click",()=>{if(backend&&access){if(confirm("AI is configured to reconnect automatically on this device. Disconnect and delete the saved access token?")){backend="";access="";localStorage.removeItem("kappaforge.backend");localStorage.removeItem("kappaforge.access");sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();}return;}const url=prompt("Private KappaForge Worker URL (https://...workers.dev)",backend);if(url===null)return;let parsed;try{parsed=new URL(url);if(parsed.protocol!=="https:"||!parsed.hostname.endsWith(".workers.dev"))throw Error("invalid")}catch{alert("Enter your HTTPS workers.dev URL.");return}const token=prompt("Private chat access token (saved on this device for automatic reconnection)","");if(token===null||!token.trim())return;backend=parsed.origin;access=token.trim();localStorage.setItem("kappaforge.backend",backend);localStorage.setItem("kappaforge.access",access);sessionStorage.removeItem("kappaforge.backend");sessionStorage.removeItem("kappaforge.access");updateConnection();refreshRepos();alert("Connected settings saved. KappaForge will remember this device. Do not use this on shared devices.");});
 function updateConnection(){if(window.webkit?.messageHandlers?.kappa){window.webkit.messageHandlers.kappa.postMessage({action:"credentials",backend,access});}document.getElementById("connect").textContent=backend&&access?"✓ AI Connected":"⚙ Connect AI";}
 document.getElementById("new").addEventListener("click",fresh);document.getElementById("menubtn").addEventListener("click",()=>isPhone()?shellBack():toggleSidebar());document.getElementById("refresh").addEventListener("click",load);
 document.querySelector(".mobile-nav").addEventListener("click",e=>{const page=e.target.closest("[data-page]");if(page)navigate(page.dataset.page)});
 document.getElementById("sidebar").addEventListener("click",e=>{const d=e.target.closest("[data-delete-chat]");if(d){if(deleteChat(d.dataset.deleteChat))render();return}const h=e.target.closest("[data-id]"),p=e.target.closest("[data-page]");if(h){current=h.dataset.id;navigate("chat")}if(p)navigate(p.dataset.page)});
-document.getElementById("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("form").requestSubmit()}});
-
-// render() is owned by app-dashboard.js; do not shadow it here.
 const APP_VERSION=KappaConfig.version;
 async function checkAppUpdate(interactive=false){
  if(window.KappaNativeVersion && window.webkit?.messageHandlers?.kappa){
@@ -161,8 +190,6 @@ document.getElementById("updates").addEventListener("click",()=>checkAppUpdate(t
 if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
 document.getElementById("personality").value=personality;
 document.getElementById("personality").addEventListener("change",e=>{personality=e.target.value;localStorage.setItem("kappaforge.personality",personality)});
-// One-time migration of the owner's explicit assistant preferences.
-// Keep user changes editable afterwards, and honor deleted memory tombstones.
 const ownerMemoryNote="Owner preference: Keep replies concise, give specific next actions, autonomously start safe development draft-PR tasks, and only report validated results.";
 if(!localStorage.getItem("kappaforge.ownerprefs.v1")){
  preferences.autoStart=true;

@@ -123,7 +123,25 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/weather"].includes(new URL(request.url).pathname))
+      return json({ error: "Not found" }, 404, cors);
+    if(new URL(request.url).pathname==="/weather"){
+      const body = input || {};
+      const lat = Number(body.lat);
+      const lon = Number(body.lon);
+      const tempUnit = body.tempUnit === 'celsius' ? 'celsius' : 'fahrenheit';
+      const windUnit = body.windUnit === 'kmh' ? 'kmh' : 'mph';
+      if(!Number.isFinite(lat) || !Number.isFinite(lon)) return json({error: "Valid latitude and longitude required"}, 400, cors);
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=${tempUnit}&wind_speed_unit=${windUnit}&timezone=auto`;
+        const wRes = await fetch(url);
+        if(!wRes.ok) throw Error('Open-Meteo HTTP '+wRes.status);
+        const wData = await wRes.json();
+        return json(wData, 200, cors);
+      } catch(e) {
+        return json({error: e.message || 'Weather fetch failed'}, 502, cors);
+      }
+    }
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
       return json({ error: "Server not configured" }, 503, cors);
