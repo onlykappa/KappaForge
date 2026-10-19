@@ -715,6 +715,32 @@ class OwnerRequestedFixTests(unittest.TestCase):
         sleep.assert_called_once()
         self.assertTrue(any(c[2] == "PATCH" for c in calls))
 
+    def test_unfinished_pr_repairs_while_native_verification_is_running(self):
+        # PR #133: the sandbox failed, but an unrelated running iOS build made
+        # the dispatched repair exit successfully without ever generating code.
+        for sandbox_conclusion in ("failure", "success"):
+            with self.subTest(sandbox=sandbox_conclusion):
+                calls, gh = self.fake(run_conclusion=sandbox_conclusion)
+
+                def unfinished(path, token, payload=None, method=None):
+                    result = gh(path, token, payload, method)
+                    if path.startswith("repos/onlykappa/KappaForge/pulls?state=open"):
+                        result[0]["body"] += '\n<!-- KAPPA_REVIEW_V1 {"complete":false,"problems":["Wire weather into chat"]} -->'
+                    return result
+
+                with patch.object(developer, "gh", side_effect=unfinished), \
+                        patch.object(native_build, "result", return_value={"id": 8, "status": "in_progress", "conclusion": None}), \
+                        patch.object(native_build, "history", return_value=[]), \
+                        patch.object(developer, "revise_branch", return_value=("flash", "Wire weather", {"app/main.py": "fixed"},
+                                                                                 developer.review_record([]), {})) as revise:
+                    developer.fix_pull_request(self.ISSUE, "key", "token")
+                revise.assert_called_once()
+                failures = revise.call_args.args[4]
+                self.assertEqual([job["id"] for job in failures], [3] if sandbox_conclusion == "failure" else [])
+                self.assertTrue(any(c[0].endswith("git/refs/heads/kappa/dev-9") and c[2] == "PATCH" for c in calls))
+                self.assertTrue(any(c[0].endswith("sandbox-tests.yml/dispatches") for c in calls))
+                self.assertFalse(any(c[0].endswith("/merge") for c in calls))
+
 
 if __name__ == "__main__":
     unittest.main()
