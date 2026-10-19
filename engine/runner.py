@@ -239,35 +239,65 @@ def code_providers(private=False):
 # Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
 FALLBACK_MAX_TOKENS = 8192
 
-def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None):
-    """Try each configured free provider once per model; a 429 or error moves on rather than waiting."""
+def fits(p, prompt, max_output_tokens):
+    """Whether a prompt plus room for the answer fits the provider's context window (about 3.5 characters a token)."""
+    return len(prompt) / 3.5 + min(max_output_tokens, p.get("maxOutput", max_output_tokens)) <= p.get("context", 32768)
+
+
+def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=()):
+    """Try each configured free provider once per model; a 429 or error moves on rather than waiting.
+
+    tier "strong" takes only providers marked strong (good at writing code), "rest" only the others, None all of them.
+    A provider whose context window the prompt does not fit is passed over."""
     for pid in PROVIDERS["order"]:
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
+        if tier is not None and bool(p.get("strong")) != (tier == "strong"):
+            continue
+        if not fits(p, prompt, max_output_tokens):
+            continue
         for model in provider_models(pid):
-            limit = max_output_tokens
+            name = pid + ":" + model
+            if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time():
+                continue
+            limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
+            asking(name)
             while True:
                 payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
                            "max_tokens": limit, "temperature": 0.2}
                 req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
                                              {"Content-Type": "application/json", **provider_headers(p)})
                 try:
-                    with urllib.request.urlopen(req, timeout=180) as response:
+                    with urllib.request.urlopen(req, timeout=300 if limit > FALLBACK_MAX_TOKENS else 180) as response:
                         data = json.load(response)
                     output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
                     if output.strip():
-                        return pid + ":" + model, output.strip()
-                    errors.append(pid + ":" + model + ": empty response")
+                        return name, output.strip()
+                    errors.append(name + ": empty response")
                 except urllib.error.HTTPError as exc:
                     if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
                         limit = FALLBACK_MAX_TOKENS
                         continue
-                    errors.append(pid + ":" + model + ": HTTP " + str(exc.code))
+                    if exc.code == 429:
+                        rate_limited(name, exc)
+                    errors.append(name + ": HTTP " + str(exc.code))
                 except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
-                    errors.append(pid + ":" + model + ": " + type(exc).__name__)
+                    errors.append(name + ": " + type(exc).__name__)
                 break
     return None
+
+# Called with each model's name just before it is asked, so the task's live feed can show who is working.
+ON_ASK = None
+
+
+def asking(name):
+    if ON_ASK:
+        try:
+            ON_ASK(name)
+        except Exception:  # The feed is best effort and never stops a model call.
+            pass
+
 
 # Models that answered 429 after their retries, skipped for the rest of this run (daily quota) or for a minute
 # (per-minute quota). Task #123 spent about 15 s on each of five rate-limited models on every single call.
@@ -307,61 +337,74 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
         resting = [m for m in resting if m in EXHAUSTED]  # Nothing else left: a minute's cooldown is worth retrying.
     if resting:
         errors.append("rate-limited earlier, not asked: " + ", ".join(resting))
-    for model in candidates:
-        if model in skip or model in resting:
-            continue
-        url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
-        payload = {"contents": [{"parts": [{"text": prompt}]}],
-                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens,
-                                        # Answers carrying code inside JSON strings often broke JSON ("Expecting ','").
-                                        **({"responseMimeType": "application/json"} if json_mode else {})}}
-        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-        grown = False
-        # Provider outages are transient. Retry only 429/5xx; an invalid
-        # model (404) needs a different route, never repeated requests.
-        for attempt in range(3):
-            try:
-                req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
-                # Long replies (large-budget development) take minutes to generate.
-                with urllib.request.urlopen(req, timeout=100 if payload["generationConfig"]["maxOutputTokens"] <= 16384 else 420) as response:
-                    data = json.load(response)
-                candidates_out = data.get("candidates") or []
-                parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
-                output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
-                # Thinking counts against the limit, so a long answer can stop mid-way; ask once more with room to finish.
-                if candidates_out and candidates_out[0].get("finishReason") == "MAX_TOKENS" and max_output_tokens < 65536 and not grown:
-                    grown = True
-                    payload["generationConfig"]["maxOutputTokens"] = min(65536, max_output_tokens * 4)
-                    errors.append(model + ": answer cut off at the output limit")
-                    continue
-                if output:
-                    if errors:
-                        print("Used " + model + " after: " + "; ".join(errors)[:600])
-                    return model, output
-                errors.append(model + ": empty response")
-                break
-            except urllib.error.HTTPError as exc:
-                if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
-                    # Per-minute quotas reset slowly; honor the provider's Retry-After when given.
-                    retry_after = (exc.headers or {}).get("Retry-After", "")
-                    delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
-                    time.sleep(min(delay, 60))
-                    continue
-                if exc.code == 429:
-                    rate_limited(model, exc)
-                errors.append(model + ": HTTP " + str(exc.code))
-                break
-            except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
-                # A dropped or cut-off connection mid-answer is transient too (task #119 failed after 13 minutes on
-                # "Remote end closed connection without response"): retry, then move on to the next model.
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                errors.append(model + ": " + type(exc).__name__)
-    fallback = run_fallback_providers(prompt, max_output_tokens, errors, allowed)
-    if fallback:
-        return fallback
+    full = [m for m in candidates if not FLASH_RE.match(m).group(2)]
+    lite = [m for m in candidates if m not in full]
+    # Best first: the strongest free coding models (DeepSeek V4 Pro, Kimi K3, Nemotron 3 Ultra; task #123 ran entirely
+    # on Flash-Lite while they sat unused), then full-size Flash, then Flash-Lite, then every other free provider. A
+    # model that is rate-limited, down or too small for the prompt hands the call to the next one, mid-task.
+    for tier in ("strong", full, lite, "rest"):
+        if isinstance(tier, str):
+            answer = run_fallback_providers(prompt, max_output_tokens, errors, allowed, tier=tier, skip=skip)
+        else:
+            answer = next((a for a in (ask_gemini(api_key, m, prompt, max_output_tokens, json_mode, errors)
+                                       for m in tier if m not in skip and m not in resting) if a), None)
+        if answer:
+            if errors:
+                print("Used " + answer[0] + " after: " + "; ".join(errors)[:600])
+            return answer
     raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
+
+
+def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
+    """One Gemini model's answer as (model, text), or None with the reason added to errors."""
+    asking(model)
+    url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
+    payload = {"contents": [{"parts": [{"text": prompt}]}],
+               "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens,
+                                    # Answers carrying code inside JSON strings often broke JSON ("Expecting ',').
+                                    **({"responseMimeType": "application/json"} if json_mode else {})}}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+    grown = False
+    # Provider outages are transient. Retry only 429/5xx; an invalid
+    # model (404) needs a different route, never repeated requests.
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
+            # Long replies (large-budget development) take minutes to generate.
+            with urllib.request.urlopen(req, timeout=100 if payload["generationConfig"]["maxOutputTokens"] <= 16384 else 420) as response:
+                data = json.load(response)
+            candidates_out = data.get("candidates") or []
+            parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
+            output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+            # Thinking counts against the limit, so a long answer can stop mid-way; ask once more with room to finish.
+            if candidates_out and candidates_out[0].get("finishReason") == "MAX_TOKENS" and max_output_tokens < 65536 and not grown:
+                grown = True
+                payload["generationConfig"]["maxOutputTokens"] = min(65536, max_output_tokens * 4)
+                errors.append(model + ": answer cut off at the output limit")
+                continue
+            if output:
+                return model, output
+            errors.append(model + ": empty response")
+            return None
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
+                # Per-minute quotas reset slowly; honor the provider's Retry-After when given.
+                retry_after = (exc.headers or {}).get("Retry-After", "")
+                delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
+                time.sleep(min(delay, 60))
+                continue
+            if exc.code == 429:
+                rate_limited(model, exc)
+            errors.append(model + ": HTTP " + str(exc.code))
+            return None
+        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+            # A dropped or cut-off connection mid-answer is transient too (task #119 failed after 13 minutes on
+            # "Remote end closed connection without response"): retry, then move on to the next model.
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            errors.append(model + ": " + type(exc).__name__)
+    return None
 
 FAILED_MARKER = "<!-- KAPPA_FAILED:"
 

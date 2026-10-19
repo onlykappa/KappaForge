@@ -252,7 +252,7 @@ test('keyless providers answer anonymously, fixed free lists skip discovery, and
   if(u==='https://api.kilo.ai/api/gateway/chat/completions')return Response.json({choices:[{message:{content:'ok'}}]});
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels({},'kilo'),['kilo-auto/free','poolside/laguna-s-2.1:free']);
+  assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free']);
   assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
   assert.deepEqual(await providerModels({ZAI_API_KEY:'z'},'zai'),['glm-4.7-flash']);
   assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'fixed free list is never rediscovered');

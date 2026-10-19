@@ -19,7 +19,8 @@ test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
  assert.match(html,/agent-activity/);
  assert.match(html,/activity-summary/);
- assert.match(html,/View progress details/);
+ assert.match(html,/activity-feed[^]*Reading 137 source files/,'what the agent did shows as a live feed, no extra tap');
+ assert.doesNotMatch(html,/View progress details/);
  assert.match(html,/Development task #88/);
  assert.doesNotMatch(html,/<script>/);
  assert.doesNotMatch(html,/activity-timeline/);
@@ -30,7 +31,7 @@ test('very long updates are shortened without losing the full report',()=>{
  const html=ctx.renderTaskActivity({text,progressKey:'progress:3:4'});
  assert.match(html,/activity-summary/);
  assert.match(html,/…/);
- assert.match(html,/activity-report/);
+ assert.match(html,/feed-item/);
 });
 test('empty progress updates remain safe',()=>{
  assert.match(ctx.renderTaskActivity({text:'',progressKey:'progress:2:1'}),/Task update received/);
@@ -63,7 +64,9 @@ test('the agent checklist becomes a step timeline with times, a live current ste
  assert.equal((html.match(/class="task-step /g)||[]).length,5,'three stages read as one row');
  assert.match(html,/IN PROGRESS/);assert.match(html,/activity-summary">Writing the change: Step 2 of 3/);
  assert.match(html,/task-progress-card[^]*Writing the change[^]*Refund quota when a task fails[^]*aria-valuenow="1"[^]*width:33%[^]*1 of 3 steps completed/);
- assert.match(html,/View progress details/,'the full checklist stays one tap away');
+ assert.doesNotMatch(html,/View progress details/);
+ assert.match(html,/feed-item read[^]*Read KappaForge: 132 source files[^]*feed-item plan[^]*Planned 3 steps[^]*feed-item code live[^]*Step 2 of 3: Refund quota/,'the feed shows each thing done, the current one live');
+ assert.doesNotMatch(html,/feed-item[^>]*>[^]*Open a draft PR and start the tests<\/span><\/li><\/ol>/,'upcoming steps are not in the feed');
 });
 test('a finished checklist reads Done, a failed one Needs attention with nothing promised after it',()=>{
  const done=ctx.renderTaskActivity({text:'✅ Read KappaForge: 12 source files · 2s\n✅ Finished task · 3s',progressKey:'progress:7:1'});
@@ -142,4 +145,17 @@ test('structured planned stages read as one Writing the change phase with the cu
   job.finished=true;html=ctx.renderTaskActivity({progressKey:'progress:9:live'},3);
   assert.doesNotMatch(html,/data-task-retry|data-task-guide/,'a finished task only offers copy');
  }finally{delete ctx.trackedJobs;delete ctx.taskValidation}
+});
+test('the live feed shows the agent\'s own activity, collapses passed-over models and ends on the current action',()=>{
+ const p={activity:[{kind:'read',text:'Read 10 files: preview/app-main.js'},{kind:'code',text:'Writing code'},
+  {kind:'model',text:'Asking gemini-3.8-flash'},{kind:'model',text:'Asking ollama:deepseek-v4-pro'}],steps:[]};
+ const items=ctx.feedItems(p,[{title:'Sandbox tests',state:'current'},{title:'iOS build',state:'upcoming'}]);
+ assert.deepEqual(items.map(a=>a.kind),['read','code','model','test'],'a model that was skipped drops out; upcoming checks wait');
+ assert.equal(items[2].text,'Asking ollama:deepseek-v4-pro');
+ const html=ctx.activityFeed(items,true);
+ assert.match(html,/feed-item read[^]*Read 10 files/);
+ assert.match(html,/feed-item test live[^]*Sandbox tests/,'the last thing happening shimmers');
+ assert.equal((html.match(/ live"/g)||[]).length,1);
+ assert.doesNotMatch(ctx.activityFeed(items,false),/ live"/,'nothing shimmers once the task ended');
+ assert.match(ctx.activityFeed([{kind:'error',text:'Step 2 failed'}],true),/feed-item error"/,'a failure never shimmers');
 });

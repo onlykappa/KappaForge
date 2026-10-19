@@ -122,7 +122,7 @@ Use KappaForge Chat **Make a task**, choose mode **develop**, and describe the f
 
 ### Free fallback AI providers
 
-Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`, in this order: Cloudflare Workers AI (built in, no key), Groq, Cerebras, OpenRouter free models, Mistral, NVIDIA NIM, Ollama Cloud and Z AI, each only when its key is configured; then the keyless safety net of Kilo Code's free pool, LLM7.io and OVHcloud AI Endpoints, which need no key at all. Models are discovered live from each provider; nothing is assumed from published lists, which change often. Z AI is pinned to its free `glm-4.7-flash` because the same key also reaches paid models. File and image attachments always use Gemini. The provider list follows [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis).
+Gemini is tried first. When it is busy or out of free quota, chat, task planning and the coding agent move on to free providers listed in `config/providers.json`, in this order: Cloudflare Workers AI (built in, no key, chat only), Ollama Cloud, NVIDIA NIM, Kilo Code's free pool, UnoRouter, Mistral, Groq, OpenRouter free models, Requesty, Z AI and Cerebras, each only when its key is configured (Kilo needs none); then the keyless safety net of LLM7.io and OVHcloud AI Endpoints. The coding agent (2.2.8) asks the providers marked `strong` first (the best free coding models: DeepSeek V4 Pro and Kimi K3 on Ollama Cloud, Nemotron 3 Ultra on NVIDIA and Kilo), then full-size Gemini Flash, then Gemini Flash-Lite, then the rest, switching down the list mid-task whenever a model is rate-limited, down or keeps giving bad answers; each provider only receives prompts that fit its `context` window and answers up to its `maxOutput`. Models are discovered live from each provider; nothing is assumed from published lists, which change often. Z AI is pinned to its free `glm-4.7-flash` because the same key also reaches paid models. File and image attachments always use Gemini. The provider list follows [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis).
 
 To add a provider, create a key at its site and save it under the same name in **both** places: the Cloudflare Worker (Settings → Variables and Secrets, type Secret) for chat, and GitHub Actions secrets for the coding agent. These free-tier keys do not expire unless you revoke them, so each one is set once. Never put a key in a link, issue or chat: anyone holding it can spend your quota.
 
@@ -133,6 +133,8 @@ To add a provider, create a key at its site and save it under the same name in *
 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/settings/keys |
 | Mistral | `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
 | NVIDIA NIM | `NVIDIA_API_KEY` | https://build.nvidia.com |
+| UnoRouter (free models) | `UNOROUTER_API_KEY` | https://unorouter.com |
+| Requesty (free models) | `REQUESTY_API_KEY` | https://www.requesty.ai/free-models |
 | Ollama Cloud | `OLLAMA_API_KEY` | https://ollama.com/settings/keys |
 | Z AI | `ZAI_API_KEY` | https://z.ai/manage-apikey/apikey-list |
 | LLM7.io (optional, raises limits) | `LLM7_API_KEY` | https://token.llm7.io |

@@ -86,6 +86,8 @@ jobs:
         OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         LLM7_API_KEY: ${{ secrets.LLM7_API_KEY }}
+        UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
+        REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
         KAPPA_TASK_SCOPE: read
@@ -154,6 +156,8 @@ jobs:
         OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         LLM7_API_KEY: ${{ secrets.LLM7_API_KEY }}
+        UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
+        REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
         INPUT_ACTION: ${{ inputs.action }}

@@ -35,6 +35,6 @@ test('compact header and composer are accessible and functional',()=>{
 test('progress and final task reports use real stored report data',()=>{
  assert.match(ui,/function renderTaskActivity\(m(?:,i=-1)?\)/);
  assert.match(ui,/progress\?renderTaskActivity\(m(?:,i)?\)/);
- assert.match(ui,/renderChatText\(report\)/);
+ assert.match(ui,/activityFeed\(feedItems\(p,validation\)/,'the live feed is drawn from the stored progress snapshot');
  assert.doesNotMatch(ui,/fake progress|simulated test result/i);
 });

@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from engine import runner
 
 KEYS = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
-        "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY")
+        "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "UNOROUTER_API_KEY", "REQUESTY_API_KEY")
 
 def response(data):
     result = MagicMock()
@@ -93,9 +93,9 @@ class ModelRoutingTests(unittest.TestCase):
                 return response({"choices": [{"message": {"content": "free pool answer"}}]})
             raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
         with patch.dict(os.environ, {k: "" for k in KEYS}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            self.assertEqual(runner.provider_models("kilo"), ["kilo-auto/free", "poolside/laguna-s-2.1:free"])
+            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free"], "coding models first")
             self.assertEqual(runner.provider_models("zai"), [], "keyed providers stay off without a key")
-            self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:kilo-auto/free", "free pool answer"))
+            self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:poolside/laguna-s-2.1:free", "free pool answer"))
         self.assertTrue(all(auth is None for _, auth in requests))
 
     def test_fixed_free_list_and_optional_keys(self):
@@ -132,7 +132,8 @@ class ModelRoutingTests(unittest.TestCase):
             if body["max_tokens"] > runner.FALLBACK_MAX_TOKENS:
                 raise urllib.error.HTTPError(url, 400, "max_tokens too large", {}, io.BytesIO(b""))
             return response({"choices": [{"message": {"content": "ok"}}]})
-        with patch.dict(os.environ, {"GROQ_API_KEY": "k"}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "k"}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), \
+                patch.dict(runner.PROVIDERS["providers"]["groq"], {"maxOutput": 65536}):
             self.assertIsNone(runner.run_fallback_providers("x", 16384, [], allowed=set()))
             self.assertEqual(sent, [])
             self.assertEqual(runner.run_fallback_providers("x", 16384, [], allowed={"groq"}), ("groq:llama-3.3-70b-versatile", "ok"))
@@ -158,7 +159,7 @@ class CutOffAnswerTests(unittest.TestCase):
                 return response({"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": '{"read": ['}]}}]})
             return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": '{"read": []}'}]}}]})
         with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            model, output = runner.run_model("key", "plan", max_output_tokens=8000)
+            model, output = runner.run_model("key", "plan", max_output_tokens=8000, allowed=set())  # Gemini only.
         self.assertEqual((model, output), ("gemini-3-flash", '{"read": []}'))
         self.assertEqual(sent, [8000, 32000])
 
@@ -208,6 +209,8 @@ class RateLimits(unittest.TestCase):
             if "/models?" in req.full_url:
                 return response({"models": [{"name": "models/" + m, "supportedGenerationMethods": ["generateContent"]}
                                             for m in ("gemini-3-flash", "gemini-3-flash-lite")]})
+            if "generativelanguage" not in req.full_url:  # Keyless free providers are out of this test.
+                raise urllib.error.HTTPError(req.full_url, 404, "missing", {}, io.BytesIO(b""))
             model = req.full_url.split("/models/")[1].split(":")[0]
             asked.append(model)
             if model == "gemini-3-flash":
@@ -235,3 +238,64 @@ class RateLimits(unittest.TestCase):
     def test_skipped_models_are_not_asked(self):
         asked, results = self.run_calls(b"{}", calls=1, skip=("gemini-3-flash",))
         self.assertEqual(asked, ["gemini-3-flash-lite"])
+
+
+class StrongModelsBeforeLite(unittest.TestCase):
+    """Task #123 ran entirely on Flash-Lite while strong free coding models sat unused; they now come first."""
+
+    CONFIG = {"order": ["strongp", "weakp"], "maxModelsPerProvider": 1, "exclude": "embed", "providers": {
+        "strongp": {"kind": "openai", "base": "https://strong.example/v1", "strong": True, "context": 1000, "maxOutput": 200,
+                    "models": ["coder-1"]},
+        "weakp": {"kind": "openai", "base": "https://weak.example/v1", "context": 100000, "models": ["small-1"]}}}
+
+    def setUp(self):
+        runner.EXHAUSTED.clear()
+        runner.COOLDOWN.clear()
+        self.addCleanup(runner.EXHAUSTED.clear)
+        self.addCleanup(runner.COOLDOWN.clear)
+
+    def route(self, prompt, max_output_tokens=100):
+        asked, bodies = [], []
+        def urlopen(req, timeout=None):
+            if "/models?" in req.full_url:
+                return response({"models": [{"name": "models/" + m, "supportedGenerationMethods": ["generateContent"]}
+                                            for m in ("gemini-3-flash", "gemini-3-flash-lite")]})
+            if "generativelanguage" in req.full_url:
+                model = req.full_url.split("/models/")[1].split(":")[0]
+                asked.append(model)
+                if model == "gemini-3-flash":
+                    raise urllib.error.HTTPError(req.full_url, 429, "quota", {}, io.BytesIO(b""))
+                return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "lite"}]}}]})
+            asked.append(req.full_url.split("/v1")[0])
+            bodies.append(json.loads(req.data))
+            return response({"choices": [{"message": {"content": "strong"}}]})
+        with patch.dict(runner.PROVIDERS, self.CONFIG), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), \
+                patch("engine.runner.time.sleep"):
+            answer = runner.run_model("key", prompt, max_output_tokens=max_output_tokens)
+        return answer, asked, bodies
+
+    def test_a_strong_provider_answers_before_flash_lite(self):
+        answer, asked, bodies = self.route("short prompt", max_output_tokens=5000)
+        self.assertEqual(answer, ("strongp:coder-1", "strong"))
+        self.assertNotIn("gemini-3-flash-lite", asked)
+        self.assertEqual(bodies[0]["max_tokens"], 200, "capped at the provider's output limit")
+
+    def test_a_prompt_too_big_for_the_strong_provider_goes_to_flash_lite(self):
+        answer, asked, _ = self.route("x" * 5000)
+        self.assertEqual(answer, ("gemini-3-flash-lite", "lite"))
+        self.assertNotIn("https://strong.example", asked)
+
+
+class BestModelsFirst(StrongModelsBeforeLite):
+    """The owner's order (2.2.8): the best free coding models first, then Gemini, falling down the list mid-task."""
+
+    def test_the_strong_provider_answers_before_gemini(self):
+        answer, asked, _ = self.route("short prompt", max_output_tokens=150)
+        self.assertEqual(answer, ("strongp:coder-1", "strong"))
+        self.assertEqual(asked, ["https://strong.example"], "Gemini is not asked while the best model answers")
+
+    def test_a_rate_limited_strong_provider_hands_over_to_gemini(self):
+        runner.COOLDOWN["strongp:coder-1"] = runner.time.time() + 60
+        answer, asked, _ = self.route("short prompt")
+        self.assertEqual(answer, ("gemini-3-flash-lite", "lite"))
+        self.assertEqual(asked[0], "gemini-3-flash", "full-size Flash is next, then Flash-Lite")

@@ -52,6 +52,18 @@ class IntentGuardTests(unittest.TestCase):
         scope.transition('verifying');scope.transition('completed')
         with self.assertRaises(PermissionError):scope.transition('executing')
 
+    def test_each_stage_gets_its_own_retries_within_a_task_wide_cap(self):
+        """Task #125 died in its last stage: one budget of 5 retries was shared by all four stages and the test."""
+        from engine import intent_guard
+        scope=ExecutionScope(issue());scope.transition('planning');scope.transition('executing')
+        for stage in range(1,5):
+            for i in range(5):scope.recover('same-answer-'+str(i),round_id=stage)
+        with self.assertRaises(PermissionError):scope.recover('one more',round_id=4)
+        with self.assertRaises(PermissionError):scope.recover('same-answer-0',round_id=4)
+        scope.recover('same-answer-0',round_id=5)
+        scope.recoveries=intent_guard.TOTAL_RECOVERIES
+        with self.assertRaises(PermissionError):scope.recover('x',round_id=6)
+
     def test_tool_boundary_drives_lifecycle_and_persists_provenance(self):
         from engine.intent_guard import record_success, report_provenance
         task=issue('audit');scope=activate(task)

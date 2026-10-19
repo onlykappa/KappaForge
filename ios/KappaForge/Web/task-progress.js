@@ -10,7 +10,9 @@ function normalize(value,number){
  const seen=new Set(),steps=[];
  for(const s of value.steps){if(!s||typeof s.id!=='string'||seen.has(s.id)||!states.has(s.status)||!text(s.title))return null;seen.add(s.id);steps.push({id:s.id,title:text(s.title),detail:text(s.detail),status:s.status,startedAt:at(s.startedAt),finishedAt:at(s.finishedAt)});}
  const units=value.units&&Number.isSafeInteger(value.units.total)&&value.units.total>0&&Number.isSafeInteger(value.units.done)&&value.units.done>=0&&value.units.done<=value.units.total?{done:value.units.done,total:value.units.total,label:text(value.units.label)||'units'}:null;
- return {version:1,taskId:String(number),attemptId:text(value.attemptId),attemptAt:at(value.attemptAt),revision:value.revision,status:value.status,updatedAt:at(value.updatedAt),startedAt:at(value.startedAt),finishedAt:at(value.finishedAt),steps,units,findings:Array.isArray(value.findings)?value.findings.filter(f=>f&&['high','medium','low'].includes(f.level)&&typeof f.text==='string').slice(0,40).map(f=>({level:f.level,text:text(f.text),resolved:f.resolved===true})):[]};
+ return {version:1,taskId:String(number),attemptId:text(value.attemptId),attemptAt:at(value.attemptAt),revision:value.revision,status:value.status,updatedAt:at(value.updatedAt),startedAt:at(value.startedAt),finishedAt:at(value.finishedAt),steps,units,findings:Array.isArray(value.findings)?value.findings.filter(f=>f&&['high','medium','low'].includes(f.level)&&typeof f.text==='string').slice(0,40).map(f=>({level:f.level,text:text(f.text),resolved:f.resolved===true})):[],
+  // The live activity feed (3.0+): what the agent did, one short line each.
+  activity:Array.isArray(value.activity)?value.activity.filter(a=>a&&typeof a.kind==='string'&&text(a.text)).slice(-60).map(a=>({kind:a.kind.slice(0,12),text:text(a.text).slice(0,240),at:at(a.at)})):[]};
 }
 function decode(body,number){const match=String(body||'').match(/<!-- KAPPA_PROGRESS_V1 (\{[^]*?\}) -->/);if(!match)return null;try{return normalize(JSON.parse(match[1]),number)}catch{return null}}
 function reconcileProgress(previous,next,resumedAt=0){

@@ -142,8 +142,8 @@ class JsonMode(unittest.TestCase):
             sent.append(json.loads(req.data)["generationConfig"])
             return response({"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "{}"}]}}]})
         with patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            runner.run_model("key", "p", json_mode=True)
-            runner.run_model("key", "p")
+            runner.run_model("key", "p", json_mode=True, allowed=set())  # Gemini only; free providers come first otherwise.
+            runner.run_model("key", "p", allowed=set())
         self.assertEqual(sent[0].get("responseMimeType"), "application/json")
         self.assertNotIn("responseMimeType", sent[1])
 
