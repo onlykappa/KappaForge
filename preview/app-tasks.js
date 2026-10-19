@@ -3,6 +3,7 @@ let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0;
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
+// Starts with the chat request, not after its reply: a failed reply or switching chats never drops the task.
 // Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(reply,typed,chat,offerTask){
  if(!offerTask||!['execution','investigation'].includes(KappaIntent.classify(typed)))return;
@@ -27,7 +28,9 @@ function checkWorkClaims(reply,chat,launchedBefore){
  const unknown=claim.numbers.filter(n=>!trackedJobs.some(j=>j.number===n));
  if(launched&&!unknown.length)return;
  if(!unknown.length&&claim.numbers.length&&claim.numbers.every(n=>trackedJobs.some(j=>j.number===n&&!j.finished)))return;
- chat.messages.push({role:"assistant",workCheck:true,text:"**Note:** "+(unknown.length?"Task "+unknown.map(n=>"#"+n).join(", ")+" doesn't exist. ":"")+"No task is running for this, so no progress will appear. To start the work, describe it as a request (for example \u201cAdd a weather feature to KappaForge\u201d) or tap **Plan task**."});
+ // The request that went unanswered gets a Start as task button of its own.
+ const asked=[...chat.messages].reverse().find(m=>m.role==="user");if(asked&&!asked.executionHandled)asked.offerTask=true;
+ chat.messages.push({role:"assistant",workCheck:true,text:"**Note:** "+(unknown.length?"Task "+unknown.map(n=>"#"+n).join(", ")+" doesn't exist. ":"")+"No task is running for this, so no progress will appear. Tap **Start as task** under your message to start it."});
  save();render();
 }
 async function userAuthorizedFetch(path,payload,userText,source='user-control',requestId=crypto.randomUUID(),conversationId=current||'controls'){
@@ -175,7 +178,8 @@ function jobChatUpdate(job,signature,body,quiet=false){
 }
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
- const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0)&&chats.some(c=>c.id===j.chatId));if(!jobs.length)return;
+ // Tracked even when its chat was deleted or replaced by a sync, so Running never counts a task nobody follows.
+ const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0));if(!jobs.length)return;
  jobTrackingBusy=true;let changed=false;
  try{
   for(const job of jobs){

@@ -46,6 +46,16 @@ function chatCommand(input){
  return null;
 }
 let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages));for(const c of chats)for(const m of c.messages)if(m.streaming){delete m.streaming;m.text=(m.text||"")+"\n\nThis reply was unfinished when the page loaded. You can retry from the message menu."}}catch(e){}
+// Conversations the owner deleted (newest 500). Synced with the vault so another device's copy can't bring one back.
+let deletedChats=[];try{const d=JSON.parse(localStorage.getItem("kappaforge.deletedChats.v1")||"[]");if(Array.isArray(d))deletedChats=d.filter(x=>typeof x==="string")}catch(e){}
+function forgetDeletedChats(){chats=chats.filter(c=>!deletedChats.includes(c.id));if(current&&!chats.some(c=>c.id===current))current=chats[0]?.id||null}
+function deleteChat(id){
+ const c=chats.find(x=>x.id===id);if(!c)return false;
+ if(!confirm("Delete \u201c"+c.title+"\u201d? It is removed from this device and your synced devices. Tasks it started keep running on GitHub."))return false;
+ deletedChats=[...deletedChats.filter(x=>x!==id),id].slice(-500);
+ try{localStorage.setItem("kappaforge.deletedChats.v1",JSON.stringify(deletedChats))}catch(e){}
+ forgetDeletedChats();save();return true;
+}
 
 const memoryKey="kappaforge.memory.notes.v1";
 let savedMemories=[];
@@ -143,14 +153,15 @@ async function syncVault(){
 // A save during a running sync is queued, not dropped, so the latest message always reaches the cloud.
 function scheduleVaultSync(){if(!vaultPassphrase)return;if(syncBusy){syncPending=true;return}syncVault()}
 function renderChatText(message){
- const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60kappa-widget\s*\n([\s\S]*?)\n\x60\x60\x60/g;
+ const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60(kappa-widget|json)\s*\n([\s\S]*?)\n\x60\x60\x60/g;
  let html="",pos=0,hit;
  while((hit=regex.exec(text))){
   html+=KappaMarkdown.render(text.slice(pos,hit.index));
-  try{const w=JSON.parse(hit[1]);
+  // Models sometimes fence a choice widget as json; any other json block stays a normal code block.
+  try{const w=JSON.parse(hit[2]);
    if(w.type!=="choice"||typeof w.question!=="string"||w.question.length>200||!Array.isArray(w.options)||w.options.length<2||w.options.length>5||w.options.some(o=>typeof o!=="string"||o.length>100))throw Error("unsupported");
    html+='<div class="answer-widget"><strong>'+esc(w.question)+'</strong><div class="widget-choices">'+w.options.map(o=>'<button type="button" class="widget-choice" data-choice="'+esc(o)+'">'+esc(o)+'</button>').join("")+'</div></div>';
-  }catch(e){html+=esc(hit[0])}
+  }catch(e){html+=hit[1]==="json"?KappaMarkdown.render(hit[0]):esc(hit[0])}
   pos=regex.lastIndex;
  }
  return html+KappaMarkdown.render(text.slice(pos));
@@ -209,7 +220,7 @@ function active(){return chats.find(c=>c.id===current)}
 const viewScroll={};
 function rememberScroll(){if(view==="chat")viewScroll.chat={id:current,y:scrollY,nearBottom:scrollY+innerHeight>=document.documentElement.scrollHeight-200};else if(view==="home")viewScroll["home:"+dashboardState.mode]=scrollY}
 function navigate(v){if(v==="settings"&&view!=="settings")settingsSection="";rememberScroll();view=v;closeNavigation();render();if(v==="home")scrollTo(0,viewScroll["home:"+dashboardState.mode]||0);const title=document.querySelector("#content h1,#content h2")||document.getElementById("heading");title.setAttribute("tabindex","-1");title.focus({preventScroll:true});if(v==="home"){load();refreshActivity()}}
-function history(){const q=conversationSearch.trim().toLowerCase();const matches=chats.filter(c=>!q||(c.title+" "+c.messages.map(m=>m.text).join(" ")).toLowerCase().includes(q));document.getElementById("history").innerHTML=matches.map(c=>'<button class="history '+(c.id===current&&view==="chat"?'active':'')+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join("")||'<p class="history-empty">'+(q?'No matching conversations':'Your conversations will appear here.')+'</p>';}
+function history(){const q=conversationSearch.trim().toLowerCase();const matches=chats.filter(c=>!q||(c.title+" "+c.messages.map(m=>m.text).join(" ")).toLowerCase().includes(q));document.getElementById("history").innerHTML=matches.map(c=>'<div class="history-item"><button class="history '+(c.id===current&&view==="chat"?'active':'')+'" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button><button type="button" class="history-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'" title="Delete">'+uiIcon("close")+'</button></div>').join("")||'<p class="history-empty">'+(q?'No matching conversations':'Your conversations will appear here.')+'</p>';}
 // Workflow Monitor: live GitHub Actions state for the dashboard. It streams changes from the Worker's /actions
 // route, falls back to polling when streaming is unavailable, keeps the last snapshot for an instant first paint,
 // and checks every fresh snapshot against what it shows, so stale or ghost runs never linger.

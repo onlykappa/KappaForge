@@ -39,12 +39,16 @@ function iosRow({tag="button",attrs="",icon="",tone="",title,sub="",value="",che
  return '<'+tag+' class="ios-row" '+(tag==="button"?'type="button" ':'')+attrs+'>'+(icon?'<span class="ios-sq '+tone+'" aria-hidden="true">'+uiIcon(icon)+'</span>':'')+
   '<span class="ios-row-text"><b>'+title+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</span>'+(value!==""?'<span class="ios-row-value">'+value+'</span>':'')+(chevron?iosChev:'')+'</'+tag+'>';
 }
+let chatEditing=false;
 function renderChatList(){
+ if(!chats.length)chatEditing=false;
  const q=conversationSearch.trim().toLowerCase();
  const list=chats.filter(c=>!q||(c.title+" "+c.messages.map(m=>m.text).join(" ")).toLowerCase().includes(q)).sort((a,b)=>(b.at||0)-(a.at||0));
  const today=new Date().toDateString(),groups=[["Today",list.filter(c=>new Date(c.at||0).toDateString()===today)],["Earlier",list.filter(c=>new Date(c.at||0).toDateString()!==today)]];
- const rows=c=>{const s=chatTaskState(c);return iosRow({attrs:'data-id="'+esc(c.id)+'"',icon:s.icon,tone:s.tone,title:esc(c.title),sub:esc(s.label||chatPreview(c)),value:esc(shellTime(c.at))})};
- return '<label class="ios-search">'+uiIcon("search")+'<span class="sr-only">Search conversations</span><input id="chatsearch" type="search" placeholder="Search" autocomplete="off" value="'+esc(conversationSearch)+'"></label>'+
+ const rows=c=>{const s=chatTaskState(c),row=iosRow({attrs:'data-id="'+esc(c.id)+'"',icon:s.icon,tone:s.tone,title:esc(c.title),sub:esc(s.label||chatPreview(c)),value:esc(shellTime(c.at)),chevron:!chatEditing});
+  // Edit mode: each row gets a Delete button, as in Mail or Messages.
+  return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row};
+ return (chats.length?'<div class="chat-list-tools"><button type="button" class="text-button" id="chatedit" aria-pressed="'+chatEditing+'">'+(chatEditing?"Done":"Edit")+'</button></div>':'')+'<label class="ios-search">'+uiIcon("search")+'<span class="sr-only">Search conversations</span><input id="chatsearch" type="search" placeholder="Search" autocomplete="off" value="'+esc(conversationSearch)+'"></label>'+
   (list.length?groups.filter(g=>g[1].length).map(([name,items])=>'<h2 class="ios-gh">'+name+'</h2><div class="ios-group icons">'+items.map(rows).join("")+'</div>').join(""):
   '<p class="ios-empty">'+(q?"No matching conversations":"Your conversations will appear here.")+'</p>');
 }
@@ -83,6 +87,8 @@ addEventListener("scroll",()=>{if(isPhone())updateTitleCollapse()},{passive:true
 function bindShell(){
  document.getElementById("chatsearch")?.addEventListener("input",e=>{conversationSearch=e.target.value;const pos=e.target.selectionStart;render();const f=document.getElementById("chatsearch");f.focus();f.setSelectionRange(pos,pos)});
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
+ document.getElementById("chatedit")?.addEventListener("click",()=>{chatEditing=!chatEditing;render()});
+ document.querySelectorAll("#content [data-delete-chat]").forEach(b=>b.addEventListener("click",()=>{if(deleteChat(b.dataset.deleteChat))render()}));
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }
 matchMedia("(max-width:840px)").addEventListener("change",()=>{if(!isPhone()&&["chats","more"].includes(view))view=view==="chats"?"chat":"settings";render()});

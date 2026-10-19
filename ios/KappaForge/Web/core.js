@@ -146,7 +146,7 @@ conversationContext(messages,count=6,max=1500){const turns=(Array.isArray(messag
 // "I'll open the draft PR"). Replies are prose from a model that cannot start work, so these are checked against real tasks.
 workClaims(reply){
  const text=String(reply||'').replace(/```[\s\S]*?```/g,'');
- const claims=/\b(?:i(?:'m| am| have|'ve)?\s+(?:now\s+|currently\s+|already\s+)?(?:working on|started|starting|finali[sz]ing|implementing|building|running|launched|kicked off|begun|on it)|i(?:'ll| will)\s+(?:open|create|push|submit)\s+(?:the\s+|a\s+)?(?:draft\s+)?(?:pr|pull request)|(?:task|job)\s*#\d+\s+(?:is|has)\s+(?:now\s+)?(?:running|started|in progress|underway))\b/i.test(text);
+ const claims=/\b(?:i(?:'m| am| have|'ve)?\s+(?:now\s+|currently\s+|already\s+|just\s+)?(?:working on|started|starting|initiated|initiating|launched|launching|kicked off|begun|beginning|creating|created|preparing|implementing|building|running|finali[sz]ing|writing|coding|opening)\b[^.\n]{0,60}\b(?:task|branch|pr|pull request|implementation|feature|change|fix|code|work)|i(?:'m| am)\s+on it|i(?:'ll| will)\s+(?:open|create|push|submit)\s+(?:the\s+|a\s+)?(?:draft\s+)?(?:pr|pull request)|i(?:'ll| will)\s+(?:notify|let)\s+you\b[^.\n]{0,60}\b(?:pr|pull request)\b[^.\n]{0,20}\bready|(?:task|job)\s*#\d+\s+(?:is|has)\s+(?:now\s+)?(?:running|started|in progress|underway))\b/i.test(text);
  if(!claims)return null;
  return {numbers:[...new Set([...text.matchAll(/\b(?:task|job|issue)\s*#(\d+)/gi)].map(m=>Number(m[1])))]};
 },

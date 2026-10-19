@@ -1,5 +1,5 @@
 {
-  "version": "2.2.1",
+  "version": "2.2.2",
   "released": "2026-10-19",
-  "notes": "Dashboard counts every pull request from the last 7 days and shows what is open now; failed tasks show as failed; the Tasks tab shows each task's status; chat no longer leaves you waiting on tasks that were never started."
+  "notes": "Task requests start reliably: they start alongside the chat reply, \u201cHere is your task: \u2026\u201d and \u201cdo not merge until I say so\u201d no longer stop them, and a planner hiccup can't drop them. Delete conversations from Chats \u2192 Edit (or the sidebar on iPad and desktop); deletions sync across devices."
 }

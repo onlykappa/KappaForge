@@ -2,7 +2,8 @@
 // Executes the real shared interface. APIs are deterministic fixtures, never live paid calls.
 const {chromium,webkit}=require('playwright');
 const {default:AxeBuilder}=require('@axe-core/playwright');
-async function auditAccessibility(page){await page.locator('#content').evaluate(async el=>{await Promise.all(el.getAnimations().map(a=>a.finished.catch(()=>{})))});return new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()}
+// Wait for every finite animation on the page (a theme change fades the header too), then audit settled colours.
+async function auditAccessibility(page){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming?.().endTime)).map(a=>a.finished.catch(()=>{})))});return new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()}
 async function openNavigation(page){if(await page.locator('#sidebar').evaluate(el=>el.inert))await page.locator('#menubtn').click();}
 const isPhone=page=>page.evaluate(()=>matchMedia('(max-width:840px)').matches);
 // Phones navigate with the tab bar (and More for Projects, Saved items, Settings, Account, Help); wider screens use the sidebar.

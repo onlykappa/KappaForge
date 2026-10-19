@@ -584,7 +584,7 @@ bindSettings();bindShell();bindDashboard();bindInterface(scrollState);
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
-document.getElementById("tasknew")?.addEventListener("click",()=>openTask(""));document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
+document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});document.getElementById("approvejob")?.addEventListener("click",launchJob);document.getElementById("canceljob")?.addEventListener("click",()=>{pendingJob=null;render()});
 }
 
 
@@ -595,18 +595,21 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+  const intent=KappaIntent.classify(text),title=KappaIntent.requestText(text).split("\n")[0].slice(0,105);
+  // A direct request ("Add …", "Fix …") is the owner's decision; the planner only picks the repository and mode,
+  // so its "not a task", bad output or an outage falls back to a develop task instead of dropping the request.
+  const fallback=reason=>{if(intent!=="execution")throw Error(reason);return {repo:"onlykappa/"+(mentionedRepository(text)||"KappaForge"),mode:"develop"}};
+  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
   const data=await resp.json().catch(()=>({}));
-  if(!resp.ok)throw Error(data.error||"Could not plan task (HTTP "+resp.status+")");
-  if(!data.isTask){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}
-  const p=data.proposal;
-  pendingJob={title:String(text).trim().split("\n")[0].slice(0,105),instructions:String(text).trim(),repo:p.repo,mode:KappaIntent.classify(text)==="investigation"?"audit":p.mode,context,requestId,conversationId};
-  view="chat";
+  let p=data.proposal;
+  if(!resp.ok)p=fallback(data.error||"Could not plan task (HTTP "+resp.status+")");
+  else if(!data.isTask){if(intent!=="execution"){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}p=fallback("")}
+  pendingJob={title:title.length>=5?title:"KappaForge task",instructions:String(text).trim(),repo:p.repo,mode:intent==="investigation"?"audit":p.mode,context,requestId,conversationId};
   // Owner explicitly requested hands-off development. Only safe task modes start
-  // automatically; potentially destructive or long-running modes still need review.
+  // automatically; potentially destructive or long-running modes still need review (shown in the chat).
   if(preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
    await launchJob();
-  }else render();
+  }else{view="chat";render()}
   return true;
  }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }

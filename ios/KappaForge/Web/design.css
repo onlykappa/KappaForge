@@ -335,3 +335,8 @@ button.gh-row:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}but
 .agent-activity.stale .task-bar.indeterminate i{visibility:hidden}
 /* Headings take focus only so screen readers announce the new page; they are not controls, so no focus ring. */
 h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{outline:none}
+/* Sidebar conversations: a delete button that appears on hover or keyboard focus. */
+.history-item{position:relative}.history-item .history{padding-right:34px}
+.history-delete{position:absolute;top:50%;right:4px;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);opacity:0}
+.history-item:hover .history-delete,.history-delete:focus-visible{opacity:1}.history-delete:hover{color:var(--bad,#ff3b30);background:rgba(128,128,150,.12)}
+@media (hover:none){.history-delete{opacity:.7}}
