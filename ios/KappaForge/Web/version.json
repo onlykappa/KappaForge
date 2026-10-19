@@ -1,5 +1,5 @@
 {
-  "version": "2.2.1",
+  "version": "2.2.2",
   "released": "2026-10-19",
-  "notes": "Dashboard counts every pull request from the last 7 days and shows what is open now; failed tasks show as failed; the Tasks tab shows each task's status; chat no longer leaves you waiting on tasks that were never started."
+  "notes": "Task requests start reliably: \u201cHere is your task: \u2026\u201d is understood, and \u201cdo not merge until I say so\u201d no longer blocks the whole request. If chat claims work with no task behind it, a Start as task button appears under your message."
 }

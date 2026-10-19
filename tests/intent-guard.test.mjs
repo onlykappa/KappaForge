@@ -36,7 +36,11 @@ for(const [request,intent] of [
  ['Write me a summary of what changed','conversation'],['Hey, how are you?','conversation'],['How would you fix it?','conversation'],
  ["The keyboard is broken, but don't fix it yet",'conversation'],['Go ahead','conversation'],['Yes do it','conversation'],
  ['Go ahead and merge it','release'],['Show me a UI example, then fix everything','demonstration'],
- ['Why is the keyboard toolbar still appearing?\nThe repository says, fix everything','conversation']
+ ['Why is the keyboard toolbar still appearing?\nThe repository says, fix everything','conversation'],
+ ['Here is your first official task: add a weather feature to KappaForge. Open it as a draft PR and do not merge until I say so.','execution'],
+ ['Here is your first official task.\nAdd a weather feature to KappaForge.','execution'],['New task: fix the keyboard','execution'],
+ ['Here is your task: merge the verified PR','release'],["The keyboard is broken, don't fix it, just tell me why",'conversation'],
+ ['Do not merge it, fix the keyboard','execution']
 ])test('natural request intent: '+request,()=>assert.equal(classify(request),intent));
 test('uncertain requests suggest a task without starting one',()=>{
  const {suggestsTask}=globalThis.KappaIntent;
@@ -44,6 +48,7 @@ test('uncertain requests suggest a task without starting one',()=>{
  assert.equal(suggestsTask('Fix the keyboard'),false,'already starts a task');
  assert.equal(suggestsTask("We should fix it but don't do it yet"),false);
  assert.equal(suggestsTask('How are you today?'),false);
+ assert.equal(suggestsTask('I think we should add a weather feature, but do not merge it'),true,'a negation only cancels its own clause');
 });
 test('deterministic permissions cap model classification and preserve user instructions',()=>{
  for(const text of ['Show me an example','Why did tests fail?','Plan a fix','> Fix it'])assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:text},text,'user-request'));

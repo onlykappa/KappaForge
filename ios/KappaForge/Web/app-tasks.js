@@ -27,7 +27,9 @@ function checkWorkClaims(reply,chat,launchedBefore){
  const unknown=claim.numbers.filter(n=>!trackedJobs.some(j=>j.number===n));
  if(launched&&!unknown.length)return;
  if(!unknown.length&&claim.numbers.length&&claim.numbers.every(n=>trackedJobs.some(j=>j.number===n&&!j.finished)))return;
- chat.messages.push({role:"assistant",workCheck:true,text:"**Note:** "+(unknown.length?"Task "+unknown.map(n=>"#"+n).join(", ")+" doesn't exist. ":"")+"No task is running for this, so no progress will appear. To start the work, describe it as a request (for example \u201cAdd a weather feature to KappaForge\u201d) or tap **Plan task**."});
+ // The request that went unanswered gets a Start as task button of its own.
+ const asked=[...chat.messages].reverse().find(m=>m.role==="user");if(asked&&!asked.executionHandled)asked.offerTask=true;
+ chat.messages.push({role:"assistant",workCheck:true,text:"**Note:** "+(unknown.length?"Task "+unknown.map(n=>"#"+n).join(", ")+" doesn't exist. ":"")+"No task is running for this, so no progress will appear. Tap **Start as task** under your message to start it."});
  save();render();
 }
 async function userAuthorizedFetch(path,payload,userText,source='user-control',requestId=crypto.randomUUID(),conversationId=current||'controls'){

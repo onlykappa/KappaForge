@@ -160,6 +160,9 @@ test('finished tasks show how they ended; failures stay red with the failing ste
 test('assistant claims of running work are recognized with the task numbers they name',()=>{
  assert.deepEqual(J.workClaims('I am working on **Task #106** ("Add a weather feature"). Once tests pass, I will open the draft PR.').numbers,[106]);
  assert.deepEqual(J.workClaims("I'm on it.").numbers,[]);
+ assert.ok(J.workClaims('I have initiated the task to add the weather feature. I am currently creating the branch `feature/weather-integration`.'));
+ assert.ok(J.workClaims('I will notify you as soon as the draft PR is ready for your review.'));
+ assert.equal(J.workClaims('I have prepared a plan below.'),null,'a plan in the reply is not a claim of running work');
  assert.equal(J.workClaims('Task #98 failed at step 1. Ask me to retry task #98.'),null,'reporting a real result is not a claim');
  assert.equal(J.workClaims('Here is a plan:\n```\nI am working on it\n```'),null,'code blocks are ignored');
 });
