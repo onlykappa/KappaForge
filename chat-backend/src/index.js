@@ -156,7 +156,7 @@ export default {
         const conditionsMap={0:"Clear sky",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Depositing rime fog",51:"Light drizzle",53:"Moderate drizzle",55:"Dense drizzle",61:"Slight rain",63:"Moderate rain",65:"Heavy rain",71:"Slight snow",73:"Moderate snow",75:"Heavy snow",95:"Thunderstorm"};
         const code=data.current_weather?.weathercode;
         data.current_weather_text=conditionsMap[code]||"Fair";
-        return json(data,200,cors);
+        return json({current_weather:data.current_weather,daily:data.daily,current_weather_text:data.current_weather_text},200,cors);
       }catch(e){return json({error:"Weather service unavailable: "+e.message},502,cors);}
     }
     if(new URL(request.url).pathname==="/github"){
