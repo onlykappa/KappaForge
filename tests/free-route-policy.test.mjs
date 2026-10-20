@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {providerModels,fallbackRoutes} from "../chat-backend/src/providers.js";
 import {discover} from "../chat-backend/src/intelligence.js";
+
+test("dashboard-managed provider allowlists are not overridden by blank Wrangler defaults",()=>{
+ const config=readFileSync(new URL("../chat-backend/wrangler.toml",import.meta.url),"utf8");
+ assert.match(config,/^keep_vars\s*=\s*true\s*$/m);
+ for(const name of ["KAPPA_FREE_PROVIDERS","KAPPA_CHAT_PROVIDERS","KAPPA_CODE_PROVIDERS","KAPPA_PRIVATE_CODE_PROVIDERS"]){
+  assert.doesNotMatch(config,new RegExp(`^${name}\\s*=`,"m"),`${name} must remain dashboard-managed`);
+ }
+});
 
 test("dynamic providers expose only individually reviewed free models",async()=>{
  const original=globalThis.fetch,requests=[];
