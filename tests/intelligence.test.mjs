@@ -204,7 +204,7 @@ test('agent development PRs can be closed in any owner repository, human PRs nev
 test('free providers take over when Gemini is rate limited, with live model discovery and normalized usage',async()=>{
  const {fallbackRoutes,providerModels}=await import('../chat-backend/src/providers.js');
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),seen=[];
- const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-providers',GROQ_API_KEY:'groq-key',OPENROUTER_API_KEY:'or-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'gemini,groq,openrouter',KAPPA_CHAT_PROVIDERS:'gemini,groq,openrouter',CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-providers',GROQ_API_KEY:'groq-key',OPENROUTER_API_KEY:'or-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
  globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push(u);
   if(u.includes('generativelanguage')&&u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
   if(u.includes('generativelanguage'))return new Response('{}',{status:429});
