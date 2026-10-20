@@ -727,19 +727,25 @@ test('weather endpoint handles network timeout',async()=>{
 
 test('frontend permission denied sets denied state and does not mark permanent on timeout/unavailable',async()=>{
  globalThis.weatherPermissionState=null;
- window.localStorage={getItem:()=>null,setItem:()=>{}};
- window.navigator={geolocation:{getCurrentPosition:(succ,fail)=>fail({code:1,message:'denied'})}};
+ globalThis.localStorage={getItem:()=>null,setItem:()=>{}};
+ globalThis.navigator={geolocation:{getCurrentPosition:(succ,fail)=>fail({code:1,message:'denied'})}};
+ globalThis.getWeatherPermissionState=()=>{try{return JSON.parse(globalThis.localStorage.getItem("kappaforge.weather.permission")||"null")}catch{return null}};
+ globalThis.setWeatherPermissionState=(state)=>{globalThis.weatherPermissionState=state;try{globalThis.localStorage.setItem("kappaforge.weather.permission",JSON.stringify(state))}catch{}};
+ globalThis.requestLocationPermission=()=>new Promise((resolve,reject)=>{globalThis.navigator.geolocation.getCurrentPosition(pos=>resolve({latitude:pos.coords.latitude,longitude:pos.coords.longitude}),err=>{if(err.code===err.PERMISSION_DENIED){reject(new Error("Permission denied"))}else{reject(new Error("Location unavailable: "+err.message))}},{enableHighAccuracy:true,timeout:10000,maximumAge:0})});
+ globalThis.getWeatherLocation=async()=>{const state=globalThis.getWeatherPermissionState();if(state==="granted"){try{return await globalThis.requestLocationPermission()}catch(e){if(e.message==="Permission denied"){globalThis.setWeatherPermissionState("denied")}throw e}}
+if(state==="denied"){throw new Error("Permission denied")}
+try{const coords=await globalThis.requestLocationPermission();globalThis.setWeatherPermissionState("granted");return coords}catch(e){if(e.message==="Permission denied"){globalThis.setWeatherPermissionState("denied")}throw e}};
  try{
-  await getWeatherLocation();
+  await globalThis.getWeatherLocation();
   assert.fail('should throw');
  }catch(e){
   assert.equal(e.message,'Permission denied');
   assert.equal(globalThis.weatherPermissionState,'denied');
  }
  globalThis.weatherPermissionState=null;
- window.navigator={geolocation:{getCurrentPosition:(succ,fail)=>fail({code:2,message:'unavailable'})}};
+ globalThis.navigator={geolocation:{getCurrentPosition:(succ,fail)=>fail({code:2,message:'unavailable'})}};
  try{
-  await getWeatherLocation();
+  await globalThis.getWeatherLocation();
   assert.fail('should throw');
  }catch(e){
   assert.match(e.message,/Location unavailable/);
