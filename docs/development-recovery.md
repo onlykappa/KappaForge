@@ -58,8 +58,11 @@ state is persisted before delivery, and the existing per-task Actions concurrenc
 queue serializes workers. A continuation token is consumed once. Lost dispatch
 acknowledgements retry the same token after twenty minutes, at most three
 deliveries. Reservation-before-state crashes can be reconciled after that delay.
-There are at most three automatic continuations and forty recovery events per
-unchanged task authorization. Near-expiry tasks block rather than queue work
+There are at most three automatic continuations per unchanged task authorization.
+History capacity is separate: `MAX_EVENTS` in `engine/recovery.py` retains forty
+recent events. At capacity, the oldest half is archived to a trusted task comment
+before rotating the live journal. Archive failure preserves the live history.
+Reaching storage capacity never proves that recovery strategies are exhausted. Near-expiry tasks block rather than queue work
 that cannot be authorized. Closure, expiry or a changed task revokes execution.
 
 A continuation reuses the existing draft. If only independent-test dispatch was
@@ -96,3 +99,17 @@ repository-scoped token has no authority to resume other repositories. Source
 checks and model review cannot prove arbitrary program correctness; independent
 behavioral tests and native checks remain necessary. The weather feature in
 PR #133 is not declared fixed or complete by this engine change.
+
+## Provider access and source recovery
+
+A provider HTTP 401 or 402 quarantines that provider key for an hour; HTTP 403
+quarantines that model route. Other approved free routes remain eligible. The
+quarantine survives continuations and is bound to a key fingerprint, so key
+rotation allows a new attempt without exposing credentials. Exhausted model
+routes can wait for continuation; GitHub permission failures still block.
+
+Missing source is prioritized when rebuilding the bounded model context, rather
+than silently omitted when the original context is full. Files shown only as
+excerpts require exact edits, preventing accidental full-file truncation. Review
+requirements come from the unchanged owner task, not prior diagnostic hypotheses.
+Legacy requirement catalogs are preserved for audit and rebuilt from that task.

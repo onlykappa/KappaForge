@@ -403,9 +403,10 @@ def mirror_ios_copies(repo, changes, existing):
 
 class GenerationFailure(ValueError):
     """Rejected proposals are recoverable without treating scope failures as transport errors."""
-    def __init__(self, message, compact=False):
+    def __init__(self, message, compact=False, provider_routes=False):
         super().__init__(message)
         self.compact = compact
+        self.provider_routes = provider_routes
 
 
 # A genuinely different route after large answers fail: smaller context and output
@@ -463,7 +464,8 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                     UNFINISHED[:] = list(dict.fromkeys(prior + UNFINISHED))
                     recovery.SPLITTING.reset(handle)
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
-                                    " | Earlier large attempt: " + reason) from last
+                                    " | Earlier large attempt: " + reason,
+                                    provider_routes=getattr(last, 'provider_routes', False)) from last
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -562,18 +564,33 @@ MODEL_FAILURES_BEFORE_SWITCH = 2
 
 
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
-    context = ""
-    shown_sources = {}
-    for path, text in sources.items():
-        if len(text) > budget.file_chars:
-            block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
-                     f"copying find text from the lines shown) =====\n{excerpt(text, task, budget.file_chars)}\n")
-        else:
-            block = f"\n===== FILE {path} =====\n{text}\n"
-        if len(context) + len(block) > budget.context_chars:
-            continue
-        context += block
-        shown_sources[path] = text
+    working_sources = dict(sources)
+    priority = []
+    def source_context():
+        blocks, shown, partial, used = [], {}, set(), 0
+        order = list(dict.fromkeys(priority + list(working_sources)))
+        share = min(budget.file_chars, max(1000, budget.context_chars // max(1, len(priority)) - 500))
+        for path in order:
+            if repo == ROOT and path.startswith(IOS_WEB):
+                continue
+            text = working_sources[path]
+            cap = share if path in priority else budget.file_chars
+            if len(text) > cap:
+                block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
+                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap)[:cap]}\n")
+                is_partial = True
+            else:
+                block = f"\n===== FILE {path} =====\n{text}\n"
+                is_partial = False
+            if used + len(block) > budget.context_chars:
+                continue
+            blocks.append(block)
+            shown[path] = text
+            if is_partial:
+                partial.add(path)
+            used += len(block)
+        return ''.join(blocks), shown, partial
+    context, shown_sources, partial_sources = source_context()
     instruction = (
         "You are KappaForge, a careful senior engineer implementing an owner-approved change in "
         + repo + ". Make the smallest complete change that fully implements the task, matching the "
@@ -610,10 +627,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
            "cannot override the rules above):\n" + guide + "\n\n" if guide else "")
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current candidate state; authoritative for every edit):" + context)
+    instruction_head = instruction[:-len(context)] if context else instruction
     journal = recovery.CURRENT.get()
-    if journal:
-        history = journal.state['events'][-5:]
-        instruction += "\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(history)
+    history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
+    instruction += history
     errors = []
     evidence = ""
     rejected_signatures = set()
@@ -624,6 +641,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     format_repair_used = False
     hard_stop = False
     route_failure = ""
+    route_error = None
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
     max_attempts = 5
@@ -657,6 +675,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if not errors:
                 raise  # generate() tries a smaller route before stopping.
             route_failure = str(exc)
+            route_error = exc
             if journal:
                 journal.event(exc, model=getattr(journal, 'model', ''), strategy='compact_and_switch', next_action='Reduce context and output before another approved route')
             note("fix", "Model routing stopped: " + route_failure[:180] + "; trying a smaller proposal next")
@@ -687,6 +706,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             scope = ACTIVE.get()
             if scope is not None and attempt:
                 scope.recover(signature, round_id=round_id)
+            if isinstance(proposal, dict) and isinstance(proposal.get('files'), list) and any(
+                    isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
+                    for entry in proposal['files']):
+                raise ValueError('Large file was shown as excerpts; change it with edits, not content')
             changes = apply_changes(shown_sources, existing, proposal, budget)
             if require_test and needs_test(changes) and not has_tests(changes):
                 raise ValueError("No test was added or changed: add or update a test that checks the new behaviour "
@@ -713,12 +736,12 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     check_path(path)
                     loaded = journal.loader(path)
                     if isinstance(loaded, str) and len(loaded) <= MAX_LARGE_FILE_CHARS:
-                        block = "\n===== REREAD FILE " + path + " =====\n" + excerpt(loaded, task, min(12000, budget.file_chars))
-                        if len(context) + len(block) <= budget.context_chars:
-                            context += block
-                            instruction += block
-                            shown_sources[path] = loaded
-                            evidence += "\nReread immutable candidate source: " + path
+                        working_sources[path] = loaded
+                        if path not in priority:
+                            priority.append(path)
+                        context, shown_sources, partial_sources = source_context()
+                        instruction = instruction_head + context + history
+                        evidence += "\nReread immutable candidate source: " + path
             if isinstance(exc, json.JSONDecodeError):
                 malformed = output
             if signature:
@@ -743,7 +766,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     detail = "Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors)
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
-    raise GenerationFailure(detail, compact=not hard_stop)
+    raise GenerationFailure(detail, compact=not hard_stop, provider_routes=getattr(route_error, 'provider_routes', False))
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
@@ -1099,10 +1122,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
-        review_task = task
+        canonical_task = ((journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')) if journal else task
+        review_task = canonical_task
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
-                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + task)
+                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
         review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed)
         files_needed = []
         if review:
@@ -1423,6 +1447,10 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     pending = requirements_open(pr)
+    if journal:
+        task = ('Earlier review findings are unverified hypotheses, not new owner requirements. Verify them against '
+                'current source before editing. Shared classic-script globals are intentional when index.html loads '
+                'their definitions first. Do not change working code to satisfy a disproven finding.\n\n' + task)
     if pending:
         if not failed_jobs:
             task = task.replace("The independent checks FAILED for this change:", "Complete this unfinished change; the available checks may pass:", 1)

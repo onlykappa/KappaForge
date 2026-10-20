@@ -19,6 +19,8 @@ def response(data):
 class ModelRoutingTests(unittest.TestCase):
     def setUp(self):
         runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
 
     def test_approved_models_only(self):
@@ -150,6 +152,8 @@ if __name__ == "__main__":
 class CutOffAnswerTests(unittest.TestCase):
     def setUp(self):
         runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
 
     def test_strongest_flash_model_goes_first(self):
@@ -207,6 +211,8 @@ class RateLimits(unittest.TestCase):
 
     def setUp(self):
         runner._lists.clear()
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
         runner.COOLDOWN.clear()
         self.addCleanup(runner.EXHAUSTED.clear)
@@ -259,6 +265,8 @@ class StrongModelsBeforeLite(unittest.TestCase):
 
     def setUp(self):
         runner._lists.clear()
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
         runner.COOLDOWN.clear()
         self.addCleanup(runner.EXHAUSTED.clear)
@@ -316,6 +324,8 @@ class ProviderCheck(unittest.TestCase):
 
     def setUp(self):
         runner._lists.clear()  # Model lists are cached per run; each test brings its own.
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
 
     def test_missing_keys_answers_and_failures_are_reported(self):
@@ -345,6 +355,8 @@ class ModelListsAndRetiredModels(unittest.TestCase):
 
     def setUp(self):
         runner._lists.clear()
+        runner.PROVIDER_PAUSES.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
         runner.COOLDOWN.clear()
         self.addCleanup(runner._lists.clear)
@@ -365,3 +377,69 @@ class ModelListsAndRetiredModels(unittest.TestCase):
                 self.assertEqual(runner.run_model("key", "p", allowed=set()), ("gemini-3-flash-lite", "ok"))
         self.assertEqual(sum("/models?" in u for u in asked), 1, "the model list is fetched once")
         self.assertEqual(sum("gemini-2.5-flash:" in u for u in asked), 1, "a retired model is asked once, not every call")
+
+
+class ProviderDenialRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        runner.PROVIDER_PAUSES.clear()
+        runner.COOLDOWN.clear()
+        runner.EXHAUSTED.clear()
+        self.addCleanup(runner.PROVIDER_PAUSES.clear)
+        self.addCleanup(runner.COOLDOWN.clear)
+        self.addCleanup(runner.EXHAUSTED.clear)
+        self.config = {'order': ['first', 'second'], 'providers': {
+            name: {'key': name.upper() + '_API_KEY', 'base': 'https://' + name,
+                   'context': 100000, 'maxOutput': 8192, 'strong': True} for name in ('first', 'second')}}
+
+    def exercise(self, code):
+        calls = []
+        def urlopen(req, timeout=None):
+            model = json.loads(req.data)['model']
+            calls.append((req.full_url, model))
+            if 'first' in req.full_url and model == 'bad':
+                raise urllib.error.HTTPError(req.full_url, code, 'denied', {}, io.BytesIO(b''))
+            return response({'choices': [{'message': {'content': 'valid'}}]})
+        with patch.object(runner, 'PROVIDERS', self.config), \
+                patch.object(runner, 'provider_models', side_effect=lambda pid: ['bad', 'good'] if pid == 'first' else ['ok']), \
+                patch.dict(os.environ, {'FIRST_API_KEY': 'old-key', 'SECOND_API_KEY': 'free-key'}), \
+                patch.object(runner.urllib.request, 'urlopen', side_effect=urlopen):
+            first = runner.run_fallback_providers('prompt', 1000, [])
+            second = runner.run_fallback_providers('prompt', 1000, [])
+            with patch.dict(os.environ, {'FIRST_API_KEY': 'new-key'}):
+                third = runner.run_fallback_providers('prompt', 1000, [])
+        return first, second, third, calls
+
+    def test_payment_or_auth_denial_skips_provider_until_key_changes(self):
+        for code in (401, 402):
+            with self.subTest(code=code):
+                runner.PROVIDER_PAUSES.clear()
+                first, second, third, calls = self.exercise(code)
+                self.assertEqual(first, ('second:ok', 'valid'))
+                self.assertEqual(second, first)
+                self.assertEqual(third, first)
+                self.assertEqual(sum('first' in url for url, _ in calls), 2)
+                self.assertNotIn(('https://first/chat/completions', 'good'), calls)
+
+    def test_model_403_tries_other_approved_models_and_does_not_repeat_denial(self):
+        first, second, third, calls = self.exercise(403)
+        self.assertEqual(first, ('first:good', 'valid'))
+        self.assertEqual(second, first)
+        self.assertEqual(third, first)
+        self.assertEqual(sum(model == 'bad' for _, model in calls), 2)
+
+    def test_quarantine_survives_worker_restart(self):
+        from engine import recovery
+        journal = MagicMock()
+        journal.state = {}
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with patch.object(runner, 'PROVIDERS', self.config):
+                runner.provider_denied('first', 'bad', 402)
+                identity = runner.provider_identity('first')
+                self.assertIn(identity, journal.state['providerPauses'])
+                runner.PROVIDER_PAUSES.clear()
+                with patch.object(runner, 'provider_models') as models:
+                    runner.run_fallback_providers('prompt', 1000, [], allowed={'first'})
+                models.assert_not_called()
+        finally:
+            recovery.CURRENT.reset(handle)

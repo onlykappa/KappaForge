@@ -33,6 +33,8 @@ def clean(value, size=700):
 def diagnose(error):
     """Deterministic failure class and a different, relevant next strategy."""
     text = str(error).lower()
+    if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
+        return 'provider_outage', 'switch_or_defer'
     if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'protected path', 'unsafe path', 'forbidden path', 'blocked path')):
         return 'authorization', 'stop'
     if isinstance(error, json.JSONDecodeError):
@@ -109,6 +111,12 @@ class Journal:
                     self.state, self.comment = state, comment['id']
             except (ValueError, KeyError, TypeError):
                 continue
+        # Legacy reviews mixed diagnostic hypotheses into the owner requirement ledger.
+        # Keep that catalog for audit; rebuild only from the unchanged owner task.
+        if self.state.get('requirementOrigin') != 'owner-v2':
+            self.state['legacyRequirements'] = self.state['requirements']
+            self.state['requirements'] = []
+            self.state['requirementOrigin'] = 'owner-v2'
         self.loader = None
         # Only the validated, trusted journal comment may be edited across runs.
         from engine.intent_guard import ACTIVE
@@ -134,16 +142,23 @@ class Journal:
     def event(self, error='', model='', strategy='', outcome='recovering', next_action='', signature=''):
         kind, default = diagnose(error)
         if len(self.state['events']) >= MAX_EVENTS:
-            self.state['status'] = 'blocked'
-            self.persist()
-            self.publish('blocked', 'Task-wide recovery history exhausted. Review saved evidence before retrying.')
-            raise PermissionError('Task-wide recovery history budget exhausted; owner review required')
+            # Storage capacity is not an execution budget. Archive before rotating;
+            # a failed archive write leaves the live history untouched.
+            archived = self.state['events'][:MAX_EVENTS // 2]
+            wire = json.dumps({'task': self.scope.number, 'digest': self.scope.digest,
+                               'events': archived}, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
+            self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',
+                       {'body': '### KappaForge recovery history\n\n<!-- KAPPA_RECOVERY_ARCHIVE_V1 ' + wire + ' -->'}, 'POST')
+            self.state['archivedEvents'] = self.state.get('archivedEvents', 0) + len(archived)
+            self.state['events'] = self.state['events'][len(archived):]
         item = dict(at=self.clock(), candidate=self.state['candidate'], kind=kind, error=clean(error, 500),
                     model=clean(model, 140), strategy=strategy or default, outcome=outcome,
                     next=clean(next_action or strategy or default, 240))
         if signature:
             key = hashlib.sha256((self.state['candidate'] + signature).encode()).hexdigest()
             self.state['rejected'][key] = self.state['rejected'].get(key, 0) + 1
+            while len(self.state['rejected']) > MAX_EVENTS:
+                del self.state['rejected'][next(iter(self.state['rejected']))]
             item['signature'] = key
         self.state['events'].append(item)
         self.state['status'] = outcome
@@ -164,6 +179,8 @@ class Journal:
     def checkpoint(self, sha, base='', pr='', files=()):
         if not SHA.fullmatch(sha):
             raise ValueError('Checkpoint requires a full candidate SHA')
+        if sha != self.state['candidate']:
+            self.state['rejected'] = {}
         self.state.update(candidate=sha, base=base or self.state['base'], pr=pr or self.state['pr'],
                           files=sorted(set(files) | set(self.state['files'])), status='running')
         self.persist()

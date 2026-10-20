@@ -1,6 +1,7 @@
 """Conservative KappaForge v0.1 task runner: read-only target inspection."""
 import http.client
 import json
+import hashlib
 import os
 import re
 import sys
@@ -286,6 +287,34 @@ def fits(p, prompt, max_output_tokens):
     return len(prompt) / 3.5 + min(max_output_tokens, p.get("maxOutput", max_output_tokens)) <= p.get("context", 32768)
 
 
+# Route-level denial is not denial of the owner's GitHub task. Quarantine the
+# failed route/key and let other approved providers answer.
+PROVIDER_PAUSES = {}
+
+class ProviderRoutesUnavailable(RuntimeError):
+    provider_routes = True
+
+
+def provider_identity(pid):
+    provider = PROVIDERS['providers'][pid]
+    key = os.getenv(provider.get('key', ''), '')
+    return pid + ':' + hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+def provider_denied(pid, model, code):
+    until = time.time() + 3600
+    identity = provider_identity(pid)
+    route = identity if code in (401, 402) else identity + ':' + model
+    PROVIDER_PAUSES[route] = until
+    # Persist quarantine across bounded continuations, bound to this key's hash.
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    if journal:
+        pauses = journal.state.setdefault('providerPauses', {})
+        pauses[route] = until
+        journal.persist()
+
+
 def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=(), json_mode=False):
     """Try each configured free provider once per model; a 429 or error moves on rather than waiting.
 
@@ -295,13 +324,22 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
+        from engine import recovery
+        journal = recovery.CURRENT.get()
+        pauses = journal.state.get('providerPauses', {}) if journal else {}
+        identity = provider_identity(pid)
+        if max(PROVIDER_PAUSES.get(identity, 0), pauses.get(identity, 0)) > time.time():
+            errors.append(pid + ': access/quota route paused; using other approved providers')
+            continue
         if tier is not None and bool(p.get("strong")) != (tier == "strong"):
             continue
         if not fits(p, prompt, max_output_tokens):
             continue
         for model in provider_models(pid):
+            if PROVIDER_PAUSES.get(identity, 0) > time.time():
+                break
             name = pid + ":" + model
-            if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time():
+            if name in skip or name in EXHAUSTED or max(COOLDOWN.get(name, 0), pauses.get(identity + ':' + model, 0), PROVIDER_PAUSES.get(identity + ':' + model, 0)) > time.time():
                 continue
             limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
             asking(name)
@@ -330,9 +368,17 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
                         limit = FALLBACK_MAX_TOKENS
                         continue
-                    if exc.code in (404, 429):
-                        rate_limited(name, exc)
-                    errors.append(name + ": HTTP " + str(exc.code))
+                    if exc.code in (401, 402, 403):
+                        provider_denied(pid, model, exc.code)
+                        errors.append(name + ': HTTP ' + str(exc.code) + '; route quarantined, trying approved alternatives')
+                        if exc.code in (401, 402):
+                            break
+                    else:
+                        if exc.code in (404, 429):
+                            rate_limited(name, exc)
+                        if exc.code == 413:
+                            COOLDOWN[name] = time.time() + 60
+                        errors.append(name + ": HTTP " + str(exc.code))
                 except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
                     errors.append(name + ": " + type(exc).__name__)
                     COOLDOWN[name] = time.time() + 300
@@ -395,7 +441,7 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
         errors.append(str(exc))
     candidates = select_models(available)
     if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"] if allowed is None or pid in allowed):
-        raise RuntimeError("No approved Flash model supports generateContent for this key. "
+        raise ProviderRoutesUnavailable("No approved Flash model supports generateContent for this key. "
                            "Available model IDs: " + ", ".join(sorted(available)[:20]))
     print("Approved Gemini fallback models: " + ", ".join(candidates))
     resting = [m for m in candidates if m in EXHAUSTED or COOLDOWN.get(m, 0) > time.time()]
@@ -418,7 +464,7 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
             if errors:
                 print("Used " + answer[0] + " after: " + "; ".join(errors)[:600])
             return answer
-    raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
+    raise ProviderRoutesUnavailable("Approved Gemini routes unavailable: " + ", ".join(errors))
 
 
 def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
