@@ -8,6 +8,7 @@ const EXCLUDE=new RegExp(registry.exclude,"i");
 // Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
 const FREE=/[:/]free$/;
 const cache=new Map();
+const discoveryStatus=new Map();
 
 // Providers without a key field, or with keyOptional, also answer anonymously; a key only raises their limits.
 const keyless=p=>!p.key||!!p.keyOptional;
@@ -17,35 +18,51 @@ export function configured(env,id){
  const p=registry.providers[id];
  return !!p&&(p.kind==="workers-ai"?!!env.AI:keyless(p)||!!env[p.key]);
 }
+function discoveryKey(env,id,enforceFreePolicy){
+ const p=registry.providers[id];
+ return id+":"+(p?.key&&env[p.key]?"key-present":"key-absent")+":"+(enforceFreePolicy?"free-v1":"legacy");
+}
+export function providerDiscoveryDiagnostic(env,id){
+ const key=discoveryKey(env,id,env.ROUTING_POLICY_VERSION==="v1");
+ return discoveryStatus.get(key)||{state:configured(env,id)?"not_checked":"missing_credential",httpStatus:null,discoveredCount:null,approvedCount:null};
+}
 
 // Live model list per provider, cached ten minutes per key. Arbitrary discovered models are excluded:
 // each provider needs an explicit no-cost model allowlist, or a free-only route suffix.
 export async function providerModels(env,id){
  const p=registry.providers[id];
- if(!configured(env,id))return [];
  const enforceFreePolicy=env.ROUTING_POLICY_VERSION==="v1";
+ const statusKey=discoveryKey(env,id,enforceFreePolicy);
+ const setStatus=value=>discoveryStatus.set(statusKey,value);
+ if(!configured(env,id)){setStatus({state:"missing_credential",httpStatus:null,discoveredCount:null,approvedCount:0});return [];}
  if(p.models){
-  if(!enforceFreePolicy)return p.models;
+  if(!enforceFreePolicy){setStatus({state:"static_models",httpStatus:null,discoveredCount:p.models.length,approvedCount:p.models.length});return p.models;}
   const freeModels=Array.isArray(p.freeModels)?new Set(p.freeModels):null;
-  return p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
+  const models=p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
+  setStatus({state:models.length?"static_models":"no_reviewed_free_models",httpStatus:null,discoveredCount:p.models.length,approvedCount:models.length});
+  return models;
  }
- if(enforceFreePolicy&&!p.freeOnly&&!Array.isArray(p.freeModels))return [];
+ if(enforceFreePolicy&&!p.freeOnly&&!Array.isArray(p.freeModels)){setStatus({state:"no_reviewed_free_models",httpStatus:null,discoveredCount:null,approvedCount:0});return [];}
  const key=id+":"+(p.key?env[p.key]||"":"")+":"+(enforceFreePolicy?"free-v1":"legacy"),hit=cache.get(key);
- if(hit&&Date.now()-hit.at<600000)return hit.models;
+ if(hit&&Date.now()-hit.at<600000){setStatus({state:"cached",httpStatus:null,discoveredCount:hit.models.length,approvedCount:hit.models.length});return hit.models;}
  try{
   const r=await fetch(p.base+"/models",{headers:authHeaders(env,p),signal:AbortSignal.timeout(8000)});
-  if(!r.ok)throw Error("HTTP "+r.status);
-  let ids=((await r.json()).data||[]).map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
+  if(!r.ok){setStatus({state:"http_error",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
+  let body;try{body=await r.json()}catch{setStatus({state:"invalid_json",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
+  if(!Array.isArray(body?.data)){setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
+  const discoveredCount=body.data.length;
+  let ids=body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
   if(enforceFreePolicy){
    if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
    else if(Array.isArray(p.freeModels))ids=ids.filter(m=>p.freeModels.includes(m));
-   else return [];
+   else{setStatus({state:"no_reviewed_free_models",httpStatus:r.status,discoveredCount,approvedCount:0});return [];}
   }
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
+  setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;
- }catch{return hit?.models||[]}
+ }catch{setStatus({state:"network_error",httpStatus:null,discoveredCount:null,approvedCount:hit?.models.length||0});return hit?.models||[]}
 }
 
 export async function providerSummary(env,health={}){

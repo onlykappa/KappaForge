@@ -10,7 +10,7 @@ import {githubHeaders,githubRead} from "./github.js";
 import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
-import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,REGISTRY} from "./providers.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
 import {routingStore} from "./router-state.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
@@ -126,10 +126,46 @@ export default {
     }
     const pathname=new URL(request.url).pathname;
     if(pathname.startsWith("/router/")){
-      if(pathname!=="/router/infer"||request.method!=="POST")return json({error:"Not found"},404);
+      const diagnostics=pathname==="/router/diagnostics"&&request.method==="GET";
+      if(!diagnostics&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
       if(!env.ROUTER_ACCESS_TOKEN||env.ROUTER_ACCESS_TOKEN.length<32||!env.MEMORY||env.ROUTING_POLICY_VERSION!=="v1")return json({error:"Integrated router is not configured"},503);
       const auth=request.headers.get("Authorization")||"";
       if(!auth.startsWith("Bearer ")||!safeEqual(auth.slice(7),env.ROUTER_ACCESS_TOKEN))return json({error:"Unauthorized"},401);
+      if(diagnostics){
+        const provider="groq",model="openai/gpt-oss-120b",config=REGISTRY.providers.groq;
+        const contains=(value,id)=>typeof value==="string"&&value.split(",").map(part=>part.trim()).includes(id);
+        const secretPresent=typeof env.GROQ_API_KEY==="string"&&env.GROQ_API_KEY.length>0;
+        const freeAllowed=contains(env.KAPPA_FREE_PROVIDERS,provider),codingAllowed=contains(env.KAPPA_CODE_PROVIDERS,provider),privateCodeAllowed=contains(env.KAPPA_PRIVATE_CODE_PROVIDERS,provider);
+        const routeAllowed=providerAllowed(env,"coding",provider,{privateCode:true,requested:[provider]});
+        const modelAllowlisted=Array.isArray(config.freeModels)&&config.freeModels.includes(model);
+        let models=[],discovery={state:routeAllowed?"not_checked":"skipped_not_eligible",httpStatus:null,discoveredCount:null,approvedCount:null};
+        if(routeAllowed){models=await providerModels(env,provider);discovery=providerDiscoveryDiagnostic(env,provider);}
+        let snapshot=null;try{snapshot=await routingSnapshot(env)}catch{}
+        const now=Date.now(),routeState=snapshot?.routes?.[provider+":"+model]||null;
+        const providerPools=Object.values(snapshot?.pools||{}).filter(row=>row?.provider===provider);
+        const poolState=providerPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
+        const blocked=!!routeState?.blocked||!!poolState?.blocked,until=Math.max(routeState?.until||0,poolState?.until||0);
+        const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
+        const dailyUsed=snapshot?.dailyRequests?.used??null,minuteUsed=snapshot?.minuteRequests?.used??null;
+        const dailyLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),minuteLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20);
+        const dailyAvailable=dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteUsed===null?null:minuteUsed<minuteLimit;
+        let failedCondition="eligible";
+        if(!secretPresent)failedCondition="secret_binding_missing";
+        else if(!freeAllowed)failedCondition="free_provider_allowlist";
+        else if(!codingAllowed)failedCondition="coding_provider_allowlist";
+        else if(!privateCodeAllowed)failedCondition="private_code_allowlist";
+        else if(!routeAllowed)failedCondition="provider_policy";
+        else if(!config.capabilities?.coding)failedCondition="coding_capability";
+        else if(!modelAllowlisted)failedCondition="model_not_in_free_allowlist";
+        else if(!models.includes(model)&&discovery.state==="http_error")failedCondition="model_discovery_http_error";
+        else if(!models.includes(model)&&(discovery.state==="network_error"||discovery.state==="invalid_json"||discovery.state==="invalid_shape"))failedCondition="model_discovery_error";
+        else if(!models.includes(model))failedCondition="approved_model_not_discovered";
+        else if(snapshot===null)failedCondition="routing_state_unavailable";
+        else if(health!=="clear")failedCondition=health==="blocked"?"provider_or_model_blocked":"provider_or_model_cooldown";
+        else if(dailyAvailable===false)failedCondition="gateway_daily_limit";
+        else if(minuteAvailable===false)failedCondition="gateway_minute_limit";
+        return json({provider,model,failedCondition,bindings:{secretPresent,configured:configured(env,provider)},allowlists:{free:freeAllowed,coding:codingAllowed,privateCode:privateCodeAllowed,providerPolicy:routeAllowed},capabilities:{chat:config.capabilities?.chat===true,coding:config.capabilities?.coding===true,structuredOutput:config.capabilities?.structuredOutput===true,streaming:config.capabilities?.streaming===true},modelPolicy:{allowlisted:modelAllowlisted,discovered:models.includes(model),approvedModels:models},discovery,health:{state:health,category:poolState?.category||routeState?.category||null,retryAt:until>now?until:null},gatewayLimits:{daily:{used:dailyUsed,limit:dailyLimit,available:dailyAvailable},minute:{used:minuteUsed,limit:minuteLimit,available:minuteAvailable}},providerQuota:{remaining:null,source:"unknown"}},200);
+      }
       const length=Number(request.headers.get("Content-Length")||0);
       if(length>200000)return json({error:"Request too large"},413);
       let body;try{const raw=await request.text();if(raw.length>200000)return json({error:"Request too large"},413);body=JSON.parse(raw)}catch{return json({error:"Invalid JSON"},400)}

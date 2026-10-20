@@ -125,6 +125,26 @@ jobs:
         esac
         echo "Runner-only inference endpoint passed URL and authentication checks without a provider call."
       shell: bash
+    - name: Diagnose Groq route without inference
+      if: contains(github.event.head_commit.message, '[router-free-live-smoke]')
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |
+        set -Eeuo pipefail
+        diagnostics=$(curl -fsS --max-time 20 \
+          -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
+          "${KAPPA_ROUTER_URL%/}/router/diagnostics") || {
+          echo "::error::Sanitized Groq diagnostics endpoint was unavailable; no inference was attempted."
+          exit 1
+        }
+        printf '%s\n' "$diagnostics" | jq '{provider,model,failedCondition,bindings,allowlists,capabilities,modelPolicy,discovery,health,gatewayLimits,providerQuota}'
+        condition=$(printf '%s' "$diagnostics" | jq -r '.failedCondition')
+        test "$condition" = "eligible" || {
+          echo "::error::Groq route is not inference-eligible ($condition); no provider inference was attempted."
+          exit 1
+        }
+      shell: bash
     - name: Verify one explicitly free Groq route (one request, no fallback)
       if: contains(github.event.head_commit.message, '[router-free-live-smoke]')
       env:
