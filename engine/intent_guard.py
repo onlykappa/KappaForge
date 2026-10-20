@@ -110,6 +110,24 @@ class ExecutionScope:
             if set(payload or {}) == {"body"} and p.rsplit("/", 1)[1] in self.own_comments:
                 return
             raise PermissionError("Only this task's own comments can be edited")
+        if self.mode == "develop":
+            # A continuation can only redispatch this authorized task, using the
+            # trusted workflow on main. It cannot change action scope or ref.
+            if p == "/repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches" and method == "POST":
+                inputs = (payload or {}).get("inputs", {})
+                if (set(payload or {}) == {"ref", "inputs"} and payload["ref"] == "main"
+                        and set(inputs) == {"issue_number", "action"} and inputs["issue_number"] == str(self.number)
+                        and re.fullmatch(r"resume:[1-3]:" + self.digest[:12], inputs.get("action", ""))):
+                    return
+                raise PermissionError("Continuation must retain task, authorization and trusted main workflow")
+            if p == "/repos/onlykappa/KappaForge/git/refs" and method == "POST":
+                ref = (payload or {}).get("ref", "")
+                if ref.startswith("refs/heads/kappa/recovery-"):
+                    if (set(payload) == {"ref", "sha"} and re.fullmatch(
+                            r"refs/heads/kappa/recovery-" + str(self.number) + "-" + self.digest[:12] + r"-[1-3]", ref)
+                            and re.fullmatch(r"[a-f0-9]{40}", payload.get("sha", ""))):
+                        return
+                    raise PermissionError("Invalid task recovery reservation")
         if self.mode in READ_MODES:
             # Read-only audit continuation may dispatch only the same task.
             if p == "/repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches" and (payload or {}).get("inputs") == {"issue_number": str(self.number)}:

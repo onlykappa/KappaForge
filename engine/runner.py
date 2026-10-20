@@ -275,7 +275,7 @@ class TaskTimeExpired(Exception):
 def model_timeout(limit=120):
     now = time.monotonic()
     if TASK_DEADLINE is not None and TASK_DEADLINE <= now:
-        raise TaskTimeExpired("Model work reached its 5-hour-50-minute budget. Saved draft stages are retained; use Fix it to continue.")
+        raise TaskTimeExpired("Model work reached its 5-hour-50-minute budget. Saved draft stages are retained for authorized automatic continuation.")
     if MODEL_DEADLINE is not None and MODEL_DEADLINE <= now:
         raise RuntimeError("Model routes reached their shared four-minute budget")
     remaining = [limit] + [d - now for d in (TASK_DEADLINE, MODEL_DEADLINE) if d is not None]
@@ -526,29 +526,71 @@ def main():
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
             print("Development mode requires explicit manual workflow dispatch; task remains queued.")
             return
-        from engine.developer import Progress, fix_pull_request, produce_development_pr
-        fixing = os.getenv("INPUT_ACTION", "").strip() == "fix"
+        from engine.developer import Progress, fix_pull_request, produce_development_pr, GenerationFailure
+        from engine import recovery
+        action = os.getenv("INPUT_ACTION", "").strip()
+        journal = recovery.Journal(issue, lambda path: github(path, token),
+                                   lambda path, payload, method: request('https://api.github.com/' + path, payload, token, method))
+        handle = recovery.CURRENT.set(journal)
         global TASK_DEADLINE
         TASK_DEADLINE = time.monotonic() + 350 * 60
         try:
-            if fixing:
+            if not journal.begin(action):
+                print("Continuation already consumed, superseded or blocked; no work dispatched.")
+                return
+            fixing = action == 'fix'
+            if action.startswith('resume:'):
+                from engine.developer import gh, token_for, review_record
+                repo = journal.scope.repo
+                rt = token_for(repo, token)
+                branch = f"kappa/dev-{issue['number']}"
+                pulls = gh(f"repos/{repo}/pulls?state=open&head=onlykappa:{branch}", rt)
+                if len(pulls) > 1:
+                    raise PermissionError('Ambiguous candidate PR; owner review required')
+                fixing = bool(pulls)
+                if not pulls and journal.state['pr']:
+                    raise PermissionError('Saved PR is closed; automatic continuation will not reopen it')
+                if not pulls and journal.state['files']:
+                    # Repair the narrow crash window after a stage was pushed but
+                    # before its draft PR was created. Never adopt an unknown branch.
+                    closed = gh(f'repos/{repo}/pulls?state=closed&head=onlykappa:{branch}', rt)
+                    if closed:
+                        raise PermissionError('A task PR was closed; automatic continuation will not reopen it')
+                    gh(f'repos/{repo}/pulls', rt, {'title': 'Draft (incomplete): ' + issue.get('title', 'Task')[:90],
+                       'head': branch, 'base': journal.state['base'], 'draft': True,
+                       'body': 'Resumed validated implementation checkpoint.\n' + review_record(
+                           journal.state['requirements'] or ['Verify every original requirement and run independent tests'])})
+                    fixing = True
+            if action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
+                next_action = recovery.resume_checks(journal, pulls[0], token)
+                url = (fix_pull_request(issue, os.environ['GEMINI_API_KEY'], token)
+                       if next_action == 'fix' else pulls[0]['html_url'])
+            elif fixing:
                 url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
                 print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
             else:
                 url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
+            journal.state['status'] = ('ready' if journal.state['status'] == 'ready' else 'testing') if url else 'blocked'
+            journal.persist()
         except Exception as exc:
+            kind, strategy = recovery.diagnose(exc)
+            recoverable = isinstance(exc, (GenerationFailure, TaskTimeExpired, RuntimeError, TimeoutError, urllib.error.URLError))
+            if recoverable and kind not in ('authorization', 'access') and journal.defer(exc):
+                print('Recovery checkpoint saved; automatic continuation queued. ' + recovery.clean(exc))
+                return
+            journal.state['status'] = 'blocked'
+            journal.persist()
+            journal.publish('blocked', 'Automatic recovery stopped: ' + recovery.clean(exc, 180))
             reason = str(exc)[:900] or type(exc).__name__
             saved_pr = getattr(Progress.latest, "saved_pr", "")
             if saved_pr:
-                reason += " Validated stages are saved at " + saved_pr + "; tap Fix it to continue from those files."
-            if Progress.latest:
-                Progress.latest.fail(reason[:300])
-            report_failure(issue["number"], token, reason, "reply in chat with guidance (what to do differently) and ask "
-                           "me to try again" + (", or tap Fix it on the Dashboard" if fixing else ""))
+                reason += " Validated stages are saved at " + saved_pr
+            report_failure(issue["number"], token, reason, "review the saved recovery history and provide missing access or guidance")
             raise
         finally:
             TASK_DEADLINE = None
+            recovery.CURRENT.reset(handle)
         return
     if re.search(r"^Mode:\s*code\s*$", body_text, re.I | re.M):
         if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":

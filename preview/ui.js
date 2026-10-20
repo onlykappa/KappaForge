@@ -98,11 +98,12 @@ function renderExecutionActivity(m,job,i=-1){
   units:null,findings:[]
  };
  const life=job.message,failed=p.status==='failed'||['failed','tests-failed'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||['tests-passed','tests-failed','failed'].includes(life);
- const status=life==='tests-passed'?'ready':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
- const labels={queued:'QUEUED',running:'IN PROGRESS',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
- const active=p.steps.find(r=>r.status==='running'),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
+ const expired=KappaProgress.expired?.(p,now)&&['waiting','recovering'].includes(p.status);
+ const status=expired?'blocked':life==='tests-passed'?'ready':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
+ const labels={queued:'QUEUED',running:'IN PROGRESS',recovering:'RECOVERING',waiting:'WAITING TO RESUME',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
+ const active=p.steps.find(r=>['running','recovering','waiting'].includes(r.status)),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
  const stale=KappaProgress.stale(job,now),unavailable=!!job.pollError;
- const headline=status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?'Task cancelled':status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
+ const headline=expired?'Task authorization expired. Retry explicitly to resume saved work.':status==='waiting'?'Progress saved. Automatic continuation is queued':status==='recovering'?'Diagnosing the error and trying a different recovery strategy':status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?'Task cancelled':status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
  const times=KappaProgress.timing({...p,finishedAt:p.finishedAt||job.finishedAt},job.queuedAt,now),duration=ms=>KappaActions.formatDuration(Math.round(ms/1000));
  const id=String(job.number),unit=p.units,percent=unit?Math.round(unit.done/unit.total*100):0;
  const timing='<div class="task-timing"><span>Queued <time'+(!p.startedAt&&!ended?' data-since="'+new Date(job.queuedAt||now).toISOString()+'"':'')+'>'+duration(times.queuedMs)+'</time></span><span>Working <time'+(p.startedAt&&!ended?' data-since="'+new Date(p.startedAt).toISOString()+'"':'')+'>'+duration(times.activeMs)+'</time></span></div>';
@@ -121,7 +122,7 @@ function renderExecutionActivity(m,job,i=-1){
    startedAt:staged.find(x=>x.startedAt)?.startedAt||0,finishedAt:done?staged.at(-1).finishedAt:stageBad?stageBad.finishedAt:0});
  }
  const rows=shown.map(r=>{
-  const state=({completed:'done',running:'current',queued:'upcoming',skipped:'skipped',failed:'failed',cancelled:'cancelled',blocked:'blocked'})[r.status]||'upcoming';
+  const state=({completed:'done',running:'current',recovering:'current',waiting:'upcoming',queued:'upcoming',skipped:'skipped',failed:'failed',cancelled:'cancelled',blocked:'blocked'})[r.status]||'upcoming';
   const cut=r.title.indexOf(': '),title=cut>0?r.title.slice(0,cut):r.title,detail=r.detail||(cut>0?r.title.slice(cut+2):'');
   const seconds=r.displayTime||(r.startedAt?duration(Math.max(0,(r.finishedAt||p.finishedAt||job.finishedAt||now)-r.startedAt)):'');
   return '<li class="task-step '+state+'"><span class="task-dot" aria-hidden="true"></span><div class="task-step-text"><strong>'+esc(plain(title))+'</strong>'+(detail?'<small>'+esc(clip(plain(detail),180))+'</small>':'')+'</div><time'+(r.status==='running'&&!ended&&r.startedAt?' data-since="'+new Date(r.startedAt).toISOString()+'"':'')+'>'+esc(seconds)+'</time><span class="sr-only">'+esc(r.status)+'</span></li>';
@@ -137,7 +138,8 @@ function renderExecutionActivity(m,job,i=-1){
   ((failed||stale)&&!job.finished?'<button type="button" data-task-retry="'+id+'">'+uiIcon('retry')+'Retry</button>':'')+
   (!job.finished?'<button type="button" data-task-guide="'+id+'">'+uiIcon('chat')+'Send guidance</button>':'')+
   (i>=0?'<button type="button" data-task-copy="'+esc(i)+'">'+uiIcon('copy')+'Copy summary</button>':'')+'</div>';
- const fresh='<p class="task-freshness" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
+ const recoveryInfo=p.recovery?'<p class="activity-summary">'+esc([p.recovery.last?.model?'Model: '+p.recovery.last.model:'',p.recovery.last?.error?'Last error: '+p.recovery.last.error:'',expired?'Next: Retry to renew task authorization':p.recovery.last?.next?'Next: '+p.recovery.last.next:'',p.recovery.candidate?'Saved commit: '+p.recovery.candidate.slice(0,7):'',p.recovery.nextAt&&!expired?'Eligible after '+new Date(p.recovery.nextAt).toLocaleTimeString()+'; queue checks every 15 minutes':''].filter(Boolean).join(' · '))+'</p>':'';
+ const fresh=recoveryInfo+'<p class="task-freshness" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
  const reports=String(m.text||'').replace(/<!--[^]*?-->/g,'');
  const findings=job.findings?.length?job.findings:p.findings?.length?p.findings:KappaJobs.findings(reports);
  // Today layout: large ring (steps done), status, title, task number and step count, and the live clock.
