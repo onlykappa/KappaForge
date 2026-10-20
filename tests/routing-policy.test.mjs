@@ -21,6 +21,7 @@ test("routing policy intersects free, channel, and private-code approvals",()=>{
  assert.equal(providerAllowed(env,"coding","groq"),true);
  assert.equal(providerAllowed(env,"coding","groq",{privateCode:true}),false);
  assert.equal(providerAllowed(env,"coding","gemini",{privateCode:true}),true);
+ assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:"groq,gemini,nvidia",KAPPA_CODE_PROVIDERS:"groq,gemini,nvidia",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini,nvidia"},"coding","nvidia"),false,"providers without a reviewed free model allowlist stay unavailable");
  assert.deepEqual(routePolicy(env).privateCodeProviders,["gemini"]);
  assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:""},"chat","groq"),false);
 });

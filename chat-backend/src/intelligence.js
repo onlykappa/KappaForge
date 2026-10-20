@@ -1,4 +1,5 @@
-export const MODELS=['gemini-3.1-flash-lite','gemini-3-flash','gemini-2.5-flash-lite','gemini-2.5-flash'];
+import registry from '../../config/providers.json' with {type:'json'};
+export const MODELS=registry.routing?.primary?.freeModels||[];
 export const FLASH=/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$/;
 const MAX_GEMINI=8;
 function rank(name){const m=name.match(FLASH);return (m[2]?0:1000)-Number(m[1])*10+(m[3]?1:0)}
@@ -19,10 +20,10 @@ export async function discover(env){
   const data=await r.json();for(const m of data.models||[])if(m.supportedGenerationMethods?.includes('generateContent'))available.add(m.name.replace(/^models\//,''));
   pageToken=data.nextPageToken||'';if(!pageToken)break;
  }
- // Every discovered Flash model, like the coding agent (engine/runner.py FLASH_RE), not a fixed list that went
- // stale: chat kept calling gemini-2.5-flash (101 attempts, 0 tokens) and never used 3.5-3.8 Flash. Lite first
- // for quick replies (routes() moves full-size Flash first for quality or complex requests), newest first.
- const models=[...available].filter(m=>FLASH.test(m)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
+ // Discovery confirms the model is currently available; the static freeModels allowlist prevents a newly
+ // discovered paid or preview model from entering automatic fallback.
+ const models=[...available].filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m)))
+  .sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
  if(models.length)discovered={key:env.GEMINI_API_KEY,at:Date.now(),models};
  return models;
 }

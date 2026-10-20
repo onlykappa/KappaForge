@@ -1,4 +1,5 @@
 import './cloud.mjs';
+import './free-route-policy.test.mjs';
 import './native-progress-fixture.test.mjs';
 import './task-progress.test.mjs';
 import './task-tracking.test.mjs';
@@ -43,14 +44,14 @@ const worker={fetch:async(request,env,context)=>{
 
 test('settings validation retains only supported values and zero budgets',()=>{const s=C.settings({model:'fake',routing:'quality',fallback:false,tokenBudget:-1,instructions:'x'.repeat(2200),appearance:'dark',secret:'no'});assert.equal(s.model,'auto');assert.equal(s.fallback,false);assert.equal(s.instructions.length,2000);assert.equal(s.tokenBudget,0);assert.equal(s.routing,'quality');assert.equal(s.secret,undefined)});
 test('usage includes failures, unknown metadata, true totals and UTC boundaries',()=>{const now=Date.UTC(2026,9,16);const sum=C.aggregate([{at:now,model:'a',input:10,output:5,total:18,latency:100,ok:true,cost:null},{at:now+1,model:'a',input:null,output:null,total:null,ok:false,fallback:true,latency:300},{at:now-1,total:100}],{since:now});assert.equal(sum.requests,2);assert.equal(sum.total,18);assert.equal(sum.unknownTokens,1);assert.equal(sum.unknownCosts,2);assert.equal(sum.errors,1);assert.equal(sum.fallbacks,1);assert.equal(sum.averageLatency,200);assert.equal(C.periodStart('month',now),Date.UTC(2026,9,1));assert.equal(C.periodStart('week',now),Date.UTC(2026,9,10))});
-test('model routing never substitutes unavailable manual model or repeats, and falls back across every approved model',()=>{assert.deepEqual(routes(MODELS,{model:'unavailable'}),[]);assert.equal(routes(MODELS,{routing:'quality'})[0].includes('lite'),false);assert.equal(routes(MODELS,{routing:'cost'})[0].includes('lite'),true);assert.equal(routes(MODELS,{fallback:false}).length,1);assert.equal(routes(MODELS,{}).length,MODELS.length);assert.equal(new Set(routes(MODELS,{})).size,MODELS.length);assert.equal(routes(MODELS,{},true)[0],MODELS[0]);assert.equal(routes(MODELS,{routing:'balanced'},true)[0].includes('lite'),false)});
+test('model routing never substitutes unavailable manual model or repeats, and falls back across every approved free model',()=>{assert.deepEqual(routes(MODELS,{model:'unavailable'}),[]);assert.equal(routes(MODELS,{routing:'quality'})[0],'gemini-3.1-flash-lite');assert.equal(routes(MODELS,{routing:'cost'})[0],'gemini-3.1-flash-lite');assert.equal(routes(MODELS,{fallback:false}).length,1);assert.equal(routes(MODELS,{}).length,MODELS.length);assert.equal(new Set(routes(MODELS,{})).size,MODELS.length);assert.equal(routes(MODELS,{},true)[0],MODELS[0]);assert.equal(routes(MODELS,{routing:'balanced'},true)[0],'gemini-3.1-flash-lite')});
 test('tokens and prices remain unavailable without provider metadata and verified rate',()=>{const empty=telemetry({},'a',1,false,false,'chat',{});assert.equal(empty.total,null);assert.equal(empty.cost,null);const meta={usageMetadata:{promptTokenCount:100,candidatesTokenCount:50,totalTokenCount:170}};assert.equal(telemetry(meta,'a',1,true,false,'chat',{a:{input:1,output:2}}).cost,null);const measured=telemetry(meta,'a',1,true,false,'chat',{a:{input:1,output:2,source:'operator test fixture',asOf:'2026-10-16'}});assert.equal(measured.cost,.0002);assert.equal(measured.total,170)});
 test('memory tombstones prevent resurrection and version comparison is numeric',()=>{assert.deepEqual(C.mergeNotes(['one','two'],['two','three'],['two']),['one','three']);assert.equal(C.compareVersions('v2.10.0','2.9.0'),1)});
 test('Worker rejects unauthenticated and foreign-origin requests to all new APIs',async()=>{for(const path of ['/usage','/capabilities','/memory'])assert.equal((await worker.fetch(req(path,{},'bad'),{CHAT_ACCESS_TOKEN:'owner-token'})).status,401);const request=new Request('https://worker.test/usage',{method:'POST',headers:{Origin:'https://evil.test'}});assert.equal((await worker.fetch(request,{})).status,403);const ios=req('/usage');ios.headers.set('Origin','null');const state=memoryState();const stub=new KappaMemory(state);const env={CHAT_ACCESS_TOKEN:'owner-token',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>stub.fetch(new Request(u,o))})}};assert.equal((await worker.fetch(ios,env)).status,200)});
 test('vault preserves ciphertext and rejects stale revision without mutation',async()=>{const state=memoryState(),vault=new KappaMemory(state);const put=(revision,payload)=>vault.fetch(new Request('https://memory.internal/vault',{method:'PUT',body:JSON.stringify({revision,payload})}));assert.equal((await put(0,'encrypted-v1')).status,200);assert.equal((await put(0,'wrong-overwrite')).status,409);assert.deepEqual(await (await vault.fetch(new Request('https://memory.internal/vault'))).json(),{revision:1,payload:'encrypted-v1'})});
 test('usage storage paginates without duplicates and reserves monthly call cap',async()=>{const state=memoryState();for(let i=0;i<505;i++){const event={id:crypto.randomUUID(),at:Date.now()+i,model:'a',total:5};await usageStore(state,new Request('https://memory.internal/usage',{method:'POST',body:JSON.stringify(event)}))}const a=await (await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(a.events.length,500);const b=await (await usageStore(state,new Request('https://memory.internal/usage?cursor='+a.cursor))).json();assert.equal(b.events.length,5);assert.equal(new Set([...a.events,...b.events].map(x=>x.id)).size,505);const reserve=()=>usageStore(state,new Request('https://memory.internal/usage/reserve',{method:'POST',body:JSON.stringify({limit:1})}));assert.equal((await reserve()).status,200);assert.equal((await reserve()).status,429)});
 test('discovery only exposes models actually returned with generateContent',async()=>{const old=globalThis.fetch;globalThis.fetch=async()=>Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']},{name:'models/unsupported',supportedGenerationMethods:['generateContent']},{name:'models/'+MODELS[1],supportedGenerationMethods:['embedContent']}]});try{assert.deepEqual(await discover({GEMINI_API_KEY:'test'}),[MODELS[0]])}finally{globalThis.fetch=old}});
-test('real chat path records fallback and token metadata using mocked provider, never credentials',async()=>{const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);let generations=0;const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'secret-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};globalThis.fetch=async(url)=>{if(String(url).endsWith('/models?pageSize=100'))return Response.json({models:MODELS.slice(0,2).map(m=>({name:'models/'+m,supportedGenerationMethods:['generateContent']}))});if(String(url).includes(':generateContent')){generations++;return generations===1?new Response('{}',{status:429}):Response.json({candidates:[{content:{parts:[{text:'A verified response'}]}}],usageMetadata:{promptTokenCount:12,candidatesTokenCount:4,totalTokenCount:16}})}return new Response('{}',{status:404})};try{const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);assert.equal(r.status,200);const d=await r.json();assert.equal(d.usage.total,16);assert.equal(d.routing.attempts,2);const events=await (await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(events.events.length,2);assert.equal(events.events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('secret-key'),false)}finally{globalThis.fetch=old}});
+test('real chat path records fallback and token metadata using mocked providers, never credentials',async()=>{const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);let generations=0;const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'secret-key',GROQ_API_KEY:'groq-test-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};globalThis.fetch=async(url,init={})=>{const u=String(url);if(u.endsWith('/models?pageSize=100'))return Response.json({models:MODELS.map(m=>({name:'models/'+m,supportedGenerationMethods:['generateContent']}))});if(u.includes(':generateContent')){generations++;return new Response('{}',{status:429})}if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'}]});if(u==='https://api.groq.com/openai/v1/chat/completions')return Response.json({choices:[{message:{content:'A verified response'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:4,total_tokens:16}});return new Response('{}',{status:404})};try{const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);assert.equal(r.status,200);const d=await r.json();assert.equal(d.usage.total,16);assert.equal(d.routing.attempts,2);const events=await (await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(events.events.length,2);assert.equal(events.events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('secret-key'),false);assert.equal(JSON.stringify(events).includes('groq-test-key'),false)}finally{globalThis.fetch=old}});
 
 test('semantic memory search uses transient notes and preserves vault authentication',async()=>{let received;const r=await worker.fetch(req('/memory/search',{query:'coding preferences',notes:['Prefer concise code','Lives in Spokane']}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{run:async(model,body)=>{received=body.text;return {data:[[1,0],[.9,.1],[0,1]]}}}});assert.equal(r.status,200);const result=await r.json();assert.equal(result.matches[0].index,0);assert.equal(received.length,3);assert.equal((await worker.fetch(req('/memory/search',{query:'x',notes:[]}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{}})).status,400)});
 test('project diagnostics refuse arbitrary repository access',async()=>{const r=await worker.fetch(req('/projects/health',{repo:'not-allowed'}),{CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'test'});assert.equal(r.status,400)});
@@ -203,21 +204,21 @@ test('agent development PRs can be closed in any owner repository, human PRs nev
 test('free providers take over when Gemini is rate limited, with live model discovery and normalized usage',async()=>{
  const {fallbackRoutes,providerModels}=await import('../chat-backend/src/providers.js');
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),seen=[];
- const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-providers',GROQ_API_KEY:'groq-key',OPENROUTER_API_KEY:'or-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'gemini,groq,openrouter',KAPPA_CHAT_PROVIDERS:'gemini,groq,openrouter',CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'g-key-providers',GROQ_API_KEY:'groq-key',OPENROUTER_API_KEY:'or-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
  globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push(u);
   if(u.includes('generativelanguage')&&u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
   if(u.includes('generativelanguage'))return new Response('{}',{status:429});
-  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'whisper-large-v3'},{id:'llama-3.3-70b-versatile'},{id:'meta-llama/llama-guard-4'},{id:'moonshotai/kimi-k2-instruct'}]});
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'},{id:'openai/gpt-oss-20b'},{id:'qwen/qwen3.8-27b'},{id:'llama-3.3-70b-versatile'},{id:'moonshotai/kimi-k2-instruct'}]});
   if(u==='https://openrouter.ai/api/v1/models')return Response.json({data:[{id:'qwen/qwen3-coder'},{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-4o'}]});
   if(u==='https://api.groq.com/openai/v1/chat/completions'){const body=JSON.parse(init.body);assert.equal(body.messages[0].role,'system');assert.equal(init.headers.Authorization,'Bearer groq-key');
    return Response.json({choices:[{message:{content:'Answer from Groq'},finish_reason:'stop'}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}})}
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels(env,'groq'),['moonshotai/kimi-k2-instruct','llama-3.3-70b-versatile']);
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b']);
   assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder:free']);
   assert.deepEqual(await providerModels(env,'cerebras'),[]);
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}]}),env);const d=await r.json();
-  assert.equal(r.status,200);assert.equal(d.reply,'Answer from Groq');assert.equal(d.model,'groq:moonshotai/kimi-k2-instruct');assert.equal(d.usage.total,12);
+  assert.equal(r.status,200);assert.equal(d.reply,'Answer from Groq');assert.equal(d.model,'groq:openai/gpt-oss-120b');assert.equal(d.usage.total,12);
   const events=(await(await usageStore(state,new Request('https://memory.internal/usage'))).json()).events;
   assert.equal(events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('groq-key'),false);
   const labels=async(prefs,media=false)=>(await fallbackRoutes(env,[MODELS[0]],prefs,media)).map(x=>x.label);
@@ -255,8 +256,8 @@ test('keyless providers answer anonymously, fixed free lists skip discovery, and
  try{
   assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free']);
   assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
-  assert.deepEqual(await providerModels({ZAI_API_KEY:'z'},'zai'),['glm-4.7-flash']);
-  assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'fixed free list is never rediscovered');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),[],'fixed models without a reviewed free allowlist stay disabled');
+  assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'providers without a reviewed free model list are never discovered');
   await callProvider({},{provider:'kilo',model:'kilo-auto/free'},{system:'',messages:[],maxTokens:10,temperature:0},false);
   assert.equal(seen.every(([,auth])=>auth===undefined),true,'no credentials sent to keyless providers');
   const summary=Object.fromEntries((await providerSummary({LLM7_API_KEY:'l'})).map(p=>[p.id,p]));
@@ -607,29 +608,28 @@ test('an iOS build question puts the previous and current build history in front
   assert.doesNotMatch(prompt,/iOS BUILD HISTORY/);
  }finally{globalThis.fetch=old}
 });
-test('chat finds every current Flash model instead of a stale fixed list, and rests models that fail',async()=>{
+test('Gemini discovery excludes models outside the published free-tier allowlist and rests failures',async()=>{
  const old=globalThis.fetch;
- const names=['gemini-3.8-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-3.1-flash-lite-preview','gemini-3-pro','gemini-3.5-flash','text-embedding-4'];
+ const names=['gemini-3.8-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-3.1-flash-lite-preview','gemini-3-pro','gemini-3.1-flash-lite','text-embedding-4'];
  globalThis.fetch=async()=>Response.json({models:names.map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
  try{
-  const found=await discover({GEMINI_API_KEY:'newer-key'});
-  assert.deepEqual(found,['gemini-3.5-flash-lite','gemini-3.1-flash-lite-preview','gemini-3.8-flash','gemini-3.5-flash','gemini-2.5-flash'],'lite first for quick replies, newest first, no Pro or embeddings');
-  assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.8-flash','quality and complex requests start with the strongest Flash');
-  rest('gemini-2.5-flash',404);rest('gemini-3.5-flash-lite',429);rest('gemini-3.8-flash',500);
-  assert.deepEqual(awake(found),['gemini-3.1-flash-lite-preview','gemini-3.8-flash','gemini-3.5-flash'],'a retired or rate-limited model is skipped');
-  assert.deepEqual(awake(['gemini-2.5-flash']),['gemini-2.5-flash'],'with nothing else left it is tried anyway');
+  const found=await discover({ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'newer-key'});
+  assert.deepEqual(found,['gemini-3.1-flash-lite'],'newly discovered and preview models cannot widen the free allowlist');
+  assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.1-flash-lite');
+  rest('gemini-3.1-flash-lite',429);
+  assert.deepEqual(awake(found),found,'the sole route remains visible for bounded retry after cooldown');
  }finally{globalThis.fetch=old}
 });
 test('a model chosen in Settings that is no longer offered falls back to Automatic instead of refusing every message',async()=>{
  const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);const asked=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'retired-choice-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
  globalThis.fetch=async url=>{url=String(url);
-  if(url.includes('/models?'))return Response.json({models:[{name:'models/gemini-3.5-flash-lite',supportedGenerationMethods:['generateContent']}]});
+  if(url.includes('/models?'))return Response.json({models:[{name:'models/gemini-3.1-flash-lite',supportedGenerationMethods:['generateContent']}]});
   if(url.includes(':generateContent')){asked.push(url.split('/models/')[1].split(':')[0]);return Response.json({candidates:[{content:{parts:[{text:'Still here'}]}}]})}
   return new Response('{}',{status:404})};
  try{
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:true}}),env);
-  assert.equal(r.status,200);assert.equal((await r.json()).reply,'Still here');assert.deepEqual(asked,['gemini-3.5-flash-lite']);
+  assert.equal(r.status,200);assert.equal((await r.json()).reply,'Still here');assert.deepEqual(asked,['gemini-3.1-flash-lite']);
   const strict=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{model:'gemini-2.5-flash',fallback:false}}),env);
   assert.equal(strict.status,422,'with fallback off the owner asked for that model only');
  }finally{globalThis.fetch=old}

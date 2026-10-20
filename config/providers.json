@@ -52,6 +52,10 @@
         "kimi-k2",
         "llama-3.3-70b"
       ],
+      "freeModels": [
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b"
+      ],
       "context": 131072,
       "maxOutput": 8192,
       "accountPool": "groq",
@@ -386,6 +390,9 @@
     },
     "primary": {
       "id": "gemini",
+    "freeModels": [
+      "gemini-3.1-flash-lite"
+    ],
       "accountPool": "gemini",
       "quotaPool": "gemini",
       "quotaScope": "model",
