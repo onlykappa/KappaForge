@@ -186,6 +186,13 @@ jobs:
           // The agent already explained the failure itself on this run; don't add a vaguer second report.
           const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number, per_page: 100});
           // Finalize the live card even when Python was killed before its exception handler ran.
+          // A killed authorized development worker is resumed by the trusted recovery queue.
+          // Explicit workflow cancellation still stops work.
+          const recoveryPending = '${{ job.status }}' !== 'cancelled' && comments.some(c => {
+            if (c.user?.login !== 'github-actions[bot]' || !(c.body || '').startsWith('### KappaForge recovery checkpoint\n')) return false;
+            const m = c.body.match(/<!-- KAPPA_RECOVERY_V1 (.*?) -->/);
+            try { const r = JSON.parse(m?.[1] || '{}'); const digest = require('node:crypto').createHash('sha256').update(issue.body || '').digest('hex'); return r.digest === digest && r.expiresAt > Date.now() && r.run === String(context.runId) && ['running','recovering','waiting'].includes(r.status); } catch { return false; }
+          });
           for (const comment of comments) {
             if (comment.user?.type !== 'Bot') continue;
             const match = (comment.body || '').match(/<!-- KAPPA_PROGRESS_V1 ([\s\S]*?) -->/);
@@ -193,17 +200,19 @@ jobs:
             let state;
             try { state = JSON.parse(match[1]); } catch { continue; }
             if (!String(state.attemptId || '').startsWith(`${context.runId}:${process.env.GITHUB_RUN_ATTEMPT}:`) ||
-                String(state.taskId) !== String(issue_number) || state.status !== 'running') continue;
+                String(state.taskId) !== String(issue_number) || !['running','recovering'].includes(state.status)) continue;
             const now = Date.now();
-            state.status = 'failed';
-            state.updatedAt = state.finishedAt = now;
+            state.status = recoveryPending ? 'waiting' : 'failed';
+            state.updatedAt = now;
+            state.finishedAt = recoveryPending ? 0 : now;
             state.revision = Number(state.revision || 0) + 1;
             state.steps = (state.steps || []).filter(s => s.status !== 'queued').map(s =>
-              s.status === 'running' ? {...s, status: 'failed', finishedAt: now, detail: 'Workflow stopped before completion'} : s);
-            state.activity = [...(state.activity || []), {kind: 'error', at: now, text: 'Workflow stopped; saved draft stages remain available. Use Fix it on an existing draft.'}].slice(-60);
+              ['running','recovering'].includes(s.status) ? {...s, status: recoveryPending ? 'waiting' : 'failed', finishedAt: recoveryPending ? 0 : now, detail: recoveryPending ? 'Progress saved; automatic recovery queue will resume this task' : 'Workflow stopped before completion'} : s);
+            state.activity = [...(state.activity || []), {kind: recoveryPending ? 'fix' : 'error', at: now, text: recoveryPending ? 'Progress saved; waiting for automatic continuation' : 'Workflow stopped; saved draft stages remain available. Use Fix it on an existing draft.'}].slice(-60);
             await github.rest.issues.updateComment({...context.repo, comment_id: comment.id,
               body: comment.body.replace(match[0], `<!-- KAPPA_PROGRESS_V1 ${JSON.stringify(state)} -->`)});
           }
+          if (recoveryPending) return;
           if (comments.some(c => (c.body || '').includes(`<!-- KAPPA_FAILED:${context.runId} -->`))) return;
           await github.rest.issues.createComment({...context.repo, issue_number,
             body: `### KappaForge task failed\n\n**Why:** the agent ${'${{ job.status }}' === 'cancelled' ? 'ran out of time or was stopped' : 'crashed'} before it could explain.\n\n**What to do:** reply in chat asking me to try again, ideally with guidance on a smaller first step. [Workflow log](${url})`});

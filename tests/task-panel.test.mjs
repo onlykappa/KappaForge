@@ -221,3 +221,33 @@ test('a draft PR report reads as a step, and as not finished when the work check
  assert.match(J.conciseReport('complete','KappaForge generated a draft PR: x',''),/^\*\*Draft PR opened\*\*/);
  assert.match(J.conciseReport('complete','### KappaForge run completed\nAll good',''),/^\*\*Task complete\*\*/);
 });
+
+test('recovery snapshots render waiting and recovering with the actual error and saved commit',async()=>{
+ await import('../preview/task-progress.js');
+ const P=globalThis.KappaProgress,source=read('ui.js');
+ const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date,Math,Number,String,Object,Array,
+  plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
+  heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
+ vm.createContext(box);vm.runInContext(slice(source,'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
+ for(const [status,label] of [['waiting','WAITING TO RESUME'],['recovering','RECOVERING'],['blocked','BLOCKED']]){
+  const p=P.normalize({version:1,taskId:'130',attemptId:'recovery:1',attemptAt:1000,revision:1,updatedAt:2000,
+   status,startedAt:1000,steps:[{id:'r',title:'Preserve candidate and retry',status,startedAt:1000}],
+   recovery:{candidate:'b'.repeat(40),nextAt:300000,continuations:1,last:{model:'writer',error:'Malformed <JSON>',next:'Use compact source'}}},130);
+  assert.ok(p);
+  const html=box.renderExecutionActivity({text:''},{number:130,title:'Weather',message:'progress',progress:p,queuedAt:1000});
+  assert.match(html,new RegExp(label));assert.match(html,/Malformed &lt;JSON&gt;/);assert.match(html,/Saved commit: bbbbbbb/);
+  assert.match(html,/Next: Use compact source/);assert.doesNotMatch(html,/>DONE</);
+  if(status==='waiting'){
+   assert.equal(P.stale({progress:p},9999999),false);
+   assert.equal(J.stalled({progress:p,message:'progress',activeAt:1000},9999999),false);
+  }
+ }
+});
+
+
+test('waiting recovery becomes blocked at the recorded authorization expiry',()=>{
+ const P=globalThis.KappaProgress;
+ const p=P.normalize({version:1,taskId:'130',attemptId:'r',attemptAt:1000,revision:1,updatedAt:2000,
+  status:'waiting',steps:[],recovery:{expiresAt:3000,candidate:'b'.repeat(40)}},130);
+ assert.equal(P.expired(p,2999),false);assert.equal(P.expired(p,3000),true);
+});

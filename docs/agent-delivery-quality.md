@@ -55,3 +55,20 @@ mock, current shared globals and dependencies, bounded context and follow-up
 inspection, rejected repair continuation, missing coverage and unavailable
 review evidence. These checks improve delivery quality; the next real task and
 its independent tests remain the measure of whether the complete feature works.
+
+
+Task #130 recovery follow-up: rejected JSON now gets one short serialization-only
+repair attempt within each five-answer generation round. Its output must pass the
+same path, exact-match, schema and syntax checks as a fresh proposal. OpenAI-style
+providers receive JSON response mode when requested; endpoints rejecting that
+option retry once without it. Ordinary chat payloads are unchanged.
+
+A routing timeout after rejected answers retains its actual diagnostic and triggers
+a compact source-backed generation round instead of escaping as an unrecoverable
+ValueError. Exhausted recoverable validation rounds (including JSON, edit and syntax failures) also get that compact route. It uses at most
+80,000 source-context characters and 8,192 output tokens, letting more approved
+providers fit the prompt. Earlier validated stages remain saved. Protected paths,
+expired authorization and invalid scope still stop immediately. Recovery remains
+bounded by generation, task and provider limits; it cannot guarantee completion
+when no approved route can supply a valid change. Final reports name the compact
+failure and earlier routing/validation evidence instead of hiding the last error.

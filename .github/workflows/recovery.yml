@@ -1,0 +1,29 @@
+name: Resume authorized development
+permissions:
+  contents: write
+  issues: write
+  actions: write
+concurrency:
+  group: kappaforge-recovery-dispatch
+  cancel-in-progress: false
+jobs:
+  resume:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: main
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Dispatch due task continuations without running candidate code
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python -m engine.recovery
+'on':
+  workflow_dispatch: null
+  schedule:
+  - cron: '*/15 * * * *'

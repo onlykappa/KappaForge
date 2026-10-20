@@ -60,7 +60,7 @@ def build():
 
 def render(data):
     # One module per line keeps the map small enough for the chat context and readable in diffs.
-    lines = ",\n".join(json.dumps(m, separators=(",", ":")) for m in data["modules"])
+    lines = ",\n".join(json.dumps({k: v for k, v in m.items() if k != "depends_on" or v}, separators=(",", ":")) for m in data["modules"])
     head = json.dumps({k: v for k, v in data.items() if k != "modules"}, indent=1)[:-2]
     return head + ',\n "modules": [\n' + lines + "\n ]\n}\n"
 

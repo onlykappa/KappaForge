@@ -30,7 +30,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("test-model", invalid)) as ai:
             with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
                 developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertEqual(ai.call_count, 5)
+        self.assertEqual(ai.call_count, 10, "large and compact strategies are both tried")
 
     def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
         """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
@@ -226,7 +226,7 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("# checked", changes["app/main.py"])
         self.assertTrue(explanation.startswith("Built in 2 stages."))
         # A later stage that can't be written keeps the earlier stages; checking the work starts from what's missing.
-        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5):
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 10):
             _, _, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, ["Cast", "Test"])
         self.assertIn("int(a)", changes["app/main.py"])
         self.assertEqual(len(developer.UNFINISHED), 1)
@@ -775,7 +775,7 @@ class StageRecoveryTests(unittest.TestCase):
         """Task #125's final "write a test" stage failing threw away three finished stages."""
         first = json.dumps({"summary": "Cast", "files": [
             {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
-        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 5):
+        with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 10):
             _, _, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None,
                                                          ["Cast"], require_test=True)
         self.assertIn("int(a)", changes["app/main.py"])

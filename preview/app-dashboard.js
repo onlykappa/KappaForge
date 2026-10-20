@@ -438,7 +438,7 @@ function taskStatusText(issue){
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
  if(job.message==="tests-passed")return "Tests passed · ready for review";
  if(job.finished)return TASK_ENDED[job.message]||"Finished";
- return KappaProgress.stale(job)?"No update for a while · may be stuck":job.message==="waiting"?"Queued":"Running";
+ if(KappaProgress.expired?.(job.progress)&&["waiting","recovering"].includes(job.progress?.status))return "Authorization expired · retry to resume";if(job.progress?.status==="waiting")return "Waiting for automatic continuation";if(job.progress?.status==="recovering")return "Recovering from an error";return KappaProgress.stale(job)?"No update for a while · may be stuck":job.message==="waiting"?"Queued":"Running";
 }
 const TASK_ENDED={merged:"Merged",closed:"Closed without merging",cancelled:"Cancelled",complete:"Finished","tests-passed":"Tests passed"};
 // Running tasks (and the day's finished ones) with their step, progress and time; a row opens the task's card in chat.
