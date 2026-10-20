@@ -126,7 +126,7 @@ jobs:
         echo "Runner-only inference endpoint passed URL and authentication checks without a provider call."
       shell: bash
     - name: Diagnose Groq route without inference
-      if: contains(github.event.head_commit.message, '[router-free-live-smoke]')
+      if: contains(github.event.head_commit.message, '[router-free-live-smoke]') || contains(github.event.head_commit.message, '[router-diagnostics-only]')
       env:
         KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
