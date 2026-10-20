@@ -142,3 +142,21 @@ test("coding gateway uses only explicitly approved free private-code routes",asy
   assert.equal(noStructured.status,503);assert.equal(upstreamCalls,2,"unsupported structured output must not contact an upstream");
  }finally{globalThis.fetch=previous;}
 });
+
+test("an owner-pinned Groq coding request sends only the exact free model with fallback disabled",async()=>{
+ const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+ const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+ const previous=globalThis.fetch;let inferenceCalls=0,submitted=[];
+ globalThis.fetch=async(url,init)=>{
+  if(String(url).endsWith("/models"))return Response.json({data:[{id:"openai/gpt-oss-120b"},{id:"qwen/qwen3.8-27b"}]});
+  inferenceCalls++;submitted.push(JSON.parse(init.body));
+  return Response.json({choices:[{message:{content:"fixture answer"}}],usage:{prompt_tokens:5,completion_tokens:3,total_tokens:8}});
+ };
+ try{
+  const input={version:1,channel:"coding",privateCode:true,repo:"onlykappa/KappaForge",requestId:"88c7e741-b7ed-4daf-881b-cb75dc6e88fa",providers:["groq"],model:"groq:openai/gpt-oss-120b",fallback:false,reasoningEffort:"low",messages:[{role:"user",content:"exact fixture edit"}],maxTokens:80};
+  const response=await inferenceRouter(env,input),body=await response.json();
+  assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.route,"groq:openai/gpt-oss-120b");
+  assert.equal(inferenceCalls,1);assert.equal(submitted[0].model,"openai/gpt-oss-120b");
+  assert.equal(submitted[0].max_completion_tokens,80);assert.equal(submitted[0].reasoning_effort,"low");
+ }finally{globalThis.fetch=previous;}
+});

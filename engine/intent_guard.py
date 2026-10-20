@@ -19,6 +19,9 @@ TOTAL_RECOVERIES = 40
 # Monitoring and multi-step coding run on a schedule for days; everything else expires after one.
 LONG_RUNNING_MODES = {"continuous", "watch", "continuous-code"}
 MARKER = re.compile(r"^<!-- kappa-authorization:(\{[^\n]+\}) -->$", re.M)
+# A pinned route is an owner-requested narrowing for a bounded live verification task.
+# Keep this list to routes whose no-charge model eligibility has been independently reviewed.
+PINNED_INFERENCE_ROUTES = {"groq:openai/gpt-oss-120b"}
 
 
 def timestamp(value):
@@ -41,6 +44,10 @@ class ExecutionScope:
         if len(modes) != 1 or len(repos) != 1 or modes[0] not in READ_MODES | WRITE_MODES:
             raise PermissionError("Task mode and repository must be unambiguous")
         self.mode, self.repo = modes[0], repos[0]
+        routes = re.findall(r"^Inference route:\s*(\S+)\s*$", self.body, re.M | re.I)
+        if len(routes) > 1 or (routes and (self.mode != "develop" or routes[0] not in PINNED_INFERENCE_ROUTES)):
+            raise PermissionError("Pinned inference route is unsupported for this task")
+        self.inference_route = routes[0] if routes else None
         if self.mode in WRITE_MODES:
             from engine.projects import registered
             registered(self.repo)

@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +19,16 @@ class Response:
 
     def read(self):
         return json.dumps({"route": "gemini:gemini-2.5-flash", "text": "fixture result"}).encode()
+
+
+class GroqResponse(Response):
+    def read(self):
+        return json.dumps({"route": "groq:openai/gpt-oss-120b", "text": "fixture result"}).encode()
+
+
+class WrongRouteResponse(Response):
+    def read(self):
+        return json.dumps({"route": "groq:qwen/qwen3.8-27b", "text": "fixture result"}).encode()
 
 
 class IntegratedRouterTests(unittest.TestCase):
@@ -49,6 +60,60 @@ class IntegratedRouterTests(unittest.TestCase):
                 patch.object(runner, "_run_model", side_effect=AssertionError("direct provider fallback")):
             with self.assertRaisesRegex(RuntimeError, "no direct provider fallback"):
                 runner.run_integrated_router("fixture", 100, ["gemini"])
+
+    def test_task_pinned_groq_model_disables_all_fallback_and_checks_actual_route(self):
+        from engine import recovery
+        captured = {}
+
+        def open_request(request, timeout):
+            captured["body"] = json.loads(request.data.decode())
+            return GroqResponse()
+
+        journal = SimpleNamespace(scope=SimpleNamespace(repo="onlykappa/KappaForge",
+                                                        inference_route="groq:openai/gpt-oss-120b"))
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with patch.dict(os.environ, {
+                "KAPPA_ROUTER_URL": "https://router.example", "KAPPA_ROUTER_TOKEN": "t" * 40,
+            }, clear=False), patch.object(runner.urllib.request, "urlopen", side_effect=open_request):
+                route, text = runner.run_integrated_router("exact documentation change", 8000, ["gemini", "groq"], True)
+        finally:
+            recovery.CURRENT.reset(handle)
+
+        self.assertEqual((route, text), ("groq:openai/gpt-oss-120b", "fixture result"))
+        self.assertEqual(captured["body"]["providers"], ["groq"])
+        self.assertEqual(captured["body"]["model"], "groq:openai/gpt-oss-120b")
+        self.assertFalse(captured["body"]["fallback"])
+        self.assertEqual(captured["body"]["reasoningEffort"], "low")
+        self.assertEqual(captured["body"]["maxTokens"], 8000)
+
+    def test_pinned_provider_must_already_be_authorized_for_code(self):
+        from engine import recovery
+        journal = SimpleNamespace(scope=SimpleNamespace(repo="onlykappa/KappaForge",
+                                                        inference_route="groq:openai/gpt-oss-120b"))
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with patch.dict(os.environ, {
+                "KAPPA_ROUTER_URL": "https://router.example", "KAPPA_ROUTER_TOKEN": "t" * 40,
+            }, clear=False), patch.object(runner.urllib.request, "urlopen", side_effect=AssertionError("network call")):
+                with self.assertRaisesRegex(RuntimeError, "outside the authorized free coding policy"):
+                    runner.run_integrated_router("fixture", 100, ["gemini"])
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_runner_rejects_a_gateway_response_for_a_different_pinned_model(self):
+        from engine import recovery
+        journal = SimpleNamespace(scope=SimpleNamespace(repo="onlykappa/KappaForge",
+                                                        inference_route="groq:openai/gpt-oss-120b"))
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with patch.dict(os.environ, {
+                "KAPPA_ROUTER_URL": "https://router.example", "KAPPA_ROUTER_TOKEN": "t" * 40,
+            }, clear=False), patch.object(runner.urllib.request, "urlopen", return_value=WrongRouteResponse()):
+                with self.assertRaisesRegex(RuntimeError, "did not honor the task-pinned route"):
+                    runner.run_integrated_router("fixture", 100, ["groq"])
+        finally:
+            recovery.CURRENT.reset(handle)
 
     def test_continuous_job_accepts_router_without_a_direct_gemini_key(self):
         env = {

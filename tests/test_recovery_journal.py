@@ -164,6 +164,7 @@ class RecoveryJournalTests(unittest.TestCase):
     def test_queue_waits_reserves_once_and_duplicate_dispatch_is_consumed_once(self):
         j = self.journal
         j.defer(RuntimeError('HTTP 429'))
+        self.assertEqual(j.state['continuations'], 0, 'cooldown waiting does not consume a continuation')
         self.assertFalse(j.queue())
         self.world.now += 301
         self.assertTrue(j.queue())
@@ -173,6 +174,15 @@ class RecoveryJournalTests(unittest.TestCase):
         action = f'resume:1:{j.scope.digest[:12]}'
         self.assertTrue(restored.begin(action))
         self.assertFalse(self.world.journal().begin(action))
+
+    def test_pinned_route_is_kept_in_the_durable_waiting_failure_record(self):
+        self.journal.scope.inference_route = 'groq:openai/gpt-oss-120b'
+        self.assertTrue(self.journal.defer(RuntimeError('Approved provider capacity is limited')))
+        self.assertEqual(self.journal.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
+        self.assertEqual(self.journal.state['status'], 'waiting')
+        self.assertEqual(self.journal.state['continuations'], 0)
+        restored = self.world.journal()
+        self.assertEqual(restored.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
 
     def test_lost_dispatch_ack_reuses_token_without_incrementing_continuation(self):
         self.journal.defer(RuntimeError('offline'))

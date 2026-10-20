@@ -31,6 +31,23 @@ class IntentGuardTests(unittest.TestCase):
         for path,payload in [('issues',{'body':'Fix unrelated error'}),('git/refs/heads/main',{'sha':'x'}),('pulls/4/merge',{}),('pulls',{'draft':True,'head':'kappa/dev-99'})]:
             with self.assertRaises(PermissionError):scope.permit('https://api.github.com/repos/onlykappa/KappaForge/'+path,payload,'POST')
 
+    def test_pinned_inference_route_is_an_exact_owner_task_restriction(self):
+        task=issue();task['body']+='\nInference route: groq:openai/gpt-oss-120b'
+        scope=ExecutionScope(task)
+        self.assertEqual(scope.inference_route,'groq:openai/gpt-oss-120b')
+        changed=copy.deepcopy(task);changed['body']=changed['body'].replace('gpt-oss-120b','qwen3.8-27b')
+        with self.assertRaisesRegex(PermissionError,'cancelled or scope changed'):
+            scope.check_current(changed)
+        duplicate=copy.deepcopy(task);duplicate['body']+='\nInference route: groq:openai/gpt-oss-120b'
+        with self.assertRaisesRegex(PermissionError,'Pinned inference route'):
+            ExecutionScope(duplicate)
+        unsupported=copy.deepcopy(task);unsupported['body']=unsupported['body'].replace('groq:openai/gpt-oss-120b','mistral:paid-model')
+        with self.assertRaisesRegex(PermissionError,'Pinned inference route'):
+            ExecutionScope(unsupported)
+        read_only=copy.deepcopy(task);read_only['body']=read_only['body'].replace('Mode: develop','Mode: audit')
+        with self.assertRaisesRegex(PermissionError,'Pinned inference route'):
+            ExecutionScope(read_only)
+
     def test_cancellation_checked_before_every_queued_mutation(self):
         original=issue();activate(original)
         guard_request('https://api.github.com/repos/onlykappa/KappaForge/git/blobs',{},'POST',lambda n: original)

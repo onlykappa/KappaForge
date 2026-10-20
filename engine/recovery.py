@@ -339,7 +339,8 @@ class Journal:
         kind, _ = diagnose(error)
         if (kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
                 or self.state['continuations'] >= MAX_CONTINUATIONS or self.scope.expires <= self.clock() + 1200):
-            self.event(error, strategy='stop', outcome='blocked', next_action='Owner review required; automatic continuations exhausted or access blocked')
+            self.event(error, model=self.scope.inference_route or '', strategy='stop', outcome='blocked',
+                       next_action='Owner review required; automatic continuations exhausted or access blocked')
             return False
         now = self.clock()
         self.state.setdefault('waitingSince', now)
@@ -350,7 +351,7 @@ class Journal:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
             return False
         self.state['nextAt'] = due
-        self.event(error, strategy='checkpoint_and_continue', outcome='waiting',
+        self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
                    next_action='Resume this task and candidate on the next recovery queue scan (every 15 minutes)')
         self.publish('waiting', 'Progress saved. Waiting for automatic continuation on the recovery queue.')
         return True

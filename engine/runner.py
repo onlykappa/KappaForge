@@ -582,14 +582,27 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     selected = sorted(set(allowed if allowed is not None else code_providers(private=True)) & set(PROVIDERS["order"] + ["gemini"]))
     if not selected:
         raise RuntimeError("No provider is authorized for coding inference; the task remains queued")
+    pinned_route = getattr(getattr(journal, "scope", None), "inference_route", None)
+    pinned_model = None
+    fallback = True
+    if pinned_route:
+        provider, separator, pinned_model = pinned_route.partition(":")
+        policy = PROVIDERS.get("providers", {}).get(provider, {})
+        if (not separator or provider not in selected or pinned_model not in policy.get("freeModels", [])):
+            raise RuntimeError("Pinned inference route is outside the authorized free coding policy")
+        selected = [provider]
+        fallback = False
     payload = {
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,
         "requestId": str(uuid.uuid4()), "providers": selected,
         "messages": [{"role": "user", "content": prompt}],
         "maxTokens": min(max(1, int(max_output_tokens)), 8192),
-        "temperature": 0.2, "fallback": True,
+        "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
     }
+    if pinned_model:
+        payload["model"] = pinned_route
+        payload["reasoningEffort"] = "low"
     request = urllib.request.Request(endpoint + "/router/infer", json.dumps(payload).encode("utf-8"), {
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
@@ -617,6 +630,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     model, output = data.get("route"), data.get("text")
     if not isinstance(model, str) or not re.fullmatch(r"[a-z0-9-]+:.{1,180}", model, re.I) or not isinstance(output, str) or not output.strip():
         raise RuntimeError("Integrated provider gateway returned an incomplete inference result")
+    if pinned_route and model != pinned_route:
+        raise RuntimeError("Integrated provider gateway did not honor the task-pinned route")
     asking(model)
     return model, output
 
