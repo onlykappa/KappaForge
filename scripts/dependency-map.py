@@ -59,10 +59,16 @@ def build():
 
 
 def render(data):
-    # One module per line keeps the map small enough for the chat context and readable in diffs.
-    lines = ",\n".join(json.dumps({k: v for k, v in m.items() if k != "depends_on" or v}, separators=(",", ":")) for m in data["modules"])
-    head = json.dumps({k: v for k, v in data.items() if k != "modules"}, indent=1)[:-2]
-    return head + ',\n "modules": [\n' + lines + "\n ]\n}\n"
+    # Paths occur in many import and test edges. Index them once, retaining every
+    # dependency and test association within the Worker's existing context budget.
+    paths = sorted({m['path'] for m in data['modules']} |
+                   {p for m in data['modules'] for k in ('depends_on', 'tests') for p in m.get(k, [])})
+    index = {path: n for n, path in enumerate(paths)}
+    compact = dict(schema_version=3, repository=data['repository'], generated_by=data['generated_by'],
+                   columns=['path_index', 'dependency_indices', 'test_indices'], paths=paths,
+                   modules=[[index[m['path']], [index[p] for p in m['depends_on']],
+                             [index[p] for p in m.get('tests', [])]] for m in data['modules']])
+    return json.dumps(compact, separators=(',', ':')) + '\n'
 
 
 def main():

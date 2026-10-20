@@ -272,6 +272,7 @@ class RecoveryJournalTests(unittest.TestCase):
     def test_archive_write_failure_keeps_every_live_event(self):
         before = [dict(sequence=n) for n in range(recovery.MAX_EVENTS)]
         self.journal.state['events'] = copy.deepcopy(before)
+        self.journal.persist()
         with patch.object(self.journal, 'write', side_effect=urllib.error.URLError('offline')):
             with self.assertRaises(urllib.error.URLError):
                 self.journal.event('next')

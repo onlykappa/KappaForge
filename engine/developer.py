@@ -68,14 +68,8 @@ def target_of(issue):
 
 
 def token_for(repo, token):
-    # The Actions token only reaches KappaForge itself; other repositories need an owner PAT.
-    if repo == ROOT:
-        return token
-    coder_token = os.getenv("KAPPA_CODER_TOKEN", "")
-    if not coder_token:
-        raise ValueError("Developing in " + repo + " needs the KAPPA_CODER_TOKEN Actions secret "
-                         "(fine-grained token with Contents and Pull requests write access)")
-    return coder_token
+    from engine.projects import access
+    return access(repo, token)
 
 
 def gh(path, token, payload=None, method=None):
@@ -403,10 +397,11 @@ def mirror_ios_copies(repo, changes, existing):
 
 class GenerationFailure(ValueError):
     """Rejected proposals are recoverable without treating scope failures as transport errors."""
-    def __init__(self, message, compact=False, provider_routes=False):
+    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False):
         super().__init__(message)
         self.compact = compact
         self.provider_routes = provider_routes
+        self.retry_at, self.terminal = retry_at, terminal
 
 
 # A genuinely different route after large answers fail: smaller context and output
@@ -421,6 +416,9 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, LARGE, design,
                                                              require_test, allow_empty)
     except (RuntimeError, GenerationFailure) as exc:
+        from engine.reliability import RecoveryBudgetExceeded
+        if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+            raise
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
@@ -435,6 +433,9 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
                                                                  guide, allowed, budget, design, require_test, allow_empty)
         except (RuntimeError, GenerationFailure) as last:
+            from engine.reliability import RecoveryBudgetExceeded
+            if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False):
+                raise
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -459,13 +460,16 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                         raise GenerationFailure('Smaller stages produced no validated source change')
                     return result
                 except (RuntimeError, ValueError) as planning:
+                    if isinstance(planning, RecoveryBudgetExceeded) or getattr(planning, 'terminal', False):
+                        raise
                     reason += ' | Stage recovery: ' + str(planning)[:600]
                 finally:
                     UNFINISHED[:] = list(dict.fromkeys(prior + UNFINISHED))
                     recovery.SPLITTING.reset(handle)
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
                                     " | Earlier large attempt: " + reason,
-                                    provider_routes=getattr(last, 'provider_routes', False)) from last
+                                    provider_routes=getattr(last, 'provider_routes', False),
+                                    retry_at=getattr(last, 'retry_at', 0), terminal=getattr(last, 'terminal', False)) from last
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -635,7 +639,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
-    avoid = journal.avoid_models() if journal else set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
+    context_key = hashlib.sha256((json.dumps(shown_sources, sort_keys=True) + str(budget)).encode()).hexdigest()
+    if journal:
+        journal.context = context_key
+    avoid = journal.avoid_models(context_key) if journal else set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
     failures = collections.Counter()
     malformed = None
     format_repair_used = False
@@ -672,6 +679,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             model, output = run_model(api_key, prompt, max_output_tokens=budget.output_tokens, allowed=allowed,
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
         except RuntimeError as exc:
+            from engine.reliability import RecoveryBudgetExceeded
+            if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+                raise
             if not errors:
                 raise  # generate() tries a smaller route before stopping.
             route_failure = str(exc)
@@ -746,7 +756,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 malformed = output
             if signature:
                 rejected_signatures.add(signature)
-            error = str(exc)[:300] or type(exc).__name__
+            error = recovery.clean(exc, 300) or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 
@@ -766,7 +776,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     detail = "Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors)
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
-    raise GenerationFailure(detail, compact=not hard_stop, provider_routes=getattr(route_error, 'provider_routes', False))
+    raise GenerationFailure(detail, compact=not hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
+                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could

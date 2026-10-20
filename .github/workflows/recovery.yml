@@ -22,6 +22,7 @@ jobs:
     - name: Dispatch due task continuations without running candidate code
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
       run: python -m engine.recovery
 'on':
   workflow_dispatch: null

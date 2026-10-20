@@ -41,6 +41,9 @@ class ExecutionScope:
         if len(modes) != 1 or len(repos) != 1 or modes[0] not in READ_MODES | WRITE_MODES:
             raise PermissionError("Task mode and repository must be unambiguous")
         self.mode, self.repo = modes[0], repos[0]
+        if self.mode in WRITE_MODES:
+            from engine.projects import registered
+            registered(self.repo)
         matches = MARKER.findall(self.body)
         if "Approved from KappaForge Chat." in self.body:
             if len(matches) != 1:
@@ -76,9 +79,17 @@ class ExecutionScope:
         """Bound autonomous retries: `limit` per generation round (one stage, fix or test) and `total` per task.
         Task #125 failed in its last stage because one budget of 5 was shared by every stage of the task."""
         used = self.round_recoveries.get(round_id, 0)
-        if (self.state in {"cancelled", "completed", "failed"} or (round_id, signature) in self.rejected
-                or used >= limit or self.recoveries >= total):
-            raise PermissionError("Recovery budget exhausted or rejected edit repeated")
+        from engine.reliability import RecoveryBudgetExceeded, RecoveryCoordinator
+        if self.state in {'cancelled', 'completed', 'failed'}:
+            raise PermissionError('Task authorization is no longer active')
+        if (round_id, signature) in self.rejected:
+            raise RecoveryBudgetExceeded('Repeated rejected proposal; choose different evidence or strategy')
+        if used >= limit or self.recoveries >= total:
+            raise RecoveryBudgetExceeded('Local edit retry budget exhausted; checkpoint for bounded continuation')
+        from engine import recovery
+        journal = recovery.CURRENT.get()
+        if journal and journal.scope.digest == self.digest and journal.scope.repo == self.repo:
+            RecoveryCoordinator.charge(journal, 'edits')
         self.rejected.add((round_id, signature))
         self.round_recoveries[round_id] = used + 1
         self.recoveries += 1
@@ -163,6 +174,9 @@ class ExecutionScope:
         raise PermissionError("Tool invocation is outside the authorized draft workflow")
 
     def branch(self, branch):
+        from engine.projects import branch_allowed
+        if not branch_allowed(self.repo, branch):
+            return False
         return bool(re.fullmatch(r"kappa/(?:dev|issue|repair)-" + str(self.number) + r"|kappa/cont-" + str(self.number) + r"-\d+", branch))
 
 

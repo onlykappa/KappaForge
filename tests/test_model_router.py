@@ -246,8 +246,8 @@ class RateLimits(unittest.TestCase):
         asked, _ = self.run_calls(b"{}")
         self.assertEqual(asked.count("gemini-3-flash"), 3)
         self.assertGreater(runner.COOLDOWN["gemini-3-flash"], 0)
-        runner.COOLDOWN["gemini-3-flash"] = 0
-        asked, _ = self.run_calls(b"{}", calls=1)
+        with patch("engine.runner.time.time", return_value=__import__("time").time() + 61):
+            asked, _ = self.run_calls(b"{}", calls=1)
         self.assertEqual(asked.count("gemini-3-flash"), 3, "asked again once the minute is over")
 
     def test_skipped_models_are_not_asked(self):
@@ -431,6 +431,8 @@ class ProviderDenialRecoveryTests(unittest.TestCase):
         from engine import recovery
         journal = MagicMock()
         journal.state = {}
+        journal.project = {}
+        journal.scope.repo = 'onlykappa/KappaForge'
         handle = recovery.CURRENT.set(journal)
         try:
             with patch.object(runner, 'PROVIDERS', self.config):

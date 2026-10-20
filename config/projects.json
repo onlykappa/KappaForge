@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "projects": {
+    "onlykappa/KappaForge": {"enabled": true, "branches": "kappa/(?:dev|issue|repair)-[0-9]+|kappa/cont-[0-9]+-[0-9]+", "maxWaitSeconds": 21600, "budgets": {"edits": 120, "modelCalls": 160}, "allowRelease": false},
+    "onlykappa/OmniPC": {"enabled": true, "tokenEnv": "KAPPA_CODER_TOKEN", "branches": "kappa/dev-[0-9]+", "maxWaitSeconds": 21600, "budgets": {"edits": 120, "modelCalls": 160}, "allowRelease": false},
+    "onlykappa/Apk-revival": {"enabled": true, "tokenEnv": "KAPPA_CODER_TOKEN", "branches": "kappa/dev-[0-9]+", "maxWaitSeconds": 21600, "budgets": {"edits": 120, "modelCalls": 160}, "allowRelease": false}
+  }
+}
