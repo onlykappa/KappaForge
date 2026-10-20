@@ -1,7 +1,7 @@
 # OmniRoute selective integration checkpoint
 
 **Updated:** 2026-10-20
-**Status:** IMPLEMENTED IN DRAFT; validation underway. Not deployed. No live provider credentials or traffic were used.
+**Status:** PARTIAL — implementation pushed in draft; fixture/build validation completed; live provider and deployment acceptance remain pending.
 
 ## Controlling decision
 
@@ -10,6 +10,7 @@ The owner replaced Phase 2's persistent Linux-host prerequisite with selective i
 ## Baselines and prior evidence
 
 - KappaForge default branch baseline: `ccf7ad582f3b617eb53f2e6ca72d600630afaf74` (`main`). Implementation branch: `codex/phase3-routing-policy`.
+- KappaForge implementation commit: `6d07a60df79b35ca33b0d2b081fade8f223027ff`. Draft PR #139: https://github.com/onlykappa/KappaForge/pull/139 (base `main`, not merged).
 - OmniRoute current standalone source at investigation: `546b38105f2cc655b251b7498b6c913cca7dcebd` (`standalone/free-agent`). Phase 1 tested source/smoke commit: `e62525857667a35610c9c812877860df8b38f774`; Phase 1 documentation head: `f735844eafd395a05270c198ec4a1388e4c21234`. Verified Windows artifact identity and smoke evidence remain in OmniRoute Phase 1/2 checkpoints; Linux runtime was not verified.
 - OmniRoute Phase 2 partial handoff: draft PR #12, head `79560333`, with standalone deployment templates only. Draft PRs #10 and #11 remain untouched. KappaForge draft PR #133 was pre-existing and left untouched.
 - Existing KappaForge routing registry: `config/providers.json`, loaded by both Worker JavaScript and Python runner. Existing app data, authorization, task recovery, and Durable Object storage remain in place.
