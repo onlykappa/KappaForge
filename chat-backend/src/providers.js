@@ -30,7 +30,7 @@ export async function providerModels(env,id){
   return p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
  }
  if(enforceFreePolicy&&!p.freeOnly&&!Array.isArray(p.freeModels))return [];
- const key=id+":"+(p.key?env[p.key]||"":""),hit=cache.get(key);
+ const key=id+":"+(p.key?env[p.key]||"":"")+":"+(enforceFreePolicy?"free-v1":"legacy"),hit=cache.get(key);
  if(hit&&Date.now()-hit.at<600000)return hit.models;
  try{
   const r=await fetch(p.base+"/models",{headers:authHeaders(env,p),signal:AbortSignal.timeout(8000)});

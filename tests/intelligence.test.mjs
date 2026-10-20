@@ -256,7 +256,7 @@ test('keyless providers answer anonymously, fixed free lists skip discovery, and
  try{
   assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free']);
   assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
-  assert.deepEqual(await providerModels({ZAI_API_KEY:'z'},'zai'),[],'fixed models without a reviewed free allowlist stay disabled');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),[],'fixed models without a reviewed free allowlist stay disabled');
   assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'providers without a reviewed free model list are never discovered');
   await callProvider({},{provider:'kilo',model:'kilo-auto/free'},{system:'',messages:[],maxTokens:10,temperature:0},false);
   assert.equal(seen.every(([,auth])=>auth===undefined),true,'no credentials sent to keyless providers');
@@ -613,7 +613,7 @@ test('Gemini discovery excludes models outside the published free-tier allowlist
  const names=['gemini-3.8-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-3.1-flash-lite-preview','gemini-3-pro','gemini-3.1-flash-lite','text-embedding-4'];
  globalThis.fetch=async()=>Response.json({models:names.map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
  try{
-  const found=await discover({GEMINI_API_KEY:'newer-key'});
+  const found=await discover({ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'newer-key'});
   assert.deepEqual(found,['gemini-3.1-flash-lite'],'newly discovered and preview models cannot widen the free allowlist');
   assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.1-flash-lite');
   rest('gemini-3.1-flash-lite',429);
