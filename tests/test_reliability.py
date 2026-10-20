@@ -148,6 +148,21 @@ class DurableRecoveryTests(unittest.TestCase):
         self.assertEqual(other.state['budgets'], {'edits':0,'modelCalls':0})
         self.assertEqual(other.ledger, {})
 
+    def test_legacy_provider_pause_migrates_without_early_probe_or_lost_eligibility(self):
+        import hashlib
+        key='existing-key'
+        old='gemini:'+hashlib.sha256(key.encode()).hexdigest()[:12]
+        until=time.time()+3600
+        self.journal.state['providerPauses']={old:until}
+        self.journal.persist()
+        identity=runner.provider_identity('gemini',key)
+        self.assertTrue(runner.provider_paused(identity))
+        error=runner.routes_unavailable(['legacy route still paused'])
+        self.assertEqual(error.retry_at,until)
+        self.assertTrue(self.journal.defer(error))
+        self.assertGreater(self.journal.state['nextAt'],until)
+        self.assertEqual(self.journal.state['continuations'],0)
+
     def test_invalid_unicode_diagnostic_and_fingerprint_cannot_break_checkpoint(self):
         self.journal.event('bad output \ud800',model='writer',signature='proposal \ud800')
         self.assertTrue(self.journal.rejected('proposal \ud800'))

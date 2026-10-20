@@ -102,7 +102,9 @@ blocks completion and preserves newer commits; it is never force-updated.
 
 Provider and model health are independent and project-scoped. Identity includes a
 credential fingerprint and endpoint, never the credential value. Health is
-persisted in the task journal and restored on worker restart.
+persisted in the task journal and restored on worker restart. V1 credential
+fingerprints are migrated for the matching task/key while retaining their retry
+eligibility, so deployment does not trigger an early probe or spend continuations.
 
 - HTTP 401 is credential authentication failure; HTTP 402 requires quota/access
   configuration. Both block the key's routes.

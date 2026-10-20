@@ -328,7 +328,22 @@ def provider_identity(pid, key=None):
     journal = recovery.CURRENT.get()
     revision = str(journal.project.get('providerConfigRevision', 1)) if journal else '1'
     project = journal.scope.repo if journal else ''
-    return pid + ':' + hashlib.sha256((endpoint + ':' + key + ':' + project + ':' + revision).encode()).hexdigest()[:16]
+    identity = pid + ':' + hashlib.sha256((endpoint + ':' + key + ':' + project + ':' + revision).encode()).hexdigest()[:16]
+    # V1 stored credential fingerprints without endpoint/project. Carry their
+    # eligibility forward in the matching task instead of probing immediately.
+    if journal and revision == '1':
+        legacy = pid + ':' + hashlib.sha256(key.encode()).hexdigest()[:12]
+        health = journal.state.setdefault('providerHealth', {})
+        changed = False
+        for route, until in journal.state.get('providerPauses', {}).items():
+            if route != legacy and not route.startswith(legacy + ':'): continue
+            target = identity + route[len(legacy):]
+            if target not in health and isinstance(until, (int,float)) and until > time.time():
+                health[target] = dict(provider=pid,model=route[len(legacy)+1:],category='legacy_pause',
+                                      until=until,updated=time.time(),state='open',blocked=False,failures=1)
+                changed = True
+        if changed: journal.persist()
+    return identity
 
 
 def health_store():
