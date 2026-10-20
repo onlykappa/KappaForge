@@ -148,6 +148,14 @@ class DurableRecoveryTests(unittest.TestCase):
         self.assertEqual(other.state['budgets'], {'edits':0,'modelCalls':0})
         self.assertEqual(other.ledger, {})
 
+    def test_invalid_unicode_diagnostic_and_fingerprint_cannot_break_checkpoint(self):
+        self.journal.event('bad output \ud800',model='writer',signature='proposal \ud800')
+        self.assertTrue(self.journal.rejected('proposal \ud800'))
+        self.assertTrue(self.world.journal().rejected('proposal \ud800'))
+        for _,payload,_ in self.world.calls:
+            if 'body' in payload:payload['body'].encode('utf-8')
+        self.assertEqual(reliability.retry_after({'Retry-After':'Infinity'},0),0)
+
     def test_secret_redaction_and_terminal_transition_validation(self):
         secret = 'secret-provider-key-1234'
         with patch.dict(os.environ, {'FIXTURE_API_KEY':secret}):

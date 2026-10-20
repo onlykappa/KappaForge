@@ -32,7 +32,7 @@ def clean(value, size=700):
     for name, secret in os.environ.items():
         if len(secret) >= 8 and re.search(r'TOKEN|SECRET|PASSWORD|API_KEY', name, re.I):
             value = value.replace(secret, '[redacted]')
-    return value[:size]
+    return value[:size].encode('utf-8', 'backslashreplace').decode('utf-8')
 
 
 def diagnose(error):
@@ -166,7 +166,7 @@ class Journal:
 
     @staticmethod
     def wire(value):
-        return json.dumps(value, separators=(',', ':'), ensure_ascii=False, allow_nan=False).replace('<', '\\u003c').replace('>', '\\u003e')
+        return json.dumps(value, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8', 'backslashreplace').decode('utf-8').replace('<', '\\u003c').replace('>', '\\u003e')
 
     def archive(self, events, kind='events'):
         # Split large records before issuing any write. The full data remains
@@ -289,7 +289,7 @@ class Journal:
         if getattr(error, 'path', ''):
             item['files'] = [error.path]
         if signature:
-            key = hashlib.sha256((self.state['candidate'] + signature).encode()).hexdigest()
+            key = hashlib.sha256((self.state['candidate'] + signature).encode('utf-8', 'backslashreplace')).hexdigest()
             self.state['rejected'][key] = self.state['rejected'].get(key, 0) + 1
             while len(self.state['rejected']) > MAX_EVENTS:
                 del self.state['rejected'][next(iter(self.state['rejected']))]
@@ -314,7 +314,7 @@ class Journal:
         return {m for m, count in counts.items() if count >= 2}
 
     def rejected(self, signature):
-        key = hashlib.sha256((self.state['candidate'] + signature).encode()).hexdigest()
+        key = hashlib.sha256((self.state['candidate'] + signature).encode('utf-8', 'backslashreplace')).hexdigest()
         return key in self.state['rejected'] or key in self.ledger
 
     def checkpoint(self, sha, base='', pr='', files=()):
