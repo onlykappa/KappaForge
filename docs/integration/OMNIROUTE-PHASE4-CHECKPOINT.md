@@ -45,8 +45,8 @@ Record only task/run/PR links, deployed gateway commit, selected provider/model,
 
 ## Limitations, rollback, and resume
 
-- Phase 4 will remain partial if the branch workflow cannot use the existing GitHub Actions secrets/variables, if the Worker rejects the pinned Groq route, if code generation/validation fails, or if the app cannot observe the resulting issue progress. No Phase 4 code has been deployed.
+- Phase 4 will remain partial if the branch workflow cannot use the existing GitHub Actions secrets/variables, the deployed gateway returned HTTP 503 for Groq capacity, so code generation, validation, and task PR creation did not complete. No Phase 4 code has been deployed.
 - Remaining provider quota is unknown. Shared Worker request limits and Groq Free Plan limits remain authoritative; never raise them, purchase credits, or enable fallback to another model/provider for this test.
 - There is no direct mobile-app `/jobs` session credential available to this executor. The authorized test used the owner-created GitHub task, which the existing task interface can adopt and follow. The app UI launch/adoption itself remains unverified because no authenticated mobile session was available.
 - Rollback before merge is to close the draft implementation PR and leave the isolated branch unmerged; the production Worker, secrets, variables, and Durable Object are unchanged. If a test-only generated PR exists, leave it draft and close it after preserving its URL/evidence. Do not merge either PR.
-- To resume, fetch `codex/phase4-cloud-execution`, read this file and the Phase 3 checkpoint, run the focused tests, then verify the one authorized test issue and Actions run before any new provider call. Keep Phase 4 PR in draft and do not begin Phase 5.
+- To resume, fetch `codex/phase4-cloud-execution`, read this file and the Phase 3 checkpoint, run the focused tests, and inspect the closed test issue/run. Do not reopen or redispatch issue #151. A new owner authorization is required before another live inference attempt; first establish that Groq capacity is eligible without sending an inference. Keep Phase 4 PR in draft and do not begin Phase 5.
