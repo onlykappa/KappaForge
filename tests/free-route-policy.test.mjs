@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {providerModels,fallbackRoutes} from "../chat-backend/src/providers.js";
+import {providerModels,fallbackRoutes,callProvider} from "../chat-backend/src/providers.js";
 import {discover} from "../chat-backend/src/intelligence.js";
 
 test("dashboard-managed provider allowlists are not overridden by blank Wrangler defaults",()=>{
@@ -42,6 +42,15 @@ test("Gemini discovery intersects live models with the free-tier model list",asy
  ]});
  try{assert.deepEqual(await discover({ROUTING_POLICY_VERSION:"v1",GEMINI_API_KEY:"test"}),["gemini-3.1-flash-lite"])}
  finally{globalThis.fetch=original}
+});
+
+test("Groq GPT-OSS requests use the supported completion limit and explicit reasoning effort",async()=>{
+ const original=globalThis.fetch;let body;
+ globalThis.fetch=async(_url,init)=>{body=JSON.parse(init.body);return Response.json({choices:[{message:{content:"ok"}}]})};
+ try{
+  await callProvider({GROQ_API_KEY:"fixture-only"},{provider:"groq",model:"openai/gpt-oss-120b"},{system:"",messages:[{role:"user",content:"say ok"}],maxTokens:256,temperature:0,reasoningEffort:"low"},false);
+  assert.equal(body.max_completion_tokens,256);assert.equal(body.max_tokens,undefined);assert.equal(body.reasoning_effort,"low");
+ }finally{globalThis.fetch=original}
 });
 
 test("automatic coding fallback cannot include model IDs outside approved free lists",async()=>{

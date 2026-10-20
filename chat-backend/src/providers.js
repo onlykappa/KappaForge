@@ -139,9 +139,11 @@ export async function callProvider(env,route,chat,streaming,signal){
    return Response.json({error:String(error?.message||error).slice(0,200)},{status:/limit|neuron|capacity|429/i.test(String(error?.message))?429:503});
   }
  }
+ const outputLimit=route.provider==="groq"?{max_completion_tokens:maxTokens}:{max_tokens:maxTokens};
  return fetch(p.base+"/chat/completions",{method:"POST",signal,
   headers:{...authHeaders(env,p),"Content-Type":"application/json"},
-  body:JSON.stringify({model:route.model,messages,max_tokens:maxTokens,temperature:chat.temperature,stream:streaming,
+  body:JSON.stringify({model:route.model,messages,...outputLimit,temperature:chat.temperature,stream:streaming,
+   ...(route.provider==="groq"&&chat.reasoningEffort?{reasoning_effort:chat.reasoningEffort}:{}),
    ...(chat.responseFormat?{response_format:chat.responseFormat}:{}),...(streaming?{stream_options:{include_usage:true}}:{})})});
 }
 

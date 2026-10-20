@@ -9,4 +9,7 @@ test("diagnostic-only deployment marker cannot enable provider inference",()=>{
  assert.match(diagnostic,/\[router-diagnostics-only\]/);
  assert.match(inference,/\[router-free-live-smoke\]/);
  assert.doesNotMatch(inference,/\[router-diagnostics-only\]/);
+ assert.match(inference,/"fallback":false/);
+ assert.match(inference,/"maxTokens":256/);
+ assert.match(inference,/"reasoningEffort":"low"/);
 });
