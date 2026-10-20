@@ -6,7 +6,11 @@ app's sanitizer drops, code nothing calls, a backend feature the app never uses,
 written inside the test file. Then a model review compares the change with every requirement in the task.
 Problems go back to the model as a follow-up stage; what still fails is reported plainly, never as success.
 """
+import ast
 import difflib
+import io
+import tokenize
+from engine.js_analysis import analyze as analyze_js, executable_quote
 import json
 import posixpath
 import re
@@ -36,97 +40,17 @@ def added_lines(old, new):
     return [line for line in new.splitlines() if line not in before]
 
 
-def js_code(text):
-    """Mask comments and quoted fixture text, preserving offsets and line breaks.
-
-    This is deliberately a lexical check, not a JavaScript interpreter. Template
-    literals are treated as data, so code supplied to a VM is not confused with
-    assignments in the Node process hosting the test.
-    """
-    chars, i = list(text), 0
-    while i < len(text):
-        start = i
-        if text.startswith('//', i):
-            end = text.find('\n', i)
-            i = len(text) if end < 0 else end
-        elif text.startswith('/*', i):
-            end = text.find('*/', i + 2)
-            i = len(text) if end < 0 else end + 2
-        elif text[i] in "'\"`":
-            quote, i = text[i], i + 1
-            while i < len(text):
-                if text[i] == '\\':
-                    i += 2
-                elif text[i] == quote:
-                    i += 1
-                    break
-                else:
-                    i += 1
-        else:
-            i += 1
-            continue
-        for n in range(start, min(i, len(text))):
-            if chars[n] != '\n':
-                chars[n] = ' '
-    return ''.join(chars)
-
-
-def js_blocks(code):
-    blocks, stack = [], []
-    for match in re.finditer(r'[{}]', code):
-        if match.group() == '{':
-            prefix = code[max(0, match.start() - 300):match.start()]
-            function = bool(re.search(r'\bfunction\b[^{};]*$|=>\s*$', prefix))
-            method = re.search(r'(?:^|[{},;])\s*(?:async\s+)?(\w+)\s*\([^()]*\)\s*$', prefix)
-            function = function or bool(method and method.group(1) not in {'if', 'for', 'while', 'switch', 'catch', 'with'})
-            stack.append((match.start(), function))
-        elif stack:
-            start, function = stack.pop()
-            blocks.append((start, match.end(), function))
-    return blocks
-
-
-def exits_block(code):
-    """Recognize direct exits and try/catch pairs whose two arms both exit."""
-    blocks = js_blocks(code)
-    outer = [b for b in blocks if not any(a[0] < b[0] and b[1] < a[1] for a in blocks)]
-    flat = list(code)
-    for start, end, _ in outer:
-        flat[start:end] = ' ' * (end - start)
-    if re.search(r'(?:^|[;}])\s*(?:return|throw)\b', ''.join(flat)):
-        return True
-    for start, end, _ in outer:
-        if not re.search(r'\btry\s*$', code[:start]):
-            continue
-        following = next((b for b in outer if b[0] >= end), None)
-        if following and re.fullmatch(r'\s*catch\s*(?:\([^)]*\))?\s*', code[end:following[0]]):
-            if exits_block(code[start + 1:end - 1]) and exits_block(code[following[0] + 1:following[1] - 1]):
-                return True
-    return False
+def changed_position(old, new, position):
+    line = new[new.rfind('\n', 0, position) + 1:new.find('\n', position) if '\n' in new[position:] else len(new)]
+    return line not in set((old or '').splitlines())
 
 
 def repeated_body_read(old, new):
-    code, old_lines = js_code(new), set(old.splitlines())
-    reads = list(re.finditer(r'\brequest\s*\.\s*(?:text|json|arrayBuffer|formData|blob)\s*\(', code))
-    blocks = js_blocks(code)
-    def function_at(pos):
-        enclosing = [b for b in blocks if b[2] and b[0] < pos < b[1]]
-        return min(enclosing, key=lambda b: b[1] - b[0], default=None)
-    grouped = {}
-    for read in reads:
-        grouped.setdefault(function_at(read.start()), []).append(read)
-    pairs = [pair for group in grouped.values() for pair in zip(group, group[1:])]
-    for earlier, later in pairs:
-        changed = any(new[new.rfind('\n', 0, m.start()) + 1:new.find('\n', m.start()) if '\n' in new[m.start():] else len(new)]
-                      not in old_lines for m in (earlier, later))
-        if not changed:
-            continue
-        # A route branch that definitely exits cannot fall through to the parser.
-        closed = [b for b in blocks if not b[2] and b[0] < earlier.start() < b[1] <= later.start()]
-        if any(exits_block(code[earlier.end():end - 1]) for _, end, _ in closed):
-            continue
-        return True
-    return False
+    analysis = analyze_js(new)
+    if analysis.get('bodyReadError'):
+        raise ValueError(analysis['bodyReadError'])
+    return any(changed_position(old, new, pair['first']) or changed_position(old, new, pair['second'])
+               for pair in analysis['bodyReads'])
 
 
 def tests_without_real_code(changes, all_paths=()):
@@ -163,7 +87,12 @@ def worker_problems(sources, changes):
         if listed and route not in allowed:
             problems.append(f'{WORKER}: the new route "{route}" is not in the allowed path list near the top of fetch(), '
                             'so every request to it gets 404 "Not found" before reaching your handler: add it there')
-    if repeated_body_read(old, new):
+    try:
+        repeated = repeated_body_read(old, new)
+    except ValueError as exc:
+        problems.append(f"{WORKER}: request-body verification unavailable: {exc}")
+        repeated = False
+    if repeated:
         problems.append(f"{WORKER}: the request body is read more than once on a fall-through path; a "
                         "second request.json() or request.text() fails: reuse the parsed input, clone before reading, "
                         "or return from the early route before the common parser")
@@ -171,97 +100,80 @@ def worker_problems(sources, changes):
 
 
 def test_binding_problems(read, changes, all_paths):
-    """Catch new tests calling new production functions without loading their module.
-
-    File-wide 'has an import' checks missed PR #133: a Worker import did not
-    define the browser permission helper its new test called.
-    """
-    introduced = {}
-    for path, text in changes.items():
-        if TEST_RE.search(path) or not re.search(r"\.[cm]?js$", path):
+    """Use parsed declarations, bindings and exports, never text resemblance."""
+    introduced, problems = {}, []
+    known = set(all_paths) | set(changes)
+    for path, source in changes.items():
+        if TEST_RE.search(path) or not re.search(r'\.[cm]?js$', path):
             continue
-        old_names = {m.group(1) or m.group(2) for m in JS_FUNC_RE.finditer(js_code(read(path) or ""))}
-        for match in JS_FUNC_RE.finditer(js_code(text)):
-            name = match.group(1) or match.group(2)
-            if name not in old_names:
-                introduced.setdefault(name, set()).add(path)
-    problems = []
-    for path, text in changes.items():
-        if not TEST_RE.search(path) or not re.search(r"\.[cm]?js$", path):
+        try:
+            names = set(analyze_js(source)['definitions']) - set(analyze_js(read(path) or '')['definitions'])
+        except ValueError as exc:
+            problems.append(f'{path}: JavaScript verification unavailable: {exc}')
             continue
-        code = js_code(text)
-        previous = set(js_code(read(path) or '').splitlines())
-        added = "\n".join(line for line in code.splitlines() if line not in previous)
-        if re.search(r"\bglobalThis\.navigator\s*=(?!=)", added):
-            problems.append(f"{path}: assigning globalThis.navigator throws on modern Node because it is getter-only; "
-                            "use an isolated VM/browser fixture or a configurable property override restored in finally")
-        bindings = {}
-        for match in re.finditer(r"\bimport\s+([^;]+?)\s+from\s*['\"](\.{1,2}/[^'\"]+)['\"]", text):
-            if not code[match.start():].startswith('import'):
-                continue
-            spec, target = match.groups()
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-            named = re.search(r'\{([^}]+)\}', spec)
-            if named:
-                for entry in named.group(1).split(','):
-                    names = re.fullmatch(r'\s*(\w+)(?:\s+as\s+(\w+))?\s*', entry)
-                    if names:
-                        imported, local = names.groups()
-                        bindings[local or imported] = (resolved, imported)
-            default = re.match(r'\s*(\w+)\s*(?:,|$)', spec)
-            if default:
-                bindings[default.group(1)] = (resolved, 'default')
-        for match in re.finditer(r"\b(?:const|let|var)\s*\{([^}]+)\}\s*=\s*require\(\s*['\"](\.{1,2}/[^'\"]+)['\"]\s*\)", text):
-            if not re.match(r'(?:const|let|var)\b', code[match.start():]):
-                continue
-            spec, target = match.groups()
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-            for entry in spec.split(','):
-                names = re.fullmatch(r'\s*(\w+)(?:\s*:\s*(\w+))?\s*', entry)
-                if names:
-                    imported, local = names.groups()
-                    bindings[local or imported] = (resolved, imported)
-        local_names = {m.group(1) or m.group(2) for m in JS_FUNC_RE.finditer(code)}
-        for name, owners in introduced.items():
-            if not re.search(r"(?<![\w$.])" + re.escape(name) + r"\s*\(", added) or name in local_names:
-                continue
-            binding = bindings.get(name)
-            if binding and module_binds(binding[0], binding[1], owners, read, changes, set(all_paths) | set(changes)):
-                continue
-            problems.append(f"{path}: the new test calls {name} but does not bind it from its production module "
-                            + ", ".join(sorted(owners)) + "; use a named import/require or call the helper through its VM/browser context")
+        for name in names:
+            introduced.setdefault(name, set()).add(path)
+    for path, source in changes.items():
+        if not TEST_RE.search(path) or not re.search(r'\.[cm]?js$', path):
+            continue
+        try:
+            parsed = analyze_js(source)
+            for position in parsed['navigatorWrites']:
+                if changed_position(read(path), source, position):
+                    problems.append(f'{path}: assigning globalThis.navigator throws on modern Node because it is getter-only; '
+                                    'use an isolated VM/browser fixture or restore a configurable property override')
+            for call in parsed['calls']:
+                name = call['name']
+                if name not in introduced or not changed_position(read(path), source, call['start']):
+                    continue
+                binding = call.get('binding')
+                if binding and binding['kind'] == 'local':
+                    continue
+                if binding and binding['kind'] == 'import':
+                    target = resolve_module(path, binding['target'], known)
+                    if target and module_binds(target, binding['imported'], introduced[name], read, changes, known, expected=name):
+                        continue
+                problems.append(f'{path}: the new test calls {name} but does not bind it from its production module '
+                                + ', '.join(sorted(introduced[name])) + '; use a named import/require or call through the VM/browser context')
+        except ValueError as exc:
+            problems.append(f'{path}: JavaScript verification unavailable: {exc}')
     return problems
 
 
-def module_binds(path, name, owners, read, changes, known, seen=None):
+def resolve_module(path, target, known):
+    if not isinstance(target, str) or not target.startswith('.'):
+        return None
+    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
+    return next((p for p in [resolved, resolved + '.js', resolved + '.mjs', resolved + '.cjs',
+                             resolved + '/index.js', resolved + '/index.cjs'] if p in known), None)
+
+
+def module_binds(path, name, owners, read, changes, known, seen=None, expected=None):
     seen = set() if seen is None else seen
     if path not in known or (path, name) in seen or len(seen) >= 40:
         return False
     seen.add((path, name))
-    source = changes[path] if path in changes else read(path) or ''
-    code = js_code(source)
-    if path in owners:
-        if name == 'default':
-            return bool(re.search(r'\bexport\s+default\b|module\.exports\s*=', code))
-        if re.search(r'\bexport\s+(?:async\s+)?(?:function|const|let|var)\s+' + re.escape(name) + r'\b', code):
-            return True
-        if re.search(r'(?:module\.exports|exports\.\w+)\s*=.*\b' + re.escape(name) + r'\b', code):
-            return True
-        if re.search(r'\bexport\s*\{[^}]*\b' + re.escape(name) + r'\b[^}]*\}(?!\s*from)', code):
-            return True
-    for match in re.finditer(r"\bexport\s+(\*|\{[^}]*\})\s+from\s*['\"](\.{1,2}/[^'\"]+)['\"]", source):
-        if not code[match.start():].startswith('export'):
+    parsed = analyze_js(changes[path] if path in changes else read(path) or '')
+    for export in parsed['exports']:
+        if export['exported'] != name:
             continue
-        spec, target = match.groups()
-        imported = name if spec == '*' else None
-        if spec != '*':
-            for entry in spec[1:-1].split(','):
-                names = re.fullmatch(r'\s*(\w+)(?:\s+as\s+(\w+))?\s*', entry)
-                if names and (names.group(2) or names.group(1)) == name:
-                    imported = names.group(1)
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-        if imported and module_binds(resolved, imported, owners, read, changes, known, seen):
+        if export.get('target'):
+            resolved = resolve_module(path, export['target'], known)
+            if resolved and module_binds(resolved, export['local'], owners, read, changes, known, seen, expected):
+                return True
+        elif path in owners and export['local'] == (expected or name):
             return True
+        else:
+            for binding in parsed['imports']:
+                if binding['local'] == export['local']:
+                    resolved = resolve_module(path, binding['target'], known)
+                    if resolved and module_binds(resolved, binding['imported'], owners, read, changes, known, seen, expected):
+                        return True
+    if name != 'default':
+        for target in parsed['stars']:
+            resolved = resolve_module(path, target, known)
+            if resolved and module_binds(resolved, name, owners, read, changes, known, seen, expected):
+                return True
     return False
 
 
@@ -462,6 +374,31 @@ def parse_review(output):
     return reqs, problems, files
 
 
+def executable_evidence(path, source, quote):
+    if re.search(r'\.[cm]?js$', path):
+        return executable_quote(source, quote)
+    if path.endswith('.py'):
+        ast.parse(source)  # Parse only; candidate code is never imported.
+        offsets, offset = [], 0
+        for line in source.splitlines(keepends=True):
+            offsets.append(offset)
+            offset += len(line)
+        ranges = []
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type in (tokenize.NAME, tokenize.OP, tokenize.NUMBER):
+                ranges.append((offsets[token.start[0] - 1] + token.start[1],
+                               offsets[token.end[0] - 1] + token.end[1]))
+        start = source.find(quote)
+        while start >= 0:
+            if any(a < start + len(quote) and b > start for a, b in ranges):
+                return True
+            start = source.find(quote, start + 1)
+        return False
+    # Documentation and other languages retain source matching plus model review;
+    # this check does not claim to interpret unsupported languages.
+    return quote in source
+
+
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's bounded source-backed verdict; None leaves verification incomplete."""
     try:
@@ -485,9 +422,10 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                     evidence = requirement['evidence']
                     path = evidence['path']
                     source = changes[path] if path in changes else read(path) if path in known else ''
-                    if path not in known or not source or evidence['quote'] not in source:
+                    if (path not in known or not source or evidence['quote'] not in source
+                            or not executable_evidence(path, source, evidence['quote'])):
                         requirement['met'] = False
-                        problems.append('Requirement evidence does not match current source: ' + requirement['text'])
+                        problems.append('Requirement evidence does not match executable current source: ' + requirement['text'])
             present = {r['text'] for r in reqs}
             for text, original in original_requirements.items():
                 if text not in present:
