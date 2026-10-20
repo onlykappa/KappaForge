@@ -412,8 +412,10 @@ COMPACT = SMALL._replace(file_chars=24000, context_chars=80000, output_tokens=81
 def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False, allow_empty=False):
     """Try the large budget first (Gemini, or a strong provider whose context window it fits); if nothing can answer
     it, re-plan at the small size for any provider."""
+    journal = recovery.CURRENT.get()
+    initial_budget = COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE
     try:
-        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, LARGE, design,
+        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
                                                              require_test, allow_empty)
     except (RuntimeError, GenerationFailure) as exc:
         from engine.reliability import RecoveryBudgetExceeded
@@ -422,7 +424,8 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
-        budget = COMPACT if isinstance(exc, GenerationFailure) else SMALL
+        budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
+                  else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
         note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
         print("Retrying with compact generation: " + reason)
         small = dict(list(sources.items())[:budget.read_files])
@@ -1336,12 +1339,12 @@ def produce_development_pr(issue, api_key, token):
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
-                      f"test again, up to {MAX_FIXES} times, before asking you.")
+                      "test again within the remaining durable recovery budget before asking you.")
     except urllib.error.HTTPError as exc:
         if journal:
             raise RuntimeError(f"Independent test dispatch unavailable: HTTP {exc.code}") from exc
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
-    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (f"tests are running. If they fail I fix them, up to {MAX_FIXES} times"
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + ("tests are running. Failed checks trigger bounded recovery with preserved progress"
                 if not validation.startswith("Test dispatch failed") else validation),
                 phase=True, status="blocked" if validation.startswith("Test dispatch failed") else "testing")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
@@ -1573,13 +1576,18 @@ def fix_pull_request(issue, api_key, token):
     failed = [j for r in failures for j in gh(f"repos/{ROOT}/actions/runs/{int(r['id'])}/jobs?per_page=30", token).get("jobs", [])
               if j.get("conclusion") == "failure"]
     native_history = native_build.summary(native_build.history(branch, token)) if native else ""
-    if fixes >= MAX_FIXES + len(guidance):
+    journal = recovery.CURRENT.get()
+    if not journal and fixes >= MAX_FIXES + len(guidance):
         report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
         return None
+    cycle, cycle_limit = fixes + 1, MAX_FIXES + len(guidance)
+    if journal:
+        from engine.reliability import RecoveryCoordinator
+        cycle, cycle_limit = RecoveryCoordinator.start_fix(journal, fixes)
     progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
     progress.ok(("Requirements are unfinished" if pending else "Tests failed") + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
-    progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""), phase=True)
+    progress.now(f"Reading the failure and writing fix {cycle} of {cycle_limit}" + (" with your guidance" if guidance else ""), phase=True)
     journal = recovery.CURRENT.get()
     saved = {'sha': head, 'changes': {}}
     def checkpoint_revision(changes, modes):
@@ -1639,7 +1647,7 @@ def fix_pull_request(issue, api_key, token):
             "title": "Draft" + (" (incomplete)" if requirements_open({"body": explanation}) else "") + ": " + title,
             "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {fixes + 1} of {MAX_FIXES + len(guidance)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
+    progress.ok(f"Pushed fix {cycle} of {cycle_limit}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

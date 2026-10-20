@@ -103,7 +103,7 @@ def retry_after(headers, now):
 
 class RecoveryCoordinator:
     """One policy authority. Counters persist with the task, never in a model prompt."""
-    LIMITS = {'edits':120, 'modelCalls':160}
+    LIMITS = {'edits':120, 'modelCalls':160, 'fixCycles':12}
     STATES = {'queued','running','recovering','waiting_for_provider','validating','completed',
               'blocked_authorization','failed_terminal','cancelled','paused'}
 
@@ -132,6 +132,17 @@ class RecoveryCoordinator:
             raise RecoveryBudgetExceeded('Task ' + kind + ' budget exhausted; saved evidence requires review', terminal=True)
         counts[kind] = counts.get(kind, 0) + 1
         journal.persist()  # Debit before work; interrupted calls cannot reset counters.
+
+    @staticmethod
+    def start_fix(journal, legacy_fixes=0):
+        counts = journal.state.setdefault('budgets', {})
+        counts.setdefault('fixCycles', legacy_fixes)
+        RecoveryCoordinator.charge(journal, 'fixCycles')
+        if counts['fixCycles'] > 3:
+            journal.state['repairStrategy'] = 'compact'
+            journal.event('Earlier repair cycles did not finish the task', strategy='compact_and_replan',
+                          next_action='Reread current source and use smaller proposals under the remaining durable budget')
+        return counts['fixCycles'], journal.project.get('budgets', {}).get('fixCycles', 12)
 
     @staticmethod
     def state(status, error=''):

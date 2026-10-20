@@ -71,7 +71,7 @@ provider requests; `engine/intent_guard.py` still authorizes every GitHub mutati
 Budgets are distinct and bounded:
 
 - Five edit recovery attempts per generation round and forty per worker run.
-- A default cumulative 120 edit recoveries and 160 model-routing calls per task
+- A default cumulative 120 edit recoveries, 160 model-routing calls and 12 repair cycles per task
   authorization, configurable per trusted project. Debits precede work and survive
   restarts and candidate changes. A routing call can contain bounded provider
   attempts, so 160 is not a promise of 160 HTTP requests.
@@ -82,6 +82,9 @@ Budgets are distinct and bounded:
   model work. Authorization expiry remains independently enforced.
 
 Local retry exhaustion is a recoverable typed error, not an access failure.
+The old three-fix PR counter remains only for legacy execution without a journal.
+Journal-backed tasks use the durable repair-cycle budget and switch to compact
+proposals after three cycles instead of silently stopping.
 Cumulative exhaustion is explicitly terminal and preserves evidence. Repeating
 restarts cannot reset cumulative counters. Only source/context changes allow
 reconsideration of an otherwise equivalent failed operation; they do not grant

@@ -181,6 +181,24 @@ class DurableRecoveryTests(unittest.TestCase):
         self.assertEqual(result,'ready')
         self.assertEqual(self.journal.state['executionState'],'completed')
 
+    def test_three_fix_boundary_changes_strategy_without_abandoning_authorized_work(self):
+        from engine import native_build
+        comments = [{'body':developer.FIX_MARKER+'prior -->'} for _ in range(3)]
+        def gh(path,token,payload=None,method=None):
+            if '/issues/133/comments?' in path:return comments
+            return self.world.read(path) if payload is None else self.world.write(path,payload,method or 'POST')
+        with patch.object(developer,'gh',side_effect=gh), \
+                patch.object(developer,'sandbox_result',return_value=dict(id=123,status='completed',conclusion='failure')), \
+                patch.object(native_build,'result',return_value=None),patch.object(developer,'owner_guidance',return_value=[]), \
+                patch.object(developer,'revise_branch',side_effect=RuntimeError('reached repair strategy')) as repair, \
+                patch.object(developer,'report_stuck') as stopped:
+            with self.assertRaisesRegex(RuntimeError,'reached repair strategy'):
+                developer.fix_pull_request(self.world.issue,'key','fixture')
+        repair.assert_called_once();stopped.assert_not_called()
+        self.assertEqual(self.journal.state['budgets']['fixCycles'],4)
+        self.assertEqual(self.journal.state['repairStrategy'],'compact')
+        self.assertEqual(self.world.journal().state['budgets']['fixCycles'],4)
+
     def test_large_active_requirements_are_preserved_outside_small_checkpoint(self):
         self.journal.requirements(['😀' * 3900 + str(i) for i in range(3)])
         for index in range(40): self.journal.event('測' * 500, signature='large-catalog-'+str(index))
