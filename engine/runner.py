@@ -286,7 +286,7 @@ def fits(p, prompt, max_output_tokens):
     return len(prompt) / 3.5 + min(max_output_tokens, p.get("maxOutput", max_output_tokens)) <= p.get("context", 32768)
 
 
-def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=()):
+def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=(), json_mode=False):
     """Try each configured free provider once per model; a 429 or error moves on rather than waiting.
 
     tier "strong" takes only providers marked strong (good at writing code), "rest" only the others, None all of them.
@@ -305,9 +305,12 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                 continue
             limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
             asking(name)
+            structured = json_mode
             while True:
                 payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
                            "max_tokens": limit, "temperature": 0.2}
+                if structured:
+                    payload["response_format"] = {"type": "json_object"}
                 req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
                                              {"Content-Type": "application/json", **provider_headers(p)})
                 try:
@@ -318,6 +321,12 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                         return name, output.strip()
                     errors.append(name + ": empty response")
                 except urllib.error.HTTPError as exc:
+                    if structured and exc.code in (400, 422):
+                        # Some free endpoints do not implement JSON mode. Retry this
+                        # endpoint once with prompt-only JSON, then normal routing.
+                        structured = False
+                        errors.append(name + ": structured JSON rejected; retrying prompt-only")
+                        continue
                     if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
                         limit = FALLBACK_MAX_TOKENS
                         continue
@@ -401,7 +410,7 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
     # model that is rate-limited, down or too small for the prompt hands the call to the next one, mid-task.
     for tier in ("strong", full, lite, "rest"):
         if isinstance(tier, str):
-            answer = run_fallback_providers(prompt, max_output_tokens, errors, allowed, tier=tier, skip=skip)
+            answer = run_fallback_providers(prompt, max_output_tokens, errors, allowed, tier=tier, skip=skip, json_mode=json_mode)
         else:
             answer = next((a for a in (ask_gemini(api_key, m, prompt, max_output_tokens, json_mode, errors)
                                        for m in tier if m not in skip and m not in resting) if a), None)
