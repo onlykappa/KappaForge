@@ -125,6 +125,30 @@ jobs:
         esac
         echo "Runner-only inference endpoint passed URL and authentication checks without a provider call."
       shell: bash
+    - name: Verify one explicitly free Groq route (one request, no fallback)
+      if: contains(github.event.head_commit.message, '[router-free-live-smoke]')
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |
+        set -Eeuo pipefail
+        response_file=$(mktemp)
+        trap 'rm -f "$response_file"' EXIT
+        status=$(curl -sS --max-time 130 -o "$response_file" -w '%{http_code}' \
+          -X POST "${KAPPA_ROUTER_URL%/}/router/infer" \
+          -H 'Content-Type: application/json' \
+          -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
+          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with exactly: live route ok"}],"providers":["groq"],"model":"groq:openai/gpt-oss-120b","fallback":false,"maxTokens":24}')
+        if [ "$status" != "200" ]; then
+          error_code=$(jq -r '.code // "unknown"' "$response_file" 2>/dev/null || echo unknown)
+          echo "::error::The one-shot free Groq route returned HTTP $status ($error_code); no alternate route was attempted."
+          exit 1
+        fi
+        route=$(jq -er '.route' "$response_file")
+        test "$route" = "groq:openai/gpt-oss-120b" || { echo "::error::The live smoke selected an unexpected route."; exit 1; }
+        usage=$(jq -c '.usage // null' "$response_file")
+        echo "One-shot live inference passed on $route; usage=$usage; fallback=false."
+      shell: bash
 'on':
   push:
     branches:

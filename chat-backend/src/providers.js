@@ -18,12 +18,16 @@ export function configured(env,id){
  return !!p&&(p.kind==="workers-ai"?!!env.AI:keyless(p)||!!env[p.key]);
 }
 
-// Live model list per provider, cached ten minutes per key. Preferred families first, then anything chat-capable.
-// A fixed "models" list skips discovery, for providers whose key also reaches paid models.
+// Live model list per provider, cached ten minutes per key. Arbitrary discovered models are excluded:
+// each provider needs an explicit no-cost model allowlist, or a free-only route suffix.
 export async function providerModels(env,id){
  const p=registry.providers[id];
  if(!configured(env,id))return [];
- if(p.models)return p.models;
+ if(p.models){
+  const freeModels=Array.isArray(p.freeModels)?new Set(p.freeModels):null;
+  return p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
+ }
+ if(!p.freeOnly&&!Array.isArray(p.freeModels))return [];
  const key=id+":"+(p.key?env[p.key]||"":""),hit=cache.get(key);
  if(hit&&Date.now()-hit.at<600000)return hit.models;
  try{
@@ -31,6 +35,8 @@ export async function providerModels(env,id){
   if(!r.ok)throw Error("HTTP "+r.status);
   let ids=((await r.json()).data||[]).map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
   if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
+  else if(Array.isArray(p.freeModels))ids=ids.filter(m=>p.freeModels.includes(m));
+  else return [];
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
