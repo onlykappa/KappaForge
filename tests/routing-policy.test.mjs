@@ -30,8 +30,35 @@ test("runner gateway authentication protects inference and exposes no management
  const make=(path,method="POST",token="",body="{}")=>new Request("https://worker.example"+path,{method,headers:{Authorization:token?"Bearer "+token:"","Content-Type":"application/json"},body:method==="GET"?undefined:body});
  assert.equal((await worker.fetch(make("/router/infer"),env)).status,401);
  assert.equal((await worker.fetch(make("/router/infer","POST","wrong"),env)).status,401);
- assert.equal((await worker.fetch(make("/router/status","GET"),env)).status,404);
+ assert.equal((await worker.fetch(make("/router/diagnostics","GET"),env)).status,401);
+ assert.equal((await worker.fetch(make("/router/status","GET",env.ROUTER_ACCESS_TOKEN),env)).status,404);
  assert.equal((await worker.fetch(make("/router/infer","POST",env.ROUTER_ACCESS_TOKEN,"{"),env)).status,400);
+});
+
+test("runner diagnostics identify missing bindings and allowlists without provider calls or secret disclosure",async()=>{
+ const token="runner-token-".padEnd(40,"x"),secret="do-not-return-this-groq-secret",env={ROUTING_POLICY_VERSION:"v1",ROUTER_ACCESS_TOKEN:token,MEMORY:{},GROQ_API_KEY:secret,KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:""};
+ const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({data:[]})};
+ const request=()=>new Request("https://worker.example/router/diagnostics",{headers:{Authorization:"Bearer "+token}});
+ try{
+  const response=await worker.fetch(request(),env),body=await response.json();
+  assert.equal(response.status,200);assert.equal(body.failedCondition,"private_code_allowlist");
+  assert.deepEqual(body.bindings,{secretPresent:true,configured:true});
+  assert.deepEqual(body.allowlists,{free:true,coding:true,privateCode:false,providerPolicy:false});
+  assert.equal(body.discovery.state,"skipped_not_eligible");assert.equal(calls,0);
+  assert.equal(JSON.stringify(body).includes(secret),false);assert.equal(JSON.stringify(body).includes(token),false);
+ }finally{globalThis.fetch=original}
+});
+
+test("runner diagnostics report only sanitized upstream model-discovery status",async()=>{
+ const token="runner-token-".padEnd(40,"x"),secret="do-not-return-this-groq-secret",env={ROUTING_POLICY_VERSION:"v1",ROUTER_ACCESS_TOKEN:token,MEMORY:{},GROQ_API_KEY:secret,KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq"};
+ const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return new Response("private upstream body",{status:404})};
+ try{
+  const response=await worker.fetch(new Request("https://worker.example/router/diagnostics",{headers:{Authorization:"Bearer "+token}}),env),body=await response.json();
+  assert.equal(response.status,200);assert.equal(body.failedCondition,"model_discovery_http_error");
+  assert.equal(body.discovery.httpStatus,404);assert.equal(body.modelPolicy.allowlisted,true);assert.equal(body.modelPolicy.discovered,false);
+  assert.equal(calls,1);assert.equal(JSON.stringify(body).includes(secret),false);assert.equal(JSON.stringify(body).includes(token),false);
+  assert.equal(JSON.stringify(body).includes("private upstream body"),false);
+ }finally{globalThis.fetch=original}
 });
 
 test("shared reservations enforce concurrency and expire after a crashed request",async()=>{
