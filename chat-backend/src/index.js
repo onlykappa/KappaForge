@@ -139,13 +139,17 @@ export default {
       let lat=Number(body.latitude),lon=Number(body.longitude),units=body.units==="metric"?"metric":"imperial";
       if((!Number.isFinite(lat)||!Number.isFinite(lon))&&typeof body.city==="string"&&body.city.trim()){
         try{
-          const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(body.city.trim())}&count=1`,{signal:AbortSignal.timeout(6000)});
+          const geoRes=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(body.city.trim())}&count=1`,{signal:AbortSignal.timeout(10000)});
           const geoData=await geoRes.json();
           if(geoData.results&&geoData.results.length>0){
             lat=geoData.results[0].latitude;
             lon=geoData.results[0].longitude;
+          }else{
+            return json({error:"City not found"},400,cors);
           }
-        }catch(e){}
+        }catch(e){
+          return json({error:"Geocoding failed: "+e.message},502,cors);
+        }
       }
       if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude, longitude or city required"},400,cors);
       try{
