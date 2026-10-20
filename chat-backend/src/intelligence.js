@@ -22,8 +22,8 @@ export async function discover(env){
  }
  // Discovery confirms the model is currently available; the static freeModels allowlist prevents a newly
  // discovered paid or preview model from entering automatic fallback.
- const freeModels=new Set(MODELS);
- const models=[...available].filter(m=>FLASH.test(m)&&freeModels.has(m)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
+ const models=[...available].filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m)))
+  .sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
  if(models.length)discovered={key:env.GEMINI_API_KEY,at:Date.now(),models};
  return models;
 }

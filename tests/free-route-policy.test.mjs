@@ -14,12 +14,12 @@ test("dynamic providers expose only individually reviewed free models",async()=>
   return Response.json({data:[{id:"deepseek-v4-pro"},{id:"kimi-k3"}]});
  };
  try{
-  assert.deepEqual(await providerModels({GROQ_API_KEY:"test"},"groq"),[
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",GROQ_API_KEY:"test"},"groq"),[
    "openai/gpt-oss-120b","qwen/qwen3.8-27b"
   ]);
-  assert.deepEqual(await providerModels({NVIDIA_API_KEY:"test"},"nvidia"),[]);
-  assert.deepEqual(await providerModels({MISTRAL_API_KEY:"test"},"mistral"),[]);
-  assert.deepEqual(await providerModels({OLLAMA_API_KEY:"test"},"ollama"),[]);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),[]);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[]);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),[]);
   assert.equal(requests.length,1,"unreviewed routes are rejected before contacting their model APIs");
  }finally{globalThis.fetch=original}
 });
@@ -31,7 +31,7 @@ test("Gemini discovery intersects live models with the free-tier model list",asy
   {name:"models/gemini-3.8-flash",supportedGenerationMethods:["generateContent"]},
   {name:"models/gemini-3.1-pro-preview",supportedGenerationMethods:["generateContent"]}
  ]});
- try{assert.deepEqual(await discover({GEMINI_API_KEY:"test"}),["gemini-3.1-flash-lite"])}
+ try{assert.deepEqual(await discover({ROUTING_POLICY_VERSION:"v1",GEMINI_API_KEY:"test"}),["gemini-3.1-flash-lite"])}
  finally{globalThis.fetch=original}
 });
 

@@ -9,8 +9,11 @@ const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
 export function providerAllowed(env,channel,id,{privateCode=false,requested=null}={}){
- if(!providers.has(id)||!noCostReviewed(id))return false;
+ if(!providers.has(id))return false;
+ // Keep legacy preview/test deployments compatible. The production Worker opts into the
+ // no-cost policy explicitly through ROUTING_POLICY_VERSION=v1.
  if(env.ROUTING_POLICY_VERSION!==ROUTING_POLICY_VERSION)return true;
+ if(!noCostReviewed(id))return false;
  const free=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
  const allowed=list(env[channelName]);
  if(!free.has(id)||!allowed.has(id))return false;

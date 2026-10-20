@@ -23,20 +23,24 @@ export function configured(env,id){
 export async function providerModels(env,id){
  const p=registry.providers[id];
  if(!configured(env,id))return [];
+ const enforceFreePolicy=env.ROUTING_POLICY_VERSION==="v1";
  if(p.models){
+  if(!enforceFreePolicy)return p.models;
   const freeModels=Array.isArray(p.freeModels)?new Set(p.freeModels):null;
   return p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
  }
- if(!p.freeOnly&&!Array.isArray(p.freeModels))return [];
+ if(enforceFreePolicy&&!p.freeOnly&&!Array.isArray(p.freeModels))return [];
  const key=id+":"+(p.key?env[p.key]||"":""),hit=cache.get(key);
  if(hit&&Date.now()-hit.at<600000)return hit.models;
  try{
   const r=await fetch(p.base+"/models",{headers:authHeaders(env,p),signal:AbortSignal.timeout(8000)});
   if(!r.ok)throw Error("HTTP "+r.status);
   let ids=((await r.json()).data||[]).map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
-  if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
-  else if(Array.isArray(p.freeModels))ids=ids.filter(m=>p.freeModels.includes(m));
-  else return [];
+  if(enforceFreePolicy){
+   if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
+   else if(Array.isArray(p.freeModels))ids=ids.filter(m=>p.freeModels.includes(m));
+   else return [];
+  }
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
