@@ -1,4 +1,5 @@
 import '../../preview/stream.js';
+import {validateProviderResponse} from './providers.js';
 
 export const IDLE_MS=45000;
 // Never replay a request after any streamed output. One telemetry event per attempt.
@@ -17,13 +18,14 @@ export function streamReply(response,{record,model,routing,abort,timeout,signal,
     try{
      for await(const raw of KappaStream.sse(response.body)){
       bump();
-      const chunk=normalize?normalize(raw):raw;
+      const chunk=normalize?normalize(raw):validateProviderResponse(raw,{stream:true,gemini:true});
       if(chunk.error)throw Error('Provider stream failed');
       if(chunk.usageMetadata)metadata.usageMetadata=chunk.usageMetadata;
       const candidate=chunk.candidates?.[0];
       const text=candidate?.content?.parts?.filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('')||'';
       if(text){answer+=text;if(answer.length>100000)throw Error('Response exceeded the output limit');emit({type:'delta',text});}
-      if(candidate?.finishReason)finished=['STOP','MAX_TOKENS'].includes(candidate.finishReason);
+      if(candidate?.finishReason==='MAX_TOKENS')throw Error('Response truncated at provider output limit');
+      if(candidate?.finishReason)finished=candidate.finishReason==='STOP';
      }
      // Providers without finish reasons (Workers AI) count a clean end of stream as complete.
      if(implicitFinish&&answer.trim())finished=true;

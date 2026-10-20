@@ -1,6 +1,10 @@
 """Conservative KappaForge v0.1 task runner: read-only target inspection."""
 import http.client
 import json
+import hashlib
+from engine.reliability import (ProviderRoutesUnavailable, ProviderResponseError, RecoveryBudgetExceeded,
+                                RecoveryCoordinator, response_json, models as response_models,
+                                completion, classify, retry_after)
 import os
 import re
 import sys
@@ -184,6 +188,8 @@ def discover_models(api_key):
 
 def fetch_gemini_models(api_key):
     """Ask Google which generateContent models this key can access."""
+    if provider_paused(provider_identity('gemini', api_key), probe=True):
+        raise RuntimeError('Gemini discovery circuit is open')
     available = set()
     page_token = None
     for _ in range(10):
@@ -193,16 +199,24 @@ def fetch_gemini_models(api_key):
         req = urllib.request.Request(url, headers={"x-goog-api-key": api_key})
         try:
             with urllib.request.urlopen(req, timeout=35) as response:
-                data = json.load(response)
+                data = response_json(response)
+                rows = response_models(data, gemini=True)
         except urllib.error.HTTPError as exc:
+            provider_failure('gemini', code=exc.code, key=api_key, headers=exc.headers)
             raise RuntimeError("Gemini model discovery failed (HTTP %s). Check Gemini API project and key permissions." % exc.code) from None
-        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, TimeoutError, ProviderResponseError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+            provider_failure('gemini', error=exc, key=api_key)
             raise RuntimeError("Gemini model discovery failed (" + type(exc).__name__ + ")") from None
-        for item in data.get("models", []):
+        provider_success('gemini', key=api_key)
+        for item in rows:
             name = item.get("name", "").removeprefix("models/")
-            if "generateContent" in item.get("supportedGenerationMethods", []):
+            if isinstance(item.get("supportedGenerationMethods"), list) and "generateContent" in item["supportedGenerationMethods"]:
                 available.add(name)
-        page_token = data.get("nextPageToken")
+        page_token = data.get('nextPageToken')
+        if page_token is not None and not isinstance(page_token, str):
+            problem = ProviderResponseError('Discovery pagination token must be a string')
+            provider_failure('gemini', error=problem, key=api_key)
+            raise problem
         if not page_token:
             break
     return available
@@ -228,6 +242,8 @@ def provider_headers(p):
 def provider_models(pid):
     """Chat models for a usable free fallback provider: its fixed free list, else live discovery, preferred families first."""
     p = PROVIDERS["providers"][pid]
+    if provider_paused(provider_identity(pid)):
+        return []
     keyed = bool(p.get("key")) and not p.get("keyOptional")
     if p.get("kind") != "openai" or p.get("agent") is False or (keyed and not os.getenv(p["key"], "")):
         return []
@@ -237,11 +253,18 @@ def provider_models(pid):
 
 
 def list_provider_models(pid, p):
+    if provider_paused(provider_identity(pid), probe=True):
+        return []
     req = urllib.request.Request(p["base"] + "/models", headers=provider_headers(p))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
-            ids = [m.get("id") for m in json.load(response).get("data", []) if isinstance(m.get("id"), str)]
-    except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError):
+            ids = [m['id'] for m in response_models(response_json(response))]
+        provider_success(pid)
+    except urllib.error.HTTPError as exc:
+        provider_failure(pid, code=exc.code, headers=exc.headers)
+        return []
+    except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError, http.client.HTTPException, ConnectionError) as exc:
+        provider_failure(pid, error=exc)
         return []
     ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or re.search(r"[:/]free$", m))]
     def rank(m):
@@ -256,9 +279,12 @@ def code_providers(private=False):
     KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) narrow it.
     """
     listed = os.getenv("KAPPA_PRIVATE_CODE_PROVIDERS" if private else "KAPPA_CODE_PROVIDERS", "").strip()
-    if listed:
-        return {name.strip() for name in listed.split(",") if name.strip()}
-    return set(PROVIDERS["order"])
+    allowed = {name.strip() for name in listed.split(',') if name.strip()} if listed else set(PROVIDERS['order'])
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    if journal and journal.project.get('providers') is not None:
+        allowed &= set(journal.project['providers'])
+    return allowed
 
 # Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
 FALLBACK_MAX_TOKENS = 8192
@@ -286,6 +312,129 @@ def fits(p, prompt, max_output_tokens):
     return len(prompt) / 3.5 + min(max_output_tokens, p.get("maxOutput", max_output_tokens)) <= p.get("context", 32768)
 
 
+# Route-level denial is not denial of the owner's GitHub task. Quarantine the
+# failed route/key and let other approved providers answer.
+PROVIDER_PAUSES = {}
+REQUEST_REJECTIONS = set()
+
+def provider_identity(pid, key=None):
+    if key is None:
+        provider = PROVIDERS['providers'][pid]
+        key = os.getenv(provider.get('key', ''), '')
+        endpoint = provider.get('base', '')
+    else:
+        endpoint = 'gemini'
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    revision = str(journal.project.get('providerConfigRevision', 1)) if journal else '1'
+    project = journal.scope.repo if journal else ''
+    identity = pid + ':' + hashlib.sha256((endpoint + ':' + key + ':' + project + ':' + revision).encode()).hexdigest()[:16]
+    # V1 stored credential fingerprints without endpoint/project. Carry their
+    # eligibility forward in the matching task instead of probing immediately.
+    if journal and revision == '1':
+        legacy = pid + ':' + hashlib.sha256(key.encode()).hexdigest()[:12]
+        health = journal.state.setdefault('providerHealth', {})
+        changed = False
+        for route, until in journal.state.get('providerPauses', {}).items():
+            if route != legacy and not route.startswith(legacy + ':'): continue
+            target = identity + route[len(legacy):]
+            if target not in health and isinstance(until, (int,float)) and until > time.time():
+                health[target] = dict(provider=pid,model=route[len(legacy)+1:],category='legacy_pause',
+                                      until=until,updated=time.time(),state='open',blocked=False,failures=1)
+                changed = True
+        if changed: journal.persist()
+    return identity
+
+
+def health_store():
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    return journal, journal.state.setdefault('providerHealth', {}) if journal else {}
+
+
+def health_record(route):
+    _, saved = health_store()
+    live = PROVIDER_PAUSES.get(route, {})
+    if not isinstance(live, dict): live = {'until':live, 'updated':0}
+    old = saved.get(route, {})
+    return old if old.get('updated', 0) >= live.get('updated', 0) else live
+
+
+def health_save(route, record):
+    journal, saved = health_store()
+    PROVIDER_PAUSES[route] = record
+    if journal:
+        saved[route] = record
+        # Read compatibility for journals written before the health layer.
+        journal.state.setdefault('providerPauses', {})[route] = record.get('until', 0)
+        journal.persist()
+
+
+def provider_failure(pid, model='', code=None, error=None, key=None, headers=None):
+    identity = provider_identity(pid, key)
+    category = classify(code, error)
+    # Discovery, authentication and payment/access failures apply to the key;
+    # a model-specific 403 does not quarantine other authorized models.
+    route = identity if not model or code in (401, 402) else identity + ':' + model
+    old = health_record(route)
+    failures = min(10, old.get('failures', 0) + 1)
+    now = time.time()
+    blocked = code in (401, 402, 403, 404)
+    delay = max(min(3600, 60 * 2 ** (failures - 1)), retry_after(headers, now))
+    health_save(route, dict(category=category, code=code, provider=pid, model=model,
+                           failures=failures, blocked=blocked, until=0 if blocked else now + delay,
+                           updated=now, probeUntil=0, state='blocked' if blocked else 'open'))
+
+
+def provider_denied(pid, model, code, key=None):
+    provider_failure(pid, model, code, key=key)
+
+
+def provider_paused(identity, model='', probe=False):
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    now = time.time()
+    for route in ((identity, identity + ':' + model) if model else (identity,)):
+        row = health_record(route)
+        if row.get('state') == 'closed': continue
+        legacy = journal.state.get('providerPauses', {}).get(route, 0) if journal else 0
+        if row.get('blocked') or max(row.get('until', 0), legacy) > now or row.get('probeUntil', 0) > now:
+            return True
+    if probe:
+        for route in ((identity, identity + ':' + model) if model else (identity,)):
+            row = health_record(route)
+            if row and row.get('state') != 'closed':
+                health_save(route, dict(row, probeUntil=now + 120, state='half_open', updated=now))
+    return False
+
+
+def provider_success(pid, model='', key=None):
+    identity = provider_identity(pid, key)
+    journal, _ = health_store()
+    if journal and journal.state.pop('routingAvailability', None) is not None:
+        journal.persist()
+    for route in (identity, identity + ':' + model):
+        if health_record(route):
+            health_save(route, dict(state='closed', failures=0, until=0, updated=time.time()))
+
+
+def routes_unavailable(errors):
+    # Only consider routes attempted by this task. Untried/healthy alternatives
+    # would already have been visited by the normal approved router.
+    journal, saved = health_store()
+    records = saved.values() if journal else (r for r in PROVIDER_PAUSES.values() if isinstance(r, dict))
+    rows = [r for r in records if r.get('state') != 'closed']
+    due = [max(r.get('until', 0), r.get('probeUntil', 0)) for r in rows if not r.get('blocked')]
+    terminal = bool(rows) and not due
+    if journal:
+        journal.state['routingAvailability'] = dict(retryAt=min(due) if due else 0, terminal=terminal)
+        journal.persist()
+    detail = ', '.join(str(r.get('provider','')) + (':' + r['model'] if r.get('model') else '') + ' ' + str(r.get('category','')) + ' HTTP ' + str(r.get('code','')) for r in rows[:6])
+    prefix = 'No authorized provider route remains; fix credential/permission configuration. ' if terminal else 'Approved Gemini routes unavailable: '
+    return ProviderRoutesUnavailable(prefix + ', '.join(errors) + (' | Health: ' + detail if detail else ''),
+                                     retry_at=min(due) if due else 0, terminal=terminal)
+
+
 def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=(), json_mode=False):
     """Try each configured free provider once per model; a 429 or error moves on rather than waiting.
 
@@ -295,13 +444,19 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
+        identity = provider_identity(pid)
+        if provider_paused(identity):
+            errors.append(pid + ': access/quota route paused; using other approved providers')
+            continue
         if tier is not None and bool(p.get("strong")) != (tier == "strong"):
             continue
         if not fits(p, prompt, max_output_tokens):
             continue
         for model in provider_models(pid):
+            if provider_paused(identity):
+                break
             name = pid + ":" + model
-            if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time():
+            if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time() or provider_paused(identity, model, probe=True):
                 continue
             limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
             asking(name)
@@ -311,12 +466,18 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                            "max_tokens": limit, "temperature": 0.2}
                 if structured:
                     payload["response_format"] = {"type": "json_object"}
+                request_signature = 'provider-request:' + hashlib.sha256((identity + json.dumps(payload, sort_keys=True)).encode()).hexdigest()
+                journal, _ = health_store()
+                if (journal and journal.rejected(request_signature)) or (not journal and request_signature in REQUEST_REJECTIONS):
+                    errors.append(name + ': equivalent request already rejected; change context or request options')
+                    break
                 req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
                                              {"Content-Type": "application/json", **provider_headers(p)})
                 try:
                     with urllib.request.urlopen(req, timeout=model_timeout()) as response:
-                        data = json.load(response)
-                    output = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                        data = response_json(response)
+                    output, _ = completion(data)
+                    provider_success(pid, model)
                     if output.strip():
                         return name, output.strip()
                     errors.append(name + ": empty response")
@@ -330,10 +491,25 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     if exc.code in (400, 413, 422) and limit > FALLBACK_MAX_TOKENS:
                         limit = FALLBACK_MAX_TOKENS
                         continue
-                    if exc.code in (404, 429):
-                        rate_limited(name, exc)
-                    errors.append(name + ": HTTP " + str(exc.code))
-                except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, ConnectionError) as exc:
+                    if exc.code in (401, 402, 403):
+                        provider_denied(pid, model, exc.code)
+                        errors.append(name + ': HTTP ' + str(exc.code) + '; route quarantined, trying approved alternatives')
+                        if exc.code in (401, 402):
+                            break
+                    else:
+                        if exc.code in (400, 413, 422):
+                            if journal:
+                                journal.event(ValueError('Provider request size/schema rejected: HTTP ' + str(exc.code)),
+                                              model=name, strategy='shrink_output', signature=request_signature)
+                            else:
+                                if len(REQUEST_REJECTIONS) >= 256: REQUEST_REJECTIONS.clear()
+                                REQUEST_REJECTIONS.add(request_signature)
+                        else:
+                            if exc.code in (404, 429): rate_limited(name, exc)
+                            provider_failure(pid, model, exc.code, headers=exc.headers)
+                        errors.append(name + ": HTTP " + str(exc.code))
+                except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError, http.client.HTTPException, ConnectionError) as exc:
+                    provider_failure(pid, model, error=exc)
                     errors.append(name + ": " + type(exc).__name__)
                     COOLDOWN[name] = time.time() + 300
                 break
@@ -368,12 +544,18 @@ def rate_limited(model, exc):
         body = ""
     if re.search(r"per ?day|PerDay|daily", body, re.I):
         EXHAUSTED.add(model)
+        if exc.headers is None: exc.headers = {}
+        exc.headers["Retry-After"] = str(max(60, int(86400 - time.time() % 86400)))
     else:
         COOLDOWN[model] = time.time() + COOLDOWN_SECONDS
 
 
 def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     global MODEL_DEADLINE
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    if journal:
+        RecoveryCoordinator.charge(journal, 'modelCalls')
     previous = MODEL_DEADLINE
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:
@@ -389,14 +571,17 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
     `skip` names models not to ask this time (one that just repeated a rejected answer)."""
     errors = []
     try:
+        if provider_paused(provider_identity('gemini', api_key)):
+            raise RuntimeError('Gemini access/quota route paused; using approved alternatives')
         available = discover_models(api_key)
     except RuntimeError as exc:
         available = set()
         errors.append(str(exc))
     candidates = select_models(available)
     if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"] if allowed is None or pid in allowed):
-        raise RuntimeError("No approved Flash model supports generateContent for this key. "
-                           "Available model IDs: " + ", ".join(sorted(available)[:20]))
+        unavailable = routes_unavailable(errors)
+        unavailable.args = ('No approved Flash model supports generateContent for this key. ' + str(unavailable),)
+        raise unavailable
     print("Approved Gemini fallback models: " + ", ".join(candidates))
     resting = [m for m in candidates if m in EXHAUSTED or COOLDOWN.get(m, 0) > time.time()]
     if all(m in resting or m in skip for m in candidates):
@@ -418,11 +603,14 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
             if errors:
                 print("Used " + answer[0] + " after: " + "; ".join(errors)[:600])
             return answer
-    raise RuntimeError("Approved Gemini routes unavailable: " + ", ".join(errors))
+    raise routes_unavailable(errors)
 
 
 def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
     """One Gemini model's answer as (model, text), or None with the reason added to errors."""
+    if provider_paused(provider_identity('gemini', api_key), model, probe=True):
+        errors.append(model + ': access/quota route paused; using approved alternatives')
+        return None
     asking(model)
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
     payload = {"contents": [{"parts": [{"text": prompt}]}],
@@ -438,16 +626,18 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
             req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
             # Long replies (large-budget development) take minutes to generate.
             with urllib.request.urlopen(req, timeout=model_timeout()) as response:
-                data = json.load(response)
-            candidates_out = data.get("candidates") or []
-            parts = (candidates_out[0].get("content") or {}).get("parts", []) if candidates_out else []
-            output = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                data = response_json(response)
+            output, finish_reason = completion(data, gemini=True)
+            provider_success('gemini', model, api_key)
+            candidates_out = data.get('candidates') or []
             # Thinking counts against the limit, so a long answer can stop mid-way; ask once more with room to finish.
             if candidates_out and candidates_out[0].get("finishReason") == "MAX_TOKENS" and max_output_tokens < 65536 and not grown:
                 grown = True
                 payload["generationConfig"]["maxOutputTokens"] = min(65536, max_output_tokens * 4)
                 errors.append(model + ": answer cut off at the output limit")
                 continue
+            if finish_reason == 'MAX_TOKENS':
+                raise ProviderResponseError('Gemini response remained truncated at the output limit')
             if output:
                 return model, output
             errors.append(model + ": empty response")
@@ -459,11 +649,13 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
                 delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
                 time.sleep(min(delay, 60, model_timeout()))
                 continue
+            provider_failure('gemini', model, exc.code, key=api_key, headers=exc.headers)
             if exc.code in (404, 429):
                 rate_limited(model, exc)
             errors.append(model + ": HTTP " + str(exc.code))
             return None
-        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, TimeoutError, ProviderResponseError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
+            provider_failure('gemini', model, error=exc, key=api_key)
             # A dropped or cut-off connection mid-answer is transient too (task #119 failed after 13 minutes on
             # "Remote end closed connection without response"): retry, then move on to the next model.
             COOLDOWN[model] = time.time() + 300
@@ -564,7 +756,7 @@ def main():
             if action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
                 next_action = recovery.resume_checks(journal, pulls[0], token)
                 url = (fix_pull_request(issue, os.environ['GEMINI_API_KEY'], token)
-                       if next_action == 'fix' else pulls[0]['html_url'])
+                       if next_action == 'fix' else None if next_action == 'blocked' else pulls[0]['html_url'])
             elif fixing:
                 url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
                 print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")

@@ -348,7 +348,7 @@ class DeveloperAuthorizationTests(unittest.TestCase):
 
     def test_other_repositories_need_the_coder_token(self):
         issue = self.issue(body="Repository: onlykappa/OmniPC\nMode: develop\n\nx")
-        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(ValueError, "KAPPA_CODER_TOKEN"):
+        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(PermissionError, "KAPPA_CODER_TOKEN"):
             produce_development_pr(issue, "key", "token")
 
     def test_refuses_a_branch_with_an_open_pr_and_preserves_a_leftover_one(self):
@@ -637,7 +637,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
         with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer.time, "sleep"):
             self.assertIsNone(developer.fix_pull_request(self.ISSUE, "key", "token"))
         self.assertFalse(any(c[2] == "PATCH" for c in calls))
-        with self.assertRaises(ValueError):
+        with self.assertRaises(PermissionError):
             developer.fix_pull_request(dict(self.ISSUE, body="Repository: onlykappa/OmniPC\nMode: develop\n\nx"), "key", "token")
 
     def test_out_of_fixes_asks_the_owner_once_and_pushes_nothing(self):

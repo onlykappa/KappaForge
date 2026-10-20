@@ -247,13 +247,98 @@ class RecoveryJournalTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.world.journal()
 
-    def test_continuation_cap_and_event_cap_are_real_not_just_prompt_instructions(self):
+    def test_continuation_cap_remains_bounded_while_storage_rotates(self):
         self.journal.state['continuations'] = recovery.MAX_CONTINUATIONS
         self.assertFalse(self.journal.defer(RuntimeError('offline')))
         self.assertEqual(self.journal.state['status'], 'blocked')
-        self.journal.state['events'] = [{}] * recovery.MAX_EVENTS
-        with self.assertRaisesRegex(PermissionError, 'history budget'):
-            self.journal.event('one more')
+        self.journal.state['events'] = [dict(sequence=n) for n in range(recovery.MAX_EVENTS)]
+        self.journal.event('one more')
+        archive = next(row['body'] for row in self.world.rows if 'ARCHIVE_V1' in row['body'])
+        saved = json.loads(re.search(r'ARCHIVE_V1 (.*?) -->', archive)[1])
+        self.assertEqual(saved['events'] + self.journal.state['events'][:-1],
+                         [dict(sequence=n) for n in range(recovery.MAX_EVENTS)])
+        self.assertEqual(len(self.journal.state['events']), 21)
+        self.assertEqual(self.journal.state['archivedEvents'], 20)
+
+    def test_history_capacity_still_allows_automatic_continuation(self):
+        self.journal.state['events'] = [dict(sequence=n) for n in range(recovery.MAX_EVENTS)]
+        self.assertTrue(self.journal.defer(runner.ProviderRoutesUnavailable('HTTP 403; HTTP 402')))
+        self.assertEqual(self.journal.state['status'], 'waiting')
+        self.world.now += 301
+        self.journal.queue()
+        self.assertEqual(self.journal.state['continuations'], 1)
+        self.assertTrue(any(path.endswith('/dispatches') for path, _, _ in self.world.calls))
+
+    def test_archive_write_failure_keeps_every_live_event(self):
+        before = [dict(sequence=n) for n in range(recovery.MAX_EVENTS)]
+        self.journal.state['events'] = copy.deepcopy(before)
+        self.journal.persist()
+        with patch.object(self.journal, 'write', side_effect=urllib.error.URLError('offline')):
+            with self.assertRaises(urllib.error.URLError):
+                self.journal.event('next')
+        self.assertEqual(self.journal.state['events'], before)
+
+    def test_source_reread_rebuilds_an_already_full_context(self):
+        self.journal.loader = lambda path: 'value = 1\n'
+        answer = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
+        budget = developer.SMALL._replace(file_chars=2000, context_chars=1060)
+        # The unrelated file almost fills the context. Appending the missing file would fail.
+        sources = {'other.py': '#' + 'x' * 1010}
+        with patch.object(developer, 'run_model', side_effect=[('writer', answer), ('other', answer)]) as model:
+            result = developer.generate_with('key', 'change value', recovery.ROOT, sources,
+                                             {'other.py': 1011, 'value.py': 10}, '', None, budget)
+        self.assertEqual(result[2]['value.py'], 'value = 2\n')
+        self.assertIn('===== FILE value.py =====\nvalue = 1', model.call_args.args[1])
+        self.assertNotIn('===== FILE other.py', model.call_args.args[1])
+
+    def test_minified_missing_file_is_visible_within_compact_context(self):
+        source = 'const value = 1;/*' + 'x' * 100000 + '*/'
+        self.journal.loader = lambda path: source
+        answer = json.dumps({'files': [{'path': 'preview/value.js', 'edits': [
+            {'find': 'const value = 1;', 'replace': 'const value = 2;'}]}]})
+        with patch.object(developer, 'run_model', side_effect=[('writer', answer), ('other', answer)]) as model:
+            result = developer.generate_with('key', 'change value', recovery.ROOT, {},
+                                             {'preview/value.js': len(source)}, '', None, developer.COMPACT)
+        self.assertEqual(result[2]['preview/value.js'], source.replace('const value = 1;', 'const value = 2;'))
+        prompt = model.call_args.args[1]
+        self.assertIn('===== FILE preview/value.js (LARGE:', prompt)
+        self.assertLess(len(prompt), developer.COMPACT.context_chars)
+
+    def test_excerpt_cannot_replace_an_entire_file(self):
+        source = 'value = 1\n' + '# comment\n' * 100
+        rewrite = json.dumps({'files': [{'path': 'value.py', 'content': 'value = 2\n'}]})
+        edit = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
+        budget = developer.SMALL._replace(file_chars=150)
+        with patch.object(developer, 'run_model', side_effect=[('writer', rewrite), ('other', edit)]):
+            result = developer.generate_with('key', 'change value', recovery.ROOT,
+                                             {'value.py': source}, {'value.py': len(source)}, '', None, budget)
+        self.assertEqual(result[2]['value.py'], source.replace('value = 1', 'value = 2'))
+        self.assertIn('excerpts', self.journal.state['events'][-1]['error'])
+
+    def test_legacy_requirement_hypotheses_are_retained_for_audit_only(self):
+        self.journal.state.pop('requirementOrigin')
+        self.journal.state['requirements'] = ['Invented requirement from a diagnostic']
+        self.journal.persist()
+        resumed = self.world.journal()
+        self.assertEqual(resumed.state['requirements'], [])
+        self.assertEqual(resumed.state['legacyRequirements'], ['Invented requirement from a diagnostic'])
+
+    def test_review_uses_owner_task_instead_of_repair_hypotheses(self):
+        from engine import verify
+        with patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(verify, 'model_review', return_value=([{'text': 'Change value to 2', 'met': True}], [], [])) as review:
+            developer.check_the_work('key', 'REPAIR HYPOTHESIS: add unrelated feature', recovery.ROOT,
+                                     'b' * 40, 'token', {'value.py': 'value = 1'}, {'value.py': 9},
+                                     {'value.py': 'value = 2'}, '', None, '', False, MagicMock())
+        task = review.call_args.args[2]
+        self.assertIn(self.world.issue['body'], task)
+        self.assertNotIn('unrelated feature', task)
+
+    def test_provider_route_exhaustion_waits_but_github_403_blocks(self):
+        wrapped = developer.GenerationFailure('HTTP 403 on provider', provider_routes=True)
+        self.assertTrue(self.journal.defer(wrapped))
+        self.assertFalse(self.journal.defer(urllib.error.HTTPError('github', 403, 'forbidden', {}, None)))
+        self.assertEqual(self.journal.state['status'], 'blocked')
 
     def test_continuation_guard_rejects_other_tasks_refs_and_actions(self):
         scope = intent_guard.ACTIVE.get()
@@ -271,7 +356,8 @@ class RecoveryJournalTests(unittest.TestCase):
         with patch.object(developer, 'run_model', side_effect=[('writer', answer), ('other', answer)]) as model:
             _, _, changes, _ = developer.generate('key', 'update value', recovery.ROOT, {}, {'value.py': 10})
         self.assertEqual(changes['value.py'], 'value = 2\n')
-        self.assertIn('REREAD FILE value.py', model.call_args.args[1])
+        self.assertIn('===== FILE value.py =====\nvalue = 1', model.call_args.args[1])
+        self.assertIn('Reread immutable candidate source: value.py', model.call_args.args[1])
         self.assertEqual(self.journal.state['events'][0]['kind'], 'missing_context')
 
     def test_runner_resumes_existing_pr_once_and_never_opens_a_duplicate(self):

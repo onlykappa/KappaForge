@@ -97,9 +97,40 @@ export async function callProvider(env,route,chat,streaming,signal){
 const usage=u=>u&&{promptTokenCount:u.prompt_tokens,candidatesTokenCount:u.completion_tokens,totalTokenCount:u.total_tokens};
 const finish=reason=>reason?(reason==="length"?"MAX_TOKENS":"STOP"):undefined;
 
+export class ProviderResponseError extends Error {
+ constructor(message){super(message);this.name="ProviderResponseError";this.code="invalid_provider_response";}
+}
+const object=(value,label)=>{if(!value||typeof value!=="object"||Array.isArray(value))throw new ProviderResponseError(label+": expected an object");return value;};
+export function validateProviderResponse(data,{stream=false,workers=false,gemini=false}={}){
+ object(data,"Provider response");
+ if(data.error)throw new ProviderResponseError("Provider reported an error");
+ if(workers&&(typeof data.response==="string"||data.response&&typeof data.response==="object"&&!Array.isArray(data.response)))return data;
+ const rows=data[gemini?"candidates":"choices"];
+ // Usage-only streaming frames are valid.
+ if(stream&&(Array.isArray(rows)&&rows.length===0||gemini&&rows==null&&data.usageMetadata&&typeof data.usageMetadata==="object"))return data;
+ if(!Array.isArray(rows)||!rows.length)throw new ProviderResponseError("Provider response: missing candidates");
+ for(const row of rows){
+  object(row,"Candidate");
+  if(gemini){
+   if(row.finishReason!=null&&typeof row.finishReason!=="string")throw new ProviderResponseError("Invalid finish reason");
+   if(row.content!=null){
+    const parts=object(row.content,"Content").parts;
+    if(!Array.isArray(parts)||parts.some(p=>!p||typeof p!=="object"||Array.isArray(p)||p.text!=null&&typeof p.text!=="string"))throw new ProviderResponseError("Invalid content parts");
+   }
+  }else{
+   const message=object(row[stream?"delta":"message"],"Message");
+   if(message.content!=null&&typeof message.content!=="string")throw new ProviderResponseError("Invalid content text");
+   if(message.tool_calls!=null&&!Array.isArray(message.tool_calls))throw new ProviderResponseError("Invalid tool calls");
+   if(row.finish_reason!=null&&typeof row.finish_reason!=="string")throw new ProviderResponseError("Invalid finish reason");
+  }
+ }
+ return data;
+}
+
 // Non-streaming provider JSON -> Gemini-shaped result.
 export function normalizeResult(route,data){
  const p=registry.providers[route.provider];
+ validateProviderResponse(data,{workers:p.kind==="workers-ai"});
  if(p.kind==="workers-ai"){
   // Newer Workers AI models (GLM, gpt-oss) answer in OpenAI chat format rather than {response}.
   const openai=data?.choices?.[0]?.message?.content;
@@ -113,8 +144,9 @@ export function normalizeResult(route,data){
 // Streaming chunk -> Gemini-shaped chunk. Workers AI sends no finish reason; streamReply treats a clean end as finished.
 export function chunkNormalizer(route){
  const p=registry.providers[route.provider];
- if(p.kind==="workers-ai")return raw=>({candidates:[{content:{parts:[{text:typeof raw?.response==="string"?raw.response:raw?.choices?.[0]?.delta?.content||""}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});
+ if(p.kind==="workers-ai")return raw=>{validateProviderResponse(raw,{stream:true,workers:true});return ({candidates:[{content:{parts:[{text:typeof raw?.response==="string"?raw.response:raw?.choices?.[0]?.delta?.content||""}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});};
  return raw=>{
+  validateProviderResponse(raw,{stream:true});
   const choice=raw?.choices?.[0];
   return {candidates:choice?[{content:{parts:[{text:choice.delta?.content||""}]},finishReason:finish(choice.finish_reason)}]:[],usageMetadata:usage(raw?.usage),error:raw?.error};
  };

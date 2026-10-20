@@ -10,7 +10,7 @@ import {githubHeaders,githubRead} from "./github.js";
 import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
-import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,REGISTRY} from "./providers.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,REGISTRY} from "./providers.js";
 import app from "../../config/app.json" with {type: "json"};
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -680,7 +680,7 @@ export default {
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
         let result;try{result=await response.json()}catch{await record(null,false);continue}finally{clearTimeout(timeout)}
-        if(!gemini)result=normalizeResult(route,result);
+        try{if(!gemini)result=normalizeResult(route,result);else validateProviderResponse(result,{gemini:true})}catch{await record(null,false);continue;}
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {

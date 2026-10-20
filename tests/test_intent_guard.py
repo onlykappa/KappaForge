@@ -1,6 +1,7 @@
 import copy
 import unittest
 from engine.intent_guard import ExecutionScope, ACTIVE, activate, guard_request
+from engine.reliability import RecoveryBudgetExceeded
 
 
 def issue(mode='develop'):
@@ -47,8 +48,8 @@ class IntentGuardTests(unittest.TestCase):
     def test_lifecycle_and_bounded_autonomous_recovery(self):
         scope=ExecutionScope(issue());scope.transition('planning');scope.transition('executing')
         for i in range(5):scope.recover(str(i))
-        with self.assertRaises(PermissionError):scope.recover('six')
-        with self.assertRaises(PermissionError):scope.recover('0')
+        with self.assertRaises(RecoveryBudgetExceeded):scope.recover('six')
+        with self.assertRaises(RecoveryBudgetExceeded):scope.recover('0')
         scope.transition('verifying');scope.transition('completed')
         with self.assertRaises(PermissionError):scope.transition('executing')
 
@@ -58,11 +59,11 @@ class IntentGuardTests(unittest.TestCase):
         scope=ExecutionScope(issue());scope.transition('planning');scope.transition('executing')
         for stage in range(1,5):
             for i in range(5):scope.recover('same-answer-'+str(i),round_id=stage)
-        with self.assertRaises(PermissionError):scope.recover('one more',round_id=4)
-        with self.assertRaises(PermissionError):scope.recover('same-answer-0',round_id=4)
+        with self.assertRaises(RecoveryBudgetExceeded):scope.recover('one more',round_id=4)
+        with self.assertRaises(RecoveryBudgetExceeded):scope.recover('same-answer-0',round_id=4)
         scope.recover('same-answer-0',round_id=5)
         scope.recoveries=intent_guard.TOTAL_RECOVERIES
-        with self.assertRaises(PermissionError):scope.recover('x',round_id=6)
+        with self.assertRaises(RecoveryBudgetExceeded):scope.recover('x',round_id=6)
 
     def test_tool_boundary_drives_lifecycle_and_persists_provenance(self):
         from engine.intent_guard import record_success, report_provenance

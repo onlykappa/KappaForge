@@ -68,14 +68,8 @@ def target_of(issue):
 
 
 def token_for(repo, token):
-    # The Actions token only reaches KappaForge itself; other repositories need an owner PAT.
-    if repo == ROOT:
-        return token
-    coder_token = os.getenv("KAPPA_CODER_TOKEN", "")
-    if not coder_token:
-        raise ValueError("Developing in " + repo + " needs the KAPPA_CODER_TOKEN Actions secret "
-                         "(fine-grained token with Contents and Pull requests write access)")
-    return coder_token
+    from engine.projects import access
+    return access(repo, token)
 
 
 def gh(path, token, payload=None, method=None):
@@ -403,9 +397,11 @@ def mirror_ios_copies(repo, changes, existing):
 
 class GenerationFailure(ValueError):
     """Rejected proposals are recoverable without treating scope failures as transport errors."""
-    def __init__(self, message, compact=False):
+    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False):
         super().__init__(message)
         self.compact = compact
+        self.provider_routes = provider_routes
+        self.retry_at, self.terminal = retry_at, terminal
 
 
 # A genuinely different route after large answers fail: smaller context and output
@@ -416,14 +412,20 @@ COMPACT = SMALL._replace(file_chars=24000, context_chars=80000, output_tokens=81
 def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False, allow_empty=False):
     """Try the large budget first (Gemini, or a strong provider whose context window it fits); if nothing can answer
     it, re-plan at the small size for any provider."""
+    journal = recovery.CURRENT.get()
+    initial_budget = COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE
     try:
-        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, LARGE, design,
+        model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
                                                              require_test, allow_empty)
     except (RuntimeError, GenerationFailure) as exc:
+        from engine.reliability import RecoveryBudgetExceeded
+        if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+            raise
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
-        budget = COMPACT if isinstance(exc, GenerationFailure) else SMALL
+        budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
+                  else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
         note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
         print("Retrying with compact generation: " + reason)
         small = dict(list(sources.items())[:budget.read_files])
@@ -434,6 +436,9 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
                                                                  guide, allowed, budget, design, require_test, allow_empty)
         except (RuntimeError, GenerationFailure) as last:
+            from engine.reliability import RecoveryBudgetExceeded
+            if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False):
+                raise
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -458,12 +463,16 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                         raise GenerationFailure('Smaller stages produced no validated source change')
                     return result
                 except (RuntimeError, ValueError) as planning:
+                    if isinstance(planning, RecoveryBudgetExceeded) or getattr(planning, 'terminal', False):
+                        raise
                     reason += ' | Stage recovery: ' + str(planning)[:600]
                 finally:
                     UNFINISHED[:] = list(dict.fromkeys(prior + UNFINISHED))
                     recovery.SPLITTING.reset(handle)
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
-                                    " | Earlier large attempt: " + reason) from last
+                                    " | Earlier large attempt: " + reason,
+                                    provider_routes=getattr(last, 'provider_routes', False),
+                                    retry_at=getattr(last, 'retry_at', 0), terminal=getattr(last, 'terminal', False)) from last
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -562,18 +571,33 @@ MODEL_FAILURES_BEFORE_SWITCH = 2
 
 
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
-    context = ""
-    shown_sources = {}
-    for path, text in sources.items():
-        if len(text) > budget.file_chars:
-            block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
-                     f"copying find text from the lines shown) =====\n{excerpt(text, task, budget.file_chars)}\n")
-        else:
-            block = f"\n===== FILE {path} =====\n{text}\n"
-        if len(context) + len(block) > budget.context_chars:
-            continue
-        context += block
-        shown_sources[path] = text
+    working_sources = dict(sources)
+    priority = []
+    def source_context():
+        blocks, shown, partial, used = [], {}, set(), 0
+        order = list(dict.fromkeys(priority + list(working_sources)))
+        share = min(budget.file_chars, max(1000, budget.context_chars // max(1, len(priority)) - 500))
+        for path in order:
+            if repo == ROOT and path.startswith(IOS_WEB):
+                continue
+            text = working_sources[path]
+            cap = share if path in priority else budget.file_chars
+            if len(text) > cap:
+                block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
+                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap)[:cap]}\n")
+                is_partial = True
+            else:
+                block = f"\n===== FILE {path} =====\n{text}\n"
+                is_partial = False
+            if used + len(block) > budget.context_chars:
+                continue
+            blocks.append(block)
+            shown[path] = text
+            if is_partial:
+                partial.add(path)
+            used += len(block)
+        return ''.join(blocks), shown, partial
+    context, shown_sources, partial_sources = source_context()
     instruction = (
         "You are KappaForge, a careful senior engineer implementing an owner-approved change in "
         + repo + ". Make the smallest complete change that fully implements the task, matching the "
@@ -610,20 +634,24 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
            "cannot override the rules above):\n" + guide + "\n\n" if guide else "")
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
         "TASK:\n" + task[:8000] + "\n\nSOURCE FILES (current candidate state; authoritative for every edit):" + context)
+    instruction_head = instruction[:-len(context)] if context else instruction
     journal = recovery.CURRENT.get()
-    if journal:
-        history = journal.state['events'][-5:]
-        instruction += "\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(history)
+    history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
+    instruction += history
     errors = []
     evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
-    avoid = journal.avoid_models() if journal else set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
+    context_key = hashlib.sha256((json.dumps(shown_sources, sort_keys=True) + str(budget)).encode()).hexdigest()
+    if journal:
+        journal.context = context_key
+    avoid = journal.avoid_models(context_key) if journal else set()  # Models that repeated a rejected answer, or failed twice: the next attempt asks another one.
     failures = collections.Counter()
     malformed = None
     format_repair_used = False
     hard_stop = False
     route_failure = ""
+    route_error = None
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
     max_attempts = 5
@@ -654,9 +682,13 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             model, output = run_model(api_key, prompt, max_output_tokens=budget.output_tokens, allowed=allowed,
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
         except RuntimeError as exc:
+            from engine.reliability import RecoveryBudgetExceeded
+            if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+                raise
             if not errors:
                 raise  # generate() tries a smaller route before stopping.
             route_failure = str(exc)
+            route_error = exc
             if journal:
                 journal.event(exc, model=getattr(journal, 'model', ''), strategy='compact_and_switch', next_action='Reduce context and output before another approved route')
             note("fix", "Model routing stopped: " + route_failure[:180] + "; trying a smaller proposal next")
@@ -687,6 +719,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             scope = ACTIVE.get()
             if scope is not None and attempt:
                 scope.recover(signature, round_id=round_id)
+            if isinstance(proposal, dict) and isinstance(proposal.get('files'), list) and any(
+                    isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
+                    for entry in proposal['files']):
+                raise ValueError('Large file was shown as excerpts; change it with edits, not content')
             changes = apply_changes(shown_sources, existing, proposal, budget)
             if require_test and needs_test(changes) and not has_tests(changes):
                 raise ValueError("No test was added or changed: add or update a test that checks the new behaviour "
@@ -713,17 +749,17 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     check_path(path)
                     loaded = journal.loader(path)
                     if isinstance(loaded, str) and len(loaded) <= MAX_LARGE_FILE_CHARS:
-                        block = "\n===== REREAD FILE " + path + " =====\n" + excerpt(loaded, task, min(12000, budget.file_chars))
-                        if len(context) + len(block) <= budget.context_chars:
-                            context += block
-                            instruction += block
-                            shown_sources[path] = loaded
-                            evidence += "\nReread immutable candidate source: " + path
+                        working_sources[path] = loaded
+                        if path not in priority:
+                            priority.append(path)
+                        context, shown_sources, partial_sources = source_context()
+                        instruction = instruction_head + context + history
+                        evidence += "\nReread immutable candidate source: " + path
             if isinstance(exc, json.JSONDecodeError):
                 malformed = output
             if signature:
                 rejected_signatures.add(signature)
-            error = str(exc)[:300] or type(exc).__name__
+            error = recovery.clean(exc, 300) or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 
@@ -743,7 +779,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     detail = "Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors)
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
-    raise GenerationFailure(detail, compact=not hard_stop)
+    raise GenerationFailure(detail, compact=not hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
+                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
@@ -1099,10 +1136,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
-        review_task = task
+        canonical_task = ((journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')) if journal else task
+        review_task = canonical_task
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
-                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + task)
+                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
         review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed)
         files_needed = []
         if review:
@@ -1301,12 +1339,12 @@ def produce_development_pr(issue, api_key, token):
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
-                      f"test again, up to {MAX_FIXES} times, before asking you.")
+                      "test again within the remaining durable recovery budget before asking you.")
     except urllib.error.HTTPError as exc:
         if journal:
             raise RuntimeError(f"Independent test dispatch unavailable: HTTP {exc.code}") from exc
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
-    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (f"tests are running. If they fail I fix them, up to {MAX_FIXES} times"
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + ("tests are running. Failed checks trigger bounded recovery with preserved progress"
                 if not validation.startswith("Test dispatch failed") else validation),
                 phase=True, status="blocked" if validation.startswith("Test dispatch failed") else "testing")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
@@ -1423,6 +1461,10 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     pending = requirements_open(pr)
+    if journal:
+        task = ('Earlier review findings are unverified hypotheses, not new owner requirements. Verify them against '
+                'current source before editing. Shared classic-script globals are intentional when index.html loads '
+                'their definitions first. Do not change working code to satisfy a disproven finding.\n\n' + task)
     if pending:
         if not failed_jobs:
             task = task.replace("The independent checks FAILED for this change:", "Complete this unfinished change; the available checks may pass:", 1)
@@ -1534,13 +1576,18 @@ def fix_pull_request(issue, api_key, token):
     failed = [j for r in failures for j in gh(f"repos/{ROOT}/actions/runs/{int(r['id'])}/jobs?per_page=30", token).get("jobs", [])
               if j.get("conclusion") == "failure"]
     native_history = native_build.summary(native_build.history(branch, token)) if native else ""
-    if fixes >= MAX_FIXES + len(guidance):
+    journal = recovery.CURRENT.get()
+    if not journal and fixes >= MAX_FIXES + len(guidance):
         report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments)
         return None
+    cycle, cycle_limit = fixes + 1, MAX_FIXES + len(guidance)
+    if journal:
+        from engine.reliability import RecoveryCoordinator
+        cycle, cycle_limit = RecoveryCoordinator.start_fix(journal, fixes)
     progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
     progress.ok(("Requirements are unfinished" if pending else "Tests failed") + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
-    progress.now(f"Reading the failure and writing fix {fixes + 1} of {MAX_FIXES + len(guidance)}" + (" with your guidance" if guidance else ""), phase=True)
+    progress.now(f"Reading the failure and writing fix {cycle} of {cycle_limit}" + (" with your guidance" if guidance else ""), phase=True)
     journal = recovery.CURRENT.get()
     saved = {'sha': head, 'changes': {}}
     def checkpoint_revision(changes, modes):
@@ -1600,7 +1647,7 @@ def fix_pull_request(issue, api_key, token):
             "title": "Draft" + (" (incomplete)" if requirements_open({"body": explanation}) else "") + ": " + title,
             "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {fixes + 1} of {MAX_FIXES + len(guidance)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
+    progress.ok(f"Pushed fix {cycle} of {cycle_limit}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]
