@@ -11,6 +11,10 @@ import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,REGISTRY} from "./providers.js";
+import {routingStore} from "./router-state.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot} from "./router-coordination.js";
+import {inferenceRouter} from "./inference-router.js";
+import {providerAllowed,routePolicy} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -21,6 +25,7 @@ export class KappaMemory {
     const url = new URL(request.url);
     if(url.pathname.startsWith("/authorization/"))return authorizationStore(this.state,request);
     if(url.pathname.startsWith("/usage"))return usageStore(this.state,request);
+    if(url.pathname.startsWith("/router/"))return routingStore(this.state,request);
     if(url.pathname.startsWith("/vectors/"))return indexStore(this.state,request);
     if (url.pathname === "/discord") {
       if (request.method === "GET") return new Response(JSON.stringify({connected:!!(await this.state.storage.get("discordWebhook"))}),{headers:{"Content-Type":"application/json"}});
@@ -119,12 +124,23 @@ export default {
       const ready = !!env.MEMORY && !!env.CHAT_ACCESS_TOKEN && typeof globalThis.KappaStream?.sse === "function" && REGISTRY.order.length > 0;
       return json({ ok: ready, version: app.version }, ready ? 200 : 503);
     }
+    const pathname=new URL(request.url).pathname;
+    if(pathname.startsWith("/router/")){
+      if(pathname!=="/router/infer"||request.method!=="POST")return json({error:"Not found"},404);
+      if(!env.ROUTER_ACCESS_TOKEN||env.ROUTER_ACCESS_TOKEN.length<32||!env.MEMORY||env.ROUTING_POLICY_VERSION!=="v1")return json({error:"Integrated router is not configured"},503);
+      const auth=request.headers.get("Authorization")||"";
+      if(!auth.startsWith("Bearer ")||!safeEqual(auth.slice(7),env.ROUTER_ACCESS_TOKEN))return json({error:"Unauthorized"},401);
+      const length=Number(request.headers.get("Content-Length")||0);
+      if(length>200000)return json({error:"Request too large"},413);
+      let body;try{const raw=await request.text();if(raw.length>200000)return json({error:"Request too large"},413);body=JSON.parse(raw)}catch{return json({error:"Invalid JSON"},400)}
+      try{return await inferenceRouter(env,body,request.signal)}catch{return json({error:"Integrated inference unavailable",code:"free_route_unavailable"},503)}
+    }
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
-    if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY))
+    if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
@@ -162,7 +178,24 @@ export default {
       }catch{return json({error:"Semantic search unavailable. Text search still works."},502,cors)}
     }
     if(new URL(request.url).pathname==="/capabilities"){
-      try{return json({version:"2.0.0",provider:"Gemini",models:env.GEMINI_API_KEY?await discover(env):[],github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),maxAttempts:env.GEMINI_API_KEY?(await discover(env)).length:0,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers:await providerSummary(env),monthlyRequestLimit:Number(env.MONTHLY_REQUEST_LIMIT)||null},200,cors)}
+      try{
+        const policy=routePolicy(env),snapshot=env.MEMORY?await routingSnapshot(env):{pools:{},routes:{},usage:{},activeReservations:0,quotaRemaining:null,quotaSource:"unknown"};
+        const health={};for(const [id,p] of Object.entries(REGISTRY.providers)){
+          const poolRows=Object.values(snapshot.pools||{}).filter(row=>row.provider===id),pool=poolRows.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
+          const routeRows=Object.entries(snapshot.routes||{}).filter(([key])=>key.startsWith(id+":" )).map(([,row])=>row);
+          const active=pool?.blocked?"blocked":pool?.until>Date.now()?"cooldown":routeRows.some(row=>row.blocked)?"route_blocked":routeRows.some(row=>row.until>Date.now())?"cooldown":"unknown";
+          health[id]={state:active,retryAt:pool?.until||Math.max(0,...routeRows.map(row=>row.until||0))||null,category:pool?.category||routeRows.find(row=>row.category)?.category||null};
+        }
+        const primary=REGISTRY.routing?.primary||{},geminiAllowed=providerAllowed(env,"chat","gemini");
+        const geminiPools=Object.values(snapshot.pools||{}).filter(row=>row.provider==="gemini"),geminiPool=geminiPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
+        health.gemini={state:geminiPool?.blocked?"blocked":geminiPool?.until>Date.now()?"cooldown":Object.values(snapshot.routes||{}).some(row=>row.provider==="gemini"&&row.until>Date.now())?"cooldown":"unknown",retryAt:geminiPool?.until||null,category:geminiPool?.category||null};
+        const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,enabled:geminiAllowed,models:geminiAllowed?await discover(env).catch(()=>[]):[],
+          capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+          maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
+          routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20,quotaRemaining:null,quotaSource:"unknown"}},
+          200,cors);
+      }
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
     if(new URL(request.url).pathname==="/usage"){
@@ -635,20 +668,26 @@ export default {
     }
     try {
       const prefs=input.preferences||{},chat=toChat(payload);
-      // A Gemini outage or exhausted key should not block the free fallback providers.
-      const available=awake(await discover(env).catch(()=>[]));
+      // The same server-side allowlist and capability filter governs chat and coding routes.
+      const available=providerAllowed(env,"chat","gemini")?awake(await discover(env).catch(()=>[])):[];
       const manualGemini=typeof prefs.model==="string"&&prefs.model!=="auto"&&!prefs.model.includes(":");
-      let candidates=manualGemini&&!available.includes(prefs.model)?[]:await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia);
+      let candidates=manualGemini&&!available.includes(prefs.model)?[]:await fallbackRoutes(env,routes(available,manualGemini?prefs:{...prefs,model:"auto"},isComplex(input)),prefs,chat.hasMedia,
+        {channel:"chat",hasTools:chat.hasTools,hasStructuredOutput:planning,promptChars:chat.contextChars,maxOutputTokens:chat.maxTokens});
       // A model chosen in Settings that is no longer offered (retired or renamed) falls back to Automatic when
       // fallback is on, instead of refusing every message; with fallback off the owner asked for that model only.
       if(!candidates.length&&prefs.fallback!==false&&prefs.model&&prefs.model!=="auto"){
-        candidates=await fallbackRoutes(env,routes(available,{...prefs,model:"auto"},isComplex(input)),{...prefs,model:"auto"},chat.hasMedia);
+        candidates=await fallbackRoutes(env,routes(available,{...prefs,model:"auto"},isComplex(input)),{...prefs,model:"auto"},chat.hasMedia,
+          {channel:"chat",hasTools:chat.hasTools,hasStructuredOutput:planning,promptChars:chat.contextChars,maxOutputTokens:chat.maxTokens});
       }
-      if(!candidates.length)return json({error:"Selected model unavailable. Refresh model availability or choose Automatic."},422,cors);
+      if(!candidates.length){const failClosed=routePolicy(env).failClosed;return json({error:failClosed?"No explicitly approved free provider route is currently available.":"Selected model unavailable. Refresh model availability or choose Automatic.",code:failClosed?"free_route_unavailable":"model_unavailable"},failClosed?503:422,cors);}
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
       if(!reservation.ok)return json({error:"Server monthly request limit reached. Requests resume next UTC month."},429,cors);
+      const routerRequestId=crypto.randomUUID();
+      let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,routerRequestId,Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20))}
+      catch{return json({error:"Shared routing limits unavailable; inference was not sent."},503,cors)}
+      if(!dailyReservation.allowed)return json({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached. Retry after the current minute window.":"Shared daily inference limit reached. Requests resume next UTC day.",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
       const streaming=!planning&&input.stream===true;
       let attempt=0;
@@ -656,31 +695,43 @@ export default {
       for (const route of candidates) {
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
-        const record=async(result,ok)=>{const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;};
+        const routeRequestId=crypto.randomUUID();
+        let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId)}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
+        if(!routeReservation.allowed){lastStatus=429;continue;}
+        let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="";
+        const record=async(result,ok)=>{
+          const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);
+          const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
+          await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
+          await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
+        };
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 45000);
         let response;
         try {
+          const geminiLimit=REGISTRY.routing?.primary?.maxOutputTokens||REGISTRY.routing?.defaults?.maxOutputTokens||8192;
+          const geminiBody=gemini?{...payload,generationConfig:{...payload.generationConfig,maxOutputTokens:Math.min(payload.generationConfig.maxOutputTokens||1200,geminiLimit)}}:null;
           response = gemini ? await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + route.model + (streaming?":streamGenerateContent?alt=sse":":generateContent"), {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-            body: JSON.stringify(payload), signal: controller.signal
+            body: JSON.stringify(geminiBody), signal: controller.signal
           }) : await callProvider(env, route, chat, streaming, controller.signal);
         } catch { clearTimeout(timeout);await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); }
         lastStatus = response.status;
+        outcomeStatus=response.status;outcomeHeaders=response.headers;
+        if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
-          if (!gemini || [404, 429, 500, 502, 503].includes(response.status)) continue;
-          return json({ error: "Gemini rejected request (HTTP " + response.status + ")" }, 502, cors);
+          continue;
         }
         if(streaming){
           const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider},abort:controller,timeout,signal:request.signal,context,
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
-        let result;try{result=await response.json()}catch{await record(null,false);continue}finally{clearTimeout(timeout)}
-        try{if(!gemini)result=normalizeResult(route,result);else validateProviderResponse(result,{gemini:true})}catch{await record(null,false);continue;}
+        let result;try{result=await response.json()}catch{outcomeStatus=502;outcomeCategory="malformed_json";await record(null,false);continue}finally{clearTimeout(timeout)}
+        try{if(!gemini)result=normalizeResult(route,result);else validateProviderResponse(result,{gemini:true})}catch{outcomeStatus=502;outcomeCategory="malformed_response";await record(null,false);continue;}
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {
@@ -710,7 +761,7 @@ export default {
         }
         await record(result,false);
       }
-      return json({ error: "All approved AI routes unavailable (last HTTP " + lastStatus + "). Free daily limits may be used up; add another provider key or try later." }, 502, cors);
+      return json({ error: "All explicitly approved free AI routes are unavailable (last HTTP " + lastStatus + "). Retry after the reported cooldown or configure another verified-free route." }, 502, cors);
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }

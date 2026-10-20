@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -560,9 +561,64 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:
         model_timeout()
+        if os.getenv("KAPPA_ROUTER_REQUIRED", "").strip().lower() == "true":
+            return run_integrated_router(prompt, max_output_tokens, allowed, json_mode)
         return _run_model(api_key, prompt, max_output_tokens, allowed, json_mode, skip)
     finally:
         MODEL_DEADLINE = previous
+
+
+def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False):
+    """Send authorized coding inference through KappaForge's shared Durable-Object router."""
+    from engine import recovery
+    endpoint = os.getenv("KAPPA_ROUTER_URL", "").strip().rstrip("/")
+    token = os.getenv("KAPPA_ROUTER_TOKEN", "")
+    parsed = urllib.parse.urlsplit(endpoint)
+    if (parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or
+            parsed.query or parsed.fragment or parsed.path not in ("", "/") or len(token) < 32):
+        raise RuntimeError("Integrated provider gateway is not configured; no direct provider fallback was attempted")
+    journal = recovery.CURRENT.get()
+    repo = journal.scope.repo if journal else ROOT
+    selected = sorted(set(allowed if allowed is not None else code_providers(private=True)) & set(PROVIDERS["order"] + ["gemini"]))
+    if not selected:
+        raise RuntimeError("No provider is authorized for coding inference; the task remains queued")
+    payload = {
+        "version": 1, "channel": "coding", "repo": repo, "privateCode": True,
+        "requestId": str(uuid.uuid4()), "providers": selected,
+        "messages": [{"role": "user", "content": prompt}],
+        "maxTokens": min(max(1, int(max_output_tokens)), 8192),
+        "temperature": 0.2, "fallback": True,
+        "responseFormat": "json_object" if json_mode else None,
+    }
+    request = urllib.request.Request(endpoint + "/router/infer", json.dumps(payload).encode("utf-8"), {
+        "Content-Type": "application/json", "Authorization": "Bearer " + token,
+        "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=model_timeout()) as response:
+            data = response_json(response)
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise PermissionError("Integrated provider gateway rejected its runner credential") from None
+        if exc.code == 429:
+            retry_at = ""
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                retry_at = "; retry after " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(body["retryAt"] / 1000)) if body.get("retryAt") else ""
+            except (ValueError, KeyError, TypeError):
+                pass
+            raise RuntimeError("Approved provider capacity is limited" + retry_at + "; no other route was used") from None
+        raise RuntimeError("Integrated provider gateway failed (HTTP " + str(exc.code) + "); no direct provider fallback was attempted") from None
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise RuntimeError("Integrated provider gateway unavailable; no direct provider fallback was attempted") from None
+    if status != 200 or not isinstance(data, dict):
+        raise RuntimeError("Integrated provider gateway returned an invalid response")
+    model, output = data.get("route"), data.get("text")
+    if not isinstance(model, str) or not re.fullmatch(r"[a-z0-9-]+:.{1,180}", model, re.I) or not isinstance(output, str) or not output.strip():
+        raise RuntimeError("Integrated provider gateway returned an incomplete inference result")
+    asking(model)
+    return model, output
 
 
 def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
@@ -680,11 +736,20 @@ def report_failure(number, token, reason, next_step):
     notify(f"❌ KappaForge task #{number} failed: {reason}"[:1500])
 
 
+def inference_backend_ready():
+    if os.getenv("KAPPA_ROUTER_REQUIRED", "").strip().lower() == "true":
+        endpoint, token = os.getenv("KAPPA_ROUTER_URL", "").strip(), os.getenv("KAPPA_ROUTER_TOKEN", "")
+        parsed = urllib.parse.urlsplit(endpoint)
+        return parsed.scheme == "https" and bool(parsed.netloc) and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment and parsed.path in ("", "/") and len(token) >= 32
+    return bool(os.getenv("GEMINI_API_KEY"))
+
+
 def main():
+    api_key = os.getenv("GEMINI_API_KEY", "")
     if os.getenv("INPUT_ISSUE_NUMBER", "").strip().lower() == "smoke":
-        if not os.getenv("GEMINI_API_KEY"):
-            raise RuntimeError("GEMINI_API_KEY is missing from Actions secrets")
-        model, answer = run_model(os.environ["GEMINI_API_KEY"],
+        if not inference_backend_ready():
+            raise RuntimeError("The configured inference backend is unavailable")
+        model, answer = run_model(api_key,
             "Reply with exactly KAPPAFORGE_CONNECTION_OK to confirm model access.")
         if "KAPPAFORGE_CONNECTION_OK" not in answer:
             raise RuntimeError("Model responded but did not return expected smoke marker")
@@ -697,11 +762,11 @@ def main():
         return
     from engine.intent_guard import activate
     activate(issue)
-    if not os.getenv("GEMINI_API_KEY"):
+    if not inference_backend_ready():
         if os.getenv("INPUT_ISSUE_NUMBER", "").strip():
-            report_failure(issue["number"], token, "GEMINI_API_KEY is missing from the repository's Actions secrets",
-                           "add it under GitHub → Settings → Secrets and variables → Actions, then retry the task")
-        print("GEMINI_API_KEY missing; task left queued.")
+            report_failure(issue["number"], token, "The approved inference gateway is not configured",
+                           "configure KAPPA_ROUTER_URL and the scoped KAPPA_ROUTER_TOKEN Actions secret, then retry")
+        print("Approved inference gateway unavailable; task left queued.")
         return
     from engine.task_scope import mode_of, require_scope
     require_scope(mode_of(issue), os.environ.get("KAPPA_TASK_SCOPE", "read"))
@@ -711,7 +776,7 @@ def main():
             print("Self-repair requires explicit workflow dispatch; task remains queued.")
             return
         from engine.self_repair import produce_repair_pr
-        url = produce_repair_pr(issue, os.environ["GEMINI_API_KEY"], token)
+        url = produce_repair_pr(issue, api_key, token)
         print("Self-repair draft pull request created: " + url)
         return
     if re.search(r"^Mode:\s*develop\s*$", body_text, re.I | re.M):
@@ -755,13 +820,13 @@ def main():
                     fixing = True
             if action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
                 next_action = recovery.resume_checks(journal, pulls[0], token)
-                url = (fix_pull_request(issue, os.environ['GEMINI_API_KEY'], token)
+                url = (fix_pull_request(issue, api_key, token)
                        if next_action == 'fix' else None if next_action == 'blocked' else pulls[0]['html_url'])
             elif fixing:
-                url = fix_pull_request(issue, os.environ["GEMINI_API_KEY"], token)
+                url = fix_pull_request(issue, api_key, token)
                 print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
             else:
-                url = produce_development_pr(issue, os.environ["GEMINI_API_KEY"], token)
+                url = produce_development_pr(issue, api_key, token)
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
             journal.state['status'] = ('ready' if journal.state['status'] == 'ready' else 'testing') if url else 'blocked'
             journal.persist()
@@ -789,7 +854,7 @@ def main():
             print("Coding mode requires explicit manual workflow dispatch; task remains queued.")
             return
         from engine.coder import produce_draft_pr
-        url = produce_draft_pr(issue, os.environ["GEMINI_API_KEY"], token)
+        url = produce_draft_pr(issue, api_key, token)
         print("Draft pull request created: " + url)
         return
     if re.search(r"^Mode:\s*project-map\s*$", body_text, re.I | re.M):
@@ -825,7 +890,7 @@ def main():
         branch = branch_match.group(1) if branch_match else None
         allowed = code_providers(is_private(repo, token))
         state, note, complete = inspect_batch(
-            repo, issue["number"], branch, token, os.environ["GEMINI_API_KEY"],
+            repo, issue["number"], branch, token, api_key,
             lambda path: github(path, read_token(repo, token)), lambda key, prompt: run_model(key, prompt, allowed=allowed), comments)
         github(f"repos/{ROOT}/issues/{issue['number']}/comments", token, {"body": note})
         print(f"Audit {'complete' if complete else 'checkpointed'}: {state['next']}/{state['files_total']}")
@@ -856,7 +921,7 @@ def main():
         + 'TASK:\n' + task + '\n\nGITHUB EVIDENCE:\n' + handoff['evidence']
     )
     try:
-        model, result = run_model(os.environ["GEMINI_API_KEY"], prompt, allowed=code_providers(is_private(repo, token)))
+        model, result = run_model(api_key, prompt, allowed=code_providers(is_private(repo, token)))
     except RuntimeError as err:
         print(str(err) + "; task remains queued")
         return

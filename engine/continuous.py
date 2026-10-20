@@ -5,7 +5,7 @@ diagnosis is read-only and produces reviewable recommendations, never code pushe
 """
 import os
 import re
-from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model, read_token
+from engine.runner import ROOT, allowed_repo, authorized, code_providers, github, get_issue, is_private, run_model, read_token, inference_backend_ready
 from engine.full_reader import inspect_batch
 
 MAX_BATCHES_PER_RUN = 3
@@ -73,9 +73,9 @@ def monitor_failures(issue, token, api_key):
 
 def main():
     token = os.environ["GITHUB_TOKEN"]
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        raise RuntimeError("Missing GEMINI_API_KEY")
+    key = os.environ.get("GEMINI_API_KEY", "")
+    if not inference_backend_ready():
+        raise RuntimeError("The configured inference backend is unavailable")
     number = os.environ.get("CONTINUOUS_ISSUE_NUMBER", "").strip()
     if number and not number.isdecimal():
         raise ValueError("Issue number must be numeric")
