@@ -2,6 +2,19 @@ name = "kappaforge-chat"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
+# Keep owner-managed routing variables configured in the Cloudflare dashboard when deploying.
+keep_vars = true
+
+# Phase 3 routing is deliberately fail-closed. Owner-reviewed free eligibility and
+# per-channel permissions are configured as non-secret variables after billing review.
+[vars]
+ROUTING_POLICY_VERSION = "v1"
+KAPPA_FREE_PROVIDERS = ""
+KAPPA_CHAT_PROVIDERS = ""
+KAPPA_CODE_PROVIDERS = ""
+KAPPA_PRIVATE_CODE_PROVIDERS = ""
+KAPPA_ROUTER_MAX_DAILY_REQUESTS = "100"
+KAPPA_ROUTER_MAX_PER_MINUTE = "20"
 
 [[durable_objects.bindings]]
 name = "MEMORY"

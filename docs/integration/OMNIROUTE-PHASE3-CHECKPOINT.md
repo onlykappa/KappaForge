@@ -1,0 +1,59 @@
+# OmniRoute selective integration checkpoint
+
+**Updated:** 2026-10-20
+**Status:** PARTIAL — implementation pushed in draft; fixture/build validation completed; live provider and deployment acceptance remain pending.
+
+## Controlling decision
+
+The owner replaced Phase 2's persistent Linux-host prerequisite with selective integration into KappaForge's existing Cloudflare Worker, `KappaMemory` SQLite Durable Object, and GitHub Actions runner. This supersedes the standalone-host decision in OmniRoute's Phase 2 checkpoint. Phase 2 remains **PARTIAL**: its template and static review exist, but no standalone Linux host, public HTTPS gateway, live route, restart/backup evidence, or remote availability was established. Keep all prior standalone OmniRoute work intact; do not report its unperformed deployment checks as passed. The complete OmniRoute Next.js application, desktop shell, native SQLite driver, and background services are not being deployed to Workers.
+
+## Baselines and prior evidence
+
+- KappaForge default branch baseline: `ccf7ad582f3b617eb53f2e6ca72d600630afaf74` (`main`). Implementation branch: `codex/phase3-routing-policy`.
+- KappaForge implementation commit: `6d07a60df79b35ca33b0d2b081fade8f223027ff`. Draft PR #139: https://github.com/onlykappa/KappaForge/pull/139 (base `main`, not merged).
+- OmniRoute current standalone source at investigation: `546b38105f2cc655b251b7498b6c913cca7dcebd` (`standalone/free-agent`). Phase 1 tested source/smoke commit: `e62525857667a35610c9c812877860df8b38f774`; Phase 1 documentation head: `f735844eafd395a05270c198ec4a1388e4c21234`. Verified Windows artifact identity and smoke evidence remain in OmniRoute Phase 1/2 checkpoints; Linux runtime was not verified.
+- OmniRoute Phase 2 partial handoff: draft PR #12, head `79560333`, with standalone deployment templates only. Draft PRs #10 and #11 remain untouched. KappaForge draft PR #133 was pre-existing and left untouched.
+- Existing KappaForge routing registry: `config/providers.json`, loaded by both Worker JavaScript and Python runner. Existing app data, authorization, task recovery, and Durable Object storage remain in place.
+
+## Implemented architecture
+
+Kappa chat and coding jobs use the same provider registry, capability metadata, free-route allowlists, and persistent `KappaMemory` routing store. Chat remains on its authenticated existing Worker API. A new runner-only `POST /router/infer` endpoint uses a distinct bearer secret (`ROUTER_ACCESS_TOKEN`), validates a bounded coding request and repository, and accepts only server-approved provider/model routes; it does not accept arbitrary URLs. GitHub Actions sends prompts to this endpoint and no longer receives provider API keys in the inference job. The endpoint is fail-closed until `ROUTING_POLICY_VERSION=v1` and the free, coding, and private-code provider allowlists are populated.
+
+The `KappaMemory` Durable Object stores expiring provider/account reservations, shared daily and per-minute request limits (defaults 100/day and 20/minute), cooldowns, and seven-day idempotent outcome records. Account pools use a one-way key fingerprint so separate provider accounts remain distinct without exposing key values. Reported token usage, provider-reported remaining quota, and estimated request counts remain separate; unknown allowance is represented as unknown. Persistent model/provider failures are distinguished from account authentication/billing blocks. The provider registry describes chat, coding, structured output, tools, streaming, media, and context/output limits. Routes lacking a required capability are excluded.
+
+Coding sends exact prompt text through HTTPS, with a unique request ID and private-code authorization; the gateway performs bounded sequential route fallback. Worker and runner do not have independent retry loops that multiply requests. If the gateway or an approved free route is unavailable, the runner fails the current inference and keeps existing task recovery behavior; it never falls back to a direct provider key. Long-running execution remains in GitHub Actions.
+
+## Configuration and deployment order
+
+New Cloudflare secret: `ROUTER_ACCESS_TOKEN` (unique random value of at least 32 characters; runner-only endpoint). New GitHub Actions secret: `KAPPA_ROUTER_TOKEN` (same value, never place in repository files or chat). New GitHub Actions variable: `KAPPA_ROUTER_URL` (Worker HTTPS origin only). Existing provider credentials remain server-side in the Worker secret store. New Worker variables: `ROUTING_POLICY_VERSION`, `KAPPA_FREE_PROVIDERS`, `KAPPA_CHAT_PROVIDERS`, `KAPPA_CODE_PROVIDERS`, `KAPPA_PRIVATE_CODE_PROVIDERS`, `KAPPA_ROUTER_MAX_DAILY_REQUESTS`, and `KAPPA_ROUTER_MAX_PER_MINUTE`.
+
+Default Wrangler config intentionally leaves provider allowlists empty and sets a daily request cap of 100. Do not populate an allowlist until billing eligibility and private-code permission are independently verified. Do not import Windows-encrypted secrets or assume `combo/free-coding` / `omniroute_free_profiles` exists in the current environment. No live route was available to this implementation session. Once the owner provisions configuration through approved secret stores: deploy the Worker with the existing Durable Object binding; configure Worker provider secrets and explicit eligible route/model allowlists; set the matching GitHub Actions URL variable and scoped token secret; then run authenticated fixture-backed and bounded approved-free live checks. No deployment workflow was enabled here.
+
+No additional Durable Object class or storage migration is required; the routing state is an additive key in the existing persistent object. Existing app response fields are additive and its current API remains compatible. The installed IPA has no changed interface and does not need an update for this backend/runner integration. Do not merge or deploy until a reviewer accepts the draft and the owner provisions the approved configuration.
+
+## Contract prepared for Phase 3 review
+
+- Worker origin: owner-configured HTTPS origin in `KAPPA_ROUTER_URL`; not yet configured or verified.
+- Existing app chat API: authenticated `POST /chat`; provider/model discovery: authenticated `POST /capabilities` (the app's existing capability interface). New runner-only endpoint: authenticated `POST /router/infer`. Public health path remains `/health` and does not reveal private configuration. Management and Durable Object routes are not exposed.
+- Runner request: `{version:1, channel:"coding", repo:"onlykappa/<repo>", privateCode:true, requestId:<uuid>, providers:[...], messages:[...], maxTokens:<1..8192>, responseFormat?:"json_object"}`. The response contains exact text, selected `provider`, selected `model`, combined `route`, reported usage when present, configured limits, and quota confidence/source. OpenAI-compatible provider calls are normalized internally; unsupported media/tools/structured output are rejected or filtered.
+- Maximum serialized request body: 200,000 characters; at most 64 messages, each at most 100,000 characters; maximum runner output is 8,192 tokens, further capped per provider. The request context ceiling defaults to 32,768 estimated tokens; provider-specific smaller limits apply. Token usage fields are included only when upstream reports them.
+- Worker route deadline: 120 seconds for runner inference; chat provider attempt timeout: 45 seconds. Runner HTTP timeout uses its remaining task/model deadline (normally bounded below the Actions job limit). The coding endpoint responds as one JSON result, not a stream. Existing chat streaming behavior remains incremental through the existing chat transport and is covered by existing streaming tests.
+- Retries are owned by the Worker route loop, sequentially across eligible routes. Durable cooldowns honor `Retry-After` and known reset headers. 401/402 blocks the account pool; 403/404 blocks the route; 429 blocks the provider/account or model pool according to registry scope; exhausted capacity returns 429/503. Chat maps total route exhaustion to a user-visible 502. Coding errors do not cause direct-provider fallback. A provider outage does not silently enable paid inference.
+- Actual selected model and available upstream usage are returned. Quota balances remain `null`/unknown unless the provider reports a numeric allowance with a source.
+
+Laptop-independent gateway hosting is not a goal of this architecture. Laptop-independent coding execution is still Phase 4 unless separately implemented and verified.
+
+## Validation record
+
+- New focused JavaScript routing/storage/gateway fixture tests: **8 passed**. They verify gateway authentication and private management routes, allowlist intersection, private-code exclusion, free model selection, exact prompt passthrough, concurrent and expiring shared reservations, cooldown and idempotent outcome reporting, unknown quota handling, replay rejection, daily/per-minute caps, and structured-output capability exclusion. No provider network was contacted (all fetches are fixture-mocked).
+- New Python runner integration fixtures: **3 passed**, including HTTPS/token request shape, selected route reporting, fail-closed behavior without direct-provider fallback, and continuous task startup without a Gemini key.
+- Existing provider reliability tests: **5 passed**.
+- Cloudflare Worker dry-run build: **passed** with Wrangler 4.151.1; final bundle 208.87 KiB (56.23 KiB gzip); existing `MEMORY` and `AI` bindings resolve. This is a build check, not deployment evidence.
+- Baseline and post-change existing KappaForge suites have known unrelated failures on this Windows environment: root `npm test` has the pre-existing `tests/chat-activity-ui.test.mjs` source-fixture assertion in `tests/intelligence.test.mjs`; Python discovery has the same pre-existing parser integrity mismatch (`acorn.mjs` hash), plus two `PermissionError` failures in temporary `GITHUB_OUTPUT` workflow tests. The focused tests pass. Current full-suite results: JavaScript 146 tests, 1 failure; Python 329 tests, 1 failure and 2 errors. The same failure categories were present at baseline (JavaScript 142 tests with the same source-fixture failure; Python 326 tests with the same three failures).
+- No live provider, chat, Worker deployment, GitHub Actions execution, or production storage mutation was performed. No billing configuration was accessible for verification; $0 is enforced by fail-closed source policy but actual account billing eligibility remains owner-verification pending.
+
+## Remaining work and exact next action
+
+Finish review of the implementation, run all applicable checks, commit and push this branch, and open a draft KappaForge PR targeting `main`. Before any production deployment, the owner must configure the scoped Worker/GitHub runner token, HTTPS Worker origin, and only explicitly verified-free provider/model allowlists plus server-side provider secrets. Then run a bounded authenticated chat and coding smoke through the live Worker, verify streaming and cancellation on chat, confirm durable state across requests, and document actual account-level cost eligibility. If the approved `combo/free-coding` profile is still required, provide its sanitized routing mapping through an approved private method and provision credentials only in the server-side secret store; do not send them in chat. Phase 3 remains **PARTIAL** until live checks and deployment are authorized and completed. Phase 4 must not begin automatically.
+
+Rollback is a Worker code/config rollback to the previous deployment; the additive routing key can be left unused. Reverting the GitHub Actions change restores the prior direct-key runner behavior, so do that only if the owner separately approves renewed direct provider use. Never re-enable those Actions key variables as an automatic fallback.

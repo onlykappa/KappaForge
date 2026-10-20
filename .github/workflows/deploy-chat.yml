@@ -101,6 +101,27 @@ jobs:
         npx wrangler rollback --message "Automatic rollback: health check failed for $GITHUB_SHA" --yes
         exit 1
       shell: bash
+    - name: Verify runner inference authentication without calling a provider
+      env:
+        WORKER_URL: ${{ steps.deploy.outputs.url }}
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |
+        set -Eeuo pipefail
+        test -n "$WORKER_URL" || { echo "::error::Deployed Worker URL is missing."; exit 1; }
+        test -n "$KAPPA_ROUTER_URL" || { echo "::error::KAPPA_ROUTER_URL Actions variable is missing."; exit 1; }
+        test -n "$KAPPA_ROUTER_TOKEN" || { echo "::error::KAPPA_ROUTER_TOKEN Actions secret is missing."; exit 1; }
+        configured_url="${KAPPA_ROUTER_URL%/}"
+        deployed_url="${WORKER_URL%/}"
+        test "$configured_url" = "$deployed_url" || { echo "::error::KAPPA_ROUTER_URL does not match the deployed Worker."; exit 1; }
+        status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' --data '{}')
+        test "$status" = "401" || { echo "::error::Unauthenticated inference request returned HTTP $status (expected 401)."; exit 1; }
+        status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' -H 'Authorization: Bearer invalid-smoke-token' --data '{}')
+        test "$status" = "401" || { echo "::error::Invalid inference credential returned HTTP $status (expected 401)."; exit 1; }
+        status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" --data '{')
+        test "$status" = "400" || { echo "::error::Authenticated malformed request returned HTTP $status (expected 400, no provider call)."; exit 1; }
+        echo "Runner-only inference endpoint passed URL and authentication checks without a provider call."
+      shell: bash
 'on':
   push:
     branches:

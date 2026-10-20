@@ -87,32 +87,38 @@ function aiMock(t,answer){
  const asked=[];
  mockFetch(t,async(url,init={})=>{
   const u=String(url);
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'llama-3.3-70b-versatile'}]});
+  if(u==='https://api.groq.com/openai/v1/chat/completions'){
+   asked.push(u);const recovered=await answer(asked.length,init);const data=await recovered.json().catch(()=>({}));
+   const text=data.candidates?.[0]?.content?.parts?.map(part=>part.text||'').join('\\n')||'recovered';
+   return Response.json({choices:[{message:{content:text},finish_reason:'stop'}]});
+  }
   if(u.includes('/user/repos')||u.includes('/users/onlykappa/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'},default_branch:'main'}]);
   if(u.includes('generativelanguage')&&u.includes('/models?'))return Response.json({models:['gemini-3-flash','gemini-2.5-flash'].map(m=>({name:'models/'+m,supportedGenerationMethods:['generateContent']}))});
   if(u.includes(':generateContent')){asked.push(u.split('/models/')[1].split(':')[0]);return answer(asked.length,init)}
   if(u.includes('/models'))return Response.json({}, {status:503});
   return Response.json({}, {status:404});
  });
- const {env,records}=environment();delete env.GITHUB_JOB_TOKEN;env.GEMINI_API_KEY='mock-'+t.name;
+ const {env,records}=environment();delete env.GITHUB_JOB_TOKEN;env.GEMINI_API_KEY='mock-'+t.name;env.GROQ_API_KEY='mock-groq-'+t.name;
  return {env,records,asked};
 }
 const reply=text=>Response.json({candidates:[{content:{parts:[{text}]},finishReason:'STOP'}]});
 test('a malformed HTTP-200 provider response falls through to the next model',async t=>{
  const {env,records,asked}=aiMock(t,n=>n===1?new Response('{invalid',{status:200}):reply('recovered'));
  const r=await worker.fetch(request('/chat',{messages:[{role:'user',text:'hello'}]}),env);
- assert.equal(r.status,200);assert.equal((await r.json()).reply,'recovered');assert.equal(asked.length,2);
+ assert.equal(r.status,200,await r.clone().text());assert.equal((await r.json()).reply,'recovered');assert.equal(asked.length,2);
  const events=[...records].filter(([k])=>k.startsWith('usage:')).map(([,v])=>v);
  assert.deepEqual(events.map(e=>e.ok),[false,true]);
 });
 test('valid JSON with an invalid response shape also falls through',async t=>{
  const {env,asked}=aiMock(t,n=>n===1?Response.json(null):reply('recovered shape'));
  const r=await worker.fetch(request('/chat',{messages:[{role:'user',text:'hello'}]}),env);
- assert.equal(r.status,200);assert.equal((await r.json()).reply,'recovered shape');assert.equal(asked.length,2);
+ assert.equal(r.status,200,await r.clone().text());assert.equal((await r.json()).reply,'recovered shape');assert.equal(asked.length,2);
 });
 test('planner malformed JSON retries and an empty title uses the real request',async t=>{
  const {env,asked}=aiMock(t,n=>reply(n===1?'{invalid':JSON.stringify({isTask:true,repo:'onlykappa/KappaForge',mode:'develop',instructions:'Add a weather helper',title:''})));
  const r=await worker.fetch(request('/plan',{request:'Add a weather helper',explicit:true}),env);
- assert.equal(r.status,200);assert.equal((await r.json()).proposal.title,'Add a weather helper');assert.equal(asked.length,2);
+ assert.equal(r.status,200,await r.clone().text());assert.equal((await r.json()).proposal.title,'Add a weather helper');assert.equal(asked.length,2);
 });
 test('blank filtered conversations and invalid root JSON return validation errors',async()=>{
  const {env}=environment();env.GEMINI_API_KEY='fake';
