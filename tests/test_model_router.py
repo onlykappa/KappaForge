@@ -443,3 +443,29 @@ class ProviderDenialRecoveryTests(unittest.TestCase):
                 models.assert_not_called()
         finally:
             recovery.CURRENT.reset(handle)
+
+
+    def test_gemini_model_denial_switches_and_key_rotation_retries(self):
+        calls = []
+        def urlopen(req, timeout=None):
+            model = req.full_url.split('/models/')[1].split(':')[0]
+            calls.append(model)
+            if model == 'gemini-3-flash':
+                raise urllib.error.HTTPError(req.full_url, 403, 'denied', {}, io.BytesIO(b''))
+            return response({'candidates': [{'content': {'parts': [{'text': 'valid'}]}}]})
+        with patch.object(runner.urllib.request, 'urlopen', side_effect=urlopen):
+            self.assertIsNone(runner.ask_gemini('old-key', 'gemini-3-flash', 'p', 1000, False, []))
+            self.assertEqual(runner.ask_gemini('old-key', 'gemini-3-flash-lite', 'p', 1000, False, []),
+                             ('gemini-3-flash-lite', 'valid'))
+            self.assertIsNone(runner.ask_gemini('old-key', 'gemini-3-flash', 'p', 1000, False, []))
+            self.assertIsNone(runner.ask_gemini('new-key', 'gemini-3-flash', 'p', 1000, False, []))
+        self.assertEqual(calls, ['gemini-3-flash', 'gemini-3-flash-lite', 'gemini-3-flash'])
+
+    def test_gemini_discovery_denial_is_not_repeated_on_next_call(self):
+        runner._lists.clear()
+        with patch.object(runner.urllib.request, 'urlopen', side_effect=urllib.error.HTTPError('gemini', 403, 'denied', {}, None)) as network, \
+                patch.object(runner, 'provider_models', return_value=['free-model']), \
+                patch.object(runner, 'run_fallback_providers', return_value=('first:free-model', 'valid')):
+            for _ in range(2):
+                self.assertEqual(runner.run_model('denied-gemini-key', 'prompt'), ('first:free-model', 'valid'))
+        self.assertEqual(network.call_count, 1)

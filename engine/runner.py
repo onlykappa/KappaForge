@@ -196,6 +196,8 @@ def fetch_gemini_models(api_key):
             with urllib.request.urlopen(req, timeout=35) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
+            if exc.code in (401, 402, 403):
+                provider_denied('gemini', '', exc.code, api_key)
             raise RuntimeError("Gemini model discovery failed (HTTP %s). Check Gemini API project and key permissions." % exc.code) from None
         except (urllib.error.URLError, TimeoutError, http.client.HTTPException, ConnectionError, json.JSONDecodeError) as exc:
             raise RuntimeError("Gemini model discovery failed (" + type(exc).__name__ + ")") from None
@@ -295,16 +297,17 @@ class ProviderRoutesUnavailable(RuntimeError):
     provider_routes = True
 
 
-def provider_identity(pid):
-    provider = PROVIDERS['providers'][pid]
-    key = os.getenv(provider.get('key', ''), '')
+def provider_identity(pid, key=None):
+    if key is None:
+        provider = PROVIDERS['providers'][pid]
+        key = os.getenv(provider.get('key', ''), '')
     return pid + ':' + hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
-def provider_denied(pid, model, code):
+def provider_denied(pid, model, code, key=None):
     until = time.time() + 3600
-    identity = provider_identity(pid)
-    route = identity if code in (401, 402) else identity + ':' + model
+    identity = provider_identity(pid, key)
+    route = identity if code in (401, 402) or not model else identity + ':' + model
     PROVIDER_PAUSES[route] = until
     # Persist quarantine across bounded continuations, bound to this key's hash.
     from engine import recovery
@@ -313,6 +316,14 @@ def provider_denied(pid, model, code):
         pauses = journal.state.setdefault('providerPauses', {})
         pauses[route] = until
         journal.persist()
+
+
+def provider_paused(identity, model=''):
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    saved = journal.state.get('providerPauses', {}) if journal else {}
+    routes = (identity, identity + ':' + model) if model else (identity,)
+    return any(max(PROVIDER_PAUSES.get(route, 0), saved.get(route, 0)) > time.time() for route in routes)
 
 
 def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier=None, skip=(), json_mode=False):
@@ -324,11 +335,8 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
-        from engine import recovery
-        journal = recovery.CURRENT.get()
-        pauses = journal.state.get('providerPauses', {}) if journal else {}
         identity = provider_identity(pid)
-        if max(PROVIDER_PAUSES.get(identity, 0), pauses.get(identity, 0)) > time.time():
+        if provider_paused(identity):
             errors.append(pid + ': access/quota route paused; using other approved providers')
             continue
         if tier is not None and bool(p.get("strong")) != (tier == "strong"):
@@ -336,10 +344,10 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
         if not fits(p, prompt, max_output_tokens):
             continue
         for model in provider_models(pid):
-            if PROVIDER_PAUSES.get(identity, 0) > time.time():
+            if provider_paused(identity):
                 break
             name = pid + ":" + model
-            if name in skip or name in EXHAUSTED or max(COOLDOWN.get(name, 0), pauses.get(identity + ':' + model, 0), PROVIDER_PAUSES.get(identity + ':' + model, 0)) > time.time():
+            if name in skip or name in EXHAUSTED or COOLDOWN.get(name, 0) > time.time() or provider_paused(identity, model):
                 continue
             limit = min(max_output_tokens, p.get("maxOutput", max_output_tokens))
             asking(name)
@@ -435,6 +443,8 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
     `skip` names models not to ask this time (one that just repeated a rejected answer)."""
     errors = []
     try:
+        if provider_paused(provider_identity('gemini', api_key)):
+            raise RuntimeError('Gemini access/quota route paused; using approved alternatives')
         available = discover_models(api_key)
     except RuntimeError as exc:
         available = set()
@@ -442,7 +452,7 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
     candidates = select_models(available)
     if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"] if allowed is None or pid in allowed):
         raise ProviderRoutesUnavailable("No approved Flash model supports generateContent for this key. "
-                           "Available model IDs: " + ", ".join(sorted(available)[:20]))
+                           "Available model IDs: " + ", ".join(sorted(available)[:20]) + " | " + "; ".join(errors))
     print("Approved Gemini fallback models: " + ", ".join(candidates))
     resting = [m for m in candidates if m in EXHAUSTED or COOLDOWN.get(m, 0) > time.time()]
     if all(m in resting or m in skip for m in candidates):
@@ -469,6 +479,9 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
 
 def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
     """One Gemini model's answer as (model, text), or None with the reason added to errors."""
+    if provider_paused(provider_identity('gemini', api_key), model):
+        errors.append(model + ': access/quota route paused; using approved alternatives')
+        return None
     asking(model)
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
     payload = {"contents": [{"parts": [{"text": prompt}]}],
@@ -505,6 +518,8 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
                 delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
                 time.sleep(min(delay, 60, model_timeout()))
                 continue
+            if exc.code in (401, 402, 403):
+                provider_denied('gemini', model, exc.code, api_key)
             if exc.code in (404, 429):
                 rate_limited(model, exc)
             errors.append(model + ": HTTP " + str(exc.code))

@@ -103,7 +103,8 @@ PR #133 is not declared fixed or complete by this engine change.
 ## Provider access and source recovery
 
 A provider HTTP 401 or 402 quarantines that provider key for an hour; HTTP 403
-quarantines that model route. Other approved free routes remain eligible. The
+quarantines that model route (or the key when model discovery is denied).
+This applies to Gemini and the fallback providers. Other approved free routes remain eligible. The
 quarantine survives continuations and is bound to a key fingerprint, so key
 rotation allows a new attempt without exposing credentials. Exhausted model
 routes can wait for continuation; GitHub permission failures still block.
