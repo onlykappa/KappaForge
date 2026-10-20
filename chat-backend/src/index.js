@@ -145,7 +145,7 @@ export default {
         const providerPools=Object.values(snapshot?.pools||{}).filter(row=>row?.provider===provider);
         const poolState=providerPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
         const blocked=!!routeState?.blocked||!!poolState?.blocked,until=Math.max(routeState?.until||0,poolState?.until||0);
-        const health=blocked?"blocked":until>now?"cooldown":"clear";
+        const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
         const dailyUsed=snapshot?.dailyRequests?.used??null,minuteUsed=snapshot?.minuteRequests?.used??null;
         const dailyLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),minuteLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20);
         const dailyAvailable=dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteUsed===null?null:minuteUsed<minuteLimit;
@@ -157,9 +157,10 @@ export default {
         else if(!routeAllowed)failedCondition="provider_policy";
         else if(!config.capabilities?.coding)failedCondition="coding_capability";
         else if(!modelAllowlisted)failedCondition="model_not_in_free_allowlist";
-        else if(discovery.state==="http_error")failedCondition="model_discovery_http_error";
-        else if(discovery.state==="network_error"||discovery.state==="invalid_json"||discovery.state==="invalid_shape")failedCondition="model_discovery_error";
+        else if(!models.includes(model)&&discovery.state==="http_error")failedCondition="model_discovery_http_error";
+        else if(!models.includes(model)&&(discovery.state==="network_error"||discovery.state==="invalid_json"||discovery.state==="invalid_shape"))failedCondition="model_discovery_error";
         else if(!models.includes(model))failedCondition="approved_model_not_discovered";
+        else if(snapshot===null)failedCondition="routing_state_unavailable";
         else if(health!=="clear")failedCondition=health==="blocked"?"provider_or_model_blocked":"provider_or_model_cooldown";
         else if(dailyAvailable===false)failedCondition="gateway_daily_limit";
         else if(minuteAvailable===false)failedCondition="gateway_minute_limit";
