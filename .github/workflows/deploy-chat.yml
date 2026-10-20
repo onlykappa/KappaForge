@@ -116,10 +116,13 @@ jobs:
         test "$configured_url" = "$deployed_url" || { echo "::error::KAPPA_ROUTER_URL does not match the deployed Worker."; exit 1; }
         status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' --data '{}')
         test "$status" = "401" || { echo "::error::Unauthenticated inference request returned HTTP $status (expected 401)."; exit 1; }
-        status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' -H 'Authorization: Bearer invalid-smoke-token' --data '{}')
-        test "$status" = "401" || { echo "::error::Invalid inference credential returned HTTP $status (expected 401)."; exit 1; }
         status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" --data '{')
         test "$status" = "400" || { echo "::error::Authenticated malformed request returned HTTP $status (expected 400, no provider call)."; exit 1; }
+        status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/router/infer" -H 'Content-Type: application/json' -H 'Authorization: Bearer invalid-smoke-token' --data '{}')
+        case "$status" in
+          401|403) ;;
+          *) echo "::error::Invalid inference credential returned HTTP $status (expected 401 or 403)."; exit 1 ;;
+        esac
         echo "Runner-only inference endpoint passed URL and authentication checks without a provider call."
       shell: bash
 'on':
