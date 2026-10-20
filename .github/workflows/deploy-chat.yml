@@ -158,7 +158,7 @@ jobs:
           -X POST "${KAPPA_ROUTER_URL%/}/router/infer" \
           -H 'Content-Type: application/json' \
           -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
-          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with exactly: live route ok"}],"providers":["groq"],"model":"groq:openai/gpt-oss-120b","fallback":false,"maxTokens":24}')
+          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with exactly: live route ok"}],"providers":["groq"],"model":"groq:openai/gpt-oss-120b","fallback":false,"maxTokens":256,"reasoningEffort":"low"}')
         if [ "$status" != "200" ]; then
           error_code=$(jq -r '.code // "unknown"' "$response_file" 2>/dev/null || echo unknown)
           echo "::error::The one-shot free Groq route returned HTTP $status ($error_code); no alternate route was attempted."

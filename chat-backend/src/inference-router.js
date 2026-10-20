@@ -19,6 +19,7 @@ function validate(input){
  if(chars>MAX_BODY_CHARS)return "Prompt exceeds the gateway request limit";
  if(input.maxTokens!==undefined&&(!Number.isInteger(input.maxTokens)||input.maxTokens<1||input.maxTokens>registry.routing.defaults.maxOutputTokens))return "Invalid output limit";
  if(input.temperature!==undefined&&(!Number.isFinite(input.temperature)||input.temperature<0||input.temperature>2))return "Invalid temperature";
+ if(input.reasoningEffort!==undefined&&!['low','medium','high'].includes(input.reasoningEffort))return "Invalid reasoning effort";
  if(input.responseFormat!==undefined&&input.responseFormat!==null&&input.responseFormat!=="json_object")return "Unsupported response format";
  if(input.model!==undefined&&(typeof input.model!=="string"||input.model.length>180))return "Invalid model";
  if(input.providers!==undefined&&(!Array.isArray(input.providers)||input.providers.length>registry.order.length+1||input.providers.some(id=>typeof id!=="string")))return "Invalid provider allowlist";
@@ -66,7 +67,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
    if(route.provider==="gemini"){
     response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal});
    }else{
-    response=await callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,hasMedia:false,hasTools:false,responseFormat:input.responseFormat==="json_object"&&p.capabilities?.structuredOutput?{type:"json_object"}:null},false,controller.signal);
+    response=await callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,reasoningEffort:input.reasoningEffort,hasMedia:false,hasTools:false,responseFormat:input.responseFormat==="json_object"&&p.capabilities?.structuredOutput?{type:"json_object"}:null},false,controller.signal);
    }
    lastStatus=response.status;
    if(!response.ok){
