@@ -65,6 +65,17 @@ test("outcome reports are idempotent and persist cooldown and usage source",asyn
  assert.ok(status.pools["acct:shared"].until>Date.now());
 });
 
+test("quota reservations accept provider model IDs containing slashes",async()=>{
+ const store=storage(),models=[{provider:"groq",model:"moonshotai/kimi-k2-instruct"},{provider:"workers-ai",model:"@cf/meta/llama-3.3-70b-instruct-fp8-fast"}];
+ for(const [index,{provider,model}] of models.entries()){
+  const requestId="slash-model-"+index;
+  const reserved=await invoke(store,"/router/reserve",{requestId,provider,model,accountPool:"acct",quotaPool:"shared",maxConcurrent:1,leaseMs:120000});
+  assert.equal(reserved.status,200);assert.equal((await reserved.json()).allowed,true);
+  const outcome=await invoke(store,"/router/outcome",{requestId,provider,model,status:200});
+  assert.equal(outcome.status,200);assert.equal((await outcome.json()).stored,true);
+ }
+});
+
 test("daily request reservations enforce limits and reject replay",async()=>{
  const store=storage();
  assert.equal((await (await invoke(store,"/router/request-reserve",{requestId:"daily-1",limit:1})).json()).allowed,true);

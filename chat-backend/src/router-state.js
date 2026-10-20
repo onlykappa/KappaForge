@@ -5,6 +5,7 @@ const MAX_COOLDOWN_MS=7*24*60*60_000;
 
 const blank=()=>({version:1,pools:{},routes:{},reservations:{},outcomes:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{}});
 const validId=value=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(value);
+const validModel=value=>typeof value==="string"&&/^[A-Za-z0-9@._:/-]{1,180}$/.test(value);
 const clean=(state,now)=>{
  for(const [id,row] of Object.entries(state.reservations))if(!row||row.expiresAt<=now)delete state.reservations[id];
  for(const [id,row] of Object.entries(state.outcomes))if(!row||row.at+RETENTION_MS<=now)delete state.outcomes[id];
@@ -33,7 +34,7 @@ export async function routingStore(state,request){
  let input;try{input=await request.json()}catch{return Response.json({error:"Invalid JSON"},{status:400});}
  if(url.pathname==="/router/reserve"){
   const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000}=input||{};
-  if(!validId(requestId)||!validId(provider)||!validId(model)||!validId(accountPool)||!validId(quotaPool)||
+  if(!validId(requestId)||!validId(provider)||!validModel(model)||!validId(accountPool)||!validId(quotaPool)||
      !["account","model"].includes(quotaScope)||!Number.isInteger(maxConcurrent)||maxConcurrent<1||maxConcurrent>8||!Number.isInteger(leaseMs)||leaseMs<1000||leaseMs>MAX_LEASE_MS)
    return Response.json({error:"Invalid reservation"},{status:400});
   const pool=accountPool+":"+quotaPool,key=routeKey(provider,model);
@@ -69,7 +70,7 @@ export async function routingStore(state,request){
  }
  if(url.pathname==="/router/outcome"){
   const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt}=input||{};
-  if(!validId(requestId)||!validId(provider)||!validId(model)||!Number.isInteger(status)||status<0||status>599)
+  if(!validId(requestId)||!validId(provider)||!validModel(model)||!Number.isInteger(status)||status<0||status>599)
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
    if(data.outcomes[requestId])return {stored:true,duplicate:true};
