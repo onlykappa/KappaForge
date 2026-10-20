@@ -1,5 +1,6 @@
 /* Shared web/iOS Settings. Existing chat, credentials and vault keys are retained. */
 let preferences;try{preferences=KappaCore.settings(JSON.parse(localStorage.getItem('kappaforge.settings.v2')||'{}'))}catch{preferences=KappaCore.settings()}
+if(!preferences.weatherUnits)preferences.weatherUnits='imperial';
 let preferencesAt=Number(localStorage.getItem('kappaforge.settings.updated'))||0;
 let removedNotes=[];try{removedNotes=JSON.parse(localStorage.getItem('kappaforge.memory.deleted.v2')||'[]')}catch{}
 let noteEdits={};try{noteEdits=JSON.parse(localStorage.getItem('kappaforge.memory.edits.v2')||'{}')}catch{}

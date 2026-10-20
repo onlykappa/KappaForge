@@ -2,6 +2,7 @@
 const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let personality=localStorage.getItem("kappaforge.personality")||"auto";if(!["auto","friendly","professional","developer"].includes(personality))personality="auto";
 let weatherPermissionState=null;try{weatherPermissionState=JSON.parse(localStorage.getItem("kappaforge.weather.permission")||"null")}catch{}
+function saveWeatherPermission(state){weatherPermissionState=state;try{localStorage.setItem("kappaforge.weather.permission",JSON.stringify(state))}catch(e){}}
 let chatAbort=null;
 let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let queuedAttachments=[];let pendingJob=null;let reviewDecisions={};let reviewHidden=new Set();try{reviewDecisions=JSON.parse(localStorage.getItem("kappaforge.review.decisions")||"{}");reviewHidden=new Set(JSON.parse(localStorage.getItem("kappaforge.review.hidden")||"[]"))}catch(e){}let recentJob=null;let diffOpen=null;let diffCache={};let jobTrackingBusy=false;try{recentJob=JSON.parse(localStorage.getItem("kappaforge.latest.job")||"null")}catch(e){}
 let verificationOnly=sessionStorage.getItem("kappaforge.verifyOnly")==="true";
