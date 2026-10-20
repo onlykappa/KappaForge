@@ -635,7 +635,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             # A model repeating a rejected answer is asked no more; the remaining attempts go to other models
             # (task #123 stopped at attempt 2 of 5 on this).
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
-            if any(x in error for x in ("Blocked path:", "Forbidden path:", "Unsafe path:", "Unauthorized")):
+            if any(x in str(exc).lower() for x in ('blocked path', 'forbidden path', 'unsafe path',
+                                                   'protected path', 'unauthorized', 'authorization expired')):
                 break
     raise ValueError("Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors))
 
@@ -966,14 +967,26 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     reqs, problems = [], []
     outstanding = list(UNFINISHED)
     previous_review_problems = []
+    requirement_catalog = {}
     repair_failures = []
     for round_ in range(MAX_CHECK_ROUNDS + 1):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
-        review = verify.model_review(run_model, api_key, task, read, changes, existing, allowed)
+        review_task = task
+        if requirement_catalog:
+            review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
+                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + task)
+        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed)
         files_needed = []
         if review:
             reqs, found, files_needed = review
+            for requirement in reqs:
+                requirement_catalog.setdefault(requirement['text'], dict(requirement))
+            current_requirements = {r['text'] for r in reqs}
+            for text, prior in requirement_catalog.items():
+                if text not in current_requirements:
+                    reqs.append({**prior, 'met': False})
+                    found.append('A requirement disappeared between repair rounds: ' + text)
             previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
                                        for r in reqs if r.get("met") is not True] + found
             if not reqs:
@@ -998,6 +1011,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         fix_task = (task + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
                     "against the task found these problems. Fix every one of them now, editing the real code paths they "
                     "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20])
+                    + "\n\nREQUIREMENT CHECKLIST (retain every item in all subsequent reviews):\n"
+                    + "\n".join('- ' + text for text in requirement_catalog)
                     + ("\n\nPREVIOUS REPAIR COULD NOT BE APPLIED. Use a different source-exact edit based on the "
                        "current files, not the rejected proposal:\n" + "\n".join(repair_failures[-2:]) if repair_failures else ""))
         try:

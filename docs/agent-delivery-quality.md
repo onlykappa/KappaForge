@@ -31,11 +31,19 @@ The engine now:
   every follow-up edit need not introduce another redundant test.
 * Requires structured source evidence for every met requirement and checks each
   literal quote against the current candidate file. Unavailable source requests
-  survive follow-up inspection; requirements cannot disappear from that pass.
+  survive follow-up inspection; a requirement checklist also persists through every repair round.
+  JavaScript/Python comments and quoted fixture data cannot prove implementation.
 
-JavaScript checks are conservative lexical analysis, not a full control-flow or
-module linker. Independent runtime tests remain necessary. Executable fixtures
-compare the checker's import and VM decisions with actual Node behavior.
+JavaScript checks use a pinned, vendored Acorn 8.19.0 parser with its MIT license
+and recorded integrity/hash. Candidate text is parsed through stdin and is never
+imported or executed. No runtime npm download is required. Agent preflight now
+requires Node as well as Python. AST checks distinguish real template expressions
+from quoted fixtures, resolve exact export names, and track request body reads
+through branches, exits, catches, aliases and independent clones. Analysis is
+bounded; unavailable analysis remains incomplete rather than silently passing.
+Independent runtime tests are still necessary because source matching alone does
+not prove the requested behavior. Unsupported source languages retain source
+matching and model review rather than a claim of AST interpretation.
 
 Generated code is still syntax-checked, never executed in the credentialed model
 generation process. Behavioral tests run in the independent secret-free sandbox.

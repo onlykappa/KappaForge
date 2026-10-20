@@ -12,7 +12,7 @@ from tools.diagnostics import run
 
 
 def check(target, which=shutil.which, execute=subprocess.run, platform=sys.platform):
-    config=load_config();required={'web':['node','npm'],'worker':['node','npm'],'native':['node','npm','xcrun','xcodebuild','xcodegen','swift'],'agent':['python3']}[target]
+    config=load_config();required={'web':['node','npm'],'worker':['node','npm'],'native':['node','npm','xcrun','xcodebuild','xcodegen','swift'],'agent':['python3','node']}[target]
     missing=[name for name in required if not which(name)]
     if missing:raise RuntimeError('Missing required tools: '+', '.join(missing)+'. Install them before running '+target+'.')
     if target!='agent':
