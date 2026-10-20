@@ -148,7 +148,6 @@ export default {
         }catch(e){}
       }
       if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude, longitude or city required"},400,cors);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon))return json({error:"Valid latitude, longitude or city required"},400,cors);
       try{
         const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode&current=apparent_temperature&temperature_unit=${units==="metric"?"celsius":"fahrenheit"}&windspeed_unit=${units==="metric"?"kmh":"mph"}&precipitation_unit=inch`;
         const res=await fetch(url,{signal:AbortSignal.timeout(10000)});
@@ -449,7 +448,9 @@ export default {
     const messages = [];
     if (!planning) {
       for (const m of input.messages) {
-        if (m.weather && m.role === "user") {
+        if (input.weather && m === input.messages.at(-1) && m.role === "user") {
+          m.text = m.text + "\n\n[Current weather data: " + JSON.stringify(input.weather) + "]";
+        } else if (m.weather && m.role === "user") {
           m.text = m.text + "\n\n[Current weather data: " + JSON.stringify(m.weather) + "]";
         }
         // An empty assistant turn (an older app sent blank task cards) is skipped, not a reason to refuse the chat.
