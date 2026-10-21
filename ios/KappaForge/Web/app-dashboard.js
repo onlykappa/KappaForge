@@ -614,7 +614,7 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
   // A direct request ("Add …", "Fix …") is the owner's decision; the planner only picks the repository and mode,
   // so its "not a task", bad output or an outage falls back to a develop task instead of dropping the request.
   const fallback=reason=>{if(intent!=="execution"&&!explicit)throw Error(reason);return {repo:"onlykappa/"+(mentionedRepository(text)||"KappaForge"),mode:"develop"}};
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text).slice(0,3500),context,preferences,explicit:explicit||approval,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
+  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text),context,preferences,explicit:explicit||approval,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
   const data=await resp.json().catch(()=>({}));
   let p=data.proposal;
   if(!resp.ok)p=fallback(data.error||"Could not plan task (HTTP "+resp.status+")");

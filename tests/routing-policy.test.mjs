@@ -204,3 +204,36 @@ test("malformed responses and transport failures return their durable cooldown d
   }finally{globalThis.fetch=previous;}
  }
 });
+
+test('Retry-After does not turn a minute throttle into a daily request reset cooldown',async()=>{
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ const state={storage:storage()},env={GROQ_API_KEY:'cooldown-fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})}};
+ const route={provider:'groq',model:'openai/gpt-oss-120b'},now=Date.now();
+ await reserveProvider(env,route,'header-lease');
+ const result=await reportProviderOutcome(env,{requestId:'header-lease',route,status:429,category:'rate_limit',headers:new Headers({
+  'retry-after':'12','x-ratelimit-remaining-requests':'990','x-ratelimit-reset-requests':'23h','x-ratelimit-remaining-tokens':'0','x-ratelimit-reset-tokens':'12s'
+ })});
+ assert.ok(result.retryAt>=now+12000&&result.retryAt<Date.now()+14000);
+});
+
+test('chat returns a real throttle deadline and suppresses inference during stored cooldown',async()=>{
+ const {KappaMemory}=await import('../chat-backend/src/index.js');
+ const values=new Map(),store={get:async key=>structuredClone(values.get(key)),put:async(key,value)=>values.set(key,structuredClone(value)),list:async()=>new Map()};
+ store.transaction=async fn=>fn(store);const vault=new KappaMemory({storage:store});
+ const env={CHAT_ACCESS_TOKEN:'chat-fixture',ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'chat-cooldown-fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CHAT_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>vault.fetch(new Request(url,init))})}};
+ const previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async url=>{
+  if(String(url).endsWith('/models'))return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+  assert.ok(String(url).endsWith('/chat/completions'));calls++;
+  return Response.json({error:'private upstream text'},{status:429,headers:{'Retry-After':'15','x-ratelimit-reset-requests':'23h'}});
+ };
+ const make=()=>new Request('https://worker.example/chat',{method:'POST',headers:{Origin:'null',Authorization:'Bearer chat-fixture','Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',text:'Hello'}],preferences:{model:'groq:openai/gpt-oss-120b',fallback:false}})});
+ try{
+  const first=await worker.fetch(make(),env),body=await first.json();
+  assert.equal(first.status,429);assert.equal(body.code,'free_capacity_cooldown');assert.equal(body.failure.source,'upstream');
+  assert.ok(body.retryAt>Date.now()&&body.retryAt<Date.now()+17000);assert.match(body.error,/Retry after \d{4}-/);
+  assert.ok(Number(first.headers.get('Retry-After'))>0);assert.ok(!JSON.stringify(body).includes('private upstream'));
+  const second=await worker.fetch(make(),env),again=await second.json();
+  assert.equal(second.status,429);assert.equal(again.retryAt,body.retryAt);assert.equal(again.failure.source,'coordination');assert.equal(calls,1);
+ }finally{globalThis.fetch=previous}
+});

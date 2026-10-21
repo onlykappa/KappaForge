@@ -50,7 +50,7 @@ test("chat and planner honor the current Groq pin over Gemini and preserve autho
   const stale=await worker.fetch(make("/chat",{messages:[{role:"user",text},{role:"assistant",text},{role:"user",text:"hello"}]}),env);
   assert.equal(stale.status,200,"legacy preference fallback remains available without a current pin");
   failing=true;
-  assert.equal((await worker.fetch(make("/chat",{messages:[{role:"user",text}]}),env)).status,502);
+  assert.equal((await worker.fetch(make("/chat",{messages:[{role:"user",text}]}),env)).status,503);
   assert.equal(submitted.length,4,"failed pinned request sends one inference only");
  }finally{globalThis.fetch=original}
 });
@@ -175,7 +175,7 @@ test("authenticated Automatic chat uses one free route and does not retry a fail
   const response=await worker.fetch(request(),env),body=await response.json();
   assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.reply,"fixture reply");assert.equal(body.model,"groq:openai/gpt-oss-120b");
   failing=true;const failed=await worker.fetch(request(),env);
-  assert.equal(failed.status,502);
+  assert.equal(failed.status,503);
   assert.equal(submitted.length,2,"one inference per request even when the selected provider fails");
   assert.ok(submitted.every(payload=>payload.model==="openai/gpt-oss-120b"));
  }finally{globalThis.fetch=original}

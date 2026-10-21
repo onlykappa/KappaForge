@@ -34,7 +34,12 @@ export async function reserveProvider(env,route,requestId){
 
 export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
- const resetHeader=headers?.get?.("x-ratelimit-reset-requests")||headers?.get?.("x-ratelimit-reset")||"";
+ // A remaining daily request allowance is not the cause of a token/minute 429.
+ // Prefer the provider's explicit Retry-After; only use an exhausted bucket's reset.
+ const retryAfter=headers?.get?.("retry-after")||undefined;
+ const exhausted=name=>headers?.get?.(name)==="0";
+ const resetHeader=retryAfter?"":exhausted("x-ratelimit-remaining-tokens")?headers?.get?.("x-ratelimit-reset-tokens")||"":
+  exhausted("x-ratelimit-remaining-requests")?headers?.get?.("x-ratelimit-reset-requests")||"":headers?.get?.("x-ratelimit-reset")||"";
  let resetAt;
  const relative=resetHeader.match(/^(\d+(?:\.\d+)?)(s|m|h)$/i);
  if(relative)resetAt=Date.now()+Number(relative[1])*({s:1000,m:60000,h:3600000})[relative[2].toLowerCase()];
@@ -42,7 +47,7 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
  else if(resetHeader)resetAt=Date.parse(resetHeader);
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,status,category,
-  retryAfter:headers?.get?.("retry-after")||undefined,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
+  retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
   usage:usage?{inputTokens:usage.promptTokenCount,outputTokens:usage.candidatesTokenCount,totalTokens:usage.totalTokenCount}:undefined,
   remaining:remainingHeader!==null&&remainingHeader!==undefined&&/^\d+$/.test(remainingHeader)?Number(remainingHeader):undefined,
   remainingSource:remainingHeader!==null&&remainingHeader!==undefined?"provider-header:x-ratelimit-remaining-requests":undefined

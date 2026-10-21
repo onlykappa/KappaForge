@@ -213,3 +213,23 @@ test('manual task controls authorize exactly the reviewed job without authorizin
  assert.throws(()=>validateRequest('/jobs',payload,payload.instructions,'user-request'));
  assert.throws(()=>validateRequest('/jobs',{...payload,instructions:'Unrelated work'},payload.instructions,'user-control'));
 });
+
+test('long owner task briefs authorize intact and remain bound to their full text',async()=>{
+ const f=fixture();f.payload.instructions='Implement weather support.\n'+('Preserve consent and manual city entry.\n'.repeat(130));
+ assert.ok(f.payload.instructions.length>3500);
+ const issued=await f.issue();assert.equal(issued.status,200,await issued.clone().text());
+ const id=f.payload.authorization.id,record=f.records.get('authorization:'+id);
+ assert.equal(record.digest,await fingerprint(f.payload));
+ const altered=await authorizeClaim({...f.payload,instructions:f.payload.instructions+'Unrelated change'});
+ assert.equal(altered.status,403,'long briefs cannot authorize a modified payload');
+ const accepted=await authorizeClaim(f.payload);assert.equal(accepted.status,200);
+ async function authorizeClaim(payload){return authorizationStore(f.state,req('/authorization/claim',{id,conversationId:payload.authorization.conversationId,path:'/jobs',digest:await fingerprint(payload)}))}
+});
+
+test('oversized task briefs return a length error without issuing authorization',async()=>{
+ const f=fixture();f.payload.instructions='Implement '+ 'x'.repeat(20000);
+ const response=await f.issue(),body=await response.json();
+ assert.equal(response.status,413);assert.equal(body.code,'task_too_long');
+ assert.match(body.error,/limit is 20000/);assert.equal(f.records.size,0);
+ f.payload.authorization.id='invalid id';assert.equal((await f.issue()).status,403,'identity checks remain enforced');
+});
