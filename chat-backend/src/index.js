@@ -14,7 +14,7 @@ import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,provi
 import {routingStore} from "./router-state.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
-import {providerAllowed,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
+import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -170,8 +170,10 @@ export default {
         return json({provider,model,failedCondition,chatPolicy,bindings:{secretPresent,configured:configured(env,provider)},allowlists:{free:freeAllowed,coding:codingAllowed,privateCode:privateCodeAllowed,providerPolicy:routeAllowed},capabilities:{chat:config.capabilities?.chat===true,coding:config.capabilities?.coding===true,structuredOutput:config.capabilities?.structuredOutput===true,streaming:config.capabilities?.streaming===true},modelPolicy:{allowlisted:modelAllowlisted,discovered:models.includes(model),approvedModels:models},discovery,health:{state:health,category:lastFailure?.category||null,httpStatus:lastFailure?.status||null,lastFailureAt:lastFailure?.updatedAt||null,retryAt:until>now?until:null},gatewayLimits:{daily:{used:dailyUsed,limit:dailyLimit,available:dailyAvailable},minute:{used:minuteUsed,limit:minuteLimit,available:minuteAvailable}},providerQuota:{remaining:null,source:"unknown"}},200);
       }
       const length=Number(request.headers.get("Content-Length")||0);
-      if(length>200000)return json({error:"Request too large"},413);
-      let body;try{const raw=await request.text();if(raw.length>200000)return json({error:"Request too large"},413);body=JSON.parse(raw)}catch{return json({error:"Invalid JSON"},400)}
+      const tooLarge=()=>json({error:"Coding request exceeds the gateway byte limit; reduce source context.",code:"request_too_large",failure:{source:"gateway_guard",category:"context_limit",upstreamStatus:null}},413);
+      const maximum=REGISTRY.routing.defaults.maxRequestBytes;
+      if(length>maximum)return tooLarge();
+      let body;try{const raw=await request.text();if(new TextEncoder().encode(raw).byteLength>maximum)return tooLarge();body=JSON.parse(raw)}catch{return json({error:"Invalid JSON"},400)}
       try{return await inferenceRouter(env,body,request.signal)}catch{return json({error:"Integrated inference unavailable",code:"free_route_unavailable"},503)}
     }
     const cors = corsHeaders(request);
@@ -228,7 +230,7 @@ export default {
         const primary=REGISTRY.routing?.primary||{},geminiAllowed=providerAllowed(env,"chat","gemini");
         const geminiPools=Object.values(snapshot.pools||{}).filter(row=>row.provider==="gemini"),geminiPool=geminiPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
         health.gemini={state:geminiPool?.blocked?"blocked":geminiPool?.until>Date.now()?"cooldown":Object.values(snapshot.routes||{}).some(row=>row.provider==="gemini"&&row.until>Date.now())?"cooldown":"unknown",retryAt:geminiPool?.until||null,category:geminiPool?.category||null};
-        const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,enabled:geminiAllowed,models:geminiAllowed?await discover(env).catch(()=>[]):[],
+        const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,

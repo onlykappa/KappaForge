@@ -42,6 +42,8 @@ def diagnose(error):
         return 'recovery_budget', 'stop' if error.terminal else 'checkpoint_and_continue'
     if isinstance(error, ProviderResponseError):
         return 'invalid_response', 'switch_or_defer'
+    if getattr(error, 'code', '') == 'request_too_large' or type(error).__name__ == 'GatewayRequestTooLarge':
+        return 'request_size', 'reduce_source_context'
     text = str(error).lower()
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'

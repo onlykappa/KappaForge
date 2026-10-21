@@ -137,6 +137,7 @@
       "base": "https://api.mistral.ai/v1",
       "key": "MISTRAL_API_KEY",
       "signup": "https://console.mistral.ai/api-keys",
+      "freeModels": ["mistral-small-latest"],
       "prefer": [
         "mistral-medium",
         "codestral-latest",
@@ -152,7 +153,7 @@
       "capabilities": {
         "chat": true,
         "coding": true,
-        "structuredOutput": false,
+        "structuredOutput": true,
         "tools": false,
         "streaming": true,
         "media": false
@@ -385,6 +386,7 @@
       "maxConcurrent": 1,
       "leaseMs": 120000,
       "maxPromptChars": 100000,
+      "maxRequestBytes": 200000,
       "maxOutputTokens": 8192,
       "maxContextTokens": 32768
     },

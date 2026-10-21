@@ -13,6 +13,28 @@ PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
 
 
+class GatewayRequestTooLarge(RuntimeError):
+    """Local request construction failure, never a provider capacity failure."""
+    terminal = True
+    gateway_failure = True
+
+
+def prompt_fits(prompt, reserve=0):
+    from engine.runner import PROVIDERS
+    limits = PROVIDERS['routing']['defaults']
+    # Match JS UTF-16 length and the conservative context estimate used by the router.
+    chars = len(prompt.encode('utf-16-le')) // 2
+    maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    wire = len(json.dumps(prompt).encode('utf-8'))
+    return chars + reserve <= maximum and wire + reserve + 4096 <= limits['maxRequestBytes']
+
+
+def require_prompt_fits(prompt):
+    if not prompt_fits(prompt):
+        raise GatewayRequestTooLarge('Coding prompt exceeds the gateway request/context budget; '
+                                   'reduce source context while preserving the owner brief; no inference was sent')
+
+
 class GatewayUnavailable(ProviderRoutesUnavailable):
     gateway_failure = True
 
@@ -24,7 +46,8 @@ def error(status, data=None, headers=None, pinned=False):
     labels = {'daily_limit': 'gateway daily limit', 'minute_limit': 'gateway minute limit',
               'free_capacity_cooldown': 'route refused; upstream rate limit or shared cooldown/concurrency (source not reported)',
               'free_route_unavailable': 'route unavailable; upstream cause not reported',
-              'routing_state_unavailable': 'gateway coordination storage unavailable'}
+              'routing_state_unavailable': 'gateway coordination storage unavailable',
+              'request_too_large': 'gateway request-size limit; reduce source context; provider was not contacted'}
     retry_at = data.get('retryAt')
     retry_at = retry_at / 1000 if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) and retry_at > 0 else 0
     retry_at = max(retry_at, time.time() + retry_after(headers, time.time()) if headers else 0)

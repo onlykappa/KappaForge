@@ -1,5 +1,5 @@
 import registry from "../../config/providers.json" with {type: "json"};
-import {providerAllowed} from "./routing-policy.js";
+import {providerAllowed,providerPolicyStatus} from "./routing-policy.js";
 // Free-tier fallback providers after Gemini. All but Workers AI speak the OpenAI chat format, so one
 // adapter covers them; responses are normalised to Gemini's shape so routing, streaming and usage
 // tracking stay provider-neutral.
@@ -68,9 +68,11 @@ export async function providerModels(env,id){
 export async function providerSummary(env,health={}){
  return Promise.all(registry.order.map(async id=>{
   const p=registry.providers[id];
-  const enabled=providerAllowed(env,"chat",id);
-  return {id,name:p.name,configured:configured(env,id),enabled,keyless:p.kind==="workers-ai"||keyless(p),hasKey:!!(p.key&&env[p.key]),signup:p.signup||null,
-   models:enabled?await providerModels(env,id):[],capabilities:p.capabilities||{chat:true,coding:true,structuredOutput:false,tools:false,streaming:true,media:false},
+  const eligibility=providerPolicyStatus(env,"chat",id),enabled=eligibility.enabled;
+  const models=enabled?await providerModels(env,id):[];
+  const discovery=enabled?providerDiscoveryDiagnostic(env,id):{state:"not_checked",httpStatus:null,discoveredCount:null,approvedCount:null};
+  return {id,name:p.name,configured:configured(env,id),enabled,eligibility,discovery,keyless:p.kind==="workers-ai"||keyless(p),hasKey:!!(p.key&&env[p.key]),signup:p.signup||null,
+   models,capabilities:p.capabilities||{chat:true,coding:true,structuredOutput:false,tools:false,streaming:true,media:false},
    contextTokens:p.context||null,requestContextCeiling:Math.min(p.context||registry.routing.defaults.maxContextTokens,registry.routing.defaults.maxContextTokens),
    maxOutputTokens:p.maxOutput||registry.routing.defaults.maxOutputTokens,health:health[id]||{state:"unknown",retryAt:null},quota:{remaining:null,source:"unknown"}};
  }));

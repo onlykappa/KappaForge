@@ -4,7 +4,7 @@ import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} fr
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 
-const MAX_BODY_CHARS=200_000,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=100_000,MAX_CONTEXT=32_768;
+const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
 const safeError=(message,status=400)=>Response.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
 

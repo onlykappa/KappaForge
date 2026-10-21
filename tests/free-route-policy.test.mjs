@@ -78,9 +78,9 @@ test("dynamic providers expose only individually reviewed free models",async()=>
    "openai/gpt-oss-120b","qwen/qwen3.8-27b"
   ]);
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),[]);
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[]);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[],"unrelated catalog IDs cannot enable Mistral models");
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),[]);
-  assert.equal(requests.length,1,"unreviewed routes are rejected before contacting their model APIs");
+  assert.equal(requests.length,2,"only Groq and the reviewed Mistral route may contact model discovery");
  }finally{globalThis.fetch=original}
 });
 
