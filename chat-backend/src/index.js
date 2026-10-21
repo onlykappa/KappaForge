@@ -746,11 +746,11 @@ export default {
       if(!candidates.length){
         const policy=routePolicy(env),failClosed=policy.failClosed;
         const configuredProviders=policy.chatProviders.filter(id=>id==="gemini"?!!env.GEMINI_API_KEY:configured(env,id));
-        const reason=!policy.providerAllowlistConfigured?"provider_allowlist_missing":
+        const reason=!policy.freeAllowlistConfigured?"free_allowlist_missing":
           typeof env.KAPPA_CHAT_PROVIDERS!=="string"||!env.KAPPA_CHAT_PROVIDERS.trim()?"chat_allowlist_missing":
-          !policy.chatProviders.length?"no_enabled_chat_provider":!configuredProviders.length?"chat_credentials_missing":"no_compatible_chat_model";
-        const messages={provider_allowlist_missing:"Worker provider permission is missing.",chat_allowlist_missing:"Worker chat provider permission is missing.",
-          no_enabled_chat_provider:"Worker provider and chat permissions have no route in common.",
+          !policy.chatProviders.length?"no_approved_chat_provider":!configuredProviders.length?"chat_credentials_missing":"no_compatible_chat_model";
+        const messages={free_allowlist_missing:"Worker provider permission (KAPPA_FREE_PROVIDERS) is missing.",chat_allowlist_missing:"Worker chat provider permission is missing.",
+          no_approved_chat_provider:"Worker provider and chat permissions have no route in common.",
           chat_credentials_missing:"Enabled chat providers have no usable server credential.",
           no_compatible_chat_model:"No enabled chat model fits this request. Check model selection, discovery, disabled providers and request capabilities."};
         return json({error:failClosed?messages[reason]:"Selected model unavailable. Refresh model availability or choose Automatic.",code:failClosed?"free_route_unavailable":"model_unavailable",
@@ -771,8 +771,12 @@ export default {
       let attempt=0;
       const inferenceDeadline=Date.now()+(REGISTRY.routing?.defaults?.requestTimeoutMs||180000);
       let lastStatus = 0,lastRetryAt=null,lastFailure=null;
+      // Full catalogs can list hundreds of routes: bound the attempts (each costs several subrequests)
+      // and skip a provider's remaining models once its account rejects the key or billing.
+      const maxAttempts=REGISTRY.routing?.defaults?.maxRouteAttempts||12,rejectedProviders=new Set();
       for (const route of candidates) {
-        if(Date.now()>=inferenceDeadline)break;
+        if(Date.now()>=inferenceDeadline||attempt>=maxAttempts)break;
+        if(rejectedProviders.has(route.provider))continue;
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
@@ -803,6 +807,7 @@ export default {
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
+          if(response.status===401||response.status===402||response.status===403)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;

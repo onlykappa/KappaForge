@@ -14,14 +14,14 @@ function storage(){
 function request(path,body){return new Request("https://memory.internal"+path,{method:body===undefined?"GET":"POST",headers:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})})}
 async function invoke(store,path,body){return routingStore({storage:store},request(path,body))}
 
-test("routing policy intersects provider, channel, and private-code permissions",()=>{
+test("routing policy intersects free, channel, and private-code approvals",()=>{
  const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq,gemini",KAPPA_CHAT_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq,gemini",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini"};
  assert.equal(providerAllowed(env,"chat","groq"),true);
  assert.equal(providerAllowed(env,"chat","gemini"),false);
  assert.equal(providerAllowed(env,"coding","groq"),true);
  assert.equal(providerAllowed(env,"coding","groq",{privateCode:true}),false);
  assert.equal(providerAllowed(env,"coding","gemini",{privateCode:true}),true);
- assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:"groq,gemini,ollama",KAPPA_CODE_PROVIDERS:"groq,gemini,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini,ollama"},"coding","ollama"),true,"provider route permission no longer depends on a static free-model list");
+ assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:"groq,gemini,ollama",KAPPA_CODE_PROVIDERS:"groq,gemini,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini,ollama"},"coding","ollama"),false,"metered cloud catalogs without a reviewed free model allowlist stay unavailable");
  assert.deepEqual(routePolicy(env).privateCodeProviders,["gemini"]);
  assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:""},"chat","groq"),false);
 });

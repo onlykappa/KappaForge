@@ -48,7 +48,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const available=providerAllowed(env,"coding","gemini",{privateCode:true,requested})?await discover(env).catch(()=>[]):[];
  const prefs={model:input.model||"auto",fallback:input.fallback!==false};
  const routes=await fallbackRoutes(env,available,prefs,false,{channel:"coding",privateCode:true,hasStructuredOutput:input.responseFormat==="json_object",requestedProviders:requested});
- if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"provider_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
  let lastStatus=0,lastRetryAt=null,attempts=0;
@@ -56,8 +56,13 @@ export async function inferenceRouter(env,input,callerSignal=null){
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
+ // Full catalogs can list hundreds of routes: bound the attempts and skip a provider's remaining
+ // models once its account rejects the key or billing.
+ const maxAttempts=registry.routing.defaults.maxRouteAttempts||12,rejectedProviders=new Set();
  for(const route of routes){
   if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};break;}
+  if(attempts>=maxAttempts)break;
+  if(rejectedProviders.has(route.provider))continue;
   lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
   let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
@@ -86,6 +91,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
    if(!response.ok){
     await response.body?.cancel();
     const category=response.status===429?"rate_limit":response.status===401||response.status===402?"authentication":response.status>=500?"provider_outage":"provider_rejection";
+    if(response.status===401||response.status===402||response.status===403)rejectedProviders.add(route.provider);
     await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;
@@ -114,5 +120,5 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const tooLarge=history.length&&history.every(row=>!row.attempted&&row.category==="context_limit");
  const budgetExpired=Date.now()>=deadline;
  const unavailable=tooLarge?413:lastStatus===429&&!budgetExpired?429:503;
- return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No enabled provider completed this request",code:tooLarge?"request_too_large":budgetExpired?"request_timeout":unavailable===429?"provider_capacity_cooldown":"provider_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"}}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No enabled provider completed this request",code:tooLarge?"request_too_large":budgetExpired?"request_timeout":unavailable===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"}}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 }

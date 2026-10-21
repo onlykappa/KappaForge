@@ -63,7 +63,7 @@ test("dashboard-managed provider allowlists are not overridden by blank Wrangler
  }
 });
 
-test("dynamic providers expose every discovered chat-capable model",async()=>{
+test("dynamic providers expose only individually reviewed free models",async()=>{
  const original=globalThis.fetch,requests=[];
  globalThis.fetch=async url=>{
   const target=String(url);requests.push(target);
@@ -75,42 +75,23 @@ test("dynamic providers expose every discovered chat-capable model",async()=>{
  };
  try{
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",GROQ_API_KEY:"test"},"groq"),[
-   "openai/gpt-oss-120b","qwen/qwen3.8-27b","moonshotai/kimi-k2-instruct","llama-3.3-70b-versatile","openai/gpt-oss-20b"
+   "openai/gpt-oss-120b","qwen/qwen3.8-27b"
   ]);
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),["deepseek-v4-pro","kimi-k3"]);
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),["deepseek-v4-pro","kimi-k3"]);
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),["deepseek-v4-pro","kimi-k3"]);
-  assert.equal(requests.length,4,"each configured account can discover its own catalog");
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),[]);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[],"unrelated catalog IDs cannot enable Mistral models");
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),[]);
+  assert.equal(requests.length,3,"only providers with reviewed models may contact model discovery");
  }finally{globalThis.fetch=original}
 });
 
-test("Workers AI discovers all account text-generation models when read access is configured",async()=>{
- const original=globalThis.fetch,requests=[];
- globalThis.fetch=async(url,init)=>{
-  const target=new URL(String(url));requests.push({target,auth:init.headers.Authorization});
-  return Response.json({success:true,result:[
-   {name:"@cf/meta/llama-3.3-70b-instruct-fp8-fast"},
-   {name:"@cf/zai-org/glm-4.7-flash"},
-   {name:"@cf/openai/whisper-large-v3-turbo"}
-  ]});
- };
- try{
-  const env={AI:{},CLOUDFLARE_ACCOUNT_ID:"account-fixture",CLOUDFLARE_API_TOKEN:"read-token-fixture"};
-  assert.deepEqual(await providerModels(env,"workers-ai"),["@cf/meta/llama-3.3-70b-instruct-fp8-fast","@cf/zai-org/glm-4.7-flash"]);
-  assert.equal(requests.length,1);assert.equal(requests[0].target.searchParams.get("task"),"text-generation");
-  assert.equal(requests[0].auth,"Bearer read-token-fixture");
-  assert.deepEqual(await providerModels({AI:{}},"workers-ai"),["@cf/zai-org/glm-4.7-flash","@cf/meta/llama-3.3-70b-instruct-fp8-fast"]);
- }finally{globalThis.fetch=original}
-});
-
-test("Gemini discovery includes all live generateContent models",async()=>{
+test("Gemini discovery intersects live models with the free-tier model list",async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async()=>Response.json({models:[
   {name:"models/gemini-3.1-flash-lite",supportedGenerationMethods:["generateContent"]},
   {name:"models/gemini-3.8-flash",supportedGenerationMethods:["generateContent"]},
   {name:"models/gemini-3.1-pro-preview",supportedGenerationMethods:["generateContent"]}
  ]});
- try{assert.deepEqual(await discover({ROUTING_POLICY_VERSION:"v1",GEMINI_API_KEY:"test"}),["gemini-3.1-flash-lite","gemini-3.8-flash","gemini-3.1-pro-preview"])}
+ try{assert.deepEqual(await discover({ROUTING_POLICY_VERSION:"v1",GEMINI_API_KEY:"test"}),["gemini-3.1-flash-lite"])}
  finally{globalThis.fetch=original}
 });
 
@@ -123,7 +104,7 @@ test("Groq GPT-OSS requests use the supported completion limit and explicit reas
  }finally{globalThis.fetch=original}
 });
 
-test("automatic coding fallback includes every discovered provider model",async()=>{
+test("automatic coding fallback cannot include model IDs outside approved free lists",async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async()=>Response.json({data:[
   {id:"openai/gpt-oss-120b"},{id:"llama-3.3-70b-versatile"}
@@ -131,16 +112,11 @@ test("automatic coding fallback includes every discovered provider model",async(
  try{
   const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq,nvidia,ollama",KAPPA_CODE_PROVIDERS:"groq,nvidia,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"groq,nvidia,ollama",GROQ_API_KEY:"test",NVIDIA_API_KEY:"test",OLLAMA_API_KEY:"test"};
   const routes=await fallbackRoutes(env,["gemini-3.1-flash-lite"],{},false,{channel:"coding",privateCode:true});
-  assert.deepEqual(new Set(routes.map(route=>route.label)),new Set([
-   "groq:openai/gpt-oss-120b","groq:openai/gpt-oss-20b","groq:qwen/qwen3.8-27b",
-   "groq:llama-3.3-70b-versatile","groq:moonshotai/kimi-k2-instruct",
-   "nvidia:deepseek-v4-pro","nvidia:kimi-k3",
-   "ollama:deepseek-v4-pro","ollama:kimi-k3"
-  ]));
+  assert.deepEqual(routes.map(route=>route.label),["groq:openai/gpt-oss-120b","groq:qwen/qwen3.8-27b"]);
  }finally{globalThis.fetch=original}
 });
 
-test("Automatic without fallback can select one enabled non-Gemini chat route",async()=>{
+test("Automatic without fallback can select one approved non-Gemini chat route",async()=>{
  const original=globalThis.fetch;let inferenceCalls=0;
  globalThis.fetch=async(url,init)=>{
   if(init?.method==="POST")inferenceCalls++;
@@ -150,11 +126,11 @@ test("Automatic without fallback can select one enabled non-Gemini chat route",a
   GROQ_API_KEY:"automatic-single-fixture",NVIDIA_API_KEY:"fixture",MISTRAL_API_KEY:"fixture",OLLAMA_API_KEY:"fixture"};
  try{
   const routes=await fallbackRoutes(env,[],{model:"auto",fallback:false},false,{channel:"chat"});
-  assert.deepEqual(routes.map(r=>r.label),["ollama:openai/gpt-oss-120b"]);
+  assert.deepEqual(routes.map(r=>r.label),["groq:openai/gpt-oss-120b"]);
   assert.equal(inferenceCalls,0,"selecting one route must not make an inference request");
   assert.deepEqual(await fallbackRoutes(env,[],{model:"gemini-retired",fallback:false},false,{channel:"chat"}),[],"an explicit unavailable model stays unavailable");
-  assert.deepEqual((await fallbackRoutes(env,[],{model:"auto",fallback:false,disabledProviders:["groq"]},false,{channel:"chat"})).map(r=>r.label),["ollama:openai/gpt-oss-120b"]);
-  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"}),[],"no selected model supports this media request");
+  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false,disabledProviders:["groq"]},false,{channel:"chat"}),[]);
+  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"}),[],"Groq cannot receive unsupported media");
  }finally{globalThis.fetch=original}
 });
 
@@ -177,7 +153,7 @@ test("chat route failure identifies a missing Worker chat allowlist without disc
  }finally{globalThis.fetch=original}
 });
 
-test("authenticated Automatic chat uses one selected route and does not retry when fallback is off",async()=>{
+test("authenticated Automatic chat uses one free route and does not retry a failed provider when fallback is off",async()=>{
  const original=globalThis.fetch,values=new Map(),submitted=[];
  const storage={get:async key=>values.get(key),put:async(key,value)=>values.set(key,value),delete:async key=>values.delete(key)};
  storage.list=async({prefix="",limit=1000}={})=>new Map([...values].filter(([key])=>key.startsWith(prefix)).slice(0,limit));
@@ -217,7 +193,7 @@ test('DeepSeek is preferred across eligible providers without overriding manual 
    assert.equal(routes[0].label,'nvidia:'+deepseek);
    assert.deepEqual(new Set(routes.map(r=>r.provider)),new Set(['gemini','nvidia','groq','openrouter']));
    assert.ok(routes.find(r=>r.model===nemotron),'non-DeepSeek fallbacks remain available');
-   assert.ok(routes.some(r=>r.model==='paid-unreviewed'||r.model==='deepseek/paid'),'all account-listed chat IDs remain eligible');
+   assert.ok(!routes.some(r=>r.model==='paid-unreviewed'||r.model==='deepseek/paid'));
    const manual=await fallbackRoutes(env,[],{model:'groq:openai/gpt-oss-120b',fallback:false},false,options);
    assert.deepEqual(manual.map(r=>r.label),['groq:openai/gpt-oss-120b']);
    const single=await fallbackRoutes(env,['gemini-3.1-flash-lite'],{model:'auto',fallback:false},false,options);

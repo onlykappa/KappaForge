@@ -1,0 +1,110 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import worker,{KappaMemory} from '../chat-backend/src/index.js';
+import {discover} from '../chat-backend/src/intelligence.js';
+import {fallbackRoutes,providerModels} from '../chat-backend/src/providers.js';
+import {providerPolicyStatus} from '../chat-backend/src/routing-policy.js';
+import {inferenceRouter} from '../chat-backend/src/inference-router.js';
+
+const memoryState=()=>{const records=new Map();const storage={get:async k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>{for(const id of Array.isArray(k)?k:[k])records.delete(id)},list:async({prefix='',end,reverse=false,limit=1000}={})=>new Map([...records].filter(([k])=>k.startsWith(prefix)&&(!end||k<end)).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit))};storage.transaction=async f=>f(storage);return {storage,records};};
+// Counts route reservations: every loop iteration, refused or sent, costs at least one subrequest.
+const memory=(reservations=[])=>{const vault=new KappaMemory(memoryState());return {idFromName:()=>'',get:()=>({fetch:(u,o)=>{if(String(u).endsWith('/router/reserve'))reservations.push(JSON.parse(o.body).model);return vault.fetch(new Request(u,o))}})};};
+const chat=body=>new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify(body)});
+const catalog=ids=>Response.json({data:ids.map(id=>({id}))});
+
+test('only providers in KAPPA_ALL_MODEL_PROVIDERS route their full account catalog',async()=>{
+ const original=globalThis.fetch,requests=[];
+ globalThis.fetch=async url=>{const u=String(url);requests.push(u);
+  if(u.startsWith('https://api.groq.com/'))return catalog(['openai/gpt-oss-120b','qwen/qwen3.8-27b','moonshotai/kimi-k2-instruct','openai/gpt-oss-20b','flux-image-gen']);
+  return catalog(['deepseek-ai/deepseek-v4.1-flash','paid/large-model','meta/llama-guard-4']);
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq,ollama',GROQ_API_KEY:'opt-in-groq',NVIDIA_API_KEY:'opt-in-nvidia',OLLAMA_API_KEY:'opt-in-ollama'};
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','moonshotai/kimi-k2-instruct','openai/gpt-oss-20b'],'no per-provider cap; image models excluded');
+  assert.deepEqual(await providerModels(env,'nvidia'),['deepseek-ai/deepseek-v4.1-flash'],'providers not opted in keep their reviewed free models');
+  assert.deepEqual(await providerModels(env,'ollama'),['deepseek-ai/deepseek-v4.1-flash','paid/large-model'],'an opted-in provider needs no free review');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',OLLAMA_API_KEY:'opt-out-ollama'},'ollama'),[]);
+  assert.equal(requests.length,3,'an unreviewed provider without opt-in is never discovered');
+ }finally{globalThis.fetch=original}
+});
+
+test('the full-catalog opt-in admits an unreviewed provider but never bypasses channel permissions',()=>{
+ const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
+ assert.equal(providerPolicyStatus(env,'chat','ollama').reason,'free_models_unreviewed');
+ assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'chat','ollama').enabled,true);
+ assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'coding','ollama').reason,'channel_permission');
+});
+
+test('Workers AI catalog discovery needs the opt-in and rests a failed lookup on the binding list',async()=>{
+ const original=globalThis.fetch,requests=[];let fail=false;
+ globalThis.fetch=async(url,init)=>{requests.push({target:new URL(String(url)),auth:init.headers.Authorization});
+  if(fail)return new Response('{}',{status:503});
+  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast'},{name:'@cf/zai-org/glm-4.7-flash'},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'}]});
+ };
+ try{
+  const env={AI:{},KAPPA_ALL_MODEL_PROVIDERS:'workers-ai',CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'};
+  assert.deepEqual(await providerModels(env,'workers-ai'),['@cf/meta/llama-3.3-70b-instruct-fp8-fast','@cf/zai-org/glm-4.7-flash']);
+  assert.equal(requests[0].target.searchParams.get('task'),'text-generation');assert.equal(requests[0].auth,'Bearer read-token-fixture');
+  assert.deepEqual(await providerModels({AI:{},CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'},'workers-ai'),
+   ['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast'],'without opt-in the binding list is used');
+  assert.equal(requests.length,1);
+  fail=true;const broken={...env,CLOUDFLARE_API_TOKEN:'other-token-fixture'};
+  assert.deepEqual(await providerModels(broken,'workers-ai'),['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast']);
+  await providerModels(broken,'workers-ai');
+  assert.equal(requests.length,2,'a failed catalog lookup is not repeated on every request');
+ }finally{globalThis.fetch=original}
+});
+
+test('Gemini full catalog skips non-chat models and uses each model\'s own context limit',async()=>{
+ const original=globalThis.fetch;
+ const models=[['gemini-3.8-flash',1048576],['gemini-3-pro',1048576],['gemma-4-27b-it',8192],['gemini-2.5-flash-image',32768],['gemini-2.5-flash-preview-tts',8192],['gemini-2.5-computer-use-preview',131072]];
+ globalThis.fetch=async()=>Response.json({models:models.map(([n,limit])=>({name:'models/'+n,supportedGenerationMethods:['generateContent'],inputTokenLimit:limit,outputTokenLimit:8192}))});
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'gemini-all-fixture',KAPPA_ALL_MODEL_PROVIDERS:'gemini',KAPPA_FREE_PROVIDERS:'gemini',KAPPA_CHAT_PROVIDERS:'gemini'};
+  const found=await discover(env);
+  assert.deepEqual(found,['gemini-3.8-flash','gemini-3-pro','gemma-4-27b-it']);
+  const large=await fallbackRoutes(env,found,{fallback:false},false,{channel:'chat',promptChars:35000,maxOutputTokens:1000});
+  assert.equal(large[0].model,'gemini-3.8-flash');
+  const routes=await fallbackRoutes(env,found,{},false,{channel:'chat',promptChars:35000,maxOutputTokens:1000});
+  assert.equal(routes.some(r=>r.model==='gemma-4-27b-it'),false,'a small-context model is not offered a prompt it cannot hold');
+  assert.deepEqual(await discover({ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'gemini-all-fixture'}),[],'without opt-in only the reviewed free list routes');
+ }finally{globalThis.fetch=original}
+});
+
+test('chat stops after the attempt cap and skips a provider whose account rejects the key',async()=>{
+ const original=globalThis.fetch,calls=[],reservations=[];
+ const groq=Array.from({length:30},(_,i)=>'groq-model-'+i),nvidia=['nvidia-a','nvidia-b','nvidia-c'];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u==='https://api.groq.com/openai/v1/models')return catalog(groq);
+  if(u==='https://integrate.api.nvidia.com/v1/models')return catalog(nvidia);
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){const body=JSON.parse(init.body);calls.push(body.model);
+   return new Response('{}',{status:u.includes('nvidia')?401:500});}
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq,nvidia',KAPPA_FREE_PROVIDERS:'groq,nvidia',KAPPA_CHAT_PROVIDERS:'groq,nvidia',
+   CHAT_ACCESS_TOKEN:'owner-token',GROQ_API_KEY:'cap-groq',NVIDIA_API_KEY:'cap-nvidia',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await worker.fetch(chat({messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);
+  assert.ok([429,503].includes(r.status));
+  assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
+  assert.equal(reservations.length,12,'33 candidate routes stop at maxRouteAttempts');
+  assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
+ }finally{globalThis.fetch=original}
+});
+
+test('the coding gateway applies the same cap and keeps its existing failure codes',async()=>{
+ const original=globalThis.fetch,calls=[],reservations=[];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u==='https://api.groq.com/openai/v1/models')return catalog(Array.from({length:30},(_,i)=>'groq-code-'+i));
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',
+   GROQ_API_KEY:'cap-code-groq',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
+  assert.ok([429,503].includes(r.status));
+  assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
+  assert.equal(reservations.length,12,'30 candidate routes stop at maxRouteAttempts');assert.ok(calls.length>=1);
+ }finally{globalThis.fetch=original}
+});

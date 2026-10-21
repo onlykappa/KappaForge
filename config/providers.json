@@ -1,5 +1,5 @@
 {
-  "note": "Chat model providers tried in configured order after Gemini. Keyed providers are used only when their key is configured; providers without a key or with keyOptional may also work anonymously. Models are discovered live from each configured account and filtered to chat-capable APIs; provider and channel permissions still gate routing. Provider limits change often; inspect each provider dashboard.",
+  "note": "Chat model providers tried in configured order after Gemini. Keyed providers are used only when their key is configured; providers without a key or with keyOptional may also work anonymously. Models are discovered live from each configured account and filtered to chat-capable APIs. Without owner opt-in each provider keeps its reviewed free models (freeModels, or freeOnly ':free' routes) capped at maxModelsPerProvider; providers listed in the KAPPA_ALL_MODEL_PROVIDERS Worker/Actions variable route every chat model the account lists, which may include paid models. Provider and channel permissions still gate routing. Provider limits change often; inspect each provider dashboard.",
   "order": [
     "workers-ai",
     "ollama",
@@ -15,7 +15,8 @@
     "llm7",
     "ovh"
   ],
-  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|safety|prompt-guard",
+  "maxModelsPerProvider": 2,
+  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard",
   "providers": {
     "workers-ai": {
       "name": "Cloudflare Workers AI",
@@ -395,6 +396,7 @@
       "leaseMs": 120000,
       "requestTimeoutMs": 180000,
       "attemptTimeoutMs": 60000,
+      "maxRouteAttempts": 12,
       "responseGraceMs": 15000,
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,

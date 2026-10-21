@@ -52,7 +52,7 @@ test('memory tombstones prevent resurrection and version comparison is numeric',
 test('Worker rejects unauthenticated and foreign-origin requests to all new APIs',async()=>{for(const path of ['/usage','/capabilities','/memory'])assert.equal((await worker.fetch(req(path,{},'bad'),{CHAT_ACCESS_TOKEN:'owner-token'})).status,401);const request=new Request('https://worker.test/usage',{method:'POST',headers:{Origin:'https://evil.test'}});assert.equal((await worker.fetch(request,{})).status,403);const ios=req('/usage');ios.headers.set('Origin','null');const state=memoryState();const stub=new KappaMemory(state);const env={CHAT_ACCESS_TOKEN:'owner-token',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>stub.fetch(new Request(u,o))})}};assert.equal((await worker.fetch(ios,env)).status,200)});
 test('vault preserves ciphertext and rejects stale revision without mutation',async()=>{const state=memoryState(),vault=new KappaMemory(state);const put=(revision,payload)=>vault.fetch(new Request('https://memory.internal/vault',{method:'PUT',body:JSON.stringify({revision,payload})}));assert.equal((await put(0,'encrypted-v1')).status,200);assert.equal((await put(0,'wrong-overwrite')).status,409);assert.deepEqual(await (await vault.fetch(new Request('https://memory.internal/vault'))).json(),{revision:1,payload:'encrypted-v1'})});
 test('usage storage paginates without duplicates and reserves monthly call cap',async()=>{const state=memoryState();for(let i=0;i<505;i++){const event={id:crypto.randomUUID(),at:Date.now()+i,model:'a',total:5};await usageStore(state,new Request('https://memory.internal/usage',{method:'POST',body:JSON.stringify(event)}))}const a=await (await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(a.events.length,500);const b=await (await usageStore(state,new Request('https://memory.internal/usage?cursor='+a.cursor))).json();assert.equal(b.events.length,5);assert.equal(new Set([...a.events,...b.events].map(x=>x.id)).size,505);const reserve=()=>usageStore(state,new Request('https://memory.internal/usage/reserve',{method:'POST',body:JSON.stringify({limit:1})}));assert.equal((await reserve()).status,200);assert.equal((await reserve()).status,429)});
-test('discovery only exposes models actually returned with generateContent',async()=>{const old=globalThis.fetch;globalThis.fetch=async()=>Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']},{name:'models/unsupported',supportedGenerationMethods:['generateContent']},{name:'models/'+MODELS[1],supportedGenerationMethods:['embedContent']}]});try{assert.deepEqual(await discover({GEMINI_API_KEY:'discover-fixture-unique'}),[MODELS[0],'unsupported'])}finally{globalThis.fetch=old}});
+test('discovery only exposes models actually returned with generateContent',async()=>{const old=globalThis.fetch;globalThis.fetch=async()=>Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']},{name:'models/unsupported',supportedGenerationMethods:['generateContent']},{name:'models/'+MODELS[1],supportedGenerationMethods:['embedContent']}]});try{assert.deepEqual(await discover({GEMINI_API_KEY:'test'}),[MODELS[0]])}finally{globalThis.fetch=old}});
 test('real chat path records fallback and token metadata using mocked providers, never credentials',async()=>{const old=globalThis.fetch;const state=memoryState(),vault=new KappaMemory(state);let generations=0;const env={CHAT_ACCESS_TOKEN:'owner-token',GEMINI_API_KEY:'secret-key',GROQ_API_KEY:'groq-test-key',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};globalThis.fetch=async(url,init={})=>{const u=String(url);if(u.endsWith('/models?pageSize=100'))return Response.json({models:MODELS.map(m=>({name:'models/'+m,supportedGenerationMethods:['generateContent']}))});if(u.includes(':generateContent')){generations++;return new Response('{}',{status:429})}if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'}]});if(u==='https://api.groq.com/openai/v1/chat/completions')return Response.json({choices:[{message:{content:'A verified response'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:4,total_tokens:16}});return new Response('{}',{status:404})};try{const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);assert.equal(r.status,200);const d=await r.json();assert.equal(d.usage.total,16);assert.equal(d.routing.attempts,2);const events=await (await usageStore(state,new Request('https://memory.internal/usage'))).json();assert.equal(events.events.length,2);assert.equal(events.events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('secret-key'),false);assert.equal(JSON.stringify(events).includes('groq-test-key'),false)}finally{globalThis.fetch=old}});
 
 test('semantic memory search uses transient notes and preserves vault authentication',async()=>{let received;const r=await worker.fetch(req('/memory/search',{query:'coding preferences',notes:['Prefer concise code','Lives in Spokane']}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{run:async(model,body)=>{received=body.text;return {data:[[1,0],[.9,.1],[0,1]]}}}});assert.equal(r.status,200);const result=await r.json();assert.equal(result.matches[0].index,0);assert.equal(received.length,3);assert.equal((await worker.fetch(req('/memory/search',{query:'x',notes:[]}),{CHAT_ACCESS_TOKEN:'owner-token',AI:{}})).status,400)});
@@ -216,8 +216,8 @@ test('free providers take over when Gemini is rate limited, with live model disc
    return Response.json({choices:[{message:{content:'Answer from Groq'},finish_reason:'stop'}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}})}
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','moonshotai/kimi-k2-instruct','llama-3.3-70b-versatile','openai/gpt-oss-20b']);
-  assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder','qwen/qwen3-coder:free','openai/gpt-4o']);
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b']);
+  assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder:free']);
   assert.deepEqual(await providerModels(env,'cerebras'),[]);
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}]}),env);const d=await r.json();
   assert.equal(r.status,200);assert.equal(d.reply,'Answer from Groq');assert.equal(d.model,'groq:openai/gpt-oss-120b');assert.equal(d.usage.total,12);
@@ -225,7 +225,7 @@ test('free providers take over when Gemini is rate limited, with live model disc
   assert.equal(events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('groq-key'),false);
   const labels=async(prefs,media=false)=>(await fallbackRoutes(env,[MODELS[0]],prefs,media)).map(x=>x.label);
   assert.deepEqual(await labels({},true),[MODELS[0]],'attachments stay on Gemini');
-  assert.deepEqual(await labels({disabledProviders:['groq']}),[MODELS[0],'openrouter:qwen/qwen3-coder','openrouter:qwen/qwen3-coder:free','openrouter:openai/gpt-4o']);
+  assert.deepEqual(await labels({disabledProviders:['groq']}),[MODELS[0],'openrouter:qwen/qwen3-coder:free']);
   assert.deepEqual(await labels({fallback:false}),[MODELS[0]]);
   assert.deepEqual(await labels({model:'openrouter:qwen/qwen3-coder:free',fallback:false}),['openrouter:qwen/qwen3-coder:free']);
   assert.deepEqual(await labels({model:'groq:not-a-model'}),[]);
@@ -248,7 +248,7 @@ test('fallback providers stream through the same reply protocol, including Worke
  }finally{globalThis.fetch=original}
 });
 
-test('keyless providers answer anonymously, all configured account models remain eligible, and the summary links key signup',async()=>{
+test('keyless providers answer anonymously, fixed free lists skip discovery, and the summary links key signup',async()=>{
  const {providerModels,providerSummary,callProvider}=await import('../chat-backend/src/providers.js');
  const original=globalThis.fetch,seen=[];
  globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push([u,init.headers?.Authorization]);
@@ -256,9 +256,9 @@ test('keyless providers answer anonymously, all configured account models remain
   if(u==='https://api.kilo.ai/api/gateway/chat/completions')return Response.json({choices:[{message:{content:'ok'}}]});
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free','paid/model']);
+  assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free']);
   assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),['glm-4.7-flash'],'an enabled provider exposes its configured account model');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),[],'fixed models without a reviewed free allowlist stay disabled');
   assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'providers without a reviewed free model list are never discovered');
   await callProvider({},{provider:'kilo',model:'kilo-auto/free'},{system:'',messages:[],maxTokens:10,temperature:0},false);
   assert.equal(seen.every(([,auth])=>auth===undefined),true,'no credentials sent to keyless providers');
@@ -610,16 +610,16 @@ test('an iOS build question puts the previous and current build history in front
   assert.doesNotMatch(prompt,/iOS BUILD HISTORY/);
  }finally{globalThis.fetch=old}
 });
-test('Gemini discovery includes every advertised generation model and rests failures',async()=>{
+test('Gemini discovery excludes models outside the published free-tier allowlist and rests failures',async()=>{
  const old=globalThis.fetch;
  const names=['gemini-3.8-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-3.1-flash-lite-preview','gemini-3-pro','gemini-3.1-flash-lite','text-embedding-4'];
- globalThis.fetch=async()=>Response.json({models:names.map(n=>({name:'models/'+n,supportedGenerationMethods:n.startsWith('text-embedding')?['embedContent']:['generateContent']}))});
+ globalThis.fetch=async()=>Response.json({models:names.map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
  try{
   const found=await discover({ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'newer-key'});
-  assert.deepEqual(found,['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.1-flash-lite-preview','gemini-3.8-flash','gemini-2.5-flash','gemini-3-pro']);
-  assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.8-flash');
+  assert.deepEqual(found,['gemini-3.1-flash-lite'],'newly discovered and preview models cannot widen the free allowlist');
+  assert.equal(routes(found,{routing:'quality'})[0],'gemini-3.1-flash-lite');
   rest('gemini-3.1-flash-lite',429);
-  assert.equal(awake(found).includes('gemini-3.1-flash-lite'),false,'the rate-limited model rests while the other live models remain routable');
+  assert.deepEqual(awake(found),found,'the sole route remains visible for bounded retry after cooldown');
  }finally{globalThis.fetch=old}
 });
 test('a model chosen in Settings that is no longer offered falls back to Automatic instead of refusing every message',async()=>{
