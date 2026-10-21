@@ -152,3 +152,17 @@ test('a cancelled coding attempt is kept in usage history as cancelled, with unk
   assert.deepEqual([events[0].kind,events[0].status,events[0].cancelled,events[0].ok,events[0].total,events[0].input],['task',499,true,false,null,null]);
  }finally{globalThis.fetch=original}
 });
+
+test('provider health follows routing: old keyless blocks are ignored and a few rested models leave the provider available',async()=>{
+ const original=globalThis.fetch;globalThis.fetch=async()=>new Response('{}',{status:404});
+ const state=memoryState(),vault=new KappaMemory(state),now=Date.now();
+ await state.storage.put('routing:v1',{version:1,reservations:{},outcomes:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{},
+  pools:{'kilo:kilo':{provider:'kilo',status:401,blocked:true,until:0,updatedAt:now}},
+  routes:{'kilo:paid/model':{provider:'kilo',model:'paid/model',status:404,category:'model_unavailable',blocked:false,until:now+3600000,updatedAt:now}}});
+ const env=key=>({CHAT_ACCESS_TOKEN:'owner-token',...(key?{KILO_API_KEY:key}:{}),MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}});
+ const kilo=async key=>(await (await worker.fetch(new Request('https://worker.test/capabilities',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:'{}'}),env(key))).json()).providers.find(p=>p.id==='kilo').health;
+ try{
+  assert.deepEqual([(await kilo('kilo-key')).state,(await kilo('kilo-key')).restingModels],['models_resting',1]);
+  assert.equal((await kilo()).state,'models_resting','a keyless 401 block is ignored by routing, so it is not shown');
+ }finally{globalThis.fetch=original}
+});

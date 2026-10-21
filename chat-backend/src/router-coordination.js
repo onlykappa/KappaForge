@@ -16,7 +16,7 @@ function resetDeadline(value,now){
  if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>now/1000?number*1000:now+number*1000;}
  const date=Date.parse(value);return Number.isFinite(date)?date:null;
 }
-async function accountPoolFor(env,provider,config){
+export async function accountPoolFor(env,provider,config){
  const secret=provider==="gemini"?env.GEMINI_API_KEY:config?.key?env[config.key]:"";
  if(typeof secret!=="string"||!secret)return config?.accountPool||provider;
  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(secret));

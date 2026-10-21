@@ -13,7 +13,7 @@ import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./revie
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
 import {routingStore} from "./router-state.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels} from "./model-probe.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
@@ -236,10 +236,14 @@ export default {
       try{
         const policy=routePolicy(env),snapshot=env.MEMORY?await routingSnapshot(env):{pools:{},routes:{},usage:{},activeReservations:0,quotaRemaining:null,quotaSource:"unknown"};
         const health={};for(const [id,p] of Object.entries(REGISTRY.providers)){
-          const poolRows=Object.values(snapshot.pools||{}).filter(row=>row.provider===id),pool=poolRows.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
-          const routeRows=Object.entries(snapshot.routes||{}).filter(([key])=>key.startsWith(id+":" )).map(([,row])=>row);
-          const active=pool?.blocked?"blocked":pool?.until>Date.now()?"cooldown":routeRows.some(row=>row.blocked)?"route_blocked":routeRows.some(row=>row.until>Date.now())?"cooldown":"unknown";
-          health[id]={state:active,retryAt:pool?.until||Math.max(0,...routeRows.map(row=>row.until||0))||null,category:pool?.category||routeRows.find(row=>row.category)?.category||null};
+          // Same rules as routing: only the current key's pool counts, and legacy blocks (HTTP 402, or 401 on a
+          // keyless pool) are ignored. A few rested models leave the provider usable.
+          const poolKey=await accountPoolFor(env,id,p)+":"+(p.quotaPool||id),keyless=poolKey.split(":").length===2,now=Date.now();
+          const legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless),live=row=>row&&!legacy(row)&&(row.blocked||row.until>now);
+          const pool=live(snapshot.pools?.[poolKey])?snapshot.pools[poolKey]:null;
+          const resting=Object.entries(snapshot.routes||{}).filter(([key,row])=>key.startsWith(id+":")&&live(row)).map(([,row])=>row);
+          const active=pool?.blocked?"blocked":pool?"cooldown":resting.length?"models_resting":"unknown";
+          health[id]={state:active,retryAt:pool?.until||Math.max(0,...resting.map(row=>row.until||0))||null,category:pool?.category||resting[0]?.category||null,status:pool?.status||null,restingModels:resting.length};
         }
         const primary=REGISTRY.routing?.primary||{},geminiAllowed=providerAllowed(env,"chat","gemini");
         const geminiPools=Object.values(snapshot.pools||{}).filter(row=>row.provider==="gemini"),geminiPool=geminiPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
