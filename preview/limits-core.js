@@ -12,14 +12,14 @@ function matches(pattern,model){
 }
 const METRICS=['rpm','rpd','tpm','tpd','rps','neuronsPerDay'];
 const pick=row=>Object.fromEntries(METRICS.filter(k=>Number.isFinite(row?.[k])&&row[k]>=0).map(k=>[k,row[k]]));
-function row(limits,provider,model){return (limits?.providers?.[provider]?.models||[]).find(r=>matches(r.match,model))||null;}
+function limitRow(limits,provider,model){return (limits?.providers?.[provider]?.models||[]).find(r=>matches(r.match,model))||null;}
 // A model the provider serves with another model ("sameAs") shares that model's quota and usage.
-function canonical(limits,provider,model){return row(limits,provider,model)?.sameAs||model;}
+function canonical(limits,provider,model){return limitRow(limits,provider,model)?.sameAs||model;}
 function limitFor(limits,provider,model){
  const entry=limits?.providers?.[provider];
  if(!entry)return null;
  if(entry.scope==='provider')return {scope:'provider',...pick(entry)};
- const r=row(limits,provider,model);
+ const r=limitRow(limits,provider,model);
  if(r?.sameAs)return limitFor(limits,provider,r.sameAs);
  return r?{scope:'model',match:r.match,...pick(r),...(r.note?{note:r.note}:{})}:null;
 }
