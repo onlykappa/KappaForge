@@ -24,6 +24,18 @@ def issue(mode):
     return {'state':'open','user':{'login':'onlykappa'},'created_at':'2099-01-01T00:00:00Z','number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
 
 class TaskScopeTests(unittest.TestCase):
+    def test_task_run_names_are_complete_yaml_strings_and_keep_task_identity(self):
+        # A '#' inside an unquoted YAML scalar starts a comment even when it
+        # appears inside a GitHub expression's single-quoted format string.
+        for workflow in ('agent', 'recovery'):
+            text = (ROOT / '.github/workflows' / (workflow+'.yml')).read_text()
+            line = next(line for line in text.splitlines() if line.startswith('run-name: '))
+            value = json.loads(line.removeprefix('run-name: '))  # valid quoted YAML/JSON subset
+            self.assertTrue(value.startswith('${{') and value.endswith('}}'))
+            self.assertIn('inputs.issue_number', value)
+            self.assertIn('task #{0}', value)
+
+
     def test_killed_workflow_finalizes_only_its_own_running_bot_snapshot(self):
         workflow = (ROOT / '.github/workflows/agent.yml').read_text()
         script = workflow.split('// Finalize the live card', 1)[1].split('if (comments.some', 1)[0]

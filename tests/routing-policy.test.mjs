@@ -21,7 +21,7 @@ test("routing policy intersects free, channel, and private-code approvals",()=>{
  assert.equal(providerAllowed(env,"coding","groq"),true);
  assert.equal(providerAllowed(env,"coding","groq",{privateCode:true}),false);
  assert.equal(providerAllowed(env,"coding","gemini",{privateCode:true}),true);
- assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:"groq,gemini,nvidia",KAPPA_CODE_PROVIDERS:"groq,gemini,nvidia",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini,nvidia"},"coding","nvidia"),false,"providers without a reviewed free model allowlist stay unavailable");
+ assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:"groq,gemini,ollama",KAPPA_CODE_PROVIDERS:"groq,gemini,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini,ollama"},"coding","ollama"),false,"metered cloud catalogs without a reviewed free model allowlist stay unavailable");
  assert.deepEqual(routePolicy(env).privateCodeProviders,["gemini"]);
  assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:""},"chat","groq"),false);
 });
@@ -173,10 +173,12 @@ test("gateway distinguishes upstream rejection or rate limit from a subsequent s
    const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
    const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
    assert.equal(response.status,status===429?429:503);
+   assert.equal(first.attempts[0].attempted,true);assert.equal(first.attempts[0].provider,'groq');assert.equal(first.attempts[0].status,status);
    assert.equal(first.failure.source,'upstream');assert.equal(first.failure.upstreamStatus,status);
    assert.equal(first.failure.category,status===413?'provider_rejection':status===429?'rate_limit':'provider_outage');
    assert.ok(first.retryAt>=Date.now()+88000);assert.ok(!JSON.stringify(first).includes('untrusted'));
    const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),body=await second.json();
+   assert.equal(body.attempts[0].attempted,false);assert.equal(body.attempts[0].source,'coordination');
    assert.equal(second.status,429);assert.equal(body.failure.source,'coordination');assert.equal(body.failure.upstreamStatus,status);
    assert.equal(inferenceCalls,1,'a stored cooldown must not contact the provider again');
   }finally{globalThis.fetch=previous;}
@@ -288,4 +290,56 @@ test('chat transport and malformed responses preserve cooldowns without inventin
    assert.equal(second.status,429);assert.equal(again.retryAt,body.retryAt);assert.equal(calls,1);
   }finally{globalThis.fetch=previous}
  }
+});
+
+
+test('expired lease outcomes retain account attribution and cannot clear a newer failure',async()=>{
+ const store=storage(),clock=Date.now;let now=1800000000000;Date.now=()=>now;
+ const reserve=id=>invoke(store,'/router/reserve',{requestId:id,provider:'groq',model:'model-a',accountPool:'acct',quotaPool:'shared',leaseMs:1000});
+ const outcome=(id,status)=>invoke(store,'/router/outcome',{requestId:id,provider:'groq',model:'model-a',status,category:status===401?'authentication':''});
+ try{
+  await reserve('old');now+=1001;assert.equal((await reserve('new')).status,200);
+  now+=1;await outcome('new',401);now+=1;await outcome('old',200);
+  const status=await (await invoke(store,'/router/status')).json();
+  assert.equal(status.pools['acct:shared'].blocked,true);assert.equal(status.usage.null,undefined);
+  assert.equal(status.usage['acct:shared'].estimatedRequests,2);assert.equal(status.activeReservations,0);
+  assert.equal((await (await reserve('old')).json()).allowed,false,'expired/completed lease IDs cannot be reused');
+ }finally{Date.now=clock}
+});
+test('cancellation releases only its lease and never erases another account failure',async()=>{
+ const store=storage(),base={provider:'groq',model:'model-a',accountPool:'acct',quotaPool:'shared',leaseMs:120000,maxConcurrent:2};
+ await invoke(store,'/router/reserve',{...base,requestId:'cancel'});await invoke(store,'/router/reserve',{...base,requestId:'failure'});
+ await invoke(store,'/router/outcome',{...base,requestId:'failure',status:401,category:'authentication'});
+ await invoke(store,'/router/outcome',{...base,requestId:'cancel',status:499,category:'cancelled'});
+ const state=await (await invoke(store,'/router/status')).json();assert.equal(state.pools['acct:shared'].blocked,true);assert.equal(state.activeReservations,0);
+});
+
+
+test('Groq requests outside the reviewed free token envelope are refused before inference with exact provenance',async()=>{
+ const state={storage:storage()},env={ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore(state,new Request(u,o))})}};
+ const original=globalThis.fetch;let inference=0;
+ globalThis.fetch=async(url,options={})=>{if(options.method==='POST')inference++;return Response.json({data:[{id:'openai/gpt-oss-120b'}]})};
+ try{
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,maxTokens:8000,messages:[{role:'user',content:'exact source '.repeat(3100)}]});
+  const data=await r.json();assert.equal(r.status,413);assert.equal(data.code,'request_too_large');assert.equal(inference,0);
+  assert.equal(data.attempts.length,1);assert.equal(data.attempts[0].provider,'groq');assert.equal(data.attempts[0].model,'openai/gpt-oss-120b');assert.equal(data.attempts[0].attempted,false);
+  assert.equal(data.attempts[0].source,'gateway_guard');assert.equal(data.failure.upstreamStatus,null);
+ }finally{globalThis.fetch=original}
+});
+
+test('DeepSeek outage falls back to another approved provider and retains per-route evidence',async()=>{
+ const original=globalThis.fetch,posted=[];
+ const state={storage:storage()},env={ROUTING_POLICY_VERSION:'v1',NVIDIA_API_KEY:'deepseek-outage-fixture',MISTRAL_API_KEY:'mistral-fallback-fixture',GROQ_API_KEY:'groq-fallback-fixture',KAPPA_FREE_PROVIDERS:'nvidia,mistral,groq',KAPPA_CODE_PROVIDERS:'nvidia,mistral,groq',KAPPA_PRIVATE_CODE_PROVIDERS:'nvidia,mistral,groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore(state,new Request(u,o))})}};
+ globalThis.fetch=async(url,init={})=>{
+  if(String(url).endsWith('/models'))return Response.json({data:(String(url).includes('nvidia.com')?['deepseek-ai/deepseek-v4.1-flash','nvidia/nemotron-3-ultra-550b-a55b']:String(url).includes('mistral.ai')?['mistral-small-latest']:['openai/gpt-oss-120b']).map(id=>({id}))});
+  posted.push(JSON.parse(init.body).model);
+  if(String(url).includes('nvidia.com'))return Response.json({error:'fixture outage'},{status:503});
+  return Response.json({choices:[{message:{content:'fallback success'}}]});
+ };
+ try{
+  const result=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['nvidia','mistral','groq'],messages:[{role:'user',content:'exact authorized source'}],maxTokens:80,responseFormat:'json_object'});
+  const body=await result.json();assert.equal(result.status,200,JSON.stringify(body));
+  assert.equal(body.route,'mistral:mistral-small-latest');
+  assert.deepEqual(posted,['deepseek-ai/deepseek-v4.1-flash','mistral-small-latest']);
+ }finally{globalThis.fetch=original}
 });

@@ -1,3 +1,203 @@
+# Task-start and recovery audit — 2026-10-21
+
+Status: fixes implemented and validated in [draft PR #175](https://github.com/onlykappa/KappaForge/pull/175); **unmerged and undeployed at owner request**.
+Baseline main `6bbd1debed31df89e4d3a3eae09930797815c7c7`.
+Branch `codex/task-start-recovery-audit`, isolated checkout; unrelated worktrees preserved.
+The older cadence/simulator record below remains historical evidence, not production
+wake-up acceptance. No weather or acceptance PR is being merged.
+
+## Task #174: exact observed boundary
+
+[Run 39603920228](https://github.com/onlykappa/KappaForge/actions/runs/39603920228)
+acknowledged and read 243 source files, then stopped at the **gateway reservation**.
+Request `fdeb11ac-83f4-4aa3-b6d7-8c43ea2589b8`, prompt36804 characters, maxTokens8000:
+HTTP429 `free_capacity_cooldown`, source `coordination`, category `provider_outage`,
+historical upstreamStatus503, retryAt `1792587612221` milliseconds. No fresh provider503
+is evidenced by this final failure; it cannot rule out an earlier attempt in the route loop. It is neither a fresh upstream429 nor proof of
+account quota exhaustion, concurrency saturation, authentication failure or a gateway
+minute/day cap. The matching reserve path returns an active stored pool/route cooldown
+before checking concurrency. The response describes only the final route; earlier routes
+may have been attempted. Fresh13:35 diagnostics found a Groq historical413 at12:58:44.409
+UTC, close to this request, but existing shared-state metadata cannot correlate it to
+a particular request. No fresh503 is established for #174. Actual failed provider/model was absent in this old response;
+remaining provider allowance and usage are unknown. Do not guess them from eligibility.
+The saved checkpoint is unchanged main `6bbd1de...`, files empty, no task PR, continuations0.
+
+Eligibility `1792587642221` = 2026-10-21 13:00:42.221 UTC / 06:00:42 PDT includes the
+existing 30-second margin. Checkpoint/progress updated 12:58:47/49 UTC. Screenshot6:09
+PDT is consistent with these units; no timezone arithmetic defect was found.
+The enabled recovery workflow (ID390098783) had **no observed scheduled scan** between
+eligibility and issue closure. Its latest scheduled scan was
+[39583498230 at10:17:28 UTC](https://github.com/onlykappa/KappaForge/actions/runs/39583498230).
+Thus there is no scan skip/lease rejection to attribute to #174: no scan inspected it
+in that window, no continuation ref was claimed and no continuation runner started.
+The precise GitHub internal reason for absent schedule deliveries is not observable.
+
+#174 was closed by `onlykappa` at13:09:59 UTC. It must stay stopped. The newly authorized
+single continuation cannot proceed while closed; it was **not attempted**. #171 closed
+at12:57:23 UTC; #174 was created at12:58:16 UTC with a distinct app authorization/request
+ID `be56554a-057d-468f-b355-64bd86689479`. #169 and #171 have different IDs and checkpoints.
+The backend Retry handler never creates issues. These records support a separate app
+submission, not replay of one immutable authorization. They do not establish who tapped
+which app control. #174's brief still ends at the supplied “Inspect the native iOS bridge
+an”; the same end exists in the owner-provided text. No new 20,000-character truncation
+or duplicate planner/chat inference was found in current submission code/tests.
+
+## Confirmed defects and focused changes
+
+- GitHub cron was the sole autonomous wake-up source. Five minutes is a minimum supported
+  interval, not a delivery promise. Add task-driven alarms in a **separate `recovery-v1`
+  instance of the existing KappaMemory class/binding**. No schema migration, provider key,
+  external host or always-running Action is added. The existing account/vault/router
+  instance `owner-v1` is preserved. Idle queue has no alarm. Up to32 pending tasks;
+  original authorization and six-hour waiting bounds remain; one due task per
+  alarm bounds Free-plan subrequests and respects the serialized Actions dispatcher; delivery is debited before
+  network and stops after three ambiguous/failed deliveries. Diagnostics retain the stop.
+- Runner-only `POST /router/recovery` accepts `{task}` and rereads the open owner task,
+  durable cancellation record and trusted exact-scope bot checkpoint. It never accepts
+  prompts, provider overrides, arbitrary workflows or URLs. `{task,statusOnly:true}`
+  returns sanitized delivery state without dispatching. Browser tokens cannot access it.
+- Alarms request only `recovery.yml` on main with that existing issue number. Python remains
+  the authority for project access, candidate validation, atomic recovery refs and the
+  per-task Actions queue. No inference runs in alarms/Workers recovery requests. Cron
+  remains fallback. Initial submission registers a bounded acknowledgement watchdog too.
+- Manual Retry/guidance of an existing waiting/running checkpoint joins the same wake-up
+  path instead of blank-dispatching another agent. Neither HTTP202 nor elapsed cooldown
+  is treated as a runner acknowledgement. Initial lost dispatch can recover the same issue.
+- Lost acknowledgements/crashes reconcile after a two-minute acknowledgement window,
+  retaining the same continuation token. Queued/active named agent runs suppress redelivery;
+  an active previous runner cannot consume another continuation. Cancelled workflows stop.
+- Exact-scope explicit renewal can carry the original candidate, budgets, requirements and
+  failed approaches to the newly authorized identity. Changed briefs without that link are
+  blocked; cancellation/expiry cannot silently renew. Replay and private-project checks remain. Every coding call rechecks current
+  issue authorization before sending inference, including unpinned tasks.
+- Preserve executionState/transition timestamps in progress. UI distinguishes cooldown,
+  waiting for recovery, recovery requested, dispatch requested, confirmed GitHub queue,
+  Actions started and acknowledged running. Receipt persistence keeps the last confirmed
+  snapshot rather than replacing it with invented running progress. Silence is not failure;
+  actionable delay offers existing-task Retry, with an in-flight duplicate-click guard.
+- Expired gateway leases release concurrency but retain bounded late-outcome attribution.
+  Replayed expired/completed lease IDs are refused. Cancellation only releases its lease;
+  it cannot clear another failure. An old success cannot erase a newer account block.
+  Structured authentication/access blocks stop recovery. Error evidence now includes a bounded per-route attempt history, the
+  candidate provider/model and whether inference was attempted, preserving provenance.
+
+- Groq's reviewed Free Plan table lists8K TPM for both approved models, separate
+  from the131K model context. Add a conservative per-request token envelope with
+  bounded output headroom; preserve exact input and return a typed preflight413
+  if no route fits. This is an estimate/guard, not a remaining-token balance or an
+  account-specific allowance. A large owner brief may not fit Groq; it is never
+  silently shortened or sent to an unapproved provider. Other existing approved
+  routes retain their own capabilities and permissions. Official source:
+  https://console.groq.com/docs/rate-limits (checked2026-10-21).
+
+## Validation and remaining gates
+
+Validated implementation: `0169fd4c4f099f1ead7cd8c9402af85999b79a28`.
+[Linux/browser/Worker CI 39612996874](https://github.com/onlykappa/KappaForge/actions/runs/39612996874)
+passed **375 Python tests, 387 JavaScript tests**, Chromium and mobile Safari regressions,
+and the isolated Worker build (Wrangler4.151.1,238.57KiB /62.86KiB gzip). Web syntax,
+configuration and generated-bundle checks passed. Local Windows LF-snapshot testing
+has only the two pre-existing temporary-file sharing errors in workflow output tests;
+Linux passed those tests. CRLF source-fixture failures are also a known local baseline.
+`engine/validate_change.py` is absent at baseline; independent trusted CI and the
+focused failure-injection tests are the available validation, not an invented validator pass.
+
+[Native CI 39612752755](https://github.com/onlykappa/KappaForge/actions/runs/39612752755)
+passed all **five UI tests**, simulator and unsigned-device builds, bundle/icon verification
+and IPA packaging on iPhone16ProMax /iOS18.5 simulator. The recovery test passed in
+**20.876 seconds**: future cooldown, the actual local timer boundary, tapping real Retry,
+confirming the native dialog, production `/authorize` then `/retry` transport with fake
+responses, one request for the same task/candidate and full termination/reopening with
+receipt persistence. This run tested `041b1b7...`; `git diff041b1b7..0169fd4 -- ios preview
+config/app.json` is empty, so its native/UI source exactly matches the validated code.
+The latest PR checks additionally validate the final handoff revision; follow their actual
+status rather than assuming a documentation push ran a new live task.
+
+Screenshot artifact12350504771 and xcresult artifact12351522110 are retained on that run.
+Manifest maps `7CF028DC-5DD0-464C-9E10-5A25D8E478D8.png` to the passing recovery test;
+it was visually inspected. RECOVERY REQUESTED explicitly says runner start is unconfirmed;
+the Debug-only fixture badge records transport1. This is a **simulator fixture**, not a
+second physical iPhone, production wake-up or provider inference. Release device builds
+exclude fixture code. The packaged IPA is a PR build artifact, **not a published update**.
+
+The first native revision failed one premature Retry-visibility assertion; the test now
+waits for the real one-minute boundary rather than only the earlier elapsed-wait label.
+Superseded PR-only native runs were cancelled. The branch also initially had unquoted
+`#` in run-name expressions; GitHub rejected those workflow definitions before execution.
+Quoted complete YAML expressions and a regression test fixed that in0169fd4. Neither
+failure changed production. No unchanged failure was repeatedly rerun as acceptance.
+
+An optional local Miniflare5/Windows alarm harness could not start workerd
+(`ERR_RUNTIME_FAILURE`); it provides **no runtime alarm evidence**. The production alarm
+handler is exercised by controlled Node boundary tests with fixture storage/GitHub,
+and its deployment is build-checked; actual persistent-platform wake-up remains a
+post-review acceptance gate. No real key, task dispatch or provider call entered that
+optional harness. The failed fixture runtime is not claimed to be a verified baseline
+failure or a successful Cloudflare deployment.
+
+Read-only Production [inspection39609368709](https://github.com/onlykappa/KappaForge/actions/runs/39609368709)
+completed with the deploy job **skipped**. Chat permission is configured, Groq secret,
+chat/free/coding policy and chat credential are present. No settings were written.
+[Guard diagnostic39609364855](https://github.com/onlykappa/KappaForge/actions/runs/39609364855)
+passed: model discovery200, Groq free/coding/private-code policy true, gateway day22/100,
+minute0/20, recorded healthclear/no currentcooldown. Historical Groq failure413 at
+12:58:44.409UTC remains visible. inferenceCapacity=unverified, provider quota unknown.
+This is not another inference attempt and does not prove free capacity is available.
+Fresh production health returned200 and unauthenticated `/router/infer` returned401.
+Read-only configuration inspection and inference-free diagnostics are separate from
+provider-capacity acceptance; see appended run evidence. Last established deployed source
+is `03182fb2305187e4e93a880c030e36e0be86b9d4`, version
+`f8b7ad28-4bbf-4385-b361-48349a5cc228`, deployment39545174469. Main/IPA fixes did not redeploy
+the Worker. Published IPA remains v2.2.15 from `d1e61c499db85b28aedb457276b9071c74479e03`.
+No live inference, task restart, new issue, merge, deployment, publication, credential
+rotation, counter reset or DO-state deletion was performed in this audit.
+
+## Cost, deployment order, rollback and exact resume
+
+[GitHub scheduling](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+is best effort and has a five-minute minimum; do not configure one-minute GitHub cron.
+[Cloudflare alarms](https://developers.cloudflare.com/durable-objects/api/alarms/) offer
+at-least-once wake-up with bounded platform retries, requiring idempotent handlers.
+[SQLite Durable Objects Free allowances](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+include100,000 requests/day (alarms included),13,000GB-s/day,5million row reads/day,
+100,000 row writes/day and5GB storage. On Workers Free, exceeded limits fail rather than
+bill automatically. These are platform limits, not a verified reading of this account's
+billing plan or remaining usage. The existing class is SQLite-backed; no upgrade or new
+service is needed. Provider accounts remain owner-confirmed free/no-card; no provider is
+enabled or paid fallback introduced. Quota remaining is unknown. Alarms and Actions still
+have platform delays/outages; this implementation promises neither exact minute timing
+nor inference capacity. Monitor allowances separately from provider quota.
+
+**Do not promote now.** After owner review: verify the account remains Workers Free and
+check current main/deployment/CI; merge only this focused PR if separately authorized.
+Publish Actions first, then deploy Worker through existing preserve-settings workflow
+(`keep_vars=true`, all18bindings/9secrets retained; no migration). New route uses existing
+KAPPA_ROUTER_URL/KAPPA_ROUTER_TOKEN and Worker ROUTER_ACCESS_TOKEN/GITHUB_JOB_TOKEN; no
+new secret or dashboard variable. Verify health/auth and inference-free recovery status.
+Existing waiting tasks are not bulk-restarted: explicitly register only still-authorized,
+uncancelled work after checking active runs/cooldown. Publish a new IPA for bundled UI
+changes through established native process; PR artifacts are not a published update.
+
+Task #174 is closed. Do not reopen it or replace weather automatically. Exact next live
+action requires the owner to explicitly choose resumption of this same closed task and
+renew authorization as needed, after deployment review. Before the single controlled
+continuation inspect current state, runs and cooldown. Observe dispatch/runner/gateway/
+inference/save; stop forced retries on another capacity failure. Do not manually implement
+weather as cloud-engine evidence. Production alarm dispatch and inference remain unverified.
+
+Rollback only focused code through review. Retain new scheduler storage keys/namespace
+instance and existing routing data, variables, secrets, owner authorization and candidates.
+A previous Worker has no alarm handler, so suspend pending scheduler alarms deliberately
+under a reviewed operation before rollback; never delete the shared storage. Reverting
+Actions/UI alone restores the cron-only timing limitation. Do not restore direct-key calls
+or clear provider counters/health. Keep the prior IPA; install updates over the existing
+app with the same signing identity without uninstalling.
+
+---
+
+## Historical PR #172/#173 record (preserved)
+
 # Recovery cadence and native fake-task verification
 
 Baseline: `0a6b07ce197ac9373ac7233b8ee69cc57626e2f0`.
@@ -115,3 +315,56 @@ Rollback: revert only this scoped PR through required checks. Preserve task
 checkpoints, authorization, candidates, credentials, DO data and provider limits.
 Keep the previous IPA; install with the same signing identity without uninstalling.
 Do not restore direct-key inference or restart weather as part of rollback.
+
+## PR175 review follow-up: providers and runtime alarms (2026-10-21)
+
+Fixed an actual regression in `engine/runner.py`: the current-task check had moved
+Groq-only diagnostic gating onto every coding call. NVIDIA-only tasks could terminate
+on Groq's cooldown before reaching the shared router. Task authorization is still
+rechecked before every task-bound call; Groq diagnostics gate only pinned Groq calls.
+Regression coverage exercises NVIDIA, Mistral, OpenRouter, Ollama, Gemini, Groq and mixed
+provider sets with Groq diagnostics unavailable. Cancellation remains fail-closed.
+
+Automatic Worker chat/coding now prefers eligible DeepSeek models, retaining other
+approved routes as fallbacks. NVIDIA/OpenRouter discovery ranks DeepSeek first. Manual
+selection, disabled providers, capabilities, context and free/private-code permissions
+remain authoritative. Automatic with fallback disabled selects one preferred route even
+when Gemini is available. NVIDIA's reviewed exact free models are
+`deepseek-ai/deepseek-v4.1-flash` and `nvidia/nemotron-3-ultra-550b-a55b`. Outage tests
+verify fallback to another approved provider without repeating failed-account inference.
+
+Official sources checked 2026-10-21:
+- https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash documents the exact free endpoint.
+- https://build.nvidia.com/?modal=signin lists Nemotron3 Ultra under free inference.
+- https://ollama.com/pricing lists DeepSeek as metered, with free usage restricted to
+  starter models. Arbitrary Ollama Cloud models remain excluded under the $0 policy.
+
+The deployment workflow offers **activate-providers**, an explicit owner operation.
+It adds configured providers with reviewed free models/free-only catalogs to the four
+existing free/chat/coding/private-code lists, preserving existing entries. It reads
+secret presence only and fingerprints settings before/after, accepting only the four
+planned variable changes. Missing keys and unreviewed/metered catalogs cannot be enabled.
+Ordinary deploy preserves dashboard permissions. Activation has NOT run in production.
+
+`node chat-backend/tools/recovery-runtime-check.mjs` passes on Linux. It bundles the
+actual Worker, runs workerd/SQLite, registers through the authenticated recovery endpoint
+and real authorization Durable Object, reconstructs workerd with persistent storage, and
+waits for the automatic alarm. It never invokes `alarm()` manually. Exactly one scanner
+request follows the persisted cooldown. The fixture then executes real Python `scan`,
+atomic claim, `Journal.begin`, acknowledgement and duplicate suppression, preserving the
+candidate. Closed-task registration is rejected. All outbound traffic is intercepted;
+there are no real GitHub dispatches, production credentials or inference. Worker CI now
+runs this harness. This is **runtime acceptance with fixture external services**, not
+production acceptance. Initial harness setup errors were corrected before recording a pass.
+
+Local checks: 376 Python tests, 390 JavaScript tests, Worker dry-run build, changed
+workflow YAML/bash syntax, web/bundle parity and dependency-map checks pass. No new
+package or lockfile change is needed; the harness uses locked Wrangler dependencies.
+No native/UI source changed in this follow-up.
+
+Remaining live gate: merge/deploy reviewed code in the documented order, run explicit
+`activate-providers` deployment, inspect actual eligibility and run one newly authorized
+bounded acceptance task through deployed alarms/Actions. Do not revive closed #174.
+Live provider capacity/quota remains unknown. This session lacks Cloudflare credentials,
+the GitHub browser is signed out and the connector lacks workflow dispatch. PR175 stays
+draft. This follow-up does not claim production activation, merge, deployment or release.

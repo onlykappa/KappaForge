@@ -597,8 +597,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             raise gateway.GatewayUnavailable(f'Pinned task prompt exceeds its bounded request budget ({len(prompt)} characters); inference was not sent', terminal=True)
         max_output_tokens = min(max_output_tokens, gateway.PINNED_OUTPUT_TOKENS)
         gateway.pace(journal, model_timeout)
-        if hasattr(journal.scope, 'check_current'):
-            journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
+    if hasattr(getattr(journal, 'scope', None), 'check_current'):
+        journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
+    # Diagnostics currently describe only the bounded Groq acceptance route.
+    # Other authorized routes must reach the shared router independently of it.
+    if pinned_route:
         gateway.check(gateway.probe(endpoint, token))
     payload = {
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,
@@ -632,7 +635,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
-                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None}
+                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

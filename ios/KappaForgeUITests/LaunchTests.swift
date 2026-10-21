@@ -116,13 +116,19 @@ final class LaunchTests: XCTestCase {
         func status(_ label: String) -> XCUIElement {
             web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
         }
-        XCTAssertTrue(status("WAITING TO RESUME").waitForExistence(timeout: 60))
+        XCTAssertTrue(status("WAITING FOR COOLDOWN").waitForExistence(timeout: 60))
         XCTAssertFalse(web.buttons["Retry"].exists, "A future provider cooldown must not offer early retry")
         let advance = web.buttons["Simulate cooldown elapsed"]
         XCTAssertTrue(advance.waitForExistence(timeout: 15))
         advance.tap() // Debug simulator fixture only: the real clock crosses the one-minute boundary in one second.
-        XCTAssertTrue(status("READY TO RESUME").waitForExistence(timeout: 15))
-        XCTAssertTrue(web.buttons["Retry"].exists, "Eligibility must reveal explicit Retry without a network update")
+        XCTAssertTrue(status("WAITING FOR RECOVERY").waitForExistence(timeout: 15))
+        XCTAssertTrue(web.buttons["Retry"].waitForExistence(timeout: 15), "The one-minute boundary must reveal Retry without a network update")
+        for _ in 0..<3 where !web.buttons["Retry"].isHittable { web.swipeUp() }
+        web.buttons["Retry"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        app.alerts.buttons["Continue"].tap()
+        XCTAssertTrue(status("RECOVERY REQUESTED").waitForExistence(timeout: 15))
+        XCTAssertTrue(status("Fixture retry transport 1").exists, "Real Retry must cross authorize and retry transport exactly once")
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Recovery eligibility (fixture; no inference or task dispatch)"
         image.lifetime = .keepAlways
@@ -130,8 +136,8 @@ final class LaunchTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(web.waitForExistence(timeout: 60))
-        XCTAssertTrue(status("READY TO RESUME").waitForExistence(timeout: 60), "Persisted recovery survives a full app restart")
-        XCTAssertTrue(web.buttons["Retry"].exists)
+        XCTAssertTrue(status("RECOVERY REQUESTED").waitForExistence(timeout: 60), "Persisted acknowledgement survives a full app restart")
+        XCTAssertFalse(web.buttons["Retry"].exists, "Do not immediately duplicate the accepted recovery request")
         XCTAssertFalse(web.buttons["Simulate cooldown elapsed"].exists, "Relaunch must not reset the saved eligibility")
         app.terminate()
     }

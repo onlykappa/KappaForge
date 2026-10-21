@@ -1,4 +1,5 @@
 name: KappaForge agent
+run-name: "${{ inputs.issue_number != '' && format('Agent task #{0} {1}', inputs.issue_number, inputs.action) || 'Scheduled agent' }}"
 permissions:
   contents: read
 # One queue per task: a shared group lets GitHub cancel a pending run when a newer task arrives.

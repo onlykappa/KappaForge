@@ -192,3 +192,20 @@ The recorded instructions were to tap **Plan task**, space planning/coding token
 Rollback: inspect current deployment to avoid overwriting another session, then restore verified Worker `22c1c5ac-7793-4350-b6c7-f1b82dc92a79` (source `ab30caa...`) using Wrangler version rollback in the same protected environment. Repeat health/auth checks. Preserve variables, secrets, DO data and migration; no state rewind. Revert focused source changes through a reviewed commit if Actions rollback is needed. Never restore direct-provider fallback or relax auth. This rollback removes planner request pin support but preserves coding task pins.
 
 Rebuild from repository/locked Node dependencies and approved server secret stores; no personal device services required. No private database, credentials or real DO/vault backups enter Git/artifacts. Standalone host backup/restore tests remain unperformed under the superseded architecture.
+
+
+## Task-start/recovery reliability follow-up — unmerged audit
+
+The bounded Phase5 acceptance above remains historical success, not proof that all later
+provider outages recover automatically. The current task #174 audit and exact resume gate
+are canonical in [RECOVERY-CADENCE-CHECKPOINT.md](RECOVERY-CADENCE-CHECKPOINT.md).
+Baseline main6bbd1de; feature branchcodex/task-start-recovery-audit. #174 reached a runner
+but its gateway reservation was refused by a stored outage cooldown (historical503),
+then no scheduled recovery scan was observed before the owner closed it. No fresh
+upstream429, quota balance or successful weather implementation can be inferred.
+Focused durable wake-up, same-task Retry, lease and truthful-progress fixes are in
+[draft PR #175](https://github.com/onlykappa/KappaForge/pull/175), source0169fd4.
+Linux CI passed375 Python/387 JavaScript tests, browser regressions and Worker build;
+native CI passed five UI tests, real Retry through fixture transport, reopening and device
+packaging. These do not establish production alarm dispatch or successful weather inference. Owner expressly prohibits merging now. No deployment, app publication or
+live continuation is claimed. Prior acceptance/weather PRs remain unmerged.

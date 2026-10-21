@@ -49,7 +49,7 @@ async function runChatAction(plan,typed,chat){
   const body={task:Number(typed.match(/\d+/)[0])};
   const response=await userAuthorizedFetch('/retry',body,typed,'user-request',message.requestId,chat.id);
   const result=await response.json();if(!response.ok)throw Error(result.error);
-  chat.messages.push({role:'assistant',text:result.message});resumeJob(body.task,chat.id);save();render();return;
+  chat.messages.push({role:'assistant',text:result.message});acceptTaskRetry(body.task,result,chat.id);save();render();return;
  }
  if(plan.source){plan.source.executionHandled=true;plan.source.offerTask=false}
  const planned=await proposeTaskAutomatically(plan.text,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id,{explicit:!!plan.explicit,approval:plan.kind==="approval"});
@@ -142,13 +142,21 @@ function taskValidation(job){
 // The chat keeps live Actions updates while one of its tasks is being validated.
 const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c=>c.id===j.chatId));
 // Card actions. Retry and guidance are confirmed and go through the owner-authorization path, like typing them.
+const taskRetryPending=new Set();
+function acceptTaskRetry(number,result,chatId){
+ let job=trackedJobs.find(j=>j.number===number);
+ if(!job){resumeJob(number,chatId);job=trackedJobs.find(j=>j.number===number)}
+ if(result.status==='blocked')throw Error(result.message||'Saved task requires review');
+ KappaProgress.recoveryReceipt(job,result);ensureTaskCard(job);persistJobs();jobPollAfter=0;
+}
 async function taskRetry(number){
- const job=trackedJobs.find(j=>j.number===number);if(!job)return;
+ const job=trackedJobs.find(j=>j.number===number);if(!job||taskRetryPending.has(number))return;
  if(!backend||!access){alert("Connect AI first.");return}
- if(!confirm("Retry task #"+number+"? KappaForge starts a fresh attempt."))return;
+ if(!confirm("Retry task #"+number+"? Request recovery of the same saved task? Provider cooldowns still apply."))return;
+ taskRetryPending.add(number);
  try{const response=await userAuthorizedFetch("/retry",{task:number},"Confirmed retry of task #"+number);const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
-  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Retry started for task #"+number+"."});resumeJob(number,job.chatId);save();render();toast("Retry started for task #"+number)}
- catch(e){alert("Retry not started: "+e.message)}
+  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Retry started for task #"+number+"."});acceptTaskRetry(number,result,job.chatId);save();render();toast("Recovery requested for task #"+number)}
+ catch(e){alert("Retry not started: "+e.message)}finally{taskRetryPending.delete(number)}
 }
 async function taskGuide(number){
  const job=trackedJobs.find(j=>j.number===number);if(!job)return;
@@ -156,7 +164,7 @@ async function taskGuide(number){
  const text=prompt("Guidance for task #"+number+" (up to 1500 characters). KappaForge uses it in its next attempt or fix.");
  if(!text||!text.trim())return;
  try{const response=await userAuthorizedFetch("/guidance",{task:number,text:text.trim().slice(0,1500)},text.trim().slice(0,1500));const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
-  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Guidance saved for task #"+number+"."});if(result.retry||result.fix)resumeJob(number,job.chatId);save();render();toast("Guidance sent to task #"+number)}
+  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Guidance saved for task #"+number+"."});if(result.retry)acceptTaskRetry(number,{status:result.recoveryStatus||result.status,nextAt:result.nextAt},job.chatId);else if(result.fix)resumeJob(number,job.chatId);save();render();toast("Guidance sent to task #"+number)}
  catch(e){alert("Guidance not sent: "+e.message)}
 }
 async function taskCopy(index){
@@ -240,6 +248,11 @@ async function checkJobResult(){
     if(["tests-passed","tests-failed"].includes(report.status))toast((report.status==="tests-passed"?"✓ Task #"+job.number+": tests passed":"✕ Task #"+job.number+": tests failed"));
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;
+   }
+   if(job.progress?.status==='queued'){
+    const runs=await taskRead('KappaForge/actions/runs?event=workflow_dispatch&per_page=30');
+    const run=runs.workflow_runs?.find(r=>r.display_title?.startsWith('Agent task #'+job.number+' ')&&Date.parse(r.created_at)>=job.progress.updatedAt-120000&&r.status!=='completed');
+    if(run){job.dispatchObservation={state:run.status,runId:run.id,at:Date.now()};changed=true;}
    }
    const prPath=job.prUrl&&!job.finished?job.prUrl.match(/github\.com\/onlykappa\/([A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/):null;
    if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);
@@ -366,7 +379,7 @@ function refreshTaskFreshness(){
  document.querySelectorAll('[data-task-freshness]').forEach(el=>{
   const job=trackedJobs.find(j=>j.number===Number(el.dataset.taskFreshness));if(!job)return;
   const updated=Number(el.dataset.updatedAt),label=updated?new Date(updated).toLocaleTimeString():'not received';
-  const reminder=!job.finished&&KappaProgress.recoveryReminderDue(job.progress);
+  const reminder=KappaProgress.retryReminder(job);
   if(el.dataset.recoveryReminder!==String(reminder))changed=true;
   el.closest('.agent-activity')?.classList.toggle('stale',!!job.pollError||reminder||KappaProgress.stale(job));
   el.textContent=job.pollError?'Updates unavailable. Reconnecting automatically.':KappaProgress.stale(job)?'No recent execution update. Last update '+label+'.':'Last update '+label;

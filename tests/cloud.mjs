@@ -62,13 +62,14 @@ test('joining a duplicate task binds cancellation to the actual running issue',a
 test('an expired-task retry renews exact task scope before dispatch and binds cancellation',async t=>{
  const {env,records}=environment(),writes=[];
  const record={id:'old',conversationId:'old',requestId:'old',repo:'onlykappa/KappaForge',mode:'develop',expiresAt:1,allowMerge:true};
- const original='Repository: onlykappa/KappaForge\nMode: develop\n\nAdd a weather helper.\nApproved from KappaForge Chat.\n<!-- kappa-authorization:'+JSON.stringify(record)+' -->';
+ let original='Repository: onlykappa/KappaForge\nMode: develop\n\nAdd a weather helper.\nApproved from KappaForge Chat.\n<!-- kappa-authorization:'+JSON.stringify(record)+' -->';
  mockFetch(t,async(url,init={})=>{
   const u=String(url);
   if(u.endsWith('/issues/777')){
-   if(init.method==='PATCH'){writes.push(JSON.parse(init.body));return Response.json({})}
+   if(init.method==='PATCH'){writes.push(JSON.parse(init.body));original=JSON.parse(init.body).body;return Response.json({})}
    return Response.json({number:777,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:original});
   }
+  if(u.includes('/issues/777/comments?'))return Response.json([]);
   if(u.includes('/pulls?'))return Response.json([]);
   if(u.endsWith('/dispatches')){writes.push(JSON.parse(init.body));return new Response(null,{status:204})}
   throw Error(u);

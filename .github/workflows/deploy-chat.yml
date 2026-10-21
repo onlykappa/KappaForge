@@ -93,8 +93,8 @@ jobs:
         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         OPERATION: ${{ inputs.operation }}
       run: |
-        if [ "$OPERATION" = "repair-chat" ]; then
-          node chat-backend/tools/verify-settings.mjs snapshot "$RUNNER_TEMP/kappa-worker-bindings.json" repair-chat
+        if [ "$OPERATION" = "repair-chat" ] || [ "$OPERATION" = "activate-providers" ]; then
+          node chat-backend/tools/verify-settings.mjs snapshot "$RUNNER_TEMP/kappa-worker-bindings.json" "$OPERATION"
         else
           node chat-backend/tools/verify-settings.mjs snapshot "$RUNNER_TEMP/kappa-worker-bindings.json"
         fi
@@ -113,6 +113,13 @@ jobs:
         node tools/verify-settings.mjs assert-unchanged "$RUNNER_TEMP/kappa-worker-bindings.json"
         if [ "$OPERATION" = "repair-chat" ]; then
           npm run deploy -- --var KAPPA_CHAT_PROVIDERS:groq 2>&1 | tee deploy.log
+        elif [ "$OPERATION" = "activate-providers" ]; then
+          provider_args=()
+          while IFS= read -r permission; do provider_args+=(--var "$permission"); done < <(
+            node --input-type=module -e 'import{readFileSync}from"node:fs";const s=JSON.parse(readFileSync(process.argv[1],"utf8"));for(const [name,value]of Object.entries(s.variables))console.log(name+":"+value)' "$RUNNER_TEMP/kappa-worker-bindings.json"
+          )
+          test "${#provider_args[@]}" = "8" || { echo "::error::Expected exactly four reviewed provider variables."; exit 1; }
+          npm run deploy -- "${provider_args[@]}" 2>&1 | tee deploy.log
         else
           npm run deploy 2>&1 | tee deploy.log
         fi
@@ -227,13 +234,14 @@ jobs:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect settings, deploy, or restore only a missing/blank Groq chat permission
+        description: Inspect, deploy, repair chat, or activate configured reviewed free providers
         type: choice
         default: deploy
         options:
         - deploy
         - inspect
         - repair-chat
+        - activate-providers
 defaults:
   run:
     shell: bash

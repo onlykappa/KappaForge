@@ -26,6 +26,26 @@ jobs:
       # A warning, not a failure: agent-written PRs cannot run the generator themselves.
       run: python3 scripts/dependency-map.py --check || echo "::warning title=dependency map::dependency_map.json is stale; run python3 scripts/dependency-map.py"
       shell: bash
+  worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: chat-backend/package-lock.json
+    - run: npm ci
+      working-directory: chat-backend
+    - name: Build Worker without deployment or production credentials
+      run: npm run build:check
+      working-directory: chat-backend
+    - name: Verify persistent automatic recovery alarms in isolated workerd
+      run: node chat-backend/tools/recovery-runtime-check.mjs
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

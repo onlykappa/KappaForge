@@ -11,6 +11,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.request
 from contextvars import ContextVar
 
 CURRENT = ContextVar('recovery_journal', default=None)
@@ -26,6 +27,30 @@ MAX_COMMENT_BYTES = 60000
 ARCHIVE_BYTES = 45000
 BOT = 'github-actions[bot]'
 SHA = re.compile(r'^[a-f0-9]{40}$')
+DISPATCH_ACK_SECONDS = 120
+
+
+def notify_wake(task):
+    """Register a task-bound wake-up, never inference. Cron remains a fallback.
+
+    The backend rereads trusted GitHub state; no prompts or arbitrary deadlines
+    cross this boundary. A registration failure must not discard the checkpoint.
+    """
+    endpoint = os.getenv('KAPPA_ROUTER_URL', '').strip().rstrip('/')
+    token = os.getenv('KAPPA_ROUTER_TOKEN', '')
+    if not endpoint or not token:
+        return
+    if endpoint != 'https://kappaforge-chat.ballaking1738.workers.dev':
+        print('Recovery wake-up skipped: unapproved backend origin', flush=True)
+        return
+    try:
+        request = urllib.request.Request(endpoint + '/router/recovery', data=json.dumps({'task': task}).encode(),
+                                         headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status != 202:
+                raise ValueError('Unexpected wake-up acknowledgement')
+    except (urllib.error.URLError, ValueError, TimeoutError):
+        print('Recovery wake-up registration failed; saved checkpoint and scheduled fallback retained', flush=True)
 
 
 def clean(value, size=700):
@@ -105,11 +130,16 @@ class Journal:
         self.issue, self.read, self.write, self.clock = issue, read, write, clock
         self.ledger, self.ledger_rows = {}, []
         self.comment = None
+        self.renewed_scope = False
+        accepted_digests = {self.scope.digest}
+        if self.scope.resume_from:
+            accepted_digests.add(self.scope.resume_from['digest'])
         self.state = dict(version=1, task=self.scope.number, repo=self.scope.repo, digest=self.scope.digest,
                           authorization=self.scope.identity, candidate='', base='', pr='', status='running',
                           run=os.getenv('GITHUB_RUN_ID', ''), continuations=0, nextAt=0, updatedAt=clock(),
                           requirements=[], events=[], rejected={}, files=[], expiresAt=int(self.scope.expires * 1000))
         all_comments = comments(read, self.scope.number)
+        conflicting_checkpoint = False
         for comment in all_comments:
             if comment.get('user', {}).get('login') != BOT or not (comment.get('body') or '').startswith('### KappaForge recovery checkpoint\n'):
                 continue
@@ -118,16 +148,25 @@ class Journal:
                 continue
             try:
                 state = json.loads(match[1])
+                same_scope = state.get('digest') == self.scope.digest and state.get('authorization') == self.scope.identity
+                renewed_scope = self.scope.resume_from == {'digest': state.get('digest'), 'authorization': state.get('authorization')}
                 valid = (state['version'] == 1 and state['task'] == self.scope.number and state['repo'] == self.scope.repo
-                         and state['digest'] == self.scope.digest and state['authorization'] == self.scope.identity
+                         and (same_scope or renewed_scope)
                          and isinstance(state['events'], list) and len(state['events']) <= MAX_EVENTS
                          and isinstance(state['requirements'], list) and len(state['requirements']) <= 100
                          and isinstance(state['rejected'], dict) and len(state['rejected']) <= MAX_EVENTS
                          and isinstance(state['continuations'], int) and 0 <= state['continuations'] <= MAX_CONTINUATIONS)
                 if valid:
+                    if renewed_scope:
+                        state = dict(state, digest=self.scope.digest, authorization=self.scope.identity, expiresAt=int(self.scope.expires*1000))
+                        self.renewed_scope = True
                     self.state, self.comment = state, comment['id']
+                elif state.get('task') == self.scope.number and state.get('repo') == self.scope.repo:
+                    conflicting_checkpoint = True
             except (ValueError, KeyError, TypeError):
                 continue
+        if conflicting_checkpoint and not self.comment:
+            raise PermissionError('Saved checkpoint scope changed; explicit owner reconciliation is required')
         if 'budgets' not in self.state:
             self.state['budgets'] = dict(edits=sum(self.state['rejected'].values()),
                                          modelCalls=sum(bool(e.get('model')) for e in self.state['events']) + self.state.get('archivedEvents', 0))
@@ -138,9 +177,12 @@ class Journal:
                             and (row.get('body') or '').startswith('### KappaForge requirement catalog\n')), None)
             match = re.search(r'<!-- KAPPA_REQUIREMENTS_V1 (.*?) -->', catalog['body']) if catalog else None
             blob = json.loads(match[1]) if match else {}
-            if (blob.get('task'), blob.get('repo'), blob.get('digest')) != (self.scope.number, self.scope.repo, self.scope.digest):
+            if (blob.get('task'), blob.get('repo')) != (self.scope.number, self.scope.repo) or blob.get('digest') not in accepted_digests:
                 raise ValueError('Referenced requirement catalog is unavailable; saved checkpoint retained')
             self.state['requirements'] = blob['requirements']
+            if self.renewed_scope:
+                self.state.pop('requirementsRef', None)
+                self.state.pop('requirementsHash', None)
         # Legacy reviews mixed diagnostic hypotheses into the owner requirement ledger.
         # Keep that catalog for audit; rebuild only from the unchanged owner task.
         if self.state.get('requirementOrigin') != 'owner-v2':
@@ -153,7 +195,7 @@ class Journal:
             match = re.search(r'<!-- KAPPA_FAILURES_V1 (.*?) -->', comment.get('body') or '')
             try:
                 part = json.loads(match[1]) if match else {}
-                if part.get('digest') == self.scope.digest and part.get('repo') == self.scope.repo and part.get('task') == self.scope.number:
+                if part.get('digest') in accepted_digests and part.get('repo') == self.scope.repo and part.get('task') == self.scope.number:
                     self.ledger.update(part['records'])
                     self.ledger_rows.append((comment['id'], part))
             except (ValueError, KeyError, TypeError):
@@ -199,6 +241,11 @@ class Journal:
         from engine.reliability import RecoveryCoordinator
         draft = copy.deepcopy(self.state)
         try:
+            if self.renewed_scope:
+                for row, part in self.ledger_rows:
+                    part['digest'] = self.scope.digest
+                    self.write(f'repos/{ROOT}/issues/comments/{row}', {'body':'### KappaForge failure ledger\n\n<!-- KAPPA_FAILURES_V1 '+self.wire(part)+' -->'}, 'PATCH')
+                self.renewed_scope = False
             execution = RecoveryCoordinator.state(draft['status'], draft['events'][-1].get('error', '') if draft['events'] else '')
             if execution not in RecoveryCoordinator.STATES:
                 raise ValueError('Unknown recovery state: ' + str(draft['status']))
@@ -358,6 +405,7 @@ class Journal:
         self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
                    next_action='Resume saved work on the next recovery scan (scheduled every 5 minutes; GitHub may delay it)')
         self.publish('waiting', 'Progress saved. Waiting for automatic continuation on the recovery queue.')
+        notify_wake(self.scope.number)
         return True
 
     def publish(self, status, message):
@@ -370,7 +418,7 @@ class Journal:
                         attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
                         steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
                                     startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
-                        recovery=dict(executionState=execution, scanIntervalSeconds=RECOVERY_SCAN_SECONDS, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
+                        recovery=dict(executionState='dispatch_requested' if self.state['status']=='dispatching' else execution, lastTransitionAt=at, scanIntervalSeconds=RECOVERY_SCAN_SECONDS, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
                                       continuations=self.state['continuations'], expiresAt=int(self.scope.expires * 1000), last=last))
         wire = json.dumps(snapshot, ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
         self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',
@@ -416,18 +464,34 @@ class Journal:
                 self.event('Candidate branch moved since the checkpoint; concurrent work is preserved', outcome='blocked', strategy='stop')
                 self.publish('blocked', 'Candidate changed. Review newer work before resuming.')
                 return False
+        if not action and self.comment and self.state['status'] in ('waiting', 'dispatching', 'running', 'recovering'):
+            # Old/duplicate blank dispatches must not bypass the continuation
+            # token, cooldown or recovery budget. Explicit Retry joins the queue.
+            notify_wake(self.scope.number)
+            return False
         self.state.update(status='running', run=os.getenv('GITHUB_RUN_ID', ''), nextAt=0)
         self._resuming = True
         try:
             self.persist()
         finally:
             self._resuming = False
+        self.publish('running', 'Runner acknowledged the saved task. Execution started.')
         return True
 
     def queue(self):
         """Atomic ref reservation plus durable dispatch state prevents competing scanners."""
         if self.state['status'] != 'waiting' or self.clock() < self.state['nextAt']:
             return False
+        # An acknowledgement can be delayed while the previous runner is still
+        # publishing its checkpoint. Do not spend a continuation alongside it.
+        if self.state.get('run'):
+            meta = self.read(f"repos/{ROOT}/actions/runs/{self.state['run']}")
+            if meta.get('status') != 'completed':
+                return False
+            if meta.get('conclusion') == 'cancelled':
+                self.event('Previous workflow was cancelled; automatic resumption stopped', outcome='blocked', strategy='stop')
+                self.publish('blocked', 'Workflow cancelled. Review before an explicit Retry.')
+                return False
         # Every mutation is also reauthorized by the normal request boundary.
         if self.clock() > self.state.get('waitingSince', self.clock()) + self.project.get('maxWaitSeconds', 21600):
             self.event('Maximum provider waiting duration elapsed', outcome='paused', strategy='stop')
@@ -444,7 +508,7 @@ class Journal:
         except urllib.error.HTTPError as error:
             if error.code != 422:
                 raise
-            if self.clock() - self.state['updatedAt'] < 1200:
+            if self.clock() - self.state['updatedAt'] < DISPATCH_ACK_SECONDS:
                 return False
             # Recover a crash between reserving the ref and persisting dispatch state.
             self.read(f'repos/{ROOT}/git/ref/heads/{ref.removeprefix("refs/heads/")}')
@@ -460,6 +524,7 @@ class Journal:
             return False
         self.state['dispatchAttempts'] = self.state.get('dispatchAttempts', 0) + 1
         self.persist()  # Count even an ambiguous/lost acknowledgement.
+        self.publish('queued', 'Dispatch requested. Waiting for GitHub Actions and runner acknowledgement.')
         action = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"
         self.write(f'repos/{ROOT}/actions/workflows/agent.yml/dispatches',
                    {'ref': 'main', 'inputs': {'issue_number': str(self.scope.number), 'action': action}}, 'POST')
@@ -544,18 +609,21 @@ def resume_checks(journal, pr, token):
     return 'testing'
 
 
-def scan(read, write, clock=time.time):
+def scan(read, write, clock=time.time, task=None):
     """Called by a serialized trusted schedule; it never invokes a model or candidate."""
     from engine.intent_guard import ACTIVE, activate
     results = []
     issues = []
-    for page in range(1, 21):
+    for page in range(1, 21) if task is None else []:
         batch = read(f'repos/{ROOT}/issues?state=open&labels=kappa-task&per_page=100&page={page}')
         issues.extend(batch)
         if len(batch) < 100:
             break
     else:
-        raise ValueError('Recovery issue queue exceeds the supported inspection limit')
+        if task is not None:
+            issues = [read(f'repos/{ROOT}/issues/{task}')]
+        elif len(issues) >= 2000:
+            raise ValueError('Recovery issue queue exceeds the supported inspection limit')
     for issue in issues:
         if issue.get('pull_request') or not re.search(r'^Mode:\s*develop\s*$', issue.get('body') or '', re.M):
             continue
@@ -564,16 +632,31 @@ def scan(read, write, clock=time.time):
             activate(issue)
             journal = Journal(issue, read, write, clock)
             if not journal.comment:
-                continue
+                if task is None:
+                    continue
+                runs = read(f'repos/{ROOT}/actions/workflows/agent.yml/runs?event=workflow_dispatch&per_page=100')['workflow_runs']
+                if any(r.get('display_title', '').startswith(f'Agent task #{task} ') and r.get('status') != 'completed' for r in runs):
+                    results.append((task, 'GitHub Actions queued or active'))
+                    continue
+                # Targeted watchdog only: recover a lost initial dispatch using
+                # the same task and the normal atomic continuation claim.
+                journal.state.update(status='waiting', run='', nextAt=clock(), waitingSince=clock())
+                journal.persist()
             if journal.state['status'] in ('running', 'recovering'):
                 journal.recover_interrupted()
             # If dispatch acknowledgement was lost, the same token is safe to send
             # again. begin() consumes it once under the per-task workflow queue.
-            if journal.state['status'] == 'dispatching' and clock() - journal.state['updatedAt'] > 1200:
-                journal.dispatch()
-                results.append((issue['number'], 'redispatched'))
+            if journal.state['status'] == 'dispatching' and clock() - journal.state['updatedAt'] > DISPATCH_ACK_SECONDS:
+                runs = read(f'repos/{ROOT}/actions/workflows/agent.yml/runs?event=workflow_dispatch&per_page=100')['workflow_runs']
+                if any(r.get('display_title', '').startswith(f"Agent task #{issue['number']} resume:{journal.state['continuations']}:") and r.get('status') != 'completed' for r in runs):
+                    results.append((issue['number'], 'GitHub Actions queued or active'))
+                else:
+                    journal.dispatch()
+                    results.append((issue['number'], 'redispatched'))
             elif journal.queue():
                 results.append((issue['number'], 'queued'))
+            else:
+                results.append((issue['number'], journal.state['status']))
         except PermissionError as error:
             results.append((issue['number'], clean(error, 180)))
             if journal:
@@ -595,7 +678,10 @@ def main():
     token = os.environ['GITHUB_TOKEN']
     read = lambda path: github(path, token)
     write = lambda path, payload, method: request('https://api.github.com/' + path, payload, token, method)
-    print('Recovery queue:', scan(read, write))
+    task = os.getenv('KAPPA_RECOVERY_TASK', '')
+    if task and (not task.isdecimal() or int(task) < 1):
+        raise ValueError('Invalid recovery task')
+    print('Recovery queue:', scan(read, write, task=int(task) if task else None))
 
 
 if __name__ == '__main__':

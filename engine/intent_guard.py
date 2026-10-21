@@ -55,6 +55,7 @@ class ExecutionScope:
         if self.mode in WRITE_MODES:
             from engine.projects import registered
             registered(self.repo)
+        self.resume_from = None
         matches = MARKER.findall(self.body)
         if "Approved from KappaForge Chat." in self.body:
             if len(matches) != 1:
@@ -64,6 +65,9 @@ class ExecutionScope:
                 raise PermissionError("Authorization does not match the task scope")
             self.expires = record.get("expiresAt", 0) / 1000
             self.identity = record.get("id")
+            previous = record.get('resumeFrom')
+            if isinstance(previous, dict) and isinstance(previous.get('authorization'), str) and re.fullmatch(r'[a-f0-9]{64}', previous.get('digest', '')):
+                self.resume_from = previous
         else:
             # Owner-created GitHub tasks remain supported, bounded like chat tasks.
             self.expires = timestamp(issue.get("created_at")) + (7 if self.mode in LONG_RUNNING_MODES else 1) * 86400

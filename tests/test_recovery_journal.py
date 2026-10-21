@@ -32,6 +32,8 @@ class GitHub:
         intent_guard.activate(self.issue)
 
     def read(self, path):
+        if path.endswith('/issues/130'):
+            return copy.deepcopy(self.issue)
         if '/issues/133/comments?' in path:
             return []
         if '/comments?' in path:
@@ -44,6 +46,8 @@ class GitHub:
             if name not in self.refs:
                 raise urllib.error.HTTPError(path, 404, 'missing', {}, None)
             return {'object': {'sha': self.refs[name]}}
+        if '/actions/workflows/agent.yml/runs?' in path:
+            return {'workflow_runs': []}
         if '/actions/runs/' in path and '/jobs?' not in path:
             return dict(self.run)
         if '/pulls?' in path:
@@ -124,6 +128,91 @@ class RecoveryJournalTests(unittest.TestCase):
         intent_guard.ACTIVE.set(None)
         developer.Progress.latest = None
         self.env.stop()
+
+    def test_targeted_automatic_scan_queues_existing_checkpoint_once(self):
+        self.journal.checkpoint('b'*40, files=['value.py'])
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 61
+        first = recovery.scan(self.world.read, self.world.write, lambda: self.world.now, task=130)
+        second = recovery.scan(self.world.read, self.world.write, lambda: self.world.now, task=130)
+        self.assertIn((130, 'queued'), first)
+        self.assertEqual(len([c for c in self.world.calls if c[0].endswith('/dispatches')]), 1)
+        intent_guard.activate(self.world.issue)
+        self.assertTrue(self.world.journal().begin('resume:1:'+self.journal.scope.digest[:12]))
+        self.assertFalse(self.world.journal().begin('resume:1:'+self.journal.scope.digest[:12]))
+        self.assertEqual(self.world.journal().state['candidate'], 'b'*40)
+
+    def test_active_previous_runner_does_not_consume_continuation(self):
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 61
+        self.world.run['status'] = 'in_progress'
+        self.assertFalse(self.world.journal().queue())
+        self.assertEqual(self.world.journal().state['continuations'], 0)
+
+    def test_wake_registration_failure_preserves_checkpoint_and_never_sends_inference(self):
+        with patch.dict(os.environ, {'KAPPA_ROUTER_URL':'https://kappaforge-chat.ballaking1738.workers.dev', 'KAPPA_ROUTER_TOKEN':'fixture-only'}), patch('urllib.request.urlopen', side_effect=TimeoutError) as transport:
+            self.assertTrue(self.journal.defer(RuntimeError('offline')))
+            self.assertEqual(self.world.journal().state['status'], 'waiting')
+            request = transport.call_args.args[0]
+            self.assertTrue(request.full_url.endswith('/router/recovery'))
+            self.assertEqual(json.loads(request.data), {'task':130})
+
+    def test_fresh_explicit_authorization_retains_candidate_budgets_and_failure_history(self):
+        self.journal.checkpoint('b'*40, files=['value.py'])
+        self.journal.event('Edit matched 0 times', model='groq:model', signature='rejected')
+        previous = self.journal.scope.digest
+        old_identity = self.journal.scope.identity
+        self.world.issue['body'] += '\nApproved from KappaForge Chat.\n<!-- kappa-authorization:' + json.dumps(dict(id='fresh-owner', conversationId='chat', requestId='fresh-owner', repo=recovery.ROOT, mode='develop', expiresAt=(self.world.now+86400)*1000, resumeFrom={'digest':previous,'authorization':old_identity})) + ' -->'
+        intent_guard.activate(self.world.issue)
+        renewed = self.world.journal()
+        self.assertEqual(renewed.state['candidate'], 'b'*40)
+        self.assertEqual(renewed.state['budgets'], self.journal.state['budgets'])
+        self.assertTrue(renewed.ledger)
+        renewed.begin("fix")
+        self.assertEqual(self.world.journal().state['authorization'], 'fresh-owner')
+        self.assertTrue(self.world.journal().ledger)
+
+    def test_targeted_watchdog_recovers_lost_initial_dispatch_to_one_runner(self):
+        self.world.rows = []
+        self.world.run['status'] = 'in_progress'  # the scanner itself is active, not an agent
+        results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now, task=130)
+        self.assertIn((130, 'queued'), results)
+        intent_guard.activate(self.world.issue)
+        journal = self.world.journal()
+        self.assertTrue(journal.begin('resume:1:'+journal.scope.digest[:12]))
+        self.assertFalse(self.world.journal().begin('resume:1:'+journal.scope.digest[:12]))
+
+    def test_pending_github_run_prevents_lost_ack_redelivery(self):
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 61
+        self.journal.queue()
+        self.world.now += 121
+        original = self.world.read
+        def read(path):
+            if '/actions/workflows/agent.yml/runs?' in path:
+                return {'workflow_runs':[{'display_title':f'Agent task #130 resume:1:{self.journal.scope.digest[:12]}','status':'queued'}]}
+            return original(path)
+        recovery.scan(read, self.world.write, lambda:self.world.now, task=130)
+        self.assertEqual(len([c for c in self.world.calls if c[0].endswith('/dispatches')]), 1)
+        self.assertEqual(self.world.journal().state['dispatchAttempts'], 1)
+
+    def test_cancelled_waiting_run_and_modified_brief_are_not_restarted(self):
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 61
+        self.world.run['conclusion'] = 'cancelled'
+        self.assertFalse(self.world.journal().queue())
+        self.assertEqual(self.world.journal().state['status'], 'blocked')
+        self.world.issue['body'] += '\nUnapproved expanded scope'
+        intent_guard.activate(self.world.issue)
+        with self.assertRaisesRegex(PermissionError, 'scope changed'):
+            self.world.journal()
+
+    def test_crash_after_atomic_ref_is_reconciled_after_ack_window(self):
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 121
+        self.world.refs[f'kappa/recovery-130-{self.journal.scope.digest[:12]}-1'] = 'a'*40
+        self.assertTrue(self.world.journal().queue())
+        self.assertEqual(len([c for c in self.world.calls if c[0].endswith('/dispatches')]), 1)
 
     def test_classification_selects_distinct_recovery_strategies(self):
         cases = [(json.JSONDecodeError('Expecting comma', '{bad:1}', 1), 'malformed_json'),

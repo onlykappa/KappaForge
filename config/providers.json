@@ -41,6 +41,7 @@
       }
     },
     "groq": {
+      "freeRequestTokenBudget": 8000,
       "name": "Groq",
       "kind": "openai",
       "base": "https://api.groq.com/openai/v1",
@@ -107,13 +108,13 @@
       "signup": "https://openrouter.ai/settings/keys",
       "freeOnly": true,
       "prefer": [
+        "deepseek",
         "nemotron-3-ultra",
         "nemotron-3-super",
         "qwen3.8",
         "laguna-s",
         "gemma-4-31b",
         "qwen3-coder",
-        "deepseek",
         "gpt-oss"
       ],
       "context": 131072,
@@ -165,9 +166,14 @@
       "base": "https://integrate.api.nvidia.com/v1",
       "key": "NVIDIA_API_KEY",
       "signup": "https://build.nvidia.com",
+      "freeModels": [
+        "deepseek-ai/deepseek-v4.1-flash",
+        "nvidia/nemotron-3-ultra-550b-a55b"
+      ],
       "prefer": [
-        "nemotron-3-ultra",
+        "deepseek-v4.1-flash",
         "deepseek-v4",
+        "nemotron-3-ultra",
         "nemotron-3-super",
         "qwen3-coder",
         "gemma-4-31b",
@@ -382,6 +388,7 @@
   },
   "routing": {
     "version": 1,
+    "preferredModelFamily": "deepseek",
     "defaults": {
       "maxConcurrent": 1,
       "leaseMs": 120000,

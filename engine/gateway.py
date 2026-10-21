@@ -56,7 +56,13 @@ def error(status, data=None, headers=None, pinned=False):
                    if key == 'upstreamStatus' and type(value) is int and 100 <= value <= 599
                    or key == 'source' and value in ('upstream', 'coordination', 'normalization', 'transport', 'gateway_guard')
                    or key == 'category' and value in ('rate_limit', 'authentication', 'provider_outage', 'provider_rejection',
-                       'context_limit', 'concurrency', 'cooldown', 'malformed_json', 'malformed_response', 'empty_response', 'timeout', 'network_failure')}
+                       'context_limit', 'concurrency', 'cooldown', 'billing_blocked', 'provider_denied', 'model_unavailable', 'malformed_json', 'malformed_response', 'empty_response', 'timeout', 'network_failure')}
+    for key in ('provider', 'model'):
+        value = failure.get(key)
+        if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,180}', value):
+            details[key] = value
+    if type(failure.get('attempted')) is bool:
+        details['attempted'] = failure['attempted']
     label = labels.get(code, 'unclassified gateway failure')
     if code in ('free_capacity_cooldown', 'free_route_unavailable'):
         source, category, upstream = details.get('source'), details.get('category', 'unreported'), details.get('upstreamStatus')
@@ -70,7 +76,17 @@ def error(status, data=None, headers=None, pinned=False):
             label = f'{source} failure ({category})'
     exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
                              + label + '; no direct provider fallback was attempted',
-                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422))
+                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422) or details.get('category') in ('authentication', 'billing_blocked', 'provider_denied', 'model_unavailable'))
+    attempts = []
+    for row in data.get('attempts', [])[:16] if isinstance(data.get('attempts'), list) else []:
+        if not isinstance(row, dict):
+            continue
+        safe = {key: value for key, value in row.items() if
+                key in ('provider', 'model', 'source', 'category') and isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,180}', value)
+                or key == 'attempted' and type(value) is bool
+                or key in ('status', 'upstreamStatus') and type(value) is int and 0 <= value <= 599}
+        attempts.append(safe)
+    exc.attempts = attempts
     exc.status, exc.code, exc.details = status, code, details
     return exc
 

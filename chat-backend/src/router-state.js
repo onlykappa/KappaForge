@@ -7,7 +7,9 @@ const blank=()=>({version:1,pools:{},routes:{},reservations:{},outcomes:{},usage
 const validId=value=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(value);
 const validModel=value=>typeof value==="string"&&/^[A-Za-z0-9@._:/-]{1,180}$/.test(value);
 const clean=(state,now)=>{
- for(const [id,row] of Object.entries(state.reservations))if(!row||row.expiresAt<=now)delete state.reservations[id];
+ state.expiredLeases ||= {};
+ for(const [id,row] of Object.entries(state.reservations))if(!row||row.expiresAt<=now){if(row)state.expiredLeases[id]=row;delete state.reservations[id];}
+ for(const [id,row] of Object.entries(state.expiredLeases))if(row.expiresAt+RETENTION_MS<=now)delete state.expiredLeases[id];
  for(const [id,row] of Object.entries(state.outcomes))if(!row||row.at+RETENTION_MS<=now)delete state.outcomes[id];
  for(const [id,row] of Object.entries(state.requests))if(!row||row.at+RETENTION_MS<=now)delete state.requests[id];
 };
@@ -39,6 +41,7 @@ export async function routingStore(state,request){
    return Response.json({error:"Invalid reservation"},{status:400});
   const pool=accountPool+":"+quotaPool,key=routeKey(provider,model);
   const result=await transact(storage,async data=>{
+   if(data.outcomes[requestId]||data.expiredLeases[requestId])return {allowed:false,reason:"request_already_used"};
    const prior=data.reservations[requestId];
    if(prior)return prior.provider===provider&&prior.model===model?{allowed:true,duplicate:true,expiresAt:prior.expiresAt}:{allowed:false,reason:"idempotency_conflict"};
    const cooldown=data.pools[pool],route=data.routes[key],now=Date.now();
@@ -46,7 +49,7 @@ export async function routingStore(state,request){
    if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
    if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
-   const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,expiresAt};
+   const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,startedAt:now,expiresAt};
    return {allowed:true,expiresAt};
   });
   return Response.json(result,{status:result.allowed?200:429});
@@ -74,10 +77,12 @@ export async function routingStore(state,request){
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
    if(data.outcomes[requestId])return {stored:true,duplicate:true};
-   const reservation=data.reservations[requestId];
+   const reservation=data.reservations[requestId]||data.expiredLeases[requestId];
+   if(!reservation)return {stored:false,reason:"reservation_missing"};
    if(reservation&&(reservation.provider!==provider||reservation.model!==model))return {stored:false,reason:"reservation_mismatch"};
    const now=Date.now(),pool=reservation?reservation.accountPool+":"+reservation.quotaPool:null;
    delete data.reservations[requestId];
+   delete data.expiredLeases[requestId];
    const u=usage&&typeof usage==="object"?usage:{};
    const current=data.usage[pool]||{reportedInputTokens:0,reportedOutputTokens:0,reportedTotalTokens:0,reportedEvents:0,remaining:null,remainingSource:"unknown"};
    const numeric=value=>Number.isSafeInteger(value)&&value>=0?value:null;
@@ -89,7 +94,12 @@ export async function routingStore(state,request){
    }
    current.estimatedRequests=(current.estimatedRequests||0)+1;current.updatedAt=now;data.usage[pool]=current;
    const route=routeKey(provider,model),failure=status===0||status>=400&&status!==499;
-   if(!failure){delete data.routes[route];if(pool)delete data.pools[pool];}
+   // Cancellation releases a lease, but is not evidence of restored health.
+   // An older success cannot erase a newer authentication/quota/outage failure.
+   if(!failure&&status!==499){
+    if(!data.routes[route]||data.routes[route].updatedAt<=(reservation.startedAt||0))delete data.routes[route];
+    if(pool&&(!data.pools[pool]||data.pools[pool].updatedAt<=(reservation.startedAt||0)))delete data.pools[pool];
+   }
    else if(status!==499){
     const code=status,blocked=code===401||code===402;
     const scope=code===401||code===402?"pool":code===403||code===404?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
