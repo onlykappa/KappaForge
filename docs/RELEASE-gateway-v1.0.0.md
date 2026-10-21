@@ -1,6 +1,6 @@
-# Gateway and Actions 1.0.0 — acceptance pending
+# Gateway and Actions 1.0.0
 
-This backend/Actions component release is separate from the iPhone version. Keep its GitHub release draft until the app-started acceptance gate in the Phase 5 checkpoint is observed. When published, use `make_latest=false`; preserve the latest IPA release.
+This backend/Actions component release is separate from the iPhone version. App-started acceptance and owner-observed persistence after a full app restart passed. Publish with `make_latest=false`; preserve the latest IPA release. No new IPA is required.
 
 Chat and cloud coding share the provider registry, free-model policy, durable quota reservations, cooldowns and normalized gateway errors. Authorized execution stays in Actions, uses a separate runner credential, and cannot bypass the gateway with provider keys. Existing task authorization, private-code permissions, cancellation, expiry and recovery remain enforced.
 
@@ -8,6 +8,10 @@ An exact current-user `Inference route: groq:openai/gpt-oss-120b` line selects G
 
 Review no longer spends another inference call on source already supplied completely. Self-review repair can correct its own new bounded document while retaining denial for pre-existing files. Deployment compares opaque binding fingerprints before/after upload; snapshots/logs contain no secret values.
 
-Production Groq inference passed. The release smoke produced its exact authorized candidate but stopped during self-review and required independent source review. This does not prove autonomous recovery or app-started acceptance. See the [Phase 5 checkpoint](integration/OMNIROUTE-PHASE5-CHECKPOINT.md) for exact evidence and limitations.
+App-started [task #163](https://github.com/onlykappa/KappaForge/issues/163) completed the real app → Actions → authenticated gateway → Groq → source review → exact-candidate sandbox → draft PR path. [Execution 39532215956](https://github.com/onlykappa/KappaForge/actions/runs/39532215956) made exactly two Groq GPT-OSS 120B HTTP 200 calls with fallback disabled, reporting 8,617 tokens. [Sandbox 39532383801](https://github.com/onlykappa/KappaForge/actions/runs/39532383801) and inference-free [final verification 39532586863](https://github.com/onlykappa/KappaForge/actions/runs/39532586863) passed at candidate `204f688b7ba0568005e82e81f5341e161f4b1f0f`. The owner confirmed task/result persistence after fully closing and restarting the app. [Draft task PR #164](https://github.com/onlykappa/KappaForge/pull/164) remains unmerged, along with the earlier acceptance drafts.
+
+The earlier executor-started smoke #157 stopped during self-review and required independent source review; that historical failure remains recorded. Actual app #163 passed without manual review override or content repair. The final verifier only checked the saved candidate and published readiness; it did not call inference. Scheduler and GitHub availability can delay progress updates. See the [Phase 5 checkpoint](integration/OMNIROUTE-PHASE5-CHECKPOINT.md) for complete evidence, rollback and limitations.
+
+The original app permission error was a blank Worker chat allowlist, with both credentials present. The owner populated the Production list. Read-only inspection and runtime guard checks passed; an attempted narrow repair correctly refused to replace the populated owner settings. Wrangler preserves dashboard variables. No keys, plans, quota limits, provider purchases or paid fallback were changed. Account tier is owner-confirmed; remaining provider allowance and account-wide billing-console settings are not independently established. A configured key or provider name alone does not enable an unreviewed paid route.
 
 OmniRoute's standalone Next.js app, desktop shell, SQLite driver, local credentials and background services remain separate. Unperformed Linux hosting tests remain unverified. No additional hosting provider is required.
