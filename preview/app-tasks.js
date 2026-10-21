@@ -142,6 +142,7 @@ function taskValidation(job){
 // The chat keeps live Actions updates while one of its tasks is being validated.
 const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c=>c.id===j.chatId));
 // Card actions. Retry and guidance are confirmed and go through the owner-authorization path, like typing them.
+const taskRetryPending=new Set();
 function acceptTaskRetry(number,result,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){resumeJob(number,chatId);job=trackedJobs.find(j=>j.number===number)}
@@ -149,13 +150,13 @@ function acceptTaskRetry(number,result,chatId){
  KappaProgress.recoveryReceipt(job,result);ensureTaskCard(job);persistJobs();jobPollAfter=0;
 }
 async function taskRetry(number){
- const job=trackedJobs.find(j=>j.number===number);if(!job||job.retryPending)return;
+ const job=trackedJobs.find(j=>j.number===number);if(!job||taskRetryPending.has(number))return;
  if(!backend||!access){alert("Connect AI first.");return}
  if(!confirm("Retry task #"+number+"? Request recovery of the same saved task? Provider cooldowns still apply."))return;
- job.retryPending=true;
+ taskRetryPending.add(number);
  try{const response=await userAuthorizedFetch("/retry",{task:number},"Confirmed retry of task #"+number);const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
   const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Retry started for task #"+number+"."});acceptTaskRetry(number,result,job.chatId);save();render();toast("Recovery requested for task #"+number)}
- catch(e){alert("Retry not started: "+e.message)}finally{job.retryPending=false}
+ catch(e){alert("Retry not started: "+e.message)}finally{taskRetryPending.delete(number)}
 }
 async function taskGuide(number){
  const job=trackedJobs.find(j=>j.number===number);if(!job)return;

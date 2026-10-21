@@ -49,10 +49,10 @@ test('native fixture exercises the production Retry control and exact authorizat
  vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');
  vm.runInContext(app.slice(app.indexOf('async function userAuthorizedFetch('),app.indexOf('// Guidance or a retry')),box);
- vm.runInContext(app.slice(app.indexOf('function acceptTaskRetry('),app.indexOf('async function taskGuide(')),box);
+ vm.runInContext(app.slice(app.indexOf('const taskRetryPending='),app.indexOf('async function taskGuide(')),box);
  const candidate=box.trackedJobs[0].progress.recovery.candidate;
  await Promise.all([box.taskRetry(103),box.taskRetry(103)]);
- assert.equal(saved.get('simulator.retry.count'),'1');assert.equal(box.trackedJobs.length,1);
+ assert.equal(saved.get('simulator.retry.count'),'1');assert.equal(box.trackedJobs.length,1);assert.equal(box.trackedJobs[0].retryPending,undefined,'a transient click lock must never be persisted with the job');
  assert.equal(box.trackedJobs[0].number,103);assert.equal(box.trackedJobs[0].progress.recovery.candidate,candidate);
  assert.equal(box.trackedJobs[0].recoveryRequest.status,'recovery_requested');
  assert.ok(proofs.some(p=>p.textContent==='Fixture retry transport 1'));

@@ -95,7 +95,7 @@ or duplicate planner/chat inference was found in current submission code/tests.
 
 Baseline focused journal33 and routing19 tests passed. Initial updated focused journal41,
 combined recovery/routing/progress55, native fixture/control transport3 passed. Worker
-Wrangler4.151.1 dry-run passed:236.79KiB /62.44KiB gzip. Full local JavaScript384 tests and web/bundle checks passed in an isolated LF
+Wrangler4.151.1 dry-run passed:236.79KiB /62.44KiB gzip. Full local JavaScript386 tests and web/bundle checks passed in an isolated LF
 snapshot. Python374 ran with only the two existing Windows temporary-file sharing
 errors (workflow output files); the regression suite otherwise passed. Full
 Linux/browser/native PR CI is required and results will be appended. Local Windows temporary-file sharing and CRLF

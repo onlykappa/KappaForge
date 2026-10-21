@@ -51,8 +51,17 @@ test('recovery receipts preserve saved progress and never imply runner or provid
  assert.equal(job.progress,saved);assert.equal(job.progress.recovery.candidate,'b'.repeat(40));
  assert.equal(P.recoveryDisplay(job,200000).label,'RECOVERY REQUESTED');
  const reopened=JSON.parse(JSON.stringify(job));assert.equal(P.recoveryDisplay(reopened).label,'RECOVERY REQUESTED');
- job.progress=snapshot({status:'queued',updatedAt:300000,recovery:{executionState:'dispatch_requested'}});
+ job.progress=snapshot({status:'queued',revision:2,updatedAt:300000,recovery:{executionState:'dispatch_requested'}});
  assert.equal(P.recoveryDisplay(job).label,'DISPATCH REQUESTED');
  job.dispatchObservation={state:'queued',at:300001};assert.equal(P.recoveryDisplay(job).label,'QUEUED IN GITHUB');
- job.progress=snapshot({status:'running',updatedAt:400000});assert.equal(P.recoveryDisplay(job),null);
+ job.progress=snapshot({status:'running',revision:3,updatedAt:400000});assert.equal(P.recoveryDisplay(job),null);
+});
+
+
+test('a newer server transition supersedes a retry receipt even when the phone clock is ahead',()=>{
+ const job={progress:snapshot({status:'waiting',recovery:{nextAt:100000}})};
+ P.recoveryReceipt(job,{status:'recovery_requested'},999999999);
+ assert.equal(P.recoveryDisplay(job).label,'RECOVERY REQUESTED');
+ job.progress=snapshot({status:'running',revision:2,updatedAt:3000});
+ assert.equal(P.recoveryDisplay(job),null,'server revision, not cross-device wall clock, confirms execution');
 });

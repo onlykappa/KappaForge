@@ -6,15 +6,16 @@ const states=new Set(['queued','running','recovering','waiting','completed','fai
 const at=v=>typeof v==='number'&&Number.isFinite(v)?v:Date.parse(v||'')||0;
 const text=v=>typeof v==='string'?v.slice(0,1000):'';
 function recoveryReceipt(job,result,now=Date.now()){
- job.recoveryRequest={status:result.status,at:now,nextAt:at(result.nextAt)};
+ job.recoveryRequest={status:result.status,at:now,nextAt:at(result.nextAt),attemptId:job.progress?.attemptId||'',revision:job.progress?.revision??-1};
  job.activeAt=now;job.pollAfter=0;job.finished=false;job.finishedAt=0;
  // HTTP202 is not a runner acknowledgement. Retain the last confirmed snapshot.
  return job;
 }
 function recoveryDisplay(job,now=Date.now()){
- const p=job.progress,r=p?.recovery;
- if(job.recoveryRequest?.status==='waiting'&&job.recoveryRequest.nextAt>now)return {label:'WAITING FOR COOLDOWN',text:'The backend confirmed the saved cooldown. No continuation has been dispatched.'};
- if(job.recoveryRequest?.status!=='monitoring'&&job.recoveryRequest?.at>(p?.updatedAt||0))return {label:'RECOVERY REQUESTED',text:'Recovery check requested for this task. Runner start is not yet confirmed.'};
+ const p=job.progress,r=p?.recovery,receipt=job.recoveryRequest;
+ const pending=receipt&&(receipt.attemptId!==undefined?receipt.attemptId===(p?.attemptId||'')&&receipt.revision===(p?.revision??-1):receipt.at>(p?.updatedAt||0));
+ if(pending&&job.recoveryRequest.status==='waiting'&&job.recoveryRequest.nextAt>now)return {label:'WAITING FOR COOLDOWN',text:'The backend confirmed the saved cooldown. No continuation has been dispatched.'};
+ if(pending&&job.recoveryRequest.status!=='monitoring')return {label:'RECOVERY REQUESTED',text:'Recovery check requested for this task. Runner start is not yet confirmed.'};
  if(p?.status==='waiting')return r?.nextAt>now?{label:'WAITING FOR COOLDOWN',text:'Saved work is waiting for the recorded provider cooldown.'}:{label:'WAITING FOR RECOVERY',text:'Recorded wait elapsed. No continuation or provider availability is confirmed yet.'};
  if(p?.status==='queued'&&job.dispatchObservation?.at>=p.updatedAt)return {label:job.dispatchObservation.state==='in_progress'?'ACTIONS STARTED':'QUEUED IN GITHUB',text:job.dispatchObservation.state==='in_progress'?'GitHub Actions started. Coding runner acknowledgement is still pending.':'GitHub confirms this task is queued. A coding runner has not acknowledged it yet.'};
  if(p?.status==='queued'&&r?.executionState==='dispatch_requested')return {label:'DISPATCH REQUESTED',text:'Dispatch requested. Waiting for GitHub Actions and runner acknowledgement.'};

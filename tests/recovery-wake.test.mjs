@@ -103,3 +103,11 @@ test('recovery registration requires runner authentication and never accepts arb
   assert.equal(deliveries(w).length,0);assert.equal(JSON.stringify(await w.rows()).includes('untrusted'),false);
  }finally{w.restore()}
 });
+
+
+test('another task recovery already queued prevents replacing GitHub pending dispatches',async()=>{
+ const w=fixture();try{
+  await w.schedule();w.advance(60001);w.active=[{display_title:'Recovery task #999',status:'queued'}];
+  await w.wake();assert.equal(deliveries(w).length,0);assert.equal((await w.rows())[174].deliveries,0);
+ }finally{w.restore()}
+});
