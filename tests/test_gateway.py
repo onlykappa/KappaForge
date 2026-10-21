@@ -9,6 +9,38 @@ from engine import gateway, developer, recovery
 
 
 class GatewayEvidenceTests(unittest.TestCase):
+    def test_saved_bounded_document_can_be_repaired_but_not_preexisting_or_broader_diffs(self):
+        path = 'docs/integration/RECOVERY-NOTE.md'
+        journal = SimpleNamespace(scope=SimpleNamespace(edit_path=path, inference_route='groq:openai/gpt-oss-120b'),
+                                  state={'repairStrategy': '', 'events': [], 'candidate': 'b'*40}, checkpoint=Mock(),
+                                  avoid_models=lambda key: set(), rejected=lambda signature: False, context='')
+        handle = recovery.CURRENT.set(journal)
+        pr = {'number': 1, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/1', 'body': ''}
+        try:
+            for delta in [[{'filename': path, 'status': 'added'}], [{'filename': path, 'status': 'modified'}],
+                          [{'filename': path, 'status': 'added'}, {'filename': 'other.md', 'status': 'modified'}]]:
+                with self.subTest(delta=delta), \
+                        patch.object(developer, 'gh', side_effect=lambda url, *args: delta if '/files?' in url else []), \
+                        patch.object(developer, 'list_tree', return_value=({path: 10}, {})), \
+                        patch.object(developer, 'project_guide', return_value=''), \
+                        patch.object(developer, 'read_source', return_value='# Old note\n'), \
+                        patch.object(developer, 'requirements_open', return_value=[]), \
+                        patch.object(developer, 'is_private', return_value=False), \
+                        patch.object(developer, 'code_providers', return_value={'groq'}), \
+                        patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', json.dumps({
+                            'files': [{'path': path, 'content': '# Corrected note\n'}]}))) as model:
+                    if len(delta) == 1 and delta[0]['status'] == 'added':
+                        result = developer.revise_branch({'title': 'Correct note', 'body': 'Only ' + path},
+                                                        pr, 'kappa/dev-1', 'b'*40, [], 'fixture', '')
+                        self.assertEqual(result[2], {path: '# Corrected note\n'})
+                        model.assert_called_once()
+                    else:
+                        with self.assertRaises(PermissionError):
+                            developer.revise_branch({'title': 'Correct note'}, pr, 'kappa/dev-1', 'b'*40, [], 'fixture', '')
+                        model.assert_not_called()
+        finally:
+            recovery.CURRENT.reset(handle)
+
     def test_finalizing_an_unchanged_checkpoint_reuses_commit_without_github_write(self):
         with patch.object(developer, 'gh', side_effect=AssertionError('empty tree request')):
             result = developer.commit_changes(developer.ROOT, 'b'*40, {}, {}, 'already saved', 'fixture')
