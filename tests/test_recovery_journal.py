@@ -129,6 +129,18 @@ class RecoveryJournalTests(unittest.TestCase):
         developer.Progress.latest = None
         self.env.stop()
 
+    def test_gateway_retry_backoff_is_not_published_as_a_provider_cooldown(self):
+        from engine.gateway import GatewayUnavailable
+        self.journal.defer(GatewayUnavailable('Gateway timeout; remaining quota is unknown'))
+        self.assertEqual(self.journal.state['waitReason'], 'retry')
+        latest = self.world.rows[-1]['body']
+        self.assertIn('"status":"queued"', latest.replace(' ', ''))
+        self.assertIn('Gateway retry scheduled', latest)
+        self.assertGreater(self.journal.state['nextAt'], self.world.now)
+        self.journal.defer(runner.ProviderRoutesUnavailable('HTTP 429', retry_at=self.world.now+120))
+        self.assertEqual(self.journal.state['waitReason'], 'cooldown')
+        self.assertIn('recorded provider cooldown', self.world.rows[-1]['body'])
+
     def test_targeted_automatic_scan_queues_existing_checkpoint_once(self):
         self.journal.checkpoint('b'*40, files=['value.py'])
         self.journal.defer(RuntimeError('offline'))

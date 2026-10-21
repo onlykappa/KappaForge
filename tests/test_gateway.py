@@ -9,6 +9,30 @@ from engine import gateway, developer, recovery, runner, intent_guard
 
 
 class GatewayEvidenceTests(unittest.TestCase):
+    def test_transport_and_invalid_gateway_responses_preserve_sanitized_evidence(self):
+        import urllib.error
+        for cause, category in [(TimeoutError('secret fixture'), 'timeout'),
+                                (urllib.error.URLError('secret fixture'), 'network_failure'),
+                                (runner.ProviderResponseError('secret fixture'), 'malformed_response')]:
+            with self.subTest(category=category), patch.dict(os.environ, {
+                    'KAPPA_ROUTER_URL':'https://fixture.example', 'KAPPA_ROUTER_TOKEN':'x'*40}), \
+                    patch.object(runner.urllib.request, 'urlopen', side_effect=cause) as network, \
+                    patch.object(gateway, 'record') as record:
+                with self.assertRaises(gateway.GatewayUnavailable) as error:
+                    runner.run_integrated_router('private original brief', 100, ['nvidia','groq'])
+                evidence = record.call_args.args[1]
+                self.assertEqual(evidence['failure']['category'], category)
+                self.assertEqual(evidence['failure']['source'], 'transport' if category != 'malformed_response' else 'normalization')
+                self.assertIsNone(evidence['usage'])
+                self.assertEqual(error.exception.retry_at, 0)
+                self.assertIsNone(error.exception.status)
+                self.assertNotIn('HTTP 503', str(error.exception))
+                self.assertNotIn('secret fixture', str(error.exception))
+                self.assertNotIn('private original brief', json.dumps(evidence))
+                limits = runner.PROVIDERS['routing']['defaults']
+                self.assertGreater(network.call_args.kwargs['timeout']*1000, limits['requestTimeoutMs'])
+                self.assertTrue(json.loads(network.call_args.args[0].data)['fallback'])
+
     def test_unpinned_providers_do_not_depend_on_groq_diagnostics(self):
         import time
         issue = dict(number=174, state='open', user={'login':'onlykappa'},

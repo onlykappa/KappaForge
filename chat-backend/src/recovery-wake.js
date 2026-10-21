@@ -10,7 +10,7 @@ async function github(env,path,body){
 }
 export async function recoveryTask(env,task){
  const issue=await github(env,'issues/'+task),body=issue.body||'';
- if(issue.state!=='open'||issue.pull_request||issue.user?.login!=='onlykappa'||!issue.labels?.some(x=>x.name==='kappa-task')||!/^Mode:\s*develop\s*$/m.test(body))return null;
+ if(issue.state!=='open'||issue.pull_request||issue.user?.login!=='onlykappa'||!issue.labels?.some(x=>typeof x.name==='string'&&x.name.toLowerCase()==='kappa-task')||!/^Mode:\s*develop\s*$/m.test(body))return null;
  let auth;try{auth=JSON.parse(body.match(/^<!-- kappa-authorization:(\{[^\n]+\}) -->$/m)?.[1])}catch{return null}
  if(!auth||auth.intent!=='execution'||auth.state!=='executing'||!auth.id||!Number.isFinite(auth.expiresAt)||auth.expiresAt<=Date.now()||!/^onlykappa\/[A-Za-z0-9_.-]+$/.test(auth.repo))return null;
  const authStore=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
@@ -66,7 +66,8 @@ export async function recoveryWakeStore(state,env,request){
   return rows[task];
  });
  if(scheduled.stopped)return reply({error:'Recovery delivery is exhausted. Review GitHub Actions access before another attempt.',status:'blocked'},409);
- return reply({status:j?.status==='waiting'?(next>now?'waiting':'recovery_requested'):'monitoring',task,nextAt:next,message:j?.status==='waiting'?(next>now?'Saved task is waiting for its recorded cooldown. Automatic wake-up is scheduled.':'Recovery check requested for the existing task. Runner start is not yet confirmed.'):'Checking the existing task and its runner; no duplicate execution was requested.'},202);
+ const cooldown=j?.status==='waiting'&&j.waitReason!=='retry'&&next>now;
+ return reply({status:j?.status==='waiting'?(cooldown?'waiting':'recovery_requested'):'monitoring',task,nextAt:next,message:j?.status==='waiting'?(cooldown?'Saved task is waiting for its recorded cooldown. Automatic wake-up is scheduled.':'Recovery check scheduled for the existing task. Runner start and provider capacity are not yet confirmed.'):'Checking the existing task and its runner; no duplicate execution was requested.'},202);
 }
 export async function recoveryAlarm(state,env){
  // No loop while idle. Network failures rearm a bounded pending row; the persisted

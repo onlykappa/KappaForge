@@ -35,6 +35,26 @@ function fixture(){
 }
 const deliveries=w=>w.calls.filter(x=>x.path.endsWith('/dispatches'));
 
+test('gateway retry backoff is scheduled without claiming a provider cooldown',async()=>{
+ const w=fixture();try{
+  w.journal.waitReason='retry';
+  const r=await w.schedule();assert.equal(r.status,202);
+  const body=await r.json();assert.equal(body.status,'recovery_requested');
+  assert.ok(body.nextAt>Date.now());assert.equal(body.message.includes('recorded cooldown'),false);
+  w.advance(60001);await w.wake();assert.equal(deliveries(w).length,1);
+ }finally{w.restore()}
+});
+
+test('production label casing registers recovery while unrelated labels remain unauthorized',async()=>{
+ const w=fixture();try{
+  w.issue.labels=[{name:'kappa-Task'}];
+  assert.equal((await w.schedule()).status,202);
+  w.advance(60001);await w.wake();assert.equal(deliveries(w).length,1);
+  w.issue.labels=[{name:'kappa-task-extra'}];
+  assert.equal((await w.schedule()).status,409);
+ }finally{w.restore()}
+});
+
 test('durable wake honors cooldown, survives reconstruction and dispatches the trusted scanner once',async()=>{
  const w=fixture();try{
   assert.equal((await w.schedule()).status,202);assert.equal(w.alarm(),Date.now()+60000);

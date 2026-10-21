@@ -49,8 +49,11 @@ def notify_wake(task):
         with urllib.request.urlopen(request, timeout=15) as response:
             if response.status != 202:
                 raise ValueError('Unexpected wake-up acknowledgement')
-    except (urllib.error.URLError, ValueError, TimeoutError):
-        print('Recovery wake-up registration failed; saved checkpoint and scheduled fallback retained', flush=True)
+    except urllib.error.HTTPError as error:
+        print(f'Recovery wake-up registration HTTP {error.code}; saved checkpoint and scheduled fallback retained', flush=True)
+    except (urllib.error.URLError, ValueError, TimeoutError) as error:
+        category = 'timeout' if isinstance(error, TimeoutError) else 'network_or_response_failure'
+        print(f'Recovery wake-up registration failed ({category}); saved checkpoint and scheduled fallback retained', flush=True)
 
 
 def clean(value, size=700):
@@ -402,9 +405,13 @@ class Journal:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
             return False
         self.state['nextAt'] = due
+        self.state['waitReason'] = ('retry' if getattr(error, 'gateway_failure', False)
+                                    and max(getattr(error, 'retry_at', 0), availability.get('retryAt', 0)) <= now else 'cooldown')
         self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
                    next_action='Resume saved work on the next recovery scan (scheduled every 5 minutes; GitHub may delay it)')
-        self.publish('waiting', 'Progress saved. Waiting for automatic continuation on the recovery queue.')
+        self.publish('waiting' if self.state['waitReason'] == 'cooldown' else 'queued',
+                     'Progress saved. Waiting for the recorded provider cooldown.' if self.state['waitReason'] == 'cooldown'
+                     else 'Progress saved. Gateway retry scheduled; provider quota remaining is unknown.')
         notify_wake(self.scope.number)
         return True
 

@@ -343,3 +343,30 @@ test('DeepSeek outage falls back to another approved provider and retains per-ro
   assert.deepEqual(posted,['deepseek-ai/deepseek-v4.1-flash','mistral-small-latest']);
  }finally{globalThis.fetch=original}
 });
+
+
+for(const exhausted of [false,true])test('timed-out routes share one bounded budget, exhausted='+exhausted,async()=>{
+ const state={storage:storage()},env={ROUTING_POLICY_VERSION:'v1',NVIDIA_API_KEY:'timeout-fixture',MISTRAL_API_KEY:'timeout-fallback-fixture',GROQ_API_KEY:'timeout-groq-fixture',KAPPA_FREE_PROVIDERS:'nvidia,mistral,groq',KAPPA_CODE_PROVIDERS:'nvidia,mistral,groq',KAPPA_PRIVATE_CODE_PROVIDERS:'nvidia,mistral,groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore(state,new Request(u,o))})}};
+ const fetch=globalThis.fetch,timer=globalThis.setTimeout,clear=globalThis.clearTimeout,clock=Date.now;
+ let now=clock(),timers=new Map(),serial=0;const waits=[],calls=[];
+ Date.now=()=>now;
+ globalThis.setTimeout=(fn,ms)=>{const id=++serial;timers.set(id,{fn,ms});waits.push(ms);return id};
+ globalThis.clearTimeout=id=>timers.delete(id);
+ globalThis.fetch=async(url,init={})=>{
+  if(String(url).endsWith('/models'))return Response.json({data:(String(url).includes('nvidia.com')?['deepseek-ai/deepseek-v4.1-flash']:String(url).includes('mistral.ai')?['mistral-small-latest']:['openai/gpt-oss-120b']).map(id=>({id}))});
+  calls.push(JSON.parse(init.body).model);
+  if(exhausted||!String(url).includes('groq.com'))return new Promise((resolve,reject)=>{
+   init.signal.addEventListener('abort',()=>reject(new Error('fixture timeout')),{once:true});
+   const pending=[...timers.values()].at(-1);now+=pending.ms;pending.fn();
+  });
+  return Response.json({choices:[{message:{content:'fallback after timeout'}}]});
+ };
+ try{
+  const response=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['nvidia','mistral','groq'],messages:[{role:'user',content:'exact source'}],maxTokens:80});
+  const body=await response.json();assert.equal(response.status,exhausted?503:200,JSON.stringify(body));
+  if(exhausted){assert.equal(body.code,'request_timeout');assert.ok(now-clock()<195000);assert.equal(body.attempts.filter(row=>row.attempted).length,3)}
+  else{assert.equal(body.route,'groq:openai/gpt-oss-120b');assert.equal(body.routing.history[0].category,'timeout')}
+  assert.equal(calls.length,3);
+  assert.ok(waits.at(-1)<120000,'one provider cannot consume the old entire runner wait');
+ }finally{globalThis.fetch=fetch;globalThis.setTimeout=timer;globalThis.clearTimeout=clear;Date.now=clock}
+});

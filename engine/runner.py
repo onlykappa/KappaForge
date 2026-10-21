@@ -622,7 +622,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
     })
     try:
-        with urllib.request.urlopen(request, timeout=model_timeout()) as response:
+        with urllib.request.urlopen(request, timeout=model_timeout(
+                (PROVIDERS["routing"]["defaults"]["requestTimeoutMs"] + PROVIDERS["routing"]["defaults"]["responseGraceMs"]) / 1000)) as response:
             data = response_json(response)
             status = response.status
     except urllib.error.HTTPError as exc:
@@ -643,9 +644,21 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
                 evidence['postFailureDiagnostic'] = 'unavailable'
         gateway.record(journal, evidence)
         raise failure from None
-    except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError):
-        raise gateway.GatewayUnavailable("Integrated provider gateway unavailable; no direct provider fallback was attempted",
-                                         terminal=bool(pinned_route)) from None
+    except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError) as exc:
+        # Never log exception text: it may contain credentials, URLs or provider output.
+        category = ('timeout' if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError)
+                    else 'malformed_response' if isinstance(exc, (ValueError, ProviderResponseError)) else 'network_failure')
+        failure = gateway.error(503, {'code': 'gateway_' + category,
+                                     'failure': {'source': 'normalization' if category == 'malformed_response' else 'transport',
+                                                 'category': category}}, pinned=bool(pinned_route))
+        failure.status = None  # No HTTP response was received.
+        failure.args = ('Integrated provider gateway ' + category.replace('_', ' ')
+                        + '; provider attempts and remaining quota are unknown; fallback stays within the approved gateway',)
+        gateway.record(journal, {'requestId': payload['requestId'], 'route': pinned_route, 'status': None,
+                                'code': failure.code, 'retryAt': None, 'promptChars': len(prompt),
+                                'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details,
+                                'attempts': []})
+        raise failure from None
     if status != 200 or not isinstance(data, dict):
         raise gateway.GatewayUnavailable("Integrated provider gateway returned an invalid response", terminal=bool(pinned_route))
     model, output = data.get("route"), data.get("text")
@@ -657,7 +670,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     usage = {key: value for key, value in raw_usage.items() if key in ('promptTokenCount', 'candidatesTokenCount', 'totalTokenCount')
              and type(value) is int and value >= 0}
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
-                             'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None})
+                             'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
+                             'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
     asking(model)
     return model, output
 

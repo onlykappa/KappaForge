@@ -392,6 +392,9 @@
     "defaults": {
       "maxConcurrent": 1,
       "leaseMs": 120000,
+      "requestTimeoutMs": 180000,
+      "attemptTimeoutMs": 60000,
+      "responseGraceMs": 15000,
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,
       "maxOutputTokens": 8192,

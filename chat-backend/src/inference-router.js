@@ -43,6 +43,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  catch{return safeError("Shared routing limits unavailable; inference was not sent",503)}
  if(dailyReservation.duplicate)return new Response(JSON.stringify({error:"Request id was already used",code:"request_replayed"}),{status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  if(!dailyReservation.allowed)return new Response(JSON.stringify({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached":"Shared daily inference limit reached",code:dailyReservation.reason==="minute_limit"?"minute_limit":"daily_limit",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000}),{status:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ const started=Date.now(),deadline=started+registry.routing.defaults.requestTimeoutMs;
  const requested=Array.isArray(input.providers)?input.providers:[];
  const available=providerAllowed(env,"coding","gemini",{privateCode:true,requested})?await discover(env).catch(()=>[]):[];
  const prefs={model:input.model||"auto",fallback:input.fallback!==false};
@@ -50,12 +51,13 @@ export async function inferenceRouter(env,input,callerSignal=null){
  if(!routes.length)return new Response(JSON.stringify({error:"No approved free provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
- const started=Date.now();let lastStatus=0,lastRetryAt=null,attempts=0;
+ let lastStatus=0,lastRetryAt=null,attempts=0;
  const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
  for(const route of routes){
+  if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};break;}
   lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
   let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
@@ -72,7 +74,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   if(!reserved.allowed){lastStatus=429;lastRetryAt=reserved.retryAt||lastRetryAt;setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
   const controller=new AbortController();let timedOut=false;
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
-  const timeout=setTimeout(()=>{timedOut=true;controller.abort()},120_000);let response,data,usage=null;
+  const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
   try{
    attempt.attempted=true;
    if(route.provider==="gemini"){
@@ -95,13 +97,13 @@ export async function inferenceRouter(env,input,callerSignal=null){
     usage=data.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
    let normalized;try{normalized=normalizeResult(route,data);}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
+   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
   }catch(error){
    lastStatus=callerSignal?.aborted?499:0;
    setFailure({source:"transport",category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure",upstreamStatus:null});
@@ -110,6 +112,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   }finally{clearTimeout(timeout);callerSignal?.removeEventListener("abort",stop);}
  }
  const tooLarge=history.length&&history.every(row=>!row.attempted&&row.category==="context_limit");
- const unavailable=tooLarge?413:lastStatus===429?429:503;
- return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No approved provider completed this request",code:tooLarge?"request_too_large":unavailable===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"}}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ const budgetExpired=Date.now()>=deadline;
+ const unavailable=tooLarge?413:lastStatus===429&&!budgetExpired?429:503;
+ return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No approved provider completed this request",code:tooLarge?"request_too_large":budgetExpired?"request_timeout":unavailable===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"}}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 }
