@@ -12,12 +12,16 @@ function matches(pattern,model){
 }
 const METRICS=['rpm','rpd','tpm','tpd','rps','neuronsPerDay'];
 const pick=row=>Object.fromEntries(METRICS.filter(k=>Number.isFinite(row?.[k])&&row[k]>=0).map(k=>[k,row[k]]));
+function row(limits,provider,model){return (limits?.providers?.[provider]?.models||[]).find(r=>matches(r.match,model))||null;}
+// A model the provider serves with another model ("sameAs") shares that model's quota and usage.
+function canonical(limits,provider,model){return row(limits,provider,model)?.sameAs||model;}
 function limitFor(limits,provider,model){
  const entry=limits?.providers?.[provider];
  if(!entry)return null;
  if(entry.scope==='provider')return {scope:'provider',...pick(entry)};
- const row=(entry.models||[]).find(r=>matches(r.match,model));
- return row?{scope:'model',match:row.match,...pick(row),...(row.note?{note:row.note}:{})}:null;
+ const r=row(limits,provider,model);
+ if(r?.sameAs)return limitFor(limits,provider,r.sameAs);
+ return r?{scope:'model',match:r.match,...pick(r),...(r.note?{note:r.note}:{})}:null;
 }
 // The account shows no quota at all for this model (0 requests per minute or day): never route to it.
 function noQuota(limits,provider,model){const l=limitFor(limits,provider,model);return !!l&&(l.rpm===0||l.rpd===0);}
@@ -67,7 +71,7 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
  for(const id of ids.filter(id=>show.includes(id)||limits?.providers?.[id]))providerFor(id);
  for(const e of events||[]){
   if(!e||!Number.isFinite(e.at)||e.at>now)continue;
-  const {provider,model}=splitLabel(e.model,ids);
+  const split=splitLabel(e.model,ids),provider=split.provider,model=canonical(limits,provider,split.model);
   const p=providerFor(provider);
   if(e.at<p.since)continue;
   add(p.used,e,now);
@@ -77,7 +81,7 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
  return Object.values(result).map(p=>{
   // Models with a known allowance appear even before their first use today.
   if(p.scope==='model')for(const row of limits.providers[p.id].models||[]){
-   if(row.rpm===0||row.rpd===0||Object.values(p.models).some(m=>m.limit?.match===row.match))continue;
+   if(row.sameAs||row.rpm===0||row.rpd===0||Object.values(p.models).some(m=>m.limit?.match===row.match))continue;
    p.models[row.match]={model:row.match,limit:limitFor(limits,p.id,row.match),used:empty(),unused:true};
   }
   const models=Object.values(p.models).map(m=>({...m,used:finish(m.used),pairs:pairs(m.limit,m.used)}));
@@ -92,5 +96,5 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope};
  });
 }
-root.KappaLimits={matches,limitFor,noQuota,splitLabel,dayStart,usage};
+root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage};
 })(globalThis);

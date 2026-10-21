@@ -1,7 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
@@ -39,7 +39,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const problem=validate(input);if(problem)return safeError(problem);
  if(!env.MEMORY)return safeError("Shared routing storage unavailable",503);
  const baseId=input.requestId||crypto.randomUUID();
- let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20))}
+ let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,routerCaps(env).daily,routerCaps(env).minute)}
  catch{return safeError("Shared routing limits unavailable; inference was not sent",503)}
  if(dailyReservation.duplicate)return new Response(JSON.stringify({error:"Request id was already used",code:"request_replayed"}),{status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  if(!dailyReservation.allowed)return new Response(JSON.stringify({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached":"Shared daily inference limit reached",code:dailyReservation.reason==="minute_limit"?"minute_limit":"daily_limit",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000}),{status:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});

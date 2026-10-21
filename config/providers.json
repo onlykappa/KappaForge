@@ -433,6 +433,11 @@
         "source": "Google AI Studio, project master ai bot, Free tier",
         "models": [
           {
+            "match": "gemini-3.7-flash",
+            "sameAs": "gemini-3.8-flash",
+            "note": "Google routes Gemini 3.7 Flash requests to 3.8 Flash, so both share its quota"
+          },
+          {
             "match": "gemini-3.8-flash",
             "rpm": 5,
             "rpd": 20,

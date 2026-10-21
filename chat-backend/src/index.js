@@ -12,7 +12,7 @@ import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./revie
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
 import {routingStore} from "./router-state.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels} from "./model-probe.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
@@ -163,7 +163,7 @@ export default {
         const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
         const lastFailure=[poolState,routeState].filter(Boolean).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
         const dailyUsed=snapshot?.dailyRequests?.used??null,minuteUsed=snapshot?.minuteRequests?.used??null;
-        const dailyLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),minuteLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20);
+        const {daily:dailyLimit,minute:minuteLimit}=routerCaps(env);
         const dailyAvailable=dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteUsed===null?null:minuteUsed<minuteLimit;
         let failedCondition="eligible";
         if(!secretPresent)failedCondition="secret_binding_missing";
@@ -247,7 +247,7 @@ export default {
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
-          routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20,quotaRemaining:null,quotaSource:"unknown"}},
+          routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
       }
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
@@ -770,7 +770,7 @@ export default {
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
       if(!reservation.ok)return json({error:"Server monthly request limit reached. Requests resume next UTC month."},429,cors);
       const routerRequestId=crypto.randomUUID();
-      let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,routerRequestId,Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20))}
+      let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,routerRequestId,routerCaps(env).daily,routerCaps(env).minute)}
       catch{return json({error:"Shared routing limits unavailable; inference was not sent."},503,cors)}
       if(!dailyReservation.allowed)return json({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached. Retry after the current minute window.":"Shared daily inference limit reached. Requests resume next UTC day.",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}

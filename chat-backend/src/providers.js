@@ -136,7 +136,12 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
   }
  }
  // Models the account dashboard shows with no quota at all (0 requests per minute or day) cannot answer.
- for(let i=routes.length-1;i>=0;i--)if(globalThis.KappaLimits.noQuota(registry.limits,routes[i].provider,routes[i].model))routes.splice(i,1);
+ // A model the provider serves with another listed model is the same quota: try it only once.
+ const L=globalThis.KappaLimits;
+ for(let i=routes.length-1;i>=0;i--){
+  const r=routes[i],same=L.canonical(registry.limits,r.provider,r.model);
+  if(L.noQuota(registry.limits,r.provider,r.model)||same!==r.model&&routes.some(o=>o.provider===r.provider&&o.model===same))routes.splice(i,1);
+ }
  // Preference orders eligible routes only. Explicit picks, permissions, free
  // model review, capabilities and context remain authoritative.
  const preferred=registry.routing?.preferredModelFamily;

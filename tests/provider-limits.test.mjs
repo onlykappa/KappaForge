@@ -22,6 +22,8 @@ test('limit patterns match a model family but never a sibling model',()=>{
  assert.equal(L.limitFor(limits,'groq','openai/gpt-oss-120b').tpd,200000);
  assert.deepEqual(L.limitFor(limits,'nvidia','anything'),{scope:'provider',rpm:40});
  assert.equal(L.noQuota(limits,'gemini','gemini-2.5-pro'),true);
+ assert.equal(L.limitFor(limits,'gemini','gemini-3.7-flash').rpd,20,'3.7 Flash is served by 3.8 Flash and shares its limits');
+ assert.equal(L.canonical(limits,'gemini','gemini-3.7-flash'),'gemini-3.8-flash');
  assert.equal(L.noQuota(limits,'gemini','gemini-3.8-flash'),false);
  assert.deepEqual(L.splitLabel('ollama:gpt-oss:120b',ids),{provider:'ollama',model:'gpt-oss:120b'});
  assert.deepEqual(L.splitLabel('gemini-3.8-flash',ids),{provider:'gemini',model:'gemini-3.8-flash'});
@@ -38,7 +40,7 @@ test('usage compares today\'s recorded attempts and tokens with each limit',()=>
  const now=Date.UTC(2026,9,21,18,30),at=offset=>now-offset;
  const events=[
   {at:at(5000),model:'gemini-3.8-flash',total:1000},{at:at(6000),model:'gemini-3.8-flash',total:2000},
-  {at:at(3*3600000),model:'gemini-3.8-flash',total:500},
+  {at:at(3*3600000),model:'gemini-3.7-flash',total:500},
   {at:at(20*3600000),model:'gemini-3.8-flash',total:9999},
   {at:at(1000),model:'groq:openai/gpt-oss-120b',total:6000},
   {at:at(2000),model:'nvidia:deepseek-ai/deepseek-v4.1-flash',total:null,ok:false},
@@ -60,6 +62,13 @@ test('routing skips models whose account shows no quota at all',async()=>{
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'gemini',KAPPA_CHAT_PROVIDERS:'gemini',GEMINI_API_KEY:'limits-fixture'};
  const routes=await fallbackRoutes(env,['gemini-3.8-flash','gemini-2.5-pro','gemini-3.1-pro-preview','gemini-3.1-flash-lite'],{},false,{channel:'chat'});
  assert.deepEqual(routes.map(r=>r.model),['gemini-3.8-flash','gemini-3.1-flash-lite']);
+});
+
+test('caps above what routing storage accepts are held to the maximum instead of stopping inference',async()=>{
+ const {routerCaps}=await import('../chat-backend/src/router-coordination.js');
+ assert.deepEqual(routerCaps({}),{daily:100,minute:20});
+ assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'50000',KAPPA_ROUTER_MAX_PER_MINUTE:'500'}),{daily:10000,minute:120});
+ assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'2500.7',KAPPA_ROUTER_MAX_PER_MINUTE:'60'}),{daily:2500,minute:60});
 });
 
 test('capabilities send the configured limits to the app',async()=>{
