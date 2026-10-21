@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {providerModels,fallbackRoutes,callProvider} from "../chat-backend/src/providers.js";
 import {discover} from "../chat-backend/src/intelligence.js";
-import worker from "../chat-backend/src/index.js";
+import worker,{KappaMemory} from "../chat-backend/src/index.js";
 
 test("dashboard-managed provider allowlists are not overridden by blank Wrangler defaults",()=>{
  const config=readFileSync(new URL("../chat-backend/wrangler.toml",import.meta.url),"utf8");
@@ -100,5 +100,33 @@ test("chat route failure identifies a missing Worker chat allowlist without disc
   assert.equal(upstreamCalls,0);
   assert.ok(!JSON.stringify(body).includes(env.GROQ_API_KEY));
   assert.ok(!JSON.stringify(body).includes(env.GEMINI_API_KEY));
+ }finally{globalThis.fetch=original}
+});
+
+test("authenticated Automatic chat uses one free route and does not retry a failed provider when fallback is off",async()=>{
+ const original=globalThis.fetch,values=new Map(),submitted=[];
+ const storage={get:async key=>values.get(key),put:async(key,value)=>values.set(key,value),delete:async key=>values.delete(key)};
+ storage.list=async({prefix="",limit=1000}={})=>new Map([...values].filter(([key])=>key.startsWith(prefix)).slice(0,limit));
+ storage.transaction=async fn=>fn(storage);
+ const vault=new KappaMemory({storage});let failing=false;
+ const env={ROUTING_POLICY_VERSION:"v1",CHAT_ACCESS_TOKEN:"fixture-chat",GROQ_API_KEY:"fixture-chat-single",
+  KAPPA_FREE_PROVIDERS:"groq",KAPPA_CHAT_PROVIDERS:"groq",MEMORY:{idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>vault.fetch(new Request(url,init))})}};
+ globalThis.fetch=async(url,init)=>{
+  if(String(url)==="https://api.groq.com/openai/v1/models")return Response.json({data:[{id:"openai/gpt-oss-120b"},{id:"qwen/qwen3.8-27b"}]});
+  if(String(url)==="https://api.groq.com/openai/v1/chat/completions"){
+   submitted.push(JSON.parse(init.body));
+   return failing?Response.json({error:"fixture outage"},{status:503}):Response.json({choices:[{message:{content:"fixture reply"},finish_reason:"stop"}],usage:{prompt_tokens:10,completion_tokens:2,total_tokens:12}});
+  }
+  return Response.json({},{status:404});
+ };
+ const request=()=>new Request("https://worker.example/chat",{method:"POST",headers:{Origin:"null",Authorization:"Bearer fixture-chat","Content-Type":"application/json"},
+  body:JSON.stringify({messages:[{role:"user",text:"hello"}],preferences:{model:"auto",fallback:false}})});
+ try{
+  const response=await worker.fetch(request(),env),body=await response.json();
+  assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.reply,"fixture reply");assert.equal(body.model,"groq:openai/gpt-oss-120b");
+  failing=true;const failed=await worker.fetch(request(),env);
+  assert.equal(failed.status,502);
+  assert.equal(submitted.length,2,"one inference per request even when the selected provider fails");
+  assert.ok(submitted.every(payload=>payload.model==="openai/gpt-oss-120b"));
  }finally{globalThis.fetch=original}
 });
