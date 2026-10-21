@@ -33,7 +33,7 @@ Long-running code execution remains on GitHub Actions. The Worker gateway and it
 - Full local Node suite on Windows: **149 passed, 1 failed**. The same pre-existing `tests/intelligence.test.mjs` source-fixture assertion fails on baseline `main` (148 passed, 1 failed); no Phase 4 regression is indicated by the comparison.
 - Full local Python suite on Windows: **334 tests, 1 failure, 2 errors**. Baseline `main` has the same parser-integrity failure (`acorn.mjs` hash) and the same two `PermissionError` errors writing temporary `GITHUB_OUTPUT` files (329 tests, 1 failure, 2 errors). New focused tests pass.
 - `dependency-map.py --check` reports that the checked-in map is stale on both current and baseline branches; it was not regenerated because this phase changes no dependency graph. Windows default text encoding initially fails this script; rerunning with UTF-8 still reports the same stale-map state.
-- GitHub PR checks on the final implementation head `4946a06271e07e6c2165b98cc324c8406a68fe31` passed: unit/preflight/dependency-map and web (Node suite plus Playwright). The production live task ran but is a failed capacity observation, not acceptance.
+- GitHub PR checks passed on the checkpoint head: [run 39518629558](https://github.com/onlykappa/KappaForge/actions/runs/39518629558) passed unit/preflight/dependency-map and web (Node suite plus Playwright). The production live task ran but is a failed capacity observation, not acceptance.
 
 ## Live acceptance attempt and evidence
 
