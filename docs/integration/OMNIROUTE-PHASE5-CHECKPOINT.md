@@ -203,6 +203,9 @@ Baseline main6bbd1de; feature branchcodex/task-start-recovery-audit. #174 reache
 but its gateway reservation was refused by a stored outage cooldown (historical503),
 then no scheduled recovery scan was observed before the owner closed it. No fresh
 upstream429, quota balance or successful weather implementation can be inferred.
-Focused durable wake-up, same-task Retry, lease and truthful-progress fixes are under
-validation. Owner expressly prohibits merging now. No deployment, app publication or
+Focused durable wake-up, same-task Retry, lease and truthful-progress fixes are in
+[draft PR #175](https://github.com/onlykappa/KappaForge/pull/175), source0169fd4.
+Linux CI passed375 Python/387 JavaScript tests, browser regressions and Worker build;
+native CI passed five UI tests, real Retry through fixture transport, reopening and device
+packaging. These do not establish production alarm dispatch or successful weather inference. Owner expressly prohibits merging now. No deployment, app publication or
 live continuation is claimed. Prior acceptance/weather PRs remain unmerged.

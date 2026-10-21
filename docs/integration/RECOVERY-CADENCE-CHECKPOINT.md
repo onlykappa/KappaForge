@@ -1,6 +1,6 @@
 # Task-start and recovery audit — 2026-10-21
 
-Status: implementation under review; **unmerged and undeployed at owner request**.
+Status: fixes implemented and validated in [draft PR #175](https://github.com/onlykappa/KappaForge/pull/175); **unmerged and undeployed at owner request**.
 Baseline main `6bbd1debed31df89e4d3a3eae09930797815c7c7`.
 Branch `codex/task-start-recovery-audit`, isolated checkout; unrelated worktrees preserved.
 The older cadence/simulator record below remains historical evidence, not production
@@ -93,21 +93,48 @@ or duplicate planner/chat inference was found in current submission code/tests.
 
 ## Validation and remaining gates
 
-Baseline focused journal33 and routing19 tests passed. Initial updated focused journal41,
-combined recovery/routing/progress55, native fixture/control transport3 passed. Worker
-Wrangler4.151.1 dry-run passed:236.79KiB /62.44KiB gzip. Full local JavaScript386 tests and web/bundle checks passed in an isolated LF
-snapshot. Python374 ran with only the two existing Windows temporary-file sharing
-errors (workflow output files); the regression suite otherwise passed. Full
-Linux/browser/native PR CI is required and results will be appended. Local Windows temporary-file sharing and CRLF
-source-fixture issues are known baseline limitations; use isolated LF snapshots and
-independent Linux CI. `engine/validate_change.py` is absent at baseline; do not invent a pass.
+Validated implementation: `0169fd4c4f099f1ead7cd8c9402af85999b79a28`.
+[Linux/browser/Worker CI 39612996874](https://github.com/onlykappa/KappaForge/actions/runs/39612996874)
+passed **375 Python tests, 387 JavaScript tests**, Chromium and mobile Safari regressions,
+and the isolated Worker build (Wrangler4.151.1,238.57KiB /62.86KiB gzip). Web syntax,
+configuration and generated-bundle checks passed. Local Windows LF-snapshot testing
+has only the two pre-existing temporary-file sharing errors in workflow output tests;
+Linux passed those tests. CRLF source-fixture failures are also a known local baseline.
+`engine/validate_change.py` is absent at baseline; independent trusted CI and the
+focused failure-injection tests are the available validation, not an invented validator pass.
 
-Native test now **taps real Retry and confirms the native dialog**, exercises production
-`userAuthorizedFetch` through `/authorize` then `/retry` with isolated fake responses,
-asserts one same-task request, preserves the candidate and reopens the persisted receipt.
-Only Debug simulator code supplies these fixtures; every non-fixture destination is
-rejected. Device Release builds exclude the fixture. Actual native CI observations and
-screenshots must be recorded separately from Node fixture results.
+[Native CI 39612752755](https://github.com/onlykappa/KappaForge/actions/runs/39612752755)
+passed all **five UI tests**, simulator and unsigned-device builds, bundle/icon verification
+and IPA packaging on iPhone16ProMax /iOS18.5 simulator. The recovery test passed in
+**20.876 seconds**: future cooldown, the actual local timer boundary, tapping real Retry,
+confirming the native dialog, production `/authorize` then `/retry` transport with fake
+responses, one request for the same task/candidate and full termination/reopening with
+receipt persistence. This run tested `041b1b7...`; `git diff041b1b7..0169fd4 -- ios preview
+config/app.json` is empty, so its native/UI source exactly matches the validated code.
+The latest PR checks additionally validate the final handoff revision; follow their actual
+status rather than assuming a documentation push ran a new live task.
+
+Screenshot artifact12350504771 and xcresult artifact12351522110 are retained on that run.
+Manifest maps `7CF028DC-5DD0-464C-9E10-5A25D8E478D8.png` to the passing recovery test;
+it was visually inspected. RECOVERY REQUESTED explicitly says runner start is unconfirmed;
+the Debug-only fixture badge records transport1. This is a **simulator fixture**, not a
+second physical iPhone, production wake-up or provider inference. Release device builds
+exclude fixture code. The packaged IPA is a PR build artifact, **not a published update**.
+
+The first native revision failed one premature Retry-visibility assertion; the test now
+waits for the real one-minute boundary rather than only the earlier elapsed-wait label.
+Superseded PR-only native runs were cancelled. The branch also initially had unquoted
+`#` in run-name expressions; GitHub rejected those workflow definitions before execution.
+Quoted complete YAML expressions and a regression test fixed that in0169fd4. Neither
+failure changed production. No unchanged failure was repeatedly rerun as acceptance.
+
+An optional local Miniflare5/Windows alarm harness could not start workerd
+(`ERR_RUNTIME_FAILURE`); it provides **no runtime alarm evidence**. The production alarm
+handler is exercised by controlled Node boundary tests with fixture storage/GitHub,
+and its deployment is build-checked; actual persistent-platform wake-up remains a
+post-review acceptance gate. No real key, task dispatch or provider call entered that
+optional harness. The failed fixture runtime is not claimed to be a verified baseline
+failure or a successful Cloudflare deployment.
 
 Read-only Production [inspection39609368709](https://github.com/onlykappa/KappaForge/actions/runs/39609368709)
 completed with the deploy job **skipped**. Chat permission is configured, Groq secret,
