@@ -1,5 +1,5 @@
 import registry from "../../config/providers.json" with {type:"json"};
-import {discover} from "./intelligence.js";
+import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
@@ -52,7 +52,18 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
  let lastStatus=0,lastRetryAt=null,attempts=0;
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;return result;};
+ let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+ let attemptStarted=0;
+ // Coding attempts join chat in the owner's usage history (kind "task"), so Settings → Usage counts every
+ // provider call KappaForge makes. A history write never blocks or fails inference.
+ const recordUsage=async outcome=>{
+  try{
+   const route=outcome.route,label=route.provider==="gemini"?route.model:route.provider+":"+route.model;
+   const event=telemetry(outcome.usage?{usageMetadata:outcome.usage}:null,label,Date.now()-attemptStarted,outcome.status===200,attempts>1,"task",pricing);
+   await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
+  }catch{}
+ };
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;if(outcome.status!==499)await recordUsage(outcome);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
@@ -81,7 +92,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
   try{
-   attempt.attempted=true;
+   attempt.attempted=true;attemptStarted=Date.now();
    if(route.provider==="gemini"){
     response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal});
    }else{

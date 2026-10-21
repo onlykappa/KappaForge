@@ -1,6 +1,7 @@
 import registry from "../../config/providers.json" with {type: "json"};
 import {fullCatalog,providerAllowed,providerPolicyStatus} from "./routing-policy.js";
 import {geminiLimits} from "./intelligence.js";
+import "../../preview/limits-core.js";
 // Free-tier fallback providers after Gemini. All but Workers AI speak the OpenAI chat format, so one
 // adapter covers them; responses are normalised to Gemini's shape so routing, streaming and usage
 // tracking stay provider-neutral.
@@ -134,6 +135,8 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
   for(const model of await providerModels(env,id))routes.push({provider:id,model,label:id+":"+model,capabilities:p.capabilities,context:p.context||null,maxOutput:p.maxOutput||null});
   }
  }
+ // Models the account dashboard shows with no quota at all (0 requests per minute or day) cannot answer.
+ for(let i=routes.length-1;i>=0;i--)if(globalThis.KappaLimits.noQuota(registry.limits,routes[i].provider,routes[i].model))routes.splice(i,1);
  // Preference orders eligible routes only. Explicit picks, permissions, free
  // model review, capabilities and context remain authoritative.
  const preferred=registry.routing?.preferredModelFamily;
