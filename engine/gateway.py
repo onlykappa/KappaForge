@@ -45,9 +45,14 @@ def error(status, data=None, headers=None, pinned=False):
 def probe(endpoint, token):
     """Checks configuration and current recorded guards, never inference capacity."""
     request = urllib.request.Request(endpoint + '/router/diagnostics', headers={
-        'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        data = json.loads(response.read())
+        'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'User-Agent': 'KappaForge-Coding-Router/1'})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        content_type = exc.headers.get('Content-Type', '').split(';')[0]
+        layer = 'edge_or_transport' if content_type == 'text/html' else 'gateway_or_edge'
+        raise GatewayUnavailable(f'Gateway diagnostics HTTP {exc.code}; layer={layer}; no inference was sent', terminal=True) from None
     if not isinstance(data, dict):
         raise GatewayUnavailable('Gateway diagnostics returned invalid metadata', terminal=True)
     # Only the deployed diagnostics contract is logged; never echo arbitrary responses.
@@ -123,4 +128,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except GatewayUnavailable as exc:
+        raise SystemExit(str(exc)) from None
