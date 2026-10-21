@@ -44,6 +44,7 @@ async function series(token,project,filter,start,end,extra=""){
  const d=await r.json().catch(()=>({}));
  const why=String(d.error?.message||"").slice(0,240);
  if(r.status===403&&/has not been used|is disabled|SERVICE_DISABLED/i.test(why+JSON.stringify(d.error?.details||"")))throw Error("Turn on the Cloud Monitoring API for project "+project+" (Google Cloud console → APIs & Services → Enable APIs → Cloud Monitoring API).");
+ if(r.status===403&&/billing/i.test(why))throw Object.assign(Error("Google only allows Cloud Monitoring reads on projects with billing enabled; project "+project+" has none."),{billing:true});
  if(r.status===403)throw Error("The service account can't read Cloud Monitoring for project "+project+". Give it the Monitoring Viewer role on that project."+(why?" Google: "+why:""));
  if(!r.ok)throw Error("Cloud Monitoring HTTP "+r.status+(d.error?.message?": "+String(d.error.message).slice(0,200):""));
  return d.timeSeries||[];
