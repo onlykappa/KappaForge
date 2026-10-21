@@ -599,6 +599,9 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         gateway.pace(journal, model_timeout)
     if hasattr(getattr(journal, 'scope', None), 'check_current'):
         journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
+    # Diagnostics currently describe only the bounded Groq acceptance route.
+    # Other authorized routes must reach the shared router independently of it.
+    if pinned_route:
         gateway.check(gateway.probe(endpoint, token))
     payload = {
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,

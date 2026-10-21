@@ -315,3 +315,56 @@ Rollback: revert only this scoped PR through required checks. Preserve task
 checkpoints, authorization, candidates, credentials, DO data and provider limits.
 Keep the previous IPA; install with the same signing identity without uninstalling.
 Do not restore direct-key inference or restart weather as part of rollback.
+
+## PR175 review follow-up: providers and runtime alarms (2026-10-21)
+
+Fixed an actual regression in `engine/runner.py`: the current-task check had moved
+Groq-only diagnostic gating onto every coding call. NVIDIA-only tasks could terminate
+on Groq's cooldown before reaching the shared router. Task authorization is still
+rechecked before every task-bound call; Groq diagnostics gate only pinned Groq calls.
+Regression coverage exercises NVIDIA, Mistral, OpenRouter, Ollama, Gemini, Groq and mixed
+provider sets with Groq diagnostics unavailable. Cancellation remains fail-closed.
+
+Automatic Worker chat/coding now prefers eligible DeepSeek models, retaining other
+approved routes as fallbacks. NVIDIA/OpenRouter discovery ranks DeepSeek first. Manual
+selection, disabled providers, capabilities, context and free/private-code permissions
+remain authoritative. Automatic with fallback disabled selects one preferred route even
+when Gemini is available. NVIDIA's reviewed exact free models are
+`deepseek-ai/deepseek-v4.1-flash` and `nvidia/nemotron-3-ultra-550b-a55b`. Outage tests
+verify fallback to another approved provider without repeating failed-account inference.
+
+Official sources checked 2026-10-21:
+- https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash documents the exact free endpoint.
+- https://build.nvidia.com/?modal=signin lists Nemotron3 Ultra under free inference.
+- https://ollama.com/pricing lists DeepSeek as metered, with free usage restricted to
+  starter models. Arbitrary Ollama Cloud models remain excluded under the $0 policy.
+
+The deployment workflow offers **activate-providers**, an explicit owner operation.
+It adds configured providers with reviewed free models/free-only catalogs to the four
+existing free/chat/coding/private-code lists, preserving existing entries. It reads
+secret presence only and fingerprints settings before/after, accepting only the four
+planned variable changes. Missing keys and unreviewed/metered catalogs cannot be enabled.
+Ordinary deploy preserves dashboard permissions. Activation has NOT run in production.
+
+`node chat-backend/tools/recovery-runtime-check.mjs` passes on Linux. It bundles the
+actual Worker, runs workerd/SQLite, registers through the authenticated recovery endpoint
+and real authorization Durable Object, reconstructs workerd with persistent storage, and
+waits for the automatic alarm. It never invokes `alarm()` manually. Exactly one scanner
+request follows the persisted cooldown. The fixture then executes real Python `scan`,
+atomic claim, `Journal.begin`, acknowledgement and duplicate suppression, preserving the
+candidate. Closed-task registration is rejected. All outbound traffic is intercepted;
+there are no real GitHub dispatches, production credentials or inference. Worker CI now
+runs this harness. This is **runtime acceptance with fixture external services**, not
+production acceptance. Initial harness setup errors were corrected before recording a pass.
+
+Local checks: 376 Python tests, 390 JavaScript tests, Worker dry-run build, changed
+workflow YAML/bash syntax, web/bundle parity and dependency-map checks pass. No new
+package or lockfile change is needed; the harness uses locked Wrangler dependencies.
+No native/UI source changed in this follow-up.
+
+Remaining live gate: merge/deploy reviewed code in the documented order, run explicit
+`activate-providers` deployment, inspect actual eligibility and run one newly authorized
+bounded acceptance task through deployed alarms/Actions. Do not revive closed #174.
+Live provider capacity/quota remains unknown. This session lacks Cloudflare credentials,
+the GitHub browser is signed out and the connector lacks workflow dispatch. PR175 stays
+draft. This follow-up does not claim production activation, merge, deployment or release.

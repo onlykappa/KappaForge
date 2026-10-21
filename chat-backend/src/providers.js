@@ -92,7 +92,7 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  const hasStructuredOutput=options.hasStructuredOutput===true;
  // Automatic still needs an initial route when Gemini is unavailable. Fallback
  // controls trying another route after selection, not eligibility for selection.
- const needsInitialRoute=automatic&&withinContext(routes,options).length===0;
+ const needsInitialRoute=automatic&&(withinContext(routes,options).length===0||!!registry.routing?.preferredModelFamily);
  if((!hasMedia||primary.capabilities?.media)&&(!hasTools||primary.capabilities?.tools)&&(!hasStructuredOutput||primary.capabilities?.structuredOutput)&&(prefs.fallback!==false||manual||needsInitialRoute)){
   for(const id of registry.order){
    const p=registry.providers[id];
@@ -101,8 +101,13 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
   for(const model of await providerModels(env,id))routes.push({provider:id,model,label:id+":"+model,capabilities:p.capabilities,context:p.context||null,maxOutput:p.maxOutput||null});
   }
  }
- if(channel==="coding")routes.sort((a,b)=>Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
-  (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0));
+ // Preference orders eligible routes only. Explicit picks, permissions, free
+ // model review, capabilities and context remain authoritative.
+ const preferred=registry.routing?.preferredModelFamily;
+ const preferredRoute=r=>typeof preferred==="string"&&r.model.toLowerCase().includes(preferred);
+ routes.sort((a,b)=>Number(preferredRoute(b))-Number(preferredRoute(a))||
+  (channel==="coding"?(Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
+   (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0)):0));
  if(manual){
   const chosen=routes.find(r=>r.label===manual);
   if(!chosen)return [];

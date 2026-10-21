@@ -9,6 +9,34 @@ from engine import gateway, developer, recovery, runner, intent_guard
 
 
 class GatewayEvidenceTests(unittest.TestCase):
+    def test_unpinned_providers_do_not_depend_on_groq_diagnostics(self):
+        import time
+        issue = dict(number=174, state='open', user={'login':'onlykappa'},
+                     created_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                     body='Repository: onlykappa/KappaForge\nMode: develop\nImplement the authorized change.')
+        for providers in (['nvidia'], ['mistral'], ['openrouter'], ['ollama'], ['groq'], ['gemini'], ['nvidia', 'groq', 'mistral']):
+            with self.subTest(providers=providers):
+                scope = intent_guard.ExecutionScope(issue)
+                handle = recovery.CURRENT.set(SimpleNamespace(scope=scope))
+                response = Mock(status=200)
+                response.__enter__ = Mock(return_value=response)
+                response.__exit__ = Mock(return_value=False)
+                response.read.return_value = json.dumps({'route':providers[0]+':fixture', 'text':'ok'}).encode()
+                try:
+                    with patch.dict(os.environ, {'KAPPA_ROUTER_URL':'https://fixture.example', 'KAPPA_ROUTER_TOKEN':'x'*40, 'GITHUB_TOKEN':'fixture'}), \
+                            patch.object(runner, 'github', return_value=issue) as current, \
+                            patch.object(gateway, 'probe', side_effect=gateway.GatewayUnavailable('Groq cooldown', terminal=True)) as diagnostic, \
+                            patch.object(gateway, 'record'), \
+                            patch.object(runner.urllib.request, 'urlopen', return_value=response) as network:
+                        self.assertEqual(runner.run_integrated_router('Exact original instructions', 100, providers)[1], 'ok')
+                        current.assert_called_once()
+                        diagnostic.assert_not_called()
+                        payload = json.loads(network.call_args.args[0].data)
+                        self.assertEqual(payload['providers'], sorted(providers))
+                        self.assertTrue(payload['fallback'])
+                finally:
+                    recovery.CURRENT.reset(handle)
+
     def test_saved_bounded_document_can_be_repaired_but_not_preexisting_or_broader_diffs(self):
         path = 'docs/integration/RECOVERY-NOTE.md'
         journal = SimpleNamespace(scope=SimpleNamespace(edit_path=path, inference_route='groq:openai/gpt-oss-120b'),

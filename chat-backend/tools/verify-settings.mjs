@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {readFile,writeFile} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
+import registry from "../../config/providers.json" with {type:"json"};
 
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==="object"?
  Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
@@ -52,6 +53,27 @@ export function expectedChatRepair(settings){
  return fingerprint({...settings,bindings:[...settings.bindings.filter(b=>b.name!=="KAPPA_CHAT_PROVIDERS"),{name:"KAPPA_CHAT_PROVIDERS",type:"plain_text",text:"groq"}]});
 }
 
+// Explicit owner operation only. Add every configured, reviewed free provider;
+// preserve existing choices, secrets, namespaces and unrelated dashboard values.
+export function providerActivation(settings){
+ const bindings=settings.bindings||[],binding=name=>bindings.find(b=>b.name===name);
+ if(binding('ROUTING_POLICY_VERSION')?.text!=='v1')throw Error('Routing policy v1 must already be active');
+ const reviewed=p=>p.freeOnly===true||Array.isArray(p.freeModels)&&p.freeModels.length>0;
+ const candidates=registry.order.filter(id=>{
+  const p=registry.providers[id];
+  return reviewed(p)&&(p.kind==='workers-ai'?!!binding('AI'):!p.key||p.keyOptional||binding(p.key)?.type==='secret_text');
+ });
+ if(reviewed(registry.routing.primary)&&binding('GEMINI_API_KEY')?.type==='secret_text')candidates.unshift('gemini');
+ const variables={};
+ for(const name of ['KAPPA_FREE_PROVIDERS','KAPPA_CHAT_PROVIDERS','KAPPA_CODE_PROVIDERS','KAPPA_PRIVATE_CODE_PROVIDERS']){
+  const existing=binding(name);
+  if(existing&&existing.type!=='plain_text')throw Error('Provider permissions must be plain-text bindings');
+  variables[name]=[...new Set([...(existing?.text||'').split(',').map(x=>x.trim()).filter(Boolean),...candidates])].join(',');
+ }
+ const expected={...settings,bindings:[...bindings.filter(b=>!Object.hasOwn(variables,b.name)),...Object.entries(variables).map(([name,text])=>({name,type:'plain_text',text}))]};
+ return {variables,expectedHash:fingerprint(expected).hash};
+}
+
 export async function main(args,env=process.env){
  const [operation,path,repair]=args;
  if(!["snapshot","verify","inspect","assert-unchanged"].includes(operation)||operation!=="inspect"&&!path)throw Error("Expected snapshot|verify|inspect|assert-unchanged and temporary file path");
@@ -59,8 +81,9 @@ export async function main(args,env=process.env){
  console.log("KAPPA_CHAT_PERMISSION "+JSON.stringify(chatPermissionAudit(metadata)));
  if(operation==="inspect")return;
  if(operation==="snapshot"){
-  if(repair&&repair!=="repair-chat")throw Error("Unsupported settings repair");
-  await writeFile(path,JSON.stringify({...current,...(repair?{expectedHash:expectedChatRepair(metadata).hash}: {})}),{mode:0o600,flag:"wx"});
+  if(repair&&!['repair-chat','activate-providers'].includes(repair))throw Error("Unsupported settings repair");
+  const planned=repair==='activate-providers'?providerActivation(metadata):repair?{expectedHash:expectedChatRepair(metadata).hash}:{};
+  await writeFile(path,JSON.stringify({...current,...planned}),{mode:0o600,flag:"wx"});
  }
  else{
   const before=JSON.parse(await readFile(path,"utf8"));

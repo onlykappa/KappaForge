@@ -55,9 +55,11 @@ test('provider summaries explain exclusions and sanitize discovery without infer
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'groq,ollama,nvidia,mistral',KAPPA_CHAT_PROVIDERS:'groq,ollama,nvidia,mistral',GROQ_API_KEY:'fixture-diagnostics',OLLAMA_API_KEY:'private-fixture',NVIDIA_API_KEY:'private-fixture',MISTRAL_API_KEY:'private-fixture',OPENROUTER_API_KEY:'private-fixture'};
  try{
   const rows=await providerSummary(env);
-  for(const id of ['ollama','nvidia']){const p=rows.find(p=>p.id===id);assert.equal(p.enabled,false);assert.equal(p.eligibility.reason,'free_models_unreviewed');assert.equal(p.discovery.state,'not_checked');}
+  for(const id of ['ollama']){const p=rows.find(p=>p.id===id);assert.equal(p.enabled,false);assert.equal(p.eligibility.reason,'free_models_unreviewed');assert.equal(p.discovery.state,'not_checked');}
   assert.equal(rows.find(p=>p.id==='openrouter').eligibility.reason,'free_provider_permission');
-  assert.equal(rows.find(p=>p.id==='groq').discovery.httpStatus,200);assert.equal(calls,2);
+  assert.equal(rows.find(p=>p.id==='groq').discovery.httpStatus,200);assert.equal(calls,3);
+  assert.equal(rows.find(p=>p.id==='nvidia').enabled,true);
+  assert.equal(rows.find(p=>p.id==='nvidia').discovery.state,'no_approved_models');
   assert.deepEqual(rows.find(p=>p.id==='mistral').models,['mistral-small-latest']);
   assert.ok(!JSON.stringify(rows).includes('private-fixture'));
  }finally{globalThis.fetch=previous;}

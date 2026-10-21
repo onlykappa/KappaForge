@@ -63,3 +63,22 @@ test("repair snapshot permits only the missing chat variable and detects concurr
   assert.ok(!logs.join("\n").includes("never-log-this"));
  }finally{globalThis.fetch=previous;console.log=log;await rm(folder,{recursive:true,force:true})}
 });
+
+test('explicit provider activation adds only configured reviewed free providers and preserves bindings',async()=>{
+ const {providerActivation}=await import('../chat-backend/tools/verify-settings.mjs');
+ const initial=repairFixture('groq');
+ initial.bindings.push({name:'KAPPA_PRIVATE_CODE_PROVIDERS',type:'plain_text',text:'groq'},
+  ...['NVIDIA_API_KEY','OLLAMA_API_KEY','OPENROUTER_API_KEY','MISTRAL_API_KEY'].map(name=>({name,type:'secret_text'})),
+  {name:'UNRELATED_SETTING',type:'plain_text',text:'preserve-me'});
+ const before=structuredClone(initial),plan=providerActivation(initial);
+ for(const value of Object.values(plan.variables)){
+  for(const id of ['groq','nvidia','openrouter','mistral'])assert.ok(value.split(',').includes(id));
+  for(const id of ['ollama','gemini','unorouter','requesty','zai','llm7','ovh','cerebras'])assert.ok(!value.split(',').includes(id));
+ }
+ assert.deepEqual(initial,before,'planning must not modify runtime settings');
+ const deployed={bindings:[...initial.bindings.filter(b=>!Object.hasOwn(plan.variables,b.name)),...Object.entries(plan.variables).map(([name,text])=>({name,type:'plain_text',text}))]};
+ assert.equal(fingerprint(deployed).hash,plan.expectedHash);
+ deployed.bindings.find(b=>b.name==='MEMORY').namespace_id='wrong';
+ assert.notEqual(fingerprint(deployed).hash,plan.expectedHash,'unrelated changes cannot pass activation verification');
+ assert.throws(()=>providerActivation({bindings:initial.bindings.filter(b=>b.name!=='ROUTING_POLICY_VERSION')}));
+});
