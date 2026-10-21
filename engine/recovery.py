@@ -337,9 +337,10 @@ class Journal:
 
     def defer(self, error):
         kind, _ = diagnose(error)
-        if (kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
+        if (self.scope.inference_route or kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
                 or self.state['continuations'] >= MAX_CONTINUATIONS or self.scope.expires <= self.clock() + 1200):
-            self.event(error, strategy='stop', outcome='blocked', next_action='Owner review required; automatic continuations exhausted or access blocked')
+            self.event(error, model=self.scope.inference_route or '', strategy='stop', outcome='blocked',
+                       next_action='Owner review required; automatic continuations exhausted or access blocked')
             return False
         now = self.clock()
         self.state.setdefault('waitingSince', now)
@@ -350,7 +351,7 @@ class Journal:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
             return False
         self.state['nextAt'] = due
-        self.event(error, strategy='checkpoint_and_continue', outcome='waiting',
+        self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
                    next_action='Resume this task and candidate on the next recovery queue scan (every 15 minutes)')
         self.publish('waiting', 'Progress saved. Waiting for automatic continuation on the recovery queue.')
         return True
@@ -360,10 +361,11 @@ class Journal:
         last = self.state['events'][-1] if self.state['events'] else {}
         execution = self.state.get('executionState', status)
         status = {'paused':'blocked','blocked_authorization':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
+        finished = at if status == 'ready' else 0
         snapshot = dict(version=1, taskId=str(self.scope.number), attemptId=f"recovery:{self.state['continuations']}:{at}",
-                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=0,
-                        steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status=status,
-                                    startedAt=at, finishedAt=0)], activity=[], findings=[], units=None,
+                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
+                        steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
+                                    startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
                         recovery=dict(executionState=execution, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
                                       continuations=self.state['continuations'], expiresAt=int(self.scope.expires * 1000), last=last))
         wire = json.dumps(snapshot, ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
@@ -474,6 +476,26 @@ class Journal:
         return self.defer(RuntimeError('Task execution deadline or interrupted worker; resume saved candidate'))
 
 
+def verify_saved_candidate(journal, token):
+    """Owner-triggered verification only: never repair, regenerate or change the candidate."""
+    if not journal.scope.inference_route or not journal.state['files'] or not journal.state['pr']:
+        raise PermissionError('Verification-only action requires a saved pinned task candidate')
+    match = re.fullmatch(r'https://github.com/' + re.escape(journal.scope.repo) + r'/pull/(\d+)', journal.state['pr'])
+    if not match:
+        raise PermissionError('Saved task PR is outside the authorized repository')
+    pr = journal.target_read(f'repos/{journal.scope.repo}/pulls/{match[1]}')
+    if (pr.get('state') != 'open' or pr.get('draft') is not True or pr.get('head', {}).get('sha') != journal.state['candidate']
+            or pr.get('head', {}).get('ref') != f'kappa/dev-{journal.scope.number}'):
+        raise PermissionError('Saved draft candidate changed; verification stopped')
+    journal.state['phase'] = 'tests'
+    result = resume_checks(journal, pr, token)
+    if result == 'fix':
+        journal.event('Independent checks or requirements need review; inference retries are disabled', outcome='blocked', strategy='stop')
+        journal.publish('blocked', 'Verification stopped without new inference; review the saved draft and test evidence.')
+        return 'blocked'
+    return result
+
+
 def resume_checks(journal, pr, token):
     """Resume independent verification at the saved SHA, including partial dispatch."""
     from engine import native_build
@@ -502,7 +524,15 @@ def resume_checks(journal, pr, token):
             journal.event('Candidate changed during verification; newer work is preserved', outcome='blocked', strategy='stop')
             journal.publish('blocked', 'Candidate changed; verify the newer commit before completion.')
             return 'blocked'
-        journal.state['status'] = 'ready'
+        # A successful exact-candidate check supersedes the active failure without
+        # erasing earlier evidence or charging any additional inference budget.
+        last = journal.state['events'][-1] if journal.state['events'] else {}
+        journal.state['events'].append(dict(at=journal.clock(), candidate=sha, kind='verification', error='',
+                                           model=journal.scope.inference_route or last.get('model', ''),
+                                           strategy='owner_review', outcome='ready', operation='test',
+                                           next='Review the validated draft PR; no automatic continuation is scheduled'))
+        journal.state.update(status='ready', nextAt=0)
+        journal.state.pop('waitingSince', None)
         journal.persist()
         journal.publish('ready', 'Independent checks passed for the saved candidate. Ready for owner review.')
         return 'ready'

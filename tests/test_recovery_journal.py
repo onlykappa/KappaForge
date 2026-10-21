@@ -164,6 +164,7 @@ class RecoveryJournalTests(unittest.TestCase):
     def test_queue_waits_reserves_once_and_duplicate_dispatch_is_consumed_once(self):
         j = self.journal
         j.defer(RuntimeError('HTTP 429'))
+        self.assertEqual(j.state['continuations'], 0, 'cooldown waiting does not consume a continuation')
         self.assertFalse(j.queue())
         self.world.now += 301
         self.assertTrue(j.queue())
@@ -173,6 +174,17 @@ class RecoveryJournalTests(unittest.TestCase):
         action = f'resume:1:{j.scope.digest[:12]}'
         self.assertTrue(restored.begin(action))
         self.assertFalse(self.world.journal().begin(action))
+
+    def test_pinned_failure_preserves_route_without_automatic_continuation(self):
+        self.journal.scope.inference_route = 'groq:openai/gpt-oss-120b'
+        self.assertFalse(self.journal.defer(RuntimeError('Gateway HTTP 503; upstream cause unknown')))
+        self.assertEqual(self.journal.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
+        self.assertEqual(self.journal.state['status'], 'blocked')
+        self.assertEqual(self.journal.state['continuations'], 0)
+        restored = self.world.journal()
+        self.assertEqual(restored.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
+        self.world.now += 1200
+        self.assertFalse(restored.queue())
 
     def test_lost_dispatch_ack_reuses_token_without_incrementing_continuation(self):
         self.journal.defer(RuntimeError('offline'))

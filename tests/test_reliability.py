@@ -204,6 +204,46 @@ class DurableRecoveryTests(unittest.TestCase):
         self.assertEqual(result,'ready')
         self.assertEqual(self.journal.state['executionState'],'completed')
 
+    def test_verified_recovery_publishes_completed_step_without_stale_failure(self):
+        from engine import native_build
+        failure = 'HTTP Error 422: Unprocessable Entity'
+        self.journal.event(failure, model='groq:openai/gpt-oss-120b', outcome='blocked',
+                           strategy='stop', next_action='Owner review required; automatic continuations exhausted or access blocked')
+        self.assertTrue(self.journal.begin('verify'))
+        self.journal.state.update(nextAt=self.world.now + 300, waitingSince=self.world.now)
+        before = copy.deepcopy(self.journal.state['budgets'])
+        success = dict(status='completed', conclusion='success')
+        with patch.object(developer, 'sandbox_result', return_value=success), \
+                patch.object(native_build, 'result', return_value=None), \
+                patch.object(native_build, 'needed', return_value=False), \
+                patch.object(developer, 'run_model', side_effect=AssertionError('verification cannot infer')):
+            self.assertEqual(recovery.resume_checks(self.journal, {'body': developer.review_record([])}, 'fixture'), 'ready')
+        restored = self.world.journal()
+        snapshot = json.loads(re.search(r'KAPPA_PROGRESS_V1 (.*?) -->', self.world.rows[-1]['body'])[1])
+        self.assertEqual(snapshot['status'], 'ready')
+        self.assertEqual(snapshot['steps'][0]['status'], 'completed')
+        self.assertEqual(snapshot['steps'][0]['detail'], '')
+        self.assertGreater(snapshot['steps'][0]['finishedAt'], 0)
+        self.assertEqual(snapshot['finishedAt'], snapshot['updatedAt'])
+        self.assertEqual(snapshot['recovery']['last']['error'], '')
+        self.assertEqual(snapshot['recovery']['last']['model'], 'groq:openai/gpt-oss-120b')
+        self.assertIn('Review the validated draft PR', snapshot['recovery']['last']['next'])
+        self.assertEqual(snapshot['recovery']['nextAt'], 0)
+        self.assertNotIn('waitingSince', restored.state)
+        self.assertEqual(restored.state['budgets'], before)
+        self.assertEqual(restored.state['candidate'], 'b'*40)
+        self.assertTrue(any(item['error'] == failure for item in restored.state['events']))
+
+    def test_waiting_progress_keeps_current_failure_and_retry_deadline(self):
+        self.journal.defer(RuntimeError('HTTP 429'))
+        snapshot = json.loads(re.search(r'KAPPA_PROGRESS_V1 (.*?) -->', self.world.rows[-1]['body'])[1])
+        self.assertEqual(snapshot['status'], 'waiting')
+        self.assertEqual(snapshot['steps'][0]['status'], 'waiting')
+        self.assertEqual(snapshot['steps'][0]['detail'], 'HTTP 429')
+        self.assertEqual(snapshot['recovery']['last']['error'], 'HTTP 429')
+        self.assertGreater(snapshot['recovery']['nextAt'], self.world.now * 1000)
+        self.assertEqual(snapshot['finishedAt'], 0)
+
     def test_three_fix_boundary_changes_strategy_without_abandoning_authorized_work(self):
         from engine import native_build
         comments = [{'body':developer.FIX_MARKER+'prior -->'} for _ in range(3)]

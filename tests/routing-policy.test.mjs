@@ -142,3 +142,64 @@ test("coding gateway uses only explicitly approved free private-code routes",asy
   assert.equal(noStructured.status,503);assert.equal(upstreamCalls,2,"unsupported structured output must not contact an upstream");
  }finally{globalThis.fetch=previous;}
 });
+
+test("an owner-pinned Groq coding request sends only the exact free model with fallback disabled",async()=>{
+ const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+ const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+ const previous=globalThis.fetch;let inferenceCalls=0,submitted=[];
+ globalThis.fetch=async(url,init)=>{
+  if(String(url).endsWith("/models"))return Response.json({data:[{id:"openai/gpt-oss-120b"},{id:"qwen/qwen3.8-27b"}]});
+  inferenceCalls++;submitted.push(JSON.parse(init.body));
+  return Response.json({choices:[{message:{content:"fixture answer"}}],usage:{prompt_tokens:5,completion_tokens:3,total_tokens:8}});
+ };
+ try{
+  const input={version:1,channel:"coding",privateCode:true,repo:"onlykappa/KappaForge",requestId:"88c7e741-b7ed-4daf-881b-cb75dc6e88fa",providers:["groq"],model:"groq:openai/gpt-oss-120b",fallback:false,reasoningEffort:"low",messages:[{role:"user",content:"exact fixture edit"}],maxTokens:80};
+  const response=await inferenceRouter(env,input),body=await response.json();
+  assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.route,"groq:openai/gpt-oss-120b");
+  assert.equal(inferenceCalls,1);assert.equal(submitted[0].model,"openai/gpt-oss-120b");
+  assert.equal(submitted[0].max_completion_tokens,80);assert.equal(submitted[0].reasoning_effort,"low");
+ }finally{globalThis.fetch=previous;}
+});
+
+test("gateway distinguishes upstream rejection or rate limit from a subsequent stored cooldown",async()=>{
+ for(const status of [413,429,503]){
+  const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+  const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+  const previous=globalThis.fetch;let inferenceCalls=0;
+  globalThis.fetch=async(url)=>String(url).endsWith('/models')?Response.json({data:[{id:'openai/gpt-oss-120b'}]}):
+   (inferenceCalls++,Response.json({error:'untrusted secret or prompt'},{status,headers:{'Retry-After':'90'}}));
+  try{
+   const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
+   const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
+   assert.equal(response.status,status===429?429:503);
+   assert.equal(first.failure.source,'upstream');assert.equal(first.failure.upstreamStatus,status);
+   assert.equal(first.failure.category,status===413?'provider_rejection':status===429?'rate_limit':'provider_outage');
+   assert.ok(first.retryAt>=Date.now()+88000);assert.ok(!JSON.stringify(first).includes('untrusted'));
+   const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),body=await second.json();
+   assert.equal(second.status,429);assert.equal(body.failure.source,'coordination');assert.equal(body.failure.upstreamStatus,status);
+   assert.equal(inferenceCalls,1,'a stored cooldown must not contact the provider again');
+  }finally{globalThis.fetch=previous;}
+ }
+});
+
+test("malformed responses and transport failures return their durable cooldown deadline",async()=>{
+ for(const mode of ['malformed_json','network_failure']){
+  const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+  const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+  const previous=globalThis.fetch;let calls=0;
+  globalThis.fetch=async url=>{
+   if(String(url).endsWith('/models'))return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+   calls++;if(mode==='network_failure')throw new TypeError('fixture network failure');
+   return new Response('{invalid json',{status:200});
+  };
+  try{
+   const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
+   const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
+   assert.equal(response.status,503);assert.equal(first.failure.category,mode);
+   assert.ok(first.retryAt>Date.now()+25000,'the failure response must expose its stored cooldown');
+   const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),later=await second.json();
+   assert.equal(second.status,429);assert.equal(later.failure.source,'coordination');
+   assert.equal(later.retryAt,first.retryAt);assert.equal(calls,1);
+  }finally{globalThis.fetch=previous;}
+ }
+});

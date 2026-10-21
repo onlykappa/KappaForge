@@ -570,7 +570,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
 
 def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False):
     """Send authorized coding inference through KappaForge's shared Durable-Object router."""
-    from engine import recovery
+    from engine import recovery, gateway
     endpoint = os.getenv("KAPPA_ROUTER_URL", "").strip().rstrip("/")
     token = os.getenv("KAPPA_ROUTER_TOKEN", "")
     parsed = urllib.parse.urlsplit(endpoint)
@@ -582,14 +582,34 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     selected = sorted(set(allowed if allowed is not None else code_providers(private=True)) & set(PROVIDERS["order"] + ["gemini"]))
     if not selected:
         raise RuntimeError("No provider is authorized for coding inference; the task remains queued")
+    pinned_route = getattr(getattr(journal, "scope", None), "inference_route", None)
+    pinned_model = None
+    fallback = True
+    if pinned_route:
+        provider, separator, pinned_model = pinned_route.partition(":")
+        policy = PROVIDERS.get("providers", {}).get(provider, {})
+        if (not separator or provider not in selected or pinned_model not in policy.get("freeModels", [])):
+            raise RuntimeError("Pinned inference route is outside the authorized free coding policy")
+        selected = [provider]
+        fallback = False
+        if len(prompt) > gateway.PINNED_PROMPT_CHARS:
+            raise gateway.GatewayUnavailable(f'Pinned task prompt exceeds its bounded request budget ({len(prompt)} characters); inference was not sent', terminal=True)
+        max_output_tokens = min(max_output_tokens, gateway.PINNED_OUTPUT_TOKENS)
+        gateway.pace(journal, model_timeout)
+        if hasattr(journal.scope, 'check_current'):
+            journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
+        gateway.check(gateway.probe(endpoint, token))
     payload = {
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,
         "requestId": str(uuid.uuid4()), "providers": selected,
         "messages": [{"role": "user", "content": prompt}],
         "maxTokens": min(max(1, int(max_output_tokens)), 8192),
-        "temperature": 0.2, "fallback": True,
+        "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
     }
+    if pinned_model:
+        payload["model"] = pinned_route
+        payload["reasoningEffort"] = "low"
     request = urllib.request.Request(endpoint + "/router/infer", json.dumps(payload).encode("utf-8"), {
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
@@ -601,22 +621,36 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             raise PermissionError("Integrated provider gateway rejected its runner credential") from None
-        if exc.code == 429:
-            retry_at = ""
+        try:
+            body = json.loads(exc.read(8192).decode('utf-8'))
+        except (ValueError, UnicodeError):
+            body = None
+        failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
+        evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
+                    'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
+                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None}
+        if pinned_route:
             try:
-                body = json.loads(exc.read().decode("utf-8"))
-                retry_at = "; retry after " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(body["retryAt"] / 1000)) if body.get("retryAt") else ""
-            except (ValueError, KeyError, TypeError):
-                pass
-            raise RuntimeError("Approved provider capacity is limited" + retry_at + "; no other route was used") from None
-        raise RuntimeError("Integrated provider gateway failed (HTTP " + str(exc.code) + "); no direct provider fallback was attempted") from None
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        raise RuntimeError("Integrated provider gateway unavailable; no direct provider fallback was attempted") from None
+                evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)
+            except Exception:
+                evidence['postFailureDiagnostic'] = 'unavailable'
+        gateway.record(journal, evidence)
+        raise failure from None
+    except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError):
+        raise gateway.GatewayUnavailable("Integrated provider gateway unavailable; no direct provider fallback was attempted",
+                                         terminal=bool(pinned_route)) from None
     if status != 200 or not isinstance(data, dict):
-        raise RuntimeError("Integrated provider gateway returned an invalid response")
+        raise gateway.GatewayUnavailable("Integrated provider gateway returned an invalid response", terminal=bool(pinned_route))
     model, output = data.get("route"), data.get("text")
     if not isinstance(model, str) or not re.fullmatch(r"[a-z0-9-]+:.{1,180}", model, re.I) or not isinstance(output, str) or not output.strip():
-        raise RuntimeError("Integrated provider gateway returned an incomplete inference result")
+        raise gateway.GatewayUnavailable("Integrated provider gateway returned an incomplete inference result", terminal=bool(pinned_route))
+    if pinned_route and model != pinned_route:
+        raise gateway.GatewayUnavailable("Integrated provider gateway did not honor the task-pinned route", terminal=True)
+    raw_usage = data.get('usage') if isinstance(data.get('usage'), dict) else {}
+    usage = {key: value for key, value in raw_usage.items() if key in ('promptTokenCount', 'candidatesTokenCount', 'totalTokenCount')
+             and type(value) is int and value >= 0}
+    gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
+                             'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None})
     asking(model)
     return model, output
 
@@ -818,7 +852,10 @@ def main():
                        'body': 'Resumed validated implementation checkpoint.\n' + review_record(
                            journal.state['requirements'] or ['Verify every original requirement and run independent tests'])})
                     fixing = True
-            if action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
+            if action == 'verify':
+                verified = recovery.verify_saved_candidate(journal, token)
+                url = journal.state['pr'] if verified != 'blocked' else None
+            elif action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
                 next_action = recovery.resume_checks(journal, pulls[0], token)
                 url = (fix_pull_request(issue, api_key, token)
                        if next_action == 'fix' else None if next_action == 'blocked' else pulls[0]['html_url'])

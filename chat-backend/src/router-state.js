@@ -43,7 +43,7 @@ export async function routingStore(state,request){
    if(prior)return prior.provider===provider&&prior.model===model?{allowed:true,duplicate:true,expiresAt:prior.expiresAt}:{allowed:false,reason:"idempotency_conflict"};
    const cooldown=data.pools[pool],route=data.routes[key],now=Date.now();
    const blocked=[cooldown,route].filter(Boolean).find(row=>row.blocked||row.until>now);
-   if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null};
+   if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
    if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
    const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,expiresAt};
@@ -101,7 +101,7 @@ export async function routingStore(state,request){
       status:code,failures:Math.min(10,(old.failures||0)+1),blocked,until:blocked?0:now+delay*1000,updatedAt:now};
    }
    data.outcomes[requestId]={at:now,status,provider,model};
-   return {stored:true,duplicate:false};
+   return {stored:true,duplicate:false,retryAt:Math.max(data.pools[pool]?.until||0,data.routes[route]?.until||0)||null};
   });
   return Response.json(result,{status:result.stored?200:409});
  }

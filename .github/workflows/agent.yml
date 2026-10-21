@@ -6,7 +6,26 @@ concurrency:
   group: kappaforge-agent-${{ inputs.issue_number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
+  router-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'router-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Inspect approved configuration and recorded cooldowns without inference
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: python -m engine.gateway
   classify:
+    if: inputs.action != 'router-check'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -219,7 +238,7 @@ jobs:
         required: false
         type: string
       action:
-        description: Blank to run the task, or "fix" to repair its failed development PR
+        description: Blank to run; fix to repair; verify for saved-candidate checks only; router-check for diagnostics only
         required: false
         type: string
   schedule:
