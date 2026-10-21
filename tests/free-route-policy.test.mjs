@@ -154,7 +154,7 @@ test("Automatic without fallback can select one enabled non-Gemini chat route",a
   assert.equal(inferenceCalls,0,"selecting one route must not make an inference request");
   assert.deepEqual(await fallbackRoutes(env,[],{model:"gemini-retired",fallback:false},false,{channel:"chat"}),[],"an explicit unavailable model stays unavailable");
   assert.deepEqual((await fallbackRoutes(env,[],{model:"auto",fallback:false,disabledProviders:["groq"]},false,{channel:"chat"})).map(r=>r.label),["ollama:openai/gpt-oss-120b"]);
-  assert.deepEqual((await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"})).map(r=>r.label),["ollama:openai/gpt-oss-120b"],"the selected Ollama model supports this media request");
+  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"}),[],"no selected model supports this media request");
  }finally{globalThis.fetch=original}
 });
 
