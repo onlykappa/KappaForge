@@ -807,7 +807,7 @@ export default {
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
-          if(response.status===401||response.status===402||response.status===403)rejectedProviders.add(route.provider);
+          if(response.status===401||response.status===402)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;

@@ -396,7 +396,7 @@
       "leaseMs": 120000,
       "requestTimeoutMs": 180000,
       "attemptTimeoutMs": 60000,
-      "maxRouteAttempts": 12,
+      "maxRouteAttempts": 64,
       "responseGraceMs": 15000,
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,

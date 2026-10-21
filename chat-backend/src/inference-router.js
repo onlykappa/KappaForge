@@ -91,7 +91,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
    if(!response.ok){
     await response.body?.cancel();
     const category=response.status===429?"rate_limit":response.status===401||response.status===402?"authentication":response.status>=500?"provider_outage":"provider_rejection";
-    if(response.status===401||response.status===402||response.status===403)rejectedProviders.add(route.provider);
+    if(response.status===401||response.status===402)rejectedProviders.add(route.provider);
     await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;

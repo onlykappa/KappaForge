@@ -41,6 +41,11 @@ class ModelRoutingTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "gemini"}):
             self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-pro", "other"])
 
+    def test_star_opts_every_provider_into_its_full_catalog(self):
+        with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*"}):
+            self.assertTrue(runner.full_catalog("kilo"))
+            self.assertEqual(runner.select_models({"gemini-2.5-pro", "gemini-3-flash"}), ["gemini-3-flash", "gemini-2.5-pro"])
+
     def test_provider_full_catalog_opt_in_lifts_free_filter_and_cap(self):
         def urlopen(req, timeout=None):
             return response({"data": [{"id": "paid/model"}, {"id": "kilo-auto/free"}, {"id": "poolside/laguna-s-2.1:free"}, {"id": "other/free"}]})

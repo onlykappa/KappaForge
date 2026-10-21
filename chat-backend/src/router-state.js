@@ -102,11 +102,14 @@ export async function routingStore(state,request){
    }
    else if(status!==499){
     const code=status,blocked=code===401||code===402;
-    const scope=code===401||code===402?"pool":code===403||code===404?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
+    // A rejection of one model (unsupported option, retired, denied) rests only that model, not the provider.
+    const modelSpecific=code===400||code===403||code===404||code===422;
+    const scope=code===401||code===402?"pool":modelSpecific?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
     const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
-    const delay=Math.max(retry===null?defaultDelay:retry,resetDelay||0);
+    // A model rejected twice in a row is not offered again for six hours; a success clears the count.
+    const delay=Math.max(retry===null?defaultDelay:retry,resetDelay||0,modelSpecific&&(old.failures||0)>=1?21600:0);
     target[id]={provider,model,category:category||({401:"authentication",402:"billing_blocked",403:"provider_denied",404:"model_unavailable",429:"rate_limit"}[code]||"provider_error"),
       status:code,failures:Math.min(10,(old.failures||0)+1),blocked,until:blocked?0:now+delay*1000,updatedAt:now};
    }

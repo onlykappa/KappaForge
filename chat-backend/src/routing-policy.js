@@ -14,9 +14,9 @@ export function requestRoutingPreferences(text,preferences={}){
 }
 const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.freeModels):
  Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
-// Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model the provider account lists,
-// including paid ones. Without it a provider keeps its reviewed free models and per-provider cap.
-export function fullCatalog(env,id){return list(env.KAPPA_ALL_MODEL_PROVIDERS).has(id);}
+// Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS, "*" for every provider) to route every chat model the provider
+// account lists, including paid ones. Without it a provider keeps its reviewed free models and per-provider cap.
+export function fullCatalog(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has("*")||all.has(id);}
 
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.

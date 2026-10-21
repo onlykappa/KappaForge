@@ -28,6 +28,12 @@ test('only providers in KAPPA_ALL_MODEL_PROVIDERS route their full account catal
  }finally{globalThis.fetch=original}
 });
 
+test('"*" opts every provider into its full catalog',async()=>{
+ const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
+ assert.equal(providerPolicyStatus(env,'chat','ollama').enabled,true);
+ assert.equal(providerPolicyStatus(env,'chat','groq').reason,'free_provider_permission','"*" never grants provider permission');
+});
+
 test('the full-catalog opt-in admits an unreviewed provider but never bypasses channel permissions',()=>{
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
  assert.equal(providerPolicyStatus(env,'chat','ollama').reason,'free_models_unreviewed');
@@ -73,7 +79,7 @@ test('Gemini full catalog skips non-chat models and uses each model\'s own conte
 
 test('chat stops after the attempt cap and skips a provider whose account rejects the key',async()=>{
  const original=globalThis.fetch,calls=[],reservations=[];
- const groq=Array.from({length:30},(_,i)=>'groq-model-'+i),nvidia=['nvidia-a','nvidia-b','nvidia-c'];
+ const groq=Array.from({length:80},(_,i)=>'groq-model-'+i),nvidia=['nvidia-a','nvidia-b','nvidia-c'];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
   if(u==='https://api.groq.com/openai/v1/models')return catalog(groq);
   if(u==='https://integrate.api.nvidia.com/v1/models')return catalog(nvidia);
@@ -87,7 +93,7 @@ test('chat stops after the attempt cap and skips a provider whose account reject
   const r=await worker.fetch(chat({messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
-  assert.equal(reservations.length,12,'33 candidate routes stop at maxRouteAttempts');
+  assert.equal(reservations.length,64,'83 candidate routes stop at maxRouteAttempts');
   assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
  }finally{globalThis.fetch=original}
 });
@@ -95,7 +101,7 @@ test('chat stops after the attempt cap and skips a provider whose account reject
 test('the coding gateway applies the same cap and keeps its existing failure codes',async()=>{
  const original=globalThis.fetch,calls=[],reservations=[];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u==='https://api.groq.com/openai/v1/models')return catalog(Array.from({length:30},(_,i)=>'groq-code-'+i));
+  if(u==='https://api.groq.com/openai/v1/models')return catalog(Array.from({length:80},(_,i)=>'groq-code-'+i));
   if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
   return new Response('{}',{status:404});
  };
@@ -105,6 +111,29 @@ test('the coding gateway applies the same cap and keeps its existing failure cod
   const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
-  assert.equal(reservations.length,12,'30 candidate routes stop at maxRouteAttempts');assert.ok(calls.length>=1);
+  assert.equal(reservations.length,64,'80 candidate routes stop at maxRouteAttempts');assert.ok(calls.length>=1);
  }finally{globalThis.fetch=original}
+});
+
+test('a model rejected twice rests for six hours while the provider\'s other models stay available',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const call=async(path,body)=>(await routingStore({storage:store},new Request('https://memory.internal'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(requestId,model)=>call('/router/reserve',{requestId,provider:'mistral',model,accountPool:'mistral',quotaPool:'mistral',quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ const fail=(requestId,model)=>call('/router/outcome',{requestId,provider:'mistral',model,status:400,category:'provider_rejection'});
+ const realNow=Date.now;let now=realNow();Date.now=()=>now;
+ try{
+  assert.equal((await reserve('strike-one-0000000000000000000000','pixtral-large-latest')).allowed,true);
+  await fail('strike-one-0000000000000000000000','pixtral-large-latest');
+  assert.equal((await reserve('other-model-00000000000000000000','mistral-medium-latest')).allowed,true,'one model\'s rejection does not pause the provider');
+  now+=31000;
+  assert.equal((await reserve('strike-two-0000000000000000000000','pixtral-large-latest')).allowed,true,'a single rejection rests the model briefly');
+  await fail('strike-two-0000000000000000000000','pixtral-large-latest');
+  now+=5*3600000;
+  assert.equal((await reserve('strike-later-00000000000000000000','pixtral-large-latest')).allowed,false,'a second rejection rests it for six hours');
+  now+=3600000+1000;
+  assert.equal((await reserve('strike-after-00000000000000000000','pixtral-large-latest')).allowed,true);
+ }finally{Date.now=realNow}
 });
