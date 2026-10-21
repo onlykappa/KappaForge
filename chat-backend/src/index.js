@@ -716,7 +716,21 @@ export default {
         candidates=await fallbackRoutes(env,routes(available,{...prefs,model:"auto"},isComplex(input)),{...prefs,model:"auto"},chat.hasMedia,
           {channel:"chat",hasTools:chat.hasTools,hasStructuredOutput:planning,promptChars:chat.contextChars,maxOutputTokens:chat.maxTokens});
       }
-      if(!candidates.length){const failClosed=routePolicy(env).failClosed;return json({error:failClosed?"No explicitly approved free provider route is currently available.":"Selected model unavailable. Refresh model availability or choose Automatic.",code:failClosed?"free_route_unavailable":"model_unavailable"},failClosed?503:422,cors);}
+      if(!candidates.length){
+        const policy=routePolicy(env),failClosed=policy.failClosed;
+        const configuredProviders=policy.chatProviders.filter(id=>id==="gemini"?!!env.GEMINI_API_KEY:configured(env,id));
+        const reason=!policy.freeAllowlistConfigured?"free_allowlist_missing":
+          typeof env.KAPPA_CHAT_PROVIDERS!=="string"||!env.KAPPA_CHAT_PROVIDERS.trim()?"chat_allowlist_missing":
+          !policy.chatProviders.length?"no_approved_chat_provider":!configuredProviders.length?"chat_credentials_missing":"no_compatible_chat_model";
+        const messages={free_allowlist_missing:"Worker free-provider permission is missing.",chat_allowlist_missing:"Worker chat provider permission is missing.",
+          no_approved_chat_provider:"Worker free and chat provider permissions have no reviewed route in common.",
+          chat_credentials_missing:"Approved chat providers have no usable server credential.",
+          no_compatible_chat_model:"No enabled free chat model fits this request. Check model selection, discovery, disabled providers and request capabilities."};
+        return json({error:failClosed?messages[reason]:"Selected model unavailable. Refresh model availability or choose Automatic.",code:failClosed?"free_route_unavailable":"model_unavailable",
+          routing:{reason:failClosed?reason:"model_unavailable",approvedProviders:policy.chatProviders,configuredProviders,
+            selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
+            fallbackEnabled:prefs.fallback!==false,hasMedia:chat.hasMedia,hasTools:chat.hasTools,structuredOutput:planning}},failClosed?503:422,cors);
+      }
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
