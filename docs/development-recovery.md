@@ -128,13 +128,30 @@ or fabricates permissions. Provider errors cannot authorize GitHub writes.
 
 ## Durable cooldown-aware scheduling
 
-`.github/workflows/recovery.yml` runs server-side every fifteen minutes, subject to
+`.github/workflows/recovery.yml` runs server-side every five minutes, subject to
 GitHub scheduling delays. Neither the app nor a personal device must stay online.
-`nextAt` is at least five minutes away and at least thirty seconds after the
+Transient provider failures become eligible after one minute; other recovery
+retains a five-minute minimum. `nextAt` remains at least thirty seconds after the
 provider's earliest eligible retry. This timestamp survives serialization, error
 wrapping, process restart and interrupted-worker reconciliation. Waiting queue
 scans do not reserve a continuation or consume one of the three deliveries.
 Healthy alternatives are tried before exhausted routing is deferred.
+
+GitHub supports no sub-five-minute scheduled workflow; the off-hour cadence
+`2-57/5 * * * *` reduces the idle scan interval without claiming an exact start
+deadline. One minute after the recorded eligibility time, the app shows
+**READY TO RESUME** and the existing explicit Retry control. This local reminder
+does not make an inference call, dispatch work, shorten provider cooldowns, or
+prove inference capacity. The clock says Waiting during provider/recovery waits.
+New snapshots carry `scanIntervalSeconds=300`; old snapshots remain readable and
+show generic scheduling-delay information. Authorization expiry still blocks.
+
+Debug simulator fixture `KAPPA_PROGRESS_FIXTURE=recovery` exercises a fake task
+through future cooldown, locally observed eligibility and persisted app reopening.
+The native XCTest advances only fixture eligibility; real UI timing/normalization
+and persistence code run. Fixtures contain no credentials or execution authority,
+disable live issue polling, and are excluded from device Release builds. Passing
+this simulation does not establish live provider recovery or a physical-device test.
 
 Waiting defaults to six hours per recovery episode, bounded by authorization
 expiry with a twenty-minute safety reserve. A validated new candidate is meaningful

@@ -27,4 +27,5 @@ jobs:
 'on':
   workflow_dispatch: null
   schedule:
-  - cron: '*/15 * * * *'
+  # GitHub supports no shorter interval; schedules are best-effort, not deadlines.
+  - cron: '2-57/5 * * * *'

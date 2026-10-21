@@ -6,7 +6,7 @@ import WebKit
 enum ProgressFixture {
     static func script() -> WKUserScript? {
         guard let scenario = ProcessInfo.processInfo.environment["KAPPA_PROGRESS_FIXTURE"],
-              ["queued", "running", "failed", "testing", "ready"].contains(scenario) else { return nil }
+              ["queued", "running", "failed", "testing", "ready", "recovery"].contains(scenario) else { return nil }
         let source = #"""
         (() => {
           if (typeof KappaProgress === 'undefined' || typeof ensureTaskCard !== 'function') return;
@@ -17,6 +17,26 @@ enum ProgressFixture {
           // UI fixtures do not poll an unrelated live GitHub issue with the same number.
           checkJobResult = async () => {};
           jobPollAfter = Number.MAX_SAFE_INTEGER;
+          if (scenario === 'recovery') {
+            const saved = trackedJobs.find(j=>j.number===103&&j.progress?.attemptId==='simulator-recovery');
+            const chat = (saved&&chats.find(c=>c.id===saved.chatId))||{id:'simulator-recovery',title:'Recovery simulator task',at:now,messages:[]};
+            if (!chats.includes(chat)) chats.unshift(chat);
+            current=chat.id;view='chat';
+            const progress = saved?.progress||KappaProgress.normalize({version:1,taskId:'103',attemptId:'simulator-recovery',attemptAt:now,
+              revision:1,status:'waiting',updatedAt:now,startedAt:now,steps:[],recovery:{candidate:'b'.repeat(40),
+              nextAt:now+3600000,expiresAt:now+7200000,scanIntervalSeconds:300,continuations:0,
+              last:{error:'Fixture upstream HTTP 503; no inference was sent',next:'Resume the saved candidate'}}},103);
+            const job = saved||{number:103,chatId:chat.id,title:'Recovery simulator task',mode:'develop',message:'progress',queuedAt:now,activeAt:now,progress};
+            trackedJobs=trackedJobs.filter(j=>j.number!==103);trackedJobs.push(job);
+            ensureTaskCard(job);persistJobs();save();render();
+            if (progress.recovery.nextAt>now) {
+              const advance=document.createElement('button');advance.textContent='Simulate cooldown elapsed';
+              advance.style.cssText='position:fixed;top:100px;right:8px;z-index:9999';
+              advance.onclick=()=>{advance.remove();job.progress.recovery.nextAt=Date.now()-59000;persistJobs();save();render()};
+              document.body.append(advance);
+            }
+            document.activeElement?.blur();scrollTo(0,0);return;
+          }
           const chat = {id:'simulator-progress-'+scenario,title:'Simulator task progress',at:now,messages:[]};
           chats.unshift(chat); current = chat.id; view = 'chat';
           const failed = scenario === 'failed', validating = scenario === 'testing' || scenario === 'ready';
