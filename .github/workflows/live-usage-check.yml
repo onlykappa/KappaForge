@@ -14,6 +14,8 @@ on:
   push:
     branches:
     - live-usage-check
+    # Pages and model lists only, without sending a message to every model.
+    - live-usage-check-quick
 permissions:
   contents: write
 concurrency:
@@ -51,7 +53,7 @@ jobs:
       env:
         KAPPA_WORKER_URL: ${{ vars.KAPPA_ROUTER_URL }}
         KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
-        PROBE: ${{ github.event_name == 'push' || inputs.probe }}
+        PROBE: ${{ github.event_name == 'push' && github.ref_name == 'live-usage-check' || inputs.probe }}
       run: |-
         set -Eeuo pipefail
         test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }

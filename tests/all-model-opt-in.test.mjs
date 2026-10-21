@@ -45,12 +45,12 @@ test('Workers AI catalog discovery needs the opt-in and rests a failed lookup on
  const original=globalThis.fetch,requests=[];let fail=false;
  globalThis.fetch=async(url,init)=>{requests.push({target:new URL(String(url)),auth:init.headers.Authorization});
   if(fail)return new Response('{}',{status:503});
-  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast'},{name:'@cf/zai-org/glm-4.7-flash'},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'}]});
+  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',task:{name:'Text Generation'}},{name:'@cf/zai-org/glm-4.7-flash',task:{name:'Text Generation'}},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'},{name:'@cf/baai/bge-m3',task:{name:'Text Embeddings'}}]});
  };
  try{
   const env={AI:{},KAPPA_ALL_MODEL_PROVIDERS:'workers-ai',CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'};
   assert.deepEqual(await providerModels(env,'workers-ai'),['@cf/meta/llama-3.3-70b-instruct-fp8-fast','@cf/zai-org/glm-4.7-flash']);
-  assert.equal(requests[0].target.searchParams.get('task'),'text-generation');assert.equal(requests[0].auth,'Bearer read-token-fixture');
+  assert.equal(requests[0].target.searchParams.get('task'),null,'filtered by each row\'s task, not a query spelling');assert.equal(requests[0].auth,'Bearer read-token-fixture');
   assert.deepEqual(await providerModels({AI:{},CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'},'workers-ai'),
    ['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast'],'without opt-in the binding list is used');
   assert.equal(requests.length,1);

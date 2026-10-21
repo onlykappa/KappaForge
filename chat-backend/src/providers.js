@@ -58,12 +58,15 @@ export async function providerModels(env,id){
    const ids=[];let page=1,status=200;
    for(;page<=50;page++){
     const url=new URL("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)+"/ai/models/search");
-    url.searchParams.set("task","text-generation");url.searchParams.set("per_page","100");url.searchParams.set("page",String(page));
+    url.searchParams.set("per_page","100");url.searchParams.set("page",String(page));
     const r=await fetch(url,{headers:{Authorization:"Bearer "+env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(8000)});status=r.status;
     if(!r.ok)return fallback({state:"http_error",httpStatus:r.status});
     const body=await r.json(),rows=body?.result;
     if(!Array.isArray(rows))return fallback({state:"invalid_shape",httpStatus:r.status});
     for(const row of rows){
+     // The whole catalog is read and filtered here by each row's task, so no task-name spelling is assumed.
+     const task=typeof row?.task==="string"?row.task:row?.task?.name;
+     if(task&&!/text generation/i.test(task))continue;
      const id=typeof row==="string"?row:row?.name||row?.id||row?.model_id||(typeof row?.model==="string"?row.model:null)||row?.model?.name||row?.model?.id;
      if(typeof id==="string"&&id.startsWith("@cf/")&&ROUTABLE.test(id)&&!EXCLUDE.test(id))ids.push(id);
     }
