@@ -13,6 +13,6 @@ test('Neurons come from Cloudflare analytics, and failures report a reason inste
   await workersAiNeurons(env,at+1000);assert.equal(calls,1,'cached for a minute');
   globalThis.fetch=async()=>Response.json({data:null,errors:[{message:'not authorized for that account'}]});
   const failed=await workersAiNeurons(env,Date.UTC(2026,9,22,1));
-  assert.equal(failed.used,null);assert.match(failed.error,/not authorized/);
+  assert.equal(failed.used,null);assert.match(failed.error,/Account Analytics: Read/);
  }finally{globalThis.fetch=real;}
 });

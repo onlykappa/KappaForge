@@ -17,7 +17,9 @@ export async function workersAiNeurons(env,now=Date.now()){
    body:JSON.stringify({query:QUERY,variables:{account:String(env.CLOUDFLARE_ACCOUNT_ID),day}})});
   const data=await r.json().catch(()=>null),errors=data?.errors?.map(e=>String(e?.message||"").slice(0,160)).filter(Boolean)||[];
   const groups=data?.data?.viewer?.accounts?.[0]?.aiInferenceAdaptiveGroups;
-  if(!r.ok||errors.length||!Array.isArray(groups))value={used:null,limit,day,error:"Cloudflare analytics "+(r.ok?"":"HTTP "+r.status+" ")+(errors.join("; ")||"returned no Workers AI data")};
+  const denied=r.status===401||r.status===403||errors.some(e=>/not authorized|permission|authentication/i.test(e));
+  if(denied)value={used:null,limit,day,error:"Add the Account Analytics: Read permission to the Worker's CLOUDFLARE_API_TOKEN to show Neurons."};
+  else if(!r.ok||errors.length||!Array.isArray(groups))value={used:null,limit,day,error:"Cloudflare analytics "+(r.ok?"":"HTTP "+r.status+" ")+(errors.join("; ")||"returned no Workers AI data")};
   else value={used:Math.round(Number(groups[0]?.sum?.totalNeurons)||0),limit,day,source:"cloudflare-analytics"};
  }catch(error){value={used:null,limit,day,error:"Cloudflare analytics unreachable"+(error?.name==="TimeoutError"?" (timeout)":"")};}
  cache.set(day,{at:now,value});

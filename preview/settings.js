@@ -89,8 +89,8 @@ function usageModel(){
  const rows=L.usage(usageEvents,capabilities.limits,list.map(p=>p.id),{show:enabled}).filter(p=>enabled.includes(p.id)||p.used.requests);
  return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p]))};
 }
-function providerRow(p,names){
- const left=p.requestLimit?Math.max(0,100-pct(p.used.requests,p.requestLimit)):null,color=PROVIDER_COLORS[p.id]||'#8e8e93';
+function providerRow(p,names,unit='requests'){
+ const byTokens=unit==='tokens'&&p.tokenLimit,left=byTokens?Math.max(0,100-pct(p.tokensOnCapped,p.tokenLimit)):p.requestLimit?Math.max(0,100-pct(p.used.requests,p.requestLimit)):null,color=PROVIDER_COLORS[p.id]||'#8e8e93';
  const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
  return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(left===null?0:100-left,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>no limit set':'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
@@ -119,10 +119,13 @@ function usageHome(){
  const main=sorted.slice(0,4),rest=sorted.slice(4);
  const other=rest.length?'<button class="u-prow" data-usage-provider="other"><span class="u-av" style="color:#8e8e93;background:#8e8e932e">+</span><span class="u-pn"><strong>Other</strong><small>'+esc(rest.map(r=>model.names[r.id]||r.id).join(', '))+' · '+plural(rest.reduce((n,r)=>n+r.used.requests,0),'request')+'</small></span><span class="u-right"><b>'+rest.length+'</b>providers</span><span class="u-chev" aria-hidden="true">›</span></button>':'';
  const providers='<h3 class="u-hdr">Provider allowances today</h3><div class="u-card u-list">'+main.map(r=>providerRow(r,model.names)).join('')+other+'</div>';
+ // Tokens view: every provider ranked by tokens, measured against its token allowance where one is published.
+ const byTokens=[...model.rows].sort((a,b)=>b.used.tokens-a.used.tokens||(b.tokenLimit?1:0)-(a.tokenLimit?1:0)).filter((r,i)=>i<4||r.used.tokens);
+ const tokenProviders='<h3 class="u-hdr">Tokens by provider today</h3><div class="u-card u-list">'+byTokens.map(r=>providerRow(r,model.names,'tokens')).join('')+'</div>';
  const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names)+'</div>':'';
  if(usageUnit==='tokens'){const tp=pct(tokensCapped,tokenLimit);
   return uHero(uRing(tp??0,'of today used',tp!==null),tokenLimit?'<b>'+compact(tokensCapped)+'</b> / '+compact(tokenLimit)+' tokens':'<b>'+compact(tokensToday)+'</b> tokens today',
-   [[compact(tokensToday),'tokens today'],[compact(tokensMonth),'this month'],[attemptsToday?compact(Math.round(tokensToday/attemptsToday)):'—','per request']])+tokenBar+providers;}
+   [[compact(tokensToday),'tokens today'],[compact(tokensMonth),'this month'],[attemptsToday?compact(Math.round(tokensToday/attemptsToday)):'—','per request']])+tokenBar+tokenProviders;}
  if(usageUnit==='neurons'){const n=capabilities.neurons,w=model.byId['workers-ai'],known=Number.isFinite(n?.used)&&n.limit>0,np=known?pct(n.used,n.limit):0;
   return uHero(uRing(np,'of today used',known),known?'<b>'+compact(n.used)+'</b> / '+compact(n.limit)+' neurons':'Neurons unavailable',
    [[compact(w?.used.requests||0),'Workers AI requests'],[compact(w?.used.tokens||0),'tokens today'],[untilReset(nextUtc),'until reset']])+
