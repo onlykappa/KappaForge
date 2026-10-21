@@ -77,6 +77,7 @@ const plural=(n,word)=>compact(n)+' '+word+(n===1?'':'s');
 const pct=(used,limit)=>limit>0?Math.round(used/limit*1000)/10:null;
 let usageView={provider:null,model:null};
 const PROVIDER_COLORS={gemini:'#0a84ff',groq:'#ff9f0a',zai:'#bf5af2',ollama:'#e5e5ea',mistral:'#ff6b35',nvidia:'#76b900',openrouter:'#ff453a','workers-ai':'#64d2ff',other:'#8e8e93'};
+const successColor=p=>p===null?'var(--text)':p>=90?'#30d158':p>=50?'#ff9f0a':'#ff453a';
 function untilReset(at){const ms=Math.max(0,at-Date.now()),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return h?h+' h '+m+' m':m+' m';}
 function uMeter(percent,color){const p=Math.max(0,Number(percent)||0);return '<div class="u-meter" role="img" aria-label="'+p+'% used"><i style="width:'+Math.min(100,p)+'%;'+(p>0?'min-width:3px;':'')+'background:'+(p>100?'#ff453a':p>=80?'#ff9f0a':color)+'"></i></div>';}
 const PROVIDER_MARKS={groq:'Q','workers-ai':'C',openrouter:'O'};
@@ -99,10 +100,10 @@ function usageHome(){
  const nextUtc=(()=>{const d=new Date();d.setUTCHours(24,0,0,0);return d.getTime();})();
  const used=state.dailyRequests?.used||0,cap=state.dailyPolicyLimit,p=pct(used,cap)??0,dash=553,off=dash-dash*Math.min(100,p)/100;
  const today=KappaCore.periodStart('day'),month=KappaCore.periodStart('month');let tokensToday=0,tokensMonth=0,okToday=0,attemptsToday=0;
- for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=month)tokensMonth+=t;if(e.at>=today){tokensToday+=t;attemptsToday++;if(e.ok!==false)okToday++;}}
+ for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=month)tokensMonth+=t;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'){attemptsToday++;if(e.ok!==false)okToday++;}}}
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
  const hero='<div class="u-card u-hero"><svg viewBox="0 0 210 210" width="196" height="196" role="img" aria-label="'+p+'% of today’s requests used"><defs><linearGradient id="u-ring"><stop offset="0" stop-color="#0a84ff"/><stop offset="1" stop-color="#64d2ff"/></linearGradient></defs><circle cx="105" cy="105" r="88" fill="none" stroke="var(--u-track)" stroke-width="18"/><circle cx="105" cy="105" r="88" fill="none" stroke="'+(p>100?'#ff453a':'url(#u-ring)')+'" stroke-width="18" stroke-linecap="round" stroke-dasharray="'+dash+'" stroke-dashoffset="'+off+'" transform="rotate(-90 105 105)"/><text x="105" y="102" text-anchor="middle" class="u-ring-big">'+Math.round(p)+'%</text><text x="105" y="130" text-anchor="middle" class="u-ring-small">of today used</text></svg>'+
-  '<div class="u-hero-count"><b>'+compact(used)+'</b> / '+compact(cap)+' requests</div><div class="u-tri"><div><b>'+compact(tokensToday)+'</b><small>tokens today</small></div><div><b>'+compact(tokensMonth)+'</b><small>this month</small></div><div><b>'+(attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—')+'</b><small>succeeded</small></div></div></div>';
+  '<div class="u-hero-count"><b>'+compact(used)+'</b> / '+compact(cap)+' requests</div><div class="u-tri"><div><b>'+compact(tokensToday)+'</b><small>tokens today</small></div><div><b>'+compact(tokensMonth)+'</b><small>this month</small></div><div><b>'+(attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—')+'</b><small>chat &amp; tasks succeeded</small></div></div></div>';
  const bars=uBarCard('Daily requests','Resets in '+untilReset(nextUtc),used,cap,'requests used','#0a84ff')+
   (tokenLimit?uBarCard('Daily tokens','Resets in '+untilReset(nextUtc),tokensCapped,tokenLimit,'tokens available','#bf5af2','Counts the providers that publish a daily token allowance: '+esc(cappedNames.join(', '))+'. Others limit requests or tokens per minute instead.'):'');
  // The four busiest providers stand alone; the rest share one "Other" row.
@@ -142,7 +143,7 @@ function modelDetail(){
  return '<button class="u-back" id="usage-back">‹ '+esc(model.names[p.id]||p.id)+'</button><h3 class="u-title">'+esc(m.model)+'</h3><p class="u-sub">'+esc(model.names[p.id]||p.id)+' · resets '+resets+'</p>'+
   '<div class="u-card"><div class="u-tag">Tokens today</div><div class="u-big"><b>'+u.tokens.toLocaleString()+'</b> tokens</div>'+split([['Input',u.input,'#0a84ff'],['Output',u.output,'#64d2ff']])+split([['Chat',u.kinds.chat,'#bf5af2'],['Tasks',u.kinds.task,'#ff9f0a'],['Tests',u.kinds.test,'#30d158']])+'</div>'+
   '<div class="u-card"><div class="u-tag">Limits</div>'+limits+'</div>'+
-  '<div class="u-duo"><div class="u-card"><div class="u-tag">Succeeded</div><div class="u-mid" style="color:#30d158">'+(u.requests?Math.round(u.ok/u.requests*100)+'%':'—')+'</div></div><div class="u-card"><div class="u-tag">Avg time</div><div class="u-mid">'+(u.requests?(u.latency/u.requests/1000).toFixed(1)+'s':'—')+'</div></div></div>'+
+  '<div class="u-duo"><div class="u-card"><div class="u-tag">Succeeded</div><div class="u-mid" style="color:'+successColor(u.requests?u.ok/u.requests*100:null)+'">'+(u.requests?Math.round(u.ok/u.requests*100)+'%':'—')+'</div></div><div class="u-card"><div class="u-tag">Avg time</div><div class="u-mid">'+(u.requests?(u.latency/u.requests/1000).toFixed(1)+'s':'—')+'</div></div></div>'+
   '<div class="u-card"><div class="u-tag">Requests by hour</div><div class="u-hours" role="img" aria-label="Requests per hour today">'+u.hours.map((n,h)=>'<i title="'+h+':00 · '+n+'" style="height:'+Math.max(3,n/max*100)+'%;background:'+color+'"></i>').join('')+'</div><div class="u-hours-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div></div>';
 }
 // Model check: one short message to every routable chat model, run in batches by the backend.

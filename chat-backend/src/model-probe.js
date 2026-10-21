@@ -1,3 +1,4 @@
+import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
 import {reserveProvider,reportProviderOutcome} from "./router-coordination.js";
@@ -7,7 +8,10 @@ import {reserveProvider,reportProviderOutcome} from "./router-coordination.js";
 // (kind "probe") and through shared provider state, so cooldowns and Settings → Usage reflect the result.
 // Probes do not consume the KappaForge daily request cap; provider reservations still apply.
 const PROMPT="Reply with the single word OK.";
-const MAX_BATCH=8,TIMEOUT_MS=25000;
+const MAX_BATCH=8,TIMEOUT_MS=25000,MAX_WAIT_MS=20000;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Spacing between this check's own calls to one provider, from its per-second cap (Mistral allows about one).
+const spacingMs=route=>{const l=globalThis.KappaLimits?.limitFor(registry.limits,route.provider,route.model)||{};return Number.isFinite(l.rps)&&l.rps>0?Math.ceil(1000/l.rps):0;};
 const outcomeFor=status=>({200:"answered",401:"key_rejected",402:"needs_credits",403:"denied",404:"not_found",429:"rate_limited"})[status]||
  (status===400||status===422?"rejected":status>=500?"provider_error":"error");
 
@@ -20,13 +24,19 @@ export async function probeRoutes(env){
 export async function probeModels(env,{offset=0,limit=MAX_BATCH}={}){
  const routes=await probeRoutes(env),start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.min(MAX_BATCH,Math.max(1,Math.floor(Number(limit)||MAX_BATCH)));
  let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
- const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1")),results=[];
+ const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1")),results=[],lastCall={};
  for(const route of routes.slice(start,start+size)){
-  const label=route.provider==="gemini"?route.model:route.provider+":"+route.model,requestId=crypto.randomUUID(),started=Date.now();
+  const label=route.provider==="gemini"?route.model:route.provider+":"+route.model,started=Date.now();let requestId=crypto.randomUUID();
   const row={label,provider:route.provider,model:route.model,outcome:"error",status:null,tokens:null,latencyMs:null,reply:null};
   let reserved;
-  try{reserved=await reserveProvider(env,route,requestId)}catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
+  // A short shared cooldown (a provider's per-minute limit) is waited out once rather than reported, so the
+  // check measures the model instead of its own pace.
+  try{
+   reserved=await reserveProvider(env,route,requestId);
+   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId);}
+  }catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
   if(!reserved.allowed){results.push({...row,outcome:"cooling_down",detail:reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
+  const gap=(lastCall[route.provider]||0)+spacingMs(route)-Date.now();if(gap>0)await sleep(gap);lastCall[route.provider]=Date.now();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
   let response=null,result=null,status=0,category="";
   try{
