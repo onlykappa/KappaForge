@@ -42,7 +42,9 @@ async function series(token,project,filter,start,end,extra=""){
   "&interval.startTime="+new Date(start).toISOString()+"&interval.endTime="+new Date(end).toISOString()+extra;
  const r=await fetch(url,{headers:{Authorization:"Bearer "+token},signal:AbortSignal.timeout(10000)});
  const d=await r.json().catch(()=>({}));
- if(r.status===403)throw Error("The service account can't read Cloud Monitoring for project "+project+". Give it the Monitoring Viewer role on that project.");
+ const why=String(d.error?.message||"").slice(0,240);
+ if(r.status===403&&/has not been used|is disabled|SERVICE_DISABLED/i.test(why+JSON.stringify(d.error?.details||"")))throw Error("Turn on the Cloud Monitoring API for project "+project+" (Google Cloud console → APIs & Services → Enable APIs → Cloud Monitoring API).");
+ if(r.status===403)throw Error("The service account can't read Cloud Monitoring for project "+project+". Give it the Monitoring Viewer role on that project."+(why?" Google: "+why:""));
  if(!r.ok)throw Error("Cloud Monitoring HTTP "+r.status+(d.error?.message?": "+String(d.error.message).slice(0,200):""));
  return d.timeSeries||[];
 }
