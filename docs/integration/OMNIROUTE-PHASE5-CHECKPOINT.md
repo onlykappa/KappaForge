@@ -1,6 +1,18 @@
 # Phase 5: final verification and operational handoff
 
-Updated 2026-10-21 UTC (2026-10-20 owner local date). **ACCEPTANCE COMPLETE; final release publication pending this handoff's checks.** App-started task #163 passed cloud inference, source review and exact-candidate sandbox validation; its inference-free final verifier published ready progress. The owner confirmed persistence after fully closing and restarting the app. Publication must be recorded after the verified handoff is merged; no acceptance-task PR may be merged as part of release.
+Updated 2026-10-21 UTC (2026-10-20 owner local date). **COMPLETE for the selective gateway/Actions integration.** App-started task #163 passed cloud inference, source review and exact-candidate sandbox validation; its inference-free verifier published ready progress. The owner confirmed persistence after a full app restart. The backend/Actions component release is published. Acceptance-task PRs remain draft and unmerged; standalone Linux hosting tests remain superseded and unperformed.
+
+## Published release and final state
+
+- **Release:** [gateway-v1.0.0](https://github.com/onlykappa/KappaForge/releases/tag/gateway-v1.0.0), ID `419056910`, published **2026-10-21 02:28:37 UTC**, `draft=false`, `prerelease=false`.
+- **Tagged source:** `4c8beec919aa58cc12d5482d0dc739dc5ba7a084`, merged [PR #165](https://github.com/onlykappa/KappaForge/pull/165). Full Linux [CI 39532995180](https://github.com/onlykappa/KappaForge/actions/runs/39532995180) passed at `1e451395210cd27b9a94eedb1bf0849555e69c17`; its Git tree equals the tagged squash source (`c0232833e8beca380573b9e5c7b6f551ffecb2fa`). The public tag resolves to the recorded commit.
+- **Available gateway:** https://kappaforge-chat.ballaking1738.workers.dev. Last observed backend upload is source `37a1e65a438a9f150b81020ff7e80f9144d6f7b6`, version `6aa15cb6-9155-4a27-96e0-54d32ce02858`, with the concurrent owner variable update and guard result documented below. A later dashboard-generated version UUID was not independently retrieved. Runtime checks and real task #163 verify the currently reachable gateway; do not invent a later deployment identity.
+- Backend, Actions, engine, provider-registry and app source paths are unchanged between reviewed runtime source `37a1e65...` and tagged release `4c8beec...` (verified with a scoped Git diff). Publication therefore required no new Worker deployment or provider call; post-deployment task #163 remains valid live evidence for this executable source.
+- Publication used **`make_latest=false`**. GitHub's latest native release was independently rechecked and remains **v2.2.12**. No IPA was built/replaced, and no native source or bundled app UI changed. The already installed app passed the owner observation; no app upgrade is required for this backend integration.
+- Acceptance PRs **#153, #156, #158 and #164 remain draft/unmerged**. Current #164 candidate was rechecked unchanged at `204f688b7ba0568005e82e81f5341e161f4b1f0f`. No further task, inference, provider probe or unrelated improvement is authorized automatically.
+- No new host, paid plan, credits, limits or fallback was introduced. Groq account tier is owner-confirmed; free-model documentation and observed usage are independently recorded. Remaining provider allowance and account-wide billing-console settings remain unknown; this is not a claim of unlimited availability or an independently verified account-wide spending guarantee.
+
+**Resume only for an explicitly requested operational issue or new task.** Preserve current secrets, dashboard variables, DO state and task authorization. Use the actual task/model/request IDs below to investigate; inspect guards before any separately authorized live inference. Review acceptance drafts without merging them automatically. For rollback use the procedure below and preserve state/configuration. Existing 15-minute recovery scheduling and GitHub/provider availability can delay status updates; never broaden authorization or silently restore direct-provider/paid fallback.
 
 ## Baseline and promotion
 
@@ -77,7 +89,7 @@ The task published running → source review → testing progress, its actual mo
 
 The owner answered **“yes it shows up after i fully close ans retart app”** after being asked to confirm the completed result following full app close/reopen. This closes the required app persistence gate as owner-observed evidence. The executor did not automate the iPhone or independently observe a new PR-link tap; those are not represented as automated checks. The backend supplies the verified draft PR #164 URL and previous app navigation evidence remains historical. Acceptance PR #164 stays draft and unmerged. No extra inference or provider retry is authorized by the confirmation.
 
-Required app execution/persistence acceptance is now complete. Final remaining operations: merge the reviewed handoff after CI, publish the prepared `gateway-v1.0.0` component release at the tested main SHA with `make_latest=false`, and record its published identity. Keep the latest native IPA release unchanged. Account-wide billing-console visibility and provider remaining allowance remain explicitly unknown; this does not turn request caps into a spending guarantee.
+Required app execution/persistence acceptance is complete. The verified handoff was merged and `gateway-v1.0.0` published with `make_latest=false`; identities are recorded above. Account-wide billing-console visibility and provider remaining allowance remain explicitly unknown; this does not turn request caps into a spending guarantee.
 
 ## Cost evidence and exclusions (account limits unchanged)
 
@@ -110,7 +122,7 @@ Final runtime [guard check 39531853203](https://github.com/onlykappa/KappaForge/
 2. Source SHA/version UUID/run, pre/post binding equality, health, URL and runner authentication are recorded above. Diagnostics establish guards only; the three successful task calls prove usage at the previous deployed baseline. Request-pin behavior now also has successful live app task #163 evidence; failure/repair cases retain their fixture evidence.
 3. PR #158 sandbox and verification-only recovery passed. Review its saved result without further inference; preserve initial failure and manual-review distinction. Leave its draft unmerged unless the owner separately chooses its disposition.
 4. App task #163 completed the required owner action and the owner confirmed persistence after restart. Do not create another acceptance issue or repeat inference. Keep draft #164 unmerged.
-5. App acceptance has passed; publish `gateway-v1.0.0` after final handoff checks. `config/integration-release.json` versions this backend component separately. Publish with `make_latest=false` at the tested main SHA and record its URL; preserve latest IPA release. Backend changes need reload/retry of the request, not a new IPA.
+5. Release `gateway-v1.0.0` is already published at the tested source above. `config/integration-release.json` versions this backend component separately. Do not republish or retag it. Preserve the latest IPA release. No new IPA or repeat acceptance task is required.
 
 Recorded owner app text (already executed as #163; do not repeat):
 
@@ -122,7 +134,7 @@ Inference route: groq:openai/gpt-oss-120b
 Edit path: docs/integration/PHASE5-APP-ACCEPTANCE.md
 ```
 
-Tap **Plan task**, then wait at least 65 seconds after the plan appears before approving/starting it to separate planning and coding token windows. Do not send a parallel chat request for the same test. Report the task number; after completion, close/reopen the app and confirm the same task/result/draft persists. No Model manager is required. These app steps were completed by #163 and the owner restart confirmation. Only final release publication remains pending at this pre-publication save; do not repeat them.
+The recorded instructions were to tap **Plan task**, space planning/coding token windows, and confirm persistence after full app restart. These steps were completed by #163 and the owner's confirmation. Publication is now complete; do not repeat this test or create a replacement issue.
 
 Rollback: inspect current deployment to avoid overwriting another session, then restore verified Worker `22c1c5ac-7793-4350-b6c7-f1b82dc92a79` (source `ab30caa...`) using Wrangler version rollback in the same protected environment. Repeat health/auth checks. Preserve variables, secrets, DO data and migration; no state rewind. Revert focused source changes through a reviewed commit if Actions rollback is needed. Never restore direct-provider fallback or relax auth. This rollback removes planner request pin support but preserves coding task pins.
 
