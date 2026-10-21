@@ -13,6 +13,7 @@ function recoveryReceipt(job,result,now=Date.now()){
 }
 function recoveryDisplay(job,now=Date.now()){
  const p=job.progress,r=p?.recovery;
+ if(job.recoveryRequest?.status==='waiting'&&job.recoveryRequest.nextAt>now)return {label:'WAITING FOR COOLDOWN',text:'The backend confirmed the saved cooldown. No continuation has been dispatched.'};
  if(job.recoveryRequest?.status!=='monitoring'&&job.recoveryRequest?.at>(p?.updatedAt||0))return {label:'RECOVERY REQUESTED',text:'Recovery check requested for this task. Runner start is not yet confirmed.'};
  if(p?.status==='waiting')return r?.nextAt>now?{label:'WAITING FOR COOLDOWN',text:'Saved work is waiting for the recorded provider cooldown.'}:{label:'WAITING FOR RECOVERY',text:'Recorded wait elapsed. No continuation or provider availability is confirmed yet.'};
  if(p?.status==='queued'&&job.dispatchObservation?.at>=p.updatedAt)return {label:job.dispatchObservation.state==='in_progress'?'ACTIONS STARTED':'QUEUED IN GITHUB',text:job.dispatchObservation.state==='in_progress'?'GitHub Actions started. Coding runner acknowledgement is still pending.':'GitHub confirms this task is queued. A coding runner has not acknowledged it yet.'};

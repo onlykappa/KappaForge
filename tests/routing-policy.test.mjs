@@ -173,10 +173,12 @@ test("gateway distinguishes upstream rejection or rate limit from a subsequent s
    const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
    const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
    assert.equal(response.status,status===429?429:503);
+   assert.equal(first.attempts[0].attempted,true);assert.equal(first.attempts[0].provider,'groq');assert.equal(first.attempts[0].status,status);
    assert.equal(first.failure.source,'upstream');assert.equal(first.failure.upstreamStatus,status);
    assert.equal(first.failure.category,status===413?'provider_rejection':status===429?'rate_limit':'provider_outage');
    assert.ok(first.retryAt>=Date.now()+88000);assert.ok(!JSON.stringify(first).includes('untrusted'));
    const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),body=await second.json();
+   assert.equal(body.attempts[0].attempted,false);assert.equal(body.attempts[0].source,'coordination');
    assert.equal(second.status,429);assert.equal(body.failure.source,'coordination');assert.equal(body.failure.upstreamStatus,status);
    assert.equal(inferenceCalls,1,'a stored cooldown must not contact the provider again');
   }finally{globalThis.fetch=previous;}

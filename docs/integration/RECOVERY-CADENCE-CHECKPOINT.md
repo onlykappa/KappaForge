@@ -50,7 +50,8 @@ or duplicate planner/chat inference was found in current submission code/tests.
   instance of the existing KappaMemory class/binding**. No schema migration, provider key,
   external host or always-running Action is added. The existing account/vault/router
   instance `owner-v1` is preserved. Idle queue has no alarm. Up to32 pending tasks;
-  original authorization and six-hour waiting bounds remain; delivery is debited before
+  original authorization and six-hour waiting bounds remain; one due task per
+  alarm bounds Free-plan subrequests and respects the serialized Actions dispatcher; delivery is debited before
   network and stops after three ambiguous/failed deliveries. Diagnostics retain the stop.
 - Runner-only `POST /router/recovery` accepts `{task}` and rereads the open owner task,
   durable cancellation record and trusted exact-scope bot checkpoint. It never accepts
@@ -68,7 +69,8 @@ or duplicate planner/chat inference was found in current submission code/tests.
   an active previous runner cannot consume another continuation. Cancelled workflows stop.
 - Exact-scope explicit renewal can carry the original candidate, budgets, requirements and
   failed approaches to the newly authorized identity. Changed briefs without that link are
-  blocked; cancellation/expiry cannot silently renew. Replay and private-project checks remain.
+  blocked; cancellation/expiry cannot silently renew. Replay and private-project checks remain. Every coding call rechecks current
+  issue authorization before sending inference, including unpinned tasks.
 - Preserve executionState/transition timestamps in progress. UI distinguishes cooldown,
   waiting for recovery, recovery requested, dispatch requested, confirmed GitHub queue,
   Actions started and acknowledged running. Receipt persistence keeps the last confirmed
@@ -94,7 +96,7 @@ or duplicate planner/chat inference was found in current submission code/tests.
 Baseline focused journal33 and routing19 tests passed. Initial updated focused journal41,
 combined recovery/routing/progress55, native fixture/control transport3 passed. Worker
 Wrangler4.151.1 dry-run passed:236.79KiB /62.44KiB gzip. Full local JavaScript384 tests and web/bundle checks passed in an isolated LF
-snapshot. Python373 ran with only the two existing Windows temporary-file sharing
+snapshot. Python374 ran with only the two existing Windows temporary-file sharing
 errors (workflow output files); the regression suite otherwise passed. Full
 Linux/browser/native PR CI is required and results will be appended. Local Windows temporary-file sharing and CRLF
 source-fixture issues are known baseline limitations; use isolated LF snapshots and

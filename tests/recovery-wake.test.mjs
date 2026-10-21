@@ -15,7 +15,7 @@ function fixture(){
  storage.transaction=fn=>{const p=tail.then(()=>fn(storage));tail=p.catch(()=>{});return p};
  const state={storage},env={GITHUB_JOB_TOKEN:'fixture-only',ROUTER_ACCESS_TOKEN:'x'.repeat(40),ROUTING_POLICY_VERSION:'v1'};
  env.MEMORY={idFromName:n=>n,get:name=>({fetch:async(u,o)=>{
-  if(name==='owner-v1')return Response.json({state:world.cancelled?'cancelled':'queued'});
+  if(name==='owner-v1')return Response.json({state:world.cancelled?'cancelled':'queued',issueNumber:174});
   return recoveryWakeStore(state,env,new Request(u,o));
  }})};
  const original=globalThis.fetch,clock=Date.now;Date.now=()=>now;
@@ -79,6 +79,7 @@ test('lost dispatch acknowledgements are debited before network and stop after t
   assert.equal(deliveries(w).length,3);assert.equal((await w.rows())[174].stopped,true);
   const r=await recoveryWakeStore(w.state,w.env,new Request('https://memory.internal/recovery/schedule',{method:'POST',body:JSON.stringify({task:174,statusOnly:true})}));
   assert.equal((await r.json()).status,'blocked');
+  assert.equal((await w.schedule()).status,409,'do not claim an exhausted wake-up was scheduled');
  }finally{w.restore()}
 });
 test('an active recovery workflow and completed task do not create duplicate executions',async()=>{

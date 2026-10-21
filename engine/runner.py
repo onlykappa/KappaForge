@@ -597,8 +597,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             raise gateway.GatewayUnavailable(f'Pinned task prompt exceeds its bounded request budget ({len(prompt)} characters); inference was not sent', terminal=True)
         max_output_tokens = min(max_output_tokens, gateway.PINNED_OUTPUT_TOKENS)
         gateway.pace(journal, model_timeout)
-        if hasattr(journal.scope, 'check_current'):
-            journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
+    if hasattr(getattr(journal, 'scope', None), 'check_current'):
+        journal.scope.check_current(github(f'repos/{ROOT}/issues/{journal.scope.number}', os.environ['GITHUB_TOKEN']))
         gateway.check(gateway.probe(endpoint, token))
     payload = {
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,

@@ -174,6 +174,7 @@ class RecoveryJournalTests(unittest.TestCase):
 
     def test_targeted_watchdog_recovers_lost_initial_dispatch_to_one_runner(self):
         self.world.rows = []
+        self.world.run['status'] = 'in_progress'  # the scanner itself is active, not an agent
         results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now, task=130)
         self.assertIn((130, 'queued'), results)
         intent_guard.activate(self.world.issue)

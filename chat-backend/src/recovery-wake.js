@@ -15,7 +15,9 @@ export async function recoveryTask(env,task){
  if(!auth||auth.intent!=='execution'||auth.state!=='executing'||!auth.id||!Number.isFinite(auth.expiresAt)||auth.expiresAt<=Date.now()||!/^onlykappa\/[A-Za-z0-9_.-]+$/.test(auth.repo))return null;
  const authStore=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
  const status=await authStore.fetch('https://memory.internal/authorization/status',{method:'POST',body:JSON.stringify({id:auth.id,conversationId:auth.conversationId})});
- if(!status.ok||(await status.json()).state==='cancelled')return null;
+ if(!status.ok)return null;
+ const binding=await status.json();
+ if(binding.state==='cancelled'||binding.issueNumber!==task)return null;
  const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))].map(x=>x.toString(16).padStart(2,'0')).join('');
  let journal=null,conflicting=false;
  for(let page=1;page<=10;page++){
@@ -50,7 +52,7 @@ export async function recoveryWakeStore(state,env,request){
  if(j&&!['waiting','dispatching','running','recovering'].includes(j.status))return reply({status:'blocked',message:'Saved task requires owner review; no automatic retry scheduled.'});
  const next=j?.status==='waiting'?j.nextAt*1000:now+ACK_MS;
  if(!Number.isFinite(next))return reply({error:'Invalid saved recovery deadline'},409);
- await state.storage.transaction(async storage=>{
+ const scheduled=await state.storage.transaction(async storage=>{
   const rows=await storage.get(KEY)||{};
   for(const [key,row] of Object.entries(rows))if(row.expires<=now)delete rows[key];
   const prior=rows[task];
@@ -59,14 +61,18 @@ export async function recoveryWakeStore(state,env,request){
   rows[task]=prior?.authorization===current.auth.id&&prior.revision===revision?prior:
    {task,authorization:current.auth.id,revision,due:Math.max(now,next),expires:Math.min(current.auth.expiresAt,(j?.waitingSince?j.waitingSince*1000:now)+21600000),deliveries:0};
   await storage.put(KEY,rows);await arm(storage,rows);
+  return rows[task];
  });
+ if(scheduled.stopped)return reply({error:'Recovery delivery is exhausted. Review GitHub Actions access before another attempt.',status:'blocked'},409);
  return reply({status:j?.status==='waiting'?(next>now?'waiting':'recovery_requested'):'monitoring',task,nextAt:next,message:j?.status==='waiting'?(next>now?'Saved task is waiting for its recorded cooldown. Automatic wake-up is scheduled.':'Recovery check requested for the existing task. Runner start is not yet confirmed.'):'Checking the existing task and its runner; no duplicate execution was requested.'},202);
 }
 export async function recoveryAlarm(state,env){
  // No loop while idle. Network failures rearm a bounded pending row; the persisted
  // delivery debit covers a crash or lost HTTP acknowledgement after dispatch.
  const rows=await state.storage.get(KEY)||{};
- for(const row of Object.values(rows)){
+ // Process one due task per alarm. This bounds subrequests on Workers Free and
+ // prevents a burst from replacing GitHub's single pending concurrency slot.
+ for(const row of Object.values(rows).filter(row=>row.due<=Date.now()||row.expires<=Date.now()).slice(0,1)){
   if(row.due>Date.now()&&row.expires>Date.now())continue;
   let remove=false,debited=false;row.lastCheckAt=Date.now();
   try{
@@ -80,13 +86,13 @@ export async function recoveryAlarm(state,env){
     else{
      const runs=await github(env,'actions/workflows/recovery.yml/runs?event=workflow_dispatch&per_page=100');
      const agents=await github(env,'actions/workflows/agent.yml/runs?event=workflow_dispatch&per_page=100');
-     const active=runs.workflow_runs.some(r=>r.display_title==='Recovery task #'+row.task&&r.status!=='completed')||agents.workflow_runs.some(r=>r.display_title?.startsWith('Agent task #'+row.task+' ')&&r.status!=='completed');
+     const active=runs.workflow_runs.some(r=>r.status!=='completed')||agents.workflow_runs.some(r=>r.display_title?.startsWith('Agent task #'+row.task+' ')&&r.status!=='completed');
      if(active)row.due=Date.now()+ACK_MS;
      else if(row.deliveries>=3){row.stopped=true;row.reason='delivery_exhausted';row.due=row.expires;}
      else {
       row.deliveries++;debited=true;row.lastDispatchAt=Date.now();row.due=Date.now()+ACK_MS;
-      await state.storage.transaction(async storage=>{const latest=await storage.get(KEY)||{};if(latest[row.task]?.revision===row.revision){latest[row.task]=row;await storage.put(KEY,latest);await arm(storage,latest)}});
-      await github(env,'actions/workflows/recovery.yml/dispatches',{ref:'main',inputs:{issue_number:String(row.task)}});
+      const claimed=await state.storage.transaction(async storage=>{const latest=await storage.get(KEY)||{};if(latest[row.task]?.revision!==row.revision||latest[row.task]?.authorization!==row.authorization)return false;latest[row.task]=row;await storage.put(KEY,latest);await arm(storage,latest);return true});
+      if(claimed)await github(env,'actions/workflows/recovery.yml/dispatches',{ref:'main',inputs:{issue_number:String(row.task)}});
      }
     }
    }

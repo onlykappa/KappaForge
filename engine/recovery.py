@@ -131,7 +131,9 @@ class Journal:
         self.ledger, self.ledger_rows = {}, []
         self.comment = None
         self.renewed_scope = False
-        accepted_digests = {self.scope.digest, (self.scope.resume_from or {}).get('digest')}
+        accepted_digests = {self.scope.digest}
+        if self.scope.resume_from:
+            accepted_digests.add(self.scope.resume_from['digest'])
         self.state = dict(version=1, task=self.scope.number, repo=self.scope.repo, digest=self.scope.digest,
                           authorization=self.scope.identity, candidate='', base='', pr='', status='running',
                           run=os.getenv('GITHUB_RUN_ID', ''), continuations=0, nextAt=0, updatedAt=clock(),
@@ -638,7 +640,7 @@ def scan(read, write, clock=time.time, task=None):
                     continue
                 # Targeted watchdog only: recover a lost initial dispatch using
                 # the same task and the normal atomic continuation claim.
-                journal.state.update(status='waiting', nextAt=clock(), waitingSince=clock())
+                journal.state.update(status='waiting', run='', nextAt=clock(), waitingSince=clock())
                 journal.persist()
             if journal.state['status'] in ('running', 'recovering'):
                 journal.recover_interrupted()

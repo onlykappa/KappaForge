@@ -5,7 +5,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from engine import gateway, developer, recovery
+from engine import gateway, developer, recovery, runner, intent_guard
 
 
 class GatewayEvidenceTests(unittest.TestCase):
@@ -75,6 +75,19 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertNotIn('fixture-secret', output.getvalue())
         with self.assertRaises(gateway.GatewayUnavailable):
             gateway.check({**result, 'failedCondition': 'provider_or_model_cooldown'})
+
+    def test_unpinned_coding_rechecks_current_task_before_any_gateway_request(self):
+        import time
+        issue = dict(number=174,state='open',user={'login':'onlykappa'},created_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),body='Repository: onlykappa/KappaForge\nMode: develop\nImplement the authorized change.')
+        scope = intent_guard.ExecutionScope(issue)
+        handle = recovery.CURRENT.set(SimpleNamespace(scope=scope))
+        try:
+            with patch.dict(os.environ, {'KAPPA_ROUTER_URL':'https://fixture.example','KAPPA_ROUTER_TOKEN':'x'*40,'GITHUB_TOKEN':'fixture'}), patch.object(runner,'github',return_value=dict(issue,state='closed')), patch.object(runner.urllib.request,'urlopen') as network:
+                with self.assertRaisesRegex(PermissionError,'cancelled'):
+                    runner.run_integrated_router('Exact original instructions', 100, ['groq'])
+                network.assert_not_called()
+        finally:
+            recovery.CURRENT.reset(handle)
 
     def test_account_authentication_cooldown_is_terminal_without_repeated_hammering(self):
         error = gateway.error(429, {'code':'free_capacity_cooldown','failure':{'source':'coordination','category':'authentication','upstreamStatus':401,'provider':'groq','model':'openai/gpt-oss-120b','attempted':False}})
