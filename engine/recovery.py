@@ -475,6 +475,26 @@ class Journal:
         return self.defer(RuntimeError('Task execution deadline or interrupted worker; resume saved candidate'))
 
 
+def verify_saved_candidate(journal, token):
+    """Owner-triggered verification only: never repair, regenerate or change the candidate."""
+    if not journal.scope.inference_route or not journal.state['files'] or not journal.state['pr']:
+        raise PermissionError('Verification-only action requires a saved pinned task candidate')
+    match = re.fullmatch(r'https://github.com/' + re.escape(journal.scope.repo) + r'/pull/(\d+)', journal.state['pr'])
+    if not match:
+        raise PermissionError('Saved task PR is outside the authorized repository')
+    pr = journal.target_read(f'repos/{journal.scope.repo}/pulls/{match[1]}')
+    if (pr.get('state') != 'open' or pr.get('draft') is not True or pr.get('head', {}).get('sha') != journal.state['candidate']
+            or pr.get('head', {}).get('ref') != f'kappa/dev-{journal.scope.number}'):
+        raise PermissionError('Saved draft candidate changed; verification stopped')
+    journal.state['phase'] = 'tests'
+    result = resume_checks(journal, pr, token)
+    if result == 'fix':
+        journal.event('Independent checks or requirements need review; inference retries are disabled', outcome='blocked', strategy='stop')
+        journal.publish('blocked', 'Verification stopped without new inference; review the saved draft and test evidence.')
+        return 'blocked'
+    return result
+
+
 def resume_checks(journal, pr, token):
     """Resume independent verification at the saved SHA, including partial dispatch."""
     from engine import native_build

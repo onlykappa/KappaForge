@@ -852,7 +852,10 @@ def main():
                        'body': 'Resumed validated implementation checkpoint.\n' + review_record(
                            journal.state['requirements'] or ['Verify every original requirement and run independent tests'])})
                     fixing = True
-            if action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
+            if action == 'verify':
+                verified = recovery.verify_saved_candidate(journal, token)
+                url = journal.state['pr'] if verified != 'blocked' else None
+            elif action.startswith('resume:') and journal.state.get('phase') == 'tests' and pulls:
                 next_action = recovery.resume_checks(journal, pulls[0], token)
                 url = (fix_pull_request(issue, api_key, token)
                        if next_action == 'fix' else None if next_action == 'blocked' else pulls[0]['html_url'])

@@ -9,6 +9,21 @@ from engine import gateway, developer, recovery
 
 
 class GatewayEvidenceTests(unittest.TestCase):
+    def test_finalizing_an_unchanged_checkpoint_reuses_commit_without_github_write(self):
+        with patch.object(developer, 'gh', side_effect=AssertionError('empty tree request')):
+            result = developer.commit_changes(developer.ROOT, 'b'*40, {}, {}, 'already saved', 'fixture')
+        self.assertEqual(result['sha'], 'b'*40)
+
+    def test_verify_only_does_not_regenerate_when_checks_need_repair(self):
+        pr = {'state': 'open', 'draft': True, 'head': {'sha': 'b'*40, 'ref': 'kappa/dev-152'}}
+        journal = SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b', repo=developer.ROOT, number=152),
+                                  state={'files': ['docs/note.md'], 'pr': 'https://github.com/onlykappa/KappaForge/pull/153', 'candidate': 'b'*40},
+                                  target_read=Mock(return_value=pr), event=Mock(), publish=Mock())
+        with patch.object(recovery, 'resume_checks', return_value='fix'), patch.object(developer, 'fix_pull_request') as fix:
+            self.assertEqual(recovery.verify_saved_candidate(journal, 'fixture'), 'blocked')
+        fix.assert_not_called()
+        journal.publish.assert_called_once()
+
     def test_probe_reports_only_metadata_and_does_not_claim_capacity(self):
         data = {'provider': 'groq', 'model': 'openai/gpt-oss-120b', 'failedCondition': 'eligible',
                 'secret': 'never-display-secret', 'bindings': {'secretPresent': True, 'key': 'never-display-secret'},

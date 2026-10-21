@@ -852,6 +852,8 @@ def stop_for_flags(repo, number, flags, token):
 
 
 def commit_changes(repo, parent, changes, modes, message, token):
+    if not changes:
+        return {'sha': parent}  # An already-saved stage must not create an empty tree/duplicate commit.
     base_tree = gh(f"repos/{repo}/git/commits/{parent}", token)["tree"]["sha"]
     tree = gh(f"repos/{repo}/git/trees", token, {"base_tree": base_tree, "tree": [
         {"path": p, "mode": modes.get(p, "100644"), "type": "blob", "content": t} for p, t in changes.items()]})
@@ -1548,8 +1550,12 @@ def sandbox_result(branch, head_sha, token, repo=ROOT):
     """Latest test run for this exact commit, dispatched from main's trusted workflow."""
     workflow, title, _ = test_workflow(repo, branch, head_sha)
     runs = gh(f"repos/{ROOT}/actions/workflows/{workflow}/runs?per_page=30", token).get("workflow_runs", [])
+    journal = recovery.CURRENT.get()
+    ref = os.getenv('GITHUB_REF_NAME', 'main') if getattr(getattr(journal, 'scope', None), 'inference_route', None) else 'main'
+    if ref not in ('main', 'codex/phase4-cloud-execution'):
+        raise PermissionError('Validation result requires the reviewed workflow ref')
     for run in runs:
-        if run.get("display_title") == title and run.get("head_branch") == "main" and run.get("event") == "workflow_dispatch":
+        if run.get("display_title") == title and run.get("head_branch") == ref and run.get("event") == "workflow_dispatch":
             return run
     return None
 
