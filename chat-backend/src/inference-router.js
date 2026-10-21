@@ -90,8 +90,8 @@ export async function inferenceRouter(env,input,callerSignal=null){
    lastStatus=response.status;
    if(!response.ok){
     await response.body?.cancel();
-    const category=response.status===429?"rate_limit":response.status===401||response.status===402?"authentication":response.status>=500?"provider_outage":"provider_rejection";
-    if(response.status===401||response.status===402)rejectedProviders.add(route.provider);
+    const category=response.status===429?"rate_limit":response.status===401?"authentication":response.status===402?"billing_blocked":response.status>=500?"provider_outage":"provider_rejection";
+    if(response.status===401)rejectedProviders.add(route.provider);
     await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;

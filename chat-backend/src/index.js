@@ -804,10 +804,10 @@ export default {
         } catch { clearTimeout(timeout);outcomeCategory="network_failure";await record(null,false);if(request.signal.aborted)throw Error("Request cancelled");continue; }
         lastStatus = response.status;
         outcomeStatus=response.status;outcomeHeaders=response.headers;
-        if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
+        if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401)outcomeCategory="authentication";else if(response.status===402)outcomeCategory="billing_blocked";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);await response.body?.cancel();await record(null,false);
-          if(response.status===401||response.status===402)rejectedProviders.add(route.provider);
+          if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;
