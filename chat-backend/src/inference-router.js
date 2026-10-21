@@ -51,6 +51,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
  const started=Date.now();let lastStatus=0,lastRetryAt=null,attempts=0;
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;return result;};
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  for(const route of routes){
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
@@ -74,29 +75,28 @@ export async function inferenceRouter(env,input,callerSignal=null){
    if(!response.ok){
     await response.body?.cancel();
     const category=response.status===429?"rate_limit":response.status===401||response.status===402?"authentication":response.status>=500?"provider_outage":"provider_rejection";
-    const outcome=await reportProviderOutcome(env,{requestId:reservationId,route,status:response.status,category,headers:response.headers});
-    lastRetryAt=outcome.retryAt||null;
+    await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers});
     failure={source:"upstream",category,upstreamStatus:response.status};
     continue;
    }
-   try{data=await response.json()}catch{lastStatus=502;failure={source:"normalization",category:"malformed_json",upstreamStatus:response.status};await reportProviderOutcome(env,{requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
+   try{data=await response.json()}catch{lastStatus=502;failure={source:"normalization",category:"malformed_json",upstreamStatus:response.status};await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
-    try{validateProviderResponse(data,{gemini:true});}catch{lastStatus=502;failure={source:"normalization",category:"malformed_response",upstreamStatus:response.status};await reportProviderOutcome(env,{requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    try{validateProviderResponse(data,{gemini:true});}catch{lastStatus=502;failure={source:"normalization",category:"malformed_response",upstreamStatus:response.status};await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
     const candidate=data.candidates?.[0]||{},text=(candidate.content?.parts||[]).filter(p=>typeof p.text==="string").map(p=>p.text).join("\n");
     usage=data.usageMetadata||null;
-    if(!text.trim()){lastStatus=502;failure={source:"normalization",category:"empty_response",upstreamStatus:response.status};await reportProviderOutcome(env,{requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
-    await reportProviderOutcome(env,{requestId:reservationId,route,status:200,headers:response.headers,usage});
+    if(!text.trim()){lastStatus=502;failure={source:"normalization",category:"empty_response",upstreamStatus:response.status};await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
+    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
     return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
-   let normalized;try{normalized=normalizeResult(route,data);}catch{lastStatus=502;failure={source:"normalization",category:"malformed_response",upstreamStatus:response.status};await reportProviderOutcome(env,{requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+   let normalized;try{normalized=normalizeResult(route,data);}catch{lastStatus=502;failure={source:"normalization",category:"malformed_response",upstreamStatus:response.status};await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
-   if(!text.trim()){lastStatus=502;failure={source:"normalization",category:"empty_response",upstreamStatus:response.status};await reportProviderOutcome(env,{requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
-   await reportProviderOutcome(env,{requestId:reservationId,route,status:200,headers:response.headers,usage});
+   if(!text.trim()){lastStatus=502;failure={source:"normalization",category:"empty_response",upstreamStatus:response.status};await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
+   await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
   }catch(error){
    lastStatus=callerSignal?.aborted?499:0;
    failure={source:"transport",category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure",upstreamStatus:null};
-   try{await reportProviderOutcome(env,{requestId:reservationId,route,status:lastStatus,category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure"})}catch{return new Response(JSON.stringify({error:"Provider outcome could not be recorded",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
+   try{await reportOutcome({requestId:reservationId,route,status:lastStatus,category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure"})}catch{return new Response(JSON.stringify({error:"Provider outcome could not be recorded",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
    if(callerSignal?.aborted)return new Response(null,{status:499});
   }finally{clearTimeout(timeout);callerSignal?.removeEventListener("abort",stop);}
  }

@@ -181,3 +181,25 @@ test("gateway distinguishes upstream rejection or rate limit from a subsequent s
   }finally{globalThis.fetch=previous;}
  }
 });
+
+test("malformed responses and transport failures return their durable cooldown deadline",async()=>{
+ for(const mode of ['malformed_json','network_failure']){
+  const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+  const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+  const previous=globalThis.fetch;let calls=0;
+  globalThis.fetch=async url=>{
+   if(String(url).endsWith('/models'))return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+   calls++;if(mode==='network_failure')throw new TypeError('fixture network failure');
+   return new Response('{invalid json',{status:200});
+  };
+  try{
+   const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
+   const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
+   assert.equal(response.status,503);assert.equal(first.failure.category,mode);
+   assert.ok(first.retryAt>Date.now()+25000,'the failure response must expose its stored cooldown');
+   const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),later=await second.json();
+   assert.equal(second.status,429);assert.equal(later.failure.source,'coordination');
+   assert.equal(later.retryAt,first.retryAt);assert.equal(calls,1);
+  }finally{globalThis.fetch=previous;}
+ }
+});
