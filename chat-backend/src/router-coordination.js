@@ -1,4 +1,5 @@
 import registry from "../../config/providers.json" with {type:"json"};
+import "../../preview/limits-core.js";
 
 function stubFor(env){
  if(!env.MEMORY)throw new Error("Persistent routing storage unavailable");
@@ -38,12 +39,26 @@ export async function reserveRouterRequest(env,requestId,limit=100,minuteLimit=2
  return {...data,status:response.status};
 }
 
-export async function reserveProvider(env,route,requestId){
+// The configured limit that applies to this route (per model, or per provider), as a counter the shared router
+// enforces: requests per minute and day, and tokens per minute against the request's estimated size.
+export function routeQuota(route,tokens=0,now=Date.now()){
+ const L=globalThis.KappaLimits,entry=registry.limits?.providers?.[route.provider],l=L?.limitFor(registry.limits,route.provider,route.model);
+ if(!l)return null;
+ const zone=entry?.dayResets||"UTC",day=L.dayStart(now,zone),dayEnd=L.dayStart(day+26*3600000,zone);
+ const key=route.provider+":"+(l.scope==="provider"?"*":L.canonical(registry.limits,route.provider,route.model));
+ const q={key,day,dayEnd,tokens:Math.max(0,Math.floor(Number(tokens)||0))};
+ for(const k of ["rpm","rpd","tpm"])if(Number.isInteger(l[k]))q[k]=l[k];
+ return q.rpm!==undefined||q.rpd!==undefined||q.tpm!==undefined?q:null;
+}
+// Rough prompt size in tokens (about four characters each), for the tokens-per-minute check.
+export const estimateTokens=value=>Math.ceil((typeof value==="string"?value:JSON.stringify(value??"")).length/4);
+
+export async function reserveProvider(env,route,requestId,{tokens=0}={}){
  const p=routeConfig(route.provider);
  if(!p)throw new Error("Unknown provider route");
  const response=await stubFor(env).fetch("https://memory.internal/router/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:p.quotaPool||route.provider,
-  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000
+  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens)
  })});
  const data=await response.json().catch(()=>({}));
  if(!response.ok&&response.status!==429)throw new Error("Routing reservation storage failed");
@@ -55,7 +70,18 @@ export async function reserveProvider(env,route,requestId){
 const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
 const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||status>=500&&registry.providers[provider]?.freeOnly===true;
 
-export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null}){
+// Google's 429 names the exhausted quota: a per-day quota rests the model until its quota day ends, a
+// per-minute one until Google's retry delay. Other bodies give no reset.
+export function quotaResetFromBody(route,body,now=Date.now()){
+ let details;try{details=JSON.parse(body||"{}")?.error?.details}catch{return null;}
+ if(!Array.isArray(details))return null;
+ const ids=details.flatMap(d=>Array.isArray(d?.violations)?d.violations.map(v=>String(v?.quotaId||"")):[]);
+ if(ids.some(id=>/PerDay/i.test(id)))return routeQuota(route,0,now)?.dayEnd||null;
+ const delay=details.map(d=>/^(\d+(?:\.\d+)?)s$/.exec(String(d?.retryDelay||""))?.[1]).find(Boolean);
+ return delay?now+Math.ceil(Number(delay))*1000:null;
+}
+
+export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null,body=null}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
  // A remaining daily request allowance is not the cause of a token/minute 429.
  // Prefer the provider's explicit Retry-After; only use an exhausted bucket's reset.
@@ -67,7 +93,8 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
   headers?.get?.("x-ratelimit-reset")
  ];
  const deadlines=resetHeaders.map(value=>resetDeadline(value,Date.now())).filter(Number.isFinite);
- const resetAt=deadlines.length?Math.max(...deadlines):undefined;
+ const bodyReset=status===429&&body?quotaResetFromBody(route,body):null;
+ const resetAt=Number.isFinite(bodyReset)?bodyReset:deadlines.length?Math.max(...deadlines):undefined;
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,status,category,modelScoped:modelScoped(env,route.provider,status),
   retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,

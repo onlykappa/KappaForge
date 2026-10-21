@@ -166,3 +166,26 @@ test('provider health follows routing: old keyless blocks are ignored and a few 
   assert.equal((await kilo()).state,'models_resting','a keyless 401 block is ignored by routing, so it is not shown');
  }finally{globalThis.fetch=original}
 });
+
+test('the shared router enforces each Gemini model\'s own minute, day and token limits, and spreads load to other models',async()=>{
+ const {reserveProvider,routeQuota,quotaResetFromBody}=await import('../chat-backend/src/router-coordination.js');
+ const q=routeQuota({provider:'gemini',model:'gemini-3.8-flash'},1000);
+ assert.deepEqual([q.key,q.rpm,q.rpd,q.tpm,q.tokens],['gemini:gemini-3.8-flash',5,20,250000,1000]);
+ assert.equal(routeQuota({provider:'gemini',model:'gemini-3.7-flash-preview'}).key,'gemini:gemini-3.8-flash','3.7 Flash shares 3.8 Flash\'s counter');
+ assert.equal(routeQuota({provider:'openrouter',model:'any/model:free'}).key,'openrouter:*','provider-wide limits share one counter');
+ const vault=new KappaMemory(memoryState()),env={GEMINI_API_KEY:'k',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+ const reserve=async(model,tokens=100)=>{const id=crypto.randomUUID(),r=await reserveProvider(env,{provider:'gemini',model},id,{tokens});
+  if(r.allowed)await vault.fetch(new Request('https://memory.internal/router/outcome',{method:'POST',body:JSON.stringify({requestId:id,provider:'gemini',model,status:200})}));return r;};
+ for(let i=0;i<5;i++)assert.equal((await reserve('gemini-3.8-flash')).allowed,true);
+ const full=await reserve('gemini-3.8-flash');
+ assert.equal(full.allowed,false);assert.equal(full.reason,'minute_quota');
+ assert.equal((await reserve('gemini-3.1-flash-lite')).allowed,true,'another model still has room');
+ assert.equal((await reserve('gemini-3.5-flash-lite',300000)).reason,'request_too_large','a prompt over the model\'s tokens per minute is never sent');
+ assert.equal((await reserve('gemini-3.5-flash-lite',200000)).allowed,true);
+ assert.equal((await reserve('gemini-3.5-flash-lite',100000)).reason,'minute_tokens');
+ const now=Date.parse('2026-10-21T23:30:00Z'),route={provider:'gemini',model:'gemini-3.6-flash'};
+ const perDay=JSON.stringify({error:{code:429,details:[{'@type':'type.googleapis.com/google.rpc.QuotaFailure',violations:[{quotaId:'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]},{'@type':'type.googleapis.com/google.rpc.RetryInfo',retryDelay:'31s'}]}});
+ assert.equal(new Date(quotaResetFromBody(route,perDay,now)).toISOString(),'2026-10-22T07:00:00.000Z','a daily quota rests the model until midnight Pacific');
+ const perMinute=perDay.replace('PerDay','PerMinute');
+ assert.equal(quotaResetFromBody(route,perMinute,now),now+31000);
+});

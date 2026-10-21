@@ -1,7 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
-import {reserveProvider,reportProviderOutcome} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,estimateTokens} from "./router-coordination.js";
 
 // Owner-requested model check: one short message to each chat model KappaForge can route, in batches so a
 // Worker invocation stays within its subrequest allowance. Each answer is recorded in the usage history
@@ -32,13 +32,13 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH}={}){
   // A short shared cooldown (a provider's per-minute limit) is waited out once rather than reported, so the
   // check measures the model instead of its own pace.
   try{
-   reserved=await reserveProvider(env,route,requestId);
-   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId);}
+   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT)});
+   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT)});}
   }catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
   if(!reserved.allowed){results.push({...row,outcome:"cooling_down",detail:reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
   const gap=(lastCall[route.provider]||0)+spacingMs(route)-Date.now();if(gap>0)await sleep(gap);lastCall[route.provider]=Date.now();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
-  let response=null,result=null,status=0,category="";
+  let response=null,result=null,status=0,category="",errorBody=null;
   try{
    response=route.provider==="gemini"
     ?await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",signal:controller.signal,
@@ -51,13 +51,13 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH}={}){
     const text=(result?.candidates?.[0]?.content?.parts||[]).filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join(" ").trim();
     if(!text){status=502;category="empty_response";}
     row.reply=text.slice(0,60)||null;
-   }else{await response.body?.cancel();category=status===429?"rate_limit":status===401?"authentication":status===402?"billing_blocked":status>=500?"provider_outage":"provider_rejection";}
+   }else{if(status===429)errorBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();category=status===429?"rate_limit":status===401?"authentication":status===402?"billing_blocked":status>=500?"provider_outage":"provider_rejection";}
   }catch{status=0;category=controller.signal.aborted?"timeout":"network_failure";}
   finally{clearTimeout(timer)}
   if(status===502&&category)row.outcome=category;
   else row.outcome=status===0?category:outcomeFor(status);
   row.status=status||null;row.latencyMs=Date.now()-started;row.tokens=result?.usageMetadata?.totalTokenCount??null;
-  try{await reportProviderOutcome(env,{requestId,route,status,category,headers:response?.headers||null,usage:result?.usageMetadata||null})}catch{}
+  try{await reportProviderOutcome(env,{requestId,route,status,category,headers:response?.headers||null,usage:result?.usageMetadata||null,body:errorBody})}catch{}
   try{await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(telemetry(result,label,row.latencyMs,row.outcome==="answered",false,"probe",pricing,row.status||0))})}catch{}
   results.push(row);
  }
