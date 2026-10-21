@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/ios-ui-pr94.test.mjs tests/actions.test.mjs tests/actions-ui.test.mjs tests/task-panel.test.mjs tests/ios-redesign.test.mjs tests/intent-guard.test.mjs tests/task-autostart.test.mjs tests/chat-delete.test.mjs tests/provider-reliability.test.mjs tests/routing-policy.test.mjs",
+    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/ios-ui-pr94.test.mjs tests/actions.test.mjs tests/actions-ui.test.mjs tests/task-panel.test.mjs tests/ios-redesign.test.mjs tests/intent-guard.test.mjs tests/task-autostart.test.mjs tests/chat-delete.test.mjs tests/provider-reliability.test.mjs tests/routing-policy.test.mjs tests/recovery-wake.test.mjs",
     "test:web": "node tests/web-regression.cjs"
   },
   "devDependencies": {

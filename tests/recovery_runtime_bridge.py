@@ -17,7 +17,7 @@ def main():
             now = time.time()
             auth = dict(id='runtime-owner', conversationId='runtime-conversation', requestId='runtime-request',
                         repo=recovery.ROOT, mode='develop', intent='execution', state='executing', expiresAt=(now+3600)*1000)
-            world.issue['labels'] = [{'name':'kappa-task'}]
+            world.issue['labels'] = [{'name':'kappa-Task'}]
             world.issue['body'] += '\nApproved from KappaForge Chat.\n<!-- kappa-authorization:'+json.dumps(auth)+' -->'
             intent_guard.activate(world.issue)
             journal = recovery.Journal(world.issue, world.read, world.write)

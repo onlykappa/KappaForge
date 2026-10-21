@@ -47,6 +47,10 @@ def error(status, data=None, headers=None, pinned=False):
               'free_capacity_cooldown': 'route refused; upstream rate limit or shared cooldown/concurrency (source not reported)',
               'free_route_unavailable': 'route unavailable; upstream cause not reported',
               'routing_state_unavailable': 'gateway coordination storage unavailable',
+              'request_timeout': 'gateway request time budget reached; provider quota remaining is unknown',
+              'gateway_timeout': 'gateway response timed out; provider attempts and quota remaining are unknown',
+              'gateway_network_failure': 'gateway transport failed; provider attempts and quota remaining are unknown',
+              'gateway_malformed_response': 'gateway returned malformed data; provider quota remaining is unknown',
               'request_too_large': 'gateway request-size limit; reduce source context; provider was not contacted'}
     retry_at = data.get('retryAt')
     retry_at = retry_at / 1000 if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) and retry_at > 0 else 0
@@ -75,10 +79,17 @@ def error(status, data=None, headers=None, pinned=False):
         elif source in ('normalization', 'transport', 'gateway_guard'):
             label = f'{source} failure ({category})'
     exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
-                             + label + '; no direct provider fallback was attempted',
+                             + label + '; fallback stays within the approved gateway',
                              retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422) or details.get('category') in ('authentication', 'billing_blocked', 'provider_denied', 'model_unavailable'))
+    attempts = safe_attempts(data.get('attempts'))
+    exc.attempts = attempts
+    exc.status, exc.code, exc.details = status, code, details
+    return exc
+
+
+def safe_attempts(rows):
     attempts = []
-    for row in data.get('attempts', [])[:16] if isinstance(data.get('attempts'), list) else []:
+    for row in rows[:16] if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
         safe = {key: value for key, value in row.items() if
@@ -86,9 +97,7 @@ def error(status, data=None, headers=None, pinned=False):
                 or key == 'attempted' and type(value) is bool
                 or key in ('status', 'upstreamStatus') and type(value) is int and 0 <= value <= 599}
         attempts.append(safe)
-    exc.attempts = attempts
-    exc.status, exc.code, exc.details = status, code, details
-    return exc
+    return attempts
 
 
 def probe(endpoint, token):
