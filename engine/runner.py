@@ -229,11 +229,13 @@ FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-
 
 
 def select_models(available):
-    """Discovered Flash models, strongest first: full Flash before Lite, newer before older, stable before preview."""
+    """Use every account-listed Gemini generateContent model; prefer current Flash routes first."""
     def rank(name):
         m = FLASH_RE.match(name)
-        return (bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
-    return sorted((name for name in available if FLASH_RE.match(name)), key=rank)
+        if m:
+            return (0, bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
+        return (1, False, 0, False, name)
+    return sorted((name for name in available if isinstance(name, str) and name), key=rank)
 
 def provider_headers(p):
     """Bearer auth when a key is set; providers without a key field (or keyOptional) also answer anonymously."""
@@ -241,7 +243,7 @@ def provider_headers(p):
     return {"User-Agent": "KappaForge", **({"Authorization": "Bearer " + key} if key else {})}
 
 def provider_models(pid):
-    """Chat models for a usable free fallback provider: its fixed free list, else live discovery, preferred families first."""
+    """Chat models this configured provider account exposes, preferred families first."""
     p = PROVIDERS["providers"][pid]
     if provider_paused(provider_identity(pid)):
         return []
@@ -249,7 +251,7 @@ def provider_models(pid):
     if p.get("kind") != "openai" or p.get("agent") is False or (keyed and not os.getenv(p["key"], "")):
         return []
     if p.get("models"):
-        return p["models"][:PROVIDERS["maxModelsPerProvider"]]
+        return p["models"]
     return cached(("provider", pid, os.getenv(p["key"], "") if p.get("key") else ""), lambda: list_provider_models(pid, p))
 
 
@@ -267,11 +269,11 @@ def list_provider_models(pid, p):
     except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError, http.client.HTTPException, ConnectionError) as exc:
         provider_failure(pid, error=exc)
         return []
-    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or re.search(r"[:/]free$", m))]
+    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I)]
     def rank(m):
         found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
         return (found[0] if found else 99, m)
-    return sorted(ids, key=rank)[:PROVIDERS["maxModelsPerProvider"]]
+    return sorted(ids, key=rank)
 
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).
@@ -691,7 +693,7 @@ def _run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=
     candidates = select_models(available)
     if not candidates and not any(provider_models(pid) for pid in PROVIDERS["order"] if allowed is None or pid in allowed):
         unavailable = routes_unavailable(errors)
-        unavailable.args = ('No approved Flash model supports generateContent for this key. ' + str(unavailable),)
+        unavailable.args = ('No Gemini model advertising generateContent is available to this key. ' + str(unavailable),)
         raise unavailable
     print("Approved Gemini fallback models: " + ", ".join(candidates))
     resting = [m for m in candidates if m in EXHAUSTED or COOLDOWN.get(m, 0) > time.time()]
