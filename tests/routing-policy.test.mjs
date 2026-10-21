@@ -43,6 +43,7 @@ test("runner diagnostics identify missing bindings and allowlists without provid
   const response=await worker.fetch(request(),env),body=await response.json();
   assert.equal(response.status,200);assert.equal(body.failedCondition,"private_code_allowlist");
   assert.deepEqual(body.bindings,{secretPresent:true,configured:true});
+  assert.deepEqual(body.chatPolicy,{permissionConfigured:false,groqAllowed:false,credentialPresent:false});
   assert.deepEqual(body.allowlists,{free:true,coding:true,privateCode:false,providerPolicy:false});
   assert.equal(body.discovery.state,"skipped_not_eligible");assert.equal(calls,0);
   assert.equal(JSON.stringify(body).includes(secret),false);assert.equal(JSON.stringify(body).includes(token),false);
