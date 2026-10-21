@@ -225,7 +225,7 @@ test('free providers take over when Gemini is rate limited, with live model disc
   assert.equal(events.filter(e=>!e.ok).length,1);assert.equal(JSON.stringify(events).includes('groq-key'),false);
   const labels=async(prefs,media=false)=>(await fallbackRoutes(env,[MODELS[0]],prefs,media)).map(x=>x.label);
   assert.deepEqual(await labels({},true),[MODELS[0]],'attachments stay on Gemini');
-  assert.deepEqual(await labels({disabledProviders:['groq']}),[MODELS[0],'openrouter:qwen/qwen3-coder:free']);
+  assert.deepEqual(await labels({disabledProviders:['groq']}),[MODELS[0],'openrouter:qwen/qwen3-coder','openrouter:qwen/qwen3-coder:free','openrouter:openai/gpt-4o']);
   assert.deepEqual(await labels({fallback:false}),[MODELS[0]]);
   assert.deepEqual(await labels({model:'openrouter:qwen/qwen3-coder:free',fallback:false}),['openrouter:qwen/qwen3-coder:free']);
   assert.deepEqual(await labels({model:'groq:not-a-model'}),[]);
@@ -248,7 +248,7 @@ test('fallback providers stream through the same reply protocol, including Worke
  }finally{globalThis.fetch=original}
 });
 
-test('keyless providers answer anonymously, fixed free lists skip discovery, and the summary links key signup',async()=>{
+test('keyless providers answer anonymously, all configured account models remain eligible, and the summary links key signup',async()=>{
  const {providerModels,providerSummary,callProvider}=await import('../chat-backend/src/providers.js');
  const original=globalThis.fetch,seen=[];
  globalThis.fetch=async(url,init={})=>{const u=String(url);seen.push([u,init.headers?.Authorization]);
@@ -258,7 +258,7 @@ test('keyless providers answer anonymously, fixed free lists skip discovery, and
  try{
   assert.deepEqual(await providerModels({},'kilo'),['poolside/laguna-s-2.1:free','kilo-auto/free','paid/model']);
   assert.deepEqual(await providerModels({},'zai'),[],'keyed providers stay off without a key');
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),[],'fixed models without a reviewed free allowlist stay disabled');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',ZAI_API_KEY:'z'},'zai'),['glm-4.7-flash'],'an enabled provider exposes its configured account model');
   assert.equal(seen.some(([u])=>u.includes('api.z.ai')),false,'providers without a reviewed free model list are never discovered');
   await callProvider({},{provider:'kilo',model:'kilo-auto/free'},{system:'',messages:[],maxTokens:10,temperature:0},false);
   assert.equal(seen.every(([,auth])=>auth===undefined),true,'no credentials sent to keyless providers');
