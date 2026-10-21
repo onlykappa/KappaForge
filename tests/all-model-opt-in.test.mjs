@@ -28,6 +28,16 @@ test('only providers in KAPPA_ALL_MODEL_PROVIDERS route their full account catal
  }finally{globalThis.fetch=original}
 });
 
+test('Cerebras models remain excluded from the free-only catalog but are discoverable with explicit full-catalog opt-in',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async url=>{assert.equal(String(url),'https://api.cerebras.ai/v1/models');return catalog(['gpt-oss-120b','qwen-3.8-27b']);};
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',CEREBRAS_API_KEY:'fixture-cerebras-key',KAPPA_FREE_PROVIDERS:'cerebras',KAPPA_CHAT_PROVIDERS:'cerebras'};
+  assert.deepEqual(await providerModels(env,'cerebras'),[],'Cerebras has no reviewed, permanently free models');
+  assert.deepEqual(await providerModels({...env,KAPPA_ALL_MODEL_PROVIDERS:'cerebras'},'cerebras'),['qwen-3.8-27b','gpt-oss-120b'],'explicit full-catalog opt-in discovers the two account models');
+ }finally{globalThis.fetch=original;}
+});
+
 test('"*" opts every provider into its full catalog',async()=>{
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
  assert.equal(providerPolicyStatus(env,'chat','ollama').enabled,true);
