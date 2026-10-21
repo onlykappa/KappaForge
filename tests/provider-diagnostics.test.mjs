@@ -39,6 +39,16 @@ test('discovery distinguishes authentication, access, rate limits, empty lists a
  assert.match(box.settingsIssues()[0].title,/cooling down/);
  assert.match(box.settingsIssues()[0].fix,/Retry after/);
 });
+
+test('excluding every route remains a setup issue without blaming credentials',()=>{
+ const box=settings([{id:'gemini',name:'Gemini',enabled:false,configured:true,models:[]},{id:'groq',name:'Groq',enabled:false,configured:true,models:[]}]);
+ box.capabilities.models=[];
+ assert.equal(box.settingsIssues().length,1);assert.equal(box.settingsIssues()[0].title,'No provider is enabled for chat');
+ box.capabilities.providers[1]={id:'groq',name:'Groq',enabled:true,configured:true,models:['fixture']};
+ assert.equal(box.settingsIssues().length,0);
+ box.preferences.disabledProviders=['groq'];
+ assert.equal(box.settingsIssues()[0].title,'No provider is enabled for chat');
+});
 test('provider summaries explain exclusions and sanitize discovery without inference',async()=>{
  const previous=globalThis.fetch;let calls=0;
  globalThis.fetch=async(url)=>{calls++;assert.ok(String(url).endsWith('/models'));return Response.json({data:[{id:'openai/gpt-oss-120b'},{id:'mistral-small-latest'},{id:'mistral-large-latest'}]});};

@@ -80,6 +80,8 @@ function settingsIssues(){
  if(e&&!e.status)return [{level:'error',title:'Can’t reach your backend',fix:'Check your internet connection. If it keeps happening, make sure the Worker URL in Connection → Manage connection is right and the latest “Deploy KappaForge Chat” run passed in GitHub → Actions.'}];
  if(e)return [{level:'error',title:'Your backend returned an error',fix:'“'+e.message+'”. Tap Check again in a minute. If it keeps failing, open the latest “Deploy KappaForge Chat” run in GitHub → Actions.'}];
  const c=capabilities||{},providers=c.providers||[],out=[];
+ const legacyPrimary=!providers.some(p=>p.id==='gemini')&&(c.models||[]).length&&!preferences.disabledProviders?.includes('gemini');
+ if(providers.length&&!legacyPrimary&&providers.every(p=>providerStatus(p).kind==='excluded'))out.push({level:'error',title:'No provider is enabled for chat',fix:'Review server route permissions and your saved provider choices. This does not establish that any key is invalid.'});
  if(!providers.some(p=>p.id==='gemini')&&!(c.models||[]).length)out.push({level:'warn',title:'Gemini model discovery unavailable',fix:'No eligible Gemini models were reported. Credential validity and inference capacity have not been established.'});
  for(const p of providers){const status=providerStatus(p);if(!['available','excluded'].includes(status.kind))out.push({level:'warn',title:p.name+': '+status.label,fix:status.detail});}
  if(c.github===false)out.push({level:'warn',title:'GitHub isn’t connected to your backend',fix:'Add a GITHUB_JOB_TOKEN secret to your Cloudflare Worker so tasks, code reviews and project health can reach GitHub.'});
