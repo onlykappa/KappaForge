@@ -27,7 +27,7 @@ function aggregate(events,{since=0,until=Infinity}={}){
  }
  sum.averageLatency=sum.requests?sum.latency/sum.requests:0;return sum;
 }
-function periodStart(period,now=Date.now()){const d=new Date(now);d.setUTCHours(0,0,0,0);if(period==='week')d.setUTCDate(d.getUTCDate()-6);if(period==='month')d.setUTCDate(1);if(period==='all')return 0;return d.getTime();}
+function periodStart(period,now=Date.now()){const d=new Date(now);d.setUTCHours(0,0,0,0);if(period==='week')d.setUTCDate(d.getUTCDate()-6);if(period==='month')d.setUTCDate(1);if(period==='year')d.setUTCMonth(0,1);if(period==='all')return 0;return d.getTime();}
 function mergeNotes(local,remote,deleted=[]){const tombstones=new Set(deleted);return [...new Set([...local,...remote])].filter(n=>typeof n==='string'&&!tombstones.has(n));}
 function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(Number),y=String(b).replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)?1:-1;}return 0;}
 root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions};

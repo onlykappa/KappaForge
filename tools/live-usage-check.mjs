@@ -47,7 +47,7 @@ try{
   summary.probe=await page.evaluate(()=>({total:probe.total,error:probe.error,results:probe.results.map(({label,outcome,status,tokens,latencyMs})=>({label,outcome,status,tokens,latencyMs}))}));
   await page.locator('section.panel',{hasText:'Test every model'}).screenshot({path:join(out,'1-model-test.png'),animations:'disabled'});
  }
- await open('usage');await page.locator('#s-refresh').click();
+ await open('usage');await page.locator('#usage-refresh').click();
  await page.waitForFunction(()=>!settingsBusy,null,{timeout:120000});
  await page.waitForTimeout(500);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2-usage-home.png'),fullPage:true,animations:'disabled'});
@@ -61,6 +61,9 @@ try{
  }
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
+ await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
+ await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});
+ await page.locator('[data-period=month]').click();
  // Drill into the busiest provider and its busiest model, as a person tapping through would.
  const first=page.locator('[data-usage-provider]').first();
  if(await first.count()){
