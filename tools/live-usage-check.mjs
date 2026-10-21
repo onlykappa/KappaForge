@@ -49,13 +49,16 @@ try{
  }
  await open('usage');await page.locator('#s-refresh').click();
  await page.waitForFunction(()=>!settingsBusy,null,{timeout:120000});
- await page.locator('[data-period=day]').click();await page.waitForTimeout(500);
- await page.evaluate(()=>scrollTo(0,0));
- await page.screenshot({path:join(out,'2-usage-today.png'),fullPage:true,animations:'disabled'});
- const cards=page.locator('details.limit-card > summary');
- for(let i=0;i<await cards.count();i++)await cards.nth(i).click();
- await page.waitForTimeout(300);
- await page.locator('section.panel',{hasText:'Provider limits'}).screenshot({path:join(out,'3-provider-limits-open.png'),animations:'disabled'});
+ await page.waitForTimeout(500);await page.evaluate(()=>scrollTo(0,0));
+ await page.screenshot({path:join(out,'2-usage-home.png'),fullPage:true,animations:'disabled'});
+ // Drill into the busiest provider and its busiest model, as a person tapping through would.
+ const first=page.locator('[data-usage-provider]').first();
+ if(await first.count()){
+  const id=await first.getAttribute('data-usage-provider');await first.click();await page.waitForTimeout(300);
+  await page.screenshot({path:join(out,'3-provider-'+id+'.png'),fullPage:true,animations:'disabled'});
+  const model=page.locator('[data-usage-model]').first();
+  if(await model.count()){await model.click();await page.waitForTimeout(300);await page.screenshot({path:join(out,'4-model.png'),fullPage:true,animations:'disabled'});}
+ }
  summary.providers=await page.evaluate(()=>{const list=capabilities?.providers||[];return KappaLimits.usage(usageEvents,capabilities?.limits,list.map(p=>p.id),{show:list.filter(p=>p.enabled).map(p=>p.id)})
   .map(p=>({id:p.id,attempts:p.used.requests,tokens:p.used.tokens,headline:p.worst&&{label:p.worst.label,model:p.worst.model||null,used:p.worst.used,limit:p.worst.limit},
    models:p.models.filter(m=>!m.unused).map(m=>({model:m.model,attempts:m.used.requests,tokens:m.used.tokens}))}));});

@@ -39,10 +39,14 @@ function dayStart(now,zone='UTC'){
   return now-((parts.hour%24)*3600+parts.minute*60+parts.second)*1000-now%1000;
  }catch{return dayStart(now,'UTC');}
 }
-function empty(){return {requests:0,tokens:0,minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,peakSecondRequests:0,minutes:{},seconds:{}};}
+function empty(){return {requests:0,tokens:0,input:0,output:0,ok:0,latency:0,kinds:{chat:0,task:0,test:0},hours:Array(24).fill(0),minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,peakSecondRequests:0,minutes:{},seconds:{}};}
 function add(used,e,now){
  const tokens=Number.isFinite(e.total)&&e.total>0?e.total:0,minute=Math.floor(e.at/60000),second=Math.floor(e.at/1000);
  used.requests++;used.tokens+=tokens;
+ // Detail for one model: token direction, what asked (chat, coding task, model test), outcome and hour of day.
+ const count=n=>Number.isFinite(n)&&n>0?n:0;
+ used.input+=count(e.input);used.output+=count(e.output);if(e.ok!==false)used.ok++;used.latency+=count(e.latency);
+ used.kinds[e.kind==='task'?'task':e.kind==='probe'?'test':'chat']+=tokens;used.hours[new Date(e.at).getHours()]++;
  if(now-e.at<60000){used.minuteRequests++;used.minuteTokens+=tokens;}
  const m=used.minutes[minute]??={requests:0,tokens:0};m.requests++;m.tokens+=tokens;
  used.peakMinuteRequests=Math.max(used.peakMinuteRequests,m.requests);used.peakMinuteTokens=Math.max(used.peakMinuteTokens,m.tokens);
@@ -93,7 +97,12 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   const daily=x=>x.key==='rpd'||x.key==='tpd',rank=x=>daily(x)||x.percent>100?x.percent+1000:x.key==='rps'?x.percent-1000:x.percent;
   const worst=all.sort((a,b)=>rank(b)-rank(a))[0]||null;
   models.sort((a,b)=>b.used.requests-a.used.requests||(b.pairs[0]?.percent??-1)-(a.pairs[0]?.percent??-1)||a.model.localeCompare(b.model));
-  return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope};
+  // Provider-wide daily allowances: its own cap, or the sum of its models' caps. Token use is compared only
+  // on models that publish a daily token cap, so the two sides of the comparison cover the same models.
+  const capped=models.filter(m=>Number.isFinite(m.limit?.tpd));
+  const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:models.reduce((n,m)=>n+(Number.isFinite(m.limit?.rpd)?m.limit.rpd:0),0)||null;
+  const tokenLimit=capped.reduce((n,m)=>n+m.limit.tpd,0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
+  return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }
 root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage};
