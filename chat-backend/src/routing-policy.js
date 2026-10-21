@@ -12,21 +12,17 @@ export function requestRoutingPreferences(text,preferences={}){
   throw new Error("Use one exact Inference route: groq:openai/gpt-oss-120b line for the bounded test.");
  return {...preferences,model:"groq:openai/gpt-oss-120b",fallback:false};
 }
-const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.freeModels):
- Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
-
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
 export function providerPolicyStatus(env,channel,id,{privateCode=false,requested=null}={}){
  const excluded=reason=>({enabled:false,reason});
  if(!providers.has(id))return excluded("unknown_provider");
  // Keep legacy preview/test deployments compatible. The production Worker opts into the
- // no-cost policy explicitly through ROUTING_POLICY_VERSION=v1.
+ // provider permissions explicitly through ROUTING_POLICY_VERSION=v1.
  if(env.ROUTING_POLICY_VERSION!==ROUTING_POLICY_VERSION)return {enabled:true,reason:"legacy_policy"};
- if(!noCostReviewed(id))return excluded("free_models_unreviewed");
- const free=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
+ const permitted=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
  const allowed=list(env[channelName]);
- if(!free.has(id))return excluded("free_provider_permission");
+ if(!permitted.has(id))return excluded("provider_permission");
  if(!allowed.has(id))return excluded("channel_permission");
  if(channel==="coding"&&privateCode&&!list(env.KAPPA_PRIVATE_CODE_PROVIDERS).has(id))return excluded("private_code_permission");
  if(requested instanceof Set&&!requested.has(id))return excluded("request_provider_restriction");
@@ -38,6 +34,7 @@ export function providerAllowed(env,channel,id,options={}){return providerPolicy
 export function routePolicy(env){
  const active=env.ROUTING_POLICY_VERSION===ROUTING_POLICY_VERSION;
  return {version:active?ROUTING_POLICY_VERSION:"legacy",failClosed:active,
+  providerAllowlistConfigured:typeof env.KAPPA_FREE_PROVIDERS==="string"&&env.KAPPA_FREE_PROVIDERS.trim().length>0,
   freeAllowlistConfigured:typeof env.KAPPA_FREE_PROVIDERS==="string"&&env.KAPPA_FREE_PROVIDERS.trim().length>0,
   chatProviders:[...providers].filter(id=>providerAllowed(env,"chat",id)),
   codingProviders:[...providers].filter(id=>providerAllowed(env,"coding",id)),
