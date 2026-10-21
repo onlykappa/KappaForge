@@ -41,6 +41,7 @@
       }
     },
     "groq": {
+      "freeRequestTokenBudget": 8000,
       "name": "Groq",
       "kind": "openai",
       "base": "https://api.groq.com/openai/v1",

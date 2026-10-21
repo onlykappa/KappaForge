@@ -43,3 +43,16 @@ test('recovery prompts after one minute of eligibility, never before cooldown or
  assert.equal(P.recoveryReminderDue(snapshot({status:'waiting',recovery:{nextAt:100000}}),160000),true,'old checkpoints need no migration');
  assert.equal(waiting.status,'waiting','eligibility is a display fact, not execution failure or new authorization');
 });
+
+
+test('recovery receipts preserve saved progress and never imply runner or provider availability',()=>{
+ const saved=snapshot({status:'waiting',recovery:{candidate:'b'.repeat(40),nextAt:100000,executionState:'waiting_for_provider'}});
+ const job={number:9,progress:saved};P.recoveryReceipt(job,{status:'recovery_requested'},200000);
+ assert.equal(job.progress,saved);assert.equal(job.progress.recovery.candidate,'b'.repeat(40));
+ assert.equal(P.recoveryDisplay(job,200000).label,'RECOVERY REQUESTED');
+ const reopened=JSON.parse(JSON.stringify(job));assert.equal(P.recoveryDisplay(reopened).label,'RECOVERY REQUESTED');
+ job.progress=snapshot({status:'queued',updatedAt:300000,recovery:{executionState:'dispatch_requested'}});
+ assert.equal(P.recoveryDisplay(job).label,'DISPATCH REQUESTED');
+ job.dispatchObservation={state:'queued',at:300001};assert.equal(P.recoveryDisplay(job).label,'QUEUED IN GITHUB');
+ job.progress=snapshot({status:'running',updatedAt:400000});assert.equal(P.recoveryDisplay(job),null);
+});

@@ -16,13 +16,16 @@ import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapsh
 import {inferenceRouter} from "./inference-router.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
+import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
 export class KappaMemory {
-  constructor(state) { this.state = state; }
+  constructor(state,env) { this.state = state; this.env=env; }
+  async alarm(){await recoveryAlarm(this.state,this.env);}
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname==="/recovery/schedule")return recoveryWakeStore(this.state,this.env,request);
     if(url.pathname.startsWith("/authorization/"))return authorizationStore(this.state,request);
     if(url.pathname.startsWith("/usage"))return usageStore(this.state,request);
     if(url.pathname.startsWith("/router/"))return routingStore(this.state,request);
@@ -127,10 +130,19 @@ export default {
     const pathname=new URL(request.url).pathname;
     if(pathname.startsWith("/router/")){
       const diagnostics=pathname==="/router/diagnostics"&&request.method==="GET";
-      if(!diagnostics&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
+      const recovery=pathname==="/router/recovery"&&request.method==="POST";
+      if(!diagnostics&&!recovery&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
       if(!env.ROUTER_ACCESS_TOKEN||env.ROUTER_ACCESS_TOKEN.length<32||!env.MEMORY||env.ROUTING_POLICY_VERSION!=="v1")return json({error:"Integrated router is not configured"},503);
       const auth=request.headers.get("Authorization")||"";
       if(!auth.startsWith("Bearer ")||!safeEqual(auth.slice(7),env.ROUTER_ACCESS_TOKEN))return json({error:"Unauthorized"},401);
+      if(recovery){
+        const input=await request.json().catch(()=>null);
+        if(!Number.isSafeInteger(input?.task)||input.task<1)return json({error:"Invalid task"},400);
+        try{
+          if(input.statusOnly)return await env.MEMORY.get(env.MEMORY.idFromName('recovery-v1')).fetch('https://memory.internal/recovery/schedule',{method:'POST',body:JSON.stringify({task:input.task,statusOnly:true})});
+          return await scheduleRecovery(env,input.task);
+        }catch{return json({error:"Recovery wake-up could not be registered; checkpoint retained"},503)}
+      }
       if(diagnostics){
         const provider="groq",model="openai/gpt-oss-120b",config=REGISTRY.providers.groq;
         const contains=(value,id)=>typeof value==="string"&&value.split(",").map(part=>part.trim()).includes(id);
@@ -480,6 +492,10 @@ export default {
           await refundAgentRun(env,run);return json({error:"Task cancelled before dispatch",issueUrl:issue.html_url},409,cors);
         }
         const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
+        if(mode==="develop"){
+          try{const wake=await scheduleRecovery(env,issue.number);if(!wake.ok)throw Error('registration');}
+          catch{console.warn('Task '+issue.number+': durable wake-up registration failed; initial dispatch and cron fallback remain');}
+        }
         const dispatched = await fetch(endpoint + "/actions/workflows/" + workflowName + "/dispatches",
           { method: "POST", headers, body: JSON.stringify({ ref: "main", inputs: { issue_number: String(issue.number) } }) });
         if (!dispatched.ok){await refundAgentRun(env,run);return json({ error: "Issue created, but workflow could not start (HTTP " + dispatched.status + ").", issueUrl: issue.html_url }, 502, cors);}

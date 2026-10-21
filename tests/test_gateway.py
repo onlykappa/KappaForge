@@ -76,6 +76,13 @@ class GatewayEvidenceTests(unittest.TestCase):
         with self.assertRaises(gateway.GatewayUnavailable):
             gateway.check({**result, 'failedCondition': 'provider_or_model_cooldown'})
 
+    def test_account_authentication_cooldown_is_terminal_without_repeated_hammering(self):
+        error = gateway.error(429, {'code':'free_capacity_cooldown','failure':{'source':'coordination','category':'authentication','upstreamStatus':401,'provider':'groq','model':'openai/gpt-oss-120b','attempted':False}})
+        self.assertTrue(error.terminal)
+        self.assertFalse(error.details['attempted'])
+        self.assertIn('historical upstream HTTP 401', str(error))
+        self.assertEqual(error.details['model'], 'openai/gpt-oss-120b')
+
     def test_error_translation_retains_only_structured_safe_failure_fields(self):
         failure = gateway.error(503, {'code': 'free_route_unavailable', 'failure': {
             'source': 'upstream', 'category': 'provider_rejection', 'upstreamStatus': 413,

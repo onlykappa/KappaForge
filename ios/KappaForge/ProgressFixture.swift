@@ -18,6 +18,21 @@ enum ProgressFixture {
           checkJobResult = async () => {};
           jobPollAfter = Number.MAX_SAFE_INTEGER;
           if (scenario === 'recovery') {
+            backend='https://fixture.invalid';access='simulator-only';
+            // Intercept the real authorization + retry HTTP boundary. Reject all
+            // destinations other than this isolated fake origin; never use keys.
+            globalThis.fetch=async(url,options)=>{
+              if(!String(url).startsWith('https://fixture.invalid/'))throw Error('Live network forbidden in simulator fixture');
+              const body=JSON.parse(options.body),path=new URL(url).pathname;
+              if(path==='/authorize'&&body.path==='/retry'&&body.payload.task===103)return Response.json({authorized:true});
+              if(path==='/retry'&&body.task===103&&body.authorization?.id){
+                const count=Number(localStorage.getItem('simulator.retry.count')||0)+1;
+                localStorage.setItem('simulator.retry.count',String(count));
+                const proof=document.createElement('p');proof.textContent='Fixture retry transport '+count;proof.style.cssText='position:fixed;top:100px;right:8px;z-index:9999';document.body.append(proof);
+                return Response.json({status:'recovery_requested',task:103,message:'Recovery requested for existing task #103; no runner confirmed.'},{status:202});
+              }
+              throw Error('Unexpected fixture operation');
+            };
             const saved = trackedJobs.find(j=>j.number===103&&j.progress?.attemptId==='simulator-recovery');
             const chat = (saved&&chats.find(c=>c.id===saved.chatId))||{id:'simulator-recovery',title:'Recovery simulator task',at:now,messages:[]};
             if (!chats.includes(chat)) chats.unshift(chat);

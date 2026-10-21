@@ -289,3 +289,38 @@ test('chat transport and malformed responses preserve cooldowns without inventin
   }finally{globalThis.fetch=previous}
  }
 });
+
+
+test('expired lease outcomes retain account attribution and cannot clear a newer failure',async()=>{
+ const store=storage(),clock=Date.now;let now=1800000000000;Date.now=()=>now;
+ const reserve=id=>invoke(store,'/router/reserve',{requestId:id,provider:'groq',model:'model-a',accountPool:'acct',quotaPool:'shared',leaseMs:1000});
+ const outcome=(id,status)=>invoke(store,'/router/outcome',{requestId:id,provider:'groq',model:'model-a',status,category:status===401?'authentication':''});
+ try{
+  await reserve('old');now+=1001;assert.equal((await reserve('new')).status,200);
+  now+=1;await outcome('new',401);now+=1;await outcome('old',200);
+  const status=await (await invoke(store,'/router/status')).json();
+  assert.equal(status.pools['acct:shared'].blocked,true);assert.equal(status.usage.null,undefined);
+  assert.equal(status.usage['acct:shared'].estimatedRequests,2);assert.equal(status.activeReservations,0);
+  assert.equal((await (await reserve('old')).json()).allowed,false,'expired/completed lease IDs cannot be reused');
+ }finally{Date.now=clock}
+});
+test('cancellation releases only its lease and never erases another account failure',async()=>{
+ const store=storage(),base={provider:'groq',model:'model-a',accountPool:'acct',quotaPool:'shared',leaseMs:120000,maxConcurrent:2};
+ await invoke(store,'/router/reserve',{...base,requestId:'cancel'});await invoke(store,'/router/reserve',{...base,requestId:'failure'});
+ await invoke(store,'/router/outcome',{...base,requestId:'failure',status:401,category:'authentication'});
+ await invoke(store,'/router/outcome',{...base,requestId:'cancel',status:499,category:'cancelled'});
+ const state=await (await invoke(store,'/router/status')).json();assert.equal(state.pools['acct:shared'].blocked,true);assert.equal(state.activeReservations,0);
+});
+
+
+test('Groq requests outside the reviewed free token envelope are refused before inference with exact provenance',async()=>{
+ const state={storage:storage()},env={ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore(state,new Request(u,o))})}};
+ const original=globalThis.fetch;let inference=0;
+ globalThis.fetch=async(url,options={})=>{if(options.method==='POST')inference++;return Response.json({data:[{id:'openai/gpt-oss-120b'}]})};
+ try{
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,maxTokens:8000,messages:[{role:'user',content:'exact source '.repeat(3100)}]});
+  const data=await r.json();assert.equal(r.status,413);assert.equal(data.code,'request_too_large');assert.equal(inference,0);
+  assert.equal(data.attempts.length,1);assert.equal(data.attempts[0].provider,'groq');assert.equal(data.attempts[0].model,'openai/gpt-oss-120b');assert.equal(data.attempts[0].attempted,false);
+  assert.equal(data.attempts[0].source,'gateway_guard');assert.equal(data.failure.upstreamStatus,null);
+ }finally{globalThis.fetch=original}
+});

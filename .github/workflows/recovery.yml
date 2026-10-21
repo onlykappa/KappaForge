@@ -1,4 +1,5 @@
 name: Resume authorized development
+run-name: ${{ inputs.issue_number != '' && format('Recovery task #{0}', inputs.issue_number) || 'Scheduled recovery scan' }}
 permissions:
   contents: write
   issues: write
@@ -23,9 +24,17 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
+        KAPPA_RECOVERY_TASK: ${{ inputs.issue_number }}
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
       run: python -m engine.recovery
 'on':
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing task only; authorization and checkpoint are rechecked
+        type: string
+        required: false
   schedule:
   # GitHub supports no shorter interval; schedules are best-effort, not deadlines.
   - cron: '2-57/5 * * * *'

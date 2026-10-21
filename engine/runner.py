@@ -632,7 +632,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
-                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None}
+                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

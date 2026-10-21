@@ -1,5 +1,6 @@
 import {githubHeaders} from "./github.js";
 import {requestFix} from "./review.js";
+import {scheduleRecovery,recoveryTask} from "./recovery-wake.js";
 // What the agent is working on, for chat answers like "did the tests pass?", and owner guidance for stuck tasks.
 const ROOT="repos/onlykappa/KappaForge";
 const get=async(env,path)=>{const r=await fetch("https://api.github.com/"+path,{headers:githubHeaders(env,"KappaForge-agent-work"),signal:AbortSignal.timeout(6000)});if(!r.ok)throw Error("GitHub HTTP "+r.status);return r.json()};
@@ -46,6 +47,14 @@ async function ownerTask(env,task){
 }
 // A fresh attempt at the task (the same dispatch /jobs uses); the agent reads the task's Guidance: comments.
 async function startAttempt(env,t){
+ if(/^Mode:\s*develop\s*$/mi.test(t.issue.body||'')){
+  const saved=await recoveryTask(env,t.number);
+  if(!saved&&/<!-- kappa-authorization:/.test(t.issue.body||''))return {error:'Saved task is cancelled, expired or its exact scope changed. No execution was requested.'};
+  if(saved?.journal&&['waiting','dispatching','running','recovering'].includes(saved.journal.status)){
+   const response=await scheduleRecovery(env,t.number),result=await response.json();
+   return response.ok?result:{error:result.error||'Recovery delivery could not be scheduled.'};
+  }
+ }
  const workflow=CONTINUOUS.test(t.issue.body||"")?"continuous.yml":"agent.yml";
  const r=await fetch("https://api.github.com/"+ROOT+"/actions/workflows/"+workflow+"/dispatches",{method:"POST",headers:{...githubHeaders(env,"KappaForge-agent-work"),"Content-Type":"application/json"},body:JSON.stringify({ref:"main",inputs:{issue_number:String(t.number)}}),signal:AbortSignal.timeout(8000)});
  return r.ok?{}:{error:"The new attempt could not start (GitHub HTTP "+r.status+")."};
@@ -65,7 +74,8 @@ async function renewTask(env,t,authorization){
  const expires=record?.expiresAt??Date.parse(t.issue.created_at||"")+duration;
  if(!Number.isFinite(expires)||expires<=Date.now()){
   if(!authorization?.id||!authorization.conversationId||!Number.isFinite(authorization.issuedAt))return {error:"A fresh user authorization is required to retry this expired task.",status:409};
-  const next={...authorization,repo:"onlykappa/"+t.repo,mode,allowMerge:false,expiresAt:authorization.issuedAt+duration};
+  const priorDigest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+  const next={...authorization,intent:"execution",state:"executing",resumeFrom:record?.id?{authorization:record.id,digest:priorDigest}:undefined,repo:"onlykappa/"+t.repo,mode,allowMerge:false,expiresAt:authorization.issuedAt+duration};
   const marker="<!-- kappa-authorization:"+JSON.stringify(next)+" -->";
   const renewed=match?body.replace(match[0],marker):body+"\nApproved from KappaForge Chat.\n"+marker;
   const r=await fetch("https://api.github.com/"+ROOT+"/issues/"+t.number,{method:"PATCH",headers:{...githubHeaders(env),"Content-Type":"application/json"},body:JSON.stringify({body:renewed}),signal:AbortSignal.timeout(8000)});
@@ -84,7 +94,7 @@ export async function sendGuidance(env,task,text,authorization){
  if(!posted.ok)return {error:"GitHub refused the guidance comment (HTTP "+posted.status+").",status:502};
  if(!t.pr){const run=await startAttempt(env,t);
   return run.error?{status:"guidance_saved",fix:false,message:"Saved, but "+run.error.toLowerCase()+" Ask me to retry task #"+t.number+" in a minute."}
-   :{status:"guidance_saved",fix:false,retry:true,message:"Saved, and a fresh attempt at task #"+t.number+" started using your guidance."}}
+   :{status:"guidance_saved",fix:false,retry:run.status!=="blocked",recoveryStatus:run.status,nextAt:run.nextAt||0,message:"Saved. "+(run.message||"Dispatch requested for existing task #"+t.number+"; waiting for runner acknowledgement.")}}
  const fix=await requestFix(env,t.repo,t.pr.number);
  return fix.error?{status:"guidance_saved",fix:false,message:"Saved. A fix will use it once the current tests finish failing; "+fix.error}
   :{status:"guidance_saved",fix:true,message:"Saved, and a new fix attempt started for PR #"+t.pr.number+"."};
@@ -94,7 +104,7 @@ export async function sendGuidance(env,task,text,authorization){
 export async function retryTask(env,task,authorization){
  const t=await ownerTask(env,task);if(t.error)return t;
  const renewed=await renewTask(env,t,authorization);if(renewed.error)return renewed;
- if(!t.pr){const run=await startAttempt(env,t);return run.error?{error:run.error,status:502}:{status:"retry_started",message:"Started a fresh attempt at task #"+t.number+". I'll post its progress here."}}
+ if(!t.pr){const run=await startAttempt(env,t);return run.error?{error:run.error,status:502}:{status:run.status||"dispatch_requested",nextAt:run.nextAt||0,message:run.message||"Dispatch requested for existing task #"+t.number+". Waiting for runner acknowledgement."}}
  const fix=await requestFix(env,t.repo,t.pr.number);
  if(!fix.error)return {status:"fix_started",message:"Started a fix attempt for PR #"+t.pr.number+" (task #"+t.number+")."};
  return {error:"Task #"+t.number+" already has an open PR (#"+t.pr.number+") and it can't be fixed right now: "+fix.error+" If its tests passed, review and merge it on the Dashboard.",status:409};

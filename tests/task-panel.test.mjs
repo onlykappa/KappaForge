@@ -230,7 +230,7 @@ test('recovery snapshots render waiting and recovering with the actual error and
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
  vm.createContext(box);vm.runInContext(slice(source,'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
- for(const [status,label] of [['waiting','WAITING TO RESUME'],['recovering','RECOVERING'],['blocked','BLOCKED']]){
+ for(const [status,label] of [['waiting','WAITING FOR COOLDOWN'],['recovering','RECOVERING'],['blocked','BLOCKED']]){
   const p=P.normalize({version:1,taskId:'130',attemptId:'recovery:1',attemptAt:1000,revision:1,updatedAt:2000,
    status,startedAt:1000,steps:[{id:'r',title:'Preserve candidate and retry',status,startedAt:1000}],
    recovery:{candidate:'b'.repeat(40),nextAt:300000,continuations:1,last:{model:'writer',error:'Malformed <JSON>',next:'Use compact source'}}},130);
@@ -254,7 +254,7 @@ test('waiting recovery becomes blocked at the recorded authorization expiry',()=
 });
 
 test('a recovery-eligible card offers explicit retry and the local timer reveals it without a provider call',()=>{
- let tick=159999,renders=0;
+ let tick=99000,renders=0;
  const clock=class extends Date{static now(){return tick}};
  const box={esc,KappaJobs:J,KappaActions:K,Date:clock,Math,Number,String,Object,Array,
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
@@ -267,7 +267,7 @@ test('a recovery-eligible card offers explicit retry and the local timer reveals
   scanIntervalSeconds:300,last:{error:'upstream HTTP 503',next:'Scan every 15 minutes'}}},171);
  const job={number:171,message:'progress',progress:p,queuedAt:500};
  const card=()=>box.renderExecutionActivity({text:''},job);
- let html=card();assert.match(html,/WAITING TO RESUME/);assert.doesNotMatch(html,/data-task-retry/);
+ let html=card();assert.match(html,/WAITING FOR COOLDOWN/);assert.doesNotMatch(html,/data-task-retry/);
  assert.match(html,/Waiting time/);assert.doesNotMatch(html,/Working time|<span>Working/);
  assert.match(html,/checks scheduled every 5 minutes; GitHub may delay/);assert.doesNotMatch(html,/15 minutes/);
  const dataset=markup=>Object.fromEntries([...markup.matchAll(/data-([a-z-]+)="([^"]*)"/g)].map(m=>[m[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase()),m[2]]));
@@ -276,11 +276,11 @@ test('a recovery-eligible card offers explicit retry and the local timer reveals
  vm.runInContext(slice(tasks,'function refreshTaskFreshness(','\nsetInterval(refreshTaskFreshness'),box);
  box.refreshTaskFreshness();assert.equal(renders,0);
  tick=160000;box.refreshTaskFreshness();assert.equal(renders,1,'one local render at the eligibility boundary');
- html=card();assert.match(html,/READY TO RESUME/);assert.match(html,/data-task-retry="171"/);
+ html=card();assert.match(html,/WAITING FOR RECOVERY/);assert.match(html,/data-task-retry="171"/);
  assert.match(html,/Scheduled checks can run late/);assert.match(html,/Saved commit: bbbbbbb/);
  el.dataset=dataset(html);box.refreshTaskFreshness();assert.equal(renders,1,'no render on every clock tick');
  assert.equal(p.status,'waiting');assert.equal(p.recovery.continuations,0);
  tick=500000;html=card();assert.match(html,/BLOCKED/);assert.match(html,/Retry to renew task authorization/);
- assert.doesNotMatch(html,/READY TO RESUME/);assert.match(html,/data-task-retry="171"/);
+ assert.doesNotMatch(html,/WAITING FOR RECOVERY/);assert.match(html,/data-task-retry="171"/);
  job.finished=true;assert.doesNotMatch(card(),/data-task-retry/);
 });

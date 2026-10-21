@@ -1,3 +1,4 @@
+import './recovery-wake.test.mjs';
 import './cloud.mjs';
 import './free-route-policy.test.mjs';
 import './provider-diagnostics.test.mjs';
@@ -459,7 +460,7 @@ test('guidance without an open PR starts a fresh attempt, and retry fixes a fail
  const original=globalThis.fetch,posted=[],dispatched=[],head='d'.repeat(40);let open=false;
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-retry'};
  globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u.endsWith('/issues/21'))return Response.json({number:21,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:'Repository: onlykappa/KappaForge\nMode: develop'});
+  if(u.endsWith('/issues/21'))return Response.json({number:21,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],created_at:new Date().toISOString(),body:'Repository: onlykappa/KappaForge\nMode: develop'});
   if(u.endsWith('/issues/22'))return Response.json({number:22,state:'closed',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:''});
   if(u.endsWith('/issues/21/comments')&&init.method==='POST'){posted.push(JSON.parse(init.body).body);return Response.json({id:1},{status:201})}
   if(u.includes('/pulls?state=open&head=onlykappa:kappa/dev-21'))return Response.json(open?[{number:60}]:[]);
@@ -470,7 +471,7 @@ test('guidance without an open PR starts a fresh attempt, and retry fixes a fail
   return Response.json({})};
  try{
   const g=await worker.fetch(req('/guidance',{task:21,text:'Use the existing helper'}),env),gd=await g.json();
-  assert.equal(g.status,200,JSON.stringify(gd));assert.equal(gd.retry,true);assert.match(gd.message,/fresh attempt at task #21 started/);
+  assert.equal(g.status,200,JSON.stringify(gd));assert.equal(gd.retry,true);assert.match(gd.message,/Dispatch requested for existing task #21; waiting for runner acknowledgement/);
   assert.deepEqual(posted,['Guidance: Use the existing helper']);assert.deepEqual(dispatched,[{issue_number:'21'}],'a develop attempt, not a fix');
   const r=await worker.fetch(req('/retry',{task:21}),env);assert.equal(r.status,202);assert.deepEqual(dispatched.at(-1),{issue_number:'21'});
   open=true;const f=await worker.fetch(req('/retry',{task:21}),env),fd=await f.json();
