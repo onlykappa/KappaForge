@@ -1,5 +1,6 @@
 import './cloud.mjs';
 import './free-route-policy.test.mjs';
+import './provider-diagnostics.test.mjs';
 import './native-progress-fixture.test.mjs';
 import './task-progress.test.mjs';
 import './task-tracking.test.mjs';

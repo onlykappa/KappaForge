@@ -582,6 +582,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     selected = sorted(set(allowed if allowed is not None else code_providers(private=True)) & set(PROVIDERS["order"] + ["gemini"]))
     if not selected:
         raise RuntimeError("No provider is authorized for coding inference; the task remains queued")
+    gateway.require_prompt_fits(prompt)
     pinned_route = getattr(getattr(journal, "scope", None), "inference_route", None)
     pinned_model = None
     fallback = True
@@ -610,7 +611,10 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     if pinned_model:
         payload["model"] = pinned_route
         payload["reasoningEffort"] = "low"
-    request = urllib.request.Request(endpoint + "/router/infer", json.dumps(payload).encode("utf-8"), {
+    encoded = json.dumps(payload).encode('utf-8')
+    if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
+        raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
+    request = urllib.request.Request(endpoint + "/router/infer", encoded, {
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
     })
