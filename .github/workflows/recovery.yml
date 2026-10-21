@@ -1,5 +1,5 @@
 name: Resume authorized development
-run-name: ${{ inputs.issue_number != '' && format('Recovery task #{0}', inputs.issue_number) || 'Scheduled recovery scan' }}
+run-name: "${{ inputs.issue_number != '' && format('Recovery task #{0}', inputs.issue_number) || 'Scheduled recovery scan' }}"
 permissions:
   contents: write
   issues: write
