@@ -1,7 +1,7 @@
 # OmniRoute integration Phase 4 checkpoint
 
 **Updated:** 2026-10-20  
-**Status:** IN PROGRESS — fixture coverage is passing for the pinned Groq route and durable recovery changes. The authorized production-gateway Actions smoke, generated draft PR, and task-result observation remain pending.
+**Status:** PARTIAL — implementation and fixtures are complete for this draft, and GitHub unit/web checks pass. The live Actions task reached the deployed gateway but received HTTP 503 for Groq capacity; no validated code change or generated task PR resulted.
 
 ## Baseline and prior evidence
 
@@ -33,11 +33,11 @@ Long-running code execution remains on GitHub Actions. The Worker gateway and it
 - Full local Node suite on Windows: **149 passed, 1 failed**. The same pre-existing `tests/intelligence.test.mjs` source-fixture assertion fails on baseline `main` (148 passed, 1 failed); no Phase 4 regression is indicated by the comparison.
 - Full local Python suite on Windows: **334 tests, 1 failure, 2 errors**. Baseline `main` has the same parser-integrity failure (`acorn.mjs` hash) and the same two `PermissionError` errors writing temporary `GITHUB_OUTPUT` files (329 tests, 1 failure, 2 errors). New focused tests pass.
 - `dependency-map.py --check` reports that the checked-in map is stale on both current and baseline branches; it was not regenerated because this phase changes no dependency graph. Windows default text encoding initially fails this script; rerunning with UTF-8 still reports the same stale-map state.
-- Linux GitHub CI and a live test task have not run yet. The local Linux-independent condition is not claimed; live execution remains pending.
+- GitHub PR checks on the final implementation head `4946a06271e07e6c2165b98cc324c8406a68fe31` passed: unit/preflight/dependency-map and web (Node suite plus Playwright). The production live task ran but is a failed capacity observation, not acceptance.
 
-## Live acceptance plan and evidence log
+## Live acceptance attempt and evidence
 
-Create one clearly labeled owner-authored test issue with `Repository: onlykappa/KappaForge`, `Mode: develop`, and the exact Groq route line. Request a single new, harmless test-only documentation file. Dispatch `agent.yml` from this implementation branch so the actual Actions job uses the new task-pinned runner while accessing the existing deployed production Worker. Do not alter any secret, Worker variable, Durable Object value, provider list, or billing setting. The issue body pin follows the task through recovery and prevents a different provider or model from receiving its prompt.
+The one authorized smoke used owner-authored issue #151 with `Repository: onlykappa/KappaForge`, `Mode: develop`, and the exact Groq route pin. It requested one harmless new documentation file and dispatched `agent.yml` from this implementation branch to the existing deployed Worker. No secret, Worker variable, Durable Object value, provider list, or billing setting was changed. The issue body pin followed the task into its request and recovery journal.
 
 Record only task/run/PR links, deployed gateway commit, selected provider/model, sanitized usage, progress/final state, and validation results. Never copy secrets, prompts, or generated private data into logs or this checkpoint. The first live test was stopped after gateway capacity failure: issue #151 is closed, and it must not be resumed or rerun without a new owner request.
 
@@ -45,7 +45,7 @@ Record only task/run/PR links, deployed gateway commit, selected provider/model,
 
 ## Limitations, rollback, and resume
 
-- Phase 4 will remain partial if the branch workflow cannot use the existing GitHub Actions secrets/variables, the deployed gateway returned HTTP 503 for Groq capacity, so code generation, validation, and task PR creation did not complete. No Phase 4 code has been deployed.
+- Phase 4 remains partial because the deployed gateway returned HTTP 503 for Groq capacity; code generation, validation, and task PR creation did not complete. No Phase 4 code has been deployed.
 - Remaining provider quota is unknown. Shared Worker request limits and Groq Free Plan limits remain authoritative; never raise them, purchase credits, or enable fallback to another model/provider for this test.
 - There is no direct mobile-app `/jobs` session credential available to this executor. The authorized test used the owner-created GitHub task, which the existing task interface can adopt and follow. The app UI launch/adoption itself remains unverified because no authenticated mobile session was available.
 - Rollback before merge is to close the draft implementation PR and leave the isolated branch unmerged; the production Worker, secrets, variables, and Durable Object are unchanged. If a test-only generated PR exists, leave it draft and close it after preserving its URL/evidence. Do not merge either PR.
