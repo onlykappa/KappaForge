@@ -13,6 +13,29 @@ for full task submission and duplicate-call fixes. See the
 baseline limitations and rollback. No provider inference or weather task was started
 for this release; diagnostics observed clear recorded guards, not inference capacity.
 
+**Request-size/diagnostics follow-up:** [PR #170](https://github.com/onlykappa/KappaForge/pull/170)
+merged as `03182fb2305187e4e93a880c030e36e0be86b9d4` after 362 Python,
+365 JavaScript, Chromium/mobile Safari and native checks passed. Owner-started
+task #169 hit the unchanged gateway byte cap after a successful Gemini planning
+call; the oversized generation request never reached inference. Source excerpts
+now fit the existing budget without truncating the owner task. Settings no longer
+labels policy exclusions as invalid keys. Owner reconfirmed configured accounts
+are free/no-card; only documented Mistral Small Free-mode support was added under
+existing permissions. Earlier Mistral exclusion statements below describe the
+original component release. Ollama/NVIDIA eligibility/use restrictions remain.
+[Deployment 39545174469](https://github.com/onlykappa/KappaForge/actions/runs/39545174469)
+passed at Worker `f8b7ad28-4bbf-4385-b361-48349a5cc228`, preserving all 18 bindings
+and nine secrets. Health/authentication passed without inference. Groq guard checks
+passed with no active cooldown; remaining provider quota and inference capacity
+remain unknown. [v2.2.14](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.14)
+is published from that exact source; the downloaded IPA checksum, arm64 executable,
+bundle identity and all 23 shared files were independently verified. Install this
+update over the existing app with the same signing identity before the owner retries
+`Retry task #169.` This repairs submission/request construction and diagnostics;
+it does not implement weather. Device installation and the repaired task's next
+execution remain unobserved. See
+[task #169 repair evidence](TASK169-GATEWAY-REPAIR.md). No weather retry is automatic.
+
 ## Published release and final state
 
 - **Release:** [gateway-v1.0.0](https://github.com/onlykappa/KappaForge/releases/tag/gateway-v1.0.0), ID `419056910`, published **2026-10-21 02:28:37 UTC**, `draft=false`, `prerelease=false`.

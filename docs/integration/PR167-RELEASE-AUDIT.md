@@ -167,3 +167,27 @@ install over the same bundle identifier to retain app data. Do not uninstall fir
 
 The old weather task #130 has expired authorization and prior failed attempts.
 A retry must be a new explicit owner operation; this release must not dispatch it.
+
+## Subsequent owner task #169 and follow-up repair
+
+After the v2.2.13 release, the owner started weather task #169. Its planning call
+completed on Gemini; its generation request exceeded the gateway byte cap. This
+separate source-context construction defect was not covered by the earlier
+submission fixtures. Empty policy-excluded provider model lists also triggered
+misleading invalid-key warnings in Settings. Both confirmed defects are addressed
+by merged [PR #170](https://github.com/onlykappa/KappaForge/pull/170), not by changing
+the weather feature or replacing credentials. See
+[TASK169-GATEWAY-REPAIR.md](TASK169-GATEWAY-REPAIR.md) for exact failure geometry,
+provider eligibility evidence, focused regression coverage, deployment and native
+release status. Historical #130 instructions above are not a request to retry it.
+Only a fresh owner action may resume #169. No weather retry or provider inference
+was sent by either maintenance repair/audit.
+
+The follow-up Worker deployment passed with all 18 bindings/nine secrets preserved.
+[v2.2.14](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.14) is published
+from merged source `03182fb2305187e4e93a880c030e36e0be86b9d4`; its downloaded IPA
+passed checksum, native identity/executable and all 23 bundled-file checks. The
+owner should install v2.2.14 over the existing app before explicitly retrying #169.
+This supersedes v2.2.13 installation advice for this repair, while retaining the
+earlier release's historical verification. No weather feature completion or
+remaining inference capacity is established by the repair.
