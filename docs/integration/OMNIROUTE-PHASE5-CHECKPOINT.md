@@ -67,6 +67,12 @@ Owner confirmed free account tiers for Groq/NVIDIA/Gemini/Mistral/Ollama. Keys/a
 
 ## Deploy, rollback and exact resume
 
+### App attempt: chat permission blocker
+
+The owner's subsequent app screenshot shows `Worker chat provider permission is missing` before a task card/issue was created; GitHub still had no new app acceptance issue at inspection. This error is the authenticated chat handler's `chat_allowlist_missing` branch, not evidence of provider capacity or a missing inference key. Do not ask the owner to re-enter keys or reuse/reopen an earlier task. The previous coding-only diagnostics did not establish chat permission; preserving bindings does not establish that their values were usable.
+
+Focused follow-up branch `codex/chat-permission-audit` adds sanitized chat-permission diagnostics and read-only Production metadata inspection. A separately invoked `repair-chat` operation may restore only an absent/blank plain-text `KAPPA_CHAT_PROVIDERS=groq`, after confirming existing Groq free/coding permission, credentials and policy v1. It refuses populated/opaque settings, detects changes before upload, and verifies that all other binding metadata remains identical afterward. No provider inference is included. Current runtime inspection/repair result is pending at this save; app acceptance and release remain pending. No key rotation, new secret, account upgrade or permission fallback is introduced.
+
 1. Focused implementation PR #159 is merged/deployed with required checks. Preserve `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `KAPPA_ROUTER_TOKEN`, `KAPPA_ROUTER_URL` in `cloudflare-production`; no new secret, binding or migration. Do not repeat deployment or inference merely to inspect the same state.
 2. Source SHA/version UUID/run, pre/post binding equality, health, URL and runner authentication are recorded above. Diagnostics establish guards only; the three successful task calls prove usage at the previous deployed baseline. New request-pin and repair behavior has fixture evidence; do not claim a new live coding request used it before an observed run.
 3. PR #158 sandbox and verification-only recovery passed. Review its saved result without further inference; preserve initial failure and manual-review distinction. Leave its draft unmerged unless the owner separately chooses its disposition.

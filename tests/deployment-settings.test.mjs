@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {fingerprint,readSettings} from "../chat-backend/tools/verify-settings.mjs";
+import {fingerprint,readSettings,chatPermissionAudit,expectedChatRepair,main} from "../chat-backend/tools/verify-settings.mjs";
+import {mkdtemp,readFile,rm} from "node:fs/promises";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
 
 const bindings=[{name:"MEMORY",type:"durable_object_namespace",namespace_id:"persistent-fixture"},
  {name:"GROQ_API_KEY",type:"secret_text",text:"never-log-this"},
@@ -25,4 +28,38 @@ test("settings reads use the fixed read-only API and suppress private API error 
  });
  assert.equal(result.secretCount,1);
  await assert.rejects(()=>readSettings(env,async()=>new Response("private API detail",{status:403})),{message:"Worker settings read failed (HTTP 403)"});
+});
+
+const repairFixture=chat=>({bindings:structuredClone([...bindings.filter(b=>b.name!=="KAPPA_CHAT_PROVIDERS"),
+ {name:"CHAT_ACCESS_TOKEN",type:"secret_text"},{name:"KAPPA_FREE_PROVIDERS",type:"plain_text",text:"groq"},
+ {name:"KAPPA_CODE_PROVIDERS",type:"plain_text",text:"groq"},{name:"ROUTING_POLICY_VERSION",type:"plain_text",text:"v1"},
+ ...(chat===undefined?[]:[{name:"KAPPA_CHAT_PROVIDERS",type:"plain_text",text:chat}])])});
+test("chat audit distinguishes missing permission from secret presence and refuses widening populated settings",()=>{
+ const missing=repairFixture();
+ assert.deepEqual(chatPermissionAudit(missing),{worker:"kappaforge-chat",chatPermission:"missing",
+  groq:{secretPresent:true,free:true,chat:false,coding:true},chatCredentialPresent:true});
+ assert.equal(chatPermissionAudit(repairFixture(" ")).chatPermission,"blank");
+ for(const value of ["groq","groq,gemini","gemini"]){assert.throws(()=>expectedChatRepair(repairFixture(value)),/refusing to replace/)}
+ for(const name of ["GROQ_API_KEY","CHAT_ACCESS_TOKEN","KAPPA_FREE_PROVIDERS","KAPPA_CODE_PROVIDERS","ROUTING_POLICY_VERSION"]){
+  assert.throws(()=>expectedChatRepair({bindings:missing.bindings.filter(b=>b.name!==name)}));
+ }
+ for(const value of [undefined," "]){assert.deepEqual(expectedChatRepair(repairFixture(value)),fingerprint(repairFixture("groq")))}
+ assert.ok(!JSON.stringify(chatPermissionAudit(missing)).includes("never-log-this"));
+});
+
+test("repair snapshot permits only the missing chat variable and detects concurrent settings changes",async()=>{
+ const previous=globalThis.fetch,log=console.log,folder=await mkdtemp(join(tmpdir(),"kappa-settings-test-")),path=join(folder,"snapshot.json");
+ const env={CLOUDFLARE_ACCOUNT_ID:"a".repeat(32),CLOUDFLARE_API_TOKEN:"private-fixture"};
+ let current=repairFixture();const logs=[];
+ globalThis.fetch=async()=>Response.json({success:true,result:current});console.log=message=>logs.push(message);
+ try{
+  await main(["snapshot",path,"repair-chat"],env);
+  const file=await readFile(path,"utf8");assert.ok(!file.includes("never-log-this"));assert.ok(!file.includes("private-fixture"));
+  await main(["assert-unchanged",path],env);
+  current=repairFixture("groq");await main(["verify",path],env);
+  await assert.rejects(()=>main(["assert-unchanged",path],env),/bindings changed/);
+  current.bindings.find(b=>b.name==="MEMORY").namespace_id="changed-namespace";
+  await assert.rejects(()=>main(["verify",path],env),/bindings changed/);
+  assert.ok(!logs.join("\n").includes("never-log-this"));
+ }finally{globalThis.fetch=previous;console.log=log;await rm(folder,{recursive:true,force:true})}
 });
