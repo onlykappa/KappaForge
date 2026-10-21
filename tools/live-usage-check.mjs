@@ -17,7 +17,7 @@ await mkdir(out,{recursive:true});
 // A local test Worker on 127.0.0.1 needs Chrome's private-network checks off; the deployed Worker does not.
 const local=process.env.KAPPA_ALLOW_LOCAL==='1'?{args:['--disable-features=PrivateNetworkAccessSendPreflights,BlockInsecurePrivateNetworkRequests,LocalNetworkAccessChecks','--proxy-bypass-list=127.0.0.1']}:{};
 const browser=await chromium.launch({...local,...(process.env.PLAYWRIGHT_CHROMIUM?{executablePath:process.env.PLAYWRIGHT_CHROMIUM}:{})});
-const summary={at:new Date().toISOString(),probe:null,providers:null,eligibility:null,errors:[]};
+const summary={at:new Date().toISOString(),google:null,probe:null,providers:null,eligibility:null,errors:[]};
 try{
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,serviceWorkers:'block',
   userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'});
@@ -61,6 +61,7 @@ try{
  }
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
+ summary.google=await page.evaluate(()=>settingsAPI('/usage/google').catch(e=>({error:e.message})));
  await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});
  await page.locator('[data-period=month]').click();
