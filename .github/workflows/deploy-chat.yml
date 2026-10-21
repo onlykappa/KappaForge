@@ -70,6 +70,11 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python3 scripts/preflight.py worker
+    - name: Snapshot production bindings without logging values
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: node chat-backend/tools/verify-settings.mjs snapshot "$RUNNER_TEMP/kappa-worker-bindings.json"
     - name: Deploy Worker
       id: deploy
       working-directory: chat-backend
@@ -101,6 +106,11 @@ jobs:
         npx wrangler rollback --message "Automatic rollback: health check failed for $GITHUB_SHA" --yes
         exit 1
       shell: bash
+    - name: Verify production bindings survived deployment
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: node chat-backend/tools/verify-settings.mjs verify "$RUNNER_TEMP/kappa-worker-bindings.json"
     - name: Verify runner inference authentication without calling a provider
       env:
         WORKER_URL: ${{ steps.deploy.outputs.url }}

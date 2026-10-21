@@ -1,9 +1,59 @@
 import test from "node:test";
+import "./deployment-settings.test.mjs";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {providerModels,fallbackRoutes,callProvider} from "../chat-backend/src/providers.js";
 import {discover} from "../chat-backend/src/intelligence.js";
 import worker,{KappaMemory} from "../chat-backend/src/index.js";
+import {requestRoutingPreferences} from "../chat-backend/src/routing-policy.js";
+
+test("current owner route field selects one model without mutating saved preferences",()=>{
+ const saved={model:"gemini-retired",fallback:true};
+ assert.deepEqual(requestRoutingPreferences("hello",saved),saved);
+ assert.deepEqual(requestRoutingPreferences("Create a note\nInference route: groq:openai/gpt-oss-120b",saved),{model:"groq:openai/gpt-oss-120b",fallback:false});
+ assert.deepEqual(saved,{model:"gemini-retired",fallback:true});
+ assert.throws(()=>requestRoutingPreferences("Inference route: paid:any",saved));
+ assert.throws(()=>requestRoutingPreferences("Inference route: groq:openai/gpt-oss-120b\nInference route: groq:openai/gpt-oss-120b",saved));
+});
+
+test("chat and planner honor the current Groq pin over Gemini and preserve authorization and allowlists",async()=>{
+ const original=globalThis.fetch,values=new Map(),submitted=[];
+ const storage={get:async key=>values.get(key),put:async(key,value)=>values.set(key,value),delete:async key=>values.delete(key)};
+ storage.list=async({prefix="",limit=1000}={})=>new Map([...values].filter(([key])=>key.startsWith(prefix)).slice(0,limit));
+ storage.transaction=async fn=>fn(storage);
+ const vault=new KappaMemory({storage});let failing=false;
+ const env={ROUTING_POLICY_VERSION:"v1",CHAT_ACCESS_TOKEN:"pin-chat",GROQ_API_KEY:"pin-groq-fixture",
+  KAPPA_FREE_PROVIDERS:"groq",KAPPA_CHAT_PROVIDERS:"groq",MEMORY:{idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>vault.fetch(new Request(url,init))})}};
+ const text="Create a Markdown note\nInference route: groq:openai/gpt-oss-120b";
+ const preferences={model:"gemini-retired",fallback:true};
+ const make=(path,body)=>new Request("https://worker.example"+path,{method:"POST",headers:{Origin:"null",Authorization:"Bearer pin-chat","Content-Type":"application/json"},body:JSON.stringify({...body,preferences})});
+ globalThis.fetch=async(url,init)=>{
+  if(String(url)==="https://api.groq.com/openai/v1/models")return Response.json({data:[{id:"openai/gpt-oss-120b"}]});
+  if(String(url)==="https://api.groq.com/openai/v1/chat/completions"){
+   const payload=JSON.parse(init.body);submitted.push(payload);
+   if(failing)return Response.json({error:"fixture outage"},{status:503});
+   const content=payload.response_format?JSON.stringify({isTask:true,repo:"onlykappa/KappaForge",mode:"develop",title:"Create Markdown note",instructions:text}):"fixture pinned reply";
+   return Response.json({choices:[{message:{content},finish_reason:"stop"}],usage:{prompt_tokens:12,completion_tokens:10,total_tokens:22}});
+  }
+  assert.ok(!String(url).includes("generativelanguage.googleapis.com"),"saved Gemini preference must not send inference");
+  assert.ok(!/\/issues|\/dispatches/.test(String(url)),"chat and planning never start execution");
+  return Response.json({},{status:404});
+ };
+ try{
+  const chat=await worker.fetch(make("/chat",{messages:[{role:"user",text}]}),env);
+  assert.equal(chat.status,200);assert.equal((await chat.json()).model,"groq:openai/gpt-oss-120b");
+  const plan=await worker.fetch(make("/plan",{request:text,explicit:true,context:"Inference route: paid:untrusted"}),env);
+  assert.equal(plan.status,200);assert.equal((await plan.json()).proposal.instructions,text);
+  assert.equal(submitted.length,2);assert.ok(submitted.every(p=>p.model==="openai/gpt-oss-120b"&&p.max_completion_tokens===768&&p.reasoning_effort==="low"));
+  const denied=await worker.fetch(make("/chat",{messages:[{role:"user",text}]}),{...env,KAPPA_CHAT_PROVIDERS:""});
+  assert.equal(denied.status,503);assert.equal(submitted.length,2);
+  const stale=await worker.fetch(make("/chat",{messages:[{role:"user",text},{role:"assistant",text},{role:"user",text:"hello"}]}),env);
+  assert.equal(stale.status,200,"legacy preference fallback remains available without a current pin");
+  failing=true;
+  assert.equal((await worker.fetch(make("/chat",{messages:[{role:"user",text}]}),env)).status,502);
+  assert.equal(submitted.length,4,"failed pinned request sends one inference only");
+ }finally{globalThis.fetch=original}
+});
 
 test("dashboard-managed provider allowlists are not overridden by blank Wrangler defaults",()=>{
  const config=readFileSync(new URL("../chat-backend/wrangler.toml",import.meta.url),"utf8");

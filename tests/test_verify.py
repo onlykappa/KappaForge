@@ -261,6 +261,53 @@ class DeliveryQualityRegressions(unittest.TestCase):
         self.assertIn('consumer(weather)', calls[1])
 
 
+class BoundedDocumentRecovery(unittest.TestCase):
+    def test_complete_source_rerequest_does_not_consume_another_model_call(self):
+        path, source = 'docs/integration/NOTE.md', '# Note\n- Cloud work\n'
+        from unittest.mock import Mock
+        model = Mock(return_value=('model', json.dumps({
+            'requirements': [{'text': 'Add note', 'met': True, 'evidence': {'path': path, 'quote': '- Cloud work'}}],
+            'problems': [], 'files_to_inspect': [path]})))
+        result = verify.model_review(model, '', 'Add note', lambda p: '', {path: source}, [])
+        self.assertEqual(result[1], [])
+        model.assert_called_once()
+        model.return_value = ('model', json.dumps({'requirements': [{'text': 'Missing bullet', 'met': False}],
+                                                  'problems': ['Missing bullet'], 'files_to_inspect': [path]}))
+        result = verify.model_review(model, '', 'task', lambda p: '', {path: source}, [])
+        self.assertFalse(result[0][0]['met'])
+        self.assertEqual(result[1], ['Missing bullet'])
+
+    def test_self_review_can_correct_only_its_new_candidate_document(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from engine import recovery
+        path = 'docs/integration/NOTE.md'
+        scope = SimpleNamespace(edit_path=path, inference_route='groq:openai/gpt-oss-120b')
+        journal = SimpleNamespace(scope=scope, issue={'title': 'Add note', 'body': 'Create only ' + path},
+                                  state={'requirements': [], 'events': []}, requirements=Mock(),
+                                  avoid_models=lambda key: set(), rejected=lambda signature: False, context='')
+        handle = recovery.CURRENT.set(journal)
+        developer.UNFINISHED.clear()
+        try:
+            pending = ([{'text': 'Correct bullet', 'met': False}], [], [])
+            done = ([{'text': 'Correct bullet', 'met': True}], [], [])
+            answer = json.dumps({'files': [{'path': path, 'content': '# Note\n- Correct bullet\n'}]})
+            with patch.object(verify, 'wiring_problems', return_value=[]), \
+                    patch.object(verify, 'model_review', side_effect=[pending, done]), \
+                    patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', answer)) as model:
+                final, _, problems = developer.check_the_work('', 'Add note', ROOT, 'sha', 'token', {}, {},
+                    {path: '# Note\n'}, '', None, '', False, SimpleNamespace(now=Mock(), ok=Mock()))
+            self.assertEqual(problems, [])
+            self.assertEqual(final, {path: '# Note\n- Correct bullet\n'})
+            model.assert_called_once()
+            with patch.object(developer, 'run_model') as model:
+                with self.assertRaises(PermissionError):
+                    developer.generate('', 'task', ROOT, {path: '# Existing\n'}, {path: 11})
+                model.assert_not_called()
+        finally:
+            recovery.CURRENT.reset(handle)
+
+
 class AnchorHint(unittest.TestCase):
     """A find copied from a diff's removed line gets the real current text back (PR #121's fixes failed 5 times on it)."""
 

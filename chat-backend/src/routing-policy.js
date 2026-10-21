@@ -3,6 +3,15 @@ import registry from "../../config/providers.json" with {type:"json"};
 const list=value=>new Set(typeof value==="string"?value.split(",").map(x=>x.trim()).filter(Boolean):[]);
 const providers=new Set(["gemini",...registry.order]);
 export const ROUTING_POLICY_VERSION="v1";
+// Match the bounded coding runner's owner-authored route field. This selects a
+// route for the current request only; it grants no provider or task permission.
+export function requestRoutingPreferences(text,preferences={}){
+ const pins=String(text||"").split(/\r?\n/).filter(line=>/^Inference route:/i.test(line.trim()));
+ if(!pins.length)return {...preferences};
+ if(pins.length!==1||pins[0].trim()!=="Inference route: groq:openai/gpt-oss-120b")
+  throw new Error("Use one exact Inference route: groq:openai/gpt-oss-120b line for the bounded test.");
+ return {...preferences,model:"groq:openai/gpt-oss-120b",fallback:false};
+}
 const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.freeModels):
  Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
 

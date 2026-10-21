@@ -14,7 +14,7 @@ import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,provi
 import {routingStore} from "./router-state.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
-import {providerAllowed,routePolicy} from "./routing-policy.js";
+import {providerAllowed,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
@@ -517,6 +517,9 @@ export default {
     }
 
 
+    let requestPrefs;
+    try{requestPrefs=requestRoutingPreferences(planning?input.request:input.messages.at(-1).text,input.preferences||{})}
+    catch(error){return json({error:error.message,code:"invalid_inference_route"},400,cors)}
     const verificationOnly=input.verificationOnly===true;
     const lock=input.lockedCommit;
     const locked=lock&&typeof lock==="object"&&isRepoName(lock.repo)&&typeof lock.sha==="string"&&/^[a-f0-9]{40}$/i.test(lock.sha);
@@ -704,7 +707,10 @@ export default {
       payload.generationConfig.maxOutputTokens=({concise:1200,standard:1200,thorough:3000})[prefs.reasoning]||1200;
     }
     try {
-      const prefs=input.preferences||{},chat=toChat(payload);
+      const prefs=requestPrefs,chat=toChat(payload);
+      if(prefs.model==="groq:openai/gpt-oss-120b"&&prefs.fallback===false){
+        chat.maxTokens=Math.min(chat.maxTokens,768);chat.reasoningEffort="low";
+      }
       // The same server-side allowlist and capability filter governs chat and coding routes.
       const available=providerAllowed(env,"chat","gemini")?awake(await discover(env).catch(()=>[])):[];
       const manualGemini=typeof prefs.model==="string"&&prefs.model!=="auto"&&!prefs.model.includes(":");

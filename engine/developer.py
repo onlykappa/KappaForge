@@ -1211,6 +1211,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         current.update(changes)
         sizes = dict(existing)
         sizes.update({path: len(text) for path, text in changes.items()})
+        # Newness is relative to the immutable task baseline, not its saved
+        # candidate. Repairs can rewrite this task's new document only.
+        edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
+        if edit_path and edit_path not in existing:
+            sizes.pop(edit_path, None)
         fix_task = (task + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
                     "against the task found these problems. Fix every one of them now, editing the real code paths they "
                     "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20])

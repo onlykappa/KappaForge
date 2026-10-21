@@ -283,7 +283,7 @@ def diff_text(read, changes, limit=40000):
     return "\n\n".join(parts)[:limit]
 
 
-def review_sources(read, changes, paths, requested=(), limit=220000):
+def review_sources(read, changes, paths, requested=(), limit=220000, complete=None):
     """Bounded current-source evidence, including classic-script globals and imports.
 
     A diff omits unchanged definitions, and may cut a minified line in half.
@@ -308,6 +308,8 @@ def review_sources(read, changes, paths, requested=(), limit=220000):
                 queue.append(dependency)
         available = max(0, limit - used - len(path) - 90)
         take = min(len(text), limit if path in requested else 90000, available)
+        if complete is not None and text and take == len(text):
+            complete.add(path)
         label = 'COMPLETE' if take == len(text) else f'PARTIAL: {take}/{len(text)} chars; request this file if evidence is missing'
         block = f'\n===== CURRENT SOURCE {path} ({label}) =====\n' + text[:take] + '\n'
         if not take:
@@ -406,7 +408,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
         unavailable_sources, original_requirements = set(), {}
         known = set(paths) | set(changes)
         for attempt in range(2):
-            context, seen = review_sources(read, changes, paths, requested)
+            complete = set()
+            context, seen = review_sources(read, changes, paths, requested, complete=complete)
             prompt = review_prompt(task, diff_text(read, changes), paths, context)
             if original_requirements:
                 prompt += '\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP:\n' + json.dumps(list(original_requirements))
@@ -436,7 +439,9 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             needed = raw.get('files_to_inspect', [])
             if not isinstance(needed, list):
                 needed = []
-            requested = list(dict.fromkeys(p for p in needed if isinstance(p, str) and p in known))[:8]
+            # A redundant request for source already supplied in full is not
+            # missing evidence. Unmet requirements and concrete problems remain.
+            requested = list(dict.fromkeys(p for p in needed if isinstance(p, str) and p in known and p not in complete))[:8]
             unavailable = [p for p in needed if not isinstance(p, str) or p not in known]
             unavailable_sources.update(str(p)[:150] for p in unavailable)
             if unavailable_sources:
