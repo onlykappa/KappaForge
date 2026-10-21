@@ -18,7 +18,7 @@ async function transact(storage,operation){
 function retryAfterSeconds(value,now){
  if(typeof value!=="string"||!value.trim())return null;
  const seconds=Number(value);
- if(Number.isFinite(seconds)&&seconds>=0)return Math.min(3600,Math.ceil(seconds));
+ if(Number.isFinite(seconds)&&seconds>=0)return Math.min(MAX_COOLDOWN_MS/1000,Math.ceil(seconds));
  const date=Date.parse(value);
  return Number.isFinite(date)?Math.min(MAX_COOLDOWN_MS/1000,Math.max(0,Math.ceil((date-now)/1000))):null;
 }

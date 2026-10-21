@@ -253,6 +253,17 @@ test('compound resets honor every exhausted pool and ignore pools with remaining
  }
 });
 
+test('a long numeric Retry-After is not shortened to one hour',async()=>{
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ const state={storage:storage()},env={GROQ_API_KEY:'long-cooldown-fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})}};
+ const route={provider:'groq',model:'openai/gpt-oss-120b'},now=Date.now();
+ await reserveProvider(env,route,'long-cooldown');
+ const result=await reportProviderOutcome(env,{requestId:'long-cooldown',route,status:429,category:'rate_limit',headers:new Headers({'Retry-After':'86400'})});
+ assert.ok(result.retryAt>=now+86400000&&result.retryAt<Date.now()+86401000);
+ const denied=await reserveProvider(env,route,'next-after-long-cooldown');
+ assert.equal(denied.allowed,false);assert.equal(denied.retryAt,result.retryAt);
+});
+
 test('chat transport and malformed responses preserve cooldowns without inventing upstream status',async()=>{
  const {KappaMemory}=await import('../chat-backend/src/index.js');
  for(const mode of ['network_failure','malformed_json','malformed_response']){

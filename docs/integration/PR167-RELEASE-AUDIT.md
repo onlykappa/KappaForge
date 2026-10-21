@@ -30,6 +30,8 @@ No provider inference, weather dispatch or policy/billing change is authorized h
   capacity. Groq documents request headers as daily and token headers as per-minute;
   a non-exhausted daily reset is not evidence of a daily-quota failure.
   See [official header semantics](https://console.groq.com/docs/rate-limits).
+  Numeric Retry-After now uses the same existing seven-day safety bound as date
+  values, so an explicit daily cooldown is not silently shortened to one hour.
 - Chat transport errors now return their durable cooldown instead of a generic
   502 that loses the deadline. Normalization errors retain the actual upstream
   status (for example HTTP 200 with malformed JSON), not an invented upstream 502.
