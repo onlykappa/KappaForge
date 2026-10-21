@@ -22,23 +22,33 @@ def error(status, data=None, headers=None, pinned=False):
     code = data.get('code')
     code = code if isinstance(code, str) and re.fullmatch(r'[a-z_]{1,60}', code) else 'unreported'
     labels = {'daily_limit': 'gateway daily limit', 'minute_limit': 'gateway minute limit',
-              'free_capacity_cooldown': 'shared route reservation refused (cooldown or concurrency)',
+              'free_capacity_cooldown': 'route refused; upstream rate limit or shared cooldown/concurrency (source not reported)',
               'free_route_unavailable': 'route unavailable; upstream cause not reported',
               'routing_state_unavailable': 'gateway coordination storage unavailable'}
     retry_at = data.get('retryAt')
     retry_at = retry_at / 1000 if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) and retry_at > 0 else 0
     retry_at = max(retry_at, time.time() + retry_after(headers, time.time()) if headers else 0)
-    exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
-                             + labels.get(code, 'unclassified gateway failure')
-                             + '; no direct provider fallback was attempted',
-                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422))
-    exc.status, exc.code = status, code
     failure = data.get('failure') if isinstance(data.get('failure'), dict) else {}
-    exc.details = {key: value for key, value in failure.items()
+    details = {key: value for key, value in failure.items()
                    if key == 'upstreamStatus' and type(value) is int and 100 <= value <= 599
                    or key == 'source' and value in ('upstream', 'coordination', 'normalization', 'transport', 'gateway_guard')
                    or key == 'category' and value in ('rate_limit', 'authentication', 'provider_outage', 'provider_rejection',
                        'context_limit', 'concurrency', 'cooldown', 'malformed_json', 'malformed_response', 'empty_response', 'timeout', 'network_failure')}
+    label = labels.get(code, 'unclassified gateway failure')
+    if code in ('free_capacity_cooldown', 'free_route_unavailable'):
+        source, category, upstream = details.get('source'), details.get('category', 'unreported'), details.get('upstreamStatus')
+        if source == 'upstream':
+            label = f'upstream HTTP {upstream or "unreported"} ({category}); account quota remaining is unknown'
+        elif source == 'coordination':
+            label = f'shared route reservation refused ({category})'
+            if upstream:
+                label += f'; historical upstream HTTP {upstream}'
+        elif source in ('normalization', 'transport', 'gateway_guard'):
+            label = f'{source} failure ({category})'
+    exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
+                             + label + '; no direct provider fallback was attempted',
+                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422))
+    exc.status, exc.code, exc.details = status, code, details
     return exc
 
 

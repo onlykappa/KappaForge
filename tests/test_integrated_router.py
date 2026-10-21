@@ -98,7 +98,7 @@ class IntegratedRouterTests(unittest.TestCase):
     def test_gateway_error_codes_and_retry_deadlines_are_preserved_without_raw_error_text(self):
         for status, code, label in [(429, 'daily_limit', 'gateway daily limit'),
                                     (429, 'minute_limit', 'gateway minute limit'),
-                                    (429, 'free_capacity_cooldown', 'shared route reservation refused'),
+                                    (429, 'free_capacity_cooldown', 'source not reported'),
                                     (503, 'free_route_unavailable', 'upstream cause not reported')]:
             body = {'code': code, 'retryAt': 1900000000000, 'error': 'secret-prompt-must-not-be-logged'}
             failure = gateway.error(status, body)

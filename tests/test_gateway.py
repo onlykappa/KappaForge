@@ -51,6 +51,20 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertEqual(failure.details, {'source': 'upstream', 'category': 'provider_rejection', 'upstreamStatus': 413})
         self.assertTrue(failure.terminal)
 
+    def test_rate_limit_message_distinguishes_upstream_from_stored_coordination_refusal(self):
+        upstream = gateway.error(429, {'code': 'free_capacity_cooldown', 'failure': {
+            'source': 'upstream', 'category': 'rate_limit', 'upstreamStatus': 429}})
+        self.assertIn('upstream HTTP 429', str(upstream))
+        self.assertNotIn('shared route reservation refused', str(upstream))
+        self.assertIn('quota remaining is unknown', str(upstream))
+        cooldown = gateway.error(429, {'code': 'free_capacity_cooldown', 'failure': {
+            'source': 'coordination', 'category': 'rate_limit', 'upstreamStatus': 429}})
+        self.assertIn('shared route reservation refused', str(cooldown))
+        self.assertIn('historical upstream HTTP 429', str(cooldown))
+        unknown = gateway.error(429, {'code': 'free_capacity_cooldown'})
+        self.assertIn('source not reported', str(unknown))
+        self.assertNotIn('capacity is limited', str(unknown))
+
     def test_four_call_bound_survives_journal_reload(self):
         journal = SimpleNamespace(state={'pinnedGatewayCalls': 4}, persist=Mock())
         with self.assertRaises(gateway.GatewayUnavailable):
