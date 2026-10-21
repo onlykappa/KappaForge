@@ -379,7 +379,7 @@ function refreshTaskFreshness(){
  document.querySelectorAll('[data-task-freshness]').forEach(el=>{
   const job=trackedJobs.find(j=>j.number===Number(el.dataset.taskFreshness));if(!job)return;
   const updated=Number(el.dataset.updatedAt),label=updated?new Date(updated).toLocaleTimeString():'not received';
-  const reminder=!job.finished&&KappaProgress.recoveryReminderDue(job.progress);
+  const reminder=KappaProgress.retryReminder(job);
   if(el.dataset.recoveryReminder!==String(reminder))changed=true;
   el.closest('.agent-activity')?.classList.toggle('stale',!!job.pollError||reminder||KappaProgress.stale(job));
   el.textContent=job.pollError?'Updates unavailable. Reconnecting automatically.':KappaProgress.stale(job)?'No recent execution update. Last update '+label+'.':'Last update '+label;

@@ -49,5 +49,6 @@ function timing(progress,queuedAt,now=Date.now()){
 function recoveryReminderDue(p,now=Date.now()){
  return p?.status==='waiting'&&Number.isFinite(p.recovery?.nextAt)&&p.recovery.nextAt>0&&now>=p.recovery.nextAt+60000&&!(p.recovery.expiresAt&&p.recovery.expiresAt<=now);
 }
-root.KappaProgress={recoveryReceipt,recoveryDisplay,recoveryReminderDue,expired:(p,now=Date.now())=>!!p?.recovery?.expiresAt&&p.recovery.expiresAt<=now,normalize,decode,reconcile:reconcileProgress,queued,timing,terminal,stale:(job,now=Date.now())=>job.progress?.status!=='waiting'&&!job.finished&&!terminal.has(job.progress?.status)&&now-(job.progress?.updatedAt||job.lastProgressAt||job.queuedAt||job.activeAt||now)>=120000};
+function retryReminder(job,now=Date.now()){return !job.finished&&recoveryReminderDue(job.progress,now)&&!(job.recoveryRequest?.at>now-60000)}
+root.KappaProgress={retryReminder,recoveryReceipt,recoveryDisplay,recoveryReminderDue,expired:(p,now=Date.now())=>!!p?.recovery?.expiresAt&&p.recovery.expiresAt<=now,normalize,decode,reconcile:reconcileProgress,queued,timing,terminal,stale:(job,now=Date.now())=>job.progress?.status!=='waiting'&&!job.finished&&!terminal.has(job.progress?.status)&&now-(job.progress?.updatedAt||job.lastProgressAt||job.queuedAt||job.activeAt||now)>=120000};
 })(globalThis);

@@ -280,6 +280,7 @@ test('a recovery-eligible card offers explicit retry and the local timer reveals
  assert.match(html,/Scheduled checks can run late/);assert.match(html,/Saved commit: bbbbbbb/);
  el.dataset=dataset(html);box.refreshTaskFreshness();assert.equal(renders,1,'no render on every clock tick');
  assert.equal(p.status,'waiting');assert.equal(p.recovery.continuations,0);
+ job.recoveryRequest={at:tick,status:'recovery_requested'};el.dataset=dataset(card());box.refreshTaskFreshness();box.refreshTaskFreshness();assert.equal(renders,1,'an accepted request must not cause a rerender on every timer tick');
  tick=500000;html=card();assert.match(html,/BLOCKED/);assert.match(html,/Retry to renew task authorization/);
  assert.doesNotMatch(html,/WAITING FOR RECOVERY/);assert.match(html,/data-task-retry="171"/);
  job.finished=true;assert.doesNotMatch(card(),/data-task-retry/);

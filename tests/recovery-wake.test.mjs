@@ -111,3 +111,10 @@ test('another task recovery already queued prevents replacing GitHub pending dis
   await w.wake();assert.equal(deliveries(w).length,0);assert.equal((await w.rows())[174].deliveries,0);
  }finally{w.restore()}
 });
+
+
+test('a waiting episode past its six-hour deadline is blocked without claiming it was scheduled',async()=>{
+ const w=fixture();try{
+  w.advance(21600001);const r=await w.schedule();assert.equal(r.status,409);assert.equal((await r.json()).status,'blocked');assert.equal(deliveries(w).length,0);
+ }finally{w.restore()}
+});

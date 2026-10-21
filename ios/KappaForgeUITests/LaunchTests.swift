@@ -122,7 +122,8 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(advance.waitForExistence(timeout: 15))
         advance.tap() // Debug simulator fixture only: the real clock crosses the one-minute boundary in one second.
         XCTAssertTrue(status("WAITING FOR RECOVERY").waitForExistence(timeout: 15))
-        XCTAssertTrue(web.buttons["Retry"].exists, "Eligibility must reveal explicit Retry without a network update")
+        XCTAssertTrue(web.buttons["Retry"].waitForExistence(timeout: 15), "The one-minute boundary must reveal Retry without a network update")
+        for _ in 0..<3 where !web.buttons["Retry"].isHittable { web.swipeUp() }
         web.buttons["Retry"].tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         app.alerts.buttons["Continue"].tap()

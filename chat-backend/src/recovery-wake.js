@@ -50,6 +50,8 @@ export async function recoveryWakeStore(state,env,request){
  if(input.statusOnly){const row=(await state.storage.get(KEY)||{})[task];return reply(row?{task,status:row.stopped?'blocked':'scheduled',due:row.due,lastCheckAt:row.lastCheckAt||null,lastDispatchAt:row.lastDispatchAt||null,deliveries:row.deliveries,reason:row.reason||null}:{task,status:'not_scheduled'});}
  const j=current.journal,now=Date.now();
  if(j&&!['waiting','dispatching','running','recovering'].includes(j.status))return reply({status:'blocked',message:'Saved task requires owner review; no automatic retry scheduled.'});
+ const expires=Math.min(current.auth.expiresAt,(j?.waitingSince?j.waitingSince*1000:now)+21600000);
+ if(expires<=now)return reply({error:'Recovery waiting deadline elapsed. Saved work requires owner review.',status:'blocked'},409);
  const next=j?.status==='waiting'?j.nextAt*1000:now+ACK_MS;
  if(!Number.isFinite(next))return reply({error:'Invalid saved recovery deadline'},409);
  const scheduled=await state.storage.transaction(async storage=>{
@@ -59,7 +61,7 @@ export async function recoveryWakeStore(state,env,request){
   if(!prior&&Object.keys(rows).length>=32)throw Error('Recovery queue limit reached');
   const revision=j?.updatedAt||0;
   rows[task]=prior?.authorization===current.auth.id&&prior.revision===revision?prior:
-   {task,authorization:current.auth.id,revision,due:Math.max(now,next),expires:Math.min(current.auth.expiresAt,(j?.waitingSince?j.waitingSince*1000:now)+21600000),deliveries:0};
+   {task,authorization:current.auth.id,revision,due:Math.max(now,next),expires,deliveries:0};
   await storage.put(KEY,rows);await arm(storage,rows);
   return rows[task];
  });
