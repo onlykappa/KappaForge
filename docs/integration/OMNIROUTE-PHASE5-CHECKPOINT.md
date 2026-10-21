@@ -1,6 +1,6 @@
 # Phase 5: final verification and operational handoff
 
-Updated 2026-10-21 UTC (2026-10-20 owner local date). **PARTIAL.** Actual app-started execution and persistence after reopening remain required. An executor-created issue, model discovery or fixture test cannot substitute.
+Updated 2026-10-21 UTC (2026-10-20 owner local date). **ACCEPTANCE COMPLETE; final release publication pending this handoff's checks.** App-started task #163 passed cloud inference, source review and exact-candidate sandbox validation; its inference-free final verifier published ready progress. The owner confirmed persistence after fully closing and restarting the app. Publication must be recorded after the verified handoff is merged; no acceptance-task PR may be merged as part of release.
 
 ## Baseline and promotion
 
@@ -54,9 +54,32 @@ Acceptance PRs #153, #156 and #158 remain draft/unmerged. Do not reopen #151/#15
 - **41 focused Python verification/gateway tests passed**: actual generation can repair its own new document, including from a saved added-file PR; pre-existing/broader diffs stay denied; redundant inspection avoids inference; partial/missing evidence remains enforced.
 - Worker dry-run passed (221.62 KiB, 58.97 KiB gzip). Full exact-head Linux CI passed Python/preflight, Node and browser/Playwright checks; production deployment validation repeated relevant Worker fixtures and dry-run build successfully. See run links above. App-specific behavior below still needs its own observation.
 - Windows broad checks encountered previously documented CRLF source-fixture, parser byte-hash and open `NamedTemporaryFile` permission failures; default Python encoding additionally caused Unicode decode errors. `check-web.py` invokes the unavailable system `python3` alias. These are local platform limits, not claimed green checks. Required Linux CI is the promotion gate; baseline Linux CI passed. No native bundle source changed.
-- Installed-app chat/planning on this backend, launch through `/authorize` → `/jobs`, truthful final progress and persistence after reopening remain **UNVERIFIED**. Earlier screenshots of other tasks and navigation do not prove this path.
+- App-started #163 verifies authorization/dispatch and cloud execution through the gateway to a validated draft, detailed below. The owner confirmed task/result persistence after a full app restart in response to the acceptance question. This is owner-observed evidence, not automated iOS testing; no new native source or IPA was involved.
 
-## Cost evidence and exclusions
+## App-started task #163 acceptance
+
+The owner supplied task number **163** after using KappaForge. [Issue #163](https://github.com/onlykappa/KappaForge/issues/163), created 2026-10-21 02:17:44 UTC, contains the authenticated `/jobs` authorization metadata with merge permission false, the exact Groq route field, and the single new document path. This is actual app-originated authorization/dispatch evidence, distinct from executor-started #157. Original request text, route and edit path reached Actions intact.
+
+[Execution 39532215956](https://github.com/onlykappa/KappaForge/actions/runs/39532215956) **passed** on main `d723d6bec8b1d422378caeac7b23bcf4e2624ee7`. It selected `groq:openai/gpt-oss-120b`, kept fallback disabled and low reasoning, and made **exactly two gateway HTTP 200 inference calls**:
+
+| Request ID | Prompt characters | Max output | Reported input | Reported output | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `b93d8df2-99cf-45c2-b062-e657576b3cf8` | 24,638 | 768 | 4,795 | 259 | 5,054 |
+| `071d7a4e-4c44-4df3-b4f3-9fc6de3ca78b` | 12,239 | 768 | 3,050 | 513 | 3,563 |
+
+Total **8,617 reported tokens** (7,845 input, 772 output). The runner observed the persisted 65-second pacing interval. Provider remaining allowance stayed unknown. No alternate provider, direct key, paid fallback, automatic repair or continuation was used.
+
+[Draft PR #164](https://github.com/onlykappa/KappaForge/pull/164) contains only the authorized added `docs/integration/PHASE5-APP-ACCEPTANCE.md`, heading `Cloud coding acceptance` and four bullets. Candidate **`204f688b7ba0568005e82e81f5341e161f4b1f0f`** remained unchanged through review. The runner's source-backed review passed all four recorded requirements without manual content review or repair. Independent [sandbox 39532383801](https://github.com/onlykappa/KappaForge/actions/runs/39532383801) **passed**, testing that exact candidate from the reviewed main workflow with automatic inference retries disabled. It checked Python tests, compiled sources, web settings/JavaScript, and Worker/app logic. This confirms actual Actions-to-gateway-to-provider-to-validated-draft execution without a local OmniRoute process or laptop execution service.
+
+The ordinary PR-triggered run [39532284526](https://github.com/onlykappa/KappaForge/actions/runs/39532284526) awaits maintainer approval (`action_required`); it is not a failing test and is not represented as passing. The separately dispatched secret-free exact-candidate sandbox passed. The integration implementation and main code already passed full Linux/browser CI (latest baseline [39532151033](https://github.com/onlykappa/KappaForge/actions/runs/39532151033)); no application code was changed by the acceptance task. Do not merge the acceptance PR or enable unrelated workflows to clear that notice.
+
+The task published running → source review → testing progress, its actual model and draft PR. Targeted inference-free [verification 39532586863](https://github.com/onlykappa/KappaForge/actions/runs/39532586863) **passed**, publishing ready/completed execution state, a completed final checklist step, no active error/deadline, and unchanged candidate/two-call budget. It accelerated the existing verifier rather than triggering new inference or code repair; normal recovery scheduling can delay readiness updates.
+
+The owner answered **“yes it shows up after i fully close ans retart app”** after being asked to confirm the completed result following full app close/reopen. This closes the required app persistence gate as owner-observed evidence. The executor did not automate the iPhone or independently observe a new PR-link tap; those are not represented as automated checks. The backend supplies the verified draft PR #164 URL and previous app navigation evidence remains historical. Acceptance PR #164 stays draft and unmerged. No extra inference or provider retry is authorized by the confirmation.
+
+Required app execution/persistence acceptance is now complete. Final remaining operations: merge the reviewed handoff after CI, publish the prepared `gateway-v1.0.0` component release at the tested main SHA with `make_latest=false`, and record its published identity. Keep the latest native IPA release unchanged. Account-wide billing-console visibility and provider remaining allowance remain explicitly unknown; this does not turn request caps into a spending guarantee.
+
+## Cost evidence and exclusions (account limits unchanged)
 
 Owner confirmed free account tiers for Groq/NVIDIA/Gemini/Mistral/Ollama. Keys/allowlists are not billing evidence. No plans, credits, limits or billing settings changed. Account billing consoles and remaining allowance are inaccessible here; never claim guaranteed $0 from source code/request caps. Cloudflare requests/DO storage, runner/artifacts, Workers AI and inference are separate allowances.
 
