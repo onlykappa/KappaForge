@@ -82,12 +82,56 @@ requests, explicit gateway error provenance, policy exclusions, legacy metadata,
 authentication/access/rate-limit distinctions, and Mistral Small JSON-only selection.
 No inference, weather dispatch or state reset is part of validation.
 
-Full Linux/browser/native CI is required before promotion. Windows checks retain
+Full Linux/browser/native CI passed before promotion. Windows checks retain
 the previously documented parser CRLF and temporary-file sharing baseline differences.
 The diagnostic UI is bundled, so it requires a new IPA; the Actions request-sizing
 repair takes effect from merged main. Worker deployment must preserve existing
 bindings and pass health/authentication checks without inference. Publication and
 runtime evidence must be recorded before telling the owner to retry.
+
+## Promotion evidence
+
+[PR #170](https://github.com/onlykappa/KappaForge/pull/170) merged as
+`03182fb2305187e4e93a880c030e36e0be86b9d4`. The Git tree matches tested head
+`649670ba4ffbf9fae0b6c36e929d2d0a639d04b5` (`1d871c8f73f9b038e30d4b05510f31d08f0eb303`).
+[PR Linux/browser CI](https://github.com/onlykappa/KappaForge/actions/runs/39543552349)
+passed 362 Python and 365 JavaScript tests and Chromium/mobile Safari regressions.
+[PR native CI](https://github.com/onlykappa/KappaForge/actions/runs/39543552362)
+passed simulator/device builds, four UI tests with zero failures, nonblank launch
+and IPA packaging. [Main CI](https://github.com/onlykappa/KappaForge/actions/runs/39545174337)
+passed independently.
+
+[Worker deployment](https://github.com/onlykappa/KappaForge/actions/runs/39545174469)
+passed at version `f8b7ad28-4bbf-4385-b361-48349a5cc228` on the exact merged source.
+Pre/post metadata verified all 18 bindings, including nine secret bindings,
+were preserved. Health passed; the saved Actions URL matched
+`https://kappaforge-chat.ballaking1738.workers.dev` (optional trailing slash).
+Unauthenticated and invalid inference credentials failed; an authenticated
+malformed request returned HTTP400 without routing. Groq configuration/guard
+diagnostics passed with no active cooldown, not a capacity guarantee. Provider
+remaining allowance remains unknown. No inference was sent by this repair.
+
+[Main native/release](https://github.com/onlykappa/KappaForge/actions/runs/39545174419)
+passed, including four UI tests with zero failures, and published
+[v2.2.14](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.14)
+at 2026-10-21 04:51:40 UTC from the exact merged source. The published
+[KappaForge-unsigned.ipa](https://github.com/onlykappa/KappaForge/releases/download/v2.2.14/KappaForge-unsigned.ipa)
+is asset 661386799, 273898 bytes. Downloaded SHA-256 matched GitHub's digest:
+`a450d2d6548e377ed40b2207a26fa530b71d1f1408a71f95568d9c58ae76bbc1`.
+Independent inspection passed archive CRC, arm64 executable, icons, bundle ID
+`com.onlykappa.KappaForge`, version 2.2.14/build20, and all 23 shared frontend files
+against the merged Git blobs plus reproduced release-version metadata. A PR build
+artifact was not substituted for the published update. GitHub's latest native
+release resolves to v2.2.14. Device installation remains an owner action.
+
+Install: Settings -> Updates -> Check for updates -> Download IPA for SideStore ->
+Install with SideStore (or import the IPA from Files). Use the same signing
+identity/team and install over the current app; do not uninstall. Reopen and
+confirm version 2.2.14. Then the existing explicit command `Retry task #169.`
+creates fresh authorization and resumes the saved task. This instruction is not
+executed by this repair. Task #169 remains stopped; its brief/checkpoint and
+any unrelated weather/acceptance drafts are unchanged. The supplied brief still
+ends mid-sentence as recorded above; no missing requirements were inferred.
 
 Rollback: revert this scoped change through the same checked deployment workflow;
 retain secrets, allowlists and DO storage. Remove Mistral from approved channel

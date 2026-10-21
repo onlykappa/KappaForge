@@ -2,13 +2,47 @@
 
 Updated 2026-10-21 UTC (2026-10-20 owner local date). **COMPLETE for the selective gateway/Actions integration.** App-started task #163 passed cloud inference, source review and exact-candidate sandbox validation; its inference-free verifier published ready progress. The owner confirmed persistence after a full app restart. The backend/Actions component release is published. Acceptance-task PRs remain draft and unmerged; standalone Linux hosting tests remain superseded and unperformed.
 
+**Maintenance release 2026-10-21:** [PR #167](https://github.com/onlykappa/KappaForge/pull/167)
+merged as `682201d3f49fcbfaccb80676066307dc58607778`. Worker deployment
+[39539962014](https://github.com/onlykappa/KappaForge/actions/runs/39539962014) passed,
+version `92bcd18c-54fe-4bad-9b8d-80a994d8fcd7`, preserving all 18 bindings/9 secrets.
+[v2.2.13 and its unsigned IPA](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.13)
+are published from that exact source after native validation. This app update is required
+for full task submission and duplicate-call fixes. See the
+[release audit](PR167-RELEASE-AUDIT.md) for scope, full test/artifact evidence, installation,
+baseline limitations and rollback. No provider inference or weather task was started
+for this release; diagnostics observed clear recorded guards, not inference capacity.
+
+**Request-size/diagnostics follow-up:** [PR #170](https://github.com/onlykappa/KappaForge/pull/170)
+merged as `03182fb2305187e4e93a880c030e36e0be86b9d4` after 362 Python,
+365 JavaScript, Chromium/mobile Safari and native checks passed. Owner-started
+task #169 hit the unchanged gateway byte cap after a successful Gemini planning
+call; the oversized generation request never reached inference. Source excerpts
+now fit the existing budget without truncating the owner task. Settings no longer
+labels policy exclusions as invalid keys. Owner reconfirmed configured accounts
+are free/no-card; only documented Mistral Small Free-mode support was added under
+existing permissions. Earlier Mistral exclusion statements below describe the
+original component release. Ollama/NVIDIA eligibility/use restrictions remain.
+[Deployment 39545174469](https://github.com/onlykappa/KappaForge/actions/runs/39545174469)
+passed at Worker `f8b7ad28-4bbf-4385-b361-48349a5cc228`, preserving all 18 bindings
+and nine secrets. Health/authentication passed without inference. Groq guard checks
+passed with no active cooldown; remaining provider quota and inference capacity
+remain unknown. [v2.2.14](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.14)
+is published from that exact source; the downloaded IPA checksum, arm64 executable,
+bundle identity and all 23 shared files were independently verified. Install this
+update over the existing app with the same signing identity before the owner retries
+`Retry task #169.` This repairs submission/request construction and diagnostics;
+it does not implement weather. Device installation and the repaired task's next
+execution remain unobserved. See
+[task #169 repair evidence](TASK169-GATEWAY-REPAIR.md). No weather retry is automatic.
+
 ## Published release and final state
 
 - **Release:** [gateway-v1.0.0](https://github.com/onlykappa/KappaForge/releases/tag/gateway-v1.0.0), ID `419056910`, published **2026-10-21 02:28:37 UTC**, `draft=false`, `prerelease=false`.
 - **Tagged source:** `4c8beec919aa58cc12d5482d0dc739dc5ba7a084`, merged [PR #165](https://github.com/onlykappa/KappaForge/pull/165). Full Linux [CI 39532995180](https://github.com/onlykappa/KappaForge/actions/runs/39532995180) passed at `1e451395210cd27b9a94eedb1bf0849555e69c17`; its Git tree equals the tagged squash source (`c0232833e8beca380573b9e5c7b6f551ffecb2fa`). The public tag resolves to the recorded commit.
-- **Available gateway:** https://kappaforge-chat.ballaking1738.workers.dev. Last observed backend upload is source `37a1e65a438a9f150b81020ff7e80f9144d6f7b6`, version `6aa15cb6-9155-4a27-96e0-54d32ce02858`, with the concurrent owner variable update and guard result documented below. A later dashboard-generated version UUID was not independently retrieved. Runtime checks and real task #163 verify the currently reachable gateway; do not invent a later deployment identity.
+- **Available gateway:** https://kappaforge-chat.ballaking1738.workers.dev. At the original component publication, the last observed backend upload was source `37a1e65a438a9f150b81020ff7e80f9144d6f7b6`, version `6aa15cb6-9155-4a27-96e0-54d32ce02858`, with the concurrent owner variable update and guard result documented below. The subsequent maintenance deployment is recorded above. The original runtime checks and real task #163 remain historical integration evidence.
 - Backend, Actions, engine, provider-registry and app source paths are unchanged between reviewed runtime source `37a1e65...` and tagged release `4c8beec...` (verified with a scoped Git diff). Publication therefore required no new Worker deployment or provider call; post-deployment task #163 remains valid live evidence for this executable source.
-- Publication used **`make_latest=false`**. GitHub's latest native release was independently rechecked and remains **v2.2.12**. No IPA was built/replaced, and no native source or bundled app UI changed. The already installed app passed the owner observation; no app upgrade is required for this backend integration.
+- Component publication used **`make_latest=false`**. At that publication GitHub's latest native release was independently rechecked as **v2.2.12**. No IPA was built/replaced in that component release. The already installed app passed the original integration observation. The separate v2.2.13 maintenance update above contains bundled frontend fixes and does require app installation.
 - Acceptance PRs **#153, #156, #158 and #164 remain draft/unmerged**. Current #164 candidate was rechecked unchanged at `204f688b7ba0568005e82e81f5341e161f4b1f0f`. No further task, inference, provider probe or unrelated improvement is authorized automatically.
 - No new host, paid plan, credits, limits or fallback was introduced. Groq account tier is owner-confirmed; free-model documentation and observed usage are independently recorded. Remaining provider allowance and account-wide billing-console settings remain unknown; this is not a claim of unlimited availability or an independently verified account-wide spending guarantee.
 
