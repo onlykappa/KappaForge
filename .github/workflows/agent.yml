@@ -238,7 +238,7 @@ jobs:
         required: false
         type: string
       action:
-        description: Blank to run the task, or "fix" to repair its failed development PR
+        description: Blank to run; fix to repair; verify for saved-candidate checks only; router-check for diagnostics only
         required: false
         type: string
   schedule:

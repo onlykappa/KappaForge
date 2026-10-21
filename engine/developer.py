@@ -1374,13 +1374,16 @@ def produce_development_pr(issue, api_key, token):
         journal.checkpoint(commit['sha'], base=base, pr=pr['html_url'], files=changes)
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
-        validation = ("Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
+        validation = ("Independent tests started in KappaForge's secret-free sandbox. Automatic inference retries are disabled for this bounded task."
+                      if journal and journal.scope.inference_route else
+                      "Independent tests started in KappaForge's secret-free sandbox. If they fail, I fix the code and "
                       "test again within the remaining durable recovery budget before asking you.")
     except urllib.error.HTTPError as exc:
         if journal:
             raise RuntimeError(f"Independent test dispatch unavailable: HTTP {exc.code}") from exc
         validation = f"Test dispatch failed (HTTP {exc.code}); use Run tests on the Dashboard."
-    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + ("tests are running. Failed checks trigger bounded recovery with preserved progress"
+    progress.ok(f"Opened draft PR #{pr.get('number', '')}; " + (("tests are running without automatic inference retries"
+                if journal and journal.scope.inference_route else "tests are running. Failed checks trigger bounded recovery with preserved progress")
                 if not validation.startswith("Test dispatch failed") else validation),
                 phase=True, status="blocked" if validation.startswith("Test dispatch failed") else "testing")
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": (
@@ -1547,7 +1550,7 @@ def failure_summary(failed, token):
 
 
 def sandbox_result(branch, head_sha, token, repo=ROOT):
-    """Latest test run for this exact commit, dispatched from main's trusted workflow."""
+    """Latest test run for this exact commit from the reviewed workflow ref."""
     workflow, title, _ = test_workflow(repo, branch, head_sha)
     runs = gh(f"repos/{ROOT}/actions/workflows/{workflow}/runs?per_page=30", token).get("workflow_runs", [])
     journal = recovery.CURRENT.get()
