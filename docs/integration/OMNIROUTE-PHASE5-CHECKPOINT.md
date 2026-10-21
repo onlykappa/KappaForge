@@ -9,6 +9,9 @@ Updated 2026-10-21 UTC (2026-10-20 owner local date). **PARTIAL.** Actual app-st
 - [Deployment 39527477187](https://github.com/onlykappa/KappaForge/actions/runs/39527477187) deployed source `ab30caa983b74ec7fc1cd55920e280c2d5c24d1c`, Worker version `22c1c5ac-7793-4350-b6c7-f1b82dc92a79`. URL **https://kappaforge-chat.ballaking1738.workers.dev** matches Actions `KAPPA_ROUTER_URL`.
 - Production health passed. Unauthenticated inference returned 401; invalid runner credential was rejected; valid runner credential plus malformed JSON returned 400 before inference. Diagnostics passed secret presence, free/coding/private-code permissions, discovery/capabilities and recorded guards. These diagnostics do not establish provider inference capacity.
 - One deployment inference returned HTTP 200 on `groq:openai/gpt-oss-120b`, fallback false, max completion 256, low reasoning. Reported usage **78 input + 22 output = 100 tokens**. Provider remaining allowance is unknown.
+- Focused [PR #159](https://github.com/onlykappa/KappaForge/pull/159) passed full Linux [CI 39529242115](https://github.com/onlykappa/KappaForge/actions/runs/39529242115) at `94b43f183d19eb842ed180272837319438b7478d`, then merged as **`1c1c4659503d5042550aa317444f0c5e5e1ba991`**. This is the current deployed backend/Actions source.
+- [Deployment 39529441458](https://github.com/onlykappa/KappaForge/actions/runs/39529441458) passed validation/build, read-only binding snapshot, upload, health, binding comparison, URL/authentication checks and diagnostics. Current Worker version **`7f7e0544-8500-466b-b656-d44d36c43a83`**. All **18 bindings, including 9 secret bindings**, were preserved according to pre/post API fingerprints. No secret values were logged or saved, no migrations/state changes were performed, and this deployment sent **no inference**. Groq configuration/recorded guards were eligible with discovery200, health clear and provider remaining unknown; that is not an inference-capacity guarantee.
+- Component release [gateway-v1.0.0 draft](https://github.com/onlykappa/KappaForge/releases/tag/untagged-04dd5afedb689b998b8c) (release ID `419056910`) targets `1c1c4659503d5042550aa317444f0c5e5e1ba991`. Publication is intentionally pending app acceptance. It was created with `make_latest=false`; no native release/version/IPA was changed.
 
 ## Architecture and previous phases
 
@@ -49,7 +52,7 @@ Acceptance PRs #153, #156 and #158 remain draft/unmerged. Do not reopen #151/#15
 
 - **26 focused Node tests passed**: current pin overrides Gemini for authenticated chat/planning, preserves permissions, cannot dispatch a task, no fallback after failure, malformed/duplicate pin, planner background isolation, bounded outgoing Groq payload, binding order/variable/namespace fingerprints and secret redaction.
 - **41 focused Python verification/gateway tests passed**: actual generation can repair its own new document, including from a saved added-file PR; pre-existing/broader diffs stay denied; redundant inspection avoids inference; partial/missing evidence remains enforced.
-- Worker dry-run passed (221.62 KiB, 58.97 KiB gzip). Phase 5 full Linux CI and deployment are pending at this save.
+- Worker dry-run passed (221.62 KiB, 58.97 KiB gzip). Full exact-head Linux CI passed Python/preflight, Node and browser/Playwright checks; production deployment validation repeated relevant Worker fixtures and dry-run build successfully. See run links above. App-specific behavior below still needs its own observation.
 - Windows broad checks encountered previously documented CRLF source-fixture, parser byte-hash and open `NamedTemporaryFile` permission failures; default Python encoding additionally caused Unicode decode errors. `check-web.py` invokes the unavailable system `python3` alias. These are local platform limits, not claimed green checks. Required Linux CI is the promotion gate; baseline Linux CI passed. No native bundle source changed.
 - Installed-app chat/planning on this backend, launch through `/authorize` → `/jobs`, truthful final progress and persistence after reopening remain **UNVERIFIED**. Earlier screenshots of other tasks and navigation do not prove this path.
 
@@ -64,11 +67,23 @@ Owner confirmed free account tiers for Groq/NVIDIA/Gemini/Mistral/Ollama. Keys/a
 
 ## Deploy, rollback and exact resume
 
-1. Review focused Phase 5 PR and required Linux checks, merge under existing authorization, allow backend deployment in `cloudflare-production`. Preserve `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `KAPPA_ROUTER_TOKEN`, `KAPPA_ROUTER_URL`; no new secret, binding or migration. Use diagnostics-only marker as needed, not another automatic live-smoke marker.
-2. Record source SHA/version UUID/run. Verify pre/post binding equality, health, URL and runner authentication without inference. Diagnostics establish guards only; the three successful task calls above prove actual usage at that baseline.
+1. Focused implementation PR #159 is merged/deployed with required checks. Preserve `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `KAPPA_ROUTER_TOKEN`, `KAPPA_ROUTER_URL` in `cloudflare-production`; no new secret, binding or migration. Do not repeat deployment or inference merely to inspect the same state.
+2. Source SHA/version UUID/run, pre/post binding equality, health, URL and runner authentication are recorded above. Diagnostics establish guards only; the three successful task calls prove usage at the previous deployed baseline. New request-pin and repair behavior has fixture evidence; do not claim a new live coding request used it before an observed run.
 3. PR #158 sandbox and verification-only recovery passed. Review its saved result without further inference; preserve initial failure and manual-review distinction. Leave its draft unmerged unless the owner separately chooses its disposition.
 4. After backend pin deployment, owner app action: request one small new Markdown note with literal `Inference route: groq:openai/gpt-oss-120b` and an unused `Edit path:`. Tap Plan task and its explicit launch/approval control. No Model manager change is needed. Report task number, reopen app and confirm same task/result/draft persists. The executor can follow cloud evidence after this phone action. Stop after a capacity failure; no automatic retries.
 5. Keep `gateway-v1.0.0` release draft until app acceptance passes. `config/integration-release.json` versions this backend component separately. Publish with `make_latest=false` at the tested main SHA and record its URL; preserve latest IPA release. Backend changes need reload/retry of the request, not a new IPA.
+
+Exact owner app text (do not dispatch another executor-created issue as a substitute):
+
+```text
+[PHASE 5 APP ACCEPTANCE] Create only docs/integration/PHASE5-APP-ACCEPTANCE.md. Read docs/HANDOFF_TEMPLATE.md for style. Use heading "Cloud coding acceptance" and four bullets describing owner authorization, GitHub Actions execution, authenticated gateway inference, and independent validation with a draft PR. Validate the change and open a draft PR. Do not merge, deploy, or change any existing file. Stop on unavailable capacity; do not retry automatically.
+Repository: onlykappa/KappaForge
+Mode: develop
+Inference route: groq:openai/gpt-oss-120b
+Edit path: docs/integration/PHASE5-APP-ACCEPTANCE.md
+```
+
+Tap **Plan task**, then wait at least 65 seconds after the plan appears before approving/starting it to separate planning and coding token windows. Do not send a parallel chat request for the same test. Report the task number; after completion, close/reopen the app and confirm the same task/result/draft persists. No Model manager is required. This owner action, its observed result and final release publication remain pending.
 
 Rollback: inspect current deployment to avoid overwriting another session, then restore verified Worker `22c1c5ac-7793-4350-b6c7-f1b82dc92a79` (source `ab30caa...`) using Wrangler version rollback in the same protected environment. Repeat health/auth checks. Preserve variables, secrets, DO data and migration; no state rewind. Revert focused source changes through a reviewed commit if Actions rollback is needed. Never restore direct-provider fallback or relax auth. This rollback removes planner request pin support but preserves coding task pins.
 
