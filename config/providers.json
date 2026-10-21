@@ -252,9 +252,12 @@
       }
     },
     "kilo": {
-      "name": "Kilo Code free pool (no key)",
+      "name": "Kilo Code free pool (key optional)",
       "kind": "openai",
       "base": "https://api.kilo.ai/api/gateway",
+      "key": "KILO_API_KEY",
+      "keyOptional": true,
+      "signup": "https://app.kilo.ai",
       "freeOnly": true,
       "prefer": [
         "nemotron-3-ultra",

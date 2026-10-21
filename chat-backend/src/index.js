@@ -1,3 +1,4 @@
+import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
 import {streamReply} from "./streaming.js";
 import {getTimeContext} from "./time.js";
@@ -245,7 +246,8 @@ export default {
         health.gemini={state:geminiPool?.blocked?"blocked":geminiPool?.until>Date.now()?"cooldown":Object.values(snapshot.routes||{}).some(row=>row.provider==="gemini"&&row.until>Date.now())?"cooldown":"unknown",retryAt:geminiPool?.until||null,category:geminiPool?.category||null};
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);

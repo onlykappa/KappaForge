@@ -51,6 +51,16 @@ try{
  await page.waitForFunction(()=>!settingsBusy,null,{timeout:120000});
  await page.waitForTimeout(500);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2-usage-home.png'),fullPage:true,animations:'disabled'});
+ // The view menu open over the page, then each view.
+ await page.locator('#usage-unit').click();await page.waitForTimeout(200);
+ await page.screenshot({path:join(out,'2a-view-menu.png'),animations:'disabled'});
+ for(const unit of ['tokens','neurons','plan']){
+  if(!await page.locator('.u-menu').count())await page.locator('#usage-unit').click();
+  await page.locator('[data-usage-unit='+unit+']').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
+  await page.screenshot({path:join(out,'2-usage-'+unit+'.png'),fullPage:true,animations:'disabled'});
+ }
+ await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
+ summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
  // Drill into the busiest provider and its busiest model, as a person tapping through would.
  const first=page.locator('[data-usage-provider]').first();
  if(await first.count()){

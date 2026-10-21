@@ -94,25 +94,45 @@ function providerRow(p,names){
  const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
  return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(left===null?0:100-left,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>no limit set':'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
+// Which allowance the Usage page counts. Each view keeps the same layout with its own unit.
+const USAGE_UNITS=[['requests','Requests'],['tokens','Tokens'],['neurons','Neurons'],['plan','Plan usage']];
+let usageUnit=(()=>{try{const v=localStorage.getItem('kappaforge.usageUnit');return USAGE_UNITS.some(u=>u[0]===v)?v:'requests'}catch{return 'requests'}})(),usageMenuOpen=false;
+function uRing(percent,label,known=true){const p=known?percent:0,dash=553,off=dash-dash*Math.min(100,p)/100;
+ return '<svg viewBox="0 0 210 210" width="196" height="196" role="img" aria-label="'+(known?p+'% '+label:'No data yet')+'"><defs><linearGradient id="u-ring"><stop offset="0" stop-color="#0a84ff"/><stop offset="1" stop-color="#64d2ff"/></linearGradient></defs><circle cx="105" cy="105" r="88" fill="none" stroke="var(--u-track)" stroke-width="18"/>'+(known?'<circle cx="105" cy="105" r="88" fill="none" stroke="'+(p>100?'#ff453a':'url(#u-ring)')+'" stroke-width="18" stroke-linecap="round" stroke-dasharray="'+dash+'" stroke-dashoffset="'+off+'" transform="rotate(-90 105 105)"/>':'')+'<text x="105" y="102" text-anchor="middle" class="u-ring-big">'+(known?Math.round(p)+'%':'—')+'</text><text x="105" y="130" text-anchor="middle" class="u-ring-small">'+label+'</text></svg>';}
+function uUnitPicker(){const name=USAGE_UNITS.find(u=>u[0]===usageUnit)[1];
+ return '<div class="u-unit"><button id="usage-unit" aria-haspopup="menu" aria-expanded="'+usageMenuOpen+'">'+name+'<span aria-hidden="true">⌄</span></button>'+
+  (usageMenuOpen?'<div class="u-menu" role="menu">'+USAGE_UNITS.map(([id,label])=>'<button role="menuitemradio" aria-checked="'+(id===usageUnit)+'" data-usage-unit="'+id+'">'+label+(id===usageUnit?'<span aria-hidden="true">✓</span>':'')+'</button>').join('')+'</div>':'')+'</div>';}
+function uTri(cells){return '<div class="u-tri">'+cells.map(([v,l])=>'<div><b>'+v+'</b><small>'+l+'</small></div>').join('')+'</div>';}
+function uHero(ring,count,cells){return '<div class="u-card u-hero">'+uUnitPicker()+ring+'<div class="u-hero-count">'+count+'</div>'+uTri(cells)+'</div>';}
 function usageHome(){
  const model=usageModel(),state=capabilities?.routingState;
  if(!model||!state)return '<div class="u-card"><p class="s-empty">Tap Refresh to load today’s usage and limits from your backend.</p></div>';
- const nextUtc=(()=>{const d=new Date();d.setUTCHours(24,0,0,0);return d.getTime();})();
- const used=state.dailyRequests?.used||0,cap=state.dailyPolicyLimit,p=pct(used,cap)??0,dash=553,off=dash-dash*Math.min(100,p)/100;
+ const nextUtc=(()=>{const d=new Date();d.setUTCHours(24,0,0,0);return d.getTime();})(),resets='Resets in '+untilReset(nextUtc);
+ const used=state.dailyRequests?.used||0,cap=state.dailyPolicyLimit,p=pct(used,cap)??0;
  const today=KappaCore.periodStart('day'),month=KappaCore.periodStart('month');let tokensToday=0,tokensMonth=0,okToday=0,attemptsToday=0;
  for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=month)tokensMonth+=t;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
+ const success=attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—';
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
- const hero='<div class="u-card u-hero"><svg viewBox="0 0 210 210" width="196" height="196" role="img" aria-label="'+p+'% of today’s requests used"><defs><linearGradient id="u-ring"><stop offset="0" stop-color="#0a84ff"/><stop offset="1" stop-color="#64d2ff"/></linearGradient></defs><circle cx="105" cy="105" r="88" fill="none" stroke="var(--u-track)" stroke-width="18"/><circle cx="105" cy="105" r="88" fill="none" stroke="'+(p>100?'#ff453a':'url(#u-ring)')+'" stroke-width="18" stroke-linecap="round" stroke-dasharray="'+dash+'" stroke-dashoffset="'+off+'" transform="rotate(-90 105 105)"/><text x="105" y="102" text-anchor="middle" class="u-ring-big">'+Math.round(p)+'%</text><text x="105" y="130" text-anchor="middle" class="u-ring-small">of today used</text></svg>'+
-  '<div class="u-hero-count"><b>'+compact(used)+'</b> / '+compact(cap)+' requests</div><div class="u-tri"><div><b>'+compact(tokensToday)+'</b><small>tokens today</small></div><div><b>'+compact(tokensMonth)+'</b><small>this month</small></div><div><b>'+(attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—')+'</b><small>chat &amp; tasks succeeded</small></div></div></div>';
- const bars=uBarCard('Daily requests','Resets in '+untilReset(nextUtc),used,cap,'requests used','#0a84ff')+
-  (tokenLimit?uBarCard('Daily tokens','Resets in '+untilReset(nextUtc),tokensCapped,tokenLimit,'tokens available','#bf5af2','Counts the providers that publish a daily token allowance: '+esc(cappedNames.join(', '))+'. Others limit requests or tokens per minute instead.'):'');
+ const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','Counts the providers that publish a daily token allowance: '+esc(cappedNames.join(', '))+'. Others limit requests or tokens per minute instead.'):'';
  // The four busiest providers stand alone; the rest share one "Other" row.
  const sorted=[...model.rows].sort((a,b)=>b.used.requests-a.used.requests||(b.requestLimit?1:0)-(a.requestLimit?1:0));
  const main=sorted.slice(0,4),rest=sorted.slice(4);
  const other=rest.length?'<button class="u-prow" data-usage-provider="other"><span class="u-av" style="color:#8e8e93;background:#8e8e932e">+</span><span class="u-pn"><strong>Other</strong><small>'+esc(rest.map(r=>model.names[r.id]||r.id).join(', '))+' · '+plural(rest.reduce((n,r)=>n+r.used.requests,0),'request')+'</small></span><span class="u-right"><b>'+rest.length+'</b>providers</span><span class="u-chev" aria-hidden="true">›</span></button>':'';
+ const providers='<h3 class="u-hdr">Provider allowances today</h3><div class="u-card u-list">'+main.map(r=>providerRow(r,model.names)).join('')+other+'</div>';
+ const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names)+'</div>':'';
+ if(usageUnit==='tokens'){const tp=pct(tokensCapped,tokenLimit);
+  return uHero(uRing(tp??0,'of today used',tp!==null),tokenLimit?'<b>'+compact(tokensCapped)+'</b> / '+compact(tokenLimit)+' tokens':'<b>'+compact(tokensToday)+'</b> tokens today',
+   [[compact(tokensToday),'tokens today'],[compact(tokensMonth),'this month'],[attemptsToday?compact(Math.round(tokensToday/attemptsToday)):'—','per request']])+tokenBar+providers;}
+ if(usageUnit==='neurons'){const n=capabilities.neurons,w=model.byId['workers-ai'],known=Number.isFinite(n?.used)&&n.limit>0,np=known?pct(n.used,n.limit):0;
+  return uHero(uRing(np,'of today used',known),known?'<b>'+compact(n.used)+'</b> / '+compact(n.limit)+' neurons':'Neurons unavailable',
+   [[compact(w?.used.requests||0),'Workers AI requests'],[compact(w?.used.tokens||0),'tokens today'],[untilReset(nextUtc),'until reset']])+
+   (known?uBarCard('Daily neurons',resets,n.used,n.limit,'neurons used','#64d2ff','From Cloudflare account analytics; it can lag a few minutes.'):'<div class="u-card"><p class="u-note">'+esc(n?.error||'Workers AI is not enabled on this backend.')+'</p></div>')+one('workers-ai');}
+ if(usageUnit==='plan'){const o=model.byId.ollama;
+  return uHero(uRing(0,'',false),'Ollama plan usage',[[compact(o?.used.requests||0),'Ollama requests'],[compact(o?.used.tokens||0),'tokens today'],[o?plural(o.models.filter(m=>!m.unused).length,'model'):'—','used today']])+
+   '<div class="u-card"><p class="u-note">Ollama shows plan usage as a percentage on ollama.com only; it has no API for it yet, so KappaForge can’t read it. The numbers above are KappaForge’s own Ollama traffic today.</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
- return hero+bars+'<h3 class="u-hdr">Provider allowances today</h3><div class="u-card u-list">'+main.map(r=>providerRow(r,model.names)).join('')+other+'</div>'+
-  uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');
+ return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],[compact(tokensMonth),'this month'],[success,'chat &amp; tasks succeeded']])+
+  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');
 }
 function providerDetail(){
  const model=usageModel();if(!model)return usageHome();
@@ -250,6 +270,10 @@ function bindSettings(){
  document.querySelectorAll('[data-usage-provider]').forEach(b=>b.onclick=()=>usageGo({provider:b.dataset.usageProvider,model:null}));
  document.querySelectorAll('[data-usage-model]').forEach(b=>b.onclick=()=>usageGo({provider:usageView.provider,model:b.dataset.usageModel}));
  document.getElementById('usage-back')?.addEventListener('click',()=>usageGo(usageView.model?{provider:usageView.provider,model:null}:{provider:null,model:null}));
+ // The view menu floats over the page; the page underneath stays as it is.
+ document.getElementById('usage-unit')?.addEventListener('click',e=>{e.stopPropagation();usageMenuOpen=!usageMenuOpen;render();});
+ document.querySelectorAll('[data-usage-unit]').forEach(b=>b.onclick=e=>{e.stopPropagation();usageUnit=b.dataset.usageUnit;usageMenuOpen=false;try{localStorage.setItem('kappaforge.usageUnit',usageUnit)}catch{}render();});
+ if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
  on('s-refresh',refreshIntelligence);
  on('model-probe',()=>{if(confirm('Send one short test message to every chat model KappaForge can use? Paid models may charge a fraction of a cent.'))return runProbe();});

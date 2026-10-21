@@ -141,7 +141,8 @@ To add a provider, create a key at its site and save it under the same name in *
 | Ollama Cloud | `OLLAMA_API_KEY` | https://ollama.com/settings/keys |
 | Z AI | `ZAI_API_KEY` | https://z.ai/manage-apikey/apikey-list |
 | LLM7.io (optional, raises limits) | `LLM7_API_KEY` | https://token.llm7.io |
-| Kilo Code, OVHcloud | none | works without a key |
+| Kilo Code (optional, raises limits) | `KILO_API_KEY` | https://app.kilo.ai |
+| OVHcloud | none | works without a key |
 
 **Settings → Models** shows which providers are configured and their models, links to each missing key's signup page, lets you pick a specific `provider:model`, and has a per-device switch to stop prompts going to any provider. Some free tiers log prompts or use them to improve their models (Kilo's free pool may route to such providers, and its NVIDIA models are logged); switch those off for private code. The coding agent in GitHub Actions does not read that per-device switch, so it will use the keyless providers when every keyed route is exhausted.
 
