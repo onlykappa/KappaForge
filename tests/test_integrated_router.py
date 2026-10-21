@@ -93,7 +93,7 @@ class IntegratedRouterTests(unittest.TestCase):
         self.assertEqual(captured["body"]["model"], "groq:openai/gpt-oss-120b")
         self.assertFalse(captured["body"]["fallback"])
         self.assertEqual(captured["body"]["reasoningEffort"], "low")
-        self.assertEqual(captured["body"]["maxTokens"], 1024)
+        self.assertEqual(captured["body"]["maxTokens"], 768)
 
     def test_gateway_error_codes_and_retry_deadlines_are_preserved_without_raw_error_text(self):
         for status, code, label in [(429, 'daily_limit', 'gateway daily limit'),

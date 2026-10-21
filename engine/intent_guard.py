@@ -48,6 +48,10 @@ class ExecutionScope:
         if len(routes) > 1 or (routes and (self.mode != "develop" or routes[0] not in PINNED_INFERENCE_ROUTES)):
             raise PermissionError("Pinned inference route is unsupported for this task")
         self.inference_route = routes[0] if routes else None
+        paths = re.findall(r'^Edit path:\s*(\S+)\s*$', self.body, re.M | re.I)
+        if len(paths) > 1 or (paths and (not self.inference_route or not re.fullmatch(r'docs/integration/[A-Za-z0-9_-]+\.md', paths[0]))):
+            raise PermissionError('Bounded edit path must be one new integration Markdown file on a pinned task')
+        self.edit_path = paths[0] if paths else None
         if self.mode in WRITE_MODES:
             from engine.projects import registered
             registered(self.repo)

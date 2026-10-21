@@ -593,7 +593,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         selected = [provider]
         fallback = False
         if len(prompt) > gateway.PINNED_PROMPT_CHARS:
-            raise gateway.GatewayUnavailable('Pinned task prompt exceeds its bounded request budget; inference was not sent', terminal=True)
+            raise gateway.GatewayUnavailable(f'Pinned task prompt exceeds its bounded request budget ({len(prompt)} characters); inference was not sent', terminal=True)
         max_output_tokens = min(max_output_tokens, gateway.PINNED_OUTPUT_TOKENS)
         gateway.pace(journal, model_timeout)
         if hasattr(journal.scope, 'check_current'):

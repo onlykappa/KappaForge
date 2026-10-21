@@ -48,6 +48,16 @@ class IntentGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError,'Pinned inference route'):
             ExecutionScope(read_only)
 
+    def test_new_document_path_is_bound_to_pinned_authorization(self):
+        task=issue();task['body']+='\nInference route: groq:openai/gpt-oss-120b\nEdit path: docs/integration/PHASE4-NOTE.md'
+        scope=ExecutionScope(task)
+        self.assertEqual(scope.edit_path,'docs/integration/PHASE4-NOTE.md')
+        changed=copy.deepcopy(task);changed['body']=changed['body'].replace('PHASE4-NOTE.md','OTHER.md')
+        with self.assertRaises(PermissionError):scope.check_current(changed)
+        for path in ['README.md','docs/integration/../README.md','docs/integration/source.py']:
+            bad=copy.deepcopy(task);bad['body']=bad['body'].replace('docs/integration/PHASE4-NOTE.md',path)
+            with self.assertRaises(PermissionError):ExecutionScope(bad)
+
     def test_cancellation_checked_before_every_queued_mutation(self):
         original=issue();activate(original)
         guard_request('https://api.github.com/repos/onlykappa/KappaForge/git/blobs',{},'POST',lambda n: original)

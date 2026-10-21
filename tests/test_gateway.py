@@ -63,3 +63,36 @@ class GatewayEvidenceTests(unittest.TestCase):
         finally:
             recovery.CURRENT.reset(handle)
 
+    def test_named_document_avoids_planning_call_and_preserves_full_instructions(self):
+        path = 'docs/integration/BOUND-NOTE.md'
+        scope = SimpleNamespace(inference_route='groq:openai/gpt-oss-120b', edit_path=path)
+        handle = recovery.CURRENT.set(SimpleNamespace(scope=scope))
+        try:
+            guide = 'EXACT POLICY\n' * 1800
+            task = 'Read docs/HANDOFF_TEMPLATE.md and create only ' + path
+            files = {'docs/HANDOFF_TEMPLATE.md': 12}
+            with patch.object(developer, 'run_model') as model:
+                paths, stages, _ = developer.plan_change('', task, files, guide)
+                model.assert_not_called()
+            self.assertEqual(paths, ['docs/HANDOFF_TEMPLATE.md'])
+            self.assertEqual(stages, [])
+        finally:
+            recovery.CURRENT.reset(handle)
+        journal = SimpleNamespace(scope=scope, state={'repairStrategy': '', 'events': []}, avoid_models=lambda key: set(),
+                                  rejected=lambda signature: False, context='')
+        handle = recovery.CURRENT.set(journal)
+        try:
+            answer = json.dumps({'files': [{'path': path, 'content': '# Note\n- Cloud work'}]})
+            with patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', answer)) as model:
+                result = developer.generate('', task, developer.ROOT, {}, files, guide)
+            self.assertIn(guide, model.call_args.args[1])
+            self.assertIn(task, model.call_args.args[1])
+            self.assertLess(len(model.call_args.args[1]), gateway.PINNED_PROMPT_CHARS)
+            self.assertEqual(set(result[2]), {path})
+            bad = json.dumps({'files': [{'path': 'wrong.md', 'content': '# Wrong'}]})
+            with patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', bad)):
+                with self.assertRaises(PermissionError):
+                    developer.generate('', task, developer.ROOT, {}, files, guide)
+        finally:
+            recovery.CURRENT.reset(handle)
+

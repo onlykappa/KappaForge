@@ -7,8 +7,8 @@ import time
 import urllib.request
 from engine.reliability import ProviderRoutesUnavailable, retry_after
 
-PINNED_OUTPUT_TOKENS = 1024
-PINNED_PROMPT_CHARS = 16000
+PINNED_OUTPUT_TOKENS = 768
+PINNED_PROMPT_CHARS = 26000
 PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
 
