@@ -64,8 +64,8 @@ export class KappaMemory {
   }
 }
 const ORIGIN = "https://onlykappa.github.io";
-// Longest task request/instructions accepted from the app (the app trims to the same limit).
-const TASK_LIMIT = 3500;
+// Task briefs have a separate bound from the 3,500-character chat context window.
+const TASK_LIMIT = 20000;
 function json(data, status = 200, cors = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -290,9 +290,10 @@ export default {
     const executionPath=new URL(request.url).pathname;
     if(executionPath==="/authorize"){
       try{
-        if(!input.payload||typeof input.userText!=="string"||input.userText.length>3500||
+        if(!input.payload||typeof input.userText!=="string"||
            !/^[a-zA-Z0-9_-]{8,100}$/.test(input.payload.authorization?.id||"")||
            !/^[a-zA-Z0-9_-]{1,100}$/.test(input.payload.authorization?.conversationId||""))throw Error("Invalid user request identity");
+        if(input.userText.length>TASK_LIMIT)return json({error:"The task is too long ("+input.userText.length+" characters; the limit is "+TASK_LIMIT+"). Shorten it and try again.",code:"task_too_long"},413,cors);
         validateRequest(input.path,input.payload,input.userText,input.source);
         const record=await authorize(env,input.path,input.payload);
         return json({authorization:{id:record.id,conversationId:record.conversationId,expiresAt:record.expiresAt},state:record.state},200,cors);
@@ -750,18 +751,20 @@ export default {
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
       const streaming=!planning&&input.stream===true;
       let attempt=0;
-      let lastStatus = 0;
+      let lastStatus = 0,lastRetryAt=null,lastFailure=null;
       for (const route of candidates) {
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId)}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
-        if(!routeReservation.allowed){lastStatus=429;continue;}
+        if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="";
         const record=async(result,ok)=>{
           const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
-          await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
+          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
+          lastRetryAt=outcome.retryAt||lastRetryAt;
+          if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
@@ -774,7 +777,7 @@ export default {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
             body: JSON.stringify(geminiBody), signal: controller.signal
           }) : await callProvider(env, route, chat, streaming, controller.signal);
-        } catch { clearTimeout(timeout);await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); }
+        } catch { clearTimeout(timeout);outcomeCategory="network_failure";await record(null,false);if(request.signal.aborted)throw Error("Request cancelled");continue; }
         lastStatus = response.status;
         outcomeStatus=response.status;outcomeHeaders=response.headers;
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
@@ -820,7 +823,9 @@ export default {
         }
         await record(result,false);
       }
-      return json({ error: "All explicitly approved free AI routes are unavailable (last HTTP " + lastStatus + "). Retry after the reported cooldown or configure another verified-free route." }, 502, cors);
+      const retryMessage=lastRetryAt?" Retry after "+new Date(lastRetryAt).toISOString()+".":" Try again later or use another verified-free route.";
+      const status=lastStatus===429?429:503;
+      return json({error:(status===429?"Approved free AI routes are temporarily rate-limited or busy.":"No approved free AI route completed this request.")+retryMessage,code:status===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,failure:lastFailure},status,{...cors,...(lastRetryAt?{"Retry-After":String(Math.max(1,Math.ceil((lastRetryAt-Date.now())/1000)))}:{})});
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }

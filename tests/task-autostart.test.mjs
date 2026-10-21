@@ -82,3 +82,29 @@ test('an uncertain request becomes an Approve or Deny card, never a started task
  const no=await attempt({text:'I think we should probably fix the sync at some point',isTask:false,options:{approval:true}});
  assert.equal(no.ok,false);assert.equal(no.pending,null,'the planner can turn an uncertain request down');
 });
+
+test('planner retains the complete pasted task instead of silently truncating its requirements',async()=>{
+ const tail='Final requirement: keep user consent explicit.';
+ const text='Implement '+ 'x'.repeat(20000-'Implement '.length-tail.length)+tail;
+ const x=await attempt({text,autoStart:false,options:{explicit:true}});
+ assert.equal(text.length,20000);assert.equal(x.sent.request,text);assert.equal(x.pending.instructions,text.trim());
+});
+
+test('sending a task waits for its task action without a competing chat inference',async()=>{
+ const main=readFileSync(resolve(root,'preview/app-main.js'),'utf8');
+ const registration=main.split('\n').find(line=>line.startsWith('document.getElementById("form").addEventListener("submit"'));
+ assert.ok(registration);
+ for(const kind of ['start','approval','retry']){
+  let submit,calls=0,finished=false;const chat={id:'one',messages:[]};
+  const text='Implement weather support.\n'+('Keep user consent explicit.\n'.repeat(140));
+  const input={value:text},button={setAttribute(){},innerHTML:'',onclick:null};
+  const box={sending:false,queuedAttachments:[],chats:[chat],backend:'https://worker.example',access:'fixture',trackedJobs:[],
+   document:{getElementById:id=>id==='form'?{addEventListener:(_name,fn)=>{submit=fn}}:input,querySelector:()=>button},
+   refreshAttachList(){},chatCommand:()=>null,active:()=>chat,save(){},render(){},rememberFromMessage:()=>false,setActivity(){},
+   chatTaskPlan:()=>({kind}),runChatAction:async()=>{await Promise.resolve();finished=true},
+   AbortController,uiIcon:()=>'',fetch:async()=>{calls++;throw Error('task must not trigger another model call')},logDiagnostic(){}};
+  vm.runInNewContext(registration,box);await submit({preventDefault(){}});
+  assert.equal(finished,true);assert.equal(calls,0,kind);assert.equal(chat.messages[0].text,text.trim(),'the full task remains saved');
+  assert.equal(box.sending,false);assert.equal(button.type,'submit');
+ }
+});

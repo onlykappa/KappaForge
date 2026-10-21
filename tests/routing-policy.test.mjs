@@ -204,3 +204,88 @@ test("malformed responses and transport failures return their durable cooldown d
   }finally{globalThis.fetch=previous;}
  }
 });
+
+test('Retry-After does not turn a minute throttle into a daily request reset cooldown',async()=>{
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ const state={storage:storage()},env={GROQ_API_KEY:'cooldown-fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})}};
+ const route={provider:'groq',model:'openai/gpt-oss-120b'},now=Date.now();
+ await reserveProvider(env,route,'header-lease');
+ const result=await reportProviderOutcome(env,{requestId:'header-lease',route,status:429,category:'rate_limit',headers:new Headers({
+  'retry-after':'12','x-ratelimit-remaining-requests':'990','x-ratelimit-reset-requests':'23h','x-ratelimit-remaining-tokens':'0','x-ratelimit-reset-tokens':'12s'
+ })});
+ assert.ok(result.retryAt>=now+12000&&result.retryAt<Date.now()+14000);
+});
+
+test('chat returns a real throttle deadline and suppresses inference during stored cooldown',async()=>{
+ const {KappaMemory}=await import('../chat-backend/src/index.js');
+ const values=new Map(),store={get:async key=>structuredClone(values.get(key)),put:async(key,value)=>values.set(key,structuredClone(value)),list:async()=>new Map()};
+ store.transaction=async fn=>fn(store);const vault=new KappaMemory({storage:store});
+ const env={CHAT_ACCESS_TOKEN:'chat-fixture',ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'chat-cooldown-fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CHAT_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>vault.fetch(new Request(url,init))})}};
+ const previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async url=>{
+  if(String(url).endsWith('/models'))return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+  assert.ok(String(url).endsWith('/chat/completions'));calls++;
+  return Response.json({error:'private upstream text'},{status:429,headers:{'Retry-After':'15','x-ratelimit-reset-requests':'23h'}});
+ };
+ const make=()=>new Request('https://worker.example/chat',{method:'POST',headers:{Origin:'null',Authorization:'Bearer chat-fixture','Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',text:'Hello'}],preferences:{model:'groq:openai/gpt-oss-120b',fallback:false}})});
+ try{
+  const first=await worker.fetch(make(),env),body=await first.json();
+  assert.equal(first.status,429);assert.equal(body.code,'free_capacity_cooldown');assert.equal(body.failure.source,'upstream');
+  assert.ok(body.retryAt>Date.now()&&body.retryAt<Date.now()+17000);assert.match(body.error,/Retry after \d{4}-/);
+  assert.ok(Number(first.headers.get('Retry-After'))>0);assert.ok(!JSON.stringify(body).includes('private upstream'));
+  const second=await worker.fetch(make(),env),again=await second.json();
+  assert.equal(second.status,429);assert.equal(again.retryAt,body.retryAt);assert.equal(again.failure.source,'coordination');assert.equal(calls,1);
+ }finally{globalThis.fetch=previous}
+});
+
+test('compound resets honor every exhausted pool and ignore pools with remaining capacity',async()=>{
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ for(const remaining of ['0','900']){
+  const state={storage:storage()},env={GROQ_API_KEY:'compound-fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})}};
+  const route={provider:'groq',model:'openai/gpt-oss-120b'},now=Date.now();
+  await reserveProvider(env,route,'compound-lease');
+  const result=await reportProviderOutcome(env,{requestId:'compound-lease',route,status:429,category:'rate_limit',headers:new Headers({
+   'x-ratelimit-remaining-tokens':'0','x-ratelimit-reset-tokens':'1m12.5s',
+   'x-ratelimit-remaining-requests':remaining,'x-ratelimit-reset-requests':'2m59.56s'
+  })});
+  const delay=remaining==='0'?179560:72500;
+  assert.ok(result.retryAt>=now+delay&&result.retryAt<Date.now()+delay+2000,JSON.stringify({result,remaining,now,delay}));
+ }
+});
+
+test('a long numeric Retry-After is not shortened to one hour',async()=>{
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ const state={storage:storage()},env={GROQ_API_KEY:'long-cooldown-fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})}};
+ const route={provider:'groq',model:'openai/gpt-oss-120b'},now=Date.now();
+ await reserveProvider(env,route,'long-cooldown');
+ const result=await reportProviderOutcome(env,{requestId:'long-cooldown',route,status:429,category:'rate_limit',headers:new Headers({'Retry-After':'86400'})});
+ assert.ok(result.retryAt>=now+86400000&&result.retryAt<Date.now()+86401000);
+ const denied=await reserveProvider(env,route,'next-after-long-cooldown');
+ assert.equal(denied.allowed,false);assert.equal(denied.retryAt,result.retryAt);
+});
+
+test('chat transport and malformed responses preserve cooldowns without inventing upstream status',async()=>{
+ const {KappaMemory}=await import('../chat-backend/src/index.js');
+ for(const mode of ['network_failure','malformed_json','malformed_response']){
+  const values=new Map(),store={get:async key=>structuredClone(values.get(key)),put:async(key,value)=>values.set(key,structuredClone(value)),list:async()=>new Map()};
+  store.transaction=async fn=>fn(store);const vault=new KappaMemory({storage:store});
+  const env={CHAT_ACCESS_TOKEN:'chat-fixture',ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'chat-failure-fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CHAT_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,init)=>vault.fetch(new Request(url,init))})}};
+  const previous=globalThis.fetch;let calls=0;
+  globalThis.fetch=async url=>{
+   if(String(url).endsWith('/models'))return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+   if(!String(url).endsWith('/chat/completions'))return new Response('{}',{status:404});
+   calls++;if(mode==='network_failure')throw new TypeError('private transport detail');
+   return mode==='malformed_json'?new Response('{private invalid JSON'):Response.json({unexpected:'private response'});
+  };
+  const make=()=>new Request('https://worker.example/chat',{method:'POST',headers:{Origin:'null',Authorization:'Bearer chat-fixture','Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',text:'Hello'}],preferences:{model:'groq:openai/gpt-oss-120b',fallback:false}})});
+  try{
+   const first=await worker.fetch(make(),env),body=await first.json();
+   assert.equal(first.status,503);assert.equal(body.failure.category,mode);
+   assert.equal(body.failure.source,mode==='network_failure'?'transport':'normalization');
+   assert.equal(body.failure.upstreamStatus,mode==='network_failure'?null:200);
+   assert.ok(body.retryAt>Date.now()+25000);assert.ok(!JSON.stringify(body).includes('private'));
+   const second=await worker.fetch(make(),env),again=await second.json();
+   assert.equal(second.status,429);assert.equal(again.retryAt,body.retryAt);assert.equal(calls,1);
+  }finally{globalThis.fetch=previous}
+ }
+});

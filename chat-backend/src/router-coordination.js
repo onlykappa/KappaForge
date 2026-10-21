@@ -5,6 +5,17 @@ function stubFor(env){
  return env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
 }
 function routeConfig(provider){return provider==="gemini"?registry.routing?.primary:registry.providers[provider];}
+function resetDeadline(value,now){
+ if(typeof value!=="string"||!value.trim())return null;
+ value=value.trim();
+ // Provider durations can combine units (for example 2m59.56s).
+ if(/^(?:\d+(?:\.\d+)?(?:ms|[dhms]))+$/i.test(value)){
+  let delay=0;for(const part of value.matchAll(/(\d+(?:\.\d+)?)(ms|[dhms])/gi))delay+=Number(part[1])*({d:86400000,h:3600000,m:60000,s:1000,ms:1})[part[2].toLowerCase()];
+  return now+delay;
+ }
+ if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>now/1000?number*1000:now+number*1000;}
+ const date=Date.parse(value);return Number.isFinite(date)?date:null;
+}
 async function accountPoolFor(env,provider,config){
  const secret=provider==="gemini"?env.GEMINI_API_KEY:config?.key?env[config.key]:"";
  if(typeof secret!=="string"||!secret)return config?.accountPool||provider;
@@ -34,15 +45,20 @@ export async function reserveProvider(env,route,requestId){
 
 export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
- const resetHeader=headers?.get?.("x-ratelimit-reset-requests")||headers?.get?.("x-ratelimit-reset")||"";
- let resetAt;
- const relative=resetHeader.match(/^(\d+(?:\.\d+)?)(s|m|h)$/i);
- if(relative)resetAt=Date.now()+Number(relative[1])*({s:1000,m:60000,h:3600000})[relative[2].toLowerCase()];
- else if(/^\d+(?:\.\d+)?$/.test(resetHeader)){const value=Number(resetHeader);resetAt=value>Date.now()/1000?value*1000:Date.now()+value*1000;}
- else if(resetHeader)resetAt=Date.parse(resetHeader);
+ // A remaining daily request allowance is not the cause of a token/minute 429.
+ // Prefer the provider's explicit Retry-After; only use an exhausted bucket's reset.
+ const retryAfter=headers?.get?.("retry-after")||undefined;
+ const exhausted=name=>headers?.get?.(name)==="0";
+ const resetHeaders=retryAfter?[]:[
+  ...(exhausted("x-ratelimit-remaining-tokens")?[headers?.get?.("x-ratelimit-reset-tokens")]:[]),
+  ...(exhausted("x-ratelimit-remaining-requests")?[headers?.get?.("x-ratelimit-reset-requests")]:[]),
+  headers?.get?.("x-ratelimit-reset")
+ ];
+ const deadlines=resetHeaders.map(value=>resetDeadline(value,Date.now())).filter(Number.isFinite);
+ const resetAt=deadlines.length?Math.max(...deadlines):undefined;
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,status,category,
-  retryAfter:headers?.get?.("retry-after")||undefined,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
+  retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
   usage:usage?{inputTokens:usage.promptTokenCount,outputTokens:usage.candidatesTokenCount,totalTokens:usage.totalTokenCount}:undefined,
   remaining:remainingHeader!==null&&remainingHeader!==undefined&&/^\d+$/.test(remainingHeader)?Number(remainingHeader):undefined,
   remainingSource:remainingHeader!==null&&remainingHeader!==undefined?"provider-header:x-ratelimit-remaining-requests":undefined
