@@ -36,6 +36,25 @@ it does not implement weather. Device installation and the repaired task's next
 execution remain unobserved. See
 [task #169 repair evidence](TASK169-GATEWAY-REPAIR.md). No weather retry is automatic.
 
+**Recovery follow-up:** [PR #172](https://github.com/onlykappa/KappaForge/pull/172)
+merged as `d1e61c499db85b28aedb457276b9071c74479e03`. Scans are scheduled every five
+minutes (GitHub's minimum; delays possible); transient eligibility has a one-minute
+floor while later cooldowns retain priority. The bundled UI adds an explicit resume
+reminder one minute after recorded eligibility, with truthful Waiting time.
+An iPhone 16 Pro Max simulator fake-task test passed cooldown, local timer,
+Retry visibility and full process restart. All 364 Python/368 JavaScript tests,
+browser regressions and five native UI tests passed. See the
+[recovery checkpoint](RECOVERY-CADENCE-CHECKPOINT.md). A subsequent owner-authorized
+real continuation of #171 again received upstream503 and saved its checkpoint;
+provider/model and remaining quota were unreported. No weather completion is claimed.
+[v2.2.15](https://github.com/onlykappa/KappaForge/releases/tag/v2.2.15) is published
+from the exact merged source after main/native checks. Its downloaded unsigned
+IPA passed checksum, native identity and all 23 shared-file checks; debug fixture
+code is absent from the device executable. Install over the existing app with the
+same signing identity and open task #171. The owner's physical installation and
+weather task completion remain unverified. No Worker,
+credentials, dashboard variables, DO data or provider permissions were changed.
+
 ## Published release and final state
 
 - **Release:** [gateway-v1.0.0](https://github.com/onlykappa/KappaForge/releases/tag/gateway-v1.0.0), ID `419056910`, published **2026-10-21 02:28:37 UTC**, `draft=false`, `prerelease=false`.
