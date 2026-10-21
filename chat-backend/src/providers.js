@@ -77,7 +77,9 @@ export async function providerModels(env,id){
    cache.set(key,{at:Date.now(),models});
    setStatus({state:"available",httpStatus:status,discoveredCount:ids.length,approvedCount:models.length});
    return models;
-  }catch{return fallback({state:"network_error",httpStatus:null});}
+  }catch(error){
+   // The reason (never a credential: the token is only ever sent as a header) shows in provider diagnostics.
+   return fallback({state:"network_error",httpStatus:null,detail:String(error?.name||"Error")+": "+String(error?.message||"").replace(/Bearer\s+\S+/gi,"Bearer [redacted]").slice(0,160)});}
  }
  if(p.models){
   const models=freeModels(env,id,p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model)))||[];

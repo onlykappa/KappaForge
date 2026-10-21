@@ -133,3 +133,22 @@ test('the model check sends one message per routable model in batches and record
   assert.equal((await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer wrong'},body:'{}'}),env)).status,401);
  }finally{globalThis.fetch=original}
 });
+
+test('a cancelled coding attempt is kept in usage history as cancelled, with unknown tokens left empty',async()=>{
+ const original=globalThis.fetch,vault=new KappaMemory(memoryState());
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+  if(init.signal?.aborted)throw new DOMException('cancelled','AbortError');
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',GROQ_API_KEY:'cancel-groq',KAPPA_ROUTER_MAX_PER_MINUTE:'100',
+   MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+  const caller=new AbortController();caller.abort();
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix it'}],maxTokens:1024,providers:['groq']},caller.signal);
+  assert.equal(r.status,499);
+  const events=(await(await vault.fetch(new Request('https://memory.internal/usage'))).json()).events;
+  assert.equal(events.length,1);
+  assert.deepEqual([events[0].kind,events[0].status,events[0].cancelled,events[0].ok,events[0].total,events[0].input],['task',499,true,false,null,null]);
+ }finally{globalThis.fetch=original}
+});

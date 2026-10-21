@@ -59,11 +59,11 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const recordUsage=async outcome=>{
   try{
    const route=outcome.route,label=route.provider==="gemini"?route.model:route.provider+":"+route.model;
-   const event=telemetry(outcome.usage?{usageMetadata:outcome.usage}:null,label,Date.now()-attemptStarted,outcome.status===200,attempts>1,"task",pricing);
+   const event=telemetry(outcome.usage?{usageMetadata:outcome.usage}:null,label,Date.now()-attemptStarted,outcome.status===200,attempts>1,"task",pricing,outcome.status);
    await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
   }catch{}
  };
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;if(outcome.status!==499)await recordUsage(outcome);return result;};
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;await recordUsage(outcome);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};

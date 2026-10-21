@@ -39,13 +39,13 @@ function dayStart(now,zone='UTC'){
   return now-((parts.hour%24)*3600+parts.minute*60+parts.second)*1000-now%1000;
  }catch{return dayStart(now,'UTC');}
 }
-function empty(){return {requests:0,tokens:0,input:0,output:0,ok:0,latency:0,kinds:{chat:0,task:0,test:0},hours:Array(24).fill(0),minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,peakSecondRequests:0,minutes:{},seconds:{}};}
+function empty(){return {requests:0,tokens:0,input:0,output:0,ok:0,cancelled:0,latency:0,kinds:{chat:0,task:0,test:0},hours:Array(24).fill(0),minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,peakSecondRequests:0,minutes:{},seconds:{}};}
 function add(used,e,now){
  const tokens=Number.isFinite(e.total)&&e.total>0?e.total:0,minute=Math.floor(e.at/60000),second=Math.floor(e.at/1000);
  used.requests++;used.tokens+=tokens;
  // Detail for one model: token direction, what asked (chat, coding task, model test), outcome and hour of day.
  const count=n=>Number.isFinite(n)&&n>0?n:0;
- used.input+=count(e.input);used.output+=count(e.output);if(e.ok!==false)used.ok++;used.latency+=count(e.latency);
+ used.input+=count(e.input);used.output+=count(e.output);if(e.cancelled)used.cancelled++;else if(e.ok!==false)used.ok++;used.latency+=count(e.latency);
  used.kinds[e.kind==='task'?'task':e.kind==='probe'?'test':'chat']+=tokens;used.hours[new Date(e.at).getHours()]++;
  if(now-e.at<60000){used.minuteRequests++;used.minuteTokens+=tokens;}
  const m=used.minutes[minute]??={requests:0,tokens:0};m.requests++;m.tokens+=tokens;

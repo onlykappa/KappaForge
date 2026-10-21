@@ -791,8 +791,8 @@ export default {
         if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="";
         const record=async(result,ok)=>{
-          const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing);
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
+          const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing,status);
           const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
           lastRetryAt=outcome.retryAt||lastRetryAt;
           if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};

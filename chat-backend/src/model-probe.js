@@ -58,7 +58,7 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH}={}){
   else row.outcome=status===0?category:outcomeFor(status);
   row.status=status||null;row.latencyMs=Date.now()-started;row.tokens=result?.usageMetadata?.totalTokenCount??null;
   try{await reportProviderOutcome(env,{requestId,route,status,category,headers:response?.headers||null,usage:result?.usageMetadata||null})}catch{}
-  try{await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(telemetry(result,label,row.latencyMs,row.outcome==="answered",false,"probe",pricing))})}catch{}
+  try{await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(telemetry(result,label,row.latencyMs,row.outcome==="answered",false,"probe",pricing,row.status||0))})}catch{}
   results.push(row);
  }
  return {total:routes.length,offset:start,next:start+size<routes.length?start+size:null,results};
