@@ -23,18 +23,18 @@ class ModelRoutingTests(unittest.TestCase):
         self.addCleanup(runner.PROVIDER_PAUSES.clear)
         runner.EXHAUSTED.clear()
 
-    def test_approved_models_only(self):
+    def test_every_discovered_generation_model_is_routable(self):
         available = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash", "other"}
-        self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-flash"])
+        self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-pro", "other"])
 
     def test_new_flash_models_are_found_without_a_hard_coded_name(self):
         # Task #111 ran on the weakest model because the named 2.5 models had gone; discovery now finds the current ones.
         available = {"gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3-pro-preview",
                      "gemini-2.5-flash-image", "gemini-2.0-flash-exp", "gemini-3-flash-live"}
-        self.assertEqual(runner.select_models(available), ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"])
+        self.assertEqual(runner.select_models(available)[:3], ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"]); self.assertEqual(set(runner.select_models(available)), available)
 
-    def test_no_unapproved_fallback(self):
-        self.assertEqual(runner.select_models({"gemini-2.5-pro"}), [])
+    def test_other_generate_content_model_falls_back_after_flash(self):
+        self.assertEqual(runner.select_models({"gemini-2.5-pro"}), ["gemini-2.5-pro"])
 
     @patch("engine.runner.urllib.request.urlopen")
     def test_discovery_filters_methods_and_paginates(self, urlopen):
@@ -85,10 +85,10 @@ class ModelRoutingTests(unittest.TestCase):
         offline = urllib.error.URLError("offline")
         with patch.dict(os.environ, empty), patch.object(runner, "discover_models", return_value=set()), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=offline):
-            with self.assertRaisesRegex(RuntimeError, "No approved Flash model"):
+            with self.assertRaisesRegex(RuntimeError, "No Gemini model advertising generateContent"):
                 runner.run_model("gemini-key", "x")
 
-    def test_keyless_providers_answer_without_credentials(self):
+    def test_keyless_provider_uses_all_discovered_chat_models_without_credentials(self):
         requests = []
         def urlopen(req, timeout=None):
             url = req.full_url
@@ -99,7 +99,7 @@ class ModelRoutingTests(unittest.TestCase):
                 return response({"choices": [{"message": {"content": "free pool answer"}}]})
             raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
         with patch.dict(os.environ, {k: "" for k in KEYS}), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free"], "coding models first")
+            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free", "paid/model"], "every catalog model remains available in preference order")
             self.assertEqual(runner.provider_models("zai"), [], "keyed providers stay off without a key")
             self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:poolside/laguna-s-2.1:free", "free pool answer"))
         self.assertTrue(all(auth is None for _, auth in requests))
