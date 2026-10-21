@@ -5,8 +5,6 @@ import {providerAllowed,providerPolicyStatus} from "./routing-policy.js";
 // tracking stay provider-neutral.
 export const REGISTRY=registry;
 const EXCLUDE=new RegExp(registry.exclude,"i");
-// Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
-const FREE=/[:/]free$/;
 const cache=new Map();
 const discoveryStatus=new Map();
 
@@ -18,32 +16,57 @@ export function configured(env,id){
  const p=registry.providers[id];
  return !!p&&(p.kind==="workers-ai"?!!env.AI:keyless(p)||!!env[p.key]);
 }
-function discoveryKey(env,id,enforceFreePolicy){
+function discoveryKey(env,id){
  const p=registry.providers[id];
- return id+":"+(p?.key&&env[p.key]?"key-present":"key-absent")+":"+(enforceFreePolicy?"free-v1":"legacy");
+ return id+":"+(p?.key&&env[p.key]?"key-present":"key-absent")+(id==="workers-ai"?":"+String(env.CLOUDFLARE_ACCOUNT_ID||"no-account")+":"+(env.CLOUDFLARE_API_TOKEN?"token-present":"token-absent"):"");
 }
 export function providerDiscoveryDiagnostic(env,id){
- const key=discoveryKey(env,id,env.ROUTING_POLICY_VERSION==="v1");
+ const key=discoveryKey(env,id);
  return discoveryStatus.get(key)||{state:configured(env,id)?"not_checked":"missing_credential",httpStatus:null,discoveredCount:null,approvedCount:null};
 }
 
-// Live model list per provider, cached ten minutes per key. Arbitrary discovered models are excluded:
-// each provider needs an explicit no-cost model allowlist, or a free-only route suffix.
+// Live model list per configured provider, cached ten minutes per key. The provider's own
+// /models response is the account-specific availability source; chat-only filtering is applied below.
 export async function providerModels(env,id){
  const p=registry.providers[id];
- const enforceFreePolicy=env.ROUTING_POLICY_VERSION==="v1";
- const statusKey=discoveryKey(env,id,enforceFreePolicy);
+ const statusKey=discoveryKey(env,id);
  const setStatus=value=>discoveryStatus.set(statusKey,value);
  if(!configured(env,id)){setStatus({state:"missing_credential",httpStatus:null,discoveredCount:null,approvedCount:0});return [];}
+ if(p.kind==="workers-ai"&&env.CLOUDFLARE_ACCOUNT_ID&&env.CLOUDFLARE_API_TOKEN){
+  const key="workers-ai:"+env.CLOUDFLARE_ACCOUNT_ID+":"+env.CLOUDFLARE_API_TOKEN,hit=cache.get(key);
+  if(hit&&Date.now()-hit.at<600000){setStatus({state:"cached",httpStatus:null,discoveredCount:hit.models.length,approvedCount:hit.models.length});return hit.models;}
+  try{
+   const ids=[];let page=1,status=200;
+   for(;page<=50;page++){
+    const url=new URL("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)+"/ai/models/search");
+    url.searchParams.set("task","text-generation");url.searchParams.set("per_page","100");url.searchParams.set("page",String(page));
+    const r=await fetch(url,{headers:{Authorization:"Bearer "+env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(8000)});status=r.status;
+    if(!r.ok){const fallback=hit?.models||p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model));setStatus({state:"http_error",httpStatus:r.status,discoveredCount:null,approvedCount:fallback.length});return fallback;}
+    const body=await r.json(),rows=body?.result;
+    if(!Array.isArray(rows)){const fallback=hit?.models||p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model));setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:fallback.length});return fallback;}
+    for(const row of rows){
+     const id=typeof row==="string"?row:row?.name||row?.id||row?.model_id||(typeof row?.model==="string"?row.model:null)||row?.model?.name||row?.model?.id;
+     if(typeof id==="string"&&id.startsWith("@cf/")&&!EXCLUDE.test(id))ids.push(id);
+    }
+    if(rows.length<100)break;
+   }
+   const models=[...new Set(ids)];
+   if(!models.length){
+    const fallback=p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model));
+    setStatus({state:"no_chat_models",httpStatus:status,discoveredCount:ids.length,approvedCount:fallback.length});
+    return fallback;
+   }
+   cache.set(key,{at:Date.now(),models});
+   setStatus({state:"available",httpStatus:status,discoveredCount:ids.length,approvedCount:models.length});
+   return models;
+  }catch{const fallback=p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model));setStatus({state:"network_error",httpStatus:null,discoveredCount:null,approvedCount:fallback.length});return fallback;}
+ }
  if(p.models){
-  if(!enforceFreePolicy){setStatus({state:"static_models",httpStatus:null,discoveredCount:p.models.length,approvedCount:p.models.length});return p.models;}
-  const freeModels=Array.isArray(p.freeModels)?new Set(p.freeModels):null;
-  const models=p.models.filter(model=>p.freeOnly?FREE.test(model):freeModels?.has(model));
-  setStatus({state:models.length?"static_models":"no_reviewed_free_models",httpStatus:null,discoveredCount:p.models.length,approvedCount:models.length});
+  const models=p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model));
+  setStatus({state:models.length?"static_models":"no_chat_models",httpStatus:null,discoveredCount:p.models.length,approvedCount:models.length});
   return models;
  }
- if(enforceFreePolicy&&!p.freeOnly&&!Array.isArray(p.freeModels)){setStatus({state:"no_reviewed_free_models",httpStatus:null,discoveredCount:null,approvedCount:0});return [];}
- const key=id+":"+(p.key?env[p.key]||"":"")+":"+(enforceFreePolicy?"free-v1":"legacy"),hit=cache.get(key);
+ const key=id+":"+(p.key?env[p.key]||"":""),hit=cache.get(key);
  if(hit&&Date.now()-hit.at<600000){setStatus({state:"cached",httpStatus:null,discoveredCount:hit.models.length,approvedCount:hit.models.length});return hit.models;}
  try{
   const r=await fetch(p.base+"/models",{headers:authHeaders(env,p),signal:AbortSignal.timeout(8000)});
@@ -52,13 +75,8 @@ export async function providerModels(env,id){
   if(!Array.isArray(body?.data)){setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   const discoveredCount=body.data.length;
   let ids=body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m));
-  if(enforceFreePolicy){
-   if(p.freeOnly)ids=ids.filter(m=>FREE.test(m));
-   else if(Array.isArray(p.freeModels))ids=ids.filter(m=>p.freeModels.includes(m));
-   else{setStatus({state:"no_reviewed_free_models",httpStatus:r.status,discoveredCount,approvedCount:0});return [];}
-  }
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
-  const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,registry.maxModelsPerProvider);
+  const models=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
   cache.set(key,{at:Date.now(),models});
   setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;
