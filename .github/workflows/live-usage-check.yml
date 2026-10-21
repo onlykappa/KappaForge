@@ -33,7 +33,21 @@ jobs:
         cache: npm
     - run: npm ci
     - run: npx playwright install --with-deps chromium
+    - name: One message to Z.ai through the coding gateway (no fallback)
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |-
+        set -Eeuo pipefail
+        mkdir -p "$RUNNER_TEMP/live"
+        status=$(curl -sS --max-time 130 -o "$RUNNER_TEMP/zai.json" -w '%{http_code}' \
+          -X POST "${KAPPA_ROUTER_URL%/}/router/infer" \
+          -H 'Content-Type: application/json' \
+          -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
+          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with the single word OK."}],"providers":["zai"],"model":"zai:glm-4.7-flash","fallback":false,"maxTokens":512}') || status=000
+        jq -c --arg status "$status" '{status:($status|tonumber),route,text:(.text//null|tostring|.[0:60]),usage,code,error,failure,attempts}' "$RUNNER_TEMP/zai.json" | tee "$RUNNER_TEMP/live/zai.json" || echo "{\"status\":$status}" | tee "$RUNNER_TEMP/live/zai.json"
     - name: Open the app pages against the deployed Worker
+      continue-on-error: true
       env:
         KAPPA_WORKER_URL: ${{ vars.KAPPA_ROUTER_URL }}
         KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
