@@ -361,10 +361,11 @@ class Journal:
         last = self.state['events'][-1] if self.state['events'] else {}
         execution = self.state.get('executionState', status)
         status = {'paused':'blocked','blocked_authorization':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
+        finished = at if status == 'ready' else 0
         snapshot = dict(version=1, taskId=str(self.scope.number), attemptId=f"recovery:{self.state['continuations']}:{at}",
-                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=0,
-                        steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status=status,
-                                    startedAt=at, finishedAt=0)], activity=[], findings=[], units=None,
+                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
+                        steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
+                                    startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
                         recovery=dict(executionState=execution, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
                                       continuations=self.state['continuations'], expiresAt=int(self.scope.expires * 1000), last=last))
         wire = json.dumps(snapshot, ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
@@ -523,7 +524,15 @@ def resume_checks(journal, pr, token):
             journal.event('Candidate changed during verification; newer work is preserved', outcome='blocked', strategy='stop')
             journal.publish('blocked', 'Candidate changed; verify the newer commit before completion.')
             return 'blocked'
-        journal.state['status'] = 'ready'
+        # A successful exact-candidate check supersedes the active failure without
+        # erasing earlier evidence or charging any additional inference budget.
+        last = journal.state['events'][-1] if journal.state['events'] else {}
+        journal.state['events'].append(dict(at=journal.clock(), candidate=sha, kind='verification', error='',
+                                           model=journal.scope.inference_route or last.get('model', ''),
+                                           strategy='owner_review', outcome='ready', operation='test',
+                                           next='Review the validated draft PR; no automatic continuation is scheduled'))
+        journal.state.update(status='ready', nextAt=0)
+        journal.state.pop('waitingSince', None)
         journal.persist()
         journal.publish('ready', 'Independent checks passed for the saved candidate. Ready for owner review.')
         return 'ready'
