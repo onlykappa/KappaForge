@@ -79,6 +79,8 @@
       "key": "CEREBRAS_API_KEY",
       "signup": "https://cloud.cerebras.ai",
       "prefer": [
+        "qwen-3.8-27b",
+        "gpt-oss-120b",
         "qwen-3-coder",
         "gpt-oss",
         "glm",
@@ -98,7 +100,8 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "freeModels": []
     },
     "openrouter": {
       "name": "OpenRouter (free models)",
