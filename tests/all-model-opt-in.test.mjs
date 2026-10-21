@@ -151,8 +151,9 @@ test('a 402 on one paid gateway model never blocks the account, and legacy 402 a
  assert.equal((await reserve('paid-again-00000000000000000000000','openai/gpt-5')).allowed,false,'the paid model itself rests');
  value.pools['openrouter:openrouter']={provider:'openrouter',model:'x',category:'authentication',status:402,failures:1,blocked:true,until:0,updatedAt:Date.now()};
  assert.equal((await reserve('after-legacy-0000000000000000000000','nvidia/nemotron-3-super:free')).allowed,true,'a stored legacy 402 account block no longer applies');
- value.pools['openrouter:openrouter'].status=401;
- assert.equal((await reserve('after-401-00000000000000000000000','nvidia/nemotron-3-super:free')).allowed,false,'a rejected key still blocks the account');
+ value.pools['openrouter:0123456789abcdef:openrouter']={provider:'openrouter',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ const keyed=await call('/router/reserve',{requestId:'after-401-00000000000000000000000',provider:'openrouter',model:'nvidia/nemotron-3-super:free',accountPool:'openrouter:0123456789abcdef',quotaPool:'openrouter',quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ assert.equal(keyed.allowed,false,'a rejected key still blocks the account');
 });
 
 test('"*" keeps free-model gateways on free routes unless named, and unroutable model ids are dropped',async()=>{
@@ -180,4 +181,18 @@ test('a keyless provider\'s 401 and a gateway\'s server error rest only that mod
  assert.equal(await tryRoute(4,'openrouter','vendor/b:free'),true,'a gateway upstream error rests only that model');
  assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',503),true);
  assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b'),false,'an outage at a single-vendor provider still pauses it');
+});
+
+test('an account block stored for a keyless provider\'s 401 is ignored; a keyed provider\'s still applies',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const call=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(requestId,provider,accountPool)=>call({requestId,provider,model:'m',accountPool,quotaPool:provider,quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ await reserve('seed-0000000000000000000000000000','kilo','kilo');
+ value.pools['kilo:kilo']={provider:'kilo',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ value.pools['groq:0123456789abcdef:groq']={provider:'groq',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ assert.equal((await reserve('kilo-after-00000000000000000000000','kilo','kilo')).allowed,true);
+ assert.equal((await reserve('groq-after-00000000000000000000000','groq','groq:0123456789abcdef')).allowed,false);
 });

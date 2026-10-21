@@ -47,7 +47,10 @@ export async function routingStore(state,request){
    const cooldown=data.pools[pool],route=data.routes[key],now=Date.now();
    // Earlier versions blocked a whole account on HTTP 402. That is a per-model answer on pooled
    // gateways (a paid model with no credits), so those legacy blocks no longer stop other models.
-   const blocked=[cooldown,route].filter(row=>row&&!(row.blocked&&row.status===402)).find(row=>row.blocked||row.until>now);
+   // Likewise a 401 block on a keyless account (its pool carries no key fingerprint): there is no key to reject,
+   // and no success could ever clear it.
+   const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless);
+   const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
    if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
    if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
