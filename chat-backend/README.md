@@ -18,6 +18,12 @@ This first live-chat backend uses a Cloudflare Worker, separate from the GitHub 
 
 No GitHub Actions workflow secrets are exposed. The iOS SwiftUI native app is not yet connected. This is for the web preview only.
 
+## Cerebras (optional, paid or trial account)
+
+The provider adapter is already included at `https://api.cerebras.ai/v1` and reads the `CEREBRAS_API_KEY` secret. To use Cerebras through both KappaForge chat and coding, store that key as an encrypted secret on the `kappaforge-chat` Cloudflare Worker under **Settings > Variables and Secrets**, then deploy the Worker. GitHub Actions sends coding inference through this Worker, so do not add a second provider key to GitHub Actions.
+
+Cerebras has no permanently free tier. The free-only catalog intentionally has no Cerebras models; an API key by itself does not add Cerebras to free fallback. Setting `KAPPA_ALL_MODEL_PROVIDERS=cerebras` opts into every chat model the account lists, which can use paid credits. Keep that opt-in off for a strict $0 setup. The provider's rate-limit dashboard shows throughput quotas, not a free token bank.
+
 ## Live GitHub Actions (`/actions`)
 
 `POST /actions` with the usual bearer token and `{op, repo, runId?, jobId?, attempt?}`:
