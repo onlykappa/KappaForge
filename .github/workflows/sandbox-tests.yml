@@ -65,7 +65,7 @@ jobs:
     steps:
     - name: Start an automatic fix for a failed agent development PR
       # Only reads the branch name; the agent fixes it from KappaForge's trusted main, at most a few times per PR.
-      if: needs.verify.result == 'failure' && startsWith(inputs.branch, 'kappa/dev-')
+      if: needs.verify.result == 'failure' && inputs.automatic_fixes && startsWith(inputs.branch, 'kappa/dev-')
       env:
         GH_TOKEN: ${{ github.token }}
         BRANCH: ${{ inputs.branch }}
@@ -81,6 +81,7 @@ jobs:
         RESULT: ${{ needs.verify.result }}
         BRANCH: ${{ inputs.branch }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        AUTOMATIC_FIXES: ${{ inputs.automatic_fixes }}
       run: |
         [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
         issue="${BASH_REMATCH[1]}"
@@ -90,6 +91,8 @@ jobs:
           body=$(printf '### Tests passed ✅ — but the work is not finished\n\nTests passed on the latest commit of `%s`, but checking the work against the task left problems open; they are listed on the PR. Send guidance or ask me to fix it before merging.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
         elif [ "$RESULT" = success ]; then
           body=$(printf '### Tests passed ✅ — ready to merge\n\nAll tests passed on the latest commit of `%s`. Review and merge it on the Dashboard.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
+        elif [ "$AUTOMATIC_FIXES" != true ]; then
+          body=$(printf '### Tests failed — automatic retries disabled\n\nTests failed for `%s`. This bounded task will not launch another inference attempt. Review the exact candidate and logs.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
         else
           body=$(printf '### Tests failed ❌ — fixing\n\nTests failed on the latest commit of `%s`. KappaForge is starting a fix automatically; if it gets stuck it will ask for your guidance.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
         fi
@@ -101,10 +104,11 @@ jobs:
         RESULT: ${{ needs.verify.result }}
         BRANCH: ${{ inputs.branch }}
         TARGET: KappaForge ${{ inputs.branch }}
+        AUTOMATIC_FIXES: ${{ inputs.automatic_fixes }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         [[ "$DISCORD_WEBHOOK_URL" =~ ^https://(discord|discordapp)\.com/api/webhooks/ ]] || exit 0
-        python3 -c 'import json,os;ok=os.environ["RESULT"]=="success";print(json.dumps({"content":("✅ Tests passed for " if ok else "❌ Tests failed for ")+os.environ["TARGET"]+(". Merge is ready on the Dashboard." if ok else (". KappaForge is fixing it automatically." if os.environ["BRANCH"].startswith("kappa/dev-") else ". Tap Fix it on the Dashboard."))+"\n"+os.environ["RUN_URL"],"allowed_mentions":{"parse":[]}}))' > payload.json
+        python3 -c 'import json,os;ok=os.environ["RESULT"]=="success";print(json.dumps({"content":("✅ Tests passed for " if ok else "❌ Tests failed for ")+os.environ["TARGET"]+(". Merge is ready on the Dashboard." if ok else (". KappaForge is fixing it automatically." if os.environ["BRANCH"].startswith("kappa/dev-") and os.environ["AUTOMATIC_FIXES"]=="true" else ". Tap Fix it on the Dashboard."))+"\n"+os.environ["RUN_URL"],"allowed_mentions":{"parse":[]}}))' > payload.json
         curl -fsS -m 15 -H 'Content-Type: application/json' -d @payload.json "$DISCORD_WEBHOOK_URL" >/dev/null || true
       shell: bash
 'on':
@@ -118,6 +122,11 @@ jobs:
         description: Exact generated branch SHA for automatic repair eligibility
         required: false
         type: string
+      automatic_fixes:
+        description: Allow automatic inference retries after validation failure
+        required: false
+        default: true
+        type: boolean
 defaults:
   run:
     shell: bash

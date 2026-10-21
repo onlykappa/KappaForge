@@ -39,6 +39,7 @@ MAX_LISTED_PATHS = 700
 Budget = collections.namedtuple("Budget", "read_files changed_files file_chars context_chars output_tokens")
 SMALL = Budget(MAX_READ_FILES, MAX_CHANGED_FILES, MAX_FILE_CHARS, MAX_CONTEXT_CHARS, 16384)
 LARGE = Budget(30, 20, 200000, 600000, 65536)
+PINNED = Budget(1, 1, 3500, 4000, 1024)
 SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml|ya?ml|swift|cs|java|kt|go|rs|c|h|cpp|hpp|sh|sql)$")
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
 # Engine code and its regression tests are editable, including this file and runner.py.
@@ -167,7 +168,17 @@ def test_workflow(repo, branch, sha):
 
 def dispatch_tests(repo, branch, sha, token, paths=()):
     workflow, _, inputs = test_workflow(repo, branch, sha)
-    gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": "main", "inputs": inputs})
+    journal = recovery.CURRENT.get()
+    pinned = getattr(getattr(journal, 'scope', None), 'inference_route', None)
+    ref = 'main'
+    if pinned:
+        if repo != ROOT:
+            raise PermissionError('Bounded pinned validation is supported only in KappaForge')
+        ref = os.getenv('GITHUB_REF_NAME', 'main')
+        if ref not in ('main', 'codex/phase4-cloud-execution'):
+            raise PermissionError('Bounded validation requires the reviewed workflow ref')
+        inputs['automatic_fixes'] = 'false'
+    gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": ref, "inputs": inputs})
     # App changes are also compiled with Xcode, UI-tested in the simulator and packaged as an unsigned IPA.
     from engine import native_build
     if native_build.needed(repo, paths):
@@ -195,6 +206,9 @@ def needs_test(changes):
 
 def plan_change(api_key, task, files, guide="", allowed=None, limit=LARGE.read_files):
     """Files to read, stages when the change is too big to make in one go, and design notes thought through first."""
+    journal = recovery.CURRENT.get()
+    if getattr(getattr(journal, 'scope', None), 'inference_route', None):
+        limit = PINNED.read_files
     return select_files(api_key, task, files, guide, allowed, limit, with_stages=True)
 
 
@@ -413,13 +427,14 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
     """Try the large budget first (Gemini, or a strong provider whose context window it fits); if nothing can answer
     it, re-plan at the small size for any provider."""
     journal = recovery.CURRENT.get()
-    initial_budget = COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE
+    initial_budget = (PINNED if getattr(getattr(journal, 'scope', None), 'inference_route', None) else
+                      COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE)
     try:
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
                                                              require_test, allow_empty)
     except (RuntimeError, GenerationFailure) as exc:
         from engine.reliability import RecoveryBudgetExceeded
-        if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+        if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):
             raise
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
@@ -437,7 +452,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                                                                  guide, allowed, budget, design, require_test, allow_empty)
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
-            if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False):
+            if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
                 raise
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
@@ -683,7 +698,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
         except RuntimeError as exc:
             from engine.reliability import RecoveryBudgetExceeded
-            if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False):
+            if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):
                 raise
             if not errors:
                 raise  # generate() tries a smaller route before stopping.

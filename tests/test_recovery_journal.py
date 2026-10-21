@@ -175,14 +175,16 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertTrue(restored.begin(action))
         self.assertFalse(self.world.journal().begin(action))
 
-    def test_pinned_route_is_kept_in_the_durable_waiting_failure_record(self):
+    def test_pinned_failure_preserves_route_without_automatic_continuation(self):
         self.journal.scope.inference_route = 'groq:openai/gpt-oss-120b'
-        self.assertTrue(self.journal.defer(RuntimeError('Approved provider capacity is limited')))
+        self.assertFalse(self.journal.defer(RuntimeError('Gateway HTTP 503; upstream cause unknown')))
         self.assertEqual(self.journal.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
-        self.assertEqual(self.journal.state['status'], 'waiting')
+        self.assertEqual(self.journal.state['status'], 'blocked')
         self.assertEqual(self.journal.state['continuations'], 0)
         restored = self.world.journal()
         self.assertEqual(restored.state['events'][-1]['model'], 'groq:openai/gpt-oss-120b')
+        self.world.now += 1200
+        self.assertFalse(restored.queue())
 
     def test_lost_dispatch_ack_reuses_token_without_incrementing_continuation(self):
         self.journal.defer(RuntimeError('offline'))

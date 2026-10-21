@@ -160,3 +160,24 @@ test("an owner-pinned Groq coding request sends only the exact free model with f
   assert.equal(submitted[0].max_completion_tokens,80);assert.equal(submitted[0].reasoning_effort,"low");
  }finally{globalThis.fetch=previous;}
 });
+
+test("gateway distinguishes upstream rejection or rate limit from a subsequent stored cooldown",async()=>{
+ for(const status of [413,429,503]){
+  const state={storage:storage()},memory={idFromName:()=>"owner-v1",get:()=>({fetch:(url,init)=>routingStore(state,new Request(url,init))})};
+  const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq",KAPPA_CODE_PROVIDERS:"groq",KAPPA_PRIVATE_CODE_PROVIDERS:"groq",GROQ_API_KEY:"fixture-only",MEMORY:memory};
+  const previous=globalThis.fetch;let inferenceCalls=0;
+  globalThis.fetch=async(url)=>String(url).endsWith('/models')?Response.json({data:[{id:'openai/gpt-oss-120b'}]}):
+   (inferenceCalls++,Response.json({error:'untrusted secret or prompt'},{status,headers:{'Retry-After':'90'}}));
+  try{
+   const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['groq'],model:'groq:openai/gpt-oss-120b',fallback:false,messages:[{role:'user',content:'fixture'}],maxTokens:128};
+   const response=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),first=await response.json();
+   assert.equal(response.status,status===429?429:503);
+   assert.equal(first.failure.source,'upstream');assert.equal(first.failure.upstreamStatus,status);
+   assert.equal(first.failure.category,status===413?'provider_rejection':status===429?'rate_limit':'provider_outage');
+   assert.ok(first.retryAt>=Date.now()+88000);assert.ok(!JSON.stringify(first).includes('untrusted'));
+   const second=await inferenceRouter(env,{...input,requestId:crypto.randomUUID()}),body=await second.json();
+   assert.equal(second.status,429);assert.equal(body.failure.source,'coordination');assert.equal(body.failure.upstreamStatus,status);
+   assert.equal(inferenceCalls,1,'a stored cooldown must not contact the provider again');
+  }finally{globalThis.fetch=previous;}
+ }
+});

@@ -452,7 +452,9 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                 return reqs, problems + ['Requirement evidence is still incomplete after source inspection: '
                                          + ', '.join(requested)], list(dict.fromkeys(files + requested))
         return result
-    except Exception:  # Wiring checks still run; the caller preserves unavailable review as incomplete.
+    except Exception as exc:  # Wiring checks still run; the caller preserves unavailable review as incomplete.
+        if getattr(exc, 'gateway_failure', False):
+            raise  # A provider failure cannot trigger new coding calls through review repair.
         return None
 
 

@@ -337,7 +337,7 @@ class Journal:
 
     def defer(self, error):
         kind, _ = diagnose(error)
-        if (kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
+        if (self.scope.inference_route or kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
                 or self.state['continuations'] >= MAX_CONTINUATIONS or self.scope.expires <= self.clock() + 1200):
             self.event(error, model=self.scope.inference_route or '', strategy='stop', outcome='blocked',
                        next_action='Owner review required; automatic continuations exhausted or access blocked')

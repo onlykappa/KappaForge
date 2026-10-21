@@ -146,6 +146,7 @@ export default {
         const poolState=providerPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
         const blocked=!!routeState?.blocked||!!poolState?.blocked,until=Math.max(routeState?.until||0,poolState?.until||0);
         const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
+        const lastFailure=[poolState,routeState].filter(Boolean).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
         const dailyUsed=snapshot?.dailyRequests?.used??null,minuteUsed=snapshot?.minuteRequests?.used??null;
         const dailyLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),minuteLimit=Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20);
         const dailyAvailable=dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteUsed===null?null:minuteUsed<minuteLimit;
@@ -164,7 +165,7 @@ export default {
         else if(health!=="clear")failedCondition=health==="blocked"?"provider_or_model_blocked":"provider_or_model_cooldown";
         else if(dailyAvailable===false)failedCondition="gateway_daily_limit";
         else if(minuteAvailable===false)failedCondition="gateway_minute_limit";
-        return json({provider,model,failedCondition,bindings:{secretPresent,configured:configured(env,provider)},allowlists:{free:freeAllowed,coding:codingAllowed,privateCode:privateCodeAllowed,providerPolicy:routeAllowed},capabilities:{chat:config.capabilities?.chat===true,coding:config.capabilities?.coding===true,structuredOutput:config.capabilities?.structuredOutput===true,streaming:config.capabilities?.streaming===true},modelPolicy:{allowlisted:modelAllowlisted,discovered:models.includes(model),approvedModels:models},discovery,health:{state:health,category:poolState?.category||routeState?.category||null,retryAt:until>now?until:null},gatewayLimits:{daily:{used:dailyUsed,limit:dailyLimit,available:dailyAvailable},minute:{used:minuteUsed,limit:minuteLimit,available:minuteAvailable}},providerQuota:{remaining:null,source:"unknown"}},200);
+        return json({provider,model,failedCondition,bindings:{secretPresent,configured:configured(env,provider)},allowlists:{free:freeAllowed,coding:codingAllowed,privateCode:privateCodeAllowed,providerPolicy:routeAllowed},capabilities:{chat:config.capabilities?.chat===true,coding:config.capabilities?.coding===true,structuredOutput:config.capabilities?.structuredOutput===true,streaming:config.capabilities?.streaming===true},modelPolicy:{allowlisted:modelAllowlisted,discovered:models.includes(model),approvedModels:models},discovery,health:{state:health,category:lastFailure?.category||null,httpStatus:lastFailure?.status||null,lastFailureAt:lastFailure?.updatedAt||null,retryAt:until>now?until:null},gatewayLimits:{daily:{used:dailyUsed,limit:dailyLimit,available:dailyAvailable},minute:{used:minuteUsed,limit:minuteLimit,available:minuteAvailable}},providerQuota:{remaining:null,source:"unknown"}},200);
       }
       const length=Number(request.headers.get("Content-Length")||0);
       if(length>200000)return json({error:"Request too large"},413);
