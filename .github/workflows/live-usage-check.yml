@@ -1,0 +1,56 @@
+name: Live usage check
+run-name: Live usage check on ${{ github.ref_name }}
+# Opens this branch's Settings → Models and Usage pages against the deployed Worker with the owner's app
+# token, optionally sends one test message to every chat model, and publishes the screenshots and a JSON
+# summary to the live-usage-check-results branch. Needs the KAPPA_APP_TOKEN Actions secret (the same
+# value as the Worker's CHAT_ACCESS_TOKEN) and the KAPPA_ROUTER_URL Actions variable.
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: Send one test message to every chat model first
+        type: boolean
+        default: true
+  push:
+    branches:
+    - live-usage-check
+permissions:
+  contents: write
+concurrency:
+  group: live-usage-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - run: npm ci
+    - run: npx playwright install --with-deps chromium
+    - name: Open the app pages against the deployed Worker
+      env:
+        KAPPA_WORKER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
+        PROBE: ${{ github.event_name == 'push' || inputs.probe }}
+      run: |-
+        set -Eeuo pipefail
+        test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }
+        node tools/live-usage-check.mjs "$RUNNER_TEMP/live" $([ "$PROBE" = "true" ] && echo --probe)
+    - name: Publish screenshots to the results branch
+      if: ${{ !cancelled() }}
+      run: |-
+        set -Eeuo pipefail
+        cd "$RUNNER_TEMP/live"
+        git init -q -b live-usage-check-results
+        git config user.name "github-actions[bot]"
+        git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git commit -q -m "Live usage check for ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}"
+        git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" live-usage-check-results
+        echo "Results: https://github.com/${GITHUB_REPOSITORY}/tree/live-usage-check-results" >> "$GITHUB_STEP_SUMMARY"

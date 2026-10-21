@@ -92,3 +92,35 @@ test('coding gateway attempts are recorded in the owner\'s usage history as task
   assert.equal(JSON.stringify(events).includes('task-usage-groq'),false,'no credentials in usage history');
  }finally{globalThis.fetch=original}
 });
+
+test('the model check sends one message per routable model in batches and records every reply as usage',async()=>{
+ const original=globalThis.fetch,vault=new KappaMemory(memoryState()),sent=[];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.startsWith('https://generativelanguage.googleapis.com/v1beta/models?'))return Response.json({models:['gemini-3.8-flash','gemini-3.1-flash-lite','gemini-2.5-pro'].map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
+  if(u.includes(':generateContent')){const model=u.split('/models/')[1].split(':')[0];sent.push(model);
+   if(model==='gemini-3.8-flash')return new Response('{}',{status:429});
+   return Response.json({candidates:[{content:{parts:[{text:'OK'}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:7,candidatesTokenCount:1,totalTokenCount:8}});}
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'},{id:'qwen/qwen3.8-27b'}]});
+  if(u==='https://openrouter.ai/api/v1/models')return Response.json({data:[{id:'openai/gpt-5'}]});
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){const body=JSON.parse(init.body);sent.push(body.model);
+   assert.equal(body.messages.at(-1).content,'Reply with the single word OK.');
+   if(body.model==='openai/gpt-5')return new Response('{}',{status:402});
+   return Response.json({choices:[{message:{content:'OK'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:1,total_tokens:13}});}
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'gemini,groq,openrouter',KAPPA_CHAT_PROVIDERS:'gemini,groq,openrouter',CHAT_ACCESS_TOKEN:'owner-token',
+   GEMINI_API_KEY:'probe-gemini',GROQ_API_KEY:'probe-groq',OPENROUTER_API_KEY:'probe-or',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
+  const call=async body=>{const r=await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify(body)}),env);assert.equal(r.status,200);return r.json();};
+  const first=await call({offset:0,limit:3}),second=await call({offset:first.next,limit:3});
+  assert.equal(first.total,5,'gemini-2.5-pro has no quota on this account and is not tested');
+  assert.equal(second.next,null);
+  const rows=Object.fromEntries([...first.results,...second.results].map(r=>[r.label,[r.outcome,r.tokens]]));
+  assert.deepEqual(rows,{'gemini-3.1-flash-lite':['answered',8],'gemini-3.8-flash':['rate_limited',null],'groq:openai/gpt-oss-120b':['answered',13],'groq:qwen/qwen3.8-27b':['answered',13],'openrouter:openai/gpt-5':['needs_credits',null]});
+  assert.equal(sent.length,5,'exactly one message per model');
+  const events=(await(await vault.fetch(new Request('https://memory.internal/usage'))).json()).events;
+  assert.equal(events.length,5);assert.ok(events.every(e=>e.kind==='probe'));
+  assert.equal(events.filter(e=>e.ok).reduce((n,e)=>n+e.total,0),34);
+  assert.equal((await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer wrong'},body:'{}'}),env)).status,401);
+ }finally{globalThis.fetch=original}
+});
