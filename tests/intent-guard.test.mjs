@@ -215,14 +215,16 @@ test('manual task controls authorize exactly the reviewed job without authorizin
 });
 
 test('long owner task briefs authorize intact and remain bound to their full text',async()=>{
- const f=fixture();f.payload.instructions='Implement weather support.\n'+('Preserve consent and manual city entry.\n'.repeat(130));
- assert.ok(f.payload.instructions.length>3500);
+ const f=fixture(),tail='Final requirement: preserve consent.';
+ f.payload.instructions='Implement '+ 'x'.repeat(20000-'Implement '.length-tail.length)+tail;
+ assert.equal(f.payload.instructions.length,20000);
  const issued=await f.issue();assert.equal(issued.status,200,await issued.clone().text());
  const id=f.payload.authorization.id,record=f.records.get('authorization:'+id);
  assert.equal(record.digest,await fingerprint(f.payload));
  const altered=await authorizeClaim({...f.payload,instructions:f.payload.instructions+'Unrelated change'});
  assert.equal(altered.status,403,'long briefs cannot authorize a modified payload');
  const accepted=await authorizeClaim(f.payload);assert.equal(accepted.status,200);
+ assert.equal((await authorizeClaim(f.payload)).status,403,'a full brief remains single-use');
  async function authorizeClaim(payload){return authorizationStore(f.state,req('/authorization/claim',{id,conversationId:payload.authorization.conversationId,path:'/jobs',digest:await fingerprint(payload)}))}
 });
 

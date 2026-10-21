@@ -84,9 +84,10 @@ test('an uncertain request becomes an Approve or Deny card, never a started task
 });
 
 test('planner retains the complete pasted task instead of silently truncating its requirements',async()=>{
- const text='Implement weather support.\n'+('Keep user consent explicit.\n'.repeat(140));
+ const tail='Final requirement: keep user consent explicit.';
+ const text='Implement '+ 'x'.repeat(20000-'Implement '.length-tail.length)+tail;
  const x=await attempt({text,autoStart:false,options:{explicit:true}});
- assert.ok(text.length>3500);assert.equal(x.sent.request,text);assert.equal(x.pending.instructions,text.trim());
+ assert.equal(text.length,20000);assert.equal(x.sent.request,text);assert.equal(x.pending.instructions,text.trim());
 });
 
 test('sending a task waits for its task action without a competing chat inference',async()=>{

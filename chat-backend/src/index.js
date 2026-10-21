@@ -764,7 +764,7 @@ export default {
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
           const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
           lastRetryAt=outcome.retryAt||lastRetryAt;
-          if(!ok)lastFailure={source:"upstream",category:outcomeCategory||"provider_error",upstreamStatus:outcomeStatus||null};
+          if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
@@ -777,7 +777,7 @@ export default {
             method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
             body: JSON.stringify(geminiBody), signal: controller.signal
           }) : await callProvider(env, route, chat, streaming, controller.signal);
-        } catch { clearTimeout(timeout);await record(null,false); if(attempt<candidates.length)continue;throw Error("Provider timed out"); }
+        } catch { clearTimeout(timeout);outcomeCategory="network_failure";await record(null,false);if(request.signal.aborted)throw Error("Request cancelled");continue; }
         lastStatus = response.status;
         outcomeStatus=response.status;outcomeHeaders=response.headers;
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401||response.status===402)outcomeCategory="authentication";else if(response.status>=500)outcomeCategory="provider_outage";
