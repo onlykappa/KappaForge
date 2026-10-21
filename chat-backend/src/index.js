@@ -746,13 +746,13 @@ export default {
       if(!candidates.length){
         const policy=routePolicy(env),failClosed=policy.failClosed;
         const configuredProviders=policy.chatProviders.filter(id=>id==="gemini"?!!env.GEMINI_API_KEY:configured(env,id));
-        const reason=!policy.freeAllowlistConfigured?"free_allowlist_missing":
+        const reason=!policy.providerAllowlistConfigured?"provider_allowlist_missing":
           typeof env.KAPPA_CHAT_PROVIDERS!=="string"||!env.KAPPA_CHAT_PROVIDERS.trim()?"chat_allowlist_missing":
-          !policy.chatProviders.length?"no_approved_chat_provider":!configuredProviders.length?"chat_credentials_missing":"no_compatible_chat_model";
-        const messages={free_allowlist_missing:"Worker free-provider permission is missing.",chat_allowlist_missing:"Worker chat provider permission is missing.",
-          no_approved_chat_provider:"Worker free and chat provider permissions have no reviewed route in common.",
-          chat_credentials_missing:"Approved chat providers have no usable server credential.",
-          no_compatible_chat_model:"No enabled free chat model fits this request. Check model selection, discovery, disabled providers and request capabilities."};
+          !policy.chatProviders.length?"no_enabled_chat_provider":!configuredProviders.length?"chat_credentials_missing":"no_compatible_chat_model";
+        const messages={provider_allowlist_missing:"Worker provider permission is missing.",chat_allowlist_missing:"Worker chat provider permission is missing.",
+          no_enabled_chat_provider:"Worker provider and chat permissions have no route in common.",
+          chat_credentials_missing:"Enabled chat providers have no usable server credential.",
+          no_compatible_chat_model:"No enabled chat model fits this request. Check model selection, discovery, disabled providers and request capabilities."};
         return json({error:failClosed?messages[reason]:"Selected model unavailable. Refresh model availability or choose Automatic.",code:failClosed?"free_route_unavailable":"model_unavailable",
           routing:{reason:failClosed?reason:"model_unavailable",approvedProviders:policy.chatProviders,configuredProviders,
             selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
@@ -769,8 +769,10 @@ export default {
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
       const streaming=!planning&&input.stream===true;
       let attempt=0;
+      const inferenceDeadline=Date.now()+(REGISTRY.routing?.defaults?.requestTimeoutMs||180000);
       let lastStatus = 0,lastRetryAt=null,lastFailure=null;
       for (const route of candidates) {
+        if(Date.now()>=inferenceDeadline)break;
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
@@ -786,7 +788,7 @@ export default {
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 45000);
+        const timeout = setTimeout(() => controller.abort(), Math.max(1,Math.min(45000,inferenceDeadline-Date.now())));
         let response;
         try {
           const geminiLimit=REGISTRY.routing?.primary?.maxOutputTokens||REGISTRY.routing?.defaults?.maxOutputTokens||8192;
@@ -841,9 +843,9 @@ export default {
         }
         await record(result,false);
       }
-      const retryMessage=lastRetryAt?" Retry after "+new Date(lastRetryAt).toISOString()+".":" Try again later or use another verified-free route.";
+      const retryMessage=lastRetryAt?" Retry after "+new Date(lastRetryAt).toISOString()+".":" Try again later or use another enabled route.";
       const status=lastStatus===429?429:503;
-      return json({error:(status===429?"Approved free AI routes are temporarily rate-limited or busy.":"No approved free AI route completed this request.")+retryMessage,code:status===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,failure:lastFailure},status,{...cors,...(lastRetryAt?{"Retry-After":String(Math.max(1,Math.ceil((lastRetryAt-Date.now())/1000)))}:{})});
+      return json({error:(status===429?"Enabled AI routes are temporarily rate-limited or busy.":"No enabled AI route completed this request.")+retryMessage,code:status===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,failure:lastFailure},status,{...cors,...(lastRetryAt?{"Retry-After":String(Math.max(1,Math.ceil((lastRetryAt-Date.now())/1000)))}:{})});
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }
