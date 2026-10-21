@@ -134,8 +134,8 @@ test("automatic coding fallback includes every discovered provider model",async(
   assert.deepEqual(new Set(routes.map(route=>route.label)),new Set([
    "groq:openai/gpt-oss-120b","groq:openai/gpt-oss-20b","groq:qwen/qwen3.8-27b",
    "groq:llama-3.3-70b-versatile","groq:moonshotai/kimi-k2-instruct",
-   "nvidia:openai/gpt-oss-120b","nvidia:llama-3.3-70b-versatile",
-   "ollama:openai/gpt-oss-120b","ollama:llama-3.3-70b-versatile"
+   "nvidia:deepseek-v4-pro","nvidia:kimi-k3",
+   "ollama:deepseek-v4-pro","ollama:kimi-k3"
   ]));
  }finally{globalThis.fetch=original}
 });
@@ -153,8 +153,8 @@ test("Automatic without fallback can select one enabled non-Gemini chat route",a
   assert.deepEqual(routes.map(r=>r.label),["ollama:openai/gpt-oss-120b"]);
   assert.equal(inferenceCalls,0,"selecting one route must not make an inference request");
   assert.deepEqual(await fallbackRoutes(env,[],{model:"gemini-retired",fallback:false},false,{channel:"chat"}),[],"an explicit unavailable model stays unavailable");
-  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false,disabledProviders:["groq"]},false,{channel:"chat"}),[]);
-  assert.deepEqual(await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"}),[],"Groq cannot receive unsupported media");
+  assert.deepEqual((await fallbackRoutes(env,[],{model:"auto",fallback:false,disabledProviders:["groq"]},false,{channel:"chat"})).map(r=>r.label),["ollama:openai/gpt-oss-120b"]);
+  assert.deepEqual((await fallbackRoutes(env,[],{model:"auto",fallback:false},true,{channel:"chat"})).map(r=>r.label),["ollama:openai/gpt-oss-120b"],"the selected Ollama model supports this media request");
  }finally{globalThis.fetch=original}
 });
 
