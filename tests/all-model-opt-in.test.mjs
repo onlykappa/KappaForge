@@ -137,3 +137,20 @@ test('a model rejected twice rests for six hours while the provider\'s other mod
   assert.equal((await reserve('strike-after-00000000000000000000','pixtral-large-latest')).allowed,true);
  }finally{Date.now=realNow}
 });
+
+test('a 402 on one paid gateway model never blocks the account, and legacy 402 account blocks are ignored',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const call=async(path,body)=>(await routingStore({storage:store},new Request('https://memory.internal'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(requestId,model)=>call('/router/reserve',{requestId,provider:'openrouter',model,accountPool:'openrouter',quotaPool:'openrouter',quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ assert.equal((await reserve('paid-model-00000000000000000000000','openai/gpt-5')).allowed,true);
+ await call('/router/outcome',{requestId:'paid-model-00000000000000000000000',provider:'openrouter',model:'openai/gpt-5',status:402,category:'billing_blocked'});
+ assert.equal((await reserve('free-model-00000000000000000000000','qwen/qwen3-coder:free')).allowed,true,'free models stay available');
+ assert.equal((await reserve('paid-again-00000000000000000000000','openai/gpt-5')).allowed,false,'the paid model itself rests');
+ value.pools['openrouter:openrouter']={provider:'openrouter',model:'x',category:'authentication',status:402,failures:1,blocked:true,until:0,updatedAt:Date.now()};
+ assert.equal((await reserve('after-legacy-0000000000000000000000','nvidia/nemotron-3-super:free')).allowed,true,'a stored legacy 402 account block no longer applies');
+ value.pools['openrouter:openrouter'].status=401;
+ assert.equal((await reserve('after-401-00000000000000000000000','nvidia/nemotron-3-super:free')).allowed,false,'a rejected key still blocks the account');
+});

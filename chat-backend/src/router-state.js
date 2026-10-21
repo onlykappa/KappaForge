@@ -45,7 +45,9 @@ export async function routingStore(state,request){
    const prior=data.reservations[requestId];
    if(prior)return prior.provider===provider&&prior.model===model?{allowed:true,duplicate:true,expiresAt:prior.expiresAt}:{allowed:false,reason:"idempotency_conflict"};
    const cooldown=data.pools[pool],route=data.routes[key],now=Date.now();
-   const blocked=[cooldown,route].filter(Boolean).find(row=>row.blocked||row.until>now);
+   // Earlier versions blocked a whole account on HTTP 402. That is a per-model answer on pooled
+   // gateways (a paid model with no credits), so those legacy blocks no longer stop other models.
+   const blocked=[cooldown,route].filter(row=>row&&!(row.blocked&&row.status===402)).find(row=>row.blocked||row.until>now);
    if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
    if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
@@ -101,10 +103,12 @@ export async function routingStore(state,request){
     if(pool&&(!data.pools[pool]||data.pools[pool].updatedAt<=(reservation.startedAt||0)))delete data.pools[pool];
    }
    else if(status!==499){
-    const code=status,blocked=code===401||code===402;
+    // Only a rejected key blocks the whole account. A 402 is per model on pooled gateways (a paid model
+    // with no credits), so it rests that model like other model-specific rejections.
+    const code=status,blocked=code===401;
     // A rejection of one model (unsupported option, retired, denied) rests only that model, not the provider.
-    const modelSpecific=code===400||code===403||code===404||code===422;
-    const scope=code===401||code===402?"pool":modelSpecific?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
+    const modelSpecific=code===400||code===402||code===403||code===404||code===422;
+    const scope=code===401?"pool":modelSpecific?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
     const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
