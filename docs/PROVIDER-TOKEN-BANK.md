@@ -13,6 +13,10 @@ Read KAPPA.md. Root AGENTS.md was not present in the GitHub contents API.
 - Application source is preview/; regenerate ios/KappaForge/Web with python scripts/bundle-web.py.
 These are source findings, not verification of deployed state or account balances. The current UI defaults to This month; its All option is labeled 90 days because the backend returns only rolling 90-day raw usage. Historical usage older than the tracking/retention window cannot currently be reconstructed from KappaForge. The supplied Usage screenshots show 659,210 measured tokens for This month; the displayed Workers AI models contribute 44,649 + 6,815 = 51,464 of that total, confirming those model tokens are counted. Several listed attempts have 0 tokens, which must be distinguished from verified zero usage because response usage may be absent.
 
+Owner-authorized Gemini account snapshot checked 2026-10-22 in AI Studio for the selected project, Free tier, last 28 days (2026-09-24 through 2026-10-22): the per-model input-token chart sums to approximately 31.006M and output-token chart to approximately 731.242K, about 31.737M combined. Chart values are rounded; models with recorded usage were Gemini 3.1 Flash Lite (~10.082M combined), Gemini 3.5 Flash Lite (~7.655M), Gemini 3 Flash (~4.362M), Gemini 3.8 Flash (~4.436M), Gemini 3.6 Flash (~3.093M), and Gemini 3.7 Flash (~2.109M). This materially exceeds KappaForge's 659,210 measured-token screenshot for the month. Do not silently import or equate the totals: the Google dashboard is project-wide API usage and can include callers outside KappaForge; reconcile by matching model, dates and request IDs where available. Google's Usage page states data can lag up to 15 minutes and excludes AI Studio playground usage without an API key.
+
+The matching Rate Limit page showed the project had reached a rate limit. Its figures are *peak usage versus per-model limits over 28 days*, not cumulative tokens: Gemini 3.6 Flash peaked at 275.5K/250K input TPM and 38/20 RPD; Gemini 3.8 Flash at 357.62K/250K TPM and 42/20 RPD; Gemini 3 Flash at 323.19K/250K TPM and 38/20 RPD; Gemini 3.1 Flash Lite at 279.74K/250K TPM; Gemini 3.5 Flash Lite at 279.79K/250K TPM. Several other model rows showed 0/0 limits on this Free project. Keep such rows as unavailable/zero verified quota for this project unless the provider confirms otherwise, and distinguish these peak limits from token-bank totals.
+
 ## Product outcome
 
 Extend the existing Usage & Billing screen with two primary banks, plus provider-specific units when a limit is neither tokens nor requests:
@@ -41,6 +45,16 @@ Public provider policies checked October 21, 2026. These are documented starting
 | Ollama Cloud | Free accounts include a monthly starter amount of credits for starter models; the amount is not public. Free allows one concurrent request, and the account Usage page shows actual included usage. Local Ollama is hardware-limited, not provider-quota-limited. See https://ollama.com/pricing | Track usage and one concurrent request as distinct metrics. A hidden credit amount is not a public token total. |
 
 Only add a row to a bank when the quota source establishes its unit, scope, and reset window. A user may optionally enter a manually verified account limit; show it as owner-entered and timestamped until reconciled.
+
+## Current KappaForge model eligibility snapshot
+
+Read-only inspection of the current main branch configuration after PR #175 merged shows that the app does not automatically expose every model present in a provider account:
+- Gemini is configured with one reviewed free model, `gemini-3.1-flash-lite`.
+- Mistral's provider entry has a strict reviewed free-model list containing only `mistral-small-latest`.
+- Under routing policy v1, discovered provider models are filtered against the reviewed no-cost allowlist. Other account-visible models therefore are not eligible for automatic KappaForge routes until their IDs and no-cost eligibility are verified and added deliberately.
+- The API adapter can technically send OpenAI-compatible chat requests to Mistral models, but that does not establish the account has free quota for every model. KappaForge's configured model context/output caps also still apply.
+
+The owner requested inspection of their Mistral Admin Panel limits, but the provided page redirected to Mistral sign-in before account-specific data could be observed. Do not infer Mistral model quotas from model names or public docs. Resume account-specific verification after an authenticated page is available. Mistral documents the Usage dashboard as the source for organization billing-period usage and the Limits page as the source for per-model TPM/RPS limits: https://docs.mistral.ai/admin/billing-usage/usage-limits. Its API `GET /v1/models` lists models available to that API user: https://docs.mistral.ai/api/endpoint/models.
 
 ## Accuracy rules
 
