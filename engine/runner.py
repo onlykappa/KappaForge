@@ -229,9 +229,11 @@ FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-
 
 
 def full_catalog(pid):
-    """Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS, "*" for every provider) to route every chat model a provider account lists, paid ones included."""
+    """Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model a provider account lists, paid ones included.
+
+    "*" covers every provider except free-model gateways (freeOnly), which take full catalogs only when named."""
     listed = {name.strip() for name in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",") if name.strip()}
-    return "*" in listed or pid in listed
+    return pid in listed or "*" in listed and not PROVIDERS.get("providers", {}).get(pid, {}).get("freeOnly")
 
 def select_models(available):
     """Discovered Gemini models, strongest first: full Flash before Lite, newer before older, stable before preview.

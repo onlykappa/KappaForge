@@ -154,3 +154,29 @@ test('a 402 on one paid gateway model never blocks the account, and legacy 402 a
  value.pools['openrouter:openrouter'].status=401;
  assert.equal((await reserve('after-401-00000000000000000000000','nvidia/nemotron-3-super:free')).allowed,false,'a rejected key still blocks the account');
 });
+
+test('"*" keeps free-model gateways on free routes unless named, and unroutable model ids are dropped',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'}]});
+ try{
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free']);
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','openai/gpt-5','qwen/qwen3-coder:free'],'naming the gateway opts into its paid models; "~" aliases are never routed');
+ }finally{globalThis.fetch=original}
+});
+
+test('a keyless provider\'s 401 and a gateway\'s server error rest only that model',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const env={MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore({storage:store},new Request(u,o))})}};
+ const id=n=>('model-scope-'+n).padEnd(32,'0');
+ const tryRoute=async(n,provider,model,status)=>{const r=await reserveProvider(env,{provider,model},id(n));if(r.allowed&&status)await reportProviderOutcome(env,{requestId:id(n),route:{provider,model},status});return r.allowed;};
+ assert.equal(await tryRoute(1,'kilo','paid/model',401),true);
+ assert.equal(await tryRoute(2,'kilo','kilo-auto/free'),true,'one model needing an account does not block the keyless pool');
+ assert.equal(await tryRoute(3,'openrouter','vendor/a:free',502),true);
+ assert.equal(await tryRoute(4,'openrouter','vendor/b:free'),true,'a gateway upstream error rests only that model');
+ assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',503),true);
+ assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b'),false,'an outage at a single-vendor provider still pauses it');
+});

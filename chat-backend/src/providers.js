@@ -7,6 +7,8 @@ import "../../preview/limits-core.js";
 // tracking stay provider-neutral.
 export const REGISTRY=registry;
 const EXCLUDE=new RegExp(registry.exclude,"i");
+// Model ids shared routing state can key (for example Kilo's "~vendor/model-latest" aliases are not).
+const ROUTABLE=/^[A-Za-z0-9@._:/-]{1,180}$/;
 // Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
 const FREE=/[:/]free$/;
 const cache=new Map();
@@ -63,7 +65,7 @@ export async function providerModels(env,id){
     if(!Array.isArray(rows))return fallback({state:"invalid_shape",httpStatus:r.status});
     for(const row of rows){
      const id=typeof row==="string"?row:row?.name||row?.id||row?.model_id||(typeof row?.model==="string"?row.model:null)||row?.model?.name||row?.model?.id;
-     if(typeof id==="string"&&id.startsWith("@cf/")&&!EXCLUDE.test(id))ids.push(id);
+     if(typeof id==="string"&&id.startsWith("@cf/")&&ROUTABLE.test(id)&&!EXCLUDE.test(id))ids.push(id);
     }
     if(rows.length<100)break;
    }
@@ -88,7 +90,7 @@ export async function providerModels(env,id){
   let body;try{body=await r.json()}catch{setStatus({state:"invalid_json",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   if(!Array.isArray(body?.data)){setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   const discoveredCount=body.data.length;
-  const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m)));
+  const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
   const models=fullCatalog(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);

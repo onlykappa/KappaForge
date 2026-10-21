@@ -16,7 +16,7 @@
     "ovh"
   ],
   "maxModelsPerProvider": 2,
-  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard",
+  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard|antigravity|deep-research|nano-banana|robotics|omni|orpheus",
   "providers": {
     "workers-ai": {
       "name": "Cloudflare Workers AI",

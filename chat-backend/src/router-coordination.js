@@ -50,6 +50,11 @@ export async function reserveProvider(env,route,requestId){
  return {...data,status:response.status};
 }
 
+// Failures that concern one model, not the account: a 401 from a provider used without a key (the model needs an
+// account), and a server error from a free-model gateway, where each model runs on a different upstream.
+const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
+const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||status>=500&&registry.providers[provider]?.freeOnly===true;
+
 export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
  // A remaining daily request allowance is not the cause of a token/minute 429.
@@ -64,7 +69,7 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
  const deadlines=resetHeaders.map(value=>resetDeadline(value,Date.now())).filter(Number.isFinite);
  const resetAt=deadlines.length?Math.max(...deadlines):undefined;
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-  requestId,provider:route.provider,model:route.model,status,category,
+  requestId,provider:route.provider,model:route.model,status,category,modelScoped:modelScoped(env,route.provider,status),
   retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
   usage:usage?{inputTokens:usage.promptTokenCount,outputTokens:usage.candidatesTokenCount,totalTokens:usage.totalTokenCount}:undefined,
   remaining:remainingHeader!==null&&remainingHeader!==undefined&&/^\d+$/.test(remainingHeader)?Number(remainingHeader):undefined,

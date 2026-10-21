@@ -118,7 +118,7 @@ test('the model check sends one message per routable model in batches and record
   return new Response('{}',{status:404});
  };
  try{
-  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'gemini,groq,openrouter',KAPPA_CHAT_PROVIDERS:'gemini,groq,openrouter',CHAT_ACCESS_TOKEN:'owner-token',
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,openrouter',KAPPA_FREE_PROVIDERS:'gemini,groq,openrouter',KAPPA_CHAT_PROVIDERS:'gemini,groq,openrouter',CHAT_ACCESS_TOKEN:'owner-token',
    GEMINI_API_KEY:'probe-gemini',GROQ_API_KEY:'probe-groq',OPENROUTER_API_KEY:'probe-or',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
   const call=async body=>{const r=await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify(body)}),env);assert.equal(r.status,200);return r.json();};
   const first=await call({offset:0,limit:3}),second=await call({offset:first.next,limit:3});
