@@ -43,6 +43,9 @@ class ModelRoutingTests(unittest.TestCase):
 
     def test_star_opts_every_provider_into_its_full_catalog(self):
         with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*"}):
+            self.assertTrue(runner.full_catalog("groq"))
+            self.assertFalse(runner.full_catalog("kilo"), "free-model gateways keep free routes unless named")
+        with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*,kilo"}):
             self.assertTrue(runner.full_catalog("kilo"))
             self.assertEqual(runner.select_models({"gemini-2.5-pro", "gemini-3-flash"}), ["gemini-3-flash", "gemini-2.5-pro"])
 

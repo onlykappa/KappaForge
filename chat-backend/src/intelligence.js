@@ -53,12 +53,13 @@ export function routes(models,options={},complex=false){
  // Free-tier quotas are per model, so a 429 on one route should fall through to every other approved route.
  return options.fallback===false?list.slice(0,1):list;
 }
-export function telemetry(result,model,latency,ok,fallback,kind,pricing){
+// status is the attempt's HTTP outcome (499 when the caller cancelled); unknown token counts stay null.
+export function telemetry(result,model,latency,ok,fallback,kind,pricing,status=null){
  const u=result?.usageMetadata||{};const count=n=>Number.isSafeInteger(n)&&n>=0?n:null;
  const input=count(u.promptTokenCount),output=count(u.candidatesTokenCount),total=count(u.totalTokenCount);let cost=null;
  // Rates must be explicitly configured by the operator from a verified source.
  const rate=pricing?.[model];if(input!==null&&output!==null&&Number.isFinite(rate?.input)&&rate.input>=0&&Number.isFinite(rate?.output)&&rate.output>=0&&rate.source&&rate.asOf)cost=(input*rate.input+output*rate.output)/1e6;
- return {id:crypto.randomUUID(),at:Date.now(),model,input,output,total,cost,latency,ok,fallback,kind};
+ return {id:crypto.randomUUID(),at:Date.now(),model,input,output,total,cost,latency,ok,fallback,kind,status:Number.isInteger(status)?status:null,cancelled:status===499};
 }
 export async function usageStore(state,request){
  const url=new URL(request.url);const storage=state.storage;

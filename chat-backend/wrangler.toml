@@ -5,13 +5,12 @@ workers_dev = true
 # Keep owner-managed routing variables configured in the Cloudflare dashboard when deploying.
 keep_vars = true
 
-# Phase 3 routing is deliberately fail-closed. Owner-managed provider and
-# per-channel permissions are dashboard-managed variables; keep them out of this config
-# so deployment cannot replace them with blank defaults.
+# Phase 3 routing is deliberately fail-closed. Owner-managed provider and per-channel
+# permissions, full-catalog opt-ins and request caps (KAPPA_ROUTER_MAX_DAILY_REQUESTS /
+# _PER_MINUTE, which default to 100 and 20 in code) are dashboard-managed variables; keep
+# them out of this config so deployment cannot replace the owner's values.
 [vars]
 ROUTING_POLICY_VERSION = "v1"
-KAPPA_ROUTER_MAX_DAILY_REQUESTS = "100"
-KAPPA_ROUTER_MAX_PER_MINUTE = "20"
 
 [[durable_objects.bindings]]
 name = "MEMORY"

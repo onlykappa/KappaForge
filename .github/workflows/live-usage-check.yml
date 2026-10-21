@@ -1,0 +1,72 @@
+name: Live usage check
+run-name: Live usage check on ${{ github.ref_name }}
+# Opens this branch's Settings → Models and Usage pages against the deployed Worker with the owner's app
+# token, optionally sends one test message to every chat model, and publishes the screenshots and a JSON
+# summary to the live-usage-check-results branch. Needs the KAPPA_APP_TOKEN Actions secret (the same
+# value as the Worker's CHAT_ACCESS_TOKEN) and the KAPPA_ROUTER_URL Actions variable.
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: Send one test message to every chat model first
+        type: boolean
+        default: true
+  push:
+    branches:
+    - live-usage-check
+    # Pages and model lists only, without sending a message to every model.
+    - live-usage-check-quick
+permissions:
+  contents: write
+concurrency:
+  group: live-usage-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - run: npm ci
+    - run: npx playwright install --with-deps chromium
+    - name: One message to Z.ai through the coding gateway (no fallback)
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |-
+        set -Eeuo pipefail
+        mkdir -p "$RUNNER_TEMP/live"
+        status=$(curl -sS --max-time 130 -o "$RUNNER_TEMP/zai.json" -w '%{http_code}' \
+          -X POST "${KAPPA_ROUTER_URL%/}/router/infer" \
+          -H 'Content-Type: application/json' \
+          -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
+          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with the single word OK."}],"providers":["zai"],"model":"zai:glm-4.7-flash","fallback":false,"maxTokens":512}') || status=000
+        jq -c --arg status "$status" '{status:($status|tonumber),route,text:(.text//null|tostring|.[0:60]),usage,code,error,failure,attempts}' "$RUNNER_TEMP/zai.json" | tee "$RUNNER_TEMP/live/zai.json" || echo "{\"status\":$status}" | tee "$RUNNER_TEMP/live/zai.json"
+    - name: Open the app pages against the deployed Worker
+      continue-on-error: true
+      env:
+        KAPPA_WORKER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
+        PROBE: ${{ github.event_name == 'push' && github.ref_name == 'live-usage-check' || inputs.probe }}
+      run: |-
+        set -Eeuo pipefail
+        test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }
+        node tools/live-usage-check.mjs "$RUNNER_TEMP/live" $([ "$PROBE" = "true" ] && echo --probe)
+    - name: Publish screenshots to the results branch
+      if: ${{ !cancelled() }}
+      run: |-
+        set -Eeuo pipefail
+        cd "$RUNNER_TEMP/live"
+        git init -q -b live-usage-check-results
+        git config user.name "github-actions[bot]"
+        git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git commit -q -m "Live usage check for ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}"
+        git push -q -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" live-usage-check-results
+        echo "Results: https://github.com/${GITHUB_REPOSITORY}/tree/live-usage-check-results" >> "$GITHUB_STEP_SUMMARY"

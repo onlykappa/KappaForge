@@ -1,7 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
-import {discover} from "./intelligence.js";
+import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
@@ -39,7 +39,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const problem=validate(input);if(problem)return safeError(problem);
  if(!env.MEMORY)return safeError("Shared routing storage unavailable",503);
  const baseId=input.requestId||crypto.randomUUID();
- let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,Math.max(1,Number(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS)||100),Math.max(1,Number(env.KAPPA_ROUTER_MAX_PER_MINUTE)||20))}
+ let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,routerCaps(env).daily,routerCaps(env).minute)}
  catch{return safeError("Shared routing limits unavailable; inference was not sent",503)}
  if(dailyReservation.duplicate)return new Response(JSON.stringify({error:"Request id was already used",code:"request_replayed"}),{status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  if(!dailyReservation.allowed)return new Response(JSON.stringify({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached":"Shared daily inference limit reached",code:dailyReservation.reason==="minute_limit"?"minute_limit":"daily_limit",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000}),{status:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
@@ -52,7 +52,18 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
  let lastStatus=0,lastRetryAt=null,attempts=0;
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;return result;};
+ let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+ let attemptStarted=0;
+ // Coding attempts join chat in the owner's usage history (kind "task"), so Settings → Usage counts every
+ // provider call KappaForge makes. A history write never blocks or fails inference.
+ const recordUsage=async outcome=>{
+  try{
+   const route=outcome.route,label=route.provider==="gemini"?route.model:route.provider+":"+route.model;
+   const event=telemetry(outcome.usage?{usageMetadata:outcome.usage}:null,label,Date.now()-attemptStarted,outcome.status===200,attempts>1,"task",pricing,outcome.status);
+   await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
+  }catch{}
+ };
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;await recordUsage(outcome);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
@@ -81,7 +92,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
   try{
-   attempt.attempted=true;
+   attempt.attempted=true;attemptStarted=Date.now();
    if(route.provider==="gemini"){
     response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal});
    }else{

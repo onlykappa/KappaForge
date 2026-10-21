@@ -45,12 +45,12 @@ test('Workers AI catalog discovery needs the opt-in and rests a failed lookup on
  const original=globalThis.fetch,requests=[];let fail=false;
  globalThis.fetch=async(url,init)=>{requests.push({target:new URL(String(url)),auth:init.headers.Authorization});
   if(fail)return new Response('{}',{status:503});
-  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast'},{name:'@cf/zai-org/glm-4.7-flash'},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'}]});
+  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',task:{name:'Text Generation'}},{name:'@cf/zai-org/glm-4.7-flash',task:{name:'Text Generation'}},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'},{name:'@cf/baai/bge-m3',task:{name:'Text Embeddings'}}]});
  };
  try{
   const env={AI:{},KAPPA_ALL_MODEL_PROVIDERS:'workers-ai',CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'};
   assert.deepEqual(await providerModels(env,'workers-ai'),['@cf/meta/llama-3.3-70b-instruct-fp8-fast','@cf/zai-org/glm-4.7-flash']);
-  assert.equal(requests[0].target.searchParams.get('task'),'text-generation');assert.equal(requests[0].auth,'Bearer read-token-fixture');
+  assert.equal(requests[0].target.searchParams.get('task'),null,'filtered by each row\'s task, not a query spelling');assert.equal(requests[0].auth,'Bearer read-token-fixture');
   assert.deepEqual(await providerModels({AI:{},CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'},'workers-ai'),
    ['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast'],'without opt-in the binding list is used');
   assert.equal(requests.length,1);
@@ -151,6 +151,48 @@ test('a 402 on one paid gateway model never blocks the account, and legacy 402 a
  assert.equal((await reserve('paid-again-00000000000000000000000','openai/gpt-5')).allowed,false,'the paid model itself rests');
  value.pools['openrouter:openrouter']={provider:'openrouter',model:'x',category:'authentication',status:402,failures:1,blocked:true,until:0,updatedAt:Date.now()};
  assert.equal((await reserve('after-legacy-0000000000000000000000','nvidia/nemotron-3-super:free')).allowed,true,'a stored legacy 402 account block no longer applies');
- value.pools['openrouter:openrouter'].status=401;
- assert.equal((await reserve('after-401-00000000000000000000000','nvidia/nemotron-3-super:free')).allowed,false,'a rejected key still blocks the account');
+ value.pools['openrouter:0123456789abcdef:openrouter']={provider:'openrouter',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ const keyed=await call('/router/reserve',{requestId:'after-401-00000000000000000000000',provider:'openrouter',model:'nvidia/nemotron-3-super:free',accountPool:'openrouter:0123456789abcdef',quotaPool:'openrouter',quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ assert.equal(keyed.allowed,false,'a rejected key still blocks the account');
+});
+
+test('"*" keeps free-model gateways on free routes unless named, and unroutable model ids are dropped',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'}]});
+ try{
+  globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'},{id:'vendor/third:free'}]});
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free','vendor/third:free'],'"*" uses every free route, beyond the two-per-provider cap');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','openai/gpt-5','qwen/qwen3-coder:free','vendor/third:free'],'naming the gateway opts into its paid models; "~" aliases are never routed');
+ }finally{globalThis.fetch=original}
+});
+
+test('a keyless provider\'s 401 and a gateway\'s server error rest only that model',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ const {reportProviderOutcome,reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const env={MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore({storage:store},new Request(u,o))})}};
+ const id=n=>('model-scope-'+n).padEnd(32,'0');
+ const tryRoute=async(n,provider,model,status)=>{const r=await reserveProvider(env,{provider,model},id(n));if(r.allowed&&status)await reportProviderOutcome(env,{requestId:id(n),route:{provider,model},status});return r.allowed;};
+ assert.equal(await tryRoute(1,'kilo','paid/model',401),true);
+ assert.equal(await tryRoute(2,'kilo','kilo-auto/free'),true,'one model needing an account does not block the keyless pool');
+ assert.equal(await tryRoute(3,'openrouter','vendor/a:free',502),true);
+ assert.equal(await tryRoute(4,'openrouter','vendor/b:free'),true,'a gateway upstream error rests only that model');
+ assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',503),true);
+ assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b'),false,'an outage at a single-vendor provider still pauses it');
+});
+
+test('an account block stored for a keyless provider\'s 401 is ignored; a keyed provider\'s still applies',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value,tail=Promise.resolve();
+ const store={get:async k=>k==='routing:v1'?structuredClone(value):undefined,put:async(k,next)=>{if(k==='routing:v1')value=structuredClone(next)}};
+ store.transaction=async fn=>{const previous=tail;let release;tail=new Promise(r=>{release=r});await previous;try{return await fn(store)}finally{release()}};
+ const call=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(requestId,provider,accountPool)=>call({requestId,provider,model:'m',accountPool,quotaPool:provider,quotaScope:'account',maxConcurrent:4,leaseMs:120000});
+ await reserve('seed-0000000000000000000000000000','kilo','kilo');
+ value.pools['kilo:kilo']={provider:'kilo',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ value.pools['groq:0123456789abcdef:groq']={provider:'groq',status:401,blocked:true,until:0,updatedAt:Date.now()};
+ assert.equal((await reserve('kilo-after-00000000000000000000000','kilo','kilo')).allowed,true);
+ assert.equal((await reserve('groq-after-00000000000000000000000','groq','groq:0123456789abcdef')).allowed,false);
 });

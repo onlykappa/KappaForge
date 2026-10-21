@@ -58,7 +58,7 @@ test("chat and planner honor the current Groq pin over Gemini and preserve autho
 test("dashboard-managed provider allowlists are not overridden by blank Wrangler defaults",()=>{
  const config=readFileSync(new URL("../chat-backend/wrangler.toml",import.meta.url),"utf8");
  assert.match(config,/^keep_vars\s*=\s*true\s*$/m);
- for(const name of ["KAPPA_FREE_PROVIDERS","KAPPA_CHAT_PROVIDERS","KAPPA_CODE_PROVIDERS","KAPPA_PRIVATE_CODE_PROVIDERS"]){
+ for(const name of ["KAPPA_FREE_PROVIDERS","KAPPA_CHAT_PROVIDERS","KAPPA_CODE_PROVIDERS","KAPPA_PRIVATE_CODE_PROVIDERS","KAPPA_ALL_MODEL_PROVIDERS","KAPPA_ROUTER_MAX_DAILY_REQUESTS","KAPPA_ROUTER_MAX_PER_MINUTE"]){
   assert.doesNotMatch(config,new RegExp(`^${name}\\s*=`,"m"),`${name} must remain dashboard-managed`);
  }
 });

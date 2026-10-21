@@ -229,6 +229,7 @@ jobs:
     - config/app.json
     - preview/stream.js
     - preview/actions-core.js
+    - preview/limits-core.js
     - .github/workflows/deploy-chat.yml
     - tests/intelligence.test.mjs
   workflow_dispatch:

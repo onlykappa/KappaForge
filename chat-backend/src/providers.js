@@ -1,11 +1,14 @@
 import registry from "../../config/providers.json" with {type: "json"};
-import {fullCatalog,providerAllowed,providerPolicyStatus} from "./routing-policy.js";
+import {everyFreeModel,fullCatalog,providerAllowed,providerPolicyStatus} from "./routing-policy.js";
 import {geminiLimits} from "./intelligence.js";
+import "../../preview/limits-core.js";
 // Free-tier fallback providers after Gemini. All but Workers AI speak the OpenAI chat format, so one
 // adapter covers them; responses are normalised to Gemini's shape so routing, streaming and usage
 // tracking stay provider-neutral.
 export const REGISTRY=registry;
 const EXCLUDE=new RegExp(registry.exclude,"i");
+// Model ids shared routing state can key (for example Kilo's "~vendor/model-latest" aliases are not).
+const ROUTABLE=/^[A-Za-z0-9@._:/-]{1,180}$/;
 // Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
 const FREE=/[:/]free$/;
 const cache=new Map();
@@ -55,14 +58,17 @@ export async function providerModels(env,id){
    const ids=[];let page=1,status=200;
    for(;page<=50;page++){
     const url=new URL("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)+"/ai/models/search");
-    url.searchParams.set("task","text-generation");url.searchParams.set("per_page","100");url.searchParams.set("page",String(page));
+    url.searchParams.set("per_page","100");url.searchParams.set("page",String(page));
     const r=await fetch(url,{headers:{Authorization:"Bearer "+env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(8000)});status=r.status;
     if(!r.ok)return fallback({state:"http_error",httpStatus:r.status});
     const body=await r.json(),rows=body?.result;
     if(!Array.isArray(rows))return fallback({state:"invalid_shape",httpStatus:r.status});
     for(const row of rows){
+     // The whole catalog is read and filtered here by each row's task, so no task-name spelling is assumed.
+     const task=typeof row?.task==="string"?row.task:row?.task?.name;
+     if(task&&!/text generation/i.test(task))continue;
      const id=typeof row==="string"?row:row?.name||row?.id||row?.model_id||(typeof row?.model==="string"?row.model:null)||row?.model?.name||row?.model?.id;
-     if(typeof id==="string"&&id.startsWith("@cf/")&&!EXCLUDE.test(id))ids.push(id);
+     if(typeof id==="string"&&id.startsWith("@cf/")&&ROUTABLE.test(id)&&!EXCLUDE.test(id))ids.push(id);
     }
     if(rows.length<100)break;
    }
@@ -71,7 +77,9 @@ export async function providerModels(env,id){
    cache.set(key,{at:Date.now(),models});
    setStatus({state:"available",httpStatus:status,discoveredCount:ids.length,approvedCount:models.length});
    return models;
-  }catch{return fallback({state:"network_error",httpStatus:null});}
+  }catch(error){
+   // The reason (never a credential: the token is only ever sent as a header) shows in provider diagnostics.
+   return fallback({state:"network_error",httpStatus:null,detail:String(error?.name||"Error")+": "+String(error?.message||"").replace(/Bearer\s+\S+/gi,"Bearer [redacted]").slice(0,160)});}
  }
  if(p.models){
   const models=freeModels(env,id,p.models.filter(model=>typeof model==="string"&&!EXCLUDE.test(model)))||[];
@@ -87,10 +95,10 @@ export async function providerModels(env,id){
   let body;try{body=await r.json()}catch{setStatus({state:"invalid_json",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   if(!Array.isArray(body?.data)){setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   const discoveredCount=body.data.length;
-  const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&!EXCLUDE.test(m)));
+  const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
-  const models=fullCatalog(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
+  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
   setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;
@@ -133,6 +141,13 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
    if(hasMedia&&!p.capabilities?.media||hasTools&&!p.capabilities?.tools||hasStructuredOutput&&!p.capabilities?.structuredOutput)continue;
   for(const model of await providerModels(env,id))routes.push({provider:id,model,label:id+":"+model,capabilities:p.capabilities,context:p.context||null,maxOutput:p.maxOutput||null});
   }
+ }
+ // Models the account dashboard shows with no quota at all (0 requests per minute or day) cannot answer.
+ // A model the provider serves with another listed model is the same quota: try it only once.
+ const L=globalThis.KappaLimits;
+ for(let i=routes.length-1;i>=0;i--){
+  const r=routes[i],same=L.canonical(registry.limits,r.provider,r.model);
+  if(L.noQuota(registry.limits,r.provider,r.model)||same!==r.model&&routes.some(o=>o.provider===r.provider&&o.model===same))routes.splice(i,1);
  }
  // Preference orders eligible routes only. Explicit picks, permissions, free
  // model review, capabilities and context remain authoritative.

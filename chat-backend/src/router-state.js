@@ -47,7 +47,10 @@ export async function routingStore(state,request){
    const cooldown=data.pools[pool],route=data.routes[key],now=Date.now();
    // Earlier versions blocked a whole account on HTTP 402. That is a per-model answer on pooled
    // gateways (a paid model with no credits), so those legacy blocks no longer stop other models.
-   const blocked=[cooldown,route].filter(row=>row&&!(row.blocked&&row.status===402)).find(row=>row.blocked||row.until>now);
+   // Likewise a 401 block on a keyless account (its pool carries no key fingerprint): there is no key to reject,
+   // and no success could ever clear it.
+   const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless);
+   const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
    if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
    if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
@@ -74,7 +77,7 @@ export async function routingStore(state,request){
   return Response.json(result,{status:result.allowed?200:429});
  }
  if(url.pathname==="/router/outcome"){
-  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt}=input||{};
+  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!Number.isInteger(status)||status<0||status>599)
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
@@ -105,10 +108,12 @@ export async function routingStore(state,request){
    else if(status!==499){
     // Only a rejected key blocks the whole account. A 402 is per model on pooled gateways (a paid model
     // with no credits), so it rests that model like other model-specific rejections.
-    const code=status,blocked=code===401;
+    const code=status,anonymous=code===401&&modelScoped===true,blocked=code===401&&!anonymous;
     // A rejection of one model (unsupported option, retired, denied) rests only that model, not the provider.
-    const modelSpecific=code===400||code===402||code===403||code===404||code===422;
-    const scope=code===401?"pool":modelSpecific?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
+    const modelSpecific=code===400||code===402||code===403||code===404||code===422||anonymous;
+    // A server error rests only that model where quotas are per model (Gemini) or the caller marks it model-specific
+    // (free-model gateways); elsewhere an outage pauses the provider.
+    const scope=blocked?"pool":modelSpecific||code>=500&&(modelScoped===true||reservation?.quotaScope==="model")?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
     const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));

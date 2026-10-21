@@ -16,7 +16,7 @@
     "ovh"
   ],
   "maxModelsPerProvider": 2,
-  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard",
+  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard|antigravity|deep-research|nano-banana|robotics|omni|orpheus",
   "providers": {
     "workers-ai": {
       "name": "Cloudflare Workers AI",
@@ -252,9 +252,12 @@
       }
     },
     "kilo": {
-      "name": "Kilo Code free pool (no key)",
+      "name": "Kilo Code free pool (key optional)",
       "kind": "openai",
       "base": "https://api.kilo.ai/api/gateway",
+      "key": "KILO_API_KEY",
+      "keyOptional": true,
+      "signup": "https://app.kilo.ai",
       "freeOnly": true,
       "prefer": [
         "nemotron-3-ultra",
@@ -422,6 +425,236 @@
       },
       "contextTokens": null,
       "maxOutputTokens": null
+    }
+  },
+  "limits": {
+    "source": "Owner dashboard capture 2026-10-21 18:28 UTC (provider-limits audit) plus published defaults where marked. Limits change; update this block from each provider's dashboard.",
+    "providers": {
+      "gemini": {
+        "scope": "model",
+        "dayResets": "America/Los_Angeles",
+        "source": "Google AI Studio, project master ai bot, Free tier",
+        "models": [
+          {
+            "match": "gemini-3.7-flash",
+            "sameAs": "gemini-3.8-flash",
+            "note": "Google routes Gemini 3.7 Flash requests to 3.8 Flash, so both share its quota"
+          },
+          {
+            "match": "gemini-3.8-flash",
+            "rpm": 5,
+            "rpd": 20,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-3.6-flash",
+            "rpm": 5,
+            "rpd": 20,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-3-flash",
+            "rpm": 5,
+            "rpd": 20,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-3.5-flash-lite",
+            "rpm": 15,
+            "rpd": 500,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-3.1-flash-lite",
+            "rpm": 15,
+            "rpd": 500,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-2.5-flash-lite",
+            "rpm": 10,
+            "rpd": 20,
+            "tpm": 250000
+          },
+          {
+            "match": "gemini-2.5-flash",
+            "rpm": 5,
+            "rpd": 20,
+            "tpm": 250000
+          },
+          {
+            "match": "gemma-4-26b",
+            "rpm": 30,
+            "rpd": 14400,
+            "tpm": 16000
+          },
+          {
+            "match": "gemma-4-31b",
+            "rpm": 30,
+            "rpd": 14400,
+            "tpm": 16000
+          },
+          {
+            "match": "gemini-2.5-pro",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "No free-tier quota on this account (0 / 0)"
+          },
+          {
+            "match": "gemini-3.1-pro",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "No free-tier quota on this account (0 / 0)"
+          },
+          {
+            "match": "gemini-2-flash-lite",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "No free-tier quota on this account (0 / 0)"
+          },
+          {
+            "match": "gemini-2-flash",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "No free-tier quota on this account (0 / 0)"
+          },
+          {
+            "match": "gemini-4-argon",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "No free-tier quota on this account (0 / 0)"
+          }
+        ]
+      },
+      "groq": {
+        "scope": "model",
+        "dayResets": "UTC",
+        "source": "Groq console, Personal organization limits",
+        "models": [
+          {
+            "match": "openai/gpt-oss-120b",
+            "rpm": 30,
+            "rpd": 1000,
+            "tpm": 8000,
+            "tpd": 200000
+          },
+          {
+            "match": "openai/gpt-oss-20b",
+            "rpm": 30,
+            "rpd": 1000,
+            "tpm": 8000,
+            "tpd": 200000
+          },
+          {
+            "match": "qwen/qwen3.8-27b",
+            "rpm": 30,
+            "rpd": 1000,
+            "tpm": 8000,
+            "tpd": 200000
+          },
+          {
+            "match": "allam-2-7b",
+            "rpm": 30,
+            "rpd": 7000,
+            "tpm": 6000,
+            "tpd": 500000
+          }
+        ]
+      },
+      "mistral": {
+        "scope": "model",
+        "source": "Mistral Admin, Default Workspace limits; -latest aliases use the dated model's row",
+        "models": [
+          {
+            "match": "labs-leanstral",
+            "tpm": 5000000,
+            "rps": 0.63
+          },
+          {
+            "match": "codestral",
+            "tpm": 625000,
+            "rps": 2.08
+          },
+          {
+            "match": "ministral-14b",
+            "tpm": 937500,
+            "rps": 0.5
+          },
+          {
+            "match": "ministral-3b",
+            "tpm": 1300000,
+            "rps": 12.5
+          },
+          {
+            "match": "ministral-8b",
+            "tpm": 625000,
+            "rps": 3.13
+          },
+          {
+            "match": "mistral-large-4",
+            "tpm": 20000,
+            "rps": 0.83
+          },
+          {
+            "match": "mistral-large",
+            "tpm": 250000,
+            "rps": 1
+          },
+          {
+            "match": "mistral-medium",
+            "tpm": 20000,
+            "rps": 1
+          },
+          {
+            "match": "mistral-small",
+            "tpm": 20000,
+            "rps": 1
+          },
+          {
+            "match": "zai-glm-5-3",
+            "tpm": 20000,
+            "rps": 1
+          },
+          {
+            "match": "glm-5-2",
+            "rps": 1
+          },
+          {
+            "match": "voxtral-small",
+            "tpm": 50000,
+            "rps": 1
+          },
+          {
+            "match": "voxtral-mini",
+            "tpm": 50000,
+            "rps": 1
+          }
+        ]
+      },
+      "nvidia": {
+        "scope": "provider",
+        "rpm": 40,
+        "source": "NVIDIA Build account page: up to 40 requests per minute across models"
+      },
+      "openrouter": {
+        "scope": "provider",
+        "rpd": 50,
+        "dayResets": "UTC",
+        "source": "OpenRouter docs: 50 free-model requests per day with no purchased credits (account shows $0)"
+      },
+      "requesty": {
+        "scope": "provider",
+        "rpd": 200,
+        "rpm": 20,
+        "dayResets": "UTC",
+        "source": "Requesty docs default for new organisations (account tier not confirmed)"
+      },
+      "workers-ai": {
+        "scope": "provider",
+        "neuronsPerDay": 10000,
+        "dayResets": "UTC",
+        "source": "Cloudflare docs: 10,000 Neurons per day free; Neurons are compute units, not tokens"
+      }
     }
   }
 }
