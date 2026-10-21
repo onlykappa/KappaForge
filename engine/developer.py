@@ -669,6 +669,18 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                        'PROJECT INSTRUCTIONS:\n' + guide + '\nTASK:\n' + task + '\nSOURCE FILES:\n' + context)
     instruction_head = instruction[:-len(context)] if context else instruction
     history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
+    if os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true':
+        from engine import gateway
+        # Preserve task/guide verbatim. Select fewer exact source excerpts with the
+        # existing partial-source edit guards; never cut the assembled prompt.
+        gateway.require_prompt_fits(instruction_head + history)
+        while not gateway.prompt_fits(instruction_head + context + history, reserve=8000):
+            if not context:
+                gateway.require_prompt_fits(instruction_head + history + ' ' * 8000)
+            budget = budget._replace(context_chars=budget.context_chars // 2,
+                                     file_chars=max(1000, budget.file_chars // 2))
+            context, shown_sources, partial_sources = source_context()
+        instruction = instruction_head + context
     instruction += history
     errors = []
     evidence = ""

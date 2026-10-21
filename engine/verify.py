@@ -9,6 +9,7 @@ Problems go back to the model as a follow-up stage; what still fails is reported
 import ast
 import difflib
 import io
+import os
 import tokenize
 from engine.js_analysis import analyze as analyze_js, executable_quote
 import json
@@ -408,13 +409,22 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
         unavailable_sources, original_requirements = set(), {}
         known = set(paths) | set(changes)
         for attempt in range(2):
-            complete = set()
-            context, seen = review_sources(read, changes, paths, requested, complete=complete)
-            prompt = review_prompt(task, diff_text(read, changes), paths, context)
-            if original_requirements:
-                prompt += '\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP:\n' + json.dumps(list(original_requirements))
-            if unavailable_sources:
-                prompt += '\n\nUNRESOLVED SOURCE REQUESTS (not available in this snapshot):\n' + json.dumps(sorted(unavailable_sources))
+            source_limit, diff_limit = 220000, 40000
+            while True:
+                complete = set()
+                context, seen = review_sources(read, changes, paths, requested, limit=source_limit, complete=complete)
+                prompt = review_prompt(task, diff_text(read, changes, limit=diff_limit), paths, context)
+                if original_requirements:
+                    prompt += '\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP:\n' + json.dumps(list(original_requirements))
+                if unavailable_sources:
+                    prompt += '\n\nUNRESOLVED SOURCE REQUESTS (not available in this snapshot):\n' + json.dumps(sorted(unavailable_sources))
+                from engine import gateway
+                if os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() != 'true' or gateway.prompt_fits(prompt):
+                    break
+                if source_limit == 0 and diff_limit == 0:
+                    gateway.require_prompt_fits(prompt)
+                source_limit //= 2
+                diff_limit //= 2
             _, output = run_model(api_key, prompt,
                                   max_output_tokens=6000, allowed=allowed, json_mode=True)
             result = parse_review(output)
