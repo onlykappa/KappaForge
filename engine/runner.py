@@ -288,7 +288,9 @@ def list_provider_models(pid, p):
         found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
         return (found[0] if found else 99, m)
     ranked = sorted(ids, key=rank)
-    return ranked if everything else ranked[:PROVIDERS["maxModelsPerProvider"]]
+    # "*" uses every free route of a free-model gateway; naming the gateway also admits its paid models.
+    every_free = p.get("freeOnly") and "*" in {n.strip() for n in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",")}
+    return ranked if everything or every_free else ranked[:PROVIDERS["maxModelsPerProvider"]]
 
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).

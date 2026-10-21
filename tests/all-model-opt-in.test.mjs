@@ -159,8 +159,9 @@ test('"*" keeps free-model gateways on free routes unless named, and unroutable 
  const original=globalThis.fetch;
  globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'}]});
  try{
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free']);
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','openai/gpt-5','qwen/qwen3-coder:free'],'naming the gateway opts into its paid models; "~" aliases are never routed');
+  globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'},{id:'vendor/third:free'}]});
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free','vendor/third:free'],'"*" uses every free route, beyond the two-per-provider cap');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','openai/gpt-5','qwen/qwen3-coder:free','vendor/third:free'],'naming the gateway opts into its paid models; "~" aliases are never routed');
  }finally{globalThis.fetch=original}
 });
 

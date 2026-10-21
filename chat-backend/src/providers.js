@@ -1,5 +1,5 @@
 import registry from "../../config/providers.json" with {type: "json"};
-import {fullCatalog,providerAllowed,providerPolicyStatus} from "./routing-policy.js";
+import {everyFreeModel,fullCatalog,providerAllowed,providerPolicyStatus} from "./routing-policy.js";
 import {geminiLimits} from "./intelligence.js";
 import "../../preview/limits-core.js";
 // Free-tier fallback providers after Gemini. All but Workers AI speak the OpenAI chat format, so one
@@ -93,7 +93,7 @@ export async function providerModels(env,id){
   const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
-  const models=fullCatalog(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
+  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
   setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;
