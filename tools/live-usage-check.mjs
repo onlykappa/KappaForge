@@ -9,7 +9,7 @@ import {chromium} from 'playwright';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../preview');
 const out=resolve(process.argv[2]||'live-usage-check'),probe=process.argv.includes('--probe');
-const backend=String(process.env.KAPPA_WORKER_URL||'').replace(/\/+$/,''),token=process.env.KAPPA_APP_TOKEN||'';
+const backend=String(process.env.KAPPA_WORKER_URL||'').replace(/\/+$/,''),token=String(process.env.KAPPA_APP_TOKEN||'').trim();
 if(!(process.env.KAPPA_ALLOW_LOCAL==='1'?/^https?:\/\/[^/\s]+$/:/^https:\/\/[^/\s]+$/).test(backend)||token.length<16)throw new Error('KAPPA_WORKER_URL (https origin) and KAPPA_APP_TOKEN are required');
 const origin='https://onlykappa.github.io',base=origin+'/KappaForge/';
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
@@ -17,7 +17,7 @@ await mkdir(out,{recursive:true});
 // A local test Worker on 127.0.0.1 needs Chrome's private-network checks off; the deployed Worker does not.
 const local=process.env.KAPPA_ALLOW_LOCAL==='1'?{args:['--disable-features=PrivateNetworkAccessSendPreflights,BlockInsecurePrivateNetworkRequests,LocalNetworkAccessChecks','--proxy-bypass-list=127.0.0.1']}:{};
 const browser=await chromium.launch({...local,...(process.env.PLAYWRIGHT_CHROMIUM?{executablePath:process.env.PLAYWRIGHT_CHROMIUM}:{})});
-const summary={at:new Date().toISOString(),probe:null,providers:null,errors:[]};
+const summary={at:new Date().toISOString(),probe:null,providers:null,eligibility:null,errors:[]};
 try{
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,serviceWorkers:'block',
   userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'});
@@ -37,6 +37,9 @@ try{
  const open=async id=>{await page.evaluate(()=>navigate('settings'));if(await page.locator('#settings-back').count())await page.locator('#settings-back').click();await page.locator('[data-section='+id+']').click();await page.locator('#settings-back').waitFor();};
  await page.evaluate(()=>refreshIntelligence(false));
  await page.waitForFunction(()=>capabilities!==null||lastVerify?.error,null,{timeout:120000});
+ // Why each provider is or is not routable, as the Worker reports it (no credentials are included).
+ summary.eligibility=await page.evaluate(()=>capabilities?{routingPolicy:{version:capabilities.routingPolicy?.version,chatProviders:capabilities.routingPolicy?.chatProviders,codingProviders:capabilities.routingPolicy?.codingProviders},
+  providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,models:(p.models||[]).length}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
  if(probe){
   await open('models');await page.locator('#model-probe').click();
   await page.waitForFunction(()=>!probe.running&&probe.total!==null||probe.error,null,{timeout:45*60000,polling:2000});
