@@ -1,0 +1,8 @@
+{
+  "component": "gateway-actions",
+  "version": "1.0.0",
+  "tag": "gateway-v1.0.0",
+  "status": "acceptance-pending",
+  "nativeUpdateRequired": false,
+  "checkpoint": "docs/integration/OMNIROUTE-PHASE5-CHECKPOINT.md"
+}

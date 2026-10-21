@@ -1,5 +1,7 @@
 # OmniRoute integration Phase 4 checkpoint
 
+Phase 5 now controls promotion and final acceptance: see [Phase 5 checkpoint](OMNIROUTE-PHASE5-CHECKPOINT.md). The owner authorized merging/deployment there; PR #150 was merged/deployed. Historical no-promotion instructions and undeployed statements below describe the earlier save, not current production. App acceptance remains explicitly pending.
+
 **Updated:** 2026-10-21 UTC
 **Status:** PARTIAL — the cloud coding path now has a successful, validated Groq-only artifact and draft task PR, including recovery of the saved candidate after a finalization defect. PR #150 remains draft/unmerged; Phase 4 Worker changes are undeployed. Owner screenshots verify installed-app dashboard visibility of both draft PRs and task #152 displaying READY FOR REVIEW with passing sandbox tests. The owner also confirms the Review draft PR link opens. App authorization-to-dispatch is now observed for task #154 on main; successful completion through the Phase 4 engine remains pending. Fresh task #155 completed feature-workflow generation, review, finalization and independent validation without repair. The installed-app path on this version remains unverified.
 

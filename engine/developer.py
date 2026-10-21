@@ -1211,6 +1211,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         current.update(changes)
         sizes = dict(existing)
         sizes.update({path: len(text) for path, text in changes.items()})
+        # Newness is relative to the immutable task baseline, not its saved
+        # candidate. Repairs can rewrite this task's new document only.
+        edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
+        if edit_path and edit_path not in existing:
+            sizes.pop(edit_path, None)
         fix_task = (task + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
                     "against the task found these problems. Fix every one of them now, editing the real code paths they "
                     "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20])
@@ -1512,6 +1517,14 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     allowed = code_providers(is_private(repo, repo_token))
     if journal and checkpoint:
         journal.stage_checkpoint = lambda model, summary, changed, explanation: checkpoint(changed, modes)
+    edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
+    if edit_path:
+        # GitHub's immutable PR delta establishes that the saved document was
+        # added by this task. A modified baseline file or broader diff cannot
+        # acquire permission merely by appearing in the recovery journal.
+        if len(files) != 1 or files[0]['filename'] != edit_path or files[0]['status'] != 'added':
+            raise PermissionError('Bounded repair requires only the task-owned new document')
+        existing = {path: size for path, size in existing.items() if path != edit_path}
     model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
     if checkpoint:
         checkpoint(changes, modes)
