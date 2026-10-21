@@ -36,6 +36,23 @@ class ModelRoutingTests(unittest.TestCase):
     def test_no_unapproved_fallback(self):
         self.assertEqual(runner.select_models({"gemini-2.5-pro"}), [])
 
+    def test_gemini_full_catalog_opt_in_routes_other_chat_models_after_flash(self):
+        available = {"gemini-2.5-pro", "gemini-3-flash", "gemini-2.5-flash-image", "gemini-2.5-flash-preview-tts", "other"}
+        with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "gemini"}):
+            self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-pro", "other"])
+
+    def test_star_opts_every_provider_into_its_full_catalog(self):
+        with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*"}):
+            self.assertTrue(runner.full_catalog("kilo"))
+            self.assertEqual(runner.select_models({"gemini-2.5-pro", "gemini-3-flash"}), ["gemini-3-flash", "gemini-2.5-pro"])
+
+    def test_provider_full_catalog_opt_in_lifts_free_filter_and_cap(self):
+        def urlopen(req, timeout=None):
+            return response({"data": [{"id": "paid/model"}, {"id": "kilo-auto/free"}, {"id": "poolside/laguna-s-2.1:free"}, {"id": "other/free"}]})
+        with patch.dict(os.environ, {**{k: "" for k in KEYS}, "KAPPA_ALL_MODEL_PROVIDERS": "kilo"}), \
+                patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
+            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free", "other/free", "paid/model"])
+
     @patch("engine.runner.urllib.request.urlopen")
     def test_discovery_filters_methods_and_paginates(self, urlopen):
         def response(data):

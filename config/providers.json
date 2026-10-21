@@ -1,5 +1,5 @@
 {
-  "note": "Free-tier LLM providers tried in order after Gemini. Keyed providers are used only when their key is configured; ones without a key (or with keyOptional) also work anonymously. Models are discovered live unless a fixed free list is given. Source list: https://github.com/mnfst/awesome-free-llm-apis. Limits change often; see README. Agent routing (2.2.8): providers marked strong (best free coding models) first, then full-size Gemini Flash, then Flash-Lite, then the rest; each provider only gets prompts that fit its context window (tokens) and answers up to maxOutput.",
+  "note": "Chat model providers tried in configured order after Gemini. Keyed providers are used only when their key is configured; providers without a key or with keyOptional may also work anonymously. Models are discovered live from each configured account and filtered to chat-capable APIs. Without owner opt-in each provider keeps its reviewed free models (freeModels, or freeOnly ':free' routes) capped at maxModelsPerProvider; providers listed in the KAPPA_ALL_MODEL_PROVIDERS Worker/Actions variable route every chat model the account lists, which may include paid models. Provider and channel permissions still gate routing. Provider limits change often; inspect each provider dashboard.",
   "order": [
     "workers-ai",
     "ollama",
@@ -16,7 +16,7 @@
     "ovh"
   ],
   "maxModelsPerProvider": 2,
-  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|vision|vl-|-vl|safety|prompt-guard",
+  "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard",
   "providers": {
     "workers-ai": {
       "name": "Cloudflare Workers AI",
@@ -138,7 +138,9 @@
       "base": "https://api.mistral.ai/v1",
       "key": "MISTRAL_API_KEY",
       "signup": "https://console.mistral.ai/api-keys",
-      "freeModels": ["mistral-small-latest"],
+      "freeModels": [
+        "mistral-small-latest"
+      ],
       "prefer": [
         "mistral-medium",
         "codestral-latest",
@@ -394,6 +396,7 @@
       "leaseMs": 120000,
       "requestTimeoutMs": 180000,
       "attemptTimeoutMs": 60000,
+      "maxRouteAttempts": 64,
       "responseGraceMs": 15000,
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,
@@ -402,9 +405,9 @@
     },
     "primary": {
       "id": "gemini",
-    "freeModels": [
-      "gemini-3.1-flash-lite"
-    ],
+      "freeModels": [
+        "gemini-3.1-flash-lite"
+      ],
       "accountPool": "gemini",
       "quotaPool": "gemini",
       "quotaScope": "model",

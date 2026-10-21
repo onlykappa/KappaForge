@@ -228,12 +228,23 @@ def fetch_gemini_models(api_key):
 FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$")
 
 
+def full_catalog(pid):
+    """Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS, "*" for every provider) to route every chat model a provider account lists, paid ones included."""
+    listed = {name.strip() for name in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",") if name.strip()}
+    return "*" in listed or pid in listed
+
 def select_models(available):
-    """Discovered Flash models, strongest first: full Flash before Lite, newer before older, stable before preview."""
+    """Discovered Gemini models, strongest first: full Flash before Lite, newer before older, stable before preview.
+
+    Only Flash models unless KAPPA_ALL_MODEL_PROVIDERS includes gemini; then every listed chat model, Flash first."""
     def rank(name):
         m = FLASH_RE.match(name)
-        return (bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
-    return sorted((name for name in available if FLASH_RE.match(name)), key=rank)
+        if m:
+            return (0, bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
+        return (1, False, 0, False, name)
+    everything = full_catalog("gemini")
+    return sorted((name for name in available if isinstance(name, str) and name
+                   and (FLASH_RE.match(name) or everything and not re.search(PROVIDERS["exclude"], name, re.I))), key=rank)
 
 def provider_headers(p):
     """Bearer auth when a key is set; providers without a key field (or keyOptional) also answer anonymously."""
@@ -241,7 +252,9 @@ def provider_headers(p):
     return {"User-Agent": "KappaForge", **({"Authorization": "Bearer " + key} if key else {})}
 
 def provider_models(pid):
-    """Chat models for a usable free fallback provider: its fixed free list, else live discovery, preferred families first."""
+    """Chat models for a usable fallback provider, preferred families first: its fixed list, else live discovery.
+
+    Capped at maxModelsPerProvider, and free-only routes for freeOnly providers, unless KAPPA_ALL_MODEL_PROVIDERS lists it."""
     p = PROVIDERS["providers"][pid]
     if provider_paused(provider_identity(pid)):
         return []
@@ -249,7 +262,7 @@ def provider_models(pid):
     if p.get("kind") != "openai" or p.get("agent") is False or (keyed and not os.getenv(p["key"], "")):
         return []
     if p.get("models"):
-        return p["models"][:PROVIDERS["maxModelsPerProvider"]]
+        return p["models"] if full_catalog(pid) else p["models"][:PROVIDERS["maxModelsPerProvider"]]
     return cached(("provider", pid, os.getenv(p["key"], "") if p.get("key") else ""), lambda: list_provider_models(pid, p))
 
 
@@ -267,11 +280,13 @@ def list_provider_models(pid, p):
     except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError, http.client.HTTPException, ConnectionError) as exc:
         provider_failure(pid, error=exc)
         return []
-    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (not p.get("freeOnly") or re.search(r"[:/]free$", m))]
+    everything = full_catalog(pid)
+    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (everything or not p.get("freeOnly") or re.search(r"[:/]free$", m))]
     def rank(m):
         found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
         return (found[0] if found else 99, m)
-    return sorted(ids, key=rank)[:PROVIDERS["maxModelsPerProvider"]]
+    ranked = sorted(ids, key=rank)
+    return ranked if everything else ranked[:PROVIDERS["maxModelsPerProvider"]]
 
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).
@@ -589,7 +604,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     if pinned_route:
         provider, separator, pinned_model = pinned_route.partition(":")
         policy = PROVIDERS.get("providers", {}).get(provider, {})
-        if (not separator or provider not in selected or pinned_model not in policy.get("freeModels", [])):
+        if (not separator or provider not in selected or (pinned_model not in policy.get("freeModels", []) and not full_catalog(provider))):
             raise RuntimeError("Pinned inference route is outside the authorized free coding policy")
         selected = [provider]
         fallback = False

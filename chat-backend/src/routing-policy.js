@@ -14,6 +14,9 @@ export function requestRoutingPreferences(text,preferences={}){
 }
 const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.freeModels):
  Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
+// Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS, "*" for every provider) to route every chat model the provider
+// account lists, including paid ones. Without it a provider keeps its reviewed free models and per-provider cap.
+export function fullCatalog(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has("*")||all.has(id);}
 
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
@@ -21,12 +24,12 @@ export function providerPolicyStatus(env,channel,id,{privateCode=false,requested
  const excluded=reason=>({enabled:false,reason});
  if(!providers.has(id))return excluded("unknown_provider");
  // Keep legacy preview/test deployments compatible. The production Worker opts into the
- // no-cost policy explicitly through ROUTING_POLICY_VERSION=v1.
+ // provider permissions explicitly through ROUTING_POLICY_VERSION=v1.
  if(env.ROUTING_POLICY_VERSION!==ROUTING_POLICY_VERSION)return {enabled:true,reason:"legacy_policy"};
- if(!noCostReviewed(id))return excluded("free_models_unreviewed");
- const free=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
+ if(!noCostReviewed(id)&&!fullCatalog(env,id))return excluded("free_models_unreviewed");
+ const permitted=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
  const allowed=list(env[channelName]);
- if(!free.has(id))return excluded("free_provider_permission");
+ if(!permitted.has(id))return excluded("free_provider_permission");
  if(!allowed.has(id))return excluded("channel_permission");
  if(channel==="coding"&&privateCode&&!list(env.KAPPA_PRIVATE_CODE_PROVIDERS).has(id))return excluded("private_code_permission");
  if(requested instanceof Set&&!requested.has(id))return excluded("request_provider_restriction");

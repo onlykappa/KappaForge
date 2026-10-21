@@ -1,8 +1,10 @@
 import registry from '../../config/providers.json' with {type:'json'};
+import {fullCatalog} from './routing-policy.js';
 export const MODELS=registry.routing?.primary?.freeModels||[];
 export const FLASH=/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$/;
-const MAX_GEMINI=8;
-function rank(name){const m=name.match(FLASH);return (m[2]?0:1000)-Number(m[1])*10+(m[3]?1:0)}
+const MAX_GEMINI=8,MAX_GEMINI_PAGES=50;
+const EXCLUDE=new RegExp(registry.exclude,'i');
+function rank(name){const m=name.match(FLASH);return m?(m[2]?0:1000)-Number(m[1])*10+(m[3]?1:0):2000}
 // Models that just failed rest instead of costing every message an attempt: a retired one (404) for an hour,
 // a rate-limited one (429) for a minute. Per Worker isolate; a cold start simply tries them again.
 const resting=new Map();
@@ -10,21 +12,30 @@ export function rest(model,status){if(status===404||status===429)resting.set(mod
 export function awake(models){const up=models.filter(m=>!(resting.get(m)>Date.now()));return up.length?up:models}
 // Discovery is a provider call; caching it keeps each chat message to one Gemini request.
 let discovered={key:'',at:0,models:null};
+// Per-model token limits from the live catalog; routes fall back to the registry's Gemini limits.
+const limits=new Map();
+export function geminiLimits(model){return limits.get(model)||{};}
 export async function discover(env){
- if(discovered.models&&discovered.key===env.GEMINI_API_KEY&&Date.now()-discovered.at<600000)return discovered.models;
+ const key=env.GEMINI_API_KEY+':'+(fullCatalog(env,'gemini')?'all':env.ROUTING_POLICY_VERSION||'legacy');
+ if(discovered.models&&discovered.key===key&&Date.now()-discovered.at<600000)return discovered.models;
  const available=new Set();let pageToken='';
- for(let page=0;page<5;page++){
+ for(let page=0;page<MAX_GEMINI_PAGES;page++){
   const url=new URL('https://generativelanguage.googleapis.com/v1beta/models');url.searchParams.set('pageSize','100');if(pageToken)url.searchParams.set('pageToken',pageToken);
   const r=await fetch(url,{headers:{'x-goog-api-key':env.GEMINI_API_KEY},signal:AbortSignal.timeout(10000)});
   if(!r.ok)throw Error('Gemini discovery HTTP '+r.status);
-  const data=await r.json();for(const m of data.models||[])if(m.supportedGenerationMethods?.includes('generateContent'))available.add(m.name.replace(/^models\//,''));
+  const data=await r.json();for(const m of data.models||[])if(m.supportedGenerationMethods?.includes('generateContent')){
+   const name=m.name.replace(/^models\//,'');available.add(name);
+   limits.set(name,{context:Number(m.inputTokenLimit)||null,maxOutput:Number(m.outputTokenLimit)||null});
+  }
   pageToken=data.nextPageToken||'';if(!pageToken)break;
  }
- // Discovery confirms the model is currently available; the static freeModels allowlist prevents a newly
- // discovered paid or preview model from entering automatic fallback.
- const models=[...available].filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m)))
-  .sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).slice(0,MAX_GEMINI);
- if(models.length)discovered={key:env.GEMINI_API_KEY,at:Date.now(),models};
+ // Discovery confirms the model is currently available. With KAPPA_ALL_MODEL_PROVIDERS including gemini,
+ // every chat model this key lists is routed; otherwise the static freeModels allowlist keeps a newly
+ // discovered paid or preview model out of automatic fallback.
+ const sorted=[...available].sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
+ const models=fullCatalog(env,'gemini')?sorted.filter(m=>!EXCLUDE.test(m)):
+  sorted.filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m))).slice(0,MAX_GEMINI);
+ if(models.length)discovered={key,at:Date.now(),models};
  return models;
 }
 export function isComplex(input){

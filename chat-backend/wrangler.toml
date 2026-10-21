@@ -5,7 +5,7 @@ workers_dev = true
 # Keep owner-managed routing variables configured in the Cloudflare dashboard when deploying.
 keep_vars = true
 
-# Phase 3 routing is deliberately fail-closed. Owner-reviewed free eligibility and
+# Phase 3 routing is deliberately fail-closed. Owner-managed provider and
 # per-channel permissions are dashboard-managed variables; keep them out of this config
 # so deployment cannot replace them with blank defaults.
 [vars]
