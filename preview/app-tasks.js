@@ -359,13 +359,18 @@ function taskCheckpoint(job,status,source='backend'){
 
 for(const job of trackedJobs){if(!job.queuedAt)job.queuedAt=job.activeAt||Date.now();if(!job.finished)ensureTaskCard(job)}
 
-// Update freshness without refetching, rerendering the chat, or announcing every timer tick.
-setInterval(()=>{
+// Update freshness locally; rerender only when a recovery reminder changes, never on each timer tick.
+function refreshTaskFreshness(){
  if(document.hidden)return;
+ let changed=false;
  document.querySelectorAll('[data-task-freshness]').forEach(el=>{
   const job=trackedJobs.find(j=>j.number===Number(el.dataset.taskFreshness));if(!job)return;
   const updated=Number(el.dataset.updatedAt),label=updated?new Date(updated).toLocaleTimeString():'not received';
-  el.closest('.agent-activity')?.classList.toggle('stale',!!job.pollError||KappaProgress.stale(job));
+  const reminder=!job.finished&&KappaProgress.recoveryReminderDue(job.progress);
+  if(el.dataset.recoveryReminder!==String(reminder))changed=true;
+  el.closest('.agent-activity')?.classList.toggle('stale',!!job.pollError||reminder||KappaProgress.stale(job));
   el.textContent=job.pollError?'Updates unavailable. Reconnecting automatically.':KappaProgress.stale(job)?'No recent execution update. Last update '+label+'.':'Last update '+label;
  });
-},1000);
+ if(changed)render(); // Only the eligibility boundary, never every clock tick or a network retry.
+}
+setInterval(refreshTaskFreshness,1000);

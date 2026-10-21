@@ -175,6 +175,32 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertTrue(restored.begin(action))
         self.assertFalse(self.world.journal().begin(action))
 
+    def test_transient_failure_is_eligible_after_one_minute_without_early_or_duplicate_dispatch(self):
+        start = self.world.now
+        self.journal.defer(urllib.error.URLError('temporary outage'))
+        self.assertEqual(self.journal.state['nextAt'], start + 60)
+        self.world.now = start + 59
+        self.assertFalse(self.world.journal().queue())
+        self.assertEqual(self.world.journal().state['continuations'], 0)
+        self.world.now = start + 61
+        restarted = self.world.journal()
+        self.assertTrue(restarted.queue())
+        self.assertFalse(self.world.journal().queue())
+        self.assertEqual(len([c for c in self.world.calls if c[0].endswith('/dispatches')]), 1)
+        progress = json.loads(re.search(r'KAPPA_PROGRESS_V1 (.*?) -->', next(r['body'] for r in self.world.rows if 'KAPPA_PROGRESS_V1' in r['body']))[1])
+        self.assertEqual(progress['recovery']['scanIntervalSeconds'], 300)
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/recovery.yml').read_text()
+        self.assertIn("cron: '2-57/5 * * * *'", workflow)
+
+    def test_one_minute_eligibility_keeps_later_provider_and_account_cooldowns(self):
+        start = self.world.now
+        self.journal.state['routingAvailability'] = {'retryAt': start + 7200}
+        self.journal.defer(runner.ProviderRoutesUnavailable('outage', retry_at=start + 3600))
+        self.assertEqual(self.journal.state['nextAt'], start + 7230)
+        self.world.now = start + 61
+        self.assertFalse(self.world.journal().queue())
+        self.assertEqual(self.world.journal().state['continuations'], 0)
+
     def test_pinned_failure_preserves_route_without_automatic_continuation(self):
         self.journal.scope.inference_route = 'groq:openai/gpt-oss-120b'
         self.assertFalse(self.journal.defer(RuntimeError('Gateway HTTP 503; upstream cause unknown')))

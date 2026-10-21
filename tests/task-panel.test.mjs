@@ -225,7 +225,8 @@ test('a draft PR report reads as a step, and as not finished when the work check
 test('recovery snapshots render waiting and recovering with the actual error and saved commit',async()=>{
  await import('../preview/task-progress.js');
  const P=globalThis.KappaProgress,source=read('ui.js');
- const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date,Math,Number,String,Object,Array,
+ const clock=class extends Date{static now(){return 200000}};
+ const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date:clock,Math,Number,String,Object,Array,
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
  vm.createContext(box);vm.runInContext(slice(source,'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
@@ -236,7 +237,7 @@ test('recovery snapshots render waiting and recovering with the actual error and
   assert.ok(p);
   const html=box.renderExecutionActivity({text:''},{number:130,title:'Weather',message:'progress',progress:p,queuedAt:1000});
   assert.match(html,new RegExp(label));assert.match(html,/Malformed &lt;JSON&gt;/);assert.match(html,/Saved commit: bbbbbbb/);
-  assert.match(html,/Next: Use compact source/);assert.doesNotMatch(html,/>DONE</);
+  assert.match(html,status==='waiting'?/Next: scheduled recovery/:/Next: Use compact source/);assert.doesNotMatch(html,/>DONE</);
   if(status==='waiting'){
    assert.equal(P.stale({progress:p},9999999),false);
    assert.equal(J.stalled({progress:p,message:'progress',activeAt:1000},9999999),false);
@@ -250,4 +251,36 @@ test('waiting recovery becomes blocked at the recorded authorization expiry',()=
  const p=P.normalize({version:1,taskId:'130',attemptId:'r',attemptAt:1000,revision:1,updatedAt:2000,
   status:'waiting',steps:[],recovery:{expiresAt:3000,candidate:'b'.repeat(40)}},130);
  assert.equal(P.expired(p,2999),false);assert.equal(P.expired(p,3000),true);
+});
+
+test('a recovery-eligible card offers explicit retry and the local timer reveals it without a provider call',()=>{
+ let tick=159999,renders=0;
+ const clock=class extends Date{static now(){return tick}};
+ const box={esc,KappaJobs:J,KappaActions:K,Date:clock,Math,Number,String,Object,Array,
+  plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
+  heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[],render(){renders++},
+  fetch(){throw Error('A display timer must not dispatch or infer')}};
+ vm.createContext(box);vm.runInContext(read('task-progress.js'),box);
+ vm.runInContext(slice(read('ui.js'),'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
+ const p=box.KappaProgress.normalize({version:1,taskId:'171',attemptId:'r',attemptAt:1000,revision:1,updatedAt:1000,
+  status:'waiting',startedAt:1000,steps:[],recovery:{candidate:'b'.repeat(40),nextAt:100000,expiresAt:500000,
+  scanIntervalSeconds:300,last:{error:'upstream HTTP 503',next:'Scan every 15 minutes'}}},171);
+ const job={number:171,message:'progress',progress:p,queuedAt:500};
+ const card=()=>box.renderExecutionActivity({text:''},job);
+ let html=card();assert.match(html,/WAITING TO RESUME/);assert.doesNotMatch(html,/data-task-retry/);
+ assert.match(html,/Waiting time/);assert.doesNotMatch(html,/Working time|<span>Working/);
+ assert.match(html,/checks scheduled every 5 minutes; GitHub may delay/);assert.doesNotMatch(html,/15 minutes/);
+ const dataset=markup=>Object.fromEntries([...markup.matchAll(/data-([a-z-]+)="([^"]*)"/g)].map(m=>[m[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase()),m[2]]));
+ const el={dataset:dataset(html),closest:()=>({classList:{toggle(){}}})};
+ box.document={hidden:false,querySelectorAll:()=>[el]};box.trackedJobs=[job];
+ vm.runInContext(slice(tasks,'function refreshTaskFreshness(','\nsetInterval(refreshTaskFreshness'),box);
+ box.refreshTaskFreshness();assert.equal(renders,0);
+ tick=160000;box.refreshTaskFreshness();assert.equal(renders,1,'one local render at the eligibility boundary');
+ html=card();assert.match(html,/READY TO RESUME/);assert.match(html,/data-task-retry="171"/);
+ assert.match(html,/Scheduled checks can run late/);assert.match(html,/Saved commit: bbbbbbb/);
+ el.dataset=dataset(html);box.refreshTaskFreshness();assert.equal(renders,1,'no render on every clock tick');
+ assert.equal(p.status,'waiting');assert.equal(p.recovery.continuations,0);
+ tick=500000;html=card();assert.match(html,/BLOCKED/);assert.match(html,/Retry to renew task authorization/);
+ assert.doesNotMatch(html,/READY TO RESUME/);assert.match(html,/data-task-retry="171"/);
+ job.finished=true;assert.doesNotMatch(card(),/data-task-retry/);
 });

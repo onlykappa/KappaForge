@@ -30,3 +30,16 @@ test('silence is stale data, never an inferred task failure',()=>{
  assert.equal(P.stale({...job,finished:true},130000),false);
  assert.equal(P.stale({progress:snapshot({status:'completed'})},130000),false);
 });
+
+test('recovery prompts after one minute of eligibility, never before cooldown or after expiry',()=>{
+ const waiting=snapshot({status:'waiting',recovery:{nextAt:100000,expiresAt:300000,scanIntervalSeconds:300}});
+ assert.equal(waiting.recovery.scanIntervalSeconds,300);
+ assert.equal(P.recoveryReminderDue(waiting,99999),false);
+ assert.equal(P.recoveryReminderDue(waiting,159999),false);
+ assert.equal(P.recoveryReminderDue(waiting,160000),true);
+ assert.equal(P.recoveryReminderDue(waiting,300000),false);
+ assert.equal(P.recoveryReminderDue({...waiting,status:'running'},200000),false);
+ assert.equal(P.recoveryReminderDue(snapshot({status:'waiting'}),200000),false);
+ assert.equal(P.recoveryReminderDue(snapshot({status:'waiting',recovery:{nextAt:100000}}),160000),true,'old checkpoints need no migration');
+ assert.equal(waiting.status,'waiting','eligibility is a display fact, not execution failure or new authorization');
+});

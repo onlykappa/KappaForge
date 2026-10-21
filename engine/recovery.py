@@ -18,6 +18,7 @@ SPLITTING = ContextVar('recovery_split_active', default=False)
 MARKER = 'KAPPA_RECOVERY_V1'
 ROOT = 'onlykappa/KappaForge'
 MAX_CONTINUATIONS = 3
+RECOVERY_SCAN_SECONDS = 300
 MAX_EVENTS = 40
 # GitHub comment content has a 65,536-character ceiling; UTF-8 bytes are
 # conservatively capped below it, including heading, marker and summary.
@@ -347,14 +348,15 @@ class Journal:
         now = self.clock()
         self.state.setdefault('waitingSince', now)
         availability = self.state.get('routingAvailability', {})
-        due = max(now + 300, getattr(error, 'retry_at', 0) + 30, availability.get('retryAt', 0) + 30)
+        minimum_wait = 60 if kind in ('provider_outage', 'rate_limit', 'invalid_response') else 300
+        due = max(now + minimum_wait, getattr(error, 'retry_at', 0) + 30, availability.get('retryAt', 0) + 30)
         end = min(self.scope.expires - 1200, self.state['waitingSince'] + self.project.get('maxWaitSeconds', 21600))
         if due > end:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
             return False
         self.state['nextAt'] = due
         self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
-                   next_action='Resume this task and candidate on the next recovery queue scan (every 15 minutes)')
+                   next_action='Resume saved work on the next recovery scan (scheduled every 5 minutes; GitHub may delay it)')
         self.publish('waiting', 'Progress saved. Waiting for automatic continuation on the recovery queue.')
         return True
 
@@ -368,7 +370,7 @@ class Journal:
                         attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
                         steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
                                     startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
-                        recovery=dict(executionState=execution, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
+                        recovery=dict(executionState=execution, scanIntervalSeconds=RECOVERY_SCAN_SECONDS, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
                                       continuations=self.state['continuations'], expiresAt=int(self.scope.expires * 1000), last=last))
         wire = json.dumps(snapshot, ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
         self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',

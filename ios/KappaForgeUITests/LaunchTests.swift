@@ -107,6 +107,35 @@ final class LaunchTests: XCTestCase {
     }
 
 
+    func testRecoveryEligibilityAndReopenInNativeSimulator() {
+        let app = XCUIApplication()
+        app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = "recovery"
+        app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 60))
+        func status(_ label: String) -> XCUIElement {
+            web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        XCTAssertTrue(status("WAITING TO RESUME").waitForExistence(timeout: 60))
+        XCTAssertFalse(web.buttons["Retry"].exists, "A future provider cooldown must not offer early retry")
+        let advance = web.buttons["Simulate cooldown elapsed"]
+        XCTAssertTrue(advance.waitForExistence(timeout: 15))
+        advance.tap() // Debug simulator fixture only: the real clock crosses the one-minute boundary in one second.
+        XCTAssertTrue(status("READY TO RESUME").waitForExistence(timeout: 15))
+        XCTAssertTrue(web.buttons["Retry"].exists, "Eligibility must reveal explicit Retry without a network update")
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Recovery eligibility (fixture; no inference or task dispatch)"
+        image.lifetime = .keepAlways
+        add(image)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(web.waitForExistence(timeout: 60))
+        XCTAssertTrue(status("READY TO RESUME").waitForExistence(timeout: 60), "Persisted recovery survives a full app restart")
+        XCTAssertTrue(web.buttons["Retry"].exists)
+        XCTAssertFalse(web.buttons["Simulate cooldown elapsed"].exists, "Relaunch must not reset the saved eligibility")
+        app.terminate()
+    }
+
     func testRedesignScreenshotsInNativeSimulator() {
         let app = XCUIApplication()
         app.launchEnvironment["KAPPA_PROGRESS_FIXTURE"] = "running"
