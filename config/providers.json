@@ -936,7 +936,7 @@
             "tpm": 5000000,
             "rps": 0.63,
             "rpm": 0,
-            "note": "Listed at 5M tokens per minute, but the API answers HTTP 403 to this account (tested 2026-10-22), so it is not routed or counted"
+            "note": "A Labs model: answers 403 until an admin enables Labs models in Mistral organization settings (audit 2026-10-22); not routed or counted until then"
           },
           {
             "match": "codestral",
