@@ -75,10 +75,11 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
 // it on hidden reasoning. A hang or server error is asked a second time at once: answering then means it was
 // starting up (a cold start), not broken.
 const AUDIT_TIMEOUT_MS=90000,AUDIT_TOKENS=1024;
-async function auditOnce(env,route){
+async function auditOnce(env,route,waited=false){
  const requestId=crypto.randomUUID(),started=Date.now(),row={status:null,outcome:"error",latencyMs:null,detail:null,reply:null,finish:null,reasoningChars:0};
- let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});}catch{return {...row,outcome:"coordination_unavailable"};}
- if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route);}
+ let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE,recheck:true});}catch{return {...row,outcome:"coordination_unavailable"};}
+ // A per-minute limit is waited out once; a second refusal is reported rather than waited on again.
+ if(!reserved.allowed&&!waited&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route,true);}
  if(!reserved.allowed)return {...row,outcome:reserved.reason==="test_budget"?"saved_for_chat":"limit_reached",detail:reserved.reason||null};
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),AUDIT_TIMEOUT_MS);
  let response=null,status=0,category="",errorBody=null,usage=null;

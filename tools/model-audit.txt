@@ -1,14 +1,8 @@
-# Mistral models on the account's limits page (admin.mistral.ai, 2026-10-22) that the API's model list leaves out or
-# that never answered: asked by name, one by one, with the provider's reason.
-mistral:mistral-large-2512
-mistral:mistral-large-latest
-mistral:mistral-large-4
-mistral:zai-glm-5-3
-mistral:glm-5-2
-mistral:mistral-small-2603
-mistral:mistral-small-latest
+# Mistral models marked as having no quota (they refused every request on 2026-10-21/22), asked again directly, and
+# Mistral Small, which answers 429 to its first request.
 mistral:mistral-medium-latest
 mistral:magistral-medium-latest
 mistral:magistral-small-latest
 mistral:mistral-vibe-cli-latest
 mistral:labs-leanstral-1-5-1
+mistral:mistral-small-latest
