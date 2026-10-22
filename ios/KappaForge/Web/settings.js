@@ -126,7 +126,7 @@ function usageHome(){
  for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
  const success=attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—';
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
- const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','Counts the providers that publish a daily token allowance: '+esc(cappedNames.join(', '))+'. Others limit requests or tokens per minute instead.'):'';
+ const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','The most the free tiers of '+esc(cappedNames.join(', '))+' allow today: published daily token caps, or for models limited per minute (like Gemini), tokens per minute × the requests allowed per day. Larger requests reach it sooner.'):'';
  // The four busiest providers stand alone; the rest share one "Other" row.
  const sorted=[...model.rows].sort((a,b)=>b.used.requests-a.used.requests||(b.requestLimit?1:0)-(a.requestLimit?1:0));
  const main=sorted.slice(0,4),rest=sorted.slice(4);

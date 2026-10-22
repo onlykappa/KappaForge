@@ -65,6 +65,14 @@ function pairs(limit,used){
  if(Number.isFinite(limit.rps))out.push({key:'rps',label:'Busiest second (requests)',used:used.peakSecondRequests,limit:limit.rps});
  return out.map(p=>({...p,percent:p.limit>0?Math.round(p.used/p.limit*1000)/10:null}));
 }
+// Most tokens a model's free tier allows in one day: its published daily token cap, or else what its per-minute
+// token limit allows over the day, held to requests per day × tokens per minute (each request at most a full minute's
+// tokens). Null without a daily bound (no daily token cap and no requests-per-day limit).
+function tokenCeiling(limit){
+ if(Number.isFinite(limit?.tpd))return limit.tpd;
+ if(!Number.isFinite(limit?.tpm)||limit.tpm<=0||!Number.isFinite(limit.rpd))return null;
+ return Math.min(limit.tpm*1440,limit.rpd*limit.tpm);
+}
 // Per provider and model: today's attempts and tokens recorded by KappaForge against the configured limits.
 function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
  const ids=[...new Set(['gemini',...providerIds])],result={};
@@ -98,12 +106,12 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   const worst=all.sort((a,b)=>rank(b)-rank(a))[0]||null;
   models.sort((a,b)=>b.used.requests-a.used.requests||(b.pairs[0]?.percent??-1)-(a.pairs[0]?.percent??-1)||a.model.localeCompare(b.model));
   // Provider-wide daily allowances: its own cap, or the sum of its models' caps. Token use is compared only
-  // on models that publish a daily token cap, so the two sides of the comparison cover the same models.
-  const capped=models.filter(m=>Number.isFinite(m.limit?.tpd));
+  // on models with a token limit, so the two sides of the comparison cover the same models.
+  const capped=models.filter(m=>tokenCeiling(m.limit)!==null);
   const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:models.reduce((n,m)=>n+(Number.isFinite(m.limit?.rpd)?m.limit.rpd:0),0)||null;
-  const tokenLimit=capped.reduce((n,m)=>n+m.limit.tpd,0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
+  const tokenLimit=capped.reduce((n,m)=>n+tokenCeiling(m.limit),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }
-root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage};
+root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage,tokenCeiling};
 })(globalThis);

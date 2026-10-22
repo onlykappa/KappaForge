@@ -189,3 +189,12 @@ test('the shared router enforces each Gemini model\'s own minute, day and token 
  const perMinute=perDay.replace('PerDay','PerMinute');
  assert.equal(quotaResetFromBody(route,perMinute,now),now+31000);
 });
+
+test('daily token capacity counts per-minute token limits, not only published daily caps',()=>{
+ assert.equal(L.tokenCeiling({tpd:500000,tpm:6000}),500000,'a published daily cap wins');
+ assert.equal(L.tokenCeiling({rpm:5,rpd:20,tpm:250000}),5000000,'20 requests a day, each up to 250K tokens');
+ assert.equal(L.tokenCeiling({rpm:30,rpd:14400,tpm:16000}),16000*1440,'held to a full day of the per-minute limit');
+ assert.equal(L.tokenCeiling({tpm:500000,rps:1}),null,'no daily bound, no ceiling');
+ const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
+ assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);assert.equal(by('mistral').tokenLimit,null);
+});
