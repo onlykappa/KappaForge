@@ -1094,8 +1094,8 @@ class Progress:
                 gh(f"repos/{ROOT}/issues/comments/{self.comment}", self.token, {"body": body}, method="PATCH")
             else:
                 self.comment = gh(f"repos/{ROOT}/issues/{self.number}/comments", self.token, {"body": body}).get("id")
-        except (urllib.error.URLError, ValueError, AttributeError):
-            pass
+        except (urllib.error.URLError, ValueError, AttributeError, PermissionError):
+            pass  # A refused write (no task scope left, such as a finished run's checklist) wrote nothing.
 
 
 def note_progress(journal, **changes):

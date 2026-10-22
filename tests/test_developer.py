@@ -11,6 +11,10 @@ SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n 
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 class DeveloperValidationTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
 
     def test_a_repeated_rejected_patch_moves_on_to_another_model(self):
         """Task #123 stopped at attempt 2 of 5 when a model repeated itself; now the other attempts ask other models."""
@@ -746,6 +750,10 @@ class OwnerRequestedFixTests(unittest.TestCase):
                 self.assertFalse(any(c[0].endswith("/merge") for c in calls))
 
 
+def tearDownModule():
+    developer.Progress.latest = None  # Later test modules start without this module's last checklist.
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -772,6 +780,11 @@ class ActivityFeedTests(unittest.TestCase):
 
 
 class StageRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
+
     def test_a_failed_test_stage_keeps_the_change_for_the_work_check(self):
         """Task #125's final "write a test" stage failing threw away three finished stages."""
         first = json.dumps({"summary": "Cast", "files": [
@@ -788,6 +801,11 @@ class StageRecoveryTests(unittest.TestCase):
 
 
 class ModelSwitchTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
+
     def test_a_model_whose_answers_keep_failing_is_swapped_mid_task(self):
         bad = [json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "missing " + str(i), "replace": "x"}]}]}) for i in range(2)]
         good = json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
