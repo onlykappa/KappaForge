@@ -167,7 +167,7 @@ export default {
         let snapshot=null;try{snapshot=await routingSnapshot(env)}catch{}
         const now=Date.now(),routeState=snapshot?.routes?.[provider+":"+model]||null;
         const providerPools=Object.values(snapshot?.pools||{}).filter(row=>row?.provider===provider);
-        const poolState=providerPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
+        const poolState=providerPools.filter(row=>row.blocked||row.outage||!(row.status===0||row.status>=500)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
         const blocked=!!routeState?.blocked||!!poolState?.blocked,until=Math.max(routeState?.until||0,poolState?.until||0);
         const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
         const lastFailure=[poolState,routeState].filter(Boolean).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
@@ -248,7 +248,9 @@ export default {
           // keyless pool) are ignored. A few rested models leave the provider usable.
           const poolKey=await accountPoolFor(env,id,p)+":"+(p.quotaPool||id),keyless=poolKey.split(":").length===2,now=Date.now();
           const legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless),live=row=>row&&!legacy(row)&&(row.blocked||row.until>now);
-          const pool=live(snapshot.pools?.[poolKey])?snapshot.pools[poolKey]:null;
+          // One model's old hang recorded against the whole account no longer stops it (router-state.js), so it is not shown as one.
+          const stale=row=>row&&!row.blocked&&!row.outage&&(row.status===0||row.status>=500);
+          const pool=live(snapshot.pools?.[poolKey])&&!stale(snapshot.pools[poolKey])?snapshot.pools[poolKey]:null;
           const resting=Object.entries(snapshot.routes||{}).filter(([key,row])=>key.startsWith(id+":")&&live(row)).map(([,row])=>row);
           const active=pool?.blocked?"blocked":pool?"cooldown":resting.length?"models_resting":"unknown";
           health[id]={state:active,retryAt:pool?.until||Math.max(0,...resting.map(row=>row.until||0))||null,category:pool?.category||resting[0]?.category||null,status:pool?.status||null,restingModels:resting.length};
