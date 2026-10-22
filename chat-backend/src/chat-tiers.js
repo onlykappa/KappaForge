@@ -88,7 +88,9 @@ async function askFirst(env,routes,opts,tries=2){
   if(sent>=tries)break;
   const r=await askRoute(env,route,opts);
   if(r.skipped)continue;
-  sent++;if(r.event)events.push(r.event);
+  if(r.event)events.push(r.event);
+  // An instant refusal (needs payment, busy) never started answering, so it does not use up a try.
+  if(r.text||!(r.event?.status&&r.event.latency<5000))sent++;
   if(r.text)return {text:r.text,route,events};
  }
  return {text:null,events};
