@@ -263,7 +263,7 @@ export default {
     if(new URL(request.url).pathname==="/providers/probe"){
       if(!env.MEMORY)return json({error:"Shared routing storage unavailable"},503,cors);
       const body=await request.json().catch(()=>({}));
-      try{return json(await probeModels(env,{offset:body.offset,limit:body.limit}),200,cors)}
+      try{return json(await probeModels(env,{offset:body.offset,limit:body.limit,provider:typeof body.provider==="string"?body.provider.slice(0,40):null}),200,cors)}
       catch{return json({error:"Model check unavailable. Check backend credentials or provider status."},502,cors)}
     }
     if(new URL(request.url).pathname==="/usage"){

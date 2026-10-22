@@ -16,6 +16,8 @@ on:
     - live-usage-check
     # Pages and model lists only, without sending a message to every model.
     - live-usage-check-quick
+    # Every model of one provider (the branch name's last part), e.g. live-usage-check-provider-mistral.
+    - live-usage-check-provider-*
 permissions:
   contents: write
 concurrency:
@@ -54,9 +56,11 @@ jobs:
         KAPPA_WORKER_URL: ${{ vars.KAPPA_ROUTER_URL }}
         KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
         PROBE: ${{ github.event_name == 'push' && github.ref_name == 'live-usage-check' || inputs.probe }}
+        PROBE_PROVIDER: ${{ startsWith(github.ref_name, 'live-usage-check-provider-') && github.ref_name || '' }}
       run: |-
         set -Eeuo pipefail
         test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }
+        PROBE_PROVIDER="${PROBE_PROVIDER#live-usage-check-provider-}"; export PROBE_PROVIDER
         node tools/live-usage-check.mjs "$RUNNER_TEMP/live" $([ "$PROBE" = "true" ] && echo --probe)
     - name: Publish screenshots to the results branch
       if: ${{ !cancelled() }}
