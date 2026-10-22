@@ -119,7 +119,16 @@ export async function auditModels(env,labels){
   if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"||first.outcome==="empty_response"){await sleep(3000);tries.push(await auditOnce(env,route));}
   results.push({label,provider:route.provider,model:route.model,tries});
  }
- for(const label of labels)if(!results.some(r=>r.label===label))results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});
+ // A model the provider's list leaves out (its limits page names it, say) is asked by name all the same, so the audit
+ // shows whether the API serves it; listed:false marks it.
+ for(const label of labels){
+  if(results.some(r=>r.label===label))continue;
+  const i=label.indexOf(":"),provider=i>0?label.slice(0,i):"",model=label.slice(i+1),p=registry.providers[provider];
+  if(!p||provider==="gemini"||!/^[A-Za-z0-9@._:/-]{1,180}$/.test(model)||!(env[p.key]||p.keyOptional||!p.key)){results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});continue;}
+  const route={provider,model,label},first=await auditOnce(env,route),tries=[first];
+  if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"){await sleep(3000);tries.push(await auditOnce(env,route));}
+  results.push({label,provider,model,listed:false,tries});
+ }
  return {results};
 }
 
