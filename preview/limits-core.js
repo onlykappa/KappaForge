@@ -67,14 +67,14 @@ function pairs(limit,used){
 }
 // Most tokens a model's free tier allows in one day: its published daily token cap, or else what its per-minute
 // token limit allows over the day, held to requests per day × tokens per minute (each request at most a full minute's
-// tokens). Null without a daily bound (no daily token cap and no requests-per-day limit).
+// tokens). A model limited only per minute (Mistral) gets a full day of its per-minute limit. Null without a token limit.
 function tokenCeiling(limit){
  if(Number.isFinite(limit?.tpd))return limit.tpd;
- if(!Number.isFinite(limit?.tpm)||limit.tpm<=0||!Number.isFinite(limit.rpd))return null;
- return Math.min(limit.tpm*1440,limit.rpd*limit.tpm);
+ if(!Number.isFinite(limit?.tpm)||limit.tpm<=0)return null;
+ return Math.min(limit.tpm*1440,Number.isFinite(limit.rpd)?limit.rpd*limit.tpm:Infinity);
 }
 // Per provider and model: today's attempts and tokens recorded by KappaForge against the configured limits.
-function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
+function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null}={}){
  const ids=[...new Set(['gemini',...providerIds])],result={};
  const providerFor=id=>result[id]??=(()=>{
   const entry=limits?.providers?.[id]||null,zone=entry?.dayResets||'UTC';
@@ -94,6 +94,8 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   // Models with a known allowance appear even before their first use today.
   if(p.scope==='model')for(const row of limits.providers[p.id].models||[]){
    if(row.sameAs||row.rpm===0||row.rpd===0||Object.values(p.models).some(m=>m.limit?.match===row.match))continue;
+   // With the routed model list known, a configured allowance counts only when KappaForge can send to that model.
+   const list=routed?.[p.id];if(Array.isArray(list)&&!list.some(name=>limitRow(limits,p.id,canonical(limits,p.id,name))?.match===row.match))continue;
    p.models[row.match]={model:row.match,limit:limitFor(limits,p.id,row.match),used:empty(),unused:true};
   }
   const models=Object.values(p.models).map(m=>({...m,used:finish(m.used),pairs:pairs(m.limit,m.used)}));
@@ -111,15 +113,7 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   const once=list=>[...new Map(list.map(m=>[m.limit?.match||m.model,m.limit])).values()];
   const capped=models.filter(m=>tokenCeiling(m.limit)!==null);
   const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:once(models.filter(m=>Number.isFinite(m.limit?.rpd))).reduce((n,l)=>n+l.rpd,0)||null;
-  let tokenLimit=once(capped).reduce((n,l)=>n+tokenCeiling(l),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
-  // A monthly token allowance (Mistral) bounds models that have no daily limit: today's share is an even split
-  // of the month, and every token those models use counts against it.
-  const monthly=limits?.providers?.[p.id]?.monthlyTokens;
-  if(Number.isFinite(monthly)&&monthly>0){
-   const d=new Date(now),days=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
-   tokenLimit=(tokenLimit||0)+Math.floor(monthly/days);
-   tokensOnCapped+=models.filter(m=>tokenCeiling(m.limit)===null).reduce((n,m)=>n+m.used.tokens,0);
-  }
+  const tokenLimit=once(capped).reduce((n,l)=>n+tokenCeiling(l),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }

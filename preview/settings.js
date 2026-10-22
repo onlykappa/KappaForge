@@ -87,7 +87,7 @@ function usageModel(){
  const L=globalThis.KappaLimits,list=capabilities?.providers||[];
  if(!L||!capabilities?.limits||!list.length)return null;
  const names=Object.fromEntries(list.map(p=>[p.id,p.name])),enabled=list.filter(p=>p.enabled!==false&&p.configured!==false).map(p=>p.id);
- const rows=L.usage(usageEvents,capabilities.limits,list.map(p=>p.id),{show:enabled}).filter(p=>enabled.includes(p.id)||p.used.requests);
+ const rows=L.usage(usageEvents,capabilities.limits,list.map(p=>p.id),{show:enabled,routed:Object.fromEntries(list.filter(p=>Array.isArray(p.models)&&p.models.length).map(p=>[p.id,p.models]))}).filter(p=>enabled.includes(p.id)||p.used.requests);
  return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p]))};
 }
 function providerRow(p,names,unit='requests'){
@@ -126,7 +126,7 @@ function usageHome(){
  for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
  const success=attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—';
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
- const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','The most the free tiers of '+esc(cappedNames.join(', '))+' allow today: published daily token caps, or for models limited per minute (like Gemini), tokens per minute × the requests allowed per day; for Mistral, today’s share of its monthly allowance. Larger requests reach it sooner.'):'';
+ const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','The most the free tiers of '+esc(cappedNames.join(', '))+' allow today: published daily token caps; for models limited per minute, tokens per minute × the requests allowed per day (Gemini), or a full day of the per-minute limit where there is no daily limit (Mistral). Counts only models KappaForge routes. Larger requests reach it sooner.'):'';
  // The four busiest providers stand alone; the rest share one "Other" row.
  const sorted=[...model.rows].sort((a,b)=>b.used.requests-a.used.requests||(b.requestLimit?1:0)-(a.requestLimit?1:0));
  const main=sorted.slice(0,4),rest=sorted.slice(4);

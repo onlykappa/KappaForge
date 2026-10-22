@@ -563,10 +563,13 @@
       },
       "mistral": {
         "scope": "model",
-        "source": "Mistral Admin, Default Workspace limits; -latest aliases use the dated model's row",
-        "monthlyTokens": 1000000000,
-        "monthlyTokensSource": "Experiment (free) plan, 1B tokens a month as published by free-tier trackers; not shown in the Mistral Admin capture",
+        "source": "Mistral Admin → Limits, Default Workspace (no daily or monthly token cap; tokens per minute and requests per second only); -latest aliases use the dated model's row",
         "models": [
+          {
+            "match": "ministral-8b-2410",
+            "tpm": 50000,
+            "rps": 1
+          },
           {
             "match": "labs-leanstral",
             "tpm": 5000000,

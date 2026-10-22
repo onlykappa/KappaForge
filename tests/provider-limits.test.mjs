@@ -194,11 +194,11 @@ test('daily token capacity counts per-minute token limits, not only published da
  assert.equal(L.tokenCeiling({tpd:500000,tpm:6000}),500000,'a published daily cap wins');
  assert.equal(L.tokenCeiling({rpm:5,rpd:20,tpm:250000}),5000000,'20 requests a day, each up to 250K tokens');
  assert.equal(L.tokenCeiling({rpm:30,rpd:14400,tpm:16000}),16000*1440,'held to a full day of the per-minute limit');
- assert.equal(L.tokenCeiling({tpm:500000,rps:1}),null,'no daily bound, no ceiling');
+ assert.equal(L.tokenCeiling({tpm:500000,rps:1}),500000*1440,'per-minute only: a full day of it');assert.equal(L.tokenCeiling({rps:1}),null);
  const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
  assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);
- const oct=L.usage([{at:Date.parse('2026-10-21T12:00:00Z'),model:'mistral:mistral-small-2603',total:500,ok:true}],limits,ids,{now:Date.parse('2026-10-21T13:00:00Z'),show:ids}).find(r=>r.id==='mistral');
- assert.equal(oct.tokenLimit,Math.floor(1e9/31),'Mistral: a 31st of its monthly allowance in October');assert.equal(oct.tokensOnCapped,500);
+ const m=L.usage([],limits,ids,{show:ids,routed:{mistral:['mistral-small-2603','ministral-8b-2410','ministral-8b-latest']}}).find(r=>r.id==='mistral');
+ assert.equal(m.tokenLimit,(20000+50000+625000)*1440,'Mistral: a day of each routed model\'s per-minute limit, nothing for models it does not route');
 });
 
 test('aliases of one model family share one allowance in provider totals',()=>{
