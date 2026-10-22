@@ -13,7 +13,8 @@ async function go(page,target){
  if(target==='chat'){await page.evaluate(()=>navigate('chat'));return}
  if(['chats','home'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
  if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
- if(target==='tasks'){await go(page,'home');await openNavigation(page);await page.locator('.sidebar [data-page=tasks]').click();return}
+ // Phones have no Tasks entry point since the tab was removed; open the view directly, as for a chat.
+ if(target==='tasks'){await page.evaluate(()=>navigate('tasks'));return}
  await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
 }
 async function openSettings(page){if(await isPhone(page)){await go(page,'settings');return}await openNavigation(page);await page.locator('#settingsbtn').click();}
