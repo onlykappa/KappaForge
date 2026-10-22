@@ -260,3 +260,12 @@ test('a plan the provider reports itself (Ollama) leads the gauge and maxes it w
  let g=KappaLimits.gauge({plan:{percent:27.5,label:'of the monthly plan'},now});assert.equal(g.percent,27.5);assert.equal(g.maxed,false);
  g=KappaLimits.gauge({plan:{percent:100,maxed:true,until:now+86400000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+86400000);
 });
+
+test('a model row under a shared daily limit shows its own share; the provider row shows the account',()=>{
+ const G=KappaLimits.gauge,now=Date.UTC(2026,9,22,15),u=(o={})=>({requests:0,tokens:0,minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,...o});
+ const shared={rpd:1000},account=u({requests:35});
+ assert.equal(G({shared,sharedUsed:account,used:u({requests:3}),sharedScope:'model',now}).percent,0.3,'3 of 1,000');
+ assert.equal(G({shared,sharedUsed:account,used:account,now}).percent,3.5,'the provider row: 35 of 1,000');
+ const full=G({shared,sharedUsed:u({requests:1000}),used:u({requests:3}),sharedScope:'model',now});
+ assert.equal(full.maxed,true,'a model cannot go on once the account’s allowance is used up');
+});

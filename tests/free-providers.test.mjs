@@ -49,3 +49,19 @@ test('usage counts Hugging Face tokens without inventing a request allowance',()
  registry.limits,ids,{now,show:['huggingface']});
  const hf=rows.find(r=>r.id==='huggingface');assert.equal(hf.known,false);assert.equal(hf.used.tokens,50);
 });
+
+test('OpenRouter models carry their own context and output limits from the catalog, never above the provider\'s',async()=>{
+ const {resetPremiumCatalog}=await import('../chat-backend/src/premium.js');
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({data:[
+  {id:'liquid/lfm-2.5-2.6b:free',pricing:{prompt:'0',completion:'0'},context_length:65536,top_provider:{max_completion_tokens:8192}},
+  {id:'nvidia/nemotron-3.5-lightning:free',pricing:{prompt:'0',completion:'0'},context_length:1000000,top_provider:{max_completion_tokens:65536}}]});
+ try{
+  resetPremiumCatalog();
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'openrouter',KAPPA_CHAT_PROVIDERS:'openrouter',KAPPA_ALL_MODEL_PROVIDERS:'*',OPENROUTER_API_KEY:'fixture'};
+  const routes=await fallbackRoutes(env,[],{},false);
+  const lfm=routes.find(r=>r.model==='liquid/lfm-2.5-2.6b:free'),big=routes.find(r=>r.model==='nvidia/nemotron-3.5-lightning:free');
+  assert.equal(lfm.context,65536);assert.equal(lfm.maxOutput,8192,'its own smaller limits apply');
+  assert.equal(big.context,registry.providers.openrouter.context);assert.equal(big.maxOutput,registry.providers.openrouter.maxOutput,'a larger published limit never loosens the provider\'s');
+ }finally{globalThis.fetch=original}
+});

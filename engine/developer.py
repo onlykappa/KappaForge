@@ -611,6 +611,16 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                 finally:
                     UNFINISHED[:] = list(dict.fromkeys(prior + UNFINISHED))
                     recovery.SPLITTING.reset(handle)
+            # The free models answered but could not produce it: one premium rescue of this step, if allowed. Free routes
+            # that are only resting (an outage with a retry time) wait for the cooldown instead.
+            if not getattr(last, 'provider_routes', False) and not getattr(last, 'retry_at', 0):
+                rescued, dispatched = premium_rescue_step("proposal", "no_validated_proposal", lambda: generate_with(
+                    api_key, recovery_task, repo, small, existing, guide, allowed, budget, design, require_test, allow_empty))
+                if dispatched:
+                    premium_outcome("proposal", "solved" if rescued else "not_solved")
+                if rescued:
+                    model, summary, changes, explanation = rescued
+                    return model, summary, mirror_ios_copies(repo, changes, existing), explanation
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
                                     " | Earlier large attempt: " + reason,
                                     provider_routes=getattr(last, 'provider_routes', False),
@@ -1042,6 +1052,95 @@ def _asking(model):
 
 runner_module.ON_ASK = _asking
 
+_PREMIUM_SEEN = []
+_STEPS = {"check": "fixing what the check found", "proposal": "writing a change that passes validation"}
+_REFUSALS = {"premium_off": "Premium Mode is off", "free_not_exhausted": "the free models have not been tried enough on this task",
+             "step_already_rescued": "this step already had its one rescue", "task_cap": "the $1 task budget would be passed",
+             "month_cap": "the $5 monthly budget would be passed", "no_model_fits": "no reviewed model fits the request and budget",
+             "pricing_unverified": "OpenRouter prices could not be verified", "cost_unverified": "the maximum charge could not be verified",
+             "premium_unavailable": "premium is not set up for coding", "premium_state_unavailable": "the premium budget could not be checked",
+             "cancelled": "the task was cancelled"}
+
+
+def _money(info, key):
+    value = info.get(key)
+    return value if isinstance(value, (int, float)) and value >= 0 else None
+
+
+def _premium(info):
+    """Feed lines for a premium rescue: the quote before dispatch, the recommendation when it is off, and the result."""
+    journal = recovery.CURRENT.get()
+    if journal is not None:
+        journal.premium_last = info
+    model = info.get('model') if isinstance(info.get('model'), str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,120}', info['model']) else 'a premium model'
+    step = _STEPS.get(info.get('step'), 'this step')
+    cap, most = _money(info, 'maxUsd'), _money(info, 'taskLeftUsd')
+    refused = info.get('refused') if isinstance(info.get('refused'), str) else None
+    if refused == 'premium_off':
+        # Short enough for one feed line (200 characters): the choice itself is in Settings → Usage.
+        text = (f"Premium rescue recommended for {step}: {model}, at most ${cap or 0:.2f} (${most or 0:.2f} left for this task). "
+                "Nothing was charged. Choose in Settings → Usage")
+    elif refused:
+        text = f"Premium rescue not used ({_REFUSALS.get(refused, refused[:40])}); staying on free models"
+    elif info.get('quote') and info.get('eligible'):
+        text = f"Premium rescue for {step} (free models could not finish it): {model}, at most ${cap or 0:.2f}"
+    elif info.get('dispatched') and info.get('failed'):
+        text = f"Premium rescue did not answer ({str(info['failed'])[:40]}); back to free models"
+    elif info.get('dispatched'):
+        usd = _money(info, 'usd')
+        text = f"Premium rescue answered: {model} · " + (f"${usd:.4f} charged" if usd is not None else "charge not yet confirmed, counted at its maximum")
+    else:
+        return
+    if not _PREMIUM_SEEN or _PREMIUM_SEEN[-1] != text:
+        _PREMIUM_SEEN.append(text)
+        note("model", text)
+
+
+runner_module.ON_PREMIUM = _premium
+
+
+def premium_possible(step):
+    """A rescue may be asked for: a task runs through the gateway (the only path that can carry one), and this step has
+    not had one."""
+    journal = recovery.CURRENT.get()
+    return (journal is not None and os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true'
+            and type(getattr(getattr(journal, 'scope', None), 'number', None)) is int
+            and step not in getattr(journal, 'premium_steps', set()))
+
+
+def premium_rescue_step(step, reason, attempt):
+    """Ask the gateway for one premium rescue of a blocked step, then run `attempt` with it.
+
+    Only the step's first model call carries the rescue (the runner consumes it); every later call, here and after, is
+    free. The gateway decides whether it is allowed (Premium Mode or a one-time approval, free evidence, the caps).
+    Returns (attempt's result or None, whether a paid request was sent)."""
+    from engine.reliability import RecoveryBudgetExceeded
+    journal = recovery.CURRENT.get()
+    if not premium_possible(step):
+        return None, False
+    journal.premium_steps = getattr(journal, 'premium_steps', set()) | {step}
+    journal.premium_request, journal.premium_last = {"step": step, "reason": reason}, None
+    result = None
+    try:
+        result = attempt()
+    except RecoveryBudgetExceeded:
+        raise
+    except (RuntimeError, ValueError, GenerationFailure) as exc:
+        print("Premium rescue step ended without a usable answer: " + str(exc)[:300])
+    finally:
+        journal.premium_request = None
+    last = getattr(journal, 'premium_last', None) or {}
+    dispatched = bool(last.get('dispatched'))
+    return (result if dispatched else None), dispatched
+
+
+def premium_outcome(step, outcome):
+    """Tell the gateway whether the rescue solved the step, as the free re-check found (best effort)."""
+    journal = recovery.CURRENT.get()
+    number = getattr(getattr(journal, 'scope', None), 'number', None)
+    if type(number) is int:
+        runner_module.premium_outcome(number, step, outcome)
+
 
 class Progress:
     """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort.
@@ -1407,8 +1506,10 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     journal = recovery.CURRENT.get()
     requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']} if journal else {}
     repair_failures = []
-    for round_ in range(MAX_CHECK_ROUNDS + 1):
-        progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
+    rescued = None
+    for round_ in range(MAX_CHECK_ROUNDS + 2):
+        progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
+                     if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
         canonical_task = ((journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')) if journal else task
         review_task = canonical_task
@@ -1439,10 +1540,17 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
-        if not problems or round_ == MAX_CHECK_ROUNDS:
+        # After the last free round, one premium rescue of this step may follow: only when the free review itself ran
+        # (an unavailable review is a capacity problem, not proof the free models cannot do it) and the step has not had
+        # one. The re-check after it is free again.
+        if rescued is not None:
             break
+        if not problems or round_ == MAX_CHECK_ROUNDS and not (review and premium_possible("check")):
+            break
+        rescue_round = round_ == MAX_CHECK_ROUNDS
         progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
-        progress.now(f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
+        progress.now("Free fix rounds used up: checking whether a premium rescue is allowed" if rescue_round
+                     else f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
         # The fix sees every file the problems name, the change so far, and the files it already touched.
         named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
         current = {path: read(path) for path in (set(sources) | named)}
@@ -1461,6 +1569,20 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     + "\n".join('- ' + text for text in requirement_catalog)
                     + ("\n\nPREVIOUS REPAIR COULD NOT BE APPLIED. Use a different source-exact edit based on the "
                        "current files, not the rejected proposal:\n" + "\n".join(repair_failures[-2:]) if repair_failures else ""))
+        if rescue_round:
+            before = len(problems)
+            result, dispatched = premium_rescue_step("check", "check_rounds_exhausted", lambda: generate(
+                api_key, fix_task, repo, current, sizes, guide, allowed, design, require_test and not has_tests(changes)))
+            if not dispatched:
+                break
+            rescued = {"before": before, "applied": result is not None}
+            if result is None:
+                premium_outcome("check", "not_solved")
+                break
+            changes = {path: text for path, text in {**changes, **result[2]}.items() if text != (sources.get(path) if path in sources else read(path))}
+            if checkpoint:
+                checkpoint(changes)
+            continue
         try:
             # Existing candidate tests are still reviewed and independently run.
             # Do not force every follow-up repair to add a redundant test file.
@@ -1480,6 +1602,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         changes = {path: text for path, text in {**changes, **more}.items() if text != (sources.get(path) if path in sources else read(path))}
         if checkpoint:
             checkpoint(changes)
+    if rescued and rescued["applied"]:
+        # The rescue counts as a success only if the free re-check found the step's problems fixed.
+        premium_outcome("check", "solved" if not problems else "not_solved")
+        progress.ok("Premium rescue " + ("fixed every problem the check found" if not problems else
+                    f"left {len(problems)} of {rescued['before']} problems open") + "; back to free models", warn=bool(problems))
     if problems:
         progress.ok(f"Checked the work: {len(problems)} problem{'s' if len(problems) != 1 else ''} still open (listed on the PR)",
                     status="blocked", warn=True)

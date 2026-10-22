@@ -13,8 +13,10 @@ import {githubHeaders,githubRead} from "./github.js";
 import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
-import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY,catalogLimits} from "./providers.js";
 import {routingStore} from "./router-state.js";
+import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptTokensUpper} from "./premium.js";
+import {premiumStore} from "./premium-store.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
@@ -35,6 +37,7 @@ export class KappaMemory {
     if(url.pathname.startsWith("/authorization/"))return authorizationStore(this.state,request);
     if(url.pathname.startsWith("/usage"))return usageStore(this.state,request);
     if(url.pathname.startsWith("/router/"))return routingStore(this.state,request);
+    if(url.pathname.startsWith("/premium/"))return premiumStore(this.state,request);
     if(url.pathname.startsWith("/vectors/"))return indexStore(this.state,request);
     if (url.pathname === "/discord") {
       if (request.method === "GET") return new Response(JSON.stringify({connected:!!(await this.state.storage.get("discordWebhook"))}),{headers:{"Content-Type":"application/json"}});
@@ -143,10 +146,16 @@ export default {
     if(pathname.startsWith("/router/")){
       const diagnostics=pathname==="/router/diagnostics"&&request.method==="GET";
       const recovery=pathname==="/router/recovery"&&request.method==="POST";
-      if(!diagnostics&&!recovery&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
+      const premiumOutcome=pathname==="/router/premium-outcome"&&request.method==="POST";
+      if(!diagnostics&&!recovery&&!premiumOutcome&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
       if(!env.ROUTER_ACCESS_TOKEN||env.ROUTER_ACCESS_TOKEN.length<32||!env.MEMORY||env.ROUTING_POLICY_VERSION!=="v1")return json({error:"Integrated router is not configured"},503);
       const auth=request.headers.get("Authorization")||"";
       if(!auth.startsWith("Bearer ")||!safeEqual(auth.slice(7),env.ROUTER_ACCESS_TOKEN))return json({error:"Unauthorized"},401);
+      // The task's own free re-check after a premium rescue: whether the rescue solved the step it was for.
+      if(premiumOutcome){
+        const input=await request.json().catch(()=>null);
+        try{return json(await premiumOp(env,{op:"outcome",task:input?.task,step:input?.step,outcome:input?.outcome}))}catch{return json({error:"Premium outcome could not be recorded"},400)}
+      }
       if(recovery){
         const input=await request.json().catch(()=>null);
         if(!Number.isSafeInteger(input?.task)||input.task<1)return json({error:"Invalid task"},400);
@@ -203,7 +212,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -263,7 +272,9 @@ export default {
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
-        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);}
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
+          // Each model's own per-request token limits where its catalog publishes them (OpenRouter has no daily token cap).
+          p.modelLimits=Object.fromEntries((p.models||[]).map(m=>[m,catalogLimits(p.id,m)]).filter(([,l])=>l));}
         // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now
         // (the whole account when the limit is shared), so Usage shows a live percentage and "Maxed".
         const LIMIT=/rate_limit|limit_reached|quota|minute_tokens|concurrency/,nowMs=Date.now();
@@ -277,12 +288,32 @@ export default {
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
         const ollama=providers.some(p=>p.id==="ollama"&&p.enabled)?await ollamaPlan(env).catch(()=>null):null;
         const openrouter=providers.some(p=>p.id==="openrouter"&&p.enabled)?await openrouterAccount(env).catch(()=>null):null;
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        // Premium rescue: the owner's setting, this month's spending (reserved, confirmed, unresolved), history and open offers.
+        const premiumCfg=premiumConfig();let premium=null;
+        if(premiumCfg&&env.MEMORY){
+          try{
+            const s=await premiumStatus(env),models=env.OPENROUTER_API_KEY?await premiumCatalog():null;
+            const example=models?pickPremium(models,{promptTokens:promptTokensUpper(40000),maxTokens:premiumCfg.maxTokensPerCall,budgetUsd:premiumCfg.taskCapUsd}):null;
+            premium={...s,configured:!!env.OPENROUTER_API_KEY,taskCapUsd:premiumCfg.taskCapUsd,monthCapUsd:premiumCfg.monthCapUsd,
+              monthLeftUsd:Math.max(0,Math.round((premiumCfg.monthCapUsd-s.monthUsd)*1e6)/1e6),resetsAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()+1,1),
+              example:example?{model:example.model,maxUsd:example.maxUsd}:null};
+          }catch{premium={error:"Premium status unavailable",enabled:false};}
+        }
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
       }
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
+    }
+    // Premium Mode and single rescues, set only by the owner from the app. The engine's runner credential cannot reach this.
+    if(new URL(request.url).pathname==="/premium"){
+      const body=await request.json().catch(()=>({}));
+      try{
+        if(body.action==="set")return json(await premiumOp(env,{op:"settings",enabled:body.enabled}),200,cors);
+        if(body.action==="approve"||body.action==="dismiss")return json(await premiumOp(env,{op:body.action,task:body.task,step:body.step}),200,cors);
+        return json({error:"Unknown premium action"},400,cors);
+      }catch(error){return json({error:"Premium setting could not be saved"},400,cors)}
     }
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/models-list"){

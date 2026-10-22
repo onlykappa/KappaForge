@@ -133,6 +133,9 @@ final class LaunchTests: XCTestCase {
         image.name = "Recovery eligibility (fixture; no inference or task dispatch)"
         image.lifetime = .keepAlways
         add(image)
+        // WebKit writes localStorage to disk on a short delay; terminating at once can drop the saved acknowledgement
+        // (the test then failed intermittently on identical code). Give it time, as a person closing the app would.
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "WebKit persists localStorage")], timeout: 3)
         app.terminate()
         app.launch()
         XCTAssertTrue(web.waitForExistence(timeout: 60))

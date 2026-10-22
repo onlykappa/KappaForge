@@ -5,7 +5,7 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **98 removed**, out of 214.
+**102 kept** (94 working, 8 unavailable today), **11 specialist tools** kept but not used for chat, and **101 removed**, out of 214.
 
 The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
@@ -16,7 +16,7 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | Mistral | 14 | 12 | 2 | 18 |
 | Cloudflare Workers AI | 23 | 23 | 0 | 11 |
 | NVIDIA Build | 16 | 13 | 3 | 49 |
-| OpenRouter | 14 | 11 | 3 | 3 |
+| OpenRouter | 11 | 10 | 1 | 6 |
 | Kilo Code | 13 | 13 | 0 | 1 |
 | Ollama Cloud | 9 | 8 | 1 | 13 |
 | Z.ai | 1 | 1 | 0 | 0 |
@@ -116,24 +116,21 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `google/gemma-4-31b-it` | Kept: unavailable today | Hung twice (90s each) on the provider's side: kept, skipped while it hangs |
 | `meta/llama-3.2-90b-vision-instruct` | Kept: unavailable today | Hung twice (90s each) on the provider's side: kept, skipped while it hangs |
 
-### OpenRouter (14)
+### OpenRouter (11)
 
 | Model | Status | Notes |
 |---|---|---|
 | `cohere/north-mini-code:free` | Working | Answered the live check |
 | `dots-studio/dots-3-note-preview:free` | Working | Answered the live check |
 | `liquid/lfm-2.5-2.6b:free` | Working | Answered the live check |
-| `minimax/minimax-m3.1-flash:free` | Working | Answered the live check |
 | `nvidia/nemotron-3-ultra-550b-a55b:free` | Working | Answered the live check |
 | `openrouter/free` | Working | Answered the live check |
 | `poolside/laguna-s-2.1:free` | Working | Answered the live check |
 | `recursive/flint-v1.0:free` | Working | Answered the live check |
-| `google/gemma-4-31b-it:free` | Working (after fix) | Answered on the one-by-one check |
 | `nvidia/nemotron-3.5-lightning:free` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
-| `nvidia/nemotron-3.5-super-vl:free` | Working (after fix) | Answered on the one-by-one check |
-| `google/gemma-4-26b-a4b-it:free` | Kept: unavailable today | Maxed out right now (rate limit): kept: Provider returned error |
-| `poolside/laguna-xs-2.1:free` | Kept: unavailable today | Maxed out right now (rate limit): kept: Provider returned error |
-| `xingchen-agi/xing4.0-29b-a4b:free` | Kept: unavailable today | Maxed out right now (rate limit): kept: Provider returned error |
+| `nvidia/nemotron-3.5-super-vl:free` | Working | Answered the OpenRouter check on 22 Oct (evening) |
+| `poolside/laguna-xs-2.1:free` | Working (after fix) | Thinking model: replied empty to the 64-token quick check, answered with room to think |
+| `xingchen-agi/xing4.0-29b-a4b:free` | Kept: unavailable today | Rate-limited upstream at its free host (Phala, 429 "temporarily rate-limited upstream"): temporary |
 
 ### Kilo Code (13)
 
@@ -142,7 +139,6 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `cohere/north-mini-code:free` | Working | Answered the live check |
 | `dots-studio/dots-3-note-preview:free` | Working | Answered the live check |
 | `liquid/lfm-2.5-2.6b:free` | Working | Answered the live check |
-| `minimax/minimax-m3.1-flash:free` | Working | Answered the live check |
 | `nvidia/nemotron-3-ultra-550b-a55b:free` | Working | Answered the live check |
 | `nvidia/nemotron-3.5-super-vl:free` | Working | Answered the live check |
 | `openrouter/free` | Working | Answered the live check |
@@ -294,10 +290,13 @@ These are not chat models, so a chat test fails them, but they are useful for th
 | `writer/palmyra-med-70b-32k` | Not hosted for this account (404) | Not found for this account |
 | `zyphra/zamba2-7b-instruct` | Not hosted for this account (404) | Not found for this account |
 
-### OpenRouter (3)
+### OpenRouter (6)
 
 | Model | Reason | Provider's message |
 |---|---|---|
+| `google/gemma-4-26b-a4b-it:free` | Duplicate: served through your own Gemini key, Workers AI and Ollama | OpenRouter's shared Google AI Studio pool: "temporarily rate-limited upstream" (429) in every check |
+| `google/gemma-4-31b-it:free` | Duplicate: served through your own Gemini key and Ollama | OpenRouter's shared Google AI Studio pool: "temporarily rate-limited upstream" (429) in every check |
+| `minimax/minimax-m3.1-flash:free` | Retired by the provider | The free launch period for MiniMax M3.1 Flash ended on Oct 22, 2026. The `:free` variant has been retired (404) |
 | `thinkingmachines/inkling-small:free` | Only available inside agent tools | thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on |
 | `thinkingmachines/inkling:free` | Only available inside agent tools | thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on |
 | `nvidia/nemotron-3-super-120b-a12b:free` | Retired by the provider | Provider returned error |
