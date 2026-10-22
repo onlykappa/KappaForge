@@ -253,3 +253,12 @@ test('parallel workers share a per-model account across its models, and a missin
  await outcome({requestId:'parallel-a'.padEnd(32,'0'),provider:'gemini',model:'gemini-3.6-flash',status:404});
  assert.ok(value.routes['gemini:gemini-3.6-flash'].until-Date.now()>23*3600000,'a model the provider says does not exist rests a day');
 });
+
+test('models the owner removed for needing payment are never routed, even when the provider lists them',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>catalog(['gpt-oss:120b','kimi-k3','glm-5.3','gemma4:31b','muse-spark-open']);
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'ollama',OLLAMA_API_KEY:'removed-models-ollama'};
+  assert.deepEqual(await providerModels(env,'ollama'),['gpt-oss:120b','gemma4:31b']);
+ }finally{globalThis.fetch=original}
+});

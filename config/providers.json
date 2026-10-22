@@ -199,18 +199,19 @@
       }
     },
     "ollama": {
+      "removedModels": ["deepseek-v4-pro:0813", "deepseek-v4.1-flash", "deepseek-v4.1-flash:1017", "glm-5.2", "glm-5.3", "glm-5.3-flash", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "minimax-m2.7", "minimax-m3", "mistral-large-3:675b", "muse-spark-open"],
+      "removedModelsReason": "Answered HTTP 402 (needs paid credits) in the live model check on 2026-10-22; removed at the owner's request",
       "name": "Ollama Cloud",
       "kind": "openai",
       "base": "https://ollama.com/v1",
       "key": "OLLAMA_API_KEY",
       "signup": "https://ollama.com/settings/keys",
       "prefer": [
-        "deepseek-v4-pro",
-        "kimi-k3",
+        "gpt-oss:120b",
+        "minimax-m3.1-flash",
+        "nemotron-3-ultra",
         "qwen3.5",
-        "minimax-m3",
-        "deepseek-v4-flash",
-        "gpt-oss:120b"
+        "gemma4"
       ],
       "strong": true,
       "context": 131072,
