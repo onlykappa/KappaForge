@@ -133,11 +133,9 @@ final class LaunchTests: XCTestCase {
         image.name = "Recovery eligibility (fixture; no inference or task dispatch)"
         image.lifetime = .keepAlways
         add(image)
-        // WebKit writes localStorage lazily and saves it when the app is backgrounded, not when it is killed. Close the
-        // app the way a person does (Home first, then quit), so the saved acknowledgement is on disk before the kill;
-        // terminating straight away failed intermittently on identical code even after a 3 second wait.
-        XCUIDevice.shared.press(.home)
-        _ = app.wait(for: .runningBackgroundSuspended, timeout: 8) // Time to save; not an assertion about the simulator.
+        // WebKit writes localStorage to disk on a short delay; terminating at once can drop the saved acknowledgement
+        // (the test then failed intermittently on identical code). Give it time, as a person closing the app would.
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "WebKit persists localStorage")], timeout: 3)
         app.terminate()
         app.launch()
         XCTAssertTrue(web.waitForExistence(timeout: 60))

@@ -90,5 +90,23 @@ enum ProgressFixture {
         """#
         return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
     }
+
+    // Runs before the app's own scripts. The app checks saved tasks as soon as it starts; on a relaunch the fixture's
+    // task #103 is already saved, and without a backend that check reads the real issue #103 from api.github.com,
+    // replacing the fixture's progress (the recovery restart test then failed whenever GitHub answered). Fixture runs
+    // reach only the isolated fake origin.
+    static func networkGuard() -> WKUserScript? {
+        guard ProcessInfo.processInfo.environment["KAPPA_PROGRESS_FIXTURE"] != nil else { return nil }
+        let source = #"""
+        (() => {
+          const real = globalThis.fetch.bind(globalThis);
+          // Bundled files (relative or same-origin) still load; any other http(s) address is refused.
+          const allowed = u => !/^https?:/i.test(u) || u.startsWith(location.origin + '/') || u.startsWith('https://fixture.invalid/');
+          globalThis.fetch = (url, options) => allowed(String(url?.url || url))
+            ? real(url, options) : Promise.reject(new TypeError('Live network forbidden in simulator fixture'));
+        })();
+        """#
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+    }
 }
 #endif

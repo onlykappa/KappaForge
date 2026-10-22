@@ -96,6 +96,9 @@ struct KappaWebView: UIViewRepresentable {
         if let fixture = ProgressFixture.script() {
             config.userContentController.addUserScript(fixture)
         }
+        if let guardScript = ProgressFixture.networkGuard() {
+            config.userContentController.addUserScript(guardScript)
+        }
         #endif
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         let view = KappaChatWebView(frame: .zero, configuration: config)

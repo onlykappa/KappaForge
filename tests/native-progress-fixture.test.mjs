@@ -58,3 +58,16 @@ test('native fixture exercises the production Retry control and exact authorizat
  assert.ok(proofs.some(p=>p.textContent==='Fixture retry transport 1'));
  await assert.rejects(box.fetch('https://production.invalid/jobs',{}),/Live network forbidden/);
 });
+
+test('native fixtures refuse live network from document start, so a relaunch cannot read the real task #103',()=>{
+ const swift=read('ios/KappaForge/ProgressFixture.swift');
+ const guardSource=swift.split('static func networkGuard()')[1];
+ assert.match(guardSource,/injectionTime: \.atDocumentStart/);
+ const source=guardSource.split('let source = #"""')[1].split('"""#')[0];
+ const calls=[],box={location:{origin:'app://kappaforge'},fetch:(u)=>{calls.push(String(u));return Promise.resolve('ok')}};
+ box.globalThis=box;vm.createContext(box);new vm.Script(source).runInContext(box);
+ assert.rejects(box.fetch('https://api.github.com/repos/onlykappa/KappaForge/issues/103'));
+ box.fetch('./version.json');box.fetch('https://fixture.invalid/retry');
+ assert.deepEqual(calls,['./version.json','https://fixture.invalid/retry']);
+ assert.match(read('ios/KappaForge/KappaWebView.swift'),/if let guardScript = ProgressFixture\.networkGuard\(\)/);
+});
