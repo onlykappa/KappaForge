@@ -91,12 +91,15 @@ export async function usageStore(state,request){
   return Response.json({...result,limit},{status:result.allowed?200:429});
  }
  if(request.method==='POST'){
-  const event=await request.json();
-  await storage.put('usage:'+String(event.at).padStart(13,'0')+':'+event.id,event);
-  // Daily totals outlive the 90-day event history so Usage can show a whole year.
-  const day='usage-day:'+new Date(Number(event.at)||Date.now()).toISOString().slice(0,10),total=Number(event.total);
-  const sum=await storage.get(day)||{tokens:0,requests:0};
-  await storage.put(day,{tokens:sum.tokens+(Number.isFinite(total)&&total>0?total:0),requests:sum.requests+1});
+  // One event, or several at once (a split question's parts) so they cost one call.
+  const body=await request.json(),events=(Array.isArray(body)?body:[body]).slice(0,10);
+  for(const event of events){
+   await storage.put('usage:'+String(event.at).padStart(13,'0')+':'+event.id,event);
+   // Daily totals outlive the 90-day event history so Usage can show a whole year.
+   const day='usage-day:'+new Date(Number(event.at)||Date.now()).toISOString().slice(0,10),total=Number(event.total);
+   const sum=await storage.get(day)||{tokens:0,requests:0};
+   await storage.put(day,{tokens:sum.tokens+(Number.isFinite(total)&&total>0?total:0),requests:sum.requests+1});
+  }
   // Retain 90 days of events and 400 days of daily totals. Paginated reads below avoid unbounded object responses.
   const old=await storage.list({prefix:'usage:',end:'usage:'+String(Date.now()-90*86400000),limit:100});
   if(old.size)await storage.delete([...old.keys()]);

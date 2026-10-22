@@ -434,7 +434,8 @@
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,
       "maxOutputTokens": 8192,
-      "maxContextTokens": 32768
+      "maxContextTokens": 32768,
+      "maxChatSends": 3
     },
     "primary": {
       "id": "gemini",
@@ -455,6 +456,58 @@
       },
       "contextTokens": null,
       "maxOutputTokens": null
+    },
+    "chatRouterModels": [
+      "ministral-3b-latest",
+      "ministral-3b-2512",
+      "ministral-8b-latest"
+    ],
+    "chatTiers": {
+      "simple": [
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "ministral-8b",
+        "ministral-14b"
+      ],
+      "general": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gpt-oss-120b"
+      ],
+      "coding": [
+        "codestral",
+        "deepseek-v4",
+        "qwen3-coder",
+        "kimi",
+        "mistral-code",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gpt-oss-120b"
+      ],
+      "complex": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3-flash",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gpt-oss-120b",
+        "deepseek-v4-pro",
+        "kimi-k3"
+      ]
+    },
+    "chatResearch": {
+      "maxParts": 3,
+      "partMaxTokens": 900,
+      "partTimeoutMs": 25000,
+      "splitTimeoutMs": 8000
     }
   },
   "limits": {

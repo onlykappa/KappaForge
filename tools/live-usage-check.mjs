@@ -40,6 +40,23 @@ try{
  // Why each provider is or is not routable, as the Worker reports it (no credentials are included).
  summary.eligibility=await page.evaluate(()=>capabilities?{routingPolicy:{version:capabilities.routingPolicy?.version,chatProviders:capabilities.routingPolicy?.chatProviders,codingProviders:capabilities.routingPolicy?.codingProviders},
   providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length,modelNames:p.id==="mistral"?(p.models||[]):undefined,health:p.health||null}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
+ // CHAT_TEST: messages separated by "||", each sent through the real chat screen in a new chat, as the owner would;
+ // keeps each reply and the attempts it took.
+ if(process.env.CHAT_TEST){
+  summary.chatTests=[];
+  // "LONG:<n>" stands for a pasted document of about n characters with a request to summarize it.
+  const expand=t=>{const m=/^LONG:(\d+)$/.exec(t);if(!m)return t;const line='KappaForge routes chat to Gemini and coding to coding models, splits complex questions into parts, and records every attempt in Usage. ';
+   return 'Summarize this document in two sentences:\n\n'+line.repeat(Math.ceil(Number(m[1])/line.length)).slice(0,Number(m[1]));};
+  for(const [n,text] of process.env.CHAT_TEST.split('||').map(t=>expand(t.trim())).filter(Boolean).entries()){
+   const since=Date.now();
+   await page.evaluate(()=>{navigate('chat');document.getElementById('new')?.click();});
+   await page.locator('#message').fill(text);await page.locator('#form button[type=submit]').click();
+   await page.waitForFunction(()=>!sending,null,{timeout:180000,polling:500});await page.waitForTimeout(500);
+   summary.chatTests.push(await page.evaluate(async({text,since})=>{text=text.length>200?text.slice(0,80)+'… ('+text.length+' characters)':text;await refreshIntelligence(false).catch(()=>{});const m=active()?.messages||[],last=m[m.length-1]||{};
+    return {sent:text,reply:String(last.text||'').slice(0,400),attempts:usageEvents.filter(e=>e&&e.at>=since-5000&&e.kind==='chat').map(e=>({model:e.model,status:e.status,latency:e.latency}))};},{text,since}));
+   await page.screenshot({path:join(out,'0-chat-test-'+(n+1)+'.png'),animations:'disabled'});
+  }
+ }
  // PROBE_PROVIDER: test only that provider's models, every one, through the probe endpoint.
  if(process.env.PROBE_PROVIDER){
   summary.providerProbe=await page.evaluate(async provider=>{const results=[];let offset=0,total=null;
@@ -67,6 +84,8 @@ try{
  }
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
+ // The most recent attempts (model, outcome, status), newest first, for auditing what answered.
+ summary.recent=await page.evaluate(()=>[...usageEvents].filter(e=>e&&Number.isFinite(e.at)).sort((a,b)=>b.at-a.at).slice(0,25).map(e=>({at:new Date(e.at).toISOString(),model:e.model,kind:e.kind,ok:e.ok,status:e.status??null,fallback:e.fallback,total:e.total??null,latency:e.latency??null})));
  summary.google=await page.evaluate(()=>settingsAPI('/usage/google').catch(e=>({error:e.message})));
  await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});

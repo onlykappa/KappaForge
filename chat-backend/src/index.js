@@ -1,3 +1,4 @@
+import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
@@ -71,7 +72,10 @@ export class KappaMemory {
 }
 const ORIGIN = "https://onlykappa.github.io";
 // Task briefs have a separate bound from the 3,500-character chat context window.
-const TASK_LIMIT = 20000;
+// A task becomes a GitHub issue, whose body holds at most 65,536 characters.
+const TASK_LIMIT = 60000;
+// One chat message (pasted documents, logs, long prompts); the provider's own context size is checked when routing.
+const MESSAGE_LIMIT = REGISTRY.routing.defaults.maxPromptChars;
 function json(data, status = 200, cors = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -123,6 +127,7 @@ function safeEqual(a, b) {
     bad |= (x[i] || 0) ^ (y[i] || 0);
   return bad === 0;
 }
+const CHAT_FIRST_BYTE_MS=20000,QUICK_REFUSAL_MS=5000;
 export default {
   async fetch(request, env, context) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
@@ -531,7 +536,9 @@ export default {
       for (const m of input.messages) {
         // An empty assistant turn (an older app sent blank task cards) is skipped, not a reason to refuse the chat.
         if (m && m.role === "assistant" && typeof m.text === "string" && !m.text.trim()) continue;
-        if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim() || m.text.length > 3500)
+        if (m && typeof m.text === "string" && m.text.length > MESSAGE_LIMIT)
+          return json({ error: "A message can be up to " + MESSAGE_LIMIT.toLocaleString("en-US") + " characters; this one has " + m.text.length.toLocaleString("en-US") + ". Shorten it or attach it as a file." }, 413, cors);
+        if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim())
           return json({ error: "Invalid message" }, 400, cors);
         const parts = [{ text: m.text }];
         if (m.role === "user" && Array.isArray(m.attachments)) {
@@ -707,7 +714,7 @@ export default {
     const taskStatus = {
       starting: "TASK STATUS FOR THIS MESSAGE: the app is starting a KappaForge task for it now, and the task's own card shows its real progress. Acknowledge in one or two sentences that the task is starting and progress will appear in its card. Do not describe yourself doing the work, and do not invent steps, branch names, PR or task numbers.",
       approval: "TASK STATUS FOR THIS MESSAGE: the app is showing the owner an Approve or Deny card for a task. Say briefly that nothing starts until they approve it. Do not describe yourself doing the work.",
-      none: "TASK STATUS FOR THIS MESSAGE: no task is being started. Never say you started, are working on, or will deliver changes. If the owner wants a change made, tell them to describe it as a request (for example \u201cAdd …\u201d) or tap Plan task."
+      none: "TASK STATUS FOR THIS MESSAGE: no task is being started. Never say you started, are working on, or will deliver changes. Only if the owner asks for a change to be made, tell them to describe it as a request (for example \u201cAdd …\u201d) or tap Plan task. Otherwise do not mention tasks at all: answer a greeting or small talk in one short, friendly sentence."
     }[input.taskIntent] || "";
     const personalityInstructions = {
       auto: "Adapt your tone and depth to the actual user request, like an excellent general-purpose AI assistant. For casual questions be natural, warm and concise. For coding, debugging, architecture and engineering work be technically rigorous with concrete code, commands, tests and caveats where useful. For professional writing, business work or complex planning be organized, precise and appropriately formal. For mixed requests balance these styles fluidly; never require the user to select a persona, and do not claim capabilities you do not have.",
@@ -773,6 +780,12 @@ export default {
             selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
             fallbackEnabled:prefs.fallback!==false,hasMedia:chat.hasMedia,hasTools:chat.hasTools,structuredOutput:planning}},failClosed?503:422,cors);
       }
+      // Automatic chat picks the kind of message first and puts the models that fit it in front; only a few are sent.
+      const automaticChat=!planning&&(!prefs.model||prefs.model==="auto");
+      const latestText=String((Array.isArray(input.messages)?input.messages.filter(m=>m?.role==="user").at(-1)?.text:"")||"");
+      const chosen=automaticChat?await chooseTier(env,latestText,{hasMedia:chat.hasMedia,disabled:new Set(Array.isArray(prefs.disabledProviders)?prefs.disabledProviders:[])}).catch(()=>null):null;
+      if(chosen)candidates=orderForTier(candidates,chosen.tier);
+      const tierInfo=chosen?{tier:chosen.tier,tierBy:chosen.by}:{};
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
@@ -782,6 +795,18 @@ export default {
       catch{return json({error:"Shared routing limits unavailable; inference was not sent."},503,cors)}
       if(!dailyReservation.allowed)return json({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached. Retry after the current minute window.":"Shared daily inference limit reached. Requests resume next UTC day.",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+      // A complex question is split into parts answered by different providers at once; the main model then writes
+      // the one reply from their notes. Any failure falls back to answering it in one piece.
+      if(chosen?.tier==="complex"&&!chat.hasMedia){
+       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub}).catch(()=>null);
+       if(notes){
+        const brief="RESEARCH NOTES for this question, written by specialist models that each answered one part. Check them, correct anything wrong, and combine them into one well-organized answer for the owner. Do not mention the notes, the parts or other models.\n\n"+notes.text;
+        payload.systemInstruction.parts.push({text:brief});chat.system+="\n\n"+brief;
+        // A combined answer needs room: at least 3,000 output tokens, whatever the detail setting.
+        payload.generationConfig.maxOutputTokens=Math.max(payload.generationConfig.maxOutputTokens||0,3000);chat.maxTokens=Math.max(chat.maxTokens||0,3000);
+        Object.assign(tierInfo,{researchParts:notes.parts,researchAnswered:notes.answered});
+       }
+      }
       const streaming=!planning&&input.stream===true;
       let attempt=0;
       const inferenceDeadline=Date.now()+(REGISTRY.routing?.defaults?.requestTimeoutMs||180000);
@@ -789,14 +814,17 @@ export default {
       // Full catalogs can list hundreds of routes: bound the attempts (each costs several subrequests)
       // and skip a provider's remaining models once its account rejects the key or billing.
       const maxAttempts=REGISTRY.routing?.defaults?.maxRouteAttempts||12,rejectedProviders=new Set();
+      // Chat sends a message to at most this many models; routes skipped before sending (resting, full) do not count.
+      const maxSends=planning?Infinity:REGISTRY.routing?.defaults?.maxChatSends||3;let sends=0;
       for (const route of candidates) {
-        if(Date.now()>=inferenceDeadline||attempt>=maxAttempts)break;
+        if(Date.now()>=inferenceDeadline||attempt>=maxAttempts||sends>=maxSends)break;
         if(rejectedProviders.has(route.provider))continue;
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
         if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+        sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
@@ -807,7 +835,8 @@ export default {
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), Math.max(1,Math.min(45000,inferenceDeadline-Date.now())));
+        // A streamed chat reply moves on when a model sends nothing for 20 seconds; planning answers whole, so it waits longer.
+        const timeout = setTimeout(() => controller.abort(), Math.max(1,Math.min(streaming?CHAT_FIRST_BYTE_MS:45000,inferenceDeadline-Date.now())));
         let response;
         try {
           const geminiLimit=REGISTRY.routing?.primary?.maxOutputTokens||REGISTRY.routing?.defaults?.maxOutputTokens||8192;
@@ -822,13 +851,15 @@ export default {
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401)outcomeCategory="authentication";else if(response.status===402)outcomeCategory="billing_blocked";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);if(response.status===429)outcomeBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();await record(null,false);
+          // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
+          if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
           if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;
         }
         if(streaming){
-          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider},abort:controller,timeout,signal:request.signal,context,
+          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider,...tierInfo},abort:controller,timeout,signal:request.signal,context,
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
@@ -837,7 +868,7 @@ export default {
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {
-          if (!planning) {const usage=await record(result,true);return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);}
+          if (!planning) {const usage=await record(result,true);return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",...tierInfo} }, 200, cors);}
           let proposal;
           try { proposal = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
           catch { await record(result,false);continue; }
