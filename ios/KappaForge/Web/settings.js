@@ -110,6 +110,12 @@ function gaugeFor(p,m=null,unit='requests'){
  const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
  const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;
  if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ // A provider with no allowance of its own beyond per-model per-minute limits (Mistral) is as full as its fullest model;
+ // a daily token figure worked out from those per-minute limits would always read near zero.
+ if(!p.requestLimit&&!shared&&!neurons&&!plan){
+  const all=(p.models||[]).filter(x=>!x.unused).map(x=>gaugeFor(p,x,unit)).filter(Boolean);
+  if(all.length)return all.reduce((a,b)=>b.maxed&&!a.maxed||b.maxed===a.maxed&&b.percent>a.percent?b:a);
+ }
  return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
   shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
 }
