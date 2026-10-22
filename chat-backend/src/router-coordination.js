@@ -66,9 +66,10 @@ export async function reserveProvider(env,route,requestId,{tokens=0}={}){
 }
 
 // Failures that concern one model, not the account: a 401 from a provider used without a key (the model needs an
-// account), and a server error from a free-model gateway, where each model runs on a different upstream.
+// account), and a server error or hang from a free-model gateway or a provider that runs each model on its own
+// deployment (failureScope "model", such as NVIDIA), where one model failing says nothing about the others.
 const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
-const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||status>=500&&registry.providers[provider]?.freeOnly===true;
+const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||(status===0||status>=500)&&(registry.providers[provider]?.freeOnly===true||registry.providers[provider]?.failureScope==="model");
 
 // Google's 429 names the exhausted quota: a per-day quota rests the model until its quota day ends, a
 // per-minute one until Google's retry delay. Other bodies give no reset.

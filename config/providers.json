@@ -188,7 +188,8 @@
       "accountPool": "nvidia",
       "quotaPool": "nvidia",
       "quotaScope": "account",
-      "maxConcurrent": 1,
+      "failureScope": "model",
+      "maxConcurrent": 3,
       "capabilities": {
         "chat": true,
         "coding": true,

@@ -196,8 +196,14 @@ test('a keyless provider\'s 401 and a gateway\'s server error rest only that mod
  assert.equal(await tryRoute(2,'kilo','kilo-auto/free'),true,'one model needing an account does not block the keyless pool');
  assert.equal(await tryRoute(3,'openrouter','vendor/a:free',502),true);
  assert.equal(await tryRoute(4,'openrouter','vendor/b:free'),true,'a gateway upstream error rests only that model');
- assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',503),true);
- assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b'),false,'an outage at a single-vendor provider still pauses it');
+ // NVIDIA runs each model on its own deployment: one model's error or hang (recorded as 502) rests that model only.
+ assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',502),true);
+ assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b',200),true,'one hung NVIDIA model does not cool down the other models');
+ assert.equal(await tryRoute(7,'nvidia','deepseek-ai/deepseek-v4.1-flash'),false,'the hung model itself rests');
+ assert.equal(await tryRoute(8,'nvidia','nvidia/nemotron-3-ultra-550b-a55b',429),true);
+ assert.equal(await tryRoute(9,'nvidia','qwen/qwen3.5-coder'),false,'the account-wide 40 a minute limit still pauses the account');
+ assert.equal(await tryRoute('g','groq','llama-4-scout',503),true);
+ assert.equal(await tryRoute('h','groq','llama-4-maverick'),false,'an outage at a provider without per-model deployments still pauses it');
 });
 
 test('an account block stored for a keyless provider\'s 401 is ignored; a keyed provider\'s still applies',async()=>{

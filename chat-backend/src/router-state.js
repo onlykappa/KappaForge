@@ -132,7 +132,7 @@ export async function routingStore(state,request){
     const modelSpecific=code===400||code===402||code===403||code===404||code===422||anonymous;
     // A server error rests only that model where quotas are per model (Gemini) or the caller marks it model-specific
     // (free-model gateways); elsewhere an outage pauses the provider.
-    const scope=blocked?"pool":modelSpecific||code>=500&&(modelScoped===true||reservation?.quotaScope==="model")?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
+    const scope=blocked?"pool":modelSpecific||(code===0||code>=500)&&(modelScoped===true||reservation?.quotaScope==="model")?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
     const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
