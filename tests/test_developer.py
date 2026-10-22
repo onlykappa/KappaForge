@@ -10,6 +10,19 @@ from engine.developer import apply_changes, check_path, syntax_error, produce_de
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
+
+def setUpModule():
+    # These tests fake GitHub's JSON API; the repository map's archive download stays offline (planning from paths).
+    global _no_archive
+    _no_archive = patch.object(developer.repo_maps, "download_sources", side_effect=OSError("offline in tests"))
+    _no_archive.start()
+
+
+def tearDownModule():
+    _no_archive.stop()
+    developer.Progress.latest = None  # Later test modules start without this module's last checklist.
+
+
 class DeveloperValidationTests(unittest.TestCase):
     def setUp(self):
         # A checklist another test left behind must not receive this test's activity (it posts once its
@@ -748,10 +761,6 @@ class OwnerRequestedFixTests(unittest.TestCase):
                 self.assertTrue(any(c[0].endswith("git/refs/heads/kappa/dev-9") and c[2] == "PATCH" for c in calls))
                 self.assertTrue(any(c[0].endswith("sandbox-tests.yml/dispatches") for c in calls))
                 self.assertFalse(any(c[0].endswith("/merge") for c in calls))
-
-
-def tearDownModule():
-    developer.Progress.latest = None  # Later test modules start without this module's last checklist.
 
 
 if __name__ == "__main__":
