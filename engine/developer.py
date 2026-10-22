@@ -25,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from engine import recovery
+from engine.edit_errors import EditMismatch, SourceNotRead
 from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
@@ -390,13 +391,6 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
     return paths, stages if len(stages) > 1 else [], design
 
 
-class EditMismatch(ValueError):
-    """Keep the failing edit's actual source, including earlier edits in this proposal."""
-    def __init__(self, path, find, text, count):
-        super().__init__(f"Edit text must match exactly once in {path} (matched {count} times): " + find[:80])
-        self.path, self.find, self.text, self.count = path, find, text, count
-
-
 def apply_changes(sources, existing, proposal, budget=SMALL):
     """Return {path: new_text} after strict validation of the model's proposal."""
     if not isinstance(proposal, dict) or not isinstance(proposal.get("files"), list):
@@ -413,7 +407,7 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
             raise ValueError("Repeated path: " + path)
         if "edits" in entry:
             if path not in sources:
-                raise ValueError("Edits target a file that was not read: " + path)
+                raise SourceNotRead(path)
             text = sources[path]
             edits = entry["edits"]
             if not isinstance(edits, list) or not edits:
@@ -431,7 +425,7 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
         elif isinstance(entry.get("content"), str):
             # Whole-file writes are for new files, or files the model has actually read in full.
             if path in existing and path not in sources:
-                raise ValueError("Refusing to overwrite a file that was not read: " + path)
+                raise SourceNotRead(path, overwrite=True)
             if len(sources.get(path, "")) > budget.file_chars:
                 raise ValueError("Large file was shown as excerpts; change it with edits, not content: " + path)
             text = entry["content"]
@@ -938,8 +932,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             # A model repeating a rejected answer is asked no more; the remaining attempts go to other models
             # (task #123 stopped at attempt 2 of 5 on this).
             # Do not repeatedly retry forbidden paths, authorization or guardrail violations.
-            if any(x in str(exc).lower() for x in ('blocked path', 'forbidden path', 'unsafe path',
-                                                   'protected path', 'unauthorized', 'authorization expired')):
+            if strategy == 'stop':
                 hard_stop = True
                 break
     detail = "Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors)

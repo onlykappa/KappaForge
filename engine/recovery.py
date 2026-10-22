@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from contextvars import ContextVar
+from engine.edit_errors import EditMismatch, SourceNotRead
 
 CURRENT = ContextVar('recovery_journal', default=None)
 SPLITTING = ContextVar('recovery_split_active', default=False)
@@ -77,6 +78,12 @@ def diagnose(error):
         return 'invalid_response', 'switch_or_defer'
     if getattr(error, 'code', '') == 'request_too_large' or type(error).__name__ == 'GatewayRequestTooLarge':
         return 'request_size', 'reduce_source_context'
+    # Source snippets and filenames are evidence, not authorization decisions.
+    # Task #191's missing anchor included the literal route "/authorization".
+    if isinstance(error, EditMismatch):
+        return 'edit_anchor', 'reread_source'
+    if isinstance(error, SourceNotRead):
+        return 'missing_context', 'read_dependencies'
     text = str(error).lower()
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'
