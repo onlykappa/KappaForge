@@ -1,8 +1,8 @@
 /* KappaForge 2.2 phone shell: floating tab bar, Chats and More pages, pushed views and the collapsing large title.
    Classic script: shares globals with the other app-*.js files. Wider screens keep the sidebar layout. */
-const SHELL_TABS=[["chats","Chats","chat"],["home","Dashboard","gauge"],["tasks","Tasks","tasks"],["reviews","Reviews","reviews"],["more","More","more-circle"]];
+const SHELL_TABS=[["chats","Chats","chat"],["home","Dashboard","gauge"],["more","More","more-circle"]];
 // Each view belongs to one tab; a view that is not its tab's root is a pushed view with a back button.
-const SHELL_TAB_OF={chat:"chats",chats:"chats",home:"home",tasks:"tasks",reviews:"reviews",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
+const SHELL_TAB_OF={chat:"chats",chats:"chats",home:"home",tasks:"home",reviews:"home",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
 const SHELL_TITLES={chats:"Chats",home:"Dashboard",tasks:"Tasks",reviews:"Reviews",more:"More",projects:"Projects",saved:"Saved items",settings:"Settings",profile:"Account",help:"Help"};
 const isPhone=()=>matchMedia("(max-width:840px)").matches;
 const shellTab=v=>SHELL_TAB_OF[v]||"chats";
@@ -62,9 +62,8 @@ function renderMorePage(){
   '<p class="ios-gf" style="text-align:center;padding-top:16px">KappaForge '+esc(KappaConfig.version)+'</p>';
 }
 function renderTabBar(){
- const tab=shellTab(view),reviews=(data.prs||[]).filter(p=>p.draft||isDevPR(p)).length;
- return SHELL_TABS.map(([page,label,icon])=>'<button type="button" data-page="'+page+'"'+(page===tab?' aria-current="page"':'')+'>'+uiIcon(icon)+'<span>'+label+'</span>'+
-  (page==="reviews"&&reviews?'<span class="tab-badge" aria-label="'+reviews+' to review">'+reviews+'</span>':'')+'</button>').join("");
+ const tab=shellTab(view);
+ return SHELL_TABS.map(([page,label,icon])=>'<button type="button" data-page="'+page+'"'+(page===tab?' aria-current="page"':'')+'>'+uiIcon(icon)+'<span>'+label+'</span></button>').join("");
 }
 // Called by render(): body state, header back button, large title and the tab bar.
 function applyShell(){

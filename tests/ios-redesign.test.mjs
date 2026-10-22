@@ -34,16 +34,25 @@ function shell(extra={}){
 }
 test('every view belongs to one tab; non-root views are pushed with a back button',()=>{
  const box=shell();
- for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','tasks'],['reviews','reviews'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
- for(const v of ['chats','home','tasks','reviews','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
- for(const v of ['chat','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
+ for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','home'],['reviews','home'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
+ for(const v of ['chats','home','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
+ for(const v of ['chat','tasks','reviews','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
 });
-test('the tab bar marks the current tab and badges pull requests waiting for review',()=>{
+test('the phone tab bar contains only Chats, Dashboard and More',()=>{
  const box=shell({view:'chat'});const html=box.renderTabBar();
- assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['chats','home','tasks','reviews','more']);
+ assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['chats','home','more']);
  assert.match(html,/data-page="chats" aria-current="page"/,'a chat sits under the Chats tab');
- assert.match(html,/data-page="reviews"[^]*class="tab-badge" aria-label="2 to review">2</);
+ assert.doesNotMatch(html,/tab-badge/,'no badge remains for the removed Reviews tab');
 });
+test('Tasks and Reviews return to Dashboard with Back',()=>{
+ for(const page of ['tasks','reviews']){
+  const box=shell({view:page,navigate:target=>{box.view=target}});
+  assert.equal(box.shellBackLabel(),'Dashboard');
+  assert.match(box.renderTabBar(),/data-page="home" aria-current="page"/);
+  box.shellBack();assert.equal(box.view,'home');
+ }
+});
+
 test('the Chats list groups by day, searches, and shows each chat\'s task state',()=>{
  const now=Date.now(),old=now-3*86400000;
  const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];

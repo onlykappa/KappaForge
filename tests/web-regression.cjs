@@ -11,7 +11,9 @@ async function go(page,target){
  if(!await isPhone(page)){await openNavigation(page);await page.locator('.sidebar [data-page='+target+']').click();return}
  for(let i=0;i<3&&await page.evaluate(()=>document.body.classList.contains('pushed'));i++)await page.locator('#menubtn').click();
  if(target==='chat'){await page.evaluate(()=>navigate('chat'));return}
- if(['chats','home','tasks','reviews'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
+ if(['chats','home'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
+ if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
+ if(target==='tasks'){await go(page,'home');await openNavigation(page);await page.locator('.sidebar [data-page=tasks]').click();return}
  await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
 }
 async function openSettings(page){if(await isPhone(page)){await go(page,'settings');return}await openNavigation(page);await page.locator('#settingsbtn').click();}
@@ -73,7 +75,7 @@ const apiServer=createServer(async(req,res)=>{
   assert.equal(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content'),'default');
   // An open chat is a pushed view: Back leads to the Chats list, which shows the floating tab bar.
   await page.locator('#menubtn').click();assert.equal(await page.evaluate(()=>view),'chats');
-  assert.equal(await page.locator('.mobile-nav button').count(),5);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
+  assert.equal(await page.locator('.mobile-nav button').count(),3);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
   await page.locator('.mobile-nav [data-page=home]').click();assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'home');
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--kappa-safe-top');navigate('chat')});assert.equal(await page.locator('.mobile-nav').isVisible(),false,'A chat hides the tab bar');
  }await openSettings(page);console.log(name+': opened settings');
