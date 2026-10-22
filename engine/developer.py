@@ -6,6 +6,8 @@ Generated code is only parsed for syntax here, never executed; review and CI sta
 """
 import ast
 import collections
+import concurrent.futures
+import contextvars
 import difflib
 import base64
 import itertools
@@ -17,6 +19,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -202,6 +205,39 @@ def request_review(repo, branch, sha, token):
 
 
 MAX_STAGES = 5
+# Independent stages (no shared files) are built at the same time by separate workers, at most this many at once.
+MAX_PARALLEL_WORKERS = 3
+
+
+class Stage(str):
+    """A stage's description, plus the files the planner expects it to edit and whether it may run alongside others."""
+    def __new__(cls, text, files=(), independent=False):
+        stage = super().__new__(cls, text)
+        stage.files = tuple(files)
+        stage.independent = independent
+        return stage
+
+
+def waves(stages):
+    """Stages grouped into waves that can be built at the same time: consecutive independent stages whose files do
+    not overlap share a wave (at most MAX_PARALLEL_WORKERS); any other stage is a wave on its own, in order."""
+    groups, current, taken = [], [], set()
+    for index, stage in enumerate(stages):
+        files = set(getattr(stage, 'files', ()) or ())
+        parallel = bool(getattr(stage, 'independent', False) and files)
+        if parallel and current and not (files & taken) and len(current) < MAX_PARALLEL_WORKERS:
+            current.append(index)
+            taken |= files
+            continue
+        if current:
+            groups.append(current)
+        current, taken = [index], set(files)
+        if not parallel:
+            groups.append(current)
+            current, taken = [], set()
+    if current:
+        groups.append(current)
+    return groups
 
 
 # Test files, by the usual conventions; a new feature in a project with tests must come with one.
@@ -253,7 +289,8 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
     prompt = (
         "You are planning a code change. Choose the existing files you must read to implement "
         "the task correctly: files to edit plus the closest callers, tests and definitions. "
-        'Return ONLY JSON {"read":["path", ...]' + (',"stages":["what stage 1 does", ...],"design":"your design notes"' if with_stages else '') + '} with at most ' + str(limit) + " paths "
+        'Return ONLY JSON {"read":["path", ...]' + (',"stages":["what stage 1 does", ...],"stage_files":[["files stage 1 edits or creates"], ...],'
+                                            '"independent":true or false,"design":"your design notes"' if with_stages else '') + '} with at most ' + str(limit) + " paths "
         "most important first "
         "copied exactly from the listing. " + (
             "Never make a stage for bundling or syncing the iOS web copies; that happens automatically. Put each "
@@ -261,6 +298,9 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
             f"Give stages only when the change is too big to make at once (several separate parts or more than about "
             f"{LARGE.changed_files} files): 2-{MAX_STAGES} short, ordered descriptions that each leave the code working. "
             "Otherwise give one stage. "
+            "For each stage list in stage_files the files it edits or creates. Set independent to true only when the "
+            "stages edit different files and none needs another stage's code to be written first, so separate "
+            "developers could build them at the same time; otherwise false. "
             "In design, think the change through before anyone writes code, in a few sentences: where each part runs "
             "(a server such as a Cloudflare Worker, the user's phone or browser, CI) and what information is and is not "
             "available there (a server does not know the user's timezone or location unless the app sends it); every case "
@@ -300,7 +340,14 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
     if not paths:
         raise ValueError("The planner could not choose which files to read (twice). Try again, or name the files "
                          "or feature more specifically in the task")
-    stages = [st.strip()[:500] for st in (plan.get("stages") or []) if isinstance(st, str) and st.strip()][:MAX_STAGES]
+    raw_files = plan.get("stage_files") if isinstance(plan.get("stage_files"), list) else []
+    independent = plan.get("independent") is True
+    stages = []
+    for index, st in enumerate(plan.get("stages") or []):
+        if isinstance(st, str) and st.strip() and len(stages) < MAX_STAGES:
+            listed = raw_files[index] if index < len(raw_files) and isinstance(raw_files[index], list) else []
+            stage_files = [f for f in listed if isinstance(f, str) and f.strip() and not f.startswith(IOS_WEB)][:20]
+            stages.append(Stage(st.strip()[:500], stage_files, independent))
     design = plan.get("design").strip()[:2000] if isinstance(plan.get("design"), str) else ""
     return paths, stages if len(stages) > 1 else [], design
 
@@ -1121,6 +1168,22 @@ class Progress:
             pass  # A refused write (no task scope left, such as a finished run's checklist) wrote nothing.
 
 
+
+# Parallel stage workers share one progress checklist; its updates go through one at a time.
+_PROGRESS_LOCK = threading.RLock()
+
+
+def _serialized(method):
+    def locked(*args, **kwargs):
+        with _PROGRESS_LOCK:
+            return method(*args, **kwargs)
+    locked.__name__, locked.__doc__ = method.__name__, method.__doc__
+    return locked
+
+
+for _name in ("now", "ok", "fail", "recovery", "act"):
+    setattr(Progress, _name, _serialized(getattr(Progress, _name)))
+
 def note_progress(journal, **changes):
     """Update the task's PROGRESS.md through the recovery journal, when there is one."""
     if callable(getattr(journal, "note", None)):
@@ -1144,36 +1207,80 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     # Tests may come in any stage; a final stage adds them only if none did.
     current, files, combined, summaries, explanations, model, writer = dict(sources), dict(existing), {}, [], [], "", ""
     unfinished = UNFINISHED
-    for i, stage in enumerate(stages, 1):
-        if progress:
-            progress.now(f"Step {i} of {len(stages)}: {stage[:160]}")
-        step = (task + f"\n\nTHIS IS STAGE {i} OF {len(stages)}. Do only this stage now: {stage}\n"
-                + ("Earlier stages are already applied to the files below: " + "; ".join(stages[:i - 1]) + "\n" if i > 1 else "")
-                + "Later stages (do not do them yet): " + ("; ".join(stages[i:]) or "none"))
-        try:
-            model, summary, changes, explanation = generate(api_key, step, repo, current, files, guide, allowed, design,
-                                                            allow_empty=True)
-        except ValueError as exc:
+
+    def prompt_for(i, stage, together=()):
+        others = [f"stage {j}: {stages[j - 1]}" for j in together if j != i]
+        return (task + f"\n\nTHIS IS STAGE {i} OF {len(stages)}. Do only this stage now: {stage}\n"
+                + ("Earlier stages are already applied to the files below: " + "; ".join(str(s) for s in stages[:i - 1]) + "\n" if i > 1 else "")
+                + ("Other developers are building these stages at the same time: " + "; ".join(others)
+                   + ". Edit or create only these files: " + ", ".join(getattr(stage, 'files', ())) + "; leave every other file to them.\n" if others else "")
+                + "Later stages (do not do them yet): " + ("; ".join(str(s) for n, s in enumerate(stages, 1) if n > i and n not in together) or "none"))
+
+    def build(i, stage, together=()):
+        return generate(api_key, prompt_for(i, stage, together), repo, current, files, guide, allowed, design, allow_empty=True)
+
+    def record(i, stage, outcome):
+        """Apply one stage's result (or its failure) in stage order; returns False when nothing usable came back."""
+        nonlocal model, writer
+        if isinstance(outcome, Exception):
+            if not isinstance(outcome, ValueError):
+                raise outcome
             if not combined:
-                raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {exc}") from exc
+                raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {outcome}") from outcome
             # Keep what earlier stages built: checking the work sends what is missing back for a fix, and anything
             # still missing is reported on a draft PR instead of the whole task failing.
-            unfinished.append(f"Step {i} of {len(stages)} was not done ({stage[:200]}): {str(exc)[:300]}")
+            unfinished.append(f"Step {i} of {len(stages)} was not done ({stage[:200]}): {str(outcome)[:300]}")
             if progress:
                 progress.ok(f"Step {i} of {len(stages)} could not be written; moving on and fixing it when checking the work", warn=True)
-            continue
+            return False
+        model, summary, changes, explanation = outcome
         if not changes:
             if progress:
                 progress.ok(f"Step {i} of {len(stages)}: nothing to change ({summary[:120]})")
             summaries.append(f"Stage {i}: {summary}")
-            continue
+            return True
         for path, text in changes.items():
             current[path], files[path] = text, len(text)
         combined.update(changes)
         writer = model  # The model credited with the change wrote some of it, not just answered last.
         summaries.append(f"Stage {i} (written by {model}): {summary}")
         explanations.append(explanation or summary)
-        if checkpoint:
+        return True
+
+    def attempt(i, stage, together=()):
+        try:
+            return build(i, stage, together)
+        except Exception as exc:  # Reported in stage order by record().
+            return exc
+
+    for wave in waves(stages):
+        numbers, before = [index + 1 for index in wave], dict(combined)
+        if len(wave) == 1:
+            i, stage = numbers[0], stages[wave[0]]
+            if progress:
+                progress.now(f"Step {i} of {len(stages)}: {stage[:160]}")
+            record(i, stage, attempt(i, stage))
+        else:
+            # Independent stages with separate files: one worker each, at the same time. The gateway lets one request per
+            # provider account through at a time, so the workers spread across providers on their own.
+            if progress:
+                progress.now(f"Steps {', '.join(map(str, numbers))} of {len(stages)} at the same time ({len(wave)} workers)")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(wave)) as pool:
+                futures = {i: pool.submit(contextvars.copy_context().run, attempt, i, stages[i - 1], tuple(numbers)) for i in numbers}
+                results = {i: future.result() for i, future in futures.items()}
+            touched = set()
+            for i in numbers:
+                stage, outcome = stages[i - 1], results[i]
+                paths = set(outcome[2]) if isinstance(outcome, tuple) else set()
+                if paths & touched:
+                    # Two workers edited the same file after all: redo this stage on top of what is already applied.
+                    if progress:
+                        progress.now(f"Step {i} of {len(stages)} overlapped another step's files; redoing it on top of that work")
+                    outcome = attempt(i, stage)
+                    paths = set(outcome[2]) if isinstance(outcome, tuple) else set()
+                record(i, stage, outcome)
+                touched |= paths
+        if checkpoint and combined != before:
             checkpoint(writer, "\n".join(summaries)[:3000], dict(combined), "\n".join(explanations)[:2000])
     if require_test and needs_test(combined) and not has_tests(combined):
         if progress:
