@@ -93,8 +93,9 @@ test('chat stops after the attempt cap and skips a provider whose account reject
   const r=await worker.fetch(chat({messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
-  assert.equal(reservations.length,64,'83 candidate routes stop at maxRouteAttempts');
   assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
+  assert.equal(calls.filter(m=>m.startsWith('groq-')).length,1,'a Groq outage cools its whole account');
+  assert.ok(reservations.length<=4,'a cooling account is skipped after one refusal, not asked about each of its 80 models ('+reservations.length+')');
  }finally{globalThis.fetch=original}
 });
 
@@ -111,7 +112,23 @@ test('the coding gateway applies the same cap and keeps its existing failure cod
   const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
-  assert.equal(reservations.length,64,'80 candidate routes stop at maxRouteAttempts');assert.ok(calls.length>=1);
+  assert.equal(calls.length,1);assert.equal(reservations.length,2,'the cooling Groq account is skipped after one refusal');
+ }finally{globalThis.fetch=original}
+});
+
+test('the coding gateway still stops at the attempt cap when each model fails on its own',async()=>{
+ const original=globalThis.fetch,calls=[],reservations=[];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.endsWith('/v1/models'))return Response.json({data:Array.from({length:80},(_,i)=>({id:'mistral-code-'+i,capabilities:{completion_chat:true}}))});
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CODE_PROVIDERS:'mistral',KAPPA_PRIVATE_CODE_PROVIDERS:'mistral',
+   MISTRAL_API_KEY:'cap-code-mistral',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['mistral']});
+  assert.ok([429,503].includes(r.status));
+  assert.equal(calls.length,64,'80 models failing one by one stop at maxRouteAttempts');
  }finally{globalThis.fetch=original}
 });
 

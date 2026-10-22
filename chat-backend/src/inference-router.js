@@ -1,10 +1,30 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
-import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
+import "../../preview/stream.js";
+import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,chunkNormalizer} from "./providers.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
+// Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
+// keeps writing may finish (it is cut off only after IDLE_MS of silence, or at the attempt's overall limit).
+const FIRST_BYTE_MS=20000,IDLE_MS=30000;
+
+// A streamed provider answer, collected into the same Gemini-shaped result a whole answer gives. Throws on a bad chunk.
+async function collect(response,route,{onChunk}){
+ const normalize=route.provider==="gemini"?raw=>validateProviderResponse(raw,{stream:true,gemini:true}):chunkNormalizer(route);
+ let text="",usage=null,finish=null;
+ for await(const raw of KappaStream.sse(response.body)){
+  onChunk();
+  const chunk=normalize(raw);
+  if(chunk.error)throw Error("Provider stream failed");
+  if(chunk.usageMetadata)usage=chunk.usageMetadata;
+  const candidate=chunk.candidates?.[0];
+  text+=(candidate?.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==="string").map(p=>p.text).join("");
+  if(candidate?.finishReason)finish=candidate.finishReason;
+ }
+ return {candidates:[{content:{parts:[{text}]},finishReason:finish||"STOP"}],usageMetadata:usage};
+}
 const safeError=(message,status=400)=>Response.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
 
@@ -70,10 +90,10 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
  // Full catalogs can list hundreds of routes: bound the attempts and skip a provider's remaining
  // models once its account rejects the key or billing.
- const maxAttempts=registry.routing.defaults.maxRouteAttempts||12,rejectedProviders=new Set();
+ const maxAttempts=registry.routing.defaults.maxRouteAttempts||12,rejectedProviders=new Set();let refused=0;
  for(const route of routes){
   if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};break;}
-  if(attempts>=maxAttempts)break;
+  if(attempts-refused>=maxAttempts)break;
   if(rejectedProviders.has(route.provider))continue;
   lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
@@ -88,17 +108,32 @@ export async function inferenceRouter(env,input,callerSignal=null){
   const reservationId=baseId.slice(0,31)+"-"+String(attempts).padStart(4,"0");attempts++;
   let reserved;
   try{reserved=await reserveProvider(env,route,reservationId,{tokens:promptTokens})}catch{return new Response(JSON.stringify({error:"Shared route reservation failed; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
-  if(!reserved.allowed){lastStatus=429;lastRetryAt=reserved.retryAt||lastRetryAt;setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
+  if(!reserved.allowed){
+   // The whole account is cooling down or busy: skip its other models now (NVIDIA alone lists dozens), and do not
+   // count the refusal as a try, so the request reaches providers that can answer.
+   if(reserved.scope==="pool")rejectedProviders.add(route.provider);
+   refused++;lastStatus=429;lastRetryAt=reserved.retryAt||lastRetryAt;setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
   const controller=new AbortController();let timedOut=false;
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
+  // Nothing within FIRST_BYTE_MS means the model is not answering; once it writes, only IDLE_MS of silence stops it.
+  let quiet=setTimeout(()=>{timedOut=true;controller.abort()},FIRST_BYTE_MS);
+  const heard=()=>{clearTimeout(quiet);quiet=setTimeout(()=>{timedOut=true;controller.abort()},IDLE_MS)};
+  const jsonFormat=input.responseFormat==="json_object"&&p.capabilities?.structuredOutput?{type:"json_object"}:null;
+  const send=stream=>route.provider==="gemini"
+   ?fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+(stream?":streamGenerateContent?alt=sse":":generateContent"),{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal})
+   :callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,reasoningEffort:input.reasoningEffort,hasMedia:false,hasTools:false,responseFormat:jsonFormat},stream,controller.signal);
+  let streamed=true;
   try{
    attempt.attempted=true;attemptStarted=Date.now();
-   if(route.provider==="gemini"){
-    response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal});
-   }else{
-    response=await callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,reasoningEffort:input.reasoningEffort,hasMedia:false,hasTools:false,responseFormat:input.responseFormat==="json_object"&&p.capabilities?.structuredOutput?{type:"json_object"}:null},false,controller.signal);
+   response=await send(true);
+   if(response.status===400&&jsonFormat){
+    // Some providers refuse JSON mode while streaming: ask once more without streaming, within the same reservation.
+    await response.body?.cancel();clearTimeout(quiet);streamed=false;response=await send(false);
    }
+   // A provider that ignores the stream flag answers whole: read that answer the usual way.
+   if(streamed&&response.ok&&!/event-stream/i.test(response.headers.get("content-type")||""))streamed=false;
+   if(streamed)heard();else clearTimeout(quiet);
    lastStatus=response.status;
    if(!response.ok){
     const body=response.status===429?(await response.text().catch(()=>"")).slice(0,20000):(await response.body?.cancel(),null);
@@ -107,6 +142,14 @@ export async function inferenceRouter(env,input,callerSignal=null){
     await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers,body});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;
+   }
+   if(streamed){
+    let collected;try{collected=await collect(response,route,{onChunk:heard});}catch(error){if(controller.signal.aborted)throw error;lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    clearTimeout(quiet);
+    const text=collected.candidates[0].content.parts[0].text;usage=collected.usageMetadata||null;
+    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
+    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
    }
    try{data=await response.json()}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_json",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
@@ -127,7 +170,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
    setFailure({source:"transport",category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure",upstreamStatus:null});
    try{await reportOutcome({requestId:reservationId,route,status:lastStatus,category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure"})}catch{return new Response(JSON.stringify({error:"Provider outcome could not be recorded",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
    if(callerSignal?.aborted)return new Response(null,{status:499});
-  }finally{clearTimeout(timeout);callerSignal?.removeEventListener("abort",stop);}
+  }finally{clearTimeout(timeout);clearTimeout(quiet);callerSignal?.removeEventListener("abort",stop);}
  }
  const tooLarge=history.length&&history.every(row=>!row.attempted&&row.category==="context_limit");
  const budgetExpired=Date.now()>=deadline;

@@ -55,20 +55,23 @@ export async function routingStore(state,request){
    // and no success could ever clear it.
    const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless);
    const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
-   if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null};
+   // scope says whether the whole account (pool) or only this model is unavailable, so callers can skip the account's
+   // other models at once instead of asking about each.
+   if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null,scope:blocked===route?"route":"pool"};
    // The provider's own published limits for this model (or provider), counted across every KappaForge caller, so a
    // full model is skipped before Google or the provider has to refuse it.
    const q=validQuota(quota)?quota:null,minute=Math.floor(now/60000),count=q?data.quotas[q.key]||{}:null;
    if(q){
     if(count.day!==q.day){count.day=q.day;count.dayCount=0;}
     if(count.minute!==minute){count.minute=minute;count.minuteCount=0;count.minuteTokens=0;}
-    if(Number.isFinite(q.rpd)&&count.dayCount>=q.rpd)return {allowed:false,reason:"daily_quota",retryAt:q.dayEnd,used:count.dayCount,limit:q.rpd};
-    if(Number.isFinite(q.rpm)&&count.minuteCount>=q.rpm)return {allowed:false,reason:"minute_quota",retryAt:(minute+1)*60000};
-    if(Number.isFinite(q.tpm)&&q.tokens>q.tpm)return {allowed:false,reason:"request_too_large",retryAt:null};
-    if(Number.isFinite(q.tpm)&&count.minuteTokens+q.tokens>q.tpm)return {allowed:false,reason:"minute_tokens",retryAt:(minute+1)*60000};
+    const scope=q.key.endsWith(":*")?"pool":"route";
+    if(Number.isFinite(q.rpd)&&count.dayCount>=q.rpd)return {allowed:false,reason:"daily_quota",retryAt:q.dayEnd,used:count.dayCount,limit:q.rpd,scope};
+    if(Number.isFinite(q.rpm)&&count.minuteCount>=q.rpm)return {allowed:false,reason:"minute_quota",retryAt:(minute+1)*60000,scope};
+    if(Number.isFinite(q.tpm)&&q.tokens>q.tpm)return {allowed:false,reason:"request_too_large",retryAt:null,scope:"route"};
+    if(Number.isFinite(q.tpm)&&count.minuteTokens+q.tokens>q.tpm)return {allowed:false,reason:"minute_tokens",retryAt:(minute+1)*60000,scope};
    }
    const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
-   if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
+   if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",scope:"pool",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
    if(q){count.dayCount++;count.minuteCount++;count.minuteTokens+=q.tokens;count.dayEnd=q.dayEnd;data.quotas[q.key]=count;}
    const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,startedAt:now,expiresAt};
    return {allowed:true,expiresAt};

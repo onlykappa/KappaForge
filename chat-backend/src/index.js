@@ -823,7 +823,10 @@ export default {
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
-        if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+        if(!routeReservation.allowed){
+          // An account that is cooling down or busy is skipped as a whole, and the refusal does not count as a try.
+          if(routeReservation.scope==="pool")rejectedProviders.add(route.provider);
+          attempt--;lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
