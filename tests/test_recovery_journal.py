@@ -437,6 +437,24 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertIn('Files changed so far: value.py', brief)
         self.assertIn('429', brief)
 
+    def test_notes_clear_pause_on_begin_and_complete_only_when_verified(self):
+        from engine import native_build
+        self.journal.note(plan=['Implement', 'Test'], done=['Stage 1: Implemented'], status='Paused')
+        self.journal.defer(RuntimeError('HTTP 429 rate-limited'))
+        self.world.now += 301
+        self.assertTrue(self.journal.queue())
+        restored = self.world.journal()
+        self.assertTrue(restored.begin(f"resume:1:{restored.scope.digest[:12]}"))
+        self.assertEqual(restored.notes.data['status'], 'Running: resumed saved work')
+        self.assertEqual(restored.notes.remaining(), ['Test'])
+        restored.checkpoint('b' * 40, files=['value.py'])
+        with patch.object(developer, 'sandbox_result', return_value={'status': 'completed', 'conclusion': 'success'}), \
+                patch.object(native_build, 'needed', return_value=False), patch.object(native_build, 'result', return_value=None):
+            self.assertEqual(recovery.resume_checks(restored, {'body': developer.review_record([])}, 'fixture'), 'ready')
+        notes = self.world.journal().notes
+        self.assertEqual(notes.remaining(), [])
+        self.assertIn('ready for owner review', notes.data['status'])
+
     def test_progress_md_from_anyone_but_the_bot_is_ignored(self):
         self.journal.note(plan=['Real plan'])
         forged = dict(next(r for r in self.world.rows if r['body'].startswith('### KappaForge PROGRESS.md')))
@@ -597,6 +615,8 @@ class RecoveryJournalTests(unittest.TestCase):
 
     def test_failed_behavioral_test_is_repaired_checkpointed_and_dispatched_for_exact_sha(self):
         from engine import native_build, verify
+        self.journal.note(plan=['Change value', 'Add test'], done=['Stage 1: Changed value'],
+                          files=['value.py'], status='Paused for a provider limit; resumes automatically')
         self.world.files['test_value.py'] = 'from value import value\nassert value == 1\n'
         good = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]},
                                     {'path': 'test_value.py', 'edits': [{'find': 'value == 1', 'replace': 'value == 2'}]}]})
@@ -618,6 +638,12 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertIn('value == 2', self.world.files['test_value.py'])
         self.assertEqual(self.journal.state['candidate'], 'c' * 40)
         self.assertEqual(dispatch.call_args.args[2], 'c' * 40)
+        restored = self.world.journal()
+        self.assertEqual(restored.notes.remaining(), [])
+        self.assertIn('test_value.py', restored.notes.data['files'])
+        self.assertIn('writer', restored.notes.data['models'])
+        self.assertEqual(restored.notes.data['status'], 'Repair saved; independent tests running')
+        self.assertIn('2. [done] Add test', restored.notes.brief())
         self.assertTrue(any(e['strategy'] == 'repair_from_test_evidence' for e in self.journal.state['events']))
         self.assertEqual(len(self.world.prs), 1)
 

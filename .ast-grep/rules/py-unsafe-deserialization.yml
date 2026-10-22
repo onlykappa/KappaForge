@@ -7,5 +7,16 @@ rule:
   - pattern: pickle.load($$$)
   - pattern: pickle.loads($$$)
   - pattern: marshal.loads($$$)
-  - pattern: yaml.load($DATA)
+  - all:
+    - pattern: yaml.load($$$)
+    - not:
+        any:
+        - pattern: yaml.load($DATA, Loader=yaml.SafeLoader)
+        - pattern: yaml.load($DATA, Loader=yaml.CSafeLoader)
+        - pattern: yaml.load($DATA, Loader=yaml.BaseLoader)
+        - pattern: yaml.load($DATA, Loader=yaml.CBaseLoader)
+        - pattern: yaml.load($DATA, yaml.SafeLoader)
+        - pattern: yaml.load($DATA, yaml.CSafeLoader)
+        - pattern: yaml.load($DATA, yaml.BaseLoader)
+        - pattern: yaml.load($DATA, yaml.CBaseLoader)
   - pattern: yaml.unsafe_load($$$)

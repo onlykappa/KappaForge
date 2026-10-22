@@ -1708,6 +1708,8 @@ def fix_pull_request(issue, api_key, token):
         gh(f'repos/{repo}/git/refs/heads/{branch}', repo_token, {'sha': commit['sha'], 'force': False}, method='PATCH')
         saved.update(sha=commit['sha'], changes=dict(changes))
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
+        note_progress(journal, files=list(changes), append_done=['Saved a repair checkpoint; full review pending'],
+                      status='Running: repair checkpoint saved; full requirement review pending')
         # Checkpoints are unverified even when the preceding candidate passed CI.
         gh(f"repos/{repo}/pulls/{pr['number']}", repo_token,
            {'body': (pr.get('body') or '') + '\n\n' + review_record(['Repair checkpoint awaiting full requirement review and independent tests'])}, method='PATCH')
@@ -1739,6 +1741,9 @@ def fix_pull_request(issue, api_key, token):
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
+        note_progress(journal, files=list(changes), model=model, append_done=['Repair saved: ' + summary],
+                      complete=bool(pending) and not requirements_open({'body': explanation}),
+                      status='Repair saved; independent tests running')
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
     if pending:
         previous = re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get("body") or "")

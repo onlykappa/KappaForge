@@ -57,7 +57,7 @@ def compare(data, config):
             continue  # The list shows only some of this provider's models, so a missing one proves nothing.
         ids = {str(m.get("id")).lower() for m in models}
         p = config["routing"]["primary"] if pid == "gemini" else config["providers"].get(pid, {})
-        for model in dict.fromkeys(p.get("freeModels", []) + p.get("models", [])):
+        for model in dict.fromkeys(p.get("freeModels", []) + ([] if p.get("metered") else p.get("models", []))):
             if not listed(model, ids):
                 rows.append(("pinned", pid, f"`{model}` is pinned as free but is no longer on the list"))
     return rows

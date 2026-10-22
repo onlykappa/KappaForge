@@ -512,6 +512,8 @@ class Journal:
             self.persist()
         finally:
             self._resuming = False
+        if self.notes.comment:
+            self.note(status='Running: resumed saved work')
         self.publish('running', 'Runner acknowledged the saved task. Execution started.')
         return True
 
@@ -641,8 +643,11 @@ def resume_checks(journal, pr, token):
         journal.state.update(status='ready', nextAt=0)
         journal.state.pop('waitingSince', None)
         journal.persist()
+        journal.note(complete=True, status='Independent checks passed; ready for owner review')
         journal.publish('ready', 'Independent checks passed for the saved candidate. Ready for owner review.')
         return 'ready'
+    if journal.notes.comment:
+        journal.note(status='Independent verification is running for the saved candidate')
     journal.publish('testing', 'Independent verification is running for the saved candidate.')
     return 'testing'
 

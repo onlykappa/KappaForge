@@ -392,7 +392,7 @@
       }
     },
     "huggingface": {
-      "name": "Hugging Face (monthly free credit)",
+      "name": "Hugging Face (metered, chat only)",
       "kind": "openai",
       "base": "https://router.huggingface.co/v1",
       "key": "HUGGINGFACE_API_KEY",
@@ -401,12 +401,8 @@
         "Qwen/Qwen2.5-Coder-7B-Instruct",
         "meta-llama/Llama-3.1-8B-Instruct"
       ],
-      "freeModels": [
-        "Qwen/Qwen2.5-Coder-7B-Instruct",
-        "meta-llama/Llama-3.1-8B-Instruct"
-      ],
       "privateCode": false,
-      "note": "Free accounts get about $0.10 of Inference Provider credit a month; pinned to small models so it lasts. When the credit runs out the router gets HTTP 402 and rests the model. Use a fine-grained token with only 'Make calls to Inference Providers'. Forwards prompts to third-party hosts (Together, Fireworks, Novita and others), so it never receives private-repository code.",
+      "note": "Metered Inference Providers; free accounts have no included monthly credits. Requires explicit named KAPPA_ALL_MODEL_PROVIDERS=huggingface opt-in and chat permissions. Calls can consume purchased credits or use billing configured in Hugging Face. Chat only; never used for repository coding. Forwards prompts to third-party hosts. Use a fine-grained token with only Make calls to Inference Providers.",
       "context": 131072,
       "maxOutput": 4096,
       "accountPool": "huggingface",
@@ -415,12 +411,14 @@
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,
-        "coding": true,
+        "coding": false,
         "structuredOutput": false,
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "metered": true,
+      "agent": false
     }
   },
   "routing": {

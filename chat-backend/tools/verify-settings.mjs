@@ -61,7 +61,7 @@ export function providerActivation(settings){
  const reviewed=p=>p.freeOnly===true||Array.isArray(p.freeModels)&&p.freeModels.length>0;
  const candidates=registry.order.filter(id=>{
   const p=registry.providers[id];
-  return reviewed(p)&&(p.kind==='workers-ai'?!!binding('AI'):!p.key||p.keyOptional||binding(p.key)?.type==='secret_text');
+  return p.metered!==true&&reviewed(p)&&(p.kind==='workers-ai'?!!binding('AI'):!p.key||p.keyOptional||binding(p.key)?.type==='secret_text');
  });
  if(reviewed(registry.routing.primary)&&binding('GEMINI_API_KEY')?.type==='secret_text')candidates.unshift('gemini');
  const variables={};

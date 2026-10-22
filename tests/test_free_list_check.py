@@ -30,6 +30,10 @@ class FreeListCheckTests(unittest.TestCase):
         self.assertFalse(any(name == "mistral" for _, name, _ in rows), "-latest matches the dated model")
         self.assertFalse(any(name == "nvidia" for _, name, _ in rows), "a partial list proves nothing")
 
+    def test_metered_chat_models_are_not_reported_as_missing_free_models(self):
+        data = {'providers': [provider('Hugging Face', 'https://router.huggingface.co/v1', [{'id': 'other'}])]}
+        self.assertEqual(free_list_check.compare(data, runner.PROVIDERS), [])
+
     def test_no_report_when_kappaforge_matches(self):
         self.assertEqual(free_list_check.report([], "2026-10-05"), "")
         text = free_list_check.report([("new", "A|B", "x|y")], "2026-10-05")

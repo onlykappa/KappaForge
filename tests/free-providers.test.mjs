@@ -4,38 +4,48 @@ import '../preview/limits-core.js';
 import registry from '../config/providers.json' with {type:'json'};
 import {fallbackRoutes} from '../chat-backend/src/providers.js';
 import {providerActivation} from '../chat-backend/tools/verify-settings.mjs';
-
+import {inferenceRouter} from '../chat-backend/src/inference-router.js';
+import {providerAllowed} from '../chat-backend/src/routing-policy.js';
 const L=globalThis.KappaLimits;
 const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'huggingface',KAPPA_CHAT_PROVIDERS:'huggingface',
- KAPPA_CODE_PROVIDERS:'huggingface',KAPPA_PRIVATE_CODE_PROVIDERS:'',HUGGINGFACE_API_KEY:'c'};
-
-test('Hugging Face routes only its pinned free models, before the keyless safety net',async()=>{
- const original=globalThis.fetch;globalThis.fetch=async()=>{throw Error('pinned models need no discovery')};
- try{
-  const routes=(await fallbackRoutes(env,[],{},false,{channel:'coding'})).map(r=>r.provider+':'+r.model);
-  assert.deepEqual(routes,['huggingface:Qwen/Qwen2.5-Coder-7B-Instruct','huggingface:meta-llama/Llama-3.1-8B-Instruct']);
-  assert.deepEqual(await fallbackRoutes(env,[],{},false,{channel:'coding',privateCode:true}),[],'private code needs an explicit opt-in');
- }finally{globalThis.fetch=original}
- const p=registry.providers.huggingface;
- assert.ok(registry.order.indexOf('huggingface')<registry.order.indexOf('llm7'));
- assert.deepEqual(p.models,p.freeModels,'pinned to its reviewed free models');
- assert.equal(p.privateCode,false);
+ KAPPA_CODE_PROVIDERS:'huggingface',KAPPA_PRIVATE_CODE_PROVIDERS:'huggingface',HUGGINGFACE_API_KEY:'fixture'};
+test('metered Hugging Face requires named paid opt-in, including legacy deployments',async()=>{
+ for(const policy of ['v1',undefined])for(const opt of ['', '*'])
+  assert.equal(providerAllowed({...env,ROUTING_POLICY_VERSION:policy,KAPPA_ALL_MODEL_PROVIDERS:opt},'chat','huggingface'),false);
+ assert.deepEqual(await fallbackRoutes(env,[],{},false),[]);
+ const opted={...env,KAPPA_ALL_MODEL_PROVIDERS:'huggingface'};
+ const routes=await fallbackRoutes(opted,[],{},false);
+ assert.deepEqual(routes.map(r=>r.model),registry.providers.huggingface.models);
+ for(const privateCode of [false,true])
+  assert.deepEqual(await fallbackRoutes(opted,[],{},false,{channel:'coding',privateCode}),[]);
+ assert.equal(registry.providers.huggingface.metered,true);
+ assert.equal(registry.providers.huggingface.freeModels,undefined);
 });
-
-test('activating providers adds Hugging Face everywhere except the private-code list',()=>{
- const bindings=[{name:'MEMORY',type:'durable_object_namespace',namespace_id:'fixture'},{name:'ROUTING_POLICY_VERSION',type:'plain_text',text:'v1'},
-  ...['HUGGINGFACE_API_KEY','GROQ_API_KEY'].map(name=>({name,type:'secret_text'}))];
+test('free activation never adds Hugging Face merely because a key exists',()=>{
+ const bindings=[{name:'MEMORY',type:'durable_object_namespace',namespace_id:'fixture'},
+ {name:'ROUTING_POLICY_VERSION',type:'plain_text',text:'v1'},
+ ...['HUGGINGFACE_API_KEY','GROQ_API_KEY'].map(name=>({name,type:'secret_text'}))];
  const {variables}=providerActivation({bindings});
- for(const name of ['KAPPA_FREE_PROVIDERS','KAPPA_CHAT_PROVIDERS','KAPPA_CODE_PROVIDERS'])
-  for(const id of ['huggingface','groq'])assert.ok(variables[name].split(',').includes(id),name+' '+id);
- assert.ok(!variables.KAPPA_PRIVATE_CODE_PROVIDERS.split(',').includes('huggingface'));
- assert.ok(variables.KAPPA_PRIVATE_CODE_PROVIDERS.split(',').includes('groq'));
+ for(const name of ['KAPPA_FREE_PROVIDERS','KAPPA_CHAT_PROVIDERS','KAPPA_CODE_PROVIDERS','KAPPA_PRIVATE_CODE_PROVIDERS']){
+  assert.ok(!variables[name].split(',').includes('huggingface'),name);
+  assert.ok(variables[name].split(',').includes('groq'),name);
+ }
 });
-
-test('the usage page counts Hugging Face tokens without inventing a request allowance',()=>{
+test('actual coding gateway rejects chat-only Hugging Face despite stale approvals',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;throw Error('No upstream inference allowed')};
+ try{
+  const memory={idFromName:n=>n,get:()=>({fetch:async()=>Response.json({allowed:true})})};
+  const response=await inferenceRouter({...env,KAPPA_ALL_MODEL_PROVIDERS:'huggingface',MEMORY:memory},
+   {version:1,channel:'coding',repo:'onlykappa/KappaForge',privateCode:true,providers:['huggingface'],
+    messages:[{role:'user',content:'Source code'}],maxTokens:100});
+  assert.equal(response.status,503);assert.equal((await response.json()).code,'free_route_unavailable');
+  assert.equal(calls,0);
+ }finally{globalThis.fetch=original}
+});
+test('usage counts Hugging Face tokens without inventing a request allowance',()=>{
  const now=Date.UTC(2026,9,22,12),ids=['gemini',...registry.order];
- const rows=L.usage([{at:now-3000,model:'huggingface:Qwen/Qwen2.5-Coder-7B-Instruct',total:50}],registry.limits,ids,{now,show:['huggingface']});
- const hf=rows.find(r=>r.id==='huggingface');
- assert.equal(hf.known,false,'credit-metered: no request allowance to show');
- assert.equal(hf.used.tokens,50);
+ const rows=L.usage([{at:now-3000,model:'huggingface:Qwen/Qwen2.5-Coder-7B-Instruct',total:50}],
+ registry.limits,ids,{now,show:['huggingface']});
+ const hf=rows.find(r=>r.id==='huggingface');assert.equal(hf.known,false);assert.equal(hf.used.tokens,50);
 });

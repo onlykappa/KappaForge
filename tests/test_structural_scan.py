@@ -82,6 +82,16 @@ class RealAstGrepTests(unittest.TestCase):
         self.assertEqual(developer.FLAGS[2][1].search("subprocess.check_call(cmd,") is not None, True)
         self.assertIsNone(developer.FLAGS[2][1].search("setTimeout('refresh()', 10)"), "the word patterns miss this one")
 
+    def test_explicit_unsafe_yaml_loaders_are_flagged_before_push(self):
+        for loader in ('Loader=yaml.Loader', 'Loader=yaml.UnsafeLoader', 'yaml.UnsafeLoader', 'Loader=custom_loader'):
+            with self.subTest(loader=loader):
+                code = 'import yaml\nvalue = yaml.load(\n    data,\n    ' + loader + '\n)\n'
+                flags = developer.flagged_changes({}, {'app.py': code})
+                self.assertTrue(any('deserializes data' in label for label in flags), flags)
+        for loader in ('Loader=yaml.SafeLoader', 'yaml.SafeLoader', 'Loader=yaml.CSafeLoader'):
+            with self.subTest(safe_loader=loader):
+                self.assertEqual(structural_scan.scan({}, {'app.py': 'value = yaml.load(data, ' + loader + ')\n'}), {})
+
     def test_the_rule_tests_pass(self):
         result = subprocess.run([REAL, "test", "--skip-snapshot-tests"], cwd=ROOT, capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout[-2000:])

@@ -50,8 +50,8 @@ class Notes:
     def _text(self, value, size=MAX_TEXT):
         return self.clean(str(value)).replace("\n", " ").strip()[:size]
 
-    def update(self, plan=None, design=None, done=None, files=(), model="", stop=None, status=None, clock=time.time):
-        """Record what changed. done replaces the list of finished steps; files and model are added."""
+    def update(self, plan=None, design=None, done=None, files=(), model="", stop=None, status=None, clock=time.time, append_done=(), complete=False):
+        """Record progress; append repair history, and complete stages only after validated review."""
         d = self.data
         if plan is not None:
             d["plan"] = [self._text(step) for step in plan][:MAX_ITEMS]
@@ -59,6 +59,13 @@ class Notes:
             d["design"] = self._text(design, 1500)
         if done is not None:
             d["done"] = [self._text(line) for line in done if str(line).strip()][-MAX_ITEMS:]
+        if append_done:
+            d["done"] = list(dict.fromkeys(d["done"] + [self._text(line) for line in append_done]))[-MAX_ITEMS:]
+        if complete:
+            # Only after full requirement review or independent verification succeeds.
+            finished = self.finished_stages()
+            d["done"] = (d["done"] + [f"Stage {i}: {step}" for i, step in enumerate(d["plan"], 1)
+                                     if i not in finished])[-MAX_ITEMS:]
         d["files"] = list(dict.fromkeys(d["files"] + [self._text(f, 200) for f in files]))[-MAX_ITEMS * 2:]
         if model and self._text(model, 140) not in d["models"]:
             d["models"] = (d["models"] + [self._text(model, 140)])[-10:]
