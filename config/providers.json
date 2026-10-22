@@ -568,7 +568,9 @@
           {
             "match": "labs-leanstral",
             "tpm": 5000000,
-            "rps": 0.63
+            "rps": 0.63,
+            "rpm": 0,
+            "note": "Listed at 5M tokens per minute, but the API answers HTTP 403 to this account (tested 2026-10-22), so it is not routed or counted"
           },
           {
             "match": "codestral",
