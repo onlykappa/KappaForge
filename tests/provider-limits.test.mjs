@@ -198,3 +198,12 @@ test('daily token capacity counts per-minute token limits, not only published da
  const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
  assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);assert.equal(by('mistral').tokenLimit,null);
 });
+
+test('aliases of one model family share one allowance in provider totals',()=>{
+ const now=Date.now(),ev=model=>({at:now-1000,model,total:10,ok:true});
+ const rows=L.usage([ev('gemini-3.1-flash-lite'),ev('gemini-3.1-flash-lite-preview'),ev('gemini-3.6-flash-preview-09-2026')],limits,ids,{now,show:['gemini']});
+ const g=rows.find(r=>r.id==='gemini');
+ assert.equal(g.tokenLimit,321080000);assert.equal(g.tokensOnCapped,30);
+ const plain=L.usage([],limits,ids,{now,show:['gemini']}).find(r=>r.id==='gemini');
+ assert.equal(g.requestLimit,plain.requestLimit,'request totals are not inflated by aliases either');
+});

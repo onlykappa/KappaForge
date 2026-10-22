@@ -107,9 +107,11 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   models.sort((a,b)=>b.used.requests-a.used.requests||(b.pairs[0]?.percent??-1)-(a.pairs[0]?.percent??-1)||a.model.localeCompare(b.model));
   // Provider-wide daily allowances: its own cap, or the sum of its models' caps. Token use is compared only
   // on models with a token limit, so the two sides of the comparison cover the same models.
+  // Model names that share one allowance (a -preview or dated alias of the same family) count it once.
+  const once=list=>[...new Map(list.map(m=>[m.limit?.match||m.model,m.limit])).values()];
   const capped=models.filter(m=>tokenCeiling(m.limit)!==null);
-  const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:models.reduce((n,m)=>n+(Number.isFinite(m.limit?.rpd)?m.limit.rpd:0),0)||null;
-  const tokenLimit=capped.reduce((n,m)=>n+tokenCeiling(m.limit),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
+  const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:once(models.filter(m=>Number.isFinite(m.limit?.rpd))).reduce((n,l)=>n+l.rpd,0)||null;
+  const tokenLimit=once(capped).reduce((n,l)=>n+tokenCeiling(l),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }
