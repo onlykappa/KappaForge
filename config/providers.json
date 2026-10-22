@@ -151,7 +151,7 @@
       "maxOutput": 32768,
       "accountPool": "mistral",
       "quotaPool": "mistral",
-      "quotaScope": "account",
+      "quotaScope": "model",
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,
