@@ -4,7 +4,8 @@ const TTL_MS=60000,BASE="https://api.mistral.ai/v1/admin/";
 let cache=null;
 
 async function admin(env,path){
- const r=await fetch(BASE+path,{headers:{"x-api-key":env.MISTRAL_ADMIN_API_KEY,Accept:"application/json"},signal:AbortSignal.timeout(10000)});
+ const key=String(env.MISTRAL_ADMIN_API_KEY).trim();
+ const r=await fetch(BASE+path,{headers:{"x-api-key":key,Authorization:"Bearer "+key,Accept:"application/json"},signal:AbortSignal.timeout(10000)});
  const text=await r.text(),data=(()=>{try{return JSON.parse(text)}catch{return null}})();
  if(!r.ok)return {error:"Mistral Admin API HTTP "+r.status+(data?.message||data?.detail?": "+String(data.message||JSON.stringify(data.detail)).slice(0,200):"")};
  return {data};
