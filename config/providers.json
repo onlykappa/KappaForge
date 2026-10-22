@@ -701,12 +701,14 @@
       "maxOutputTokens": null,
       "removedModels": [
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        "gemini-pro-latest"
       ],
       "removedModelsReason": "Model audit 2026-10-22: 404 no longer available to new users",
       "removedWhy": {
         "gemini-2.5-flash": "Retired by the provider: This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the lates",
-        "gemini-2.5-flash-lite": "Retired by the provider: This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for"
+        "gemini-2.5-flash-lite": "Retired by the provider: This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for",
+        "gemini-pro-latest": "No free quota: Pro models are 0 / 0 on this account's AI Studio free tier"
       }
     },
     "chatRouterModels": [
@@ -768,8 +770,24 @@
       "gemini": {
         "scope": "model",
         "dayResets": "America/Los_Angeles",
-        "source": "Google AI Studio, project master ai bot, Free tier",
+        "source": "Google AI Studio rate limits, project master ai bot, Free tier (checked 2026-10-22)",
         "models": [
+          {
+            "match": "gemini-flash-latest",
+            "sameAs": "gemini-3.8-flash",
+            "note": "Alias of the newest Flash; AI Studio lists no row of its own, so it shares Gemini 3.8 Flash's quota"
+          },
+          {
+            "match": "gemini-flash-lite-latest",
+            "sameAs": "gemini-3.5-flash-lite",
+            "note": "Alias of the newest Flash-Lite; AI Studio lists no row of its own, so it shares Gemini 3.5 Flash Lite's quota"
+          },
+          {
+            "match": "gemini-pro-latest",
+            "rpm": 0,
+            "rpd": 0,
+            "note": "Alias of the newest Pro; Pro models have no free-tier quota on this account (0 / 0), and the model audit got 'exceeded your current quota'"
+          },
           {
             "match": "gemini-3.7-flash",
             "sameAs": "gemini-3.8-flash",

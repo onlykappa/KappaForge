@@ -5,13 +5,13 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**106 kept** (95 working, 11 unavailable today), **11 specialist tools** kept but not used for chat, and **79 removed**, out of 196.
+**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **80 removed**, out of 196.
 
 The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
 | Provider | Kept | Working | Unavailable today | Removed |
 |---|---|---|---|---|
-| Google Gemini | 12 | 10 | 2 | 2 |
+| Google Gemini | 11 | 10 | 1 | 3 |
 | Groq | 4 | 4 | 0 | 0 |
 | Mistral | 14 | 12 | 2 | 0 |
 | Cloudflare Workers AI | 23 | 23 | 0 | 11 |
@@ -23,7 +23,7 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 
 ## Kept models
 
-### Google Gemini (12)
+### Google Gemini (11)
 
 | Model | Status | Notes |
 |---|---|---|
@@ -38,7 +38,6 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `gemini-3.8-flash` | Working (after fix) | Cold start or busy: first try overloaded, answered on the second |
 | `gemma-4-31b-it` | Working (after fix) | Answered on the one-by-one check |
 | `gemini-flash-latest` | Kept: unavailable today | Provider overloaded or erroring today: kept: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later. |
-| `gemini-pro-latest` | Kept: unavailable today | Maxed out right now (rate limit): kept: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to:  To monitor your current usa |
 
 ### Groq (4)
 
@@ -194,10 +193,11 @@ These are not chat models, so a chat test fails them, but they are useful for th
 
 ## Removed models
 
-### Google Gemini (2)
+### Google Gemini (3)
 
 | Model | Reason | Provider's message |
 |---|---|---|
+| `gemini-pro-latest` | No free quota on this account | No free quota: Pro models are 0 / 0 on this account's AI Studio free tier |
 | `gemini-2.5-flash` | Retired by the provider | This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features |
 | `gemini-2.5-flash-lite` | Retired by the provider | This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the lates |
 
