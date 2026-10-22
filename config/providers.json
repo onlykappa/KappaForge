@@ -62,7 +62,7 @@
       "maxOutput": 8192,
       "accountPool": "groq",
       "quotaPool": "groq",
-      "quotaScope": "account",
+      "quotaScope": "model",
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,

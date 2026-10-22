@@ -2,9 +2,8 @@ const KEY="routing:v1";
 const MAX_LEASE_MS=5*60_000;
 const RETENTION_MS=7*24*60*60_000;
 const MAX_COOLDOWN_MS=7*24*60*60_000;
-const OUTAGE_MODELS=3,OUTAGE_WINDOW_MS=5*60_000;
 
-const blank=()=>({version:1,pools:{},routes:{},poolFailures:{},reservations:{},outcomes:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{},quotas:{}});
+const blank=()=>({version:1,pools:{},routes:{},reservations:{},outcomes:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{},quotas:{}});
 const validId=value=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(value);
 const limitValue=value=>value===undefined||Number.isInteger(value)&&value>=0&&value<=1e9;
 const validQuota=q=>!!q&&typeof q.key==="string"&&q.key.length<=200&&Number.isFinite(q.day)&&Number.isFinite(q.dayEnd)&&Number.isInteger(q.tokens)&&q.tokens>=0&&
@@ -55,9 +54,9 @@ export async function routingStore(state,request){
    // Likewise a 401 block on a keyless account (its pool carries no key fingerprint): there is no key to reject,
    // and no success could ever clear it.
    // An account-wide rest from one model's hang or server error, written before such failures were kept to the
-   // model, does not stop the account's other models; an outage seen across several models (outage:true) still does.
+   // model, does not stop the account's other models.
    const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless)||
-    row===cooldown&&!row.blocked&&!row.outage&&(row.status===0||row.status>=500);
+    row===cooldown&&!row.blocked&&(row.status===0||row.status>=500);
    const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
    // scope says whether the whole account (pool) or only this model is unavailable, so callers can skip the account's
    // other models at once instead of asking about each.
@@ -100,7 +99,7 @@ export async function routingStore(state,request){
   return Response.json(result,{status:result.allowed?200:429});
  }
  if(url.pathname==="/router/outcome"){
-  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped}=input||{};
+  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped,full}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!Number.isInteger(status)||status<0||status>599)
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
@@ -125,9 +124,14 @@ export async function routingStore(state,request){
    // Cancellation releases a lease, but is not evidence of restored health.
    // An older success cannot erase a newer authentication/quota/outage failure.
    if(!failure&&status!==499){
-    if(pool&&data.poolFailures?.[pool])delete data.poolFailures[pool];
     if(!data.routes[route]||data.routes[route].updatedAt<=(reservation.startedAt||0))delete data.routes[route];
     if(pool&&(!data.pools[pool]||data.pools[pool].updatedAt<=(reservation.startedAt||0)))delete data.pools[pool];
+    // The answer used up the last of a limit (the provider's rate-limit headers say 0 left): the model, or the whole
+    // account where the limit is shared, rests until it resets, so the next request moves on without being refused.
+    if(full===true&&Number.isFinite(resetAt)&&resetAt>now){
+     const shared=reservation?.quotaScope!=="model",target=shared?data.pools:data.routes,id=shared?pool:route;
+     target[id]={provider,model,category:"limit_reached",status,failures:0,blocked:false,until:Math.min(resetAt,now+86400000),updatedAt:now};
+    }
    }
    else if(status!==499){
     // Only a rejected key blocks the whole account. A 402 is per model on pooled gateways (a paid model
@@ -136,9 +140,9 @@ export async function routingStore(state,request){
     // A rejection of one model (unsupported option, retired, denied) rests only that model, not the provider.
     const modelSpecific=code===400||code===402||code===403||code===404||code===422||anonymous;
     // A hang or server error rests only that model: providers run models on separate deployments, so one model failing
-    // says nothing about the rest. Several different models failing soon after one another is an outage (below).
+    // says nothing about the rest, and the next model is simply tried.
     const serverFailure=code===0||code>=500;
-    const scope=blocked?"pool":modelSpecific||serverFailure?"route":category==="rate_limit"&&reservation?.quotaScope==="model"?"route":"pool";
+    const scope=blocked?"pool":modelSpecific||serverFailure?"route":(code===429||category==="rate_limit")&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
     const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
@@ -147,19 +151,6 @@ export async function routingStore(state,request){
     const delay=Math.max(retry===null?defaultDelay:retry,resetDelay||0,modelSpecific&&(old.failures||0)>=1?21600:0,code===402?86400:0);
     target[id]={provider,model,category:category||({401:"authentication",402:"billing_blocked",403:"provider_denied",404:"model_unavailable",429:"rate_limit"}[code]||"provider_error"),
       status:code,failures:Math.min(10,(old.failures||0)+1),blocked,until:blocked?0:now+delay*1000,updatedAt:now};
-    if(serverFailure&&!blocked&&pool&&modelScoped!==true&&reservation?.quotaScope!=="model"){
-     // Three different models of one account failing within five minutes: the account itself is down, so it pauses
-     // for a minute (doubling while it stays down) instead of each of its models costing an attempt. Gateways and
-     // per-model quota providers (Gemini, Mistral) are left out: there several models failing is still no outage.
-     data.poolFailures ||= {};
-     const recent=(data.poolFailures[pool]||[]).filter(row=>row.at>now-OUTAGE_WINDOW_MS&&row.model!==model).concat({model,at:now}).slice(-OUTAGE_MODELS);
-     data.poolFailures[pool]=recent;
-     if(recent.length>=OUTAGE_MODELS){
-      const prior=data.pools[pool]||{},outages=prior.outage?Math.min(6,(prior.failures||0)):0;
-      data.pools[pool]={provider,model,category:"provider_outage",status:code,failures:outages+1,blocked:false,outage:true,until:now+60000*Math.pow(2,outages),updatedAt:now};
-      data.poolFailures[pool]=[];
-     }
-    }
    }
    data.outcomes[requestId]={at:now,status,provider,model};
    return {stored:true,duplicate:false,retryAt:Math.max(data.pools[pool]?.until||0,data.routes[route]?.until||0)||null};
