@@ -1,4 +1,4 @@
-import {chooseTier,orderForTier} from "./chat-tiers.js";
+import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
@@ -72,7 +72,10 @@ export class KappaMemory {
 }
 const ORIGIN = "https://onlykappa.github.io";
 // Task briefs have a separate bound from the 3,500-character chat context window.
-const TASK_LIMIT = 20000;
+// A task becomes a GitHub issue, whose body holds at most 65,536 characters.
+const TASK_LIMIT = 60000;
+// One chat message (pasted documents, logs, long prompts); the provider's own context size is checked when routing.
+const MESSAGE_LIMIT = REGISTRY.routing.defaults.maxPromptChars;
 function json(data, status = 200, cors = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -533,7 +536,9 @@ export default {
       for (const m of input.messages) {
         // An empty assistant turn (an older app sent blank task cards) is skipped, not a reason to refuse the chat.
         if (m && m.role === "assistant" && typeof m.text === "string" && !m.text.trim()) continue;
-        if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim() || m.text.length > 3500)
+        if (m && typeof m.text === "string" && m.text.length > MESSAGE_LIMIT)
+          return json({ error: "A message can be up to " + MESSAGE_LIMIT.toLocaleString("en-US") + " characters; this one has " + m.text.length.toLocaleString("en-US") + ". Shorten it or attach it as a file." }, 413, cors);
+        if (!m || !["user", "assistant"].includes(m.role) || typeof m.text !== "string" || !m.text.trim())
           return json({ error: "Invalid message" }, 400, cors);
         const parts = [{ text: m.text }];
         if (m.role === "user" && Array.isArray(m.attachments)) {
@@ -790,6 +795,18 @@ export default {
       catch{return json({error:"Shared routing limits unavailable; inference was not sent."},503,cors)}
       if(!dailyReservation.allowed)return json({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached. Retry after the current minute window.":"Shared daily inference limit reached. Requests resume next UTC day.",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+      // A complex question is split into parts answered by different providers at once; the main model then writes
+      // the one reply from their notes. Any failure falls back to answering it in one piece.
+      if(chosen?.tier==="complex"&&!chat.hasMedia){
+       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub}).catch(()=>null);
+       if(notes){
+        const brief="RESEARCH NOTES for this question, written by specialist models that each answered one part. Check them, correct anything wrong, and combine them into one well-organized answer for the owner. Do not mention the notes, the parts or other models.\n\n"+notes.text;
+        payload.systemInstruction.parts.push({text:brief});chat.system+="\n\n"+brief;
+        // A combined answer needs room: at least 3,000 output tokens, whatever the detail setting.
+        payload.generationConfig.maxOutputTokens=Math.max(payload.generationConfig.maxOutputTokens||0,3000);chat.maxTokens=Math.max(chat.maxTokens||0,3000);
+        Object.assign(tierInfo,{researchParts:notes.parts,researchAnswered:notes.answered});
+       }
+      }
       const streaming=!planning&&input.stream===true;
       let attempt=0;
       const inferenceDeadline=Date.now()+(REGISTRY.routing?.defaults?.requestTimeoutMs||180000);

@@ -229,9 +229,9 @@ test('long owner task briefs authorize intact and remain bound to their full tex
 });
 
 test('oversized task briefs return a length error without issuing authorization',async()=>{
- const f=fixture();f.payload.instructions='Implement '+ 'x'.repeat(20000);
+ const f=fixture();f.payload.instructions='Implement '+ 'x'.repeat(60000);
  const response=await f.issue(),body=await response.json();
  assert.equal(response.status,413);assert.equal(body.code,'task_too_long');
- assert.match(body.error,/limit is 20000/);assert.equal(f.records.size,0);
+ assert.match(body.error,/limit is 60000/);assert.equal(f.records.size,0);
  f.payload.authorization.id='invalid id';assert.equal((await f.issue()).status,403,'identity checks remain enforced');
 });
