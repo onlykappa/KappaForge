@@ -181,7 +181,7 @@ test("authenticated Automatic chat uses one free route and does not retry a fail
  }finally{globalThis.fetch=original}
 });
 
-test('DeepSeek is preferred across eligible providers without overriding manual selection or permissions',async()=>{
+test('DeepSeek leads coding (Gemini leads chat) without overriding manual selection or permissions',async()=>{
  const original=globalThis.fetch;
  const deepseek='deepseek-ai/deepseek-v4.1-flash',nemotron='nvidia/nemotron-3-ultra-550b-a55b';
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CHAT_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_PRIVATE_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',NVIDIA_API_KEY:'deepseek-order-fixture',GROQ_API_KEY:'deepseek-groq-fixture',OPENROUTER_API_KEY:'deepseek-openrouter-fixture'};
@@ -190,14 +190,15 @@ test('DeepSeek is preferred across eligible providers without overriding manual 
   for(const channel of ['chat','coding']){
    const options={channel,privateCode:channel==='coding'};
    const routes=await fallbackRoutes(env,['gemini-3.1-flash-lite'],{},false,options);
-   assert.equal(routes[0].label,'nvidia:'+deepseek);
+   const first=channel==='coding'?'nvidia:'+deepseek:'gemini-3.1-flash-lite';
+   assert.equal(routes[0].label,first,channel==='coding'?'DeepSeek leads coding':'chat keeps Gemini first');
    assert.deepEqual(new Set(routes.map(r=>r.provider)),new Set(['gemini','nvidia','groq','openrouter']));
    assert.ok(routes.find(r=>r.model===nemotron),'non-DeepSeek fallbacks remain available');
    assert.ok(!routes.some(r=>r.model==='paid-unreviewed'||r.model==='deepseek/paid'));
    const manual=await fallbackRoutes(env,[],{model:'groq:openai/gpt-oss-120b',fallback:false},false,options);
    assert.deepEqual(manual.map(r=>r.label),['groq:openai/gpt-oss-120b']);
    const single=await fallbackRoutes(env,['gemini-3.1-flash-lite'],{model:'auto',fallback:false},false,options);
-   assert.deepEqual(single.map(r=>r.label),['nvidia:'+deepseek]);
+   assert.deepEqual(single.map(r=>r.label),[first]);
    const disabled=await fallbackRoutes(env,[],{disabledProviders:['nvidia','openrouter']},false,options);
    assert.ok(disabled.every(r=>r.provider==='groq'));
   }

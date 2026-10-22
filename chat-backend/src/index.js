@@ -123,6 +123,7 @@ function safeEqual(a, b) {
     bad |= (x[i] || 0) ^ (y[i] || 0);
   return bad === 0;
 }
+const CHAT_FIRST_BYTE_MS=20000;
 export default {
   async fetch(request, env, context) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
@@ -807,7 +808,8 @@ export default {
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), Math.max(1,Math.min(45000,inferenceDeadline-Date.now())));
+        // A streamed chat reply moves on when a model sends nothing for 20 seconds; planning answers whole, so it waits longer.
+        const timeout = setTimeout(() => controller.abort(), Math.max(1,Math.min(streaming?CHAT_FIRST_BYTE_MS:45000,inferenceDeadline-Date.now())));
         let response;
         try {
           const geminiLimit=REGISTRY.routing?.primary?.maxOutputTokens||REGISTRY.routing?.defaults?.maxOutputTokens||8192;
