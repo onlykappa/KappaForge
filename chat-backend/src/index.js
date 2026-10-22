@@ -17,7 +17,7 @@ import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,provi
 import {routingStore} from "./router-state.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
-import {probeModels} from "./model-probe.js";
+import {probeModels,auditModels} from "./model-probe.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
@@ -272,6 +272,9 @@ export default {
     if(new URL(request.url).pathname==="/providers/probe"){
       if(!env.MEMORY)return json({error:"Shared routing storage unavailable"},503,cors);
       const body=await request.json().catch(()=>({}));
+      // audit: one-by-one check of the named models (labels as the check reports them), at most three per call.
+      if(Array.isArray(body.audit)){try{return json(await auditModels(env,body.audit.filter(l=>typeof l==="string").slice(0,3).map(l=>l.slice(0,200))),200,cors)}
+       catch{return json({error:"Model audit unavailable. Check backend credentials or provider status."},502,cors)}}
       try{return json(await probeModels(env,{offset:body.offset,limit:body.limit,provider:typeof body.provider==="string"?body.provider.slice(0,40):null}),200,cors)}
       catch{return json({error:"Model check unavailable. Check backend credentials or provider status."},502,cors)}
     }

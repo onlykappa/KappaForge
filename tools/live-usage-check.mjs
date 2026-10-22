@@ -3,6 +3,7 @@
 // "Test every model", and writes iPhone-sized screenshots plus a JSON summary. Never prints the token.
 // Usage: KAPPA_WORKER_URL=… KAPPA_APP_TOKEN=… node tools/live-usage-check.mjs <out-dir> [--probe]
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
 import {join,extname,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
@@ -55,6 +56,15 @@ try{
    summary.chatTests.push(await page.evaluate(async({text,since})=>{text=text.length>200?text.slice(0,80)+'… ('+text.length+' characters)':text;await refreshIntelligence(false).catch(()=>{});const m=active()?.messages||[],last=m[m.length-1]||{};
     return {sent:text,reply:String(last.text||'').slice(0,400),attempts:usageEvents.filter(e=>e&&e.at>=since-5000&&e.kind==='chat').map(e=>({model:e.model,status:e.status,latency:e.latency}))};},{text,since}));
    await page.screenshot({path:join(out,'0-chat-test-'+(n+1)+'.png'),animations:'disabled'});
+  }
+ }
+ // AUDIT_LIST: a file of model labels (one per line) checked one by one with a long wait, each with the provider's reason.
+ if(process.env.AUDIT_LIST){
+  const labels=readFileSync(process.env.AUDIT_LIST,'utf8').split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('#'));
+  summary.audit=[];
+  for(const label of labels){
+   const row=await page.evaluate(async label=>{try{return (await settingsAPI('/providers/probe',{audit:[label]},240000)).results?.[0]||{label,error:'no result'}}catch(e){return {label,error:String(e?.message||e)}}},label);
+   summary.audit.push(row);console.log('AUDIT '+JSON.stringify(row));
   }
  }
  // PROBE_PROVIDER: test only that provider's models, every one, through the probe endpoint.

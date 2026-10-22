@@ -67,3 +67,54 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
  }
  return {total:routes.length,offset:start,next:start+size<routes.length?start+size:null,results};
 }
+
+// Owner's one-by-one audit of models that did not answer the quick check: one model per call, a long wait and a
+// large reply allowance, the provider's own reason for any failure, and for an empty reply whether the model spent
+// it on hidden reasoning. A hang or server error is asked a second time at once: answering then means it was
+// starting up (a cold start), not broken.
+const AUDIT_TIMEOUT_MS=90000,AUDIT_TOKENS=1024;
+async function auditOnce(env,route){
+ const requestId=crypto.randomUUID(),started=Date.now(),row={status:null,outcome:"error",latencyMs:null,detail:null,reply:null,finish:null,reasoningChars:0};
+ let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}catch{return {...row,outcome:"coordination_unavailable"};}
+ if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route);}
+ if(!reserved.allowed)return {...row,outcome:"limit_reached",detail:reserved.reason||null};
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),AUDIT_TIMEOUT_MS);
+ let response=null,status=0,category="",errorBody=null,usage=null;
+ try{
+  response=route.provider==="gemini"
+   ?await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",signal:controller.signal,
+     headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:PROMPT}]}],generationConfig:{maxOutputTokens:AUDIT_TOKENS,temperature:0}})})
+   :await callProvider(env,route,{system:"Answer briefly.",messages:[{role:"user",content:PROMPT}],maxTokens:AUDIT_TOKENS,temperature:0,hasMedia:false,hasTools:false,responseFormat:null},false,controller.signal);
+  status=response.status;
+  if(response.ok){
+   const data=await response.json(),message=data?.choices?.[0]?.message||{};
+   const result=route.provider==="gemini"?data:normalizeResult(route,data);usage=result?.usageMetadata||null;
+   const text=(result?.candidates?.[0]?.content?.parts||[]).filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join(" ").trim();
+   const raw=String(message.content??data?.response??"");
+   row.reasoningChars=String(message.reasoning_content||message.reasoning||"").length+(raw.match(/<think>[\s\S]*?(<\/think>|$)/i)?.[0].length||0)+
+    (route.provider==="gemini"?Number(data?.usageMetadata?.thoughtsTokenCount||0)*4:0);
+   row.finish=data?.choices?.[0]?.finish_reason||data?.candidates?.[0]?.finishReason||null;
+   row.reply=text.slice(0,80)||null;
+   if(!text){status=502;category="empty_response";row.detail=JSON.stringify(data).replace(/\s+/g," ").slice(0,300);}
+  }else{errorBody=(await response.text().catch(()=>"")).slice(0,20000);
+   try{const e=JSON.parse(errorBody);row.detail=String(e?.error?.message||e?.message||e?.detail||e?.error||"").replace(/\s+/g," ").slice(0,300)||null;}catch{row.detail=errorBody.replace(/\s+/g," ").slice(0,300)||null;}
+   category=status===429?"rate_limit":status===401?"authentication":status===402?"billing_blocked":status>=500?"provider_outage":"provider_rejection";}
+ }catch(error){status=0;category=controller.signal.aborted?"timeout":"network_failure";row.detail=controller.signal.aborted?"No answer within "+AUDIT_TIMEOUT_MS/1000+"s":String(error?.message||error).slice(0,200);}
+ finally{clearTimeout(timer)}
+ row.status=status||null;row.latencyMs=Date.now()-started;
+ row.outcome=status===502&&category?category:status===0?category:outcomeFor(status);
+ try{await reportProviderOutcome(env,{requestId,route,status,category,headers:response?.headers||null,usage,body:errorBody})}catch{}
+ return row;
+}
+export async function auditModels(env,labels){
+ const all=await probeRoutes(env),wanted=new Set(labels),results=[];
+ for(const route of all){
+  const label=route.provider==="gemini"?route.model:route.provider+":"+route.model;
+  if(!wanted.has(label))continue;
+  const first=await auditOnce(env,route),tries=[first];
+  if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"||first.outcome==="empty_response"){await sleep(3000);tries.push(await auditOnce(env,route));}
+  results.push({label,provider:route.provider,model:route.model,tries});
+ }
+ for(const label of labels)if(!results.some(r=>r.label===label))results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});
+ return {results};
+}
