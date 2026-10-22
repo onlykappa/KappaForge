@@ -4,8 +4,8 @@
 (function(root){
 'use strict';
 // A pattern names a model family: "gemini-3.6-flash" covers -preview-09-2026, -latest, -001 and "gemma-4-31b"
-// covers -it, but never a different model such as gemini-3.6-flash-lite.
-const SUFFIX=/^(?:preview|latest|exp|it|\d)/;
+// covers -it and the mixture-of-experts name gemma-4-26b-a4b-it, but never a different model such as gemini-3.6-flash-lite.
+const SUFFIX=/^(?:preview|latest|exp|it|a\d+b|\d)/;
 function matches(pattern,model){
  const id=String(model||'').toLowerCase(),p=String(pattern||'').toLowerCase();
  return !!p&&(id===p||id.startsWith(p+'-')&&SUFFIX.test(id.slice(p.length+1)));

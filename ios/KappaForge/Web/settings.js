@@ -73,7 +73,7 @@ function usageStats(s){return '<div class="usage-stats">'+[['Measured tokens',s.
 function budgetAlert(){const s=KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
 // Usage home: today's KappaForge requests and tokens against their daily allowances, providers grouped,
 // and a drill-down to each provider and model. Allowances come from config/providers.json "limits".
-const compact=n=>{const v=Math.abs(n);return v>=1e6?+(n/1e6).toFixed(v%1e6?2:0)+'M':v>=1e4?+(n/1e3).toFixed(v%1e3?1:0)+'K':Number(n).toLocaleString();};
+const compact=n=>{const v=Math.abs(n);return v>=1e9?+(n/1e9).toFixed(2)+'B':v>=1e6?+(n/1e6).toFixed(v%1e6?2:0)+'M':v>=1e4?+(n/1e3).toFixed(v%1e3?1:0)+'K':Number(n).toLocaleString();};
 const plural=(n,word)=>compact(n)+' '+word+(n===1?'':'s');
 const pct=(used,limit)=>limit>0?Math.round(used/limit*1000)/10:null;
 let usageView={provider:null,model:null};

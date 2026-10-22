@@ -209,3 +209,10 @@ test('aliases of one model family share one allowance in provider totals',()=>{
  const plain=L.usage([],limits,ids,{now,show:['gemini']}).find(r=>r.id==='gemini');
  assert.equal(g.requestLimit,plain.requestLimit,'request totals are not inflated by aliases either');
 });
+
+test('Gemma\'s mixture-of-experts name uses the Gemma 4 26B allowance',()=>{
+ assert.equal(L.matches('gemma-4-26b','gemma-4-26b-a4b-it'),true);
+ assert.equal(L.limitFor(limits,'gemini','gemma-4-26b-a4b-it').tpm,16000);
+ const g=L.usage([],limits,ids,{show:['gemini'],routed:{gemini:['gemma-4-26b-a4b-it','gemma-4-31b-it']}}).find(r=>r.id==='gemini');
+ assert.equal(g.tokenLimit,2*16000*1440);
+});
