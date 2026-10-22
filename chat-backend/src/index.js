@@ -19,6 +19,7 @@ import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapsh
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
 import {ollamaPlan} from "./ollama-plan.js";
+import {openrouterAccount} from "./openrouter-account.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
@@ -275,7 +276,8 @@ export default {
         }
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
         const ollama=providers.some(p=>p.id==="ollama"&&p.enabled)?await ollamaPlan(env).catch(()=>null):null;
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        const openrouter=providers.some(p=>p.id==="openrouter"&&p.enabled)?await openrouterAccount(env).catch(()=>null):null;
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);

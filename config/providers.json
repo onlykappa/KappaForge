@@ -1020,9 +1020,10 @@
       },
       "openrouter": {
         "scope": "provider",
-        "rpd": 50,
+        "rpd": 1000,
+        "rpm": 20,
         "dayResets": "UTC",
-        "source": "OpenRouter docs: 50 free-model requests per day with no purchased credits (account shows $0)"
+        "source": "OpenRouter docs: free models allow 20 requests a minute, and 1,000 a day once at least $10 of credits have been purchased (bought 2026-10-22); KappaForge routes only :free models, so the credits are not spent"
       },
       "requesty": {
         "scope": "provider",

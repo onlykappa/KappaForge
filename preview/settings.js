@@ -105,7 +105,9 @@ function usageModel(){
 // provider's own rate-limit counters, Workers AI neurons, and "Maxed" while the router rests it at a limit.
 function gaugeFor(p,m=null,unit='requests'){
  const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
- const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
+ // OpenRouter's daily free-model allowance follows the account itself: 50 a day on the free tier, 1,000 once credits are bought.
+ const orDaily=p.id==='openrouter'?capabilities?.openrouterAccount?.dailyFreeLimit:null;
+ const shared=p.scope==='provider'?(orDaily?{...p.limit,rpd:orDaily}:p.limit):null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
  // Ollama reports its monthly plan itself: the whole plan for the provider, each model's share of it for a model.
  const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
  const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;

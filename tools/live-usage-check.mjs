@@ -95,6 +95,7 @@ try{
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
  summary.ollamaPlan=await page.evaluate(()=>capabilities?.ollamaPlan??null);
+ summary.openrouterAccount=await page.evaluate(()=>capabilities?.openrouterAccount??null);
  // Every model's usage gauge as the Usage page shows it (percent, maxed, which limit), and the provider's own counters.
  summary.gauges=await page.evaluate(()=>{const m=usageModel();if(!m)return null;
   return m.rows.map(p=>({provider:p.id,gauge:gaugeFor(p),live:Object.keys((capabilities.providers.find(x=>x.id===p.id)||{}).live||{}).length,
