@@ -601,7 +601,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         raise RuntimeError("Integrated provider gateway is not configured; no direct provider fallback was attempted")
     journal = recovery.CURRENT.get()
     repo = journal.scope.repo if journal else ROOT
-    selected = sorted(set(allowed if allowed is not None else code_providers(private=True)) & set(PROVIDERS["order"] + ["gemini"]))
+    # Gemini is the primary model and always eligible (code_providers lists only the fallbacks); a project that names
+    # its providers keeps exactly that list.
+    project = getattr(journal, "project", None) or {}
+    primary = set() if project.get("providers") is not None and "gemini" not in project["providers"] else {"gemini"}
+    selected = sorted((set(allowed if allowed is not None else code_providers(private=True)) | primary) & set(PROVIDERS["order"] + ["gemini"]))
     if not selected:
         raise RuntimeError("No provider is authorized for coding inference; the task remains queued")
     gateway.require_prompt_fits(prompt)

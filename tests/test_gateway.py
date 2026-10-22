@@ -56,7 +56,7 @@ class GatewayEvidenceTests(unittest.TestCase):
                         current.assert_called_once()
                         diagnostic.assert_not_called()
                         payload = json.loads(network.call_args.args[0].data)
-                        self.assertEqual(payload['providers'], sorted(providers))
+                        self.assertEqual(payload['providers'], sorted(set(providers) | {'gemini'}), 'Gemini, the primary, is always eligible')
                         self.assertTrue(payload['fallback'])
                 finally:
                     recovery.CURRENT.reset(handle)
