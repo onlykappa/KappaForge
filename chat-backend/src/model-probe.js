@@ -52,7 +52,10 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
     const text=(result?.candidates?.[0]?.content?.parts||[]).filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join(" ").trim();
     if(!text){status=502;category="empty_response";}
     row.reply=text.slice(0,60)||null;
-   }else{if(status===429)errorBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();category=status===429?"rate_limit":status===401?"authentication":status===402?"billing_blocked":status>=500?"provider_outage":"provider_rejection";}
+   }else{errorBody=(await response.text().catch(()=>"")).slice(0,20000);
+    // The provider's own reason for a refusal (its error message only, shortened), so the owner can see why.
+    try{const e=JSON.parse(errorBody);row.detail=String(e?.error?.message||e?.message||e?.detail||e?.error||"").replace(/\s+/g," ").slice(0,200)||null;}catch{row.detail=errorBody.replace(/\s+/g," ").slice(0,200)||null;}
+    category=status===429?"rate_limit":status===401?"authentication":status===402?"billing_blocked":status>=500?"provider_outage":"provider_rejection";}
   }catch{status=0;category=controller.signal.aborted?"timeout":"network_failure";}
   finally{clearTimeout(timer)}
   if(status===502&&category)row.outcome=category;
