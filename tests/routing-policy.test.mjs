@@ -340,8 +340,8 @@ test('DeepSeek outage falls back to another approved provider and retains per-ro
   const result=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['nvidia','mistral','groq'],messages:[{role:'user',content:'exact authorized source'}],maxTokens:80,responseFormat:'json_object'});
   const body=await result.json();assert.equal(result.status,200,JSON.stringify(body));
   assert.equal(body.route,'mistral:mistral-small-latest');
-  // NVIDIA runs each model separately, so its other model is tried before another provider.
-  assert.deepEqual(posted,['deepseek-ai/deepseek-v4.1-flash','nvidia/nemotron-3-ultra-550b-a55b','mistral-small-latest']);
+  // Coding takes turns across providers: after NVIDIA's first model, Mistral's first comes before NVIDIA's second.
+  assert.deepEqual(posted,['deepseek-ai/deepseek-v4.1-flash','mistral-small-latest']);
  }finally{globalThis.fetch=original}
 });
 

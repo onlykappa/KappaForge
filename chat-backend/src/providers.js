@@ -153,10 +153,13 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  // model review, capabilities and context remain authoritative.
  const preferred=registry.routing?.preferredModelFamily;
  const reasoning=r=>channel==="chat"&&REASONING_MODEL.test(r.model);
+ // Coding takes turns across providers (each one's first model, then each one's second, …), so one provider's long
+ // list of slow or unserved models cannot use up a task's time before the others are asked.
+ const turn=new Map(),seen={};for(const r of routes)turn.set(r,seen[r.provider]=(seen[r.provider]??-1)+1);
  // The preferred family (DeepSeek) leads coding; chat keeps Gemini first, where a short reply should come fast.
  const preferredRoute=r=>channel==="coding"&&typeof preferred==="string"&&r.model.toLowerCase().includes(preferred);
  routes.sort((a,b)=>Number(reasoning(a))-Number(reasoning(b))||Number(preferredRoute(b))-Number(preferredRoute(a))||
-  (channel==="coding"?(Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
+  (channel==="coding"?(turn.get(a)-turn.get(b)||Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
    (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0)):0));
  if(manual){
   const chosen=routes.find(r=>r.label===manual);
