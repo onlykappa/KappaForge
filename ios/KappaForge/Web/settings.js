@@ -156,12 +156,40 @@ function uPeriodCell(){const p=USAGE_PERIODS.find(x=>x[0]===usagePeriod)||USAGE_
 function uPeriodSwitch(){return '<div class="u-seg" role="radiogroup" aria-label="Token period">'+USAGE_PERIODS.map(([id,label])=>'<button role="radio" aria-checked="'+(id===usagePeriod)+'" data-period="'+id+'">'+label+'</button>').join('')+'</div>';}
 function uTri(cells){return '<div class="u-tri">'+cells.map(([v,l])=>'<div><b>'+v+'</b><small>'+l+'</small></div>').join('')+'</div>';}
 function uHero(ring,count,cells,period=false){return '<div class="u-card u-hero">'+uUnitPicker()+ring+'<div class="u-hero-count">'+count+'</div>'+uTri(cells)+(period?uPeriodSwitch():'')+'</div>';}
-// Premium mode: this month's paid OpenRouter spending for demanding tasks, against its monthly cap.
+// Premium rescue. Settings → AI Models holds the owner's switch (off by default; the backend stores and enforces it).
+const PREMIUM_STEPS={check:'fixing what the check found',proposal:'writing a change that passes validation'};
+const PREMIUM_REASONS={check_rounds_exhausted:'free fix rounds used up with problems still open',no_validated_proposal:'no free model produced a change that passes validation'};
+const usd=v=>Number.isFinite(v)?'$'+(v>0&&v<0.1?v.toFixed(4):v.toFixed(2)):'—';
+function premiumModeField(){
+ const m=capabilities?.premium;if(!m||m.error)return m?.error?sf('Premium Mode','<span class="muted">Unavailable</span>',esc(m.error)):'';
+ return sf('Premium Mode','<label><input type="checkbox" id="premium-mode"'+(m.enabled?' checked':'')+(m.configured?'':' disabled')+'> '+(m.enabled?'On':'Off')+'</label>',
+  'Allow OpenRouter credits only when free routes cannot complete a task. Free models are always tried first. At most '+usd(m.taskCapUsd)+' a task and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests never use it.'+
+  ' Turning it off stops every rescue not yet sent; a request already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
+}
 function premiumCard(){
- const m=capabilities?.premium;if(!m||!Number.isFinite(m.monthCapUsd))return '';
- const spent=Number.isFinite(m.monthUsd)?m.monthUsd:0,p=Math.min(100,Math.round(spent/m.monthCapUsd*1000)/10),next=(()=>{const d=new Date();return Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1);})();
- return '<div class="u-card"><div class="u-ttl"><strong>Premium</strong><span>Resets in '+untilReset(next)+'</span></div>'+uMeter(p,'#ff9f0a')+'<div class="u-lim"><span><b>$'+spent.toFixed(2)+'</b> of $'+m.monthCapUsd.toFixed(2)+' this month</span><span>'+(p>=100?'Maxed':p+'%')+'</span></div>'+
-  '<p class="u-note">A paid OpenRouter model for demanding tasks, from your OpenRouter credit: '+esc(m.model||'none under the price ceiling right now')+'. Up to $'+Number(m.taskCapUsd).toFixed(2)+' a task. Never used for chat.</p></div>';
+ const m=capabilities?.premium;if(!m||m.error||!Number.isFinite(m.monthCapUsd))return '';
+ const p=Math.min(100,Math.round((m.monthUsd||0)/m.monthCapUsd*1000)/10);
+ const offers=(m.offers||[]).map(o=>'<div class="u-offer"><p><strong>Premium rescue recommended · task #'+o.task+'</strong><br>Blocked at '+esc(PREMIUM_STEPS[o.step]||o.step)+': '+esc(PREMIUM_REASONS[o.reason]||'the free models could not finish it')+'. '+
+  (o.model?esc(o.model)+' would cost at most '+usd(o.maxUsd)+'. ':'')+'Budget left: '+usd(o.taskLeftUsd)+' for this task, '+usd(o.monthLeftUsd)+' this month. '+
+  (o.freeMayRecover?'Free capacity may recover after a cooldown, so waiting may also work. ':'The free models answered but could not finish it, so waiting alone is unlikely to help. ')+'A paid model may still not solve it.'+(o.approvedAt?' <em>One rescue approved: retry the task to use it.</em>':'')+'</p>'+
+  '<div class="settings-actions"><button class="btn" data-premium-allow="'+o.task+':'+esc(o.step)+'">Allow one rescue</button><button class="btn secondary" data-premium-enable="'+o.task+':'+esc(o.step)+'">Enable Premium Mode</button><button class="btn secondary" data-premium-dismiss="'+o.task+':'+esc(o.step)+'">Keep using free</button></div></div>').join('');
+ const outcome={solved:'solved the step',not_solved:'did not solve the step',failed:'failed',pending:'result pending'};
+ const history=(m.history||[]).slice(0,10).map(h=>'<li><strong>Task #'+h.task+'</strong> · '+esc(PREMIUM_STEPS[h.step]||h.step)+' · '+esc(h.model||'—')+'<br><small>'+esc(PREMIUM_REASONS[h.reason]||h.reason||'')+' · up to '+usd(h.estimateUsd)+' · '+
+  (h.billing==='confirmed'?'charged '+usd(h.usd):h.billing==='unresolved'?'charge unknown, counted at '+usd(h.estimateUsd):'reserved')+' · '+esc(outcome[h.outcome]||h.outcome)+' · '+new Date(h.at).toLocaleDateString()+'</small></li>').join('');
+ return '<h3 class="u-hdr">Premium rescue</h3><div class="u-card"><div class="u-ttl"><strong>Premium Mode '+(m.enabled?'on':'off')+'</strong><span>Resets in '+untilReset(m.resetsAt)+'</span></div>'+uMeter(p,'#ff9f0a')+
+  '<div class="u-lim"><span><b>'+usd(m.monthUsd)+'</b> of '+usd(m.monthCapUsd)+' this month</span><span>'+(p>=100?'Maxed':p+'%')+'</span></div>'+
+  '<p class="u-note">Confirmed '+usd(m.confirmedUsd)+' · reserved '+usd(m.reservedUsd)+' · unresolved '+usd(m.unresolvedUsd)+' (counted at its maximum until OpenRouter reports it) · '+usd(m.monthLeftUsd)+' left · up to '+usd(m.taskCapUsd)+' a task.'+
+  (m.lastRescue?' Last rescue: task #'+m.lastRescue.task+', '+esc(outcome[m.lastRescue.outcome]||m.lastRescue.outcome)+'.':' No rescues yet.')+'</p>'+offers+(history?'<ul class="u-history">'+history+'</ul>':'')+'</div>';
+}
+async function premiumAction(kind,key){
+ const [task,step]=[Number(key.split(':')[0]),key.split(':').slice(1).join(':')];
+ if(kind==='enable'){if(!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.'))return;
+  await settingsAPI('/premium',{action:'set',enabled:true});}
+ if(kind==='allow'){if(!confirm('Allow one premium rescue for task #'+task+'? It is used once, for this step only, within 24 hours.'))return;
+  await settingsAPI('/premium',{action:'approve',task,step});}
+ if(kind==='dismiss')await settingsAPI('/premium',{action:'dismiss',task,step});
+ await refreshIntelligence(false);
+ if(kind!=='dismiss'){if(typeof taskRetry==='function'&&trackedJobs.some(j=>j.number===task))await taskRetry(task);else toast('Retry task #'+task+' to use the rescue.');}
 }
 function usageHome(){
  const model=usageModel(),state=capabilities?.routingState;
@@ -296,7 +324,7 @@ function settingsHome(){
 function renderSettings(){
  const section=settingSections.find(s=>s[0]===settingsSection);if(!section)return settingsHome();let body='';
  if(settingsSection==='overview')body=sectionPanel('Your assistant',sf('AI connection',sb('settingsconnect',backend&&access?'Manage connection':'Connect AI'),capabilities?'Verified backend configuration':backend&&access?'Credentials saved on this device. Run diagnostics to verify.':'Not configured')+sf('Active model',esc(preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model))+sf('Synchronization',esc(syncBusy?'In progress':vaultPassphrase?'Enabled on this device':'Not enabled'),lastSyncAt?'Last successful sync: '+new Date(lastSyncAt).toLocaleString():'Enable the same vault passphrase separately on each device.')+sf('App health',esc(navigator.onLine?'Online':'Offline'),APP_VERSION+' · '+(window.webkit?.messageHandlers?.kappa?'Installed iOS':'Web deployment'))+sb('s-refresh','Verify connection & refresh',false))+usageStats(usageSummary())+budgetAlert();
- if(settingsSection==='models')body=sectionPanel('Model manager',sf('Primary provider','Gemini',capabilities?'Live discovery checked with your backend key.':'Availability has not been verified.')+ss('model','Preferred model',[['auto','Automatic'],...(capabilities?.models||[]).map(m=>[m,m]),...(capabilities?.providers||[]).flatMap(p=>p.models.map(m=>[p.id+':'+m,p.name+' · '+m])),...(!capabilities?.models?.includes(preferences.model)&&!(capabilities?.providers||[]).some(p=>p.models.some(m=>p.id+':'+m===preferences.model))&&preferences.model!=='auto'?[[preferences.model,preferences.model+' · unverified']]:[])])+ss('routing','Automatic route',[['balanced','Balanced · complex tasks favor full Flash'],['speed','Speed · Flash Lite first'],['cost','Cost preference · Flash Lite first'],['quality','Quality · full Flash first']])+ss('reasoning','Response detail',[['concise','Concise'],['standard','Standard'],['thorough','Thorough']])+sf('Fallback','<label><input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'> Try other models and providers when one is busy or out of quota</label>','Each model is tried at most once per request. Files and images always use Gemini.')+sf('Tasks','<label><input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'> Start tasks as soon as you ask for work in chat</label>','When off, you approve each task first. Tasks are always draft PRs; nothing merges until you tap Merge.')+(capabilities?.premium?sf('Premium (tasks only)',esc(capabilities.premium.model||'No model under the price ceiling')+' · $'+Number(capabilities.premium.taskCapUsd).toFixed(2)+' a task, $'+Number(capabilities.premium.monthCapUsd).toFixed(2)+' a month','Used when you switch on “Use premium” for a task, or after the free models fail one. $'+Number(capabilities.premium.monthUsd||0).toFixed(2)+' spent this month. The caps are set in config/providers.json.'):'')+providerSwitches()+sb('s-refresh','Refresh available models',false),'Only approved models returned by the configured backend are offered. Cost routing uses a Lite preference; live cost comparisons are unavailable without verified pricing. Provider quota: unavailable.')+probePanel();
+ if(settingsSection==='models')body=sectionPanel('Model manager',sf('Primary provider','Gemini',capabilities?'Live discovery checked with your backend key.':'Availability has not been verified.')+ss('model','Preferred model',[['auto','Automatic'],...(capabilities?.models||[]).map(m=>[m,m]),...(capabilities?.providers||[]).flatMap(p=>p.models.map(m=>[p.id+':'+m,p.name+' · '+m])),...(!capabilities?.models?.includes(preferences.model)&&!(capabilities?.providers||[]).some(p=>p.models.some(m=>p.id+':'+m===preferences.model))&&preferences.model!=='auto'?[[preferences.model,preferences.model+' · unverified']]:[])])+ss('routing','Automatic route',[['balanced','Balanced · complex tasks favor full Flash'],['speed','Speed · Flash Lite first'],['cost','Cost preference · Flash Lite first'],['quality','Quality · full Flash first']])+ss('reasoning','Response detail',[['concise','Concise'],['standard','Standard'],['thorough','Thorough']])+sf('Fallback','<label><input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'> Try other models and providers when one is busy or out of quota</label>','Each model is tried at most once per request. Files and images always use Gemini.')+sf('Tasks','<label><input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'> Start tasks as soon as you ask for work in chat</label>','When off, you approve each task first. Tasks are always draft PRs; nothing merges until you tap Merge.')+premiumModeField()+providerSwitches()+sb('s-refresh','Refresh available models',false),'Only approved models returned by the configured backend are offered. Cost routing uses a Lite preference; live cost comparisons are unavailable without verified pricing. Provider quota: unavailable.')+probePanel();
  if(settingsSection==='usage'){
  if(usageView.model||usageView.provider){body=usageView.model?modelDetail():providerDetail();}else{
  body=usageHome()+'<p class="u-note u-updated" role="status">'+(lastVerify?.at?'Updated '+new Date(lastVerify.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+' · refreshes every minute':esc(usageNotice))+'</p>';
@@ -345,6 +373,14 @@ function bindSettings(){
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
  on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ document.getElementById('premium-mode')?.addEventListener('change',async e=>{
+  const enabled=e.target.checked;
+  if(enabled&&!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.')){e.target.checked=false;return;}
+  try{await settingsAPI('/premium',{action:'set',enabled});await refreshIntelligence(false);}catch(err){e.target.checked=!enabled;settingsNotice='Premium Mode not changed: '+err.message;render();}
+ });
+ document.querySelectorAll('[data-premium-allow],[data-premium-enable],[data-premium-dismiss]').forEach(b=>b.onclick=async()=>{
+  b.disabled=true;const kind=b.dataset.premiumAllow?'allow':b.dataset.premiumEnable?'enable':'dismiss';
+  try{await premiumAction(kind,b.dataset.premiumAllow||b.dataset.premiumEnable||b.dataset.premiumDismiss)}catch(err){settingsNotice='Premium: '+err.message;render()}finally{b.disabled=false}});
  on('model-list',async()=>{
   // Every model in use, the specialist tools kept and the removed models with their reasons; statuses from the last test.
   try{const data=await settingsAPI('/providers/models-list',{},60000);

@@ -1,6 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
-import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
+import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,freeModelId} from "./providers.js";
+import {fullCatalog} from "./routing-policy.js";
 import {reserveProvider,reportProviderOutcome,estimateTokens} from "./router-coordination.js";
 
 // Owner-requested model check: one short message to each chat model KappaForge can route, in batches so a
@@ -128,6 +129,9 @@ export async function auditModels(env,labels){
   if(results.some(r=>r.label===label))continue;
   const i=label.indexOf(":"),provider=i>0?label.slice(0,i):"",model=label.slice(i+1),p=registry.providers[provider];
   if(!p||provider==="gemini"||!/^[A-Za-z0-9@._:/-]{1,180}$/.test(model)||!(env[p.key]||p.keyOptional||!p.key)){results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});continue;}
+  // Never ask a model that could charge: an unlisted name on a free-model gateway must be a free variant, and a metered
+  // provider needs the owner's paid opt-in, as in routing.
+  if(p.freeOnly&&!freeModelId(model)||p.metered&&!fullCatalog(env,provider)){results.push({label,tries:[],outcome:"not_asked",detail:"Not a free model: an audit never sends a request that could be charged"});continue;}
   const route={provider,model,label},first=await auditOnce(env,route),tries=[first];
   if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"){await sleep(3000);tries.push(await auditOnce(env,route));}
   results.push({label,provider,model,listed:false,tries});

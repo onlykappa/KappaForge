@@ -4,7 +4,7 @@ import "../../preview/stream.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,chunkNormalizer} from "./providers.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
-import {premiumAttempt} from "./premium.js";
+import {premiumRescue,premiumAvailable,recordFreeAnswer,validRescue} from "./premium.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
 // Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
@@ -45,7 +45,8 @@ function validate(input){
  if(input.model!==undefined&&(typeof input.model!=="string"||input.model.length>180))return "Invalid model";
  if(input.providers!==undefined&&(!Array.isArray(input.providers)||input.providers.length>registry.order.length+1||input.providers.some(id=>typeof id!=="string")))return "Invalid provider allowlist";
  if(input.requestId!==undefined&&(typeof input.requestId!=="string"||!/^[a-f0-9-]{36}$/i.test(input.requestId)))return "Invalid request id";
- if(input.premium!==undefined&&(!input.premium||typeof input.premium!=="object"||!Number.isInteger(input.premium.task)||input.premium.task<1||!["now","rescue"].includes(input.premium.mode)))return "Invalid premium request";
+ if(input.task!==undefined&&(!Number.isInteger(input.task)||input.task<1))return "Invalid task number";
+ if(input.premium!==undefined&&(!validRescue(input.premium)||input.task!==input.premium.task))return "Invalid premium request";
  return "";
 }
 
@@ -61,11 +62,39 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const problem=validate(input);if(problem)return safeError(problem);
  if(!env.MEMORY)return safeError("Shared routing storage unavailable",503);
  const baseId=input.requestId||crypto.randomUUID();
+ const premiumResponse=(premium,status=200,extra={})=>Response.json({premium,...extra},{status,headers:{"Cache-Control":"no-store"}});
+ const requestedProviders=Array.isArray(input.providers)?input.providers:[];
+ // A premium rescue request is premium only: the free models already had their bounded recovery for this step. It is
+ // never sent when premium is not configured or coding policy does not allow OpenRouter for private code.
+ if(input.premium&&!premiumAvailable(env,requestedProviders))return premiumResponse({task:input.premium.task,step:input.premium.step,refused:"premium_unavailable"},403,{error:"Premium is not available for this request",code:"premium_not_authorized"});
+ const rescueInput=()=>({task:input.premium.task,step:input.premium.step,reason:input.premium.reason,freeMayRecover:input.premium.freeMayRecover===true,requestId:baseId,
+  system:input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n"),messages:input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content})),
+  promptChars:input.messages.reduce((n,m)=>n+m.content.length,0),maxTokens:input.maxTokens||registry.routing.defaults.maxOutputTokens,temperature:input.temperature??0.2,signal:callerSignal});
+ if(input.premium?.quote){
+  let premium;try{premium=await premiumRescue(env,{...rescueInput(),quote:true,deadline:Date.now()+10000});}catch{premium={task:input.premium.task,step:input.premium.step,refused:"premium_state_unavailable"};}
+  return premiumResponse(premium);
+ }
  let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,routerCaps(env).daily,routerCaps(env).minute)}
  catch{return safeError("Shared routing limits unavailable; inference was not sent",503)}
  if(dailyReservation.duplicate)return new Response(JSON.stringify({error:"Request id was already used",code:"request_replayed"}),{status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  if(!dailyReservation.allowed)return new Response(JSON.stringify({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached":"Shared daily inference limit reached",code:dailyReservation.reason==="minute_limit"?"minute_limit":"daily_limit",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000}),{status:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const started=Date.now(),deadline=started+registry.routing.defaults.requestTimeoutMs;
+ if(input.premium){
+  const premiumStarted=Date.now();let premium;
+  try{premium=await premiumRescue(env,{...rescueInput(),deadline});}catch{premium={task:input.premium.task,step:input.premium.step,refused:"premium_state_unavailable"};}
+  if(premium.dispatched){
+   try{
+    const event=telemetry(premium.usage?{usageMetadata:premium.usage}:null,"openrouter:"+premium.model,Date.now()-premiumStarted,!!premium.text,false,"premium",{},premium.status||null);
+    event.cost=Number.isFinite(premium.usd)?premium.usd:null;event.billing=premium.billing;event.task=premium.task;event.step=premium.step;
+    await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
+   }catch{}
+  }
+  const {text:premiumText,usage:premiumUsage,...summary}=premium;
+  if(premiumText)return Response.json({text:premiumText,provider:"openrouter",model:summary.model,route:"openrouter:"+summary.model,usage:premiumUsage,premium:summary,
+   routing:{attempts:1,history:[{provider:"openrouter",model:summary.model,attempted:true,status:200,premium:true}],elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
+  // Refused or failed: say so, and send nothing else. The task carries on with free models on its next step.
+  return premiumResponse(summary,summary.dispatched?502:403,{error:summary.dispatched?"Premium rescue did not answer":"Premium rescue not authorized",code:summary.dispatched?"premium_failed":"premium_not_authorized"});
+ }
  const requested=Array.isArray(input.providers)?input.providers:[];
  const available=providerAllowed(env,"coding","gemini",{privateCode:true,requested})?await discover(env).catch(()=>[]):[];
  const prefs={model:input.model||"auto",fallback:input.fallback!==false};
@@ -74,25 +103,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
  const promptTokens=estimateTokens(input.messages.map(m=>m.content).join("\n"));
  let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
- // Premium (a task the owner switched to premium, or one the free models already failed): one paid OpenRouter attempt
- // first, inside the task and month caps. A refusal or failure carries on with the free routes below.
- let premium=null;
- if(input.premium){
-  const premiumStarted=Date.now();
-  premium=await premiumAttempt(env,{task:input.premium.task,requestId:baseId,system,messages,promptTokens,maxTokens:input.maxTokens||registry.routing.defaults.maxOutputTokens,
-   temperature:input.temperature??0.2,signal:callerSignal,deadline}).catch(()=>({failed:"premium unavailable"}));
-  if(premium.model&&!premium.refused){
-   try{
-    const event=telemetry(premium.usage?{usageMetadata:premium.usage}:null,"openrouter:"+premium.model,Date.now()-premiumStarted,!!premium.text,false,"premium",pricing,premium.status||null);
-    event.cost=Number.isFinite(premium.usd)?premium.usd:null;
-    await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
-   }catch{}
-  }
-  const {text:premiumText,usage:premiumUsage,...summary}=premium;premium={mode:input.premium.mode,...summary};
-  if(premiumText)return Response.json({text:premiumText,provider:"openrouter",model:summary.model,route:"openrouter:"+summary.model,usage:premiumUsage,premium,
-   routing:{attempts:1,history:[{provider:"openrouter",model:summary.model,attempted:true,status:200,premium:true}],elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
- }
- if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable",...(premium?{premium}:{})}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  let lastStatus=0,lastRetryAt=null,attempts=0;
  let attemptStarted=0;
  // Coding attempts join chat in the owner's usage history (kind "task"), so Settings → Usage counts every
@@ -104,17 +115,21 @@ export async function inferenceRouter(env,input,callerSignal=null){
    await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});
   }catch{}
  };
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;await recordUsage(outcome);return result;};
+ // A free answer on a task is the evidence a premium rescue needs later (several answers, more than one free model).
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;await recordUsage(outcome);
+  if(outcome.status===200&&input.task)await recordFreeAnswer(env,input.task,outcome.route.provider+":"+outcome.route.model);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
  const setFailure=value=>{failure=value;if(attempt)Object.assign(attempt,value,{status:lastStatus})};
  // Full catalogs can list hundreds of routes: bound the attempts and skip a provider's remaining
  // models once its account rejects the key or billing.
  const maxAttempts=registry.routing.defaults.maxRouteAttempts||12,rejectedProviders=new Set();let refused=0;
- for(const route of routes){
-  if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};break;}
-  if(attempts-refused>=maxAttempts)break;
-  if(rejectedProviders.has(route.provider))continue;
+ // Routes not asked, by reason, alongside the attempts in history: the record of which free routes were tried or skipped.
+ const skipped={};const skip=reason=>{skipped[reason]=(skipped[reason]||0)+1;};
+ for(const [i,route] of routes.entries()){
+  if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};skipped.time_budget=(skipped.time_budget||0)+routes.length-i;break;}
+  if(attempts-refused>=maxAttempts){skipped.attempt_limit=(skipped.attempt_limit||0)+routes.length-i;break;}
+  if(rejectedProviders.has(route.provider)){skip("provider_resting_or_rejected");continue;}
   lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
   let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
@@ -169,7 +184,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
     const text=collected.candidates[0].content.parts[0].text;usage=collected.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"},...(premium?{premium}:{})},{headers:{"Cache-Control":"no-store"}});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
    }
    try{data=await response.json()}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_json",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
@@ -178,13 +193,13 @@ export async function inferenceRouter(env,input,callerSignal=null){
     usage=data.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"},...(premium?{premium}:{})}, {headers:{"Cache-Control":"no-store"}});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
    let normalized;try{normalized=normalizeResult(route,data);}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"},...(premium?{premium}:{})}, {headers:{"Cache-Control":"no-store"}});
+   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
   }catch(error){
    lastStatus=callerSignal?.aborted?499:0;
    setFailure({source:"transport",category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure",upstreamStatus:null});
@@ -195,5 +210,5 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const tooLarge=history.length&&history.every(row=>!row.attempted&&row.category==="context_limit");
  const budgetExpired=Date.now()>=deadline;
  const unavailable=tooLarge?413:lastStatus===429&&!budgetExpired?429:503;
- return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No enabled provider completed this request",code:tooLarge?"request_too_large":budgetExpired?"request_timeout":unavailable===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"},...(premium?{premium}:{})}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ return new Response(JSON.stringify({error:unavailable===429?"Approved route reservation is unavailable":"No enabled provider completed this request",code:tooLarge?"request_too_large":budgetExpired?"request_timeout":unavailable===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,attempts:history.slice(-16),skipped,failure:{...failure,provider:lastRoute?.provider||null,model:lastRoute?.model||null,attempted:failure.source!=="coordination"&&failure.source!=="gateway_guard"}}),{status:unavailable,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 }

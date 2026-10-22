@@ -806,6 +806,7 @@
     },
     "premium": {
       "provider": "openrouter",
+      "reviewed": "Owner-reviewed coding families. A family is a candidate, not proof of quality: the catalog must also show verified prices under the ceilings, room for the request and a token limit.",
       "families": [
         "deepseek",
         "qwen3.8-coder",
@@ -813,7 +814,9 @@
         "kimi",
         "glm-5"
       ],
+      "maxInputPricePerMillion": 1.5,
       "maxOutputPricePerMillion": 3,
+      "safetyMargin": 1.25,
       "taskCapUsd": 1,
       "monthCapUsd": 5,
       "maxTokensPerCall": 8000

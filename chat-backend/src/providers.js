@@ -11,6 +11,8 @@ const EXCLUDE=new RegExp(registry.exclude,"i");
 const ROUTABLE=/^[A-Za-z0-9@._:/-]{1,180}$/;
 // Free pools mark models ":free" (OpenRouter, Kilo) or route through ".../free" auto-routers.
 const FREE=/[:/]free$/;
+export const chargesNothing=pricing=>!!pricing&&typeof pricing==="object"&&Object.values(pricing).every(v=>v!==null&&v!==""&&Number(v)===0);
+export const freeModelId=id=>FREE.test(id);
 const cache=new Map();
 const discoveryStatus=new Map();
 
@@ -102,7 +104,10 @@ async function listedModels(env,id){
   let body;try{body=await r.json()}catch{setStatus({state:"invalid_json",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   if(!Array.isArray(body?.data)){setStatus({state:"invalid_shape",httpStatus:r.status,discoveredCount:null,approvedCount:0});return hit?.models||[];}
   const discoveredCount=body.data.length;
-  const ids=freeModels(env,id,body.data.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
+  // A free-model gateway's catalog publishes prices: a model is free only if every published price is zero, whatever its
+  // name says. Unpublished, malformed or variable ("-1") prices are not free. (Without the owner's paid opt-in.)
+  const priced=p.freeOnly&&!fullCatalog(env,id)?body.data.filter(m=>!m?.pricing||chargesNothing(m.pricing)):body.data;
+  const ids=freeModels(env,id,priced.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
   const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);

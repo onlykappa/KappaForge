@@ -98,88 +98,122 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
   current route charges: `freeModels()` already keeps only ids that end in `:free` or `/free` for `freeOnly` providers. The
   spend predates this audit.
 
-## Step 3. Premium mode: OpenRouter credits for demanding tasks, rarely, within caps
+## Step 3. Premium rescue: free first, owner-authorized, capped (built; supersedes the first design)
 
-**Owner's decisions (2026-10-22, final):**
-- **When:** both.
-  1. A **"Use premium"** switch when starting a task.
-  2. **Automatic rescue** after the free models have already failed the task.
-- **Caps:** **$1 per task** and **$5 per calendar month (UTC)**, enforced before every premium request.
-- **Model:** **strong but affordable.** The strongest coding model in the preferred families under a price ceiling, chosen
-  live from OpenRouter's catalog. Not the most expensive frontier models.
+The owner's upgrade spec of 22 Oct 2026 replaced the first design. The "Use premium" task switch and automatic escalation
+are gone. Free models are the default for every task. Premium is a last-resort rescue for one blocked task step, never a
+preferred route.
 
-**Design:**
-1. **Config** (`config/providers.json` → `routing.premium`):
-   ```json
-   {"provider": "openrouter", "families": ["deepseek", "qwen3.8-coder", "qwen3-coder", "kimi", "glm-5"],
-    "maxOutputPricePerMillion": 3, "taskCapUsd": 1, "monthCapUsd": 5, "maxTokensPerCall": 8000}
-   ```
-   Families are preference order. Fill in real ids by reading OpenRouter's catalog (`GET https://openrouter.ai/api/v1/models`,
-   which needs no key and is reachable from the Worker and from GitHub Actions). The model must not end in `:free`, must
-   have a tool-free chat capability, and must have `pricing.completion * 1e6 <= maxOutputPricePerMillion`.
-2. **Worker: `chat-backend/src/premium.js`** (new):
-   - `premiumModel(env)`: read the catalog (cache 1 h), pick the first family match under the ceiling, and return
-     `{model, inputPrice, outputPrice}` per token.
-   - `premiumBudget(env, {task, estimateUsd})` and `recordPremium(env, {task, usd})`: keep the spend in the
-     `KappaMemory` Durable Object (`router-state.js` style, one transaction), keyed by month (`premium:2026-10`) and
-     task (`premium-task:<issue number>`). Refuse when `spent + estimate` passes either cap.
-   - **Estimate before sending:** prompt tokens (`estimateTokens`) × input price + `maxTokensPerCall` × output price.
-   - **After the answer:** use OpenRouter's reported cost. Send `"usage": {"include": true}` in the request body and read
-     `usage.cost`, or use `GET /api/v1/generation?id=...`. Fall back to tokens × price.
-3. **Gateway** (`chat-backend/src/inference-router.js`):
-   - Accept `premium: {task: <number>}` in a coding request.
-   - Do the free routes **first**, unchanged. Only when the request says `premium.mode === "now"` (the owner's switch)
-     or `"rescue"` does it add the premium route, as **one** attempt after free routes fail (rescue) or first (switch).
-   - It must still pass the budget check. When the budget refuses, carry on with free routes and return
-     `premium: {refused: "task cap" | "month cap"}`.
-   - The premium call **must not** go through the `freeOnly` filter, so build its route directly:
-     `{provider: "openrouter", model, premium: true}`.
-   - Record it in Usage with `kind: "premium"` and the cost.
-4. **Engine (Python, `engine/`):**
-   - The task brief carries `premium: true` when the owner switched it on. The app adds it to the authorization payload
-     the same way `mode` is carried (`chat-backend/src/agent-work.js` `taskBody`). The engine reads it in
-     `engine/developer.py` where the brief is parsed.
-   - `engine/gateway.py` / `engine/runner.py`: pass `premium: {task, mode}` on gateway calls.
-     - `mode: "now"` for every call of a task with the switch on.
-     - `mode: "rescue"` only in `check_the_work()` after `MAX_CHECK_ROUNDS` failed, and in `build_in_stages()` when a
-       stage has "No validated proposal" after the compact retry.
-   - Progress feed line: `Using premium: <model> · $0.08 so far (cap $1.00)`. Use `Progress.act("model", ...)` in
-     `engine/developer.py`.
-5. **App (`preview/`):**
-   - **Task start** (`preview/app-tasks.js` or wherever "Start task" is built): a "Use premium" switch, off by default,
-     with a hint like "Up to $1 of your OpenRouter credit if free models can't do it".
-   - **Usage** (`preview/settings.js`): a card "Premium: $0.43 of $5 this month", from `/capabilities` →
-     `premium: {monthUsd, monthCapUsd, model}`.
-   - **Settings → AI Models:** show the chosen premium model and the caps, read-only.
-6. **Safety:**
-   - Premium is never used for chat, only for tasks.
-   - The caps are enforced in the Durable Object, so a crash or retry cannot double-spend.
-   - Recommend the owner set a $5 credit limit on the OpenRouter key in OpenRouter's settings as a backstop.
+**Flow:** free first → bounded free recovery → verified blocker → authorized rescue of that one step → free re-check →
+back to free.
 
-**As built:**
-- Both modes do the same thing at the gateway: one premium attempt **first**, then the free routes if premium is refused
-  (cap) or fails. The difference is in the engine. "now" is set on every call of a task the owner switched on. "rescue"
-  is set only once the free models have already failed the work, so asking them first again would waste the round.
-- The engine keeps the mode on the task's journal (`journal.premium`), not in a global, so it never leaks into another
-  task. Rescue fires once per task:
-  - after `MAX_CHECK_ROUNDS` as one extra fix round,
-  - after "No validated proposal" as one extra compact attempt, but not when free routes are only resting (an outage
-    with a retry time).
-- A switched-on task carries `Premium: on` in its issue body, right after `Mode:`. A `Premium:` line typed in the brief
-  is quoted, so it cannot switch premium on.
-- Live check: push to `live-usage-check-premium`. It runs the quick check plus one 64-token premium request (task 194),
-  writes `premium.json` to the results branch, and adds `summary.premium` (`/capabilities` → `premium`).
+### Enforcement (backend, `chat-backend/src/premium-store.js`, `premium.js`, `inference-router.js`)
+- **Premium Mode** is stored in the KappaMemory Durable Object (`premium:v1`) and is **off** unless the owner turns it on.
+  - Only the owner's app token can change it (`POST /premium`, action `set`).
+  - The engine's runner token cannot reach that endpoint.
+  - Nothing in an inference request (body, model name, key) can authorize a paid request.
+- **Single checks at dispatch.** Every paid request needs a `reserve` that passes all of these in **one transaction**,
+  immediately before sending:
+  - Premium Mode is on, or a single-use approval exists for this task and step.
+  - The task has free evidence: at least 3 free answers from at least 2 different free models, recorded by the gateway
+    itself from real free answers on that task.
+  - The step has not had a rescue (one paid dispatch per task step, ever).
+  - The conservative maximum charge fits both caps.
+- **Fail closed.** Missing or unreadable state, an unverifiable catalog or price, or a provider policy that does not allow
+  OpenRouter for private code: no dispatch.
+- **Disabling.** Turning Premium Mode off blocks every rescue not yet reserved and withdraws unused approvals. A request
+  already sent cannot be recalled across Worker invocations and may be charged. The app says so.
+- **Scope.** Coding tasks only. Chat (`/chat`), audits and model tests (`/providers/probe`), diagnostics and background
+  checks never call premium code.
+- A rescue request is **premium only**: the gateway does not fall back to free routes inside it. The engine's next call is
+  free.
 
-**Prove it:**
-- **Unit tests:**
-  - The budget refuses at the task cap and at the month cap, and the month rolls over.
-  - The estimate covers the worst case.
-  - The gateway adds the premium route only for `rescue` after free failures or for `now`, and never for chat.
-  - The catalog pick respects the ceiling and the family order.
-  - The engine passes the premium mode.
-- **Live:** run `tools/multi_agent_check.py`'s complex scenario (push to `multi-agent-check-complex`) with a forced
-  rescue, then confirm on `live-usage-check-quick` that `openrouterAccount.usedUsd` rose by about the reported cost and
-  stayed under $1.
+### Single-use approval
+- With Premium Mode off, the gateway's quote records one **offer** per task step: what failed, the step, the proposed
+  model, the maximum charge, the budgets left, and whether free capacity may recover.
+- The owner chooses in Settings → Usage:
+  - **Allow one rescue:** an approval for that task and step only. It expires in 24 hours, is used once at reserve, and
+    is withdrawn if Premium Mode is turned off.
+  - **Enable Premium Mode.**
+  - **Keep using free:** dismisses the offer; it is not offered again.
+- After allowing or enabling, the app retries the task. The retry runs free first again and reaches the same step.
+
+### Money
+- **Caps:** $1 a task and $5 a UTC calendar month, counting every hold:
+  - **reserved:** the maximum, before sending;
+  - **confirmed:** OpenRouter's `usage.cost`, or `GET /api/v1/generation` by id;
+  - **unresolved:** a timeout or lost answer, kept at its maximum and never assumed free.
+- Reconciliation replaces an unresolved maximum with the reported charge.
+- A 4xx refusal from OpenRouter (400, 401, 402, 403, 404, 413, 422, 429) is recorded as $0, because those are refused
+  before inference.
+- **Maximum charge:**
+  - prompt tokens counted at 2 characters a token;
+  - output counted at **twice** `max_tokens` (room for reasoning tokens), at the dearer of the completion and reasoning
+    prices;
+  - plus any per-request fee;
+  - times a 1.25 margin.
+  - `max_tokens` ≤ 8,000.
+- The dispatch sends `provider.max_price` with the same prices, so OpenRouter refuses rather than routing to a dearer
+  provider.
+- Concurrency: every operation is one Durable Object transaction. The test with 12 concurrent $0.90 rescues admits
+  exactly 5.
+
+### Model selection (`pickPremium`)
+- Candidates: owner-reviewed families (`routing.premium.families`), never a `:free` or `openrouter/` router model.
+- Catalog requirements:
+  - Prompt, completion, request and reasoning prices all verified (missing, malformed or "-1" excludes the model).
+  - Completion ≤ $3/M and prompt ≤ $1.5/M.
+  - Text output, `max_tokens` support, and room for the prompt plus twice the output.
+- The pick is the candidate with the **lowest maximum charge** that fits the remaining budget.
+- A family name is a candidate, not proof of quality. The catalog proves availability and price only.
+
+### Engine (`engine/runner.py`, `engine/developer.py`)
+- Every gateway call carries `task`, so the gateway can record the free evidence.
+- **Rescue points.** Each fires once per task step, through the gateway only:
+  - `check`: after `MAX_CHECK_ROUNDS` free fix rounds still leave problems, and only if that round's free review ran. A
+    review that was unavailable is a capacity problem, not proof.
+  - `proposal`: after "No validated proposal" from the large, compact and split attempts. Not when the free routes are
+    only resting (an outage with a retry time).
+- The step's first model call asks for a **quote**; the feed shows the reason and maximum charge before dispatch, or the
+  recommendation when Premium Mode is off. Only an eligible quote is followed by the dispatch. Every later call,
+  including the re-check, is free.
+- **Outcome:** after a `check` rescue, the free re-check decides `solved` (no problems left) or `not_solved`. For
+  `proposal`, `solved` means a validated proposal came back. Recorded with `POST /router/premium-outcome`.
+
+### App
+- **Settings → AI Models → Premium Mode:** the switch with the owner's wording and the caps.
+- **Settings → Usage → Premium rescue:**
+  - mode, month spend (confirmed, reserved, unresolved), budget left, next reset;
+  - last rescue and outcome;
+  - open recommendations with the three actions;
+  - history: task, step, model, reason, maximum, charge, outcome.
+- No prompts or keys are shown.
+
+### Free-route safety (audit)
+- **OpenRouter discovery** keeps a model only if every price in its catalog entry is zero, whatever its name.
+  `openrouter/free` is kept only if its catalog prices are zero; a variable price ("-1") drops it.
+- **The model audit** never asks an unlisted model on a free gateway unless it is a `:free` id, nor a metered provider
+  without the owner's paid opt-in. Previously an audit list naming a paid id would have been sent.
+- **Unchanged:** chat and coding routes (`fallbackRoutes`), including manual model picks, come only from that list. The
+  existing explicit paid opt-in (`KAPPA_ALL_MODEL_PROVIDERS` naming a provider) still works.
+
+### Free routing record
+- Every gateway response carries `routing.skipped`: routes not asked, by reason (`provider_resting_or_rejected`,
+  `attempt_limit`, `time_budget`), next to the attempt history.
+- The existing reservations skip rested, full and rejected models without asking them.
+
+### The $0.00076
+- **No source found.**
+  - KappaForge's usage history has no OpenRouter call with a cost and no non-free OpenRouter model id.
+  - No audit list ever named a paid OpenRouter id.
+  - Two full checks that asked every routed model, including `openrouter/free`, left the spend at $0.000759.
+- KappaForge cannot see OpenRouter's per-request activity. The owner can check it at openrouter.ai → Activity.
+- **Safeguards now in place:** price-verified discovery, the audit guard, and premium only through the gated path.
+
+### Not verified live
+- No paid request was sent while building this: the owner's spec forbids real paid tests without a separate approval and
+  a tiny budget.
+- After merge, the first real rescue should be watched in Usage.
 
 ## Step 4. Finish
 
@@ -191,5 +225,5 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
 
 - [x] 1. Usage shared-limit model rows
 - [x] 2. OpenRouter audit (+ $0.00076 spend source)
-- [x] 3. Premium mode (code, tests; live check on `live-usage-check-premium`)
+- [x] 3. Premium rescue (owner-authorized, free first; mocked-billing tests; no live paid test by design)
 - [ ] 4. Finish

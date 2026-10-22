@@ -342,7 +342,7 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus,#heading[tabindex="-1"]:focus{ou
 @media (hover:none){.history-delete{opacity:.7}}
 /* Approve or Deny card for a task the owner hasn't confirmed yet. */
 .approval-actions{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 2px}.approval-actions .btn{min-width:104px}
-.task-approval .premium-switch{display:flex;align-items:center;gap:8px;font-weight:600;margin:6px 0 0}.task-approval .premium-switch+.muted{margin:2px 0 8px;font-size:.85em}
+.u-offer{border-top:1px solid var(--line,#8e8e9333);margin-top:10px;padding-top:10px}.u-offer p{margin:0 0 8px;font-size:.9em}.u-history{list-style:none;margin:10px 0 0;padding:0}.u-history li{padding:6px 0;border-top:1px solid var(--line,#8e8e9333)}.u-history small{opacity:.75}
 
 /* Live activity feed under a task card: one icon and one line per thing the agent did, the current one shimmering. */
 .activity-feed{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:12px}

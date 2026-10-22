@@ -88,41 +88,6 @@ export async function routingStore(state,request){
   });
   return Response.json(result,{status:result.allowed?200:429});
  }
- // Premium (paid OpenRouter) spending for demanding tasks, kept per UTC month and per task. A reservation holds the
- // worst-case estimate before the request is sent, so a crash or a retry can never spend past a cap; settling replaces
- // the hold with the cost OpenRouter reported.
- if(url.pathname==="/router/premium"){
-  const {op,task,requestId,estimateUsd,usd,taskCapUsd,monthCapUsd}=input||{};
-  const money=v=>Number.isFinite(v)&&v>=0&&v<=100,round=v=>Math.round(Math.max(0,v)*1e6)/1e6;
-  if(!["reserve","settle","status"].includes(op)||op!=="status"&&(!Number.isInteger(task)||task<1||!validId(requestId)))return Response.json({error:"Invalid premium request"},{status:400});
-  const result=await transact(storage,async data=>{
-   const now=Date.now(),month=new Date(now).toISOString().slice(0,7),p=data.premium ||= {months:{},tasks:{},holds:{}};
-   for(const [id,row] of Object.entries(p.tasks))if(row.at+60*86400000<=now)delete p.tasks[id];
-   for(const [id,row] of Object.entries(p.holds))if(row.at+RETENTION_MS<=now)delete p.holds[id];
-   for(const key of Object.keys(p.months))if(key<month&&Object.keys(p.months).length>12)delete p.months[key];
-   const spent=()=>({monthUsd:p.months[month]||0,taskUsd:op==="status"?null:p.tasks[task]?.usd||0,month});
-   if(op==="status")return {...spent(),holds:Object.keys(p.holds).length};
-   if(op==="reserve"){
-    if(!money(estimateUsd)||!money(taskCapUsd)||!money(monthCapUsd))return {allowed:false,reason:"invalid"};
-    if(p.holds[requestId])return {allowed:false,reason:"request_already_used"};
-    const s=spent();
-    if(s.taskUsd+estimateUsd>taskCapUsd)return {allowed:false,reason:"task cap",...s};
-    if(s.monthUsd+estimateUsd>monthCapUsd)return {allowed:false,reason:"month cap",...s};
-    p.holds[requestId]={task,month,usd:estimateUsd,at:now};
-    p.months[month]=round(s.monthUsd+estimateUsd);p.tasks[task]={usd:round(s.taskUsd+estimateUsd),at:now};
-    return {allowed:true,...spent()};
-   }
-   const hold=p.holds[requestId];
-   if(!hold||hold.settled)return {settled:false,...spent()};
-   // The real cost replaces the estimate (never above it: the request was capped to the estimate's output tokens).
-   const actual=money(usd)?Math.min(usd,hold.usd):hold.usd,delta=actual-hold.usd;
-   p.months[hold.month]=round((p.months[hold.month]||0)+delta);
-   if(p.tasks[hold.task])p.tasks[hold.task].usd=round(p.tasks[hold.task].usd+delta);
-   hold.usd=actual;hold.settled=true;
-   return {settled:true,usd:actual,...spent()};
-  });
-  return Response.json(result,{status:result.allowed===false?429:200});
- }
  if(url.pathname==="/router/request-reserve"){
   const {requestId,limit=100,minuteLimit=20}=input||{};
   if(!validId(requestId)||!Number.isInteger(limit)||limit<1||limit>10000||!Number.isInteger(minuteLimit)||minuteLimit<1||minuteLimit>120)return Response.json({error:"Invalid request reservation"},{status:400});

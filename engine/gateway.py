@@ -51,7 +51,9 @@ def error(status, data=None, headers=None, pinned=False):
               'gateway_timeout': 'gateway response timed out; provider attempts and quota remaining are unknown',
               'gateway_network_failure': 'gateway transport failed; provider attempts and quota remaining are unknown',
               'gateway_malformed_response': 'gateway returned malformed data; provider quota remaining is unknown',
-              'request_too_large': 'gateway request-size limit; reduce source context; provider was not contacted'}
+              'request_too_large': 'gateway request-size limit; reduce source context; provider was not contacted',
+              'premium_not_authorized': 'premium rescue not authorized; nothing was sent or charged',
+              'premium_failed': 'premium rescue sent but did not answer; its charge is counted at its maximum until reported'}
     retry_at = data.get('retryAt')
     retry_at = retry_at / 1000 if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) and retry_at > 0 else 0
     retry_at = max(retry_at, time.time() + retry_after(headers, time.time()) if headers else 0)
