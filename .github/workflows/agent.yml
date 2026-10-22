@@ -147,6 +147,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
+    - name: Install ast-grep for the structural security scan
+      shell: bash
+      run: python -m pip install --quiet --no-deps --require-hashes -r .github/ast-grep-requirements.txt
     - name: Preflight agent tools and build settings
       shell: bash
       run: |-

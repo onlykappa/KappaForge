@@ -1,0 +1,17 @@
+id: py-unsafe-deserialization
+valid:
+- json.loads(body)
+- yaml.safe_load(text)
+- yaml.load(text, Loader=yaml.SafeLoader)
+- yaml.load(text, yaml.SafeLoader)
+- yaml.load(text, Loader=yaml.CSafeLoader)
+- yaml.load(text, Loader=yaml.BaseLoader)
+invalid:
+- pickle.loads(blob)
+- pickle.load(handle)
+- yaml.load(text)
+- marshal.loads(data)
+- yaml.load(text, Loader=yaml.Loader)
+- yaml.load(text, Loader=yaml.UnsafeLoader)
+- yaml.load(text, yaml.UnsafeLoader)
+- yaml.load(text, Loader=custom_loader)

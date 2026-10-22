@@ -39,7 +39,13 @@ try{
  await page.waitForFunction(()=>capabilities!==null||lastVerify?.error,null,{timeout:120000});
  // Why each provider is or is not routable, as the Worker reports it (no credentials are included).
  summary.eligibility=await page.evaluate(()=>capabilities?{routingPolicy:{version:capabilities.routingPolicy?.version,chatProviders:capabilities.routingPolicy?.chatProviders,codingProviders:capabilities.routingPolicy?.codingProviders},
-  providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length,health:p.health||null}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
+  providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length,modelNames:p.id==="mistral"?(p.models||[]):undefined,health:p.health||null}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
+ // PROBE_PROVIDER: test only that provider's models, every one, through the probe endpoint.
+ if(process.env.PROBE_PROVIDER){
+  summary.providerProbe=await page.evaluate(async provider=>{const results=[];let offset=0,total=null;
+   for(let i=0;i<20&&offset!==null;i++){const d=await settingsAPI('/providers/probe',{provider,offset},120000);total=d.total;results.push(...(d.results||[]).map(({label,outcome,status,tokens,reply})=>({label,outcome,status,tokens,reply})));offset=d.next;}
+   return {provider,total,results};},process.env.PROBE_PROVIDER);
+ }
  if(probe){
   await open('models');await page.locator('#model-probe').click();
   await page.waitForFunction(()=>!probe.running&&probe.total!==null||probe.error,null,{timeout:45*60000,polling:2000});

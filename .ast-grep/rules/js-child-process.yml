@@ -1,0 +1,14 @@
+id: js-child-process
+language: javascript
+severity: error
+message: starts other programs (child_process)
+rule:
+  any:
+  - pattern: require('child_process')
+  - pattern: require("child_process")
+  - pattern: require('node:child_process')
+  - pattern: require("node:child_process")
+  - kind: import_statement
+    has:
+      kind: string
+      regex: ^['"](?:node:)?child_process['"]$

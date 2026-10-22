@@ -12,6 +12,7 @@
     "requesty",
     "zai",
     "cerebras",
+    "huggingface",
     "llm7",
     "ovh"
   ],
@@ -151,7 +152,7 @@
       "maxOutput": 32768,
       "accountPool": "mistral",
       "quotaPool": "mistral",
-      "quotaScope": "account",
+      "quotaScope": "model",
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,
@@ -389,6 +390,35 @@
         "streaming": true,
         "media": false
       }
+    },
+    "huggingface": {
+      "name": "Hugging Face (metered, chat only)",
+      "kind": "openai",
+      "base": "https://router.huggingface.co/v1",
+      "key": "HUGGINGFACE_API_KEY",
+      "signup": "https://huggingface.co/settings/tokens",
+      "models": [
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "privateCode": false,
+      "note": "Metered Inference Providers; free accounts have no included monthly credits. Requires explicit named KAPPA_ALL_MODEL_PROVIDERS=huggingface opt-in and chat permissions. Calls can consume purchased credits or use billing configured in Hugging Face. Chat only; never used for repository coding. Forwards prompts to third-party hosts. Use a fine-grained token with only Make calls to Inference Providers.",
+      "context": 131072,
+      "maxOutput": 4096,
+      "accountPool": "huggingface",
+      "quotaPool": "huggingface",
+      "quotaScope": "account",
+      "maxConcurrent": 1,
+      "capabilities": {
+        "chat": true,
+        "coding": false,
+        "structuredOutput": false,
+        "tools": false,
+        "streaming": true,
+        "media": false
+      },
+      "metered": true,
+      "agent": false
     }
   },
   "routing": {
@@ -563,7 +593,7 @@
       },
       "mistral": {
         "scope": "model",
-        "source": "Mistral Admin, Default Workspace limits; -latest aliases use the dated model's row",
+        "source": "Mistral Admin → Limits, EU region (api.mistral.ai), Default Workspace: tokens per minute and requests per second only, no daily or monthly token cap; -latest aliases use the dated model's row",
         "models": [
           {
             "match": "labs-leanstral",

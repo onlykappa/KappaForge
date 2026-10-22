@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 from engine import recovery
 from engine import repo_map as repo_maps
+from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
 from engine.verify import open_problems as requirements_open, review_record
@@ -183,10 +184,21 @@ def dispatch_tests(repo, branch, sha, token, paths=()):
             raise PermissionError('Bounded validation requires the reviewed workflow ref')
         inputs['automatic_fixes'] = 'false'
     gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": ref, "inputs": inputs})
+    if not pinned:
+        request_review(repo, branch, sha, token)
     # App changes are also compiled with Xcode, UI-tested in the simulator and packaged as an unsigned IPA.
     from engine import native_build
     if native_build.needed(repo, paths):
         native_build.dispatch(branch, sha, token)
+
+
+def request_review(repo, branch, sha, token):
+    """Risk-scored review comment on the PR (review-graph.yml). Best effort: it never stops the task."""
+    inputs = {"repo": repo.split("/", 1)[1], "branch": branch, "candidate_sha": sha}
+    try:
+        gh(f"repos/{ROOT}/actions/workflows/review-graph.yml/dispatches", token, {"ref": "main", "inputs": inputs})
+    except (urllib.error.URLError, ValueError) as exc:
+        print("Review graph not started: " + (f"HTTP {exc.code}" if hasattr(exc, "code") else type(exc).__name__), flush=True)
 
 
 MAX_STAGES = 5
@@ -870,6 +882,12 @@ def flagged_changes(sources, changes):
         for label, pattern in FLAGS:
             if any(pattern.search(line) for line in added):
                 found.setdefault(label, []).append(path)
+    # Structural rules (ast-grep) add what word patterns miss, such as shell=True or a literal key.
+    structural = structural_scan.scan(sources, changes)
+    if structural is None:
+        print("Structural scan unavailable (ast-grep not installed or failed); word-pattern flags still apply", flush=True)
+    for label, paths in (structural or {}).items():
+        found.setdefault(label, []).extend(p for p in paths if p not in found.get(label, []))
     return found
 
 
@@ -1099,8 +1117,14 @@ class Progress:
                 gh(f"repos/{ROOT}/issues/comments/{self.comment}", self.token, {"body": body}, method="PATCH")
             else:
                 self.comment = gh(f"repos/{ROOT}/issues/{self.number}/comments", self.token, {"body": body}).get("id")
-        except (urllib.error.URLError, ValueError, AttributeError):
-            pass
+        except (urllib.error.URLError, ValueError, AttributeError, PermissionError):
+            pass  # A refused write (no task scope left, such as a finished run's checklist) wrote nothing.
+
+
+def note_progress(journal, **changes):
+    """Update the task's PROGRESS.md through the recovery journal, when there is one."""
+    if callable(getattr(journal, "note", None)):
+        journal.note(**changes)
 
 
 def short_list(paths, n=4):
@@ -1346,6 +1370,8 @@ def produce_development_pr(issue, api_key, token):
         progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
     else:
         progress.now("Writing the change", phase=True)
+    if journal:
+        note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
     saved = {"sha": sha, "pr": None, "changes": {}}
 
     def checkpoint(model, summary, changes, explanation):
@@ -1373,6 +1399,8 @@ def produce_development_pr(issue, api_key, token):
         progress.saved_pr = saved["pr"]["html_url"]
         if journal:
             journal.checkpoint(saved['sha'], pr=saved['pr']['html_url'])
+            note_progress(journal, done=summary.splitlines(), files=list(changes), model=model,
+                         status="Saved a validated stage on " + saved["pr"]["html_url"])
 
     if journal:
         journal.stage_checkpoint = checkpoint
@@ -1415,6 +1443,8 @@ def produce_development_pr(issue, api_key, token):
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], base=base, pr=pr['html_url'], files=changes)
+        note_progress(journal, done=summary.splitlines(), files=list(changes), model=model,
+                     status="Draft PR opened; independent tests running: " + pr['html_url'])
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. Automatic inference retries are disabled for this bounded task."
@@ -1543,6 +1573,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     pending = requirements_open(pr)
+    notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
+    if notes:
+        task = notes + "\n\n" + task
     if journal:
         task = ('Earlier review findings are unverified hypotheses, not new owner requirements. Verify them against '
                 'current source before editing. Shared classic-script globals are intentional when index.html loads '
@@ -1701,6 +1734,8 @@ def fix_pull_request(issue, api_key, token):
         gh(f'repos/{repo}/git/refs/heads/{branch}', repo_token, {'sha': commit['sha'], 'force': False}, method='PATCH')
         saved.update(sha=commit['sha'], changes=dict(changes))
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
+        note_progress(journal, files=list(changes), append_done=['Saved a repair checkpoint; full review pending'],
+                      status='Running: repair checkpoint saved; full requirement review pending')
         # Checkpoints are unverified even when the preceding candidate passed CI.
         gh(f"repos/{repo}/pulls/{pr['number']}", repo_token,
            {'body': (pr.get('body') or '') + '\n\n' + review_record(['Repair checkpoint awaiting full requirement review and independent tests'])}, method='PATCH')
@@ -1732,6 +1767,9 @@ def fix_pull_request(issue, api_key, token):
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
+        note_progress(journal, files=list(changes), model=model, append_done=['Repair saved: ' + summary],
+                      complete=bool(pending) and not requirements_open({'body': explanation}),
+                      status='Repair saved; independent tests running')
     pr_files = [f.get("filename", "") for f in gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)]
     if pending:
         previous = re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get("body") or "")

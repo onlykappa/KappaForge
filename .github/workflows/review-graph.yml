@@ -1,0 +1,150 @@
+name: Review graph
+run-name: ${{ format('Review graph {0} {1}', inputs.repo || github.event.repository.name, inputs.branch || github.head_ref) }}
+# Risk-scored review of a pull request with code-review-graph: a Tree-sitter graph of the code shows which functions
+# changed, what calls them and which changes no test reaches, and the result is posted as one sticky PR comment.
+# Runs on pull requests, and the coding agent dispatches it for its own PRs (those don't trigger pull_request).
+# Three jobs: only "fetch" and "publish" hold a token, and only "analyze" installs code-review-graph; the code is
+# parsed, never run.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Repository under onlykappa
+        default: KappaForge
+      branch:
+        description: Agent branch (kappa/dev-N or kappa/repair-N)
+        required: true
+      candidate_sha:
+        description: Full commit SHA to review
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: review-graph-${{ inputs.repo || github.repository }}-${{ inputs.branch || github.head_ref }}
+  cancel-in-progress: true
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+    steps:
+    - name: Validate inputs
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        REPO: ${{ inputs.repo }}
+        BRANCH: ${{ inputs.branch }}
+        SHA: ${{ inputs.candidate_sha }}
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        [[ "$REPO" =~ ^[A-Za-z0-9_.-]+$ && ! "$REPO" =~ ^\.+$ ]] || { echo "Invalid repository"; exit 1; }
+        [[ "$BRANCH" =~ ^kappa/(dev|repair)-[0-9]+$ ]] || { echo "Only agent branches are reviewed by dispatch"; exit 1; }
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "A full commit SHA is required"; exit 1; }
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ github.event_name == 'workflow_dispatch' && format('onlykappa/{0}', inputs.repo) || github.repository }}
+        ref: ${{ inputs.candidate_sha || github.event.pull_request.head.sha }}
+        token: ${{ (github.event_name == 'workflow_dispatch' && inputs.repo != 'KappaForge' && secrets.KAPPA_CODER_TOKEN) || github.token }}
+        persist-credentials: false
+        fetch-depth: 0
+        path: project
+    - name: Find the base branch
+      id: base
+      env:
+        GH_TOKEN: ${{ (github.event_name == 'workflow_dispatch' && inputs.repo != 'KappaForge' && secrets.KAPPA_CODER_TOKEN) || github.token }}
+        REPO: ${{ github.event_name == 'workflow_dispatch' && format('onlykappa/{0}', inputs.repo) || github.repository }}
+        PR_BASE: ${{ github.base_ref }}
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        base="${PR_BASE:-$(gh api "repos/$REPO" --jq .default_branch)}"
+        [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "Unexpected base branch name"; exit 1; }
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+    - name: Package the code and its history
+      run: tar -czf project.tgz project
+      shell: bash
+    - uses: actions/upload-artifact@v4
+      with:
+        name: review-source
+        path: project.tgz
+        retention-days: 1
+  analyze:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+    - uses: actions/checkout@v4  # This workflow's own commit, for the renderer.
+      with:
+        persist-credentials: false
+        path: kappaforge
+    - uses: actions/download-artifact@v4
+      with:
+        name: review-source
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install code-review-graph
+      run: python -m pip install --quiet -r kappaforge/.github/review-graph-requirements.txt
+      shell: bash
+    - name: Build the graph and analyse the change
+      env:
+        BASE: ${{ needs.fetch.outputs.base }}
+        TITLE: ${{ inputs.branch || github.head_ref }}
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        tar -xzf project.tgz
+        cd project
+        git config --global --add safe.directory "$PWD"
+        code-review-graph build
+        code-review-graph detect-changes --base "origin/$BASE" > "$RUNNER_TEMP/report.json"
+        python ../kappaforge/engine/review_graph.py --input "$RUNNER_TEMP/report.json" --output "$RUNNER_TEMP/review.md" \
+          --root "$PWD" --title "$TITLE"
+        cp "$RUNNER_TEMP/review.md" ../review.md
+        cat ../review.md >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: review-report
+        path: review.md
+        retention-days: 7
+  publish:
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: review-report
+    - name: Post or update the sticky review comment
+      uses: actions/github-script@v7
+      env:
+        REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repo || github.event.repository.name }}
+        BRANCH: ${{ inputs.branch || github.head_ref }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      with:
+        github-token: ${{ (github.event_name == 'workflow_dispatch' && inputs.repo != 'KappaForge' && secrets.KAPPA_CODER_TOKEN) || github.token }}
+        script: |
+          const fs = require('fs');
+          const body = fs.readFileSync('review.md', 'utf8').trim();
+          const marker = '<!-- kappaforge-review-graph -->';
+          if (!body.startsWith(marker) || Buffer.byteLength(body) > 62000) { core.setFailed('Unexpected report'); return; }
+          const owner = 'onlykappa', repo = process.env.REPO;
+          let number = Number(process.env.PR_NUMBER) || 0;
+          if (!number) {
+            const pulls = await github.rest.pulls.list({owner, repo, state: 'open', head: `${owner}:${process.env.BRANCH}`});
+            if (pulls.data.length !== 1) { core.info('No single open PR for this branch; the report is in the job summary.'); return; }
+            number = pulls.data[0].number;
+          }
+          // Only ever edit a comment this workflow's own identity wrote: anyone can paste the marker.
+          let me = 'github-actions[bot]';
+          try { me = (await github.rest.users.getAuthenticated()).data.login; } catch (e) {}
+          const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: number, per_page: 100});
+          const mine = comments.find(c => c.user && c.user.login === me && (c.body || '').startsWith(marker));
+          if (mine) await github.rest.issues.updateComment({owner, repo, comment_id: mine.id, body});
+          else await github.rest.issues.createComment({owner, repo, issue_number: number, body});
+          core.info(`Review graph posted on ${repo}#${number}`);

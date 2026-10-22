@@ -20,9 +20,14 @@ def setUpModule():
 
 def tearDownModule():
     _no_archive.stop()
+    developer.Progress.latest = None  # Later test modules start without this module's last checklist.
 
 
 class DeveloperValidationTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
 
     def test_a_repeated_rejected_patch_moves_on_to_another_model(self):
         """Task #123 stopped at attempt 2 of 5 when a model repeated itself; now the other attempts ask other models."""
@@ -482,9 +487,10 @@ class OtherRepositoryTests(unittest.TestCase):
                 patch.object(developer, "run_model", side_effect=model):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
-        everything = set(PROVIDERS["order"])
+        everything = {pid for pid in PROVIDERS["order"] if PROVIDERS["providers"][pid].get("privateCode") is not False and PROVIDERS["providers"][pid].get("agent") is not False}
         # Every step may use any allowed provider: a strong one comes before Flash-Lite when the prompt fits it.
-        self.assertEqual(allowances, [everything] * 3, "owner allows every fallback provider by default")
+        self.assertEqual(allowances, [everything] * 3, "owner allows every fallback provider by default, except "
+                         'providers marked "privateCode": false for this private repository')
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})
@@ -783,6 +789,11 @@ class ActivityFeedTests(unittest.TestCase):
 
 
 class StageRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
+
     def test_a_failed_test_stage_keeps_the_change_for_the_work_check(self):
         """Task #125's final "write a test" stage failing threw away three finished stages."""
         first = json.dumps({"summary": "Cast", "files": [
@@ -799,6 +810,11 @@ class StageRecoveryTests(unittest.TestCase):
 
 
 class ModelSwitchTests(unittest.TestCase):
+    def setUp(self):
+        # A checklist another test left behind must not receive this test's activity (it posts once its
+        # four-second write throttle has passed, which a slow runner reaches).
+        developer.Progress.latest = None
+
     def test_a_model_whose_answers_keep_failing_is_swapped_mid_task(self):
         bad = [json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "missing " + str(i), "replace": "x"}]}]}) for i in range(2)]
         good = json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})

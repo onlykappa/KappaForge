@@ -1,0 +1,8 @@
+id: py-eval-exec
+valid:
+- ast.literal_eval(text)
+- model.evaluate(x)
+- "def exec_task(): pass"
+invalid:
+- eval(user_input)
+- exec(compile(src, 'f', 'exec'))

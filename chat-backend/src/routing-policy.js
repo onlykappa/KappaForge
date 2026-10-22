@@ -16,16 +16,18 @@ const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.
  Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
 // Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model the provider account lists, including paid
 // ones. Without it a provider keeps its reviewed free models and per-provider cap. "*" covers every provider except
-// free-model gateways (freeOnly), whose paid models need purchased credits: those take full catalogs only by name.
+// free-model gateways (freeOnly) and metered providers: their paid catalogs require a named opt-in.
 // "*" still lifts the per-provider cap on a free-model gateway: every free route it lists is used.
 export function everyFreeModel(env,id){return list(env.KAPPA_ALL_MODEL_PROVIDERS).has("*")&&registry.providers[id]?.freeOnly===true;}
-export function fullCatalog(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has(id)||all.has("*")&&registry.providers[id]?.freeOnly!==true;}
+export function fullCatalog(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has(id)||all.has("*")&&registry.providers[id]?.freeOnly!==true&&registry.providers[id]?.metered!==true;}
 
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
 export function providerPolicyStatus(env,channel,id,{privateCode=false,requested=null}={}){
  const excluded=reason=>({enabled:false,reason});
  if(!providers.has(id))return excluded("unknown_provider");
+ if(registry.providers[id]?.metered===true&&!list(env.KAPPA_ALL_MODEL_PROVIDERS).has(id))return excluded("metered_provider_opt_in");
+ if(channel==="coding"&&registry.providers[id]?.capabilities?.coding===false)return excluded("coding_unsupported");
  // Keep legacy preview/test deployments compatible. The production Worker opts into the
  // provider permissions explicitly through ROUTING_POLICY_VERSION=v1.
  if(env.ROUTING_POLICY_VERSION!==ROUTING_POLICY_VERSION)return {enabled:true,reason:"legacy_policy"};
