@@ -1080,6 +1080,12 @@ class Progress:
             pass
 
 
+def note_progress(journal, **changes):
+    """Update the task's PROGRESS.md through the recovery journal, when there is one."""
+    if callable(getattr(journal, "note", None)):
+        journal.note(**changes)
+
+
 def short_list(paths, n=4):
     shown = ", ".join("`" + p + "`" for p in list(paths)[:n])
     return shown + (f" and {len(paths) - n} more" if len(paths) > n else "")
@@ -1320,6 +1326,8 @@ def produce_development_pr(issue, api_key, token):
         progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
     else:
         progress.now("Writing the change", phase=True)
+    if journal:
+        note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
     saved = {"sha": sha, "pr": None, "changes": {}}
 
     def checkpoint(model, summary, changes, explanation):
@@ -1347,6 +1355,8 @@ def produce_development_pr(issue, api_key, token):
         progress.saved_pr = saved["pr"]["html_url"]
         if journal:
             journal.checkpoint(saved['sha'], pr=saved['pr']['html_url'])
+            note_progress(journal, done=summary.splitlines(), files=list(changes), model=model,
+                         status="Saved a validated stage on " + saved["pr"]["html_url"])
 
     if journal:
         journal.stage_checkpoint = checkpoint
@@ -1389,6 +1399,8 @@ def produce_development_pr(issue, api_key, token):
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], base=base, pr=pr['html_url'], files=changes)
+        note_progress(journal, done=summary.splitlines(), files=list(changes), model=model,
+                     status="Draft PR opened; independent tests running: " + pr['html_url'])
     try:
         dispatch_tests(repo, branch, commit["sha"], token, list(changes))
         validation = ("Independent tests started in KappaForge's secret-free sandbox. Automatic inference retries are disabled for this bounded task."
@@ -1517,6 +1529,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     pending = requirements_open(pr)
+    notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
+    if notes:
+        task = notes + "\n\n" + task
     if journal:
         task = ('Earlier review findings are unverified hypotheses, not new owner requirements. Verify them against '
                 'current source before editing. Shared classic-script globals are intentional when index.html loads '

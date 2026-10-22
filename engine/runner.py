@@ -295,11 +295,13 @@ def list_provider_models(pid, p):
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).
 
-    Default, chosen by the owner for maximum uptime: every provider, for public and private repositories alike.
+    Default, chosen by the owner for maximum uptime: every provider, for public and private repositories alike, except
+    that providers marked "privateCode": false never get private code unless the owner lists them by name.
     KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) narrow it.
     """
     listed = os.getenv("KAPPA_PRIVATE_CODE_PROVIDERS" if private else "KAPPA_CODE_PROVIDERS", "").strip()
-    allowed = {name.strip() for name in listed.split(',') if name.strip()} if listed else set(PROVIDERS['order'])
+    allowed = ({name.strip() for name in listed.split(',') if name.strip()} if listed else
+               {pid for pid in PROVIDERS['order'] if not private or PROVIDERS['providers'][pid].get('privateCode') is not False})
     from engine import recovery
     journal = recovery.CURRENT.get()
     if journal and journal.project.get('providers') is not None:

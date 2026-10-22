@@ -470,9 +470,10 @@ class OtherRepositoryTests(unittest.TestCase):
                 patch.object(developer, "run_model", side_effect=model):
             developer.produce_development_pr(issue, "key", "actions-token")
         self.assertIn("Use tabs.", prompts[1])
-        everything = set(PROVIDERS["order"])
+        everything = {pid for pid in PROVIDERS["order"] if PROVIDERS["providers"][pid].get("privateCode") is not False}
         # Every step may use any allowed provider: a strong one comes before Flash-Lite when the prompt fits it.
-        self.assertEqual(allowances, [everything] * 3, "owner allows every fallback provider by default")
+        self.assertEqual(allowances, [everything] * 3, "owner allows every fallback provider by default, except "
+                         'providers marked "privateCode": false for this private repository')
         dispatch = next(c for c in calls if c[0].endswith("/dispatches"))
         self.assertEqual(dispatch[0], "repos/onlykappa/KappaForge/actions/workflows/project-tests.yml/dispatches")
         self.assertEqual(dispatch[1]["inputs"], {"repo": "OmniPC", "branch": "kappa/dev-9", "candidate_sha": "c" * 40})

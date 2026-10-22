@@ -12,6 +12,9 @@
     "requesty",
     "zai",
     "cerebras",
+    "modelscope",
+    "siliconflow",
+    "huggingface",
     "llm7",
     "ovh"
   ],
@@ -389,6 +392,97 @@
         "streaming": true,
         "media": false
       }
+    },
+    "modelscope": {
+      "name": "ModelScope (free Qwen)",
+      "kind": "openai",
+      "base": "https://api-inference.modelscope.cn/v1",
+      "key": "MODELSCOPE_API_KEY",
+      "signup": "https://modelscope.cn/my/myaccesstoken",
+      "models": [
+        "Qwen/Qwen3.5-35B-A3B",
+        "Qwen/Qwen3.5-27B"
+      ],
+      "freeModels": [
+        "Qwen/Qwen3.5-35B-A3B",
+        "Qwen/Qwen3.5-27B"
+      ],
+      "privateCode": false,
+      "note": "Free API-Inference: about 2,000 requests a day in total and up to 500 per model. Needs an Alibaba Cloud account binding and real-name verification. Hosted in China, so it never receives private-repository code.",
+      "context": 262144,
+      "maxOutput": 16384,
+      "accountPool": "modelscope",
+      "quotaPool": "modelscope",
+      "quotaScope": "account",
+      "maxConcurrent": 1,
+      "capabilities": {
+        "chat": true,
+        "coding": true,
+        "structuredOutput": false,
+        "tools": false,
+        "streaming": true,
+        "media": false
+      }
+    },
+    "siliconflow": {
+      "name": "SiliconFlow (free Qwen3-8B)",
+      "kind": "openai",
+      "base": "https://api.siliconflow.cn/v1",
+      "key": "SILICONFLOW_API_KEY",
+      "signup": "https://cloud.siliconflow.cn/account/ak",
+      "models": [
+        "Qwen/Qwen3-8B"
+      ],
+      "freeModels": [
+        "Qwen/Qwen3-8B"
+      ],
+      "privateCode": false,
+      "note": "Pinned to the permanently free Qwen3-8B; the same key also reaches paid models. Identity verification required. Hosted in China, so it never receives private-repository code.",
+      "context": 131072,
+      "maxOutput": 8192,
+      "accountPool": "siliconflow",
+      "quotaPool": "siliconflow",
+      "quotaScope": "account",
+      "maxConcurrent": 1,
+      "capabilities": {
+        "chat": true,
+        "coding": true,
+        "structuredOutput": false,
+        "tools": false,
+        "streaming": true,
+        "media": false
+      }
+    },
+    "huggingface": {
+      "name": "Hugging Face (monthly free credit)",
+      "kind": "openai",
+      "base": "https://router.huggingface.co/v1",
+      "key": "HUGGINGFACE_API_KEY",
+      "signup": "https://huggingface.co/settings/tokens",
+      "models": [
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "freeModels": [
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "privateCode": false,
+      "note": "Free accounts get about $0.10 of Inference Provider credit a month; pinned to small models so it lasts. When the credit runs out the router gets HTTP 402 and rests the model. Use a fine-grained token with only 'Make calls to Inference Providers'. Forwards prompts to third-party hosts (Together, Fireworks, Novita and others), so it never receives private-repository code.",
+      "context": 131072,
+      "maxOutput": 4096,
+      "accountPool": "huggingface",
+      "quotaPool": "huggingface",
+      "quotaScope": "account",
+      "maxConcurrent": 1,
+      "capabilities": {
+        "chat": true,
+        "coding": true,
+        "structuredOutput": false,
+        "tools": false,
+        "streaming": true,
+        "media": false
+      }
     }
   },
   "routing": {
@@ -654,6 +748,24 @@
         "neuronsPerDay": 10000,
         "dayResets": "UTC",
         "source": "Cloudflare docs: 10,000 Neurons per day free; Neurons are compute units, not tokens"
+      },
+      "modelscope": {
+        "scope": "provider",
+        "rpd": 2000,
+        "dayResets": "UTC",
+        "source": "awesome-free-llm-apis 2026-10-05: 2,000 requests a day in total, up to 500 per model (dynamic); reset time not published"
+      },
+      "siliconflow": {
+        "scope": "model",
+        "dayResets": "UTC",
+        "source": "awesome-free-llm-apis 2026-10-05",
+        "models": [
+          {
+            "match": "qwen/qwen3-8b",
+            "rpm": 1000,
+            "tpm": 50000
+          }
+        ]
       }
     }
   }

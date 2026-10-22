@@ -11,6 +11,8 @@ from contextvars import ContextVar
 from datetime import datetime
 from urllib.parse import urlparse
 
+# Continuation number 1-15: three failed attempts plus twelve waits for a provider limit (engine.recovery).
+RESUME_NUMBER = r"(?:[1-9]|1[0-5])"
 ACTIVE = ContextVar("execution_scope", default=None)
 READ_MODES = {"analysis", "audit", "project-map", "continuous", "watch"}
 WRITE_MODES = {"develop", "code", "repair", "continuous-code"}
@@ -143,14 +145,14 @@ class ExecutionScope:
                 inputs = (payload or {}).get("inputs", {})
                 if (set(payload or {}) == {"ref", "inputs"} and payload["ref"] == "main"
                         and set(inputs) == {"issue_number", "action"} and inputs["issue_number"] == str(self.number)
-                        and re.fullmatch(r"resume:[1-3]:" + self.digest[:12], inputs.get("action", ""))):
+                        and re.fullmatch(r"resume:" + RESUME_NUMBER + ":" + self.digest[:12], inputs.get("action", ""))):
                     return
                 raise PermissionError("Continuation must retain task, authorization and trusted main workflow")
             if p == "/repos/onlykappa/KappaForge/git/refs" and method == "POST":
                 ref = (payload or {}).get("ref", "")
                 if ref.startswith("refs/heads/kappa/recovery-"):
                     if (set(payload) == {"ref", "sha"} and re.fullmatch(
-                            r"refs/heads/kappa/recovery-" + str(self.number) + "-" + self.digest[:12] + r"-[1-3]", ref)
+                            r"refs/heads/kappa/recovery-" + str(self.number) + "-" + self.digest[:12] + "-" + RESUME_NUMBER, ref)
                             and re.fullmatch(r"[a-f0-9]{40}", payload.get("sha", ""))):
                         return
                     raise PermissionError("Invalid task recovery reservation")

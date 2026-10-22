@@ -136,9 +136,14 @@ class ModelRoutingTests(unittest.TestCase):
         with patch.dict(os.environ, {**keys, "GROQ_API_KEY": "k"}):
             everything = set(runner.PROVIDERS["order"])
             self.assertEqual(runner.code_providers(False), everything, "owner allows every provider by default")
-            self.assertEqual(runner.code_providers(True), everything)
+            self.assertEqual(runner.code_providers(True), everything - {"modelscope", "siliconflow", "huggingface"},
+                             'providers marked "privateCode": false never get private code by default')
         with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
             self.assertEqual(runner.code_providers(True), {"groq", "cerebras"})
+            self.assertEqual(runner.code_providers(False), {"kilo"})
+        with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq,modelscope"}):
+            self.assertEqual(runner.code_providers(True), {"groq", "modelscope"}, "naming a provider is an explicit owner opt-in")
+        with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
             self.assertEqual(runner.code_providers(False), {"kilo"})
 
     def test_fallback_skips_disallowed_providers_and_retries_with_a_smaller_reply_limit(self):
