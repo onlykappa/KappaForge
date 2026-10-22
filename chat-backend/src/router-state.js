@@ -39,7 +39,7 @@ export async function routingStore(state,request){
  if(request.method!=="POST")return Response.json({error:"Method not allowed"},{status:405});
  let input;try{input=await request.json()}catch{return Response.json({error:"Invalid JSON"},{status:400});}
  if(url.pathname==="/router/reserve"){
-  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null}=input||{};
+  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null,fresh=false}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!validId(accountPool)||!validId(quotaPool)||
      !["account","model"].includes(quotaScope)||!Number.isInteger(maxConcurrent)||maxConcurrent<1||maxConcurrent>8||!Number.isInteger(leaseMs)||leaseMs<1000||leaseMs>MAX_LEASE_MS)
    return Response.json({error:"Invalid reservation"},{status:400});
@@ -60,7 +60,7 @@ export async function routingStore(state,request){
    const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
    // scope says whether the whole account (pool) or only this model is unavailable, so callers can skip the account's
    // other models at once instead of asking about each.
-   if(blocked)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null,scope:blocked===route?"route":"pool"};
+   if(blocked&&fresh!==true)return {allowed:false,reason:blocked.category||"cooldown",retryAt:blocked.until||null,upstreamStatus:blocked.status||null,scope:blocked===route?"route":"pool"};
    // The provider's own published limits for this model (or provider), counted across every KappaForge caller, so a
    // full model is skipped before Google or the provider has to refuse it.
    const q=validQuota(quota)?quota:null,minute=Math.floor(now/60000),count=q?data.quotas[q.key]||{}:null;

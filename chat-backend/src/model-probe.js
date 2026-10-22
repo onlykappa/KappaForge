@@ -33,8 +33,8 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
   // A short shared cooldown (a provider's per-minute limit) is waited out once rather than reported, so the
   // check measures the model instead of its own pace.
   try{
-   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT)});
-   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT)});}
+   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});
+   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}
   }catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
   if(!reserved.allowed){results.push({...row,outcome:"cooling_down",detail:reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
   const gap=(lastCall[route.provider]||0)+spacingMs(route)-Date.now();if(gap>0)await sleep(gap);lastCall[route.provider]=Date.now();
