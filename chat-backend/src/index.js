@@ -260,6 +260,8 @@ export default {
         health.gemini={state:geminiPool?.blocked?"blocked":geminiPool?.until>Date.now()?"cooldown":Object.values(snapshot.routes||{}).some(row=>row.provider==="gemini"&&row.until>Date.now())?"cooldown":"unknown",retryAt:geminiPool?.until||null,category:geminiPool?.category||null};
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
+        // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);}
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
         return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,

@@ -68,9 +68,15 @@ function providerSwitches(){
  return '<div class="s-providers"><strong>Configured providers</strong><p class="muted">Server policy determines eligible free routes; your device choices can restrict them further. Some free tiers retain prompts or use them for training; disable any provider you do not want to receive your prompts. Discovery does not prove inference capacity. Keep provider keys in Worker secrets; coding uses the authenticated gateway.</p>'+list.map(p=>{const status=providerStatus(p);return '<label class="s-provider"><input type="checkbox" data-provider="'+esc(p.id)+'" '+(!p.configured||p.enabled===false?'disabled ':'')+(p.enabled!==false&&p.configured&&!preferences.disabledProviders.includes(p.id)?'checked':'')+'> <span><b>'+esc(p.name)+'</b> · '+esc(status.kind==='available'?p.models.join(', '):status.label)+'</span></label>'}).join('')+'</div>';
 }
 function sectionPanel(title,body,desc=''){return '<section class="panel"><h3>'+title+'</h3>'+(desc?'<p class="muted">'+desc+'</p>':'')+body+'</section>';}
-function usageSummary(){return KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart(usagePeriod)});}
+// Usage leaves out models removed after the model audit: their test attempts got no reply and they are never used again.
+// Exports keep the full history.
+function shownEvents(){
+ const removed=new Set((capabilities?.providers||[]).flatMap(p=>(p.removed||[]).map(m=>p.id==='gemini'?m:p.id+':'+m)));
+ return removed.size?usageEvents.filter(e=>!e||!removed.has(e.model)):usageEvents;
+}
+function usageSummary(){return KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart(usagePeriod)});}
 function usageStats(s){return '<div class="usage-stats">'+[['Measured tokens',s.requests&&s.unknownTokens<s.requests?s.total.toLocaleString():'Unavailable'],['Provider attempts',s.requests.toLocaleString()],['Average latency',s.requests?(s.averageLatency/1000).toFixed(1)+'s':'Unavailable'],['Estimated cost',!s.requests||s.unknownCosts?'Unavailable':'$'+s.cost.toFixed(4)]].map(([l,v])=>'<div class="s-stat"><small>'+l+'</small><strong>'+v+'</strong></div>').join('')+'</div>';}
-function budgetAlert(){const s=KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
+function budgetAlert(){const s=KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
 // Usage home: today's KappaForge requests and tokens against their daily allowances, providers grouped,
 // and a drill-down to each provider and model. Allowances come from config/providers.json "limits".
 const compact=n=>{const v=Math.abs(n);return v>=1e9?+(n/1e9).toFixed(2)+'B':v>=1e6?+(n/1e6).toFixed(v%1e6?2:0)+'M':v>=1e4?+(n/1e3).toFixed(v%1e3?1:0)+'K':Number(n).toLocaleString();};
@@ -87,8 +93,10 @@ function usageModel(){
  const L=globalThis.KappaLimits,list=capabilities?.providers||[];
  if(!L||!capabilities?.limits||!list.length)return null;
  const names=Object.fromEntries(list.map(p=>[p.id,p.name])),enabled=list.filter(p=>p.enabled!==false&&p.configured!==false).map(p=>p.id);
- const rows=L.usage(usageEvents,capabilities.limits,list.map(p=>p.id),{show:enabled,routed:Object.fromEntries(list.filter(p=>Array.isArray(p.models)&&p.models.length).map(p=>[p.id,p.models]))}).filter(p=>enabled.includes(p.id)||p.used.requests);
- return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p]))};
+ const rows=L.usage(shownEvents(),capabilities.limits,list.map(p=>p.id),{show:enabled,routed:Object.fromEntries(list.filter(p=>Array.isArray(p.models)&&p.models.length).map(p=>[p.id,p.models])),hidden:Object.fromEntries(list.map(p=>[p.id,p.removed||[]]))}).filter(p=>enabled.includes(p.id)||p.used.requests);
+ return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p])),tools:Object.fromEntries(list.map(p=>[p.id,p.tools||[]])),
+  // A model with usage today that the provider no longer offers (not routed, not a tool) is labeled, not hidden: its use was real.
+  offered:(id,name)=>{const routed=list.find(p=>p.id===id)?.models;return !Array.isArray(routed)||!routed.length||routed.some(n=>n===name||L.canonical(capabilities.limits,id,n)===name);}};
 }
 function providerRow(p,names,unit='requests'){
  const byTokens=unit==='tokens'&&p.tokenLimit,left=byTokens?Math.max(0,100-pct(p.tokensOnCapped,p.tokenLimit)):p.requestLimit?Math.max(0,100-pct(p.used.requests,p.requestLimit)):null,color=PROVIDER_COLORS[p.id]||'#8e8e93';
@@ -109,7 +117,7 @@ function uUnitPicker(){const name=USAGE_UNITS.find(u=>u[0]===usageUnit)[1];
 const USAGE_PERIODS=[['day','Day','today'],['week','Week','last 7 days'],['month','Month','this month'],['year','Year','this year']];
 function periodTokens(period){
  const since=KappaCore.periodStart(period),kept=KappaCore.periodStart('day')-89*86400000;let n=0;
- for(const e of usageEvents)if(e&&e.at>=since&&Number.isFinite(e.total)&&e.total>0)n+=e.total;
+ for(const e of shownEvents())if(e&&e.at>=since&&Number.isFinite(e.total)&&e.total>0)n+=e.total;
  for(const [day,v] of Object.entries(usageDays)){const at=Date.parse(day+'T00:00:00Z');if(at>=since&&at<kept&&Number.isFinite(v?.tokens))n+=v.tokens;}
  return n;
 }
@@ -123,7 +131,7 @@ function usageHome(){
  const nextUtc=(()=>{const d=new Date();d.setUTCHours(24,0,0,0);return d.getTime();})(),resets='Resets in '+untilReset(nextUtc);
  const used=state.dailyRequests?.used||0,cap=state.dailyPolicyLimit,p=pct(used,cap)??0;
  const today=KappaCore.periodStart('day');let tokensToday=0,okToday=0,attemptsToday=0;
- for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
+ for(const e of shownEvents()){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
  const success=attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—';
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
  const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','The most the free tiers of '+esc(cappedNames.join(', '))+' allow today: published daily token caps; for models limited per minute, tokens per minute × the requests allowed per day (Gemini), or a full day of the per-minute limit where there is no daily limit (Mistral). Counts only models KappaForge routes. Larger requests reach it sooner.'):'';
@@ -150,6 +158,9 @@ function usageHome(){
  return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],uPeriodCell(),[success,'chat &amp; tasks succeeded']],true)+
   uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');
 }
+// A request that got no reply (hung, refused, rate-limited) still reached the provider but used no tokens: say so.
+function answered(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
+ return !u.requests?' · '+compact(u.tokens)+' tokens':failed===u.requests?' · none answered':(failed?' · '+compact(failed)+' failed':'')+' · '+compact(u.tokens)+' tokens';}
 function providerDetail(){
  const model=usageModel();if(!model)return usageHome();
  const back='<button class="u-back" id="usage-back">‹ Usage</button>';
@@ -161,7 +172,7 @@ function providerDetail(){
  const resets=p.dayResets==='America/Los_Angeles'?'midnight Pacific':'midnight UTC',color=PROVIDER_COLORS[p.id]||'#8e8e93';
  const head=p.requestLimit?uBarCard('Requests today',Math.round(Math.max(0,100-pct(p.used.requests,p.requestLimit)))+'% left',p.used.requests,p.requestLimit,'requests',color):'<div class="u-card"><div class="u-ttl"><strong>Requests today</strong><span>no limit set</span></div><div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests · '+compact(p.used.tokens)+' tokens</span></div></div>';
  const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),left=rpd?Math.max(0,100-rpd.percent):null;
-  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+' · '+compact(m.used.tokens)+' tokens</small>'+uMeter(rpd?rpd.percent:0,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>'+(m.limit?'per-minute limits':'no limit set'):'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
+  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(rpd?rpd.percent:0,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>'+(m.limit?'per-minute limits':'no limit set'):'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
   '<h3 class="u-hdr">Models</h3><div class="u-card u-list">'+(used.length?used.map(modelRow).join(''):'<p class="s-empty">No requests today.</p>')+(idle.length?'<details class="u-idle"><summary>'+plural(idle.length,'more model')+' · unused today</summary>'+idle.map(modelRow).join('')+'</details>':'')+'</div>'+

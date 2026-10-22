@@ -216,3 +216,14 @@ test('Gemma\'s mixture-of-experts name uses the Gemma 4 26B allowance',()=>{
  const g=L.usage([],limits,ids,{show:['gemini'],routed:{gemini:['gemma-4-26b-a4b-it','gemma-4-31b-it']}}).find(r=>r.id==='gemini');
  assert.equal(g.tokenLimit,2*16000*1440);
 });
+
+test('usage leaves out removed models entirely and counts failed attempts apart from answers',()=>{
+ const now=Date.UTC(2026,9,22,15),at=now-3600000,limits={providers:{nvidia:{scope:'provider',rpm:40}}};
+ const events=[{model:'nvidia:01-ai/yi-large',at,total:null,ok:false},{model:'nvidia:deepseek-ai/deepseek-v4.1-flash',at,total:null,ok:false},
+  {model:'nvidia:deepseek-ai/deepseek-v4.1-flash',at,total:null,ok:false},{model:'nvidia:nvidia/nemotron-3-ultra-550b-a55b',at,total:1800,ok:true}];
+ const [p]=KappaLimits.usage(events,limits,['nvidia'],{now,show:['nvidia'],hidden:{nvidia:['01-ai/yi-large']}}).filter(r=>r.id==='nvidia');
+ assert.deepEqual(p.models.map(m=>m.model).sort(),['deepseek-ai/deepseek-v4.1-flash','nvidia/nemotron-3-ultra-550b-a55b'],'a removed model is not listed');
+ assert.equal(p.used.requests,3,'and its attempts count nowhere');
+ const hung=p.models.find(m=>m.model==='deepseek-ai/deepseek-v4.1-flash').used;
+ assert.equal(hung.requests,2);assert.equal(hung.ok,0);assert.equal(hung.tokens,0,'requests without a reply use no tokens');
+});

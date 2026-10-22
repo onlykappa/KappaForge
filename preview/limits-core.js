@@ -74,7 +74,8 @@ function tokenCeiling(limit){
  return Math.min(limit.tpm*1440,Number.isFinite(limit.rpd)?limit.rpd*limit.tpm:Infinity);
 }
 // Per provider and model: today's attempts and tokens recorded by KappaForge against the configured limits.
-function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null}={}){
+// hidden: models per provider left out entirely (removed after the model audit), so their old attempts count nowhere.
+function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null,hidden=null}={}){
  const ids=[...new Set(['gemini',...providerIds])],result={};
  const providerFor=id=>result[id]??=(()=>{
   const entry=limits?.providers?.[id]||null,zone=entry?.dayResets||'UTC';
@@ -84,6 +85,7 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null}={}
  for(const e of events||[]){
   if(!e||!Number.isFinite(e.at)||e.at>now)continue;
   const split=splitLabel(e.model,ids),provider=split.provider,model=canonical(limits,provider,split.model);
+  if(hidden?.[provider]?.includes(split.model))continue;
   const p=providerFor(provider);
   if(e.at<p.since)continue;
   add(p.used,e,now);
