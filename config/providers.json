@@ -179,13 +179,15 @@
       "removedModels": [
         "nvidia/nemotron-3-super-120b-a12b:free",
         "thinkingmachines/inkling-small:free",
-        "thinkingmachines/inkling:free"
+        "thinkingmachines/inkling:free",
+        "minimax/minimax-m3.1-flash:free"
       ],
       "removedModelsReason": "Model audit 2026-10-22: 403 only available on agentic harnesses, or 404 no longer served",
       "removedWhy": {
         "nvidia/nemotron-3-super-120b-a12b:free": "Retired by the provider: 404 on OpenRouter, Kilo and NVIDIA alike",
         "thinkingmachines/inkling-small:free": "Only available inside agent tools: thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed o",
-        "thinkingmachines/inkling:free": "Only available inside agent tools: thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on"
+        "thinkingmachines/inkling:free": "Only available inside agent tools: thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on",
+        "minimax/minimax-m3.1-flash:free": "Retired by the provider: the free launch period for MiniMax M3.1 Flash ended on Oct 22, 2026 (404); only the paid version remains"
       }
     },
     "mistral": {
@@ -801,6 +803,20 @@
       "partMaxTokens": 900,
       "partTimeoutMs": 25000,
       "splitTimeoutMs": 8000
+    },
+    "premium": {
+      "provider": "openrouter",
+      "families": [
+        "deepseek",
+        "qwen3.8-coder",
+        "qwen3-coder",
+        "kimi",
+        "glm-5"
+      ],
+      "maxOutputPricePerMillion": 3,
+      "taskCapUsd": 1,
+      "monthCapUsd": 5,
+      "maxTokensPerCall": 8000
     }
   },
   "limits": {

@@ -596,7 +596,7 @@ document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.get
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
-document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
+document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true,premium:!!document.getElementById("jobpremium")?.checked});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
 }
 
 
@@ -632,7 +632,7 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
 }
 function jobApproval(){
  const brief=pendingJob.instructions.length>400?pendingJob.instructions.slice(0,399)+"…":pendingJob.instructions;
- return '<section class="panel task-approval" role="alertdialog" aria-labelledby="approvaltitle" aria-describedby="approvalbody"><span class="pill">Start this task?</span><h3 id="approvaltitle">'+esc(pendingJob.title)+'</h3><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p id="approvalbody" style="white-space:pre-wrap">'+esc(brief)+'</p><div class="approval-actions"><button class="btn" id="approvejob">Approve</button><button class="btn secondary" id="canceljob">Deny</button></div><p class="muted">Approve creates the task and starts the agent. Changes arrive as a draft pull request; nothing merges until you tap Merge.</p></section>';
+ return '<section class="panel task-approval" role="alertdialog" aria-labelledby="approvaltitle" aria-describedby="approvalbody"><span class="pill">Start this task?</span><h3 id="approvaltitle">'+esc(pendingJob.title)+'</h3><p class="muted">'+esc(pendingJob.repo)+' · '+esc(pendingJob.mode)+'</p><p id="approvalbody" style="white-space:pre-wrap">'+esc(brief)+'</p>'+(["code","develop"].includes(pendingJob.mode)?'<label class="premium-switch"><input type="checkbox" id="jobpremium"'+(pendingJob.premium?' checked':'')+'> Use premium</label><p class="muted">A stronger paid model from the start, up to $1 of your OpenRouter credit ($5 a month at most). Without it, premium steps in only after the free models fail.</p>':'')+'<div class="approval-actions"><button class="btn" id="approvejob">Approve</button><button class="btn secondary" id="canceljob">Deny</button></div><p class="muted">Approve creates the task and starts the agent. Changes arrive as a draft pull request; nothing merges until you tap Merge.</p></section>';
 }
 function jobResult(){
  if(!recentJob)return "";

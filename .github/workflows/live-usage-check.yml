@@ -20,6 +20,8 @@ on:
     - live-usage-check-provider-*
     # One-by-one audit of the models listed in tools/model-audit.txt, each with the provider's reason.
     - live-usage-check-audit
+    # The quick check plus one small premium request (64 output tokens, well under a cent of OpenRouter credit).
+    - live-usage-check-premium
 permissions:
   contents: write
 concurrency:
@@ -52,6 +54,19 @@ jobs:
           -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
           --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with the single word OK."}],"providers":["zai"],"model":"zai:glm-4.7-flash","fallback":false,"maxTokens":512}') || status=000
         jq -c --arg status "$status" '{status:($status|tonumber),route,text:(.text//null|tostring|.[0:60]),usage,code,error,failure,attempts}' "$RUNNER_TEMP/zai.json" | tee "$RUNNER_TEMP/live/zai.json" || echo "{\"status\":$status}" | tee "$RUNNER_TEMP/live/zai.json"
+    - name: One small premium request through the coding gateway
+      if: github.ref_name == 'live-usage-check-premium'
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: |-
+        set -Eeuo pipefail
+        status=$(curl -sS --max-time 190 -o "$RUNNER_TEMP/premium.json" -w '%{http_code}' \
+          -X POST "${KAPPA_ROUTER_URL%/}/router/infer" \
+          -H 'Content-Type: application/json' \
+          -H "Authorization: Bearer $KAPPA_ROUTER_TOKEN" \
+          --data '{"version":1,"channel":"coding","privateCode":true,"repo":"onlykappa/KappaForge","messages":[{"role":"user","content":"Reply with the single word OK."}],"providers":["openrouter"],"maxTokens":64,"premium":{"task":194,"mode":"now"}}') || status=000
+        jq -c --arg status "$status" '{status:($status|tonumber),route,text:(.text//null|tostring|.[0:60]),usage,premium,code,error}' "$RUNNER_TEMP/premium.json" | tee "$RUNNER_TEMP/live/premium.json" || echo "{\"status\":$status}" | tee "$RUNNER_TEMP/live/premium.json"
     - name: Open the app pages against the deployed Worker
       continue-on-error: true
       env:
@@ -61,7 +76,7 @@ jobs:
         PROBE_PROVIDER: ${{ startsWith(github.ref_name, 'live-usage-check-provider-') && github.ref_name || '' }}
         AUDIT_LIST: ${{ github.ref_name == 'live-usage-check-audit' && 'tools/model-audit.txt' || '' }}
         # One real chat message through the app, on the quick check.
-        CHAT_TEST: ${{ github.ref_name == 'live-usage-check-quick' && 'hi || Why does my python import fail with ModuleNotFoundError when I run tests? || How should I plan the long-term architecture for syncing my app across devices? || LONG:8000' || '' }}
+        CHAT_TEST: ${{ (github.ref_name == 'live-usage-check-quick' || github.ref_name == 'live-usage-check-premium') && 'hi || Why does my python import fail with ModuleNotFoundError when I run tests? || How should I plan the long-term architecture for syncing my app across devices? || LONG:8000' || '' }}
       run: |-
         set -Eeuo pipefail
         test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }

@@ -85,6 +85,19 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
    If a route can charge, remove it (or require `:free`) in `providerModels()` for providers with `freeOnly`.
 6. Update `docs/model-master-list.md`, and tell the owner the findings in plain words.
 
+### Step 2 findings (22 Oct 2026, done)
+
+- Full OpenRouter check (13 routed models): 9 answered. `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free` and
+  `xingchen-agi/xing4.0-29b-a4b:free` answered 429 "Provider returned error" (the free host's own limit): **kept**.
+  `nvidia/nemotron-3.5-lightning:free` and `poolside/laguna-xs-2.1:free` replied empty to the 64-token quick check.
+- One-by-one audit (1,024 tokens): both empty models answered "OK". They are thinking models that spend a short
+  allowance on reasoning, so they are **kept** (working). The three 429 models were still 429 upstream.
+- `minimax/minimax-m3.1-flash:free` returned 404: "The free launch period for MiniMax M3.1 Flash ended on Oct 22, 2026.
+  The `:free` variant has been retired." It is now in `removedModels`, so Usage no longer shows it.
+- The $0.00076 spend did not move across two checks that asked every routed model, including `openrouter/free`. No
+  current route charges: `freeModels()` already keeps only ids that end in `:free` or `/free` for `freeOnly` providers. The
+  spend predates this audit.
+
 ## Step 3. Premium mode: OpenRouter credits for demanding tasks, rarely, within caps
 
 **Owner's decisions (2026-10-22, final):**
@@ -143,6 +156,20 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
    - The caps are enforced in the Durable Object, so a crash or retry cannot double-spend.
    - Recommend the owner set a $5 credit limit on the OpenRouter key in OpenRouter's settings as a backstop.
 
+**As built:**
+- Both modes do the same thing at the gateway: one premium attempt **first**, then the free routes if premium is refused
+  (cap) or fails. The difference is in the engine. "now" is set on every call of a task the owner switched on. "rescue"
+  is set only once the free models have already failed the work, so asking them first again would waste the round.
+- The engine keeps the mode on the task's journal (`journal.premium`), not in a global, so it never leaks into another
+  task. Rescue fires once per task:
+  - after `MAX_CHECK_ROUNDS` as one extra fix round,
+  - after "No validated proposal" as one extra compact attempt, but not when free routes are only resting (an outage
+    with a retry time).
+- A switched-on task carries `Premium: on` in its issue body, right after `Mode:`. A `Premium:` line typed in the brief
+  is quoted, so it cannot switch premium on.
+- Live check: push to `live-usage-check-premium`. It runs the quick check plus one 64-token premium request (task 194),
+  writes `premium.json` to the results branch, and adds `summary.premium` (`/capabilities` → `premium`).
+
 **Prove it:**
 - **Unit tests:**
   - The budget refuses at the task cap and at the month cap, and the month rolls over.
@@ -163,6 +190,6 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
 ## Status
 
 - [x] 1. Usage shared-limit model rows
-- [ ] 2. OpenRouter audit (+ $0.00076 spend source)
-- [ ] 3. Premium mode
+- [x] 2. OpenRouter audit (+ $0.00076 spend source)
+- [x] 3. Premium mode (code, tests; live check on `live-usage-check-premium`)
 - [ ] 4. Finish

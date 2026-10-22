@@ -611,6 +611,18 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                 finally:
                     UNFINISHED[:] = list(dict.fromkeys(prior + UNFINISHED))
                     recovery.SPLITTING.reset(handle)
+            # The free models answered but could not produce it: one more compact attempt on premium (once per task, within
+            # its caps). Free routes that are only resting (an outage with a retry time) wait for the cooldown instead.
+            if (not getattr(last, 'provider_routes', False) and not getattr(last, 'retry_at', 0)
+                    and premium_rescue("no validated proposal after large and compact attempts")):
+                try:
+                    model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
+                                                                         guide, allowed, budget, design, require_test, allow_empty)
+                    return model, summary, mirror_ios_copies(repo, changes, existing), explanation
+                except (RuntimeError, GenerationFailure) as rescue_failure:
+                    if isinstance(rescue_failure, RecoveryBudgetExceeded) or getattr(rescue_failure, 'terminal', False):
+                        raise
+                    reason += ' | Premium rescue: ' + str(rescue_failure)[:600]
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
                                     " | Earlier large attempt: " + reason,
                                     provider_routes=getattr(last, 'provider_routes', False),
@@ -1042,6 +1054,38 @@ def _asking(model):
 
 runner_module.ON_ASK = _asking
 
+_PREMIUM_SEEN = []
+
+
+def _premium(info):
+    """One feed line per change in premium use: the model and the task's spend so far, or why it was skipped."""
+    model = info.get('model') if isinstance(info.get('model'), str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,120}', info['model']) else 'premium model'
+    money = lambda key: info[key] if isinstance(info.get(key), (int, float)) and info[key] >= 0 else None
+    if isinstance(info.get('refused'), str):
+        text = f"Premium skipped ({info['refused'][:40]}); carrying on with the free models"
+    elif isinstance(info.get('failed'), str):
+        text = f"Premium {model} did not answer ({info['failed'][:40]}); carrying on with the free models"
+    else:
+        spent, cap = money('taskUsd'), money('taskCapUsd')
+        text = f"Using premium: {model}" + (f" · ${spent:.2f} so far" if spent is not None else "") + (f" (cap ${cap:.2f})" if cap is not None else "")
+    if not _PREMIUM_SEEN or _PREMIUM_SEEN[-1] != text:
+        _PREMIUM_SEEN.append(text)
+        note("model", text)
+
+
+runner_module.ON_PREMIUM = _premium
+
+
+def premium_rescue(reason):
+    """Once the free models have failed the task, let its remaining calls use premium (the gateway's caps still apply).
+    Returns False outside a task or when premium is already on, so a rescue is tried only once."""
+    journal = recovery.CURRENT.get()
+    if journal is None or getattr(journal, 'premium', None):
+        return False
+    journal.premium = "rescue"
+    note("model", "The free models could not finish this (" + reason + "); trying premium, up to $1 of OpenRouter credit")
+    return True
+
 
 class Progress:
     """One task comment the agent edits as it works, so the owner can watch each step from chat. Best effort.
@@ -1407,8 +1451,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     journal = recovery.CURRENT.get()
     requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']} if journal else {}
     repair_failures = []
-    for round_ in range(MAX_CHECK_ROUNDS + 1):
-        progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})")
+    for round_ in range(MAX_CHECK_ROUNDS + 2):
+        progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {min(round_, MAX_CHECK_ROUNDS)} of {MAX_CHECK_ROUNDS})"
+                     if round_ <= MAX_CHECK_ROUNDS else "Checking the premium fix")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
         canonical_task = ((journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')) if journal else task
         review_task = canonical_task
@@ -1439,10 +1484,12 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
-        if not problems or round_ == MAX_CHECK_ROUNDS:
+        # After the last free round, one more round on premium (once per task, within its caps).
+        if not problems or round_ > MAX_CHECK_ROUNDS or round_ == MAX_CHECK_ROUNDS and not premium_rescue(f"{len(problems)} problems after {MAX_CHECK_ROUNDS} fix rounds"):
             break
         progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
-        progress.now(f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
+        progress.now("Fixing what the check found with premium" if round_ == MAX_CHECK_ROUNDS
+                     else f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
         # The fix sees every file the problems name, the change so far, and the files it already touched.
         named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
         current = {path: read(path) for path in (set(sources) | named)}
@@ -1524,6 +1571,8 @@ def produce_development_pr(issue, api_key, token):
     base, sha, existing, modes = snapshot(repo, repo_token)
     journal = recovery.CURRENT.get()
     if journal:
+        # The owner's "Use premium" switch, carried as "Premium: on" in the task body.
+        journal.premium = "now" if re.search(r"^Premium:\s*on\s*$", body, re.I | re.M) else None
         journal.checkpoint(sha, base=base)
         journal.loader = lambda path: read_source(repo, path, journal.state['candidate'], repo_token)
     guide = project_guide(repo, sha, existing, repo_token)

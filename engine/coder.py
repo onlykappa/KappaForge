@@ -8,6 +8,7 @@ import ast
 import json
 import re
 import urllib.error
+from engine import recovery
 from engine.runner import github, run_model
 
 ROOT = "onlykappa/KappaForge"
@@ -88,6 +89,9 @@ def produce_draft_pr(issue, api_key, token):
         raise ValueError("Coding currently permitted only in KappaForge")
     if not re.search(r"^Mode:\s*code\s*$", body, re.I | re.M):
         raise ValueError("Coding requires explicit Mode: code")
+    journal = recovery.CURRENT.get()
+    if journal:
+        journal.premium = "now" if re.search(r"^Premium:\s*on\s*$", body, re.I | re.M) else None
     number = int(issue["number"])
     branch = f"kappa/issue-{number}"
     try:

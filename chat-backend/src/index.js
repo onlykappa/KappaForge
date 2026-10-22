@@ -15,6 +15,7 @@ import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./revie
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
 import {routingStore} from "./router-state.js";
+import {premiumConfig,premiumModel,premiumStatus} from "./premium.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
@@ -277,7 +278,10 @@ export default {
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
         const ollama=providers.some(p=>p.id==="ollama"&&p.enabled)?await ollamaPlan(env).catch(()=>null):null;
         const openrouter=providers.some(p=>p.id==="openrouter"&&p.enabled)?await openrouterAccount(env).catch(()=>null):null;
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        // Premium mode: this month's paid OpenRouter spending against its caps, and the model it would use now.
+        const premiumCfg=premiumConfig(),premium=premiumCfg&&env.OPENROUTER_API_KEY&&env.MEMORY?await Promise.all([premiumStatus(env),premiumModel(env)]).then(([s,pick])=>({monthUsd:s.monthUsd||0,month:s.month,
+         monthCapUsd:premiumCfg.monthCapUsd,taskCapUsd:premiumCfg.taskCapUsd,model:pick?.model||null,outputPricePerMillion:pick?Math.round(pick.outputPrice*1e8)/100:null})).catch(()=>null):null;
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
@@ -487,7 +491,8 @@ export default {
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
-      const issueBody = taskBody(repo, mode, instructions, input.context, executionAuthorization);
+      // "Use premium" (the owner's switch at task start): coding tasks only; the gateway caps the spend.
+      const issueBody = taskBody(repo, mode, instructions, input.context, executionAuthorization, input.premium === true && ["code", "develop"].includes(mode));
       try {
         // Before a write, check the token identity and its access without mutating GitHub.
         const identityResponse = await fetch("https://api.github.com/user", { headers });

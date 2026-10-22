@@ -541,6 +541,20 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
 # Called with each model's name just before it is asked, so the task's live feed can show who is working.
 ON_ASK = None
 
+# Premium mode (one paid OpenRouter model, inside the gateway's $1 a task and $5 a month caps) is kept on the task's
+# journal: "now" for every call of a task the owner switched to premium, "rescue" for the calls made after the free
+# models already failed the task. ON_PREMIUM gets the gateway's premium summary (model, cost so far, or why it was
+# skipped) for the live feed.
+ON_PREMIUM = None
+
+
+def premium_used(info):
+    if ON_PREMIUM and isinstance(info, dict):
+        try:
+            ON_PREMIUM(info)
+        except Exception:  # Best effort, like the feed.
+            pass
+
 
 def asking(name):
     if ON_ASK:
@@ -640,6 +654,10 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     if pinned_model:
         payload["model"] = pinned_route
         payload["reasoningEffort"] = "low"
+    premium = getattr(journal, "premium", None)
+    task_number = getattr(getattr(journal, "scope", None), "number", None)
+    if premium in ("now", "rescue") and not pinned_route and type(task_number) is int and task_number > 0:
+        payload["premium"] = {"task": task_number, "mode": premium}
     encoded = json.dumps(payload).encode('utf-8')
     if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
         raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
@@ -659,6 +677,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             body = json.loads(exc.read(8192).decode('utf-8'))
         except (ValueError, UnicodeError):
             body = None
+        premium_used(body.get('premium') if isinstance(body, dict) else None)
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
@@ -698,6 +717,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
                              'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
+    premium_used(data.get('premium'))
     asking(model)
     return model, output
 
