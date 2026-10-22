@@ -85,7 +85,7 @@ const pct=(used,limit)=>limit>0?Math.round(used/limit*1000)/10:null;
 let usageView={provider:null,model:null};
 const PROVIDER_COLORS={gemini:'#0a84ff',groq:'#ff9f0a',zai:'#bf5af2',ollama:'#e5e5ea',mistral:'#ff6b35',nvidia:'#76b900',openrouter:'#ff453a','workers-ai':'#64d2ff',other:'#8e8e93'};
 const successColor=p=>p===null?'var(--text)':p>=90?'#30d158':p>=50?'#ff9f0a':'#ff453a';
-function untilReset(at){const ms=Math.max(0,at-Date.now()),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return h?h+' h '+m+' m':m+' m';}
+function untilReset(at){const ms=Math.max(0,at-Date.now()),d=Math.floor(ms/86400000),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return d>=2?d+' d '+Math.floor(ms%86400000/3600000)+' h':h?h+' h '+m+' m':m+' m';}
 function uMeter(percent,color){const p=Math.max(0,Number(percent)||0);return '<div class="u-meter" role="img" aria-label="'+p+'% used"><i style="width:'+Math.min(100,p)+'%;'+(p>0?'min-width:3px;':'')+'background:'+(p>100?'#ff453a':p>=80?'#ff9f0a':color)+'"></i></div>';}
 const PROVIDER_MARKS={groq:'Q','workers-ai':'C',openrouter:'O'};
 function uBarCard(title,right,used,limit,unit,color,note=''){const p=pct(used,limit);return '<div class="u-card"><div class="u-ttl"><strong>'+title+'</strong><span>'+right+'</span></div>'+uMeter(p,color)+'<div class="u-lim"><span><b>'+compact(used)+'</b> of '+compact(limit)+' '+unit+'</span><span>'+(p??0)+'%</span></div>'+(note?'<p class="u-note">'+note+'</p>':'')+'</div>';}
@@ -103,9 +103,12 @@ function usageModel(){
 function gaugeFor(p,m=null,unit='requests'){
  const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
  const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
- if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ // Ollama reports its monthly plan itself: the whole plan for the provider, each model's share of it for a model.
+ const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
+ const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;
+ if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
  return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
-  shared,sharedUsed:p.used,neurons,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
+  shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
 }
 const gaugeShort=g=>g.daily?'used today':/minute/.test(g.label)?'this minute':'used';
 const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
@@ -168,9 +171,11 @@ function usageHome(){
   return uHero(uRing(np,'of today used',known),known?'<b>'+compact(n.used)+'</b> / '+compact(n.limit)+' neurons':'Neurons unavailable',
    [[compact(w?.used.requests||0),'Workers AI requests'],[compact(w?.used.tokens||0),'tokens today'],[untilReset(nextUtc),'until reset']])+
    (known?uBarCard('Daily neurons',resets,n.used,n.limit,'neurons used','#64d2ff','From Cloudflare account analytics; it can lag a few minutes.'):'<div class="u-card"><p class="u-note">'+esc(n?.error||'Workers AI is not enabled on this backend.')+'</p></div>')+one('workers-ai');}
- if(usageUnit==='plan'){const o=model.byId.ollama;
-  return uHero(uRing(0,'',false),'Ollama plan usage',[[compact(o?.used.requests||0),'Ollama requests'],[compact(o?.used.tokens||0),'tokens today'],[o?plural(o.models.filter(m=>!m.unused).length,'model'):'—','used today']])+
-   '<div class="u-card"><p class="u-note">Ollama shows plan usage as a percentage on ollama.com only; it has no API for it yet, so KappaForge can’t read it. The numbers above are KappaForge’s own Ollama traffic today.</p></div>'+one('ollama');}
+ if(usageUnit==='plan'){const o=model.byId.ollama,plan=capabilities.ollamaPlan,known=Number.isFinite(plan?.percent);
+  const left=known&&Number.isFinite(plan.leftUsd)?'$'+plan.leftUsd.toFixed(2)+' of $'+plan.allowanceUsd.toFixed(2)+' left':known?(100-plan.percent)+'% of the '+plan.window+' limit left':'Ollama plan usage';
+  return uHero(uRing(known?plan.percent:0,known?(plan.window?'of the '+plan.window+' limit':'of this month used'):'',known),left,
+   [[compact(o?.used.requests||0),'Ollama requests today'],[compact(o?.used.tokens||0),'tokens today'],[known&&plan.resetsAt?untilReset(plan.resetsAt):'—','until reset']])+
+   '<div class="u-card"><p class="u-note">'+(known?'From Ollama’s own plan balance (included monthly credit, refreshed every minute).'+(plan.purchasedUsd>0?' Purchased credit left: $'+plan.purchasedUsd.toFixed(2)+'.':''):esc(plan?.error||'Ollama is not enabled on this backend.'))+'</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
  return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],uPeriodCell(),[success,'chat &amp; tasks succeeded']],true)+
   uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');

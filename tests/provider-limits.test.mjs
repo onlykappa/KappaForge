@@ -251,3 +251,9 @@ test('every model gets a usage percentage from whichever limit applies, or Maxed
  // The tokens view counts token limits only.
  assert.equal(G({limit:{rpd:20},used:used({requests:5}),unit:'tokens',now}),null);
 });
+
+test('a plan the provider reports itself (Ollama) leads the gauge and maxes it when used up',()=>{
+ const now=Date.UTC(2026,9,22);
+ let g=KappaLimits.gauge({plan:{percent:27.5,label:'of the monthly plan'},now});assert.equal(g.percent,27.5);assert.equal(g.maxed,false);
+ g=KappaLimits.gauge({plan:{percent:100,maxed:true,until:now+86400000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+86400000);
+});
