@@ -6,13 +6,15 @@ on:
   push:
     branches:
     - multi-agent-check
+    # The planner plans a three-feature task on a sample project and the project's tests run on the result.
+    - multi-agent-check-complex
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
     - uses: actions/checkout@v4
       with:
@@ -20,10 +22,14 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
     - name: Build two stages with parallel workers
       env:
         KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
         KAPPA_ROUTER_REQUIRED: 'true'
         GITHUB_TOKEN: ${{ github.token }}
+        MULTI_AGENT_SCENARIO: ${{ github.ref_name == 'multi-agent-check-complex' && 'complex' || 'simple' }}
       run: python -m tools.multi_agent_check
