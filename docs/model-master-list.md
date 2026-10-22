@@ -5,19 +5,19 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**106 kept** (92 working, 14 unavailable today), **11 specialist tools** kept but not used for chat, and **79 removed**, out of 196.
+**106 kept** (95 working, 11 unavailable today), **11 specialist tools** kept but not used for chat, and **79 removed**, out of 196.
 
 The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
 | Provider | Kept | Working | Unavailable today | Removed |
 |---|---|---|---|---|
-| Google Gemini | 12 | 9 | 3 | 2 |
+| Google Gemini | 12 | 10 | 2 | 2 |
 | Groq | 4 | 4 | 0 | 0 |
 | Mistral | 14 | 12 | 2 | 0 |
-| Cloudflare Workers AI | 23 | 22 | 1 | 11 |
+| Cloudflare Workers AI | 23 | 23 | 0 | 11 |
 | NVIDIA Build | 16 | 13 | 3 | 49 |
 | OpenRouter | 14 | 11 | 3 | 3 |
-| Kilo Code | 13 | 12 | 1 | 1 |
+| Kilo Code | 13 | 13 | 0 | 1 |
 | Ollama Cloud | 9 | 8 | 1 | 13 |
 | Z.ai | 1 | 1 | 0 | 0 |
 
@@ -36,9 +36,9 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `gemini-3.1-flash-lite-preview` | Working (after fix) | Answered on the one-by-one check |
 | `gemini-3.6-flash` | Working (after fix) | Answered on the one-by-one check |
 | `gemini-3.8-flash` | Working (after fix) | Cold start or busy: first try overloaded, answered on the second |
+| `gemma-4-31b-it` | Working (after fix) | Answered on the one-by-one check |
 | `gemini-flash-latest` | Kept: unavailable today | Provider overloaded or erroring today: kept: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later. |
 | `gemini-pro-latest` | Kept: unavailable today | Maxed out right now (rate limit): kept: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to:  To monitor your current usa |
-| `gemma-4-31b-it` | Kept: unavailable today | Provider overloaded or erroring today: kept: Internal error encountered. |
 
 ### Groq (4)
 
@@ -92,9 +92,9 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `@cf/qwen/qwq-32b` | Working | Answered the live check |
 | `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
 | `@cf/google/gemma-4-26b-a4b-it` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
+| `@cf/meta/llama-3.2-11b-vision-instruct` | Working (after fix) | Needed Meta's license accepted once (done automatically now) |
 | `@cf/qwen/qwen3-30b-a3b-fp8` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
 | `@cf/zai-org/glm-4.7-flash` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
-| `@cf/meta/llama-3.2-11b-vision-instruct` | Kept: unavailable today | Provider overloaded or erroring today: kept: 5016: Prior to using this model, you must submit the prompt 'agree'. By submitting ‘agree’, you hereby agree to the llama-3.2-11b-vision-instruct Comm |
 
 ### NVIDIA Build (16)
 
@@ -152,7 +152,7 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 | `xingchen-agi/xing4.0-29b-a4b:free` | Working | Answered the live check |
 | `kilo-auto/free` | Working (after fix) | Answered on the one-by-one check |
 | `nvidia/nemotron-3.5-lightning:free` | Working (after fix) | Thinking model: needed more room to reply (the quick check allowed 64 tokens) |
-| `poolside/laguna-xs-2.1:free` | Kept: unavailable today | Maxed out right now (rate limit): kept: Provider returned error |
+| `poolside/laguna-xs-2.1:free` | Working (after fix) | Answered on the one-by-one check |
 
 ### Ollama Cloud (9)
 
