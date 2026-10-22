@@ -1,8 +1,6 @@
-# Mistral models marked as having no quota (they refused every request on 2026-10-21/22), asked again directly, and
-# Mistral Small, which answers 429 to its first request.
-mistral:mistral-medium-latest
-mistral:magistral-medium-latest
-mistral:magistral-small-latest
-mistral:mistral-vibe-cli-latest
-mistral:labs-leanstral-1-5-1
-mistral:mistral-small-latest
+openrouter:nvidia/nemotron-3.5-lightning:free
+openrouter:poolside/laguna-xs-2.1:free
+openrouter:minimax/minimax-m3.1-flash:free
+openrouter:google/gemma-4-26b-a4b-it:free
+openrouter:google/gemma-4-31b-it:free
+openrouter:xingchen-agi/xing4.0-29b-a4b:free
