@@ -122,7 +122,7 @@ function applyShell(){
  if(view==="chat"&&phone)document.getElementById("heading").textContent=active()?.title||"New chat";
  updateTitleCollapse();
 }
-function largeTitle(){return view==="chat"?"":view==="start"?homeHeader():view==="chats"&&isPhone()?chatListHeader():'<h1 class="large-title">'+esc(SHELL_TITLES[view]||"")+'</h1>'}
+function largeTitle(){return view==="chat"||view==="settings"&&settingsSection&&settingsSection!=="usage"?"":view==="start"?homeHeader():view==="chats"&&isPhone()?chatListHeader():'<h1 class="large-title">'+esc(SHELL_TITLES[view]||"")+'</h1>'}
 function updateTitleCollapse(){
  const t=document.querySelector(".large-title");
  document.body.classList.toggle("title-collapsed",!!t&&t.getBoundingClientRect().bottom<(document.querySelector(".top")?.getBoundingClientRect().bottom||0));
