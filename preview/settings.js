@@ -98,10 +98,27 @@ function usageModel(){
   // A model with usage today that the provider no longer offers (not routed, not a tool) is labeled, not hidden: its use was real.
   offered:(id,name)=>{const routed=list.find(p=>p.id===id)?.models;return !Array.isArray(routed)||!routed.length||routed.some(n=>n===name||L.canonical(capabilities.limits,id,n)===name);}};
 }
+// How full a provider (m null) or one of its models is: today's use against the tightest limit that applies, the
+// provider's own rate-limit counters, Workers AI neurons, and "Maxed" while the router rests it at a limit.
+function gaugeFor(p,m=null,unit='requests'){
+ const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
+ const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
+ if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
+  shared,sharedUsed:p.used,neurons,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
+}
+const gaugeShort=g=>g.daily?'used today':/minute/.test(g.label)?'this minute':'used';
+const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
+// No limit known at all (none published, no counters from the provider) and never refused: open.
+function gaugeRight(g){
+ if(!g)return '<b>Open</b>no cap reported';
+ if(g.maxed)return '<b class="u-low">Maxed</b>'+(g.until?'resets in '+untilReset(g.until):'limit reached');
+ return '<b'+(g.percent>=80?' class="u-low"':'')+'>'+gaugeNumber(g.percent)+'%</b>'+gaugeShort(g);
+}
 function providerRow(p,names,unit='requests'){
- const byTokens=unit==='tokens'&&p.tokenLimit,left=byTokens?Math.max(0,100-pct(p.tokensOnCapped,p.tokenLimit)):p.requestLimit?Math.max(0,100-pct(p.used.requests,p.requestLimit)):null,color=PROVIDER_COLORS[p.id]||'#8e8e93';
+ const g=gaugeFor(p,null,unit),color=PROVIDER_COLORS[p.id]||'#8e8e93';
  const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
- return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(left===null?0:100-left,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>no limit set':'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
+ return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
 // Which allowance the Usage page counts. Each view keeps the same layout with its own unit.
 const USAGE_UNITS=[['requests','Requests'],['tokens','Tokens'],['neurons','Neurons'],['plan','Plan usage']];
@@ -170,9 +187,11 @@ function providerDetail(){
  }
  const p=model.byId[usageView.provider];if(!p){usageView={provider:null,model:null};return usageHome();}
  const resets=p.dayResets==='America/Los_Angeles'?'midnight Pacific':'midnight UTC',color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const head=p.requestLimit?uBarCard('Requests today',Math.round(Math.max(0,100-pct(p.used.requests,p.requestLimit)))+'% left',p.used.requests,p.requestLimit,'requests',color):'<div class="u-card"><div class="u-ttl"><strong>Requests today</strong><span>no limit set</span></div><div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests · '+compact(p.used.tokens)+' tokens</span></div></div>';
- const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),left=rpd?Math.max(0,100-rpd.percent):null;
-  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(rpd?rpd.percent:0,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>'+(m.limit?'per-minute limits':'no limit set'):'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
+ const pg=gaugeFor(p);
+ const head='<div class="u-card"><div class="u-ttl"><strong>Usage today</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):'no cap reported')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
+  '<div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests'+answered(p.used)+'</span></div></div>';
+ const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),g=gaugeFor(p,m);
+  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
   '<h3 class="u-hdr">Models</h3><div class="u-card u-list">'+(used.length?used.map(modelRow).join(''):'<p class="s-empty">No requests today.</p>')+(idle.length?'<details class="u-idle"><summary>'+plural(idle.length,'more model')+' · unused today</summary>'+idle.map(modelRow).join('')+'</details>':'')+'</div>'+

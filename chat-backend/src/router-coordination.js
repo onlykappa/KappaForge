@@ -14,7 +14,8 @@ function resetDeadline(value,now){
   let delay=0;for(const part of value.matchAll(/(\d+(?:\.\d+)?)(ms|[dhms])/gi))delay+=Number(part[1])*({d:86400000,h:3600000,m:60000,s:1000,ms:1})[part[2].toLowerCase()];
   return now+delay;
  }
- if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>now/1000?number*1000:now+number*1000;}
+ // A plain number is a delay in seconds, or an epoch time: in milliseconds (OpenRouter) or seconds.
+ if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>1e12?number:number>now/1000?number*1000:now+number*1000;}
  const date=Date.parse(value);return Number.isFinite(date)?date:null;
 }
 export async function accountPoolFor(env,provider,config){
@@ -84,6 +85,18 @@ export function quotaResetFromBody(route,body,now=Date.now()){
  return delay?now+Math.ceil(Number(delay))*1000:null;
 }
 
+// The provider's own counters from its rate-limit headers (x-ratelimit-limit-requests / -remaining-requests,
+// -tokens, a plain x-ratelimit-limit, …): what a model may still use, even where no limit is published.
+export function liveLimits(headers,now=Date.now()){
+ if(!headers?.forEach)return null;
+ const out={};
+ headers.forEach((value,key)=>{const m=/^x-ratelimit-(limit|remaining|reset)(?:-(.+))?$/i.exec(key);if(!m)return;
+  const name=(m[2]||"requests").toLowerCase().slice(0,40),row=out[name]??={};
+  if(m[1].toLowerCase()==="reset")row.reset=resetDeadline(String(value),now);else{const n=Number(value);if(Number.isFinite(n)&&n>=0)row[m[1].toLowerCase()]=n;}});
+ const kept=Object.entries(out).filter(([,r])=>r.limit>0&&Number.isFinite(r.remaining)).slice(0,8);
+ return kept.length?Object.fromEntries(kept.map(([k,r])=>[k,{limit:r.limit,remaining:Math.min(r.remaining,r.limit),reset:Number.isFinite(r.reset)?r.reset:null}])):null;
+}
+
 export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null,body=null}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
  // A remaining daily request allowance is not the cause of a token/minute 429.
@@ -101,6 +114,7 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,status,category,modelScoped:modelScoped(env,route.provider,status),
   full:status>=200&&status<300&&(exhausted("x-ratelimit-remaining-requests")||exhausted("x-ratelimit-remaining-tokens")),
+  live:liveLimits(headers)||undefined,
   retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
   usage:usage?{inputTokens:usage.promptTokenCount,outputTokens:usage.candidatesTokenCount,totalTokens:usage.totalTokenCount}:undefined,
   remaining:remainingHeader!==null&&remainingHeader!==undefined&&/^\d+$/.test(remainingHeader)?Number(remainingHeader):undefined,

@@ -227,3 +227,27 @@ test('usage leaves out removed models entirely and counts failed attempts apart 
  const hung=p.models.find(m=>m.model==='deepseek-ai/deepseek-v4.1-flash').used;
  assert.equal(hung.requests,2);assert.equal(hung.ok,0);assert.equal(hung.tokens,0,'requests without a reply use no tokens');
 });
+
+test('every model gets a usage percentage from whichever limit applies, or Maxed',()=>{
+ const G=KappaLimits.gauge,now=Date.UTC(2026,9,22,15),used=(o={})=>({requests:0,tokens:0,minuteRequests:0,minuteTokens:0,...o});
+ // Gemini and Groq: requests per day per model.
+ let g=G({limit:{rpd:20},used:used({requests:5}),now});assert.equal(g.percent,25);assert.equal(g.daily,true);
+ // Mistral: tokens per minute only, counted as a full day of that limit.
+ g=G({limit:{tpm:500000},used:used({tokens:72000000}),now});assert.equal(g.percent,10);assert.match(g.label,/tokens/);
+ // NVIDIA: 40 a minute shared by every model; no daily cap, so this minute leads.
+ g=G({shared:{rpm:40},sharedUsed:used({minuteRequests:10}),used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/minute/);
+ // OpenRouter: 50 a day shared.
+ g=G({shared:{rpd:50},sharedUsed:used({requests:45}),used:used(),now});assert.equal(g.percent,90);
+ // Workers AI: the account's daily neurons.
+ g=G({neurons:{used:2500,limit:10000},used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/neurons/);
+ // Ollama, Kilo, Z.ai: no published limit, but the provider's own counters from its last answer.
+ g=G({live:[{at:now-60000,limits:{requests:{limit:1000,remaining:600,reset:now+3600000}}}],now});assert.equal(g.percent,40);
+ assert.equal(G({live:[{at:now-7200000,limits:{requests:{limit:1000,remaining:600,reset:now-60000}}}],now}),null,'a counter whose window reset says nothing');
+ // Resting at a limit, or any limit used up, is maxed.
+ g=G({limit:{rpd:20},used:used({requests:3}),rest:{until:now+600000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+600000);
+ g=G({shared:{rpm:40},sharedUsed:used({minuteRequests:40}),now});assert.equal(g.maxed,true);
+ // A daily limit leads over a fuller per-minute one unless that one is used up.
+ g=G({limit:{rpd:100,rpm:10},used:used({requests:10,minuteRequests:8}),now});assert.equal(g.percent,10);
+ // The tokens view counts token limits only.
+ assert.equal(G({limit:{rpd:20},used:used({requests:5}),unit:'tokens',now}),null);
+});

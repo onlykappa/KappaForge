@@ -262,6 +262,16 @@ export default {
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
         for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);}
+        // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now
+        // (the whole account when the limit is shared), so Usage shows a live percentage and "Maxed".
+        const LIMIT=/rate_limit|limit_reached|quota|minute_tokens|concurrency/,nowMs=Date.now();
+        for(const p of providers){
+         const prefix=p.id+":",pick=o=>Object.fromEntries(Object.entries(o||{}).filter(([k])=>k.startsWith(prefix)).map(([k,v])=>[k.slice(prefix.length),v]));
+         p.live=pick(snapshot?.live);
+         p.limited=Object.fromEntries(Object.entries(pick(snapshot?.routes)).filter(([,r])=>r&&!r.blocked&&r.until>nowMs&&LIMIT.test(r.category||"")).map(([m,r])=>[m,{until:r.until,category:r.category}]));
+         const pool=Object.values(snapshot?.pools||{}).find(r=>r?.provider===p.id&&!r.blocked&&r.until>nowMs&&LIMIT.test(r.category||""));
+         p.poolLimited=pool?{until:pool.until,category:pool.category}:null;
+        }
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
         return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,

@@ -119,5 +119,37 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null,hid
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }
-root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage,tokenCeiling};
+// How full a model or provider is, as one percentage: the tightest limit that applies, whatever its unit. Daily
+// allowances (requests, tokens, Workers AI neurons, shared provider caps) lead; a per-minute limit or the provider's own
+// rate-limit counters stand in where there is no daily one. Resting at a limit right now, or any limit used up, is "maxed".
+//   limit, used: this model's (or provider's) configured limit and today's use from usage()
+//   shared, sharedUsed: a provider-wide limit and the provider's use (NVIDIA 40 a minute, OpenRouter 50 a day)
+//   neurons: {used,limit} for Workers AI; live: the provider's counters [{limits:{name:{limit,remaining,reset}},at}]
+//   rest: {until} when the router is resting it at a limit; unit: 'tokens' to count tokens only.
+function gauge({limit=null,used=null,shared=null,sharedUsed=null,neurons=null,live=[],rest=null,unit='requests',now=Date.now()}={}){
+ const out=[],add=(u,l,label,daily,kind)=>{if(l>0&&Number.isFinite(u))out.push({percent:Math.round(u/l*1000)/10,label,daily,kind});};
+ if(limit&&used){
+  add(used.requests,limit.rpd,'of today’s requests',true,'requests');
+  add(used.tokens,tokenCeiling(limit),'of today’s tokens',true,'tokens');
+  add(used.minuteRequests,limit.rpm,'this minute',false,'requests');
+  add(used.minuteTokens,limit.tpm,'of this minute’s tokens',false,'tokens');
+ }
+ if(shared&&sharedUsed){
+  add(sharedUsed.requests,shared.rpd,'of today’s shared requests',true,'requests');
+  add(sharedUsed.minuteRequests,shared.rpm,'of this minute (shared)',false,'requests');
+ }
+ if(neurons&&Number.isFinite(neurons.used))add(neurons.used,neurons.limit,'of today’s neurons (shared)',true,'tokens');
+ for(const entry of live||[])for(const [name,r] of Object.entries(entry?.limits||{})){
+  // A counter whose window has reset, or an hour old without a reset time, no longer says anything.
+  if(Number.isFinite(r.reset)?r.reset<=now:!(entry.at>now-3600000))continue;
+  add(r.limit-r.remaining,r.limit,/token/.test(name)?'of tokens (provider’s count)':'of requests (provider’s count)',/day/.test(name),/token/.test(name)?'tokens':'requests');
+ }
+ const fitting=unit==='tokens'?out.filter(x=>x.kind==='tokens'):out;
+ if(rest&&rest.until>now)return {percent:100,maxed:true,label:'resting at its limit',until:rest.until};
+ if(!fitting.length)return null;
+ const daily=fitting.filter(x=>x.daily),pool=daily.length?daily:fitting,best=pool.reduce((a,b)=>b.percent>a.percent?b:a);
+ const full=fitting.find(x=>x.percent>=100);
+ return full?{...full,maxed:true}:{...best,maxed:false};
+}
+root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage,tokenCeiling,gauge};
 })(globalThis);

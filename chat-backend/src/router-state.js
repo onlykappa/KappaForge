@@ -16,6 +16,7 @@ const clean=(state,now)=>{
  for(const [id,row] of Object.entries(state.expiredLeases))if(row.expiresAt+RETENTION_MS<=now)delete state.expiredLeases[id];
  for(const [id,row] of Object.entries(state.outcomes))if(!row||row.at+RETENTION_MS<=now)delete state.outcomes[id];
  for(const [id,row] of Object.entries(state.requests))if(!row||row.at+RETENTION_MS<=now)delete state.requests[id];
+ for(const [id,row] of Object.entries(state.live||{}))if(!row||row.at+2*86400000<=now)delete state.live[id];
 };
 async function transact(storage,operation){
  const run=async target=>{const state=await target.get(KEY)||blank();clean(state,Date.now());const result=await operation(state);await target.put(KEY,state);return result;};
@@ -33,7 +34,7 @@ function routeKey(provider,model){return provider+":"+model;}
 export async function routingStore(state,request){
  const url=new URL(request.url),storage=state.storage;
  if(request.method==="GET"&&url.pathname==="/router/status"){
-  return Response.json(await transact(storage,async data=>{const now=Date.now(),day=new Date(now).toISOString().slice(0,10),minute=Math.floor(now/60000);return {version:1,pools:data.pools,routes:data.routes,usage:data.usage,
+  return Response.json(await transact(storage,async data=>{const now=Date.now(),day=new Date(now).toISOString().slice(0,10),minute=Math.floor(now/60000);return {version:1,pools:data.pools,routes:data.routes,usage:data.usage,live:data.live||{},
    activeReservations:Object.keys(data.reservations).length,dailyRequests:{day,used:data.dailyRequests[day]||0,source:"durable-object-counter"},minuteRequests:{windowStart:minute*60000,used:data.minuteRequests[minute]||0,source:"durable-object-counter"},quotaRemaining:null,quotaSource:"unknown"}}));
  }
  if(request.method!=="POST")return Response.json({error:"Method not allowed"},{status:405});
@@ -101,7 +102,7 @@ export async function routingStore(state,request){
   return Response.json(result,{status:result.allowed?200:429});
  }
  if(url.pathname==="/router/outcome"){
-  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped,full}=input||{};
+  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped,full,live}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!Number.isInteger(status)||status<0||status>599)
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
@@ -155,6 +156,9 @@ export async function routingStore(state,request){
     target[id]={provider,model,category:category||({401:"authentication",402:"billing_blocked",403:"provider_denied",404:"model_unavailable",429:"rate_limit"}[code]||"provider_error"),
       status:code,failures:Math.min(10,(old.failures||0)+1),blocked,until:blocked?0:now+delay*1000,updatedAt:now};
    }
+   // The provider's own counters for this model, newest answer wins.
+   const validLive=live&&typeof live==="object"&&!Array.isArray(live)?Object.entries(live).slice(0,8).filter(([k,r])=>typeof k==="string"&&k.length<=40&&r&&Number.isFinite(r.limit)&&r.limit>0&&Number.isFinite(r.remaining)):[];
+   if(validLive.length){data.live ||= {};data.live[routeKey(provider,model)]={at:now,limits:Object.fromEntries(validLive.map(([k,r])=>[k,{limit:r.limit,remaining:Math.max(0,Math.min(r.remaining,r.limit)),reset:Number.isFinite(r.reset)?r.reset:null}]))};}
    data.outcomes[requestId]={at:now,status,provider,model};
    return {stored:true,duplicate:false,retryAt:Math.max(data.pools[pool]?.until||0,data.routes[route]?.until||0)||null};
   });
