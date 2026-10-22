@@ -1029,11 +1029,15 @@ def note(kind, text):
             Progress.latest.act(kind, text)
 
 
+# The step a parallel stage worker is building, so its feed lines say which worker they come from.
+WORKER = contextvars.ContextVar("worker", default=0)
+
+
 def _asking(model):
     journal = recovery.CURRENT.get()
     if journal:
         journal.model = model
-    note("model", "Asking " + model)
+    note("model", (f"Worker {WORKER.get()} · " if WORKER.get() else "") + "Asking " + model)
 
 
 runner_module.ON_ASK = _asking
@@ -1139,7 +1143,9 @@ class Progress:
         line = {"kind": kind, "text": text[:240], "at": int(getattr(self, "updated", time.time()) * 1000)}
         # Models asked one after another collapse into the latest, so a busy task doesn't push its first lines
         # ("Read 10 files", "Planned 3 steps") out of the feed.
-        if text.startswith("Asking ") and self.activity and self.activity[-1]["text"].startswith("Asking "):
+        # A parallel worker's line replaces only that same worker's.
+        asking = re.match(r"(Worker \d+ · )?Asking ", text)
+        if asking and self.activity and self.activity[-1]["text"].startswith(asking[0]):
             self.activity = self.activity[:-1]
         self.activity = self.activity + [line]
         if len(self.activity) > ACTIVITY_LINES:
@@ -1287,11 +1293,18 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         explanations.append(explanation or summary)
         return True
 
-    def attempt(i, stage, together=(), feedback=""):
+    def attempt(i, stage, together=(), feedback="", worker=False):
+        token = WORKER.set(i if worker else 0)
         try:
             return build(i, stage, together, feedback)
         except Exception as exc:  # Reported in stage order by record().
             return exc
+        finally:
+            WORKER.reset(token)
+
+    def tell(kind, text):
+        if progress:
+            progress.act(kind, text)
 
     for wave in waves(stages):
         numbers, before = [index + 1 for index in wave], dict(combined)
@@ -1306,7 +1319,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
             if progress:
                 progress.now(f"Steps {', '.join(map(str, numbers))} of {len(stages)} at the same time ({len(wave)} workers)")
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(wave)) as pool:
-                futures = {i: pool.submit(contextvars.copy_context().run, attempt, i, stages[i - 1], tuple(numbers)) for i in numbers}
+                futures = {i: pool.submit(contextvars.copy_context().run, attempt, i, stages[i - 1], tuple(numbers), "", True) for i in numbers}
                 results = {i: future.result() for i, future in futures.items()}
             touched = set()
             for i in numbers:
@@ -1316,27 +1329,31 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
                     # this stage once more on its own, on top of their work, before counting it as not done.
                     if progress:
                         progress.now(f"Step {i} of {len(stages)} could not get a free AI alongside the others; building it now on its own")
-                    outcome = attempt(i, stage)
+                    outcome = attempt(i, stage, worker=True)
                 paths = set(outcome[2]) if isinstance(outcome, tuple) else set()
+                if isinstance(outcome, tuple):
+                    tell("code", f"Worker {i} · {outcome[0]} wrote " + (short_list(sorted(paths)) if paths else "no changes"))
                 if paths & touched:
                     # Two workers edited the same file after all: redo this stage on top of what is already applied.
                     if progress:
                         progress.now(f"Step {i} of {len(stages)} overlapped another step's files; redoing it on top of that work")
-                    outcome = attempt(i, stage)
+                    outcome = attempt(i, stage, worker=True)
                     paths = set(outcome[2]) if isinstance(outcome, tuple) else set()
                 elif paths:
                     # A reviewer checks each worker's output; a problem it finds is fixed once, on top of the work so far.
                     ok, problem = review_stage(api_key, task, stage, outcome[2], current, allowed)
+                    tell("check", f"Reviewer passed worker {i}'s step" if ok else f"Reviewer sent worker {i}'s step back: {problem[:140]}")
                     if not ok:
                         if progress:
                             progress.now(f"Step {i} of {len(stages)}: the reviewer found a problem; fixing it ({problem[:120]})")
-                        redo = attempt(i, stage, feedback=problem)
+                        redo = attempt(i, stage, feedback=problem, worker=True)
                         if isinstance(redo, tuple) and redo[2]:
                             outcome, paths = redo, set(redo[2])
                 record(i, stage, outcome)
                 touched |= paths
         if checkpoint and combined != before:
             checkpoint(writer, "\n".join(summaries)[:3000], dict(combined), "\n".join(explanations)[:2000])
+            tell("git", f"Saved a checkpoint after step{'s' if len(numbers) > 1 else ''} {', '.join(map(str, numbers))}, so a restart picks up from here")
     if require_test and needs_test(combined) and not has_tests(combined):
         if progress:
             progress.now("Writing a test that proves the change works")

@@ -159,6 +159,30 @@ class ParallelBuildTests(unittest.TestCase):
         self.assertEqual(changes, {"api.py": "new\n", "ui.js": "new\n"})
         self.assertEqual(tries["ui.js"], 2)
 
+    def test_the_task_feed_shows_each_worker_its_ai_the_review_and_the_checkpoint(self):
+        def fake(api_key, step, repo, current, files, guide, allowed, design, allow_empty=False):
+            path = "api.py" if "endpoint" in step.split("Do only this stage now:")[1].split("\n")[0] else "ui.js"
+            developer._asking("model-" + path)
+            return "model-" + path, "did " + path, {path: "new\n"}, "why"
+
+        with patch.object(developer.Progress, "_write", lambda self: None):
+            progress = developer.Progress(1, "t")
+            try:
+                with patch.object(developer, "generate", side_effect=fake), \
+                        patch.object(developer, "review_stage", side_effect=lambda *a: (True, "") if "endpoint" in a[2] else (False, "no handler")):
+                    developer.build_in_stages("k", "Build", "o/r", {"api.py": "old\n", "ui.js": "old\n"}, {"api.py": 4, "ui.js": 4}, "",
+                                              None, [Stage("Add the endpoint", ["api.py"], True), Stage("Add the screen", ["ui.js"], True)],
+                                              progress=progress, checkpoint=lambda *a: None)
+            finally:
+                developer.Progress.latest = None
+        feed = [line["text"] for line in progress.activity]
+        self.assertIn("Worker 1 · Asking model-api.py", feed)
+        self.assertIn("Worker 2 · Asking model-ui.js", feed, "one worker's ask does not replace another's")
+        self.assertIn("Worker 1 · model-api.py wrote `api.py`", feed)
+        self.assertIn("Reviewer passed worker 1's step", feed)
+        self.assertIn("Reviewer sent worker 2's step back: no handler", feed)
+        self.assertTrue(any(t.startswith("Saved a checkpoint after steps 1, 2") for t in feed))
+
     def test_dependent_stages_still_run_in_order(self):
         order = []
 
