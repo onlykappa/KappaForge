@@ -312,3 +312,25 @@ test('task 191 excluded routes are never sent and all-excluded requests report u
   for(const invalid of [null,{},['bad route'],Array(161).fill('groq:x')])assert.equal((await inferenceRouter(env,{...input,excludedRoutes:invalid})).status,400);
  }finally{globalThis.fetch=original;}
 });
+
+test('model tests stop at half of a daily allowance and leave the rest for chat and tasks',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value;const store={get:async()=>structuredClone(value),put:async(k,n)=>{value=structuredClone(n)}};
+ const day=Date.UTC(2026,9,22),quota={key:'openrouter:*',day,dayEnd:day+86400000,tokens:10,rpd:4};
+ const reserve=async(n,testShare)=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({requestId:('share-'+n).padEnd(32,'0'),provider:'openrouter',model:'m'+n,accountPool:'openrouter',quotaPool:'openrouter',quotaScope:'account',maxConcurrent:8,leaseMs:120000,quota,testShare})}))).json();
+ assert.equal((await reserve('a',0.5)).allowed,true);assert.equal((await reserve('b',0.5)).allowed,true);
+ const third=await reserve('c',0.5);assert.equal(third.allowed,false);assert.equal(third.reason,'test_budget','a test may not take the third of four');
+ assert.equal((await reserve('d')).allowed,true,'chat still may');
+ assert.equal((await reserve('e')).allowed,true);assert.equal((await reserve('f')).reason,'daily_quota');
+});
+
+test('an audit asks a model the limits mark as having no quota, so the provider says whether it still refuses',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ const {reserveProvider}=await import('../chat-backend/src/router-coordination.js');
+ let value;const store={get:async()=>structuredClone(value),put:async(k,n)=>{value=structuredClone(n)}};
+ const env={MISTRAL_API_KEY:'k',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore({storage:store},new Request(u,o))})}};
+ const route={provider:'mistral',model:'magistral-medium-latest'};
+ assert.equal((await reserveProvider(env,route,'recheck-a'.padEnd(32,'0'))).allowed,false,'routing never sends it');
+ assert.equal((await reserveProvider(env,route,'recheck-b'.padEnd(32,'0'),{recheck:true})).allowed,true,'an audit asks it');
+});

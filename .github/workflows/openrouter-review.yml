@@ -1,0 +1,28 @@
+name: OpenRouter free-model review
+run-name: OpenRouter free-model review on ${{ github.ref_name }}
+# Every free OpenRouter model: OpenRouter's own limits, its upstream providers, and one free request with the upstream
+# error when it fails. Free models only; nothing priced is asked. Runs when the branch is pushed to openrouter-review.
+on:
+  push:
+    branches:
+    - openrouter-review
+permissions:
+  contents: read
+concurrency:
+  group: openrouter-review
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Review every free OpenRouter model
+      env:
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      run: node tools/openrouter-review.mjs

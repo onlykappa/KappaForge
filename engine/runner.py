@@ -541,6 +541,56 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
 # Called with each model's name just before it is asked, so the task's live feed can show who is working.
 ON_ASK = None
 
+# Premium rescue (one paid OpenRouter request for a blocked task step; the gateway decides whether it is allowed and
+# enforces the caps). A step that wants one sets journal.premium_request; the next gateway call takes it, asks for a
+# quote first, and is sent as the rescue only if the quote is eligible. Every later call is free. ON_PREMIUM gets the
+# gateway's premium summary (the quote, the recommendation when Premium Mode is off, or the result) for the live feed.
+ON_PREMIUM = None
+
+
+class PremiumNotUsed(RuntimeError):
+    """The gateway did not allow the rescue (Premium Mode off, not enough free evidence, a cap, unverifiable prices).
+    Nothing was sent or charged; the step stays with the free models."""
+    terminal = True
+
+    def __init__(self, info):
+        super().__init__('Premium rescue not used: ' + str(info.get('refused') or 'not eligible')[:60])
+        self.info = info
+
+
+def premium_used(info):
+    if ON_PREMIUM and isinstance(info, dict):
+        try:
+            ON_PREMIUM(info)
+        except Exception:  # Best effort, like the feed.
+            pass
+
+
+def _router_post(path, payload, timeout=30):
+    """A small JSON POST to the gateway with the runner credential. Returns (status, body dict) and never raises."""
+    endpoint = os.environ.get('KAPPA_ROUTER_URL', '').strip().rstrip('/')
+    token = os.environ.get('KAPPA_ROUTER_TOKEN', '')
+    if not endpoint or len(token) < 32:
+        return 0, {}
+    request = urllib.request.Request(endpoint + path, json.dumps(payload).encode('utf-8'), {
+        "Content-Type": "application/json", "Authorization": "Bearer " + token,
+        "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, json.loads(response.read(65536) or b'{}')
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read(65536) or b'{}')
+        except ValueError:
+            return exc.code, {}
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return 0, {}
+
+
+def premium_outcome(task, step, outcome):
+    """Whether a rescue solved its step, as the task's free re-check found."""
+    _router_post('/router/premium-outcome', {'task': task, 'step': step, 'outcome': outcome})
+
 
 def asking(name):
     if ON_ASK:
@@ -646,6 +696,19 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     if pinned_model:
         payload["model"] = pinned_route
         payload["reasoningEffort"] = "low"
+    task_number = getattr(getattr(journal, "scope", None), "number", None)
+    if type(task_number) is int and task_number > 0:
+        payload["task"] = task_number  # Free answers on a task are the evidence a premium rescue needs.
+    rescue = getattr(journal, "premium_request", None) if not pinned_route else None
+    if rescue and "task" in payload:
+        journal.premium_request = None  # One rescue call per step: every later call is free.
+        premium = {"task": task_number, "step": rescue["step"], "reason": rescue["reason"]}
+        status, body = _router_post("/router/infer", {**payload, "requestId": str(uuid.uuid4()), "premium": {**premium, "quote": True}})
+        quote = body.get("premium") if isinstance(body.get("premium"), dict) else {"refused": "premium_state_unavailable"}
+        premium_used(quote)
+        if status != 200 or not quote.get("eligible"):
+            raise PremiumNotUsed(quote)
+        payload["premium"] = premium
     encoded = json.dumps(payload).encode('utf-8')
     if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
         raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
@@ -665,6 +728,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             body = json.loads(exc.read(8192).decode('utf-8'))
         except (ValueError, UnicodeError):
             body = None
+        premium_used(body.get('premium') if isinstance(body, dict) else None)
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
@@ -706,6 +770,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
                              'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
+    premium_used(data.get('premium'))
     asking(model)
     return model, output
 

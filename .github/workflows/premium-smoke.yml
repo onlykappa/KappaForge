@@ -1,0 +1,28 @@
+name: Premium smoke test
+run-name: Premium smoke test (cap $0.10) on ${{ github.ref_name }}
+# One real premium rescue through this checkout's premium code, capped at $0.10 with a throwaway in-memory budget.
+# Runs only when the owner approves a paid test and the branch is pushed to premium-smoke-test.
+on:
+  push:
+    branches:
+    - premium-smoke-test
+permissions:
+  contents: read
+concurrency:
+  group: premium-smoke
+  cancel-in-progress: false
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: One premium rescue, at most $0.10
+      env:
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      run: node tools/premium-smoke.mjs

@@ -1,6 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
-import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
+import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,freeModelId} from "./providers.js";
+import {fullCatalog} from "./routing-policy.js";
 import {reserveProvider,reportProviderOutcome,estimateTokens} from "./router-coordination.js";
 
 // Owner-requested model check: one short message to each chat model KappaForge can route, in batches so a
@@ -9,6 +10,8 @@ import {reserveProvider,reportProviderOutcome,estimateTokens} from "./router-coo
 // Probes do not consume the KappaForge daily request cap; provider reservations still apply.
 const PROMPT="Reply with the single word OK.";
 const MAX_BATCH=8,TIMEOUT_MS=25000,MAX_WAIT_MS=20000;
+// A model check never takes a model or provider past half of its daily request allowance.
+const TEST_SHARE=0.5;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Spacing between this check's own calls to one provider, from its per-second cap (Mistral allows about one).
 const spacingMs=route=>{const l=globalThis.KappaLimits?.limitFor(registry.limits,route.provider,route.model)||{};return Number.isFinite(l.rps)&&l.rps>0?Math.ceil(1000/l.rps):0;};
@@ -33,10 +36,10 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
   // A short shared cooldown (a provider's per-minute limit) is waited out once rather than reported, so the
   // check measures the model instead of its own pace.
   try{
-   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});
-   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}
+   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});
+   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});}
   }catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
-  if(!reserved.allowed){results.push({...row,outcome:"cooling_down",detail:reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
+  if(!reserved.allowed){results.push({...row,outcome:reserved.reason==="test_budget"?"saved_for_chat":"cooling_down",detail:reserved.reason==="test_budget"?"Not tested: half of today's "+reserved.limit+" requests are already used, and the rest is kept for chat and tasks":reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
   const gap=(lastCall[route.provider]||0)+spacingMs(route)-Date.now();if(gap>0)await sleep(gap);lastCall[route.provider]=Date.now();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
   let response=null,result=null,status=0,category="",errorBody=null;
@@ -44,7 +47,8 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
    response=route.provider==="gemini"
     ?await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",signal:controller.signal,
       headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:PROMPT}]}],generationConfig:{maxOutputTokens:256,temperature:0}})})
-    :await callProvider(env,route,{system:"Answer briefly.",messages:[{role:"user",content:PROMPT}],maxTokens:64,temperature:0,hasMedia:false,hasTools:false,responseFormat:null},false,controller.signal);
+    // Thinking models spend their first tokens reasoning (79 before "OK" on nemotron-3.5-lightning): 64 read as an empty reply.
+    :await callProvider(env,route,{system:"Answer briefly.",messages:[{role:"user",content:PROMPT}],maxTokens:512,temperature:0,hasMedia:false,hasTools:false,responseFormat:null},false,controller.signal);
    status=response.status;
    if(response.ok){
     const data=await response.json();
@@ -73,11 +77,12 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
 // it on hidden reasoning. A hang or server error is asked a second time at once: answering then means it was
 // starting up (a cold start), not broken.
 const AUDIT_TIMEOUT_MS=90000,AUDIT_TOKENS=1024;
-async function auditOnce(env,route){
+async function auditOnce(env,route,waited=false){
  const requestId=crypto.randomUUID(),started=Date.now(),row={status:null,outcome:"error",latencyMs:null,detail:null,reply:null,finish:null,reasoningChars:0};
- let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}catch{return {...row,outcome:"coordination_unavailable"};}
- if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route);}
- if(!reserved.allowed)return {...row,outcome:"limit_reached",detail:reserved.reason||null};
+ let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE,recheck:true});}catch{return {...row,outcome:"coordination_unavailable"};}
+ // A per-minute limit is waited out once; a second refusal is reported rather than waited on again.
+ if(!reserved.allowed&&!waited&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route,true);}
+ if(!reserved.allowed)return {...row,outcome:reserved.reason==="test_budget"?"saved_for_chat":"limit_reached",detail:reserved.reason||null};
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),AUDIT_TIMEOUT_MS);
  let response=null,status=0,category="",errorBody=null,usage=null;
  try{
@@ -119,7 +124,19 @@ export async function auditModels(env,labels){
   if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"||first.outcome==="empty_response"){await sleep(3000);tries.push(await auditOnce(env,route));}
   results.push({label,provider:route.provider,model:route.model,tries});
  }
- for(const label of labels)if(!results.some(r=>r.label===label))results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});
+ // A model the provider's list leaves out (its limits page names it, say) is asked by name all the same, so the audit
+ // shows whether the API serves it; listed:false marks it.
+ for(const label of labels){
+  if(results.some(r=>r.label===label))continue;
+  const i=label.indexOf(":"),provider=i>0?label.slice(0,i):"",model=label.slice(i+1),p=registry.providers[provider];
+  if(!p||provider==="gemini"||!/^[A-Za-z0-9@._:/-]{1,180}$/.test(model)||!(env[p.key]||p.keyOptional||!p.key)){results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});continue;}
+  // Never ask a model that could charge: an unlisted name on a free-model gateway must be a free variant, and a metered
+  // provider needs the owner's paid opt-in, as in routing.
+  if(p.freeOnly&&!freeModelId(model)||p.metered&&!fullCatalog(env,provider)){results.push({label,tries:[],outcome:"not_asked",detail:"Not a free model: an audit never sends a request that could be charged"});continue;}
+  const route={provider,model,label},first=await auditOnce(env,route),tries=[first];
+  if(first.outcome==="timeout"||first.outcome==="provider_error"||first.outcome==="network_failure"){await sleep(3000);tries.push(await auditOnce(env,route));}
+  results.push({label,provider,model,listed:false,tries});
+ }
  return {results};
 }
 

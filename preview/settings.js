@@ -105,26 +105,38 @@ function usageModel(){
 // provider's own rate-limit counters, Workers AI neurons, and "Maxed" while the router rests it at a limit.
 function gaugeFor(p,m=null,unit='requests'){
  const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
- const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
+ // OpenRouter's daily free-model allowance follows the account itself: 50 a day on the free tier, 1,000 once credits are bought.
+ const orDaily=p.id==='openrouter'?capabilities?.openrouterAccount?.dailyFreeLimit:null;
+ const shared=p.scope==='provider'?(orDaily?{...p.limit,rpd:orDaily}:p.limit):null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
  // Ollama reports its monthly plan itself: the whole plan for the provider, each model's share of it for a model.
  const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
  const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;
- if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,sharedScope:'model',neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ // A provider with no allowance of its own beyond per-model per-minute limits (Mistral) is as full as its fullest model;
+ // a daily token figure worked out from those per-minute limits would always read near zero.
+ if(!p.requestLimit&&!shared&&!neurons&&!plan){
+  const all=(p.models||[]).filter(x=>!x.unused).map(x=>gaugeFor(p,x,unit)).filter(Boolean);
+  if(all.length)return all.reduce((a,b)=>b.maxed&&!a.maxed||b.maxed===a.maxed&&b.percent>a.percent?b:a);
+ }
  return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
   shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
 }
 const gaugeShort=g=>g.daily?'used today':/busiest minute/.test(g.label)?'peak minute':/minute/.test(g.label)?'this minute':'used';
 const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
 // No limit known at all (none published, no counters from the provider) and never refused: open.
-function gaugeRight(g){
- if(!g)return '<b>Open</b>no cap reported';
+function gaugeRight(g,unit='requests'){
+ if(!g)return '<b>Open</b>'+(unit==='tokens'?'no daily token cap':unit==='requests'?'no daily request cap':'no cap reported');
  if(g.maxed)return '<b class="u-low">Maxed</b>'+(g.until?'resets in '+untilReset(g.until):'limit reached');
  return '<b'+(g.percent>=80?' class="u-low"':'')+'>'+gaugeNumber(g.percent)+'%</b>'+gaugeShort(g);
 }
+// The row's figures follow the view: requests (and how many failed) in Requests, tokens in Tokens.
+const rowUnit=unit=>unit==='tokens'?'tokens':'requests';
+const requestFigure=(used,limit)=>(limit?compact(used.requests)+' of '+compact(limit)+' requests':plural(used.requests,'request'))+failures(used);
+const tokenFigure=(tokens,limit)=>limit?compact(tokens)+' of '+compact(limit)+' tokens':compact(tokens)+' tokens';
 function providerRow(p,names,unit='requests'){
  const g=gaugeFor(p,null,unit),color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
- return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
+ const detail=rowUnit(unit)==='tokens'?tokenFigure(p.tokenLimit?p.tokensOnCapped:p.used.tokens,p.tokenLimit):requestFigure(p.used,p.requestLimit);
+ return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g,unit)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
 // Which allowance the Usage page counts. Each view keeps the same layout with its own unit.
 const USAGE_UNITS=[['requests','Requests'],['tokens','Tokens'],['neurons','Neurons'],['plan','Plan usage']];
@@ -148,6 +160,41 @@ function uPeriodCell(){const p=USAGE_PERIODS.find(x=>x[0]===usagePeriod)||USAGE_
 function uPeriodSwitch(){return '<div class="u-seg" role="radiogroup" aria-label="Token period">'+USAGE_PERIODS.map(([id,label])=>'<button role="radio" aria-checked="'+(id===usagePeriod)+'" data-period="'+id+'">'+label+'</button>').join('')+'</div>';}
 function uTri(cells){return '<div class="u-tri">'+cells.map(([v,l])=>'<div><b>'+v+'</b><small>'+l+'</small></div>').join('')+'</div>';}
 function uHero(ring,count,cells,period=false){return '<div class="u-card u-hero">'+uUnitPicker()+ring+'<div class="u-hero-count">'+count+'</div>'+uTri(cells)+(period?uPeriodSwitch():'')+'</div>';}
+// Premium rescue. Settings → AI Models holds the owner's switch (off by default; the backend stores and enforces it).
+const PREMIUM_STEPS={check:'fixing what the check found',proposal:'writing a change that passes validation'};
+const PREMIUM_REASONS={check_rounds_exhausted:'free fix rounds used up with problems still open',no_validated_proposal:'no free model produced a change that passes validation'};
+const usd=v=>Number.isFinite(v)?'$'+(v>0&&v<0.1?v.toFixed(4):v.toFixed(2)):'—';
+function premiumModeField(){
+ const m=capabilities?.premium;if(!m||m.error)return m?.error?sf('Premium Mode','<span class="muted">Unavailable</span>',esc(m.error)):'';
+ return sf('Premium Mode','<label><input type="checkbox" id="premium-mode"'+(m.enabled?' checked':'')+(m.configured?'':' disabled')+'> '+(m.enabled?'On':'Off')+'</label>',
+  'Allow OpenRouter credits only when free routes cannot complete a task. Free models are always tried first. At most '+usd(m.taskCapUsd)+' a task and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests never use it.'+
+  ' Turning it off stops every rescue not yet sent; a request already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
+}
+function premiumCard(){
+ const m=capabilities?.premium;if(!m||m.error||!Number.isFinite(m.monthCapUsd))return '';
+ const p=Math.min(100,Math.round((m.monthUsd||0)/m.monthCapUsd*1000)/10);
+ const offers=(m.offers||[]).map(o=>'<div class="u-offer"><p><strong>Premium rescue recommended · task #'+o.task+'</strong><br>Blocked at '+esc(PREMIUM_STEPS[o.step]||o.step)+': '+esc(PREMIUM_REASONS[o.reason]||'the free models could not finish it')+'. '+
+  (o.model?esc(o.model)+' would cost at most '+usd(o.maxUsd)+'. ':'')+'Budget left: '+usd(o.taskLeftUsd)+' for this task, '+usd(o.monthLeftUsd)+' this month. '+
+  (o.freeMayRecover?'Free capacity may recover after a cooldown, so waiting may also work. ':'The free models answered but could not finish it, so waiting alone is unlikely to help. ')+'A paid model may still not solve it.'+(o.approvedAt?' <em>One rescue approved: retry the task to use it.</em>':'')+'</p>'+
+  '<div class="settings-actions"><button class="btn" data-premium-allow="'+o.task+':'+esc(o.step)+'">Allow one rescue</button><button class="btn secondary" data-premium-enable="'+o.task+':'+esc(o.step)+'">Enable Premium Mode</button><button class="btn secondary" data-premium-dismiss="'+o.task+':'+esc(o.step)+'">Keep using free</button></div></div>').join('');
+ const outcome={solved:'solved the step',not_solved:'did not solve the step',failed:'failed',pending:'result pending'};
+ const history=(m.history||[]).slice(0,10).map(h=>'<li><strong>Task #'+h.task+'</strong> · '+esc(PREMIUM_STEPS[h.step]||h.step)+' · '+esc(h.model||'—')+'<br><small>'+esc(PREMIUM_REASONS[h.reason]||h.reason||'')+' · up to '+usd(h.estimateUsd)+' · '+
+  (h.billing==='confirmed'?'charged '+usd(h.usd):h.billing==='unresolved'?'charge unknown, counted at '+usd(h.estimateUsd):'reserved')+' · '+esc(outcome[h.outcome]||h.outcome)+' · '+new Date(h.at).toLocaleDateString()+'</small></li>').join('');
+ return '<h3 class="u-hdr">Premium rescue</h3><div class="u-card"><div class="u-ttl"><strong>Premium Mode '+(m.enabled?'on':'off')+'</strong><span>Resets in '+untilReset(m.resetsAt)+'</span></div>'+uMeter(p,'#ff9f0a')+
+  '<div class="u-lim"><span><b>'+usd(m.monthUsd)+'</b> of '+usd(m.monthCapUsd)+' this month</span><span>'+(p>=100?'Maxed':p+'%')+'</span></div>'+
+  '<p class="u-note">Confirmed '+usd(m.confirmedUsd)+' · reserved '+usd(m.reservedUsd)+' · unresolved '+usd(m.unresolvedUsd)+' (counted at its maximum until OpenRouter reports it) · '+usd(m.monthLeftUsd)+' left · up to '+usd(m.taskCapUsd)+' a task.'+
+  (m.lastRescue?' Last rescue: task #'+m.lastRescue.task+', '+esc(outcome[m.lastRescue.outcome]||m.lastRescue.outcome)+'.':' No rescues yet.')+'</p>'+offers+(history?'<ul class="u-history">'+history+'</ul>':'')+'</div>';
+}
+async function premiumAction(kind,key){
+ const [task,step]=[Number(key.split(':')[0]),key.split(':').slice(1).join(':')];
+ if(kind==='enable'){if(!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.'))return;
+  await settingsAPI('/premium',{action:'set',enabled:true});}
+ if(kind==='allow'){if(!confirm('Allow one premium rescue for task #'+task+'? It is used once, for this step only, within 24 hours.'))return;
+  await settingsAPI('/premium',{action:'approve',task,step});}
+ if(kind==='dismiss')await settingsAPI('/premium',{action:'dismiss',task,step});
+ await refreshIntelligence(false);
+ if(kind!=='dismiss'){if(typeof taskRetry==='function'&&trackedJobs.some(j=>j.number===task))await taskRetry(task);else toast('Retry task #'+task+' to use the rescue.');}
+}
 function usageHome(){
  const model=usageModel(),state=capabilities?.routingState;
  if(!model||!state)return '<div class="u-card"><p class="s-empty">Tap Refresh to load today’s usage and limits from your backend.</p></div>';
@@ -166,7 +213,7 @@ function usageHome(){
  // Tokens view: every provider ranked by tokens, measured against its token allowance where one is published.
  const byTokens=[...model.rows].sort((a,b)=>b.used.tokens-a.used.tokens||(b.tokenLimit?1:0)-(a.tokenLimit?1:0)).filter((r,i)=>i<4||r.used.tokens);
  const tokenProviders='<h3 class="u-hdr">Tokens by provider today</h3><div class="u-card u-list">'+byTokens.map(r=>providerRow(r,model.names,'tokens')).join('')+'</div>';
- const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names)+'</div>':'';
+ const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names,usageUnit)+'</div>':'';
  if(usageUnit==='tokens'){const tp=pct(tokensCapped,tokenLimit);
   return uHero(uRing(tp??0,'of today used',tp!==null),tokenLimit?'<b>'+compact(tokensCapped)+'</b> / '+compact(tokenLimit)+' tokens':'<b>'+compact(tokensToday)+'</b> tokens today',
    [[compact(tokensToday),'tokens today'],uPeriodCell(),[attemptsToday?compact(Math.round(tokensToday/attemptsToday)):'—','per request']],true)+tokenBar+tokenProviders;}
@@ -180,26 +227,32 @@ function usageHome(){
    [[compact(o?.used.requests||0),'Ollama requests today'],[compact(o?.used.tokens||0),'tokens today'],[known&&plan.resetsAt?untilReset(plan.resetsAt):'—','until reset']])+
    '<div class="u-card"><p class="u-note">'+(known?'From Ollama’s own plan balance (included monthly credit, refreshed every minute).'+(plan.purchasedUsd>0?' Purchased credit left: $'+plan.purchasedUsd.toFixed(2)+'.':''):esc(plan?.error||'Ollama is not enabled on this backend.'))+'</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
- return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],uPeriodCell(),[success,'chat &amp; tasks succeeded']],true)+
-  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');
+ // Requests only here; Tokens has its own view.
+ return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(attemptsToday),'chat &amp; task requests'],[compact(minute),'this minute'],[success,'succeeded']])+
+  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158')+premiumCard();
 }
-// A request that got no reply (hung, refused, rate-limited) still reached the provider but used no tokens: say so.
-function answered(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
- return !u.requests?' · '+compact(u.tokens)+' tokens':failed===u.requests?' · none answered':(failed?' · '+compact(failed)+' failed':'')+' · '+compact(u.tokens)+' tokens';}
+// A request that got no reply (hung, refused, rate-limited) still reached the provider: say how many, in Requests.
+function failures(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
+ return !u.requests||!failed?'':failed===u.requests?' · none answered':' · '+compact(failed)+' failed';}
 function providerDetail(){
  const model=usageModel();if(!model)return usageHome();
+ const unit=rowUnit(usageUnit);
  const back='<button class="u-back" id="usage-back">‹ Usage</button>';
  if(usageView.provider==='other'){
   const sorted=[...model.rows].sort((a,b)=>b.used.requests-a.used.requests||(b.requestLimit?1:0)-(a.requestLimit?1:0)).slice(4);
-  return back+'<h3 class="u-title">Other providers</h3><div class="u-card u-list">'+sorted.map(r=>providerRow(r,model.names)).join('')+'</div>';
+  return back+'<h3 class="u-title">Other providers</h3><div class="u-card u-list">'+sorted.map(r=>providerRow(r,model.names,unit)).join('')+'</div>';
  }
  const p=model.byId[usageView.provider];if(!p){usageView={provider:null,model:null};return usageHome();}
  const resets=p.dayResets==='America/Los_Angeles'?'midnight Pacific':'midnight UTC',color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const pg=gaugeFor(p);
- const head='<div class="u-card"><div class="u-ttl"><strong>Usage today</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):'no cap reported')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
-  '<div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests'+answered(p.used)+'</span></div></div>';
- const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),g=gaugeFor(p,m);
-  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
+ const pg=gaugeFor(p,null,unit);
+ const head='<div class="u-card"><div class="u-ttl"><strong>'+(unit==='tokens'?'Tokens today':'Requests today')+'</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):unit==='tokens'?'no daily token cap':'no daily request cap')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
+  '<div class="u-lim"><span>'+(unit==='tokens'?'<b>'+tokenFigure(p.tokenLimit?p.tokensOnCapped:p.used.tokens,p.tokenLimit)+'</b>':'<b>'+requestFigure(p.used,p.requestLimit)+'</b>')+'</span></div></div>';
+ const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),tpd=m.pairs.find(x=>x.key==='tpd'),g=gaugeFor(p,m,unit);
+  // With no daily token cap (OpenRouter), the model's own per-request limits are the real token values to show.
+  const own=!tpd&&(capabilities?.providers||[]).find(x=>x.id===p.id)?.modelLimits?.[m.model];
+  const perRequest=own?' · up to '+[own.context&&compact(own.context)+' in',own.maxOutput&&compact(own.maxOutput)+' out'].filter(Boolean).join(', ')+' per request':'';
+  const figure=unit==='tokens'?tokenFigure(tpd?tpd.used:m.used.tokens,tpd?.limit)+perRequest:rpd?requestFigure({...m.used,requests:rpd.used},rpd.limit):requestFigure(m.used,null);
+  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+figure+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g,unit)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
   '<h3 class="u-hdr">Models</h3><div class="u-card u-list">'+(used.length?used.map(modelRow).join(''):'<p class="s-empty">No requests today.</p>')+(idle.length?'<details class="u-idle"><summary>'+plural(idle.length,'more model')+' · unused today</summary>'+idle.map(modelRow).join('')+'</details>':'')+'</div>'+
@@ -222,7 +275,7 @@ function modelDetail(){
 }
 // Model check: one short message to every routable chat model, run in batches by the backend.
 let probe={running:false,total:null,results:[],error:'',at:0};
-const PROBE_LABELS={answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
+const PROBE_LABELS={saved_for_chat:'Skipped: daily limit kept for chat',answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
 function probePanel(){
  const answered=probe.results.filter(r=>r.outcome==='answered'),tokens=answered.reduce((n,r)=>n+(Number(r.tokens)||0),0);
  const status=probe.running?'Testing '+probe.results.length+' of '+(probe.total??'…')+' models…':probe.total!==null?answered.length+' of '+probe.total+' models answered · '+tokens.toLocaleString()+' tokens · '+new Date(probe.at).toLocaleTimeString():'Not run yet.';
@@ -281,7 +334,7 @@ function settingsHome(){
 function renderSettings(){
  const section=settingSections.find(s=>s[0]===settingsSection);if(!section)return settingsHome();let body='';
  if(settingsSection==='overview')body=sectionPanel('Your assistant',sf('AI connection',sb('settingsconnect',backend&&access?'Manage connection':'Connect AI'),capabilities?'Verified backend configuration':backend&&access?'Credentials saved on this device. Run diagnostics to verify.':'Not configured')+sf('Active model',esc(preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model))+sf('Synchronization',esc(syncBusy?'In progress':vaultPassphrase?'Enabled on this device':'Not enabled'),lastSyncAt?'Last successful sync: '+new Date(lastSyncAt).toLocaleString():'Enable the same vault passphrase separately on each device.')+sf('App health',esc(navigator.onLine?'Online':'Offline'),APP_VERSION+' · '+(window.webkit?.messageHandlers?.kappa?'Installed iOS':'Web deployment'))+sb('s-refresh','Verify connection & refresh',false))+usageStats(usageSummary())+budgetAlert();
- if(settingsSection==='models')body=sectionPanel('Model manager',sf('Primary provider','Gemini',capabilities?'Live discovery checked with your backend key.':'Availability has not been verified.')+ss('model','Preferred model',[['auto','Automatic'],...(capabilities?.models||[]).map(m=>[m,m]),...(capabilities?.providers||[]).flatMap(p=>p.models.map(m=>[p.id+':'+m,p.name+' · '+m])),...(!capabilities?.models?.includes(preferences.model)&&!(capabilities?.providers||[]).some(p=>p.models.some(m=>p.id+':'+m===preferences.model))&&preferences.model!=='auto'?[[preferences.model,preferences.model+' · unverified']]:[])])+ss('routing','Automatic route',[['balanced','Balanced · complex tasks favor full Flash'],['speed','Speed · Flash Lite first'],['cost','Cost preference · Flash Lite first'],['quality','Quality · full Flash first']])+ss('reasoning','Response detail',[['concise','Concise'],['standard','Standard'],['thorough','Thorough']])+sf('Fallback','<label><input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'> Try other models and providers when one is busy or out of quota</label>','Each model is tried at most once per request. Files and images always use Gemini.')+sf('Tasks','<label><input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'> Start tasks as soon as you ask for work in chat</label>','When off, you approve each task first. Tasks are always draft PRs; nothing merges until you tap Merge.')+providerSwitches()+sb('s-refresh','Refresh available models',false),'Only approved models returned by the configured backend are offered. Cost routing uses a Lite preference; live cost comparisons are unavailable without verified pricing. Provider quota: unavailable.')+probePanel();
+ if(settingsSection==='models')body=sectionPanel('Model manager',sf('Primary provider','Gemini',capabilities?'Live discovery checked with your backend key.':'Availability has not been verified.')+ss('model','Preferred model',[['auto','Automatic'],...(capabilities?.models||[]).map(m=>[m,m]),...(capabilities?.providers||[]).flatMap(p=>p.models.map(m=>[p.id+':'+m,p.name+' · '+m])),...(!capabilities?.models?.includes(preferences.model)&&!(capabilities?.providers||[]).some(p=>p.models.some(m=>p.id+':'+m===preferences.model))&&preferences.model!=='auto'?[[preferences.model,preferences.model+' · unverified']]:[])])+ss('routing','Automatic route',[['balanced','Balanced · complex tasks favor full Flash'],['speed','Speed · Flash Lite first'],['cost','Cost preference · Flash Lite first'],['quality','Quality · full Flash first']])+ss('reasoning','Response detail',[['concise','Concise'],['standard','Standard'],['thorough','Thorough']])+sf('Fallback','<label><input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'> Try other models and providers when one is busy or out of quota</label>','Each model is tried at most once per request. Files and images always use Gemini.')+sf('Tasks','<label><input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'> Start tasks as soon as you ask for work in chat</label>','When off, you approve each task first. Tasks are always draft PRs; nothing merges until you tap Merge.')+premiumModeField()+providerSwitches()+sb('s-refresh','Refresh available models',false),'Only approved models returned by the configured backend are offered. Cost routing uses a Lite preference; live cost comparisons are unavailable without verified pricing. Provider quota: unavailable.')+probePanel();
  if(settingsSection==='usage'){
  if(usageView.model||usageView.provider){body=usageView.model?modelDetail():providerDetail();}else{
  body=usageHome()+'<p class="u-note u-updated" role="status">'+(lastVerify?.at?'Updated '+new Date(lastVerify.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+' · refreshes every minute':esc(usageNotice))+'</p>';
@@ -330,6 +383,14 @@ function bindSettings(){
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
  on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ document.getElementById('premium-mode')?.addEventListener('change',async e=>{
+  const enabled=e.target.checked;
+  if(enabled&&!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.')){e.target.checked=false;return;}
+  try{await settingsAPI('/premium',{action:'set',enabled});await refreshIntelligence(false);}catch(err){e.target.checked=!enabled;settingsNotice='Premium Mode not changed: '+err.message;render();}
+ });
+ document.querySelectorAll('[data-premium-allow],[data-premium-enable],[data-premium-dismiss]').forEach(b=>b.onclick=async()=>{
+  b.disabled=true;const kind=b.dataset.premiumAllow?'allow':b.dataset.premiumEnable?'enable':'dismiss';
+  try{await premiumAction(kind,b.dataset.premiumAllow||b.dataset.premiumEnable||b.dataset.premiumDismiss)}catch(err){settingsNotice='Premium: '+err.message;render()}finally{b.disabled=false}});
  on('model-list',async()=>{
   // Every model in use, the specialist tools kept and the removed models with their reasons; statuses from the last test.
   try{const data=await settingsAPI('/providers/models-list',{},60000);

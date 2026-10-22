@@ -179,13 +179,19 @@
       "removedModels": [
         "nvidia/nemotron-3-super-120b-a12b:free",
         "thinkingmachines/inkling-small:free",
-        "thinkingmachines/inkling:free"
+        "thinkingmachines/inkling:free",
+        "minimax/minimax-m3.1-flash:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "google/gemma-4-31b-it:free"
       ],
       "removedModelsReason": "Model audit 2026-10-22: 403 only available on agentic harnesses, or 404 no longer served",
       "removedWhy": {
         "nvidia/nemotron-3-super-120b-a12b:free": "Retired by the provider: 404 on OpenRouter, Kilo and NVIDIA alike",
         "thinkingmachines/inkling-small:free": "Only available inside agent tools: thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed o",
-        "thinkingmachines/inkling:free": "Only available inside agent tools: thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on"
+        "thinkingmachines/inkling:free": "Only available inside agent tools: thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on",
+        "minimax/minimax-m3.1-flash:free": "Retired by the provider: the free launch period for MiniMax M3.1 Flash ended on Oct 22, 2026 (404); only the paid version remains",
+        "google/gemma-4-26b-a4b-it:free": "Duplicate, kept elsewhere: the same Gemma 4 model answers through your own Gemini key (its own limits), Workers AI and Ollama. OpenRouter routes its free copy through a shared Google AI Studio pool that answered 429 \"temporarily rate-limited upstream\" in every check on 22 Oct 2026",
+        "google/gemma-4-31b-it:free": "Duplicate, kept elsewhere: the same Gemma 4 model answers through your own Gemini key (its own limits), Workers AI and Ollama. OpenRouter routes its free copy through a shared Google AI Studio pool that answered 429 \"temporarily rate-limited upstream\" in every check on 22 Oct 2026"
       }
     },
     "mistral": {
@@ -217,8 +223,27 @@
         "streaming": true,
         "media": false
       },
-      "removedModels": [],
-      "removedModelsReason": "Model audit 2026-10-22: 400 Invalid model for chat (audio transcription models)",
+      "removedModels": [
+        "glm-5-2",
+        "labs-leanstral-1-5",
+        "labs-leanstral-1-5-1",
+        "magistral-medium-latest",
+        "magistral-small-latest",
+        "mistral-large-2512",
+        "mistral-large-4",
+        "mistral-large-latest",
+        "mistral-medium",
+        "mistral-medium-2604",
+        "mistral-medium-3",
+        "mistral-medium-3-5",
+        "mistral-medium-3.5",
+        "mistral-medium-latest",
+        "mistral-vibe-cli-fast",
+        "mistral-vibe-cli-latest",
+        "mistral-vibe-cli-with-tools",
+        "zai-glm-5-3"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: not in the subscription tier (403), refuses every request (429), or a Labs model that is off (403)",
       "toolModels": [
         {
           "model": "voxtral-mini-2602",
@@ -240,7 +265,27 @@
           "kind": "Audio",
           "note": "Live speech-to-text transcription"
         }
-      ]
+      ],
+      "removedWhy": {
+        "mistral-large-2512": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-large-latest": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-large-4": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "zai-glm-5-3": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "glm-5-2": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-medium": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-2604": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3-5": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3.5": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "magistral-medium-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "magistral-small-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-fast": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-with-tools": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "labs-leanstral-1-5": "Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed",
+        "labs-leanstral-1-5-1": "Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed"
+      }
     },
     "nvidia": {
       "name": "NVIDIA NIM",
@@ -762,6 +807,23 @@
       "partMaxTokens": 900,
       "partTimeoutMs": 25000,
       "splitTimeoutMs": 8000
+    },
+    "premium": {
+      "provider": "openrouter",
+      "reviewed": "Owner-reviewed coding families. A family is a candidate, not proof of quality: the catalog must also show verified prices under the ceilings, room for the request and a token limit.",
+      "families": [
+        "deepseek",
+        "qwen3.8-coder",
+        "qwen3-coder",
+        "kimi",
+        "glm-5"
+      ],
+      "maxInputPricePerMillion": 1.5,
+      "maxOutputPricePerMillion": 3,
+      "safetyMargin": 1.25,
+      "taskCapUsd": 1,
+      "monthCapUsd": 5,
+      "maxTokensPerCall": 8000
     }
   },
   "limits": {
@@ -923,7 +985,7 @@
             "tpm": 5000000,
             "rps": 0.63,
             "rpm": 0,
-            "note": "Listed at 5M tokens per minute, but the API answers HTTP 403 to this account (tested 2026-10-22), so it is not routed or counted"
+            "note": "A Labs model: answers 403 until an admin enables Labs models in Mistral organization settings (audit 2026-10-22); not routed or counted until then"
           },
           {
             "match": "codestral",
@@ -1020,9 +1082,10 @@
       },
       "openrouter": {
         "scope": "provider",
-        "rpd": 50,
+        "rpd": 1000,
+        "rpm": 20,
         "dayResets": "UTC",
-        "source": "OpenRouter docs: 50 free-model requests per day with no purchased credits (account shows $0)"
+        "source": "OpenRouter docs: free models allow 20 requests a minute, and 1,000 a day once at least $10 of credits have been purchased (bought 2026-10-22); KappaForge routes only :free models, so the credits are not spent"
       },
       "requesty": {
         "scope": "provider",
