@@ -15,7 +15,9 @@ from engine import runner
 SOURCE = "https://raw.githubusercontent.com/mnfst/awesome-free-llm-apis/main/data.json"
 # Reviewed and left out on purpose: roleplay-only models, and a non-OpenAI API that is non-commercial only.
 IGNORED = {"Aion Labs": "built for roleplay and storytelling, not coding",
-           "Cohere": "different API format; trial key is non-commercial and 1,000 calls a month"}
+           "Cohere": "different API format; trial key is non-commercial and 1,000 calls a month",
+           "ModelScope": "the owner keeps to English-language providers",
+           "SiliconFlow": "the owner keeps to English-language providers"}
 # Configured without a base URL of their own.
 KNOWN_HOSTS = {"generativelanguage.googleapis.com": "gemini", "api.cloudflare.com": "workers-ai",
                "open.bigmodel.cn": "zai"}  # Z AI's China endpoint; KappaForge uses the international api.z.ai.

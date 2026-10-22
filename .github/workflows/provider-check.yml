@@ -31,8 +31,6 @@ jobs:
         KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
         UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
         REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
-        MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
-        SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
         HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
       shell: bash
       run: |-

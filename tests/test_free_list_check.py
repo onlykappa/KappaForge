@@ -35,10 +35,12 @@ class FreeListCheckTests(unittest.TestCase):
         text = free_list_check.report([("new", "A|B", "x|y")], "2026-10-05")
         self.assertIn("| Not used by KappaForge yet | A/B | x/y |", text, "a pipe never breaks the table")
 
-    def test_every_new_provider_is_known_to_the_list_matcher(self):
+    def test_hugging_face_is_matched_and_skipped_providers_stay_quiet(self):
         hosts = free_list_check.configured_hosts(runner.PROVIDERS)
-        for pid in ("modelscope", "siliconflow", "huggingface"):
-            self.assertIn(pid, hosts.values())
+        self.assertIn("huggingface", hosts.values())
+        data = {"providers": [provider("ModelScope", "https://api-inference.modelscope.cn/v1", [{"id": "q"}]),
+                              provider("SiliconFlow", "https://api.siliconflow.cn/v1", [{"id": "q"}])]}
+        self.assertEqual(free_list_check.compare(data, runner.PROVIDERS), [], "skipped on purpose: English-language providers only")
 
     def test_workflow_reads_no_secrets_and_only_writes_issues(self):
         text = (ROOT / ".github/workflows/free-llm-drift.yml").read_text()
