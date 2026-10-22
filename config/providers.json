@@ -151,7 +151,7 @@
       "maxOutput": 32768,
       "accountPool": "mistral",
       "quotaPool": "mistral",
-      "quotaScope": "account",
+      "quotaScope": "model",
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,
@@ -563,7 +563,7 @@
       },
       "mistral": {
         "scope": "model",
-        "source": "Mistral Admin, Default Workspace limits; -latest aliases use the dated model's row",
+        "source": "Mistral Admin → Limits, EU region (api.mistral.ai), Default Workspace: tokens per minute and requests per second only, no daily or monthly token cap; -latest aliases use the dated model's row",
         "models": [
           {
             "match": "labs-leanstral",

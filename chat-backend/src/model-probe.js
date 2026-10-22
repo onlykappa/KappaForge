@@ -21,8 +21,9 @@ export async function probeRoutes(env){
  return routes.sort((a,b)=>(a.provider==="gemini"?"":a.provider).localeCompare(b.provider==="gemini"?"":b.provider)||a.model.localeCompare(b.model));
 }
 
-export async function probeModels(env,{offset=0,limit=MAX_BATCH}={}){
- const routes=await probeRoutes(env),start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.min(MAX_BATCH,Math.max(1,Math.floor(Number(limit)||MAX_BATCH)));
+export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={}){
+ // An optional provider id narrows the check to that provider's models.
+ const all=await probeRoutes(env),routes=typeof provider==="string"&&provider?all.filter(r=>r.provider===provider):all,start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.min(MAX_BATCH,Math.max(1,Math.floor(Number(limit)||MAX_BATCH)));
  let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
  const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1")),results=[],lastCall={};
  for(const route of routes.slice(start,start+size)){

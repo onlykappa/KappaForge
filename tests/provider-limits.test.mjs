@@ -189,3 +189,30 @@ test('the shared router enforces each Gemini model\'s own minute, day and token 
  const perMinute=perDay.replace('PerDay','PerMinute');
  assert.equal(quotaResetFromBody(route,perMinute,now),now+31000);
 });
+
+test('daily token capacity counts per-minute token limits, not only published daily caps',()=>{
+ assert.equal(L.tokenCeiling({tpd:500000,tpm:6000}),500000,'a published daily cap wins');
+ assert.equal(L.tokenCeiling({rpm:5,rpd:20,tpm:250000}),5000000,'20 requests a day, each up to 250K tokens');
+ assert.equal(L.tokenCeiling({rpm:30,rpd:14400,tpm:16000}),16000*1440,'held to a full day of the per-minute limit');
+ assert.equal(L.tokenCeiling({tpm:500000,rps:1}),500000*1440,'per-minute only: a full day of it');assert.equal(L.tokenCeiling({rps:1}),null);
+ const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
+ assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);
+ const m=L.usage([],limits,ids,{show:ids,routed:{mistral:['mistral-small-2603','ministral-8b-2512','ministral-8b-latest']}}).find(r=>r.id==='mistral');
+ assert.equal(m.tokenLimit,(20000+625000)*1440,'Mistral: a day of each routed model\'s per-minute limit, nothing for models it does not route');
+});
+
+test('aliases of one model family share one allowance in provider totals',()=>{
+ const now=Date.now(),ev=model=>({at:now-1000,model,total:10,ok:true});
+ const rows=L.usage([ev('gemini-3.1-flash-lite'),ev('gemini-3.1-flash-lite-preview'),ev('gemini-3.6-flash-preview-09-2026')],limits,ids,{now,show:['gemini']});
+ const g=rows.find(r=>r.id==='gemini');
+ assert.equal(g.tokenLimit,321080000);assert.equal(g.tokensOnCapped,30);
+ const plain=L.usage([],limits,ids,{now,show:['gemini']}).find(r=>r.id==='gemini');
+ assert.equal(g.requestLimit,plain.requestLimit,'request totals are not inflated by aliases either');
+});
+
+test('Gemma\'s mixture-of-experts name uses the Gemma 4 26B allowance',()=>{
+ assert.equal(L.matches('gemma-4-26b','gemma-4-26b-a4b-it'),true);
+ assert.equal(L.limitFor(limits,'gemini','gemma-4-26b-a4b-it').tpm,16000);
+ const g=L.usage([],limits,ids,{show:['gemini'],routed:{gemini:['gemma-4-26b-a4b-it','gemma-4-31b-it']}}).find(r=>r.id==='gemini');
+ assert.equal(g.tokenLimit,2*16000*1440);
+});
