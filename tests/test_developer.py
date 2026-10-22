@@ -10,6 +10,18 @@ from engine.developer import apply_changes, check_path, syntax_error, produce_de
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
+
+def setUpModule():
+    # These tests fake GitHub's JSON API; the repository map's archive download stays offline (planning from paths).
+    global _no_archive
+    _no_archive = patch.object(developer.repo_maps, "download_sources", side_effect=OSError("offline in tests"))
+    _no_archive.start()
+
+
+def tearDownModule():
+    _no_archive.stop()
+
+
 class DeveloperValidationTests(unittest.TestCase):
 
     def test_a_repeated_rejected_patch_moves_on_to_another_model(self):

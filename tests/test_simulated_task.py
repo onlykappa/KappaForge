@@ -40,6 +40,17 @@ def chat(text):
     return reply({"choices": [{"message": {"content": text}}]})
 
 
+def setUpModule():
+    # These tests fake GitHub's JSON API; the repository map's archive download stays offline (planning from paths).
+    global _no_archive
+    _no_archive = patch.object(developer.repo_maps, "download_sources", side_effect=OSError("offline in tests"))
+    _no_archive.start()
+
+
+def tearDownModule():
+    _no_archive.stop()
+
+
 class World:
     """Simulated GitHub plus simulated providers, recording what the agent did."""
 
