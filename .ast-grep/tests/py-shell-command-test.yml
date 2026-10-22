@@ -1,0 +1,9 @@
+id: py-shell-command
+valid:
+- subprocess.run(["git", "status"], check=True)
+- subprocess.run(cmd, shell=False)
+invalid:
+- subprocess.run(cmd, shell=True)
+- subprocess.Popen("ls " + d, stdout=PIPE, shell=True)
+- os.system("rm -rf " + path)
+- os.popen(cmd)

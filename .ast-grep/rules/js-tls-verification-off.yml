@@ -1,0 +1,15 @@
+id: js-tls-verification-off
+language: javascript
+severity: error
+message: turns off TLS certificate checks
+rule:
+  any:
+  - kind: pair
+    all:
+    - has:
+        field: key
+        regex: ^['"]?rejectUnauthorized['"]?$
+    - has:
+        field: value
+        kind: "false"
+  - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = $V

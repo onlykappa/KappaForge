@@ -1,0 +1,10 @@
+id: js-html-injection
+valid:
+- el.textContent = name
+- el.innerHTML = ''
+- el.innerHTML = '<b>fixed</b>'
+invalid:
+- el.innerHTML = name
+- el.innerHTML = `<b>${name}</b>`
+- list.insertAdjacentHTML('beforeend', row)
+- document.write(html)

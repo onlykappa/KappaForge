@@ -88,12 +88,12 @@ class TaskScopeTests(unittest.TestCase):
 
     def test_classifier_grants_write_only_for_explicit_manual_code(self):
         for event, expected in [('schedule','skip'),('workflow_dispatch','write')]:
-            with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=issue('code')), patch('sys.argv',['task_scope']):
+            with tempfile.NamedTemporaryFile(mode='r+', delete_on_close=False) as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':event,'GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=issue('code')), patch('sys.argv',['task_scope']):
                 task_scope.main();self.assertIn('scope='+expected,Path(output.name).read_text())
 
     def test_expired_task_is_reported_instead_of_failing_silently(self):
         expired=dict(issue('develop'),created_at='2020-01-01T00:00:00Z')
-        with tempfile.NamedTemporaryFile(mode='r+') as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=expired), patch('sys.argv',['task_scope']):
+        with tempfile.NamedTemporaryFile(mode='r+', delete_on_close=False) as output, patch.dict(os.environ,{'GITHUB_TOKEN':'fixture','INPUT_ISSUE_NUMBER':'23','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_OUTPUT':output.name}), patch.object(task_scope,'choose_issue',return_value=expired), patch('sys.argv',['task_scope']):
             task_scope.main();written=Path(output.name).read_text()
         self.assertIn('scope=expired',written);self.assertIn('issue=23',written)
         workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/agent.yml').read_text()

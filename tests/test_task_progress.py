@@ -51,3 +51,7 @@ class TaskProgressContractTests(unittest.TestCase):
             p.now('Choose files', phase=True)
         self.assertEqual(p.snapshot()['steps'][-1]['id'], before)
         self.assertEqual(wire(bodies[0])['steps'][0]['title'], 'Read <!-- comment -->')
+
+
+def tearDownModule():
+    developer.Progress.latest = None  # Later test modules start without this module's last checklist.

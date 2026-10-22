@@ -231,9 +231,9 @@ FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-
 def full_catalog(pid):
     """Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model a provider account lists, paid ones included.
 
-    "*" covers every provider except free-model gateways (freeOnly), which take full catalogs only when named."""
+    "*" excludes free-model gateways (freeOnly) and metered providers, whose paid catalogs require a named opt-in."""
     listed = {name.strip() for name in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",") if name.strip()}
-    return pid in listed or "*" in listed and not PROVIDERS.get("providers", {}).get(pid, {}).get("freeOnly")
+    return pid in listed or "*" in listed and not PROVIDERS.get("providers", {}).get(pid, {}).get("freeOnly") and not PROVIDERS.get("providers", {}).get(pid, {}).get("metered")
 
 def select_models(available):
     """Discovered Gemini models, strongest first: full Flash before Lite, newer before older, stable before preview.
@@ -295,11 +295,14 @@ def list_provider_models(pid, p):
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).
 
-    Default, chosen by the owner for maximum uptime: every provider, for public and private repositories alike.
+    Default: coding-capable providers, for public and private repositories alike, except
+    that providers marked "privateCode": false never get private code unless the owner lists them by name.
     KAPPA_CODE_PROVIDERS / KAPPA_PRIVATE_CODE_PROVIDERS (comma lists, GitHub Actions variables) narrow it.
     """
     listed = os.getenv("KAPPA_PRIVATE_CODE_PROVIDERS" if private else "KAPPA_CODE_PROVIDERS", "").strip()
-    allowed = {name.strip() for name in listed.split(',') if name.strip()} if listed else set(PROVIDERS['order'])
+    allowed = ({name.strip() for name in listed.split(',') if name.strip()} if listed else
+               {pid for pid in PROVIDERS['order'] if not private or PROVIDERS['providers'][pid].get('privateCode') is not False})
+    allowed = {pid for pid in allowed if PROVIDERS['providers'].get(pid, {}).get('agent') is not False}
     from engine import recovery
     journal = recovery.CURRENT.get()
     if journal and journal.project.get('providers') is not None:

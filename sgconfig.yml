@@ -1,0 +1,6 @@
+# ast-grep (https://ast-grep.github.io): structural security rules. CI scans this repository with them, and the
+# coding agent scans every change it is about to push to another repository (engine/structural_scan.py).
+ruleDirs:
+- .ast-grep/rules
+testConfigs:
+- testDir: .ast-grep/tests

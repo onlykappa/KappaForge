@@ -1,0 +1,9 @@
+id: js-child-process
+valid:
+- const fs = require('fs')
+- import {readFile} from 'node:fs/promises'
+invalid:
+- const cp = require('child_process')
+- const {execSync} = require("node:child_process")
+- import {spawn} from 'child_process'
+- import {exec} from "node:child_process"

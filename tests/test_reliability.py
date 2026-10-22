@@ -377,3 +377,7 @@ class ProviderHealthTests(unittest.TestCase):
             self.assertIsNone(runner.run_fallback_providers('large',1000,[],allowed={'fixture'}))
             self.assertEqual(runner.run_fallback_providers('small',1000,[],allowed={'fixture'}),('fixture:free','valid'))
         self.assertEqual(calls,['large','small'])
+
+
+def tearDownModule():
+    developer.Progress.latest = None  # Later test modules start without this module's last checklist.
