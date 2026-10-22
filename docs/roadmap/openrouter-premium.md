@@ -162,7 +162,7 @@ error", which is the upstream free provider's own rate limit, not OpenRouter's.
 
 ## Status
 
-- [ ] 1. Usage shared-limit model rows
+- [x] 1. Usage shared-limit model rows
 - [ ] 2. OpenRouter audit (+ $0.00076 spend source)
 - [ ] 3. Premium mode
 - [ ] 4. Finish
