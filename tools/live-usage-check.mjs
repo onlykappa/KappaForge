@@ -44,12 +44,15 @@ try{
  // keeps each reply and the attempts it took.
  if(process.env.CHAT_TEST){
   summary.chatTests=[];
-  for(const [n,text] of process.env.CHAT_TEST.split('||').map(t=>t.trim()).filter(Boolean).entries()){
+  // "LONG:<n>" stands for a pasted document of about n characters with a request to summarize it.
+  const expand=t=>{const m=/^LONG:(\d+)$/.exec(t);if(!m)return t;const line='KappaForge routes chat to Gemini and coding to coding models, splits complex questions into parts, and records every attempt in Usage. ';
+   return 'Summarize this document in two sentences:\n\n'+line.repeat(Math.ceil(Number(m[1])/line.length)).slice(0,Number(m[1]));};
+  for(const [n,text] of process.env.CHAT_TEST.split('||').map(t=>expand(t.trim())).filter(Boolean).entries()){
    const since=Date.now();
    await page.evaluate(()=>{navigate('chat');document.getElementById('new')?.click();});
    await page.locator('#message').fill(text);await page.locator('#form button[type=submit]').click();
    await page.waitForFunction(()=>!sending,null,{timeout:180000,polling:500});await page.waitForTimeout(500);
-   summary.chatTests.push(await page.evaluate(async({text,since})=>{await refreshIntelligence(false).catch(()=>{});const m=active()?.messages||[],last=m[m.length-1]||{};
+   summary.chatTests.push(await page.evaluate(async({text,since})=>{text=text.length>200?text.slice(0,80)+'… ('+text.length+' characters)':text;await refreshIntelligence(false).catch(()=>{});const m=active()?.messages||[],last=m[m.length-1]||{};
     return {sent:text,reply:String(last.text||'').slice(0,400),attempts:usageEvents.filter(e=>e&&e.at>=since-5000&&e.kind==='chat').map(e=>({model:e.model,status:e.status,latency:e.latency}))};},{text,since}));
    await page.screenshot({path:join(out,'0-chat-test-'+(n+1)+'.png'),animations:'disabled'});
   }
