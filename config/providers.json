@@ -217,8 +217,14 @@
         "streaming": true,
         "media": false
       },
-      "removedModels": [],
-      "removedModelsReason": "Model audit 2026-10-22: 400 Invalid model for chat (audio transcription models)",
+      "removedModels": [
+        "glm-5-2",
+        "mistral-large-2512",
+        "mistral-large-4",
+        "mistral-large-latest",
+        "zai-glm-5-3"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 403 not available in the account's subscription tier",
       "toolModels": [
         {
           "model": "voxtral-mini-2602",
@@ -240,7 +246,14 @@
           "kind": "Audio",
           "note": "Live speech-to-text transcription"
         }
-      ]
+      ],
+      "removedWhy": {
+        "mistral-large-2512": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-large-latest": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-large-4": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "zai-glm-5-3": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "glm-5-2": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)"
+      }
     },
     "nvidia": {
       "name": "NVIDIA NIM",

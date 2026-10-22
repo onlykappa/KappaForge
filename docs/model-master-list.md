@@ -5,7 +5,7 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **80 removed**, out of 196.
+**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **85 removed**, out of 201.
 
 The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
@@ -13,7 +13,7 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 |---|---|---|---|---|
 | Google Gemini | 11 | 10 | 1 | 3 |
 | Groq | 4 | 4 | 0 | 0 |
-| Mistral | 14 | 12 | 2 | 0 |
+| Mistral | 14 | 12 | 2 | 5 |
 | Cloudflare Workers AI | 23 | 23 | 0 | 11 |
 | NVIDIA Build | 16 | 13 | 3 | 49 |
 | OpenRouter | 14 | 11 | 3 | 3 |
@@ -200,6 +200,16 @@ These are not chat models, so a chat test fails them, but they are useful for th
 | `gemini-pro-latest` | No free quota on this account | No free quota: Pro models are 0 / 0 on this account's AI Studio free tier |
 | `gemini-2.5-flash` | Retired by the provider | This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features |
 | `gemini-2.5-flash-lite` | Retired by the provider | This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the lates |
+
+### Mistral (5)
+
+| Model | Reason | Provider's message |
+|---|---|---|
+| `glm-5-2` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
+| `mistral-large-2512` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
+| `mistral-large-4` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
+| `mistral-large-latest` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
+| `zai-glm-5-3` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
 
 ### Cloudflare Workers AI (11)
 
