@@ -39,7 +39,7 @@ export async function routingStore(state,request){
  if(request.method!=="POST")return Response.json({error:"Method not allowed"},{status:405});
  let input;try{input=await request.json()}catch{return Response.json({error:"Invalid JSON"},{status:400});}
  if(url.pathname==="/router/reserve"){
-  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null}=input||{};
+  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",failureScope="account",maxConcurrent=1,leaseMs=120_000,quota=null}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!validId(accountPool)||!validId(quotaPool)||
      !["account","model"].includes(quotaScope)||!Number.isInteger(maxConcurrent)||maxConcurrent<1||maxConcurrent>8||!Number.isInteger(leaseMs)||leaseMs<1000||leaseMs>MAX_LEASE_MS)
    return Response.json({error:"Invalid reservation"},{status:400});
@@ -53,7 +53,10 @@ export async function routingStore(state,request){
    // gateways (a paid model with no credits), so those legacy blocks no longer stop other models.
    // Likewise a 401 block on a keyless account (its pool carries no key fingerprint): there is no key to reject,
    // and no success could ever clear it.
-   const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless);
+   // Where each model runs on its own deployment (failureScope "model"), an account-wide rest from a hang or server
+   // error, written before such failures were kept to the model, does not stop the account's other models.
+   const keyless=pool.split(":").length===2,legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless)||
+    row===cooldown&&failureScope==="model"&&!row.blocked&&(row.status===0||row.status>=500);
    const blocked=[cooldown,route].filter(row=>row&&!legacy(row)).find(row=>row.blocked||row.until>now);
    // scope says whether the whole account (pool) or only this model is unavailable, so callers can skip the account's
    // other models at once instead of asking about each.

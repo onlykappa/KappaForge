@@ -202,6 +202,9 @@ test('a keyless provider\'s 401 and a gateway\'s server error rest only that mod
  assert.equal(await tryRoute(7,'nvidia','deepseek-ai/deepseek-v4.1-flash'),false,'the hung model itself rests');
  assert.equal(await tryRoute(8,'nvidia','nvidia/nemotron-3-ultra-550b-a55b',429),true);
  assert.equal(await tryRoute(9,'nvidia','qwen/qwen3.5-coder'),false,'the account-wide 40 a minute limit still pauses the account');
+ // A whole-account rest an older version wrote for one NVIDIA model's hang no longer blocks the others.
+ value.pools['nvidia:nvidia']={provider:'nvidia',model:'deepseek-ai/deepseek-v4.1-flash',category:'timeout',status:0,failures:6,blocked:false,until:Date.now()+1920000,updatedAt:Date.now()};
+ assert.equal(await tryRoute('n','nvidia','qwen/qwen3-next'),true,'a stale account-wide hang rest is ignored');
  assert.equal(await tryRoute('g','groq','llama-4-scout',503),true);
  assert.equal(await tryRoute('h','groq','llama-4-maverick'),false,'an outage at a provider without per-model deployments still pauses it');
 });
