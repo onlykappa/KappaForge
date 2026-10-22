@@ -129,7 +129,7 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null,hid
 //   plan: {percent,label,maxed} for a plan allowance the provider reports itself (Ollama's monthly included credit).
 //   sharedScope: 'model' for a model row under a shared limit, which counts that model's own share of the shared cap
 //   (its requests against the account's allowance) and is maxed only when the whole account has used it up.
-function gauge({limit=null,used=null,shared=null,sharedUsed=null,sharedScope='provider',neurons=null,plan=null,live=[],rest=null,unit='requests',now=Date.now()}={}){
+function gauge({limit=null,used=null,shared=null,sharedUsed=null,sharedScope='provider',neurons=null,plan=null,live=[],rest=null,unit='any',now=Date.now()}={}){
  const out=[],add=(u,l,label,daily,kind)=>{if(l>0&&Number.isFinite(u))out.push({percent:Math.round(u/l*1000)/10,label,daily,kind});};
  // A per-minute limit is shown at today's busiest minute (how close it came to maxing), and maxes the gauge while the
  // current minute is used up. A daily token figure worked out from a per-minute limit only counts where there is a
@@ -148,14 +148,15 @@ function gauge({limit=null,used=null,shared=null,sharedUsed=null,sharedScope='pr
  const sharedFull=shared&&sharedUsed&&sharedScope==='model'&&shared.rpd>0&&sharedUsed.requests>=shared.rpd;
  const now1=[limit&&used&&limit.rpm>0&&used.minuteRequests>=limit.rpm,limit&&used&&limit.tpm>0&&used.minuteTokens>=limit.tpm,
   shared&&sharedUsed&&shared.rpm>0&&sharedUsed.minuteRequests>=shared.rpm].some(Boolean);
- if(neurons&&Number.isFinite(neurons.used))add(neurons.used,neurons.limit,'of today’s neurons (shared)',true,'tokens');
- if(plan&&Number.isFinite(plan.percent))out.push({percent:plan.percent,label:plan.label||'of the monthly plan',daily:true,kind:'tokens'});
+ if(neurons&&Number.isFinite(neurons.used))add(neurons.used,neurons.limit,'of today’s neurons (shared)',true,'neurons');
+ if(plan&&Number.isFinite(plan.percent))out.push({percent:plan.percent,label:plan.label||'of the monthly plan',daily:true,kind:'plan'});
  for(const entry of live||[])for(const [name,r] of Object.entries(entry?.limits||{})){
   // A counter whose window has reset, or an hour old without a reset time, no longer says anything.
   if(Number.isFinite(r.reset)?r.reset<=now:!(entry.at>now-3600000))continue;
   add(r.limit-r.remaining,r.limit,/token/.test(name)?'of tokens (provider’s count)':'of requests (provider’s count)',/day/.test(name),/token/.test(name)?'tokens':'requests');
  }
- const fitting=unit==='tokens'?out.filter(x=>x.kind==='tokens'):out;
+ // Each Usage view measures its own unit: requests, tokens, neurons or the plan ('any' takes every limit).
+ const fitting=unit==='any'?out:out.filter(x=>x.kind===unit);
  if(rest&&rest.until>now)return {percent:100,maxed:true,label:'resting at its limit',until:rest.until};
  if(plan?.maxed)return {percent:100,maxed:true,label:plan.label||'of the monthly plan',until:plan.until||null};
  if(now1)return {percent:100,maxed:true,label:'this minute’s limit',until:(Math.floor(now/60000)+1)*60000};

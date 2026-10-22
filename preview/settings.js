@@ -124,15 +124,19 @@ function gaugeFor(p,m=null,unit='requests'){
 const gaugeShort=g=>g.daily?'used today':/busiest minute/.test(g.label)?'peak minute':/minute/.test(g.label)?'this minute':'used';
 const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
 // No limit known at all (none published, no counters from the provider) and never refused: open.
-function gaugeRight(g){
- if(!g)return '<b>Open</b>no cap reported';
+function gaugeRight(g,unit='requests'){
+ if(!g)return '<b>Open</b>'+(unit==='tokens'?'no token cap':unit==='requests'?'no request cap':'no cap reported');
  if(g.maxed)return '<b class="u-low">Maxed</b>'+(g.until?'resets in '+untilReset(g.until):'limit reached');
  return '<b'+(g.percent>=80?' class="u-low"':'')+'>'+gaugeNumber(g.percent)+'%</b>'+gaugeShort(g);
 }
+// The row's figures follow the view: requests (and how many failed) in Requests, tokens in Tokens.
+const rowUnit=unit=>unit==='tokens'?'tokens':'requests';
+const requestFigure=(used,limit)=>(limit?compact(used.requests)+' of '+compact(limit)+' requests':plural(used.requests,'request'))+failures(used);
+const tokenFigure=(tokens,limit)=>limit?compact(tokens)+' of '+compact(limit)+' tokens':compact(tokens)+' tokens';
 function providerRow(p,names,unit='requests'){
  const g=gaugeFor(p,null,unit),color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
- return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
+ const detail=rowUnit(unit)==='tokens'?tokenFigure(p.tokenLimit?p.tokensOnCapped:p.used.tokens,p.tokenLimit):requestFigure(p.used,p.requestLimit);
+ return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g,unit)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
 // Which allowance the Usage page counts. Each view keeps the same layout with its own unit.
 const USAGE_UNITS=[['requests','Requests'],['tokens','Tokens'],['neurons','Neurons'],['plan','Plan usage']];
@@ -209,7 +213,7 @@ function usageHome(){
  // Tokens view: every provider ranked by tokens, measured against its token allowance where one is published.
  const byTokens=[...model.rows].sort((a,b)=>b.used.tokens-a.used.tokens||(b.tokenLimit?1:0)-(a.tokenLimit?1:0)).filter((r,i)=>i<4||r.used.tokens);
  const tokenProviders='<h3 class="u-hdr">Tokens by provider today</h3><div class="u-card u-list">'+byTokens.map(r=>providerRow(r,model.names,'tokens')).join('')+'</div>';
- const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names)+'</div>':'';
+ const one=id=>model.byId[id]?'<div class="u-card u-list">'+providerRow(model.byId[id],model.names,usageUnit)+'</div>':'';
  if(usageUnit==='tokens'){const tp=pct(tokensCapped,tokenLimit);
   return uHero(uRing(tp??0,'of today used',tp!==null),tokenLimit?'<b>'+compact(tokensCapped)+'</b> / '+compact(tokenLimit)+' tokens':'<b>'+compact(tokensToday)+'</b> tokens today',
    [[compact(tokensToday),'tokens today'],uPeriodCell(),[attemptsToday?compact(Math.round(tokensToday/attemptsToday)):'—','per request']],true)+tokenBar+tokenProviders;}
@@ -223,26 +227,29 @@ function usageHome(){
    [[compact(o?.used.requests||0),'Ollama requests today'],[compact(o?.used.tokens||0),'tokens today'],[known&&plan.resetsAt?untilReset(plan.resetsAt):'—','until reset']])+
    '<div class="u-card"><p class="u-note">'+(known?'From Ollama’s own plan balance (included monthly credit, refreshed every minute).'+(plan.purchasedUsd>0?' Purchased credit left: $'+plan.purchasedUsd.toFixed(2)+'.':''):esc(plan?.error||'Ollama is not enabled on this backend.'))+'</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
- return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],uPeriodCell(),[success,'chat &amp; tasks succeeded']],true)+
-  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158')+premiumCard();
+ // Requests only here; Tokens has its own view.
+ return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(attemptsToday),'chat &amp; task requests'],[compact(minute),'this minute'],[success,'succeeded']])+
+  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158')+premiumCard();
 }
-// A request that got no reply (hung, refused, rate-limited) still reached the provider but used no tokens: say so.
-function answered(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
- return !u.requests?' · '+compact(u.tokens)+' tokens':failed===u.requests?' · none answered':(failed?' · '+compact(failed)+' failed':'')+' · '+compact(u.tokens)+' tokens';}
+// A request that got no reply (hung, refused, rate-limited) still reached the provider: say how many, in Requests.
+function failures(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
+ return !u.requests||!failed?'':failed===u.requests?' · none answered':' · '+compact(failed)+' failed';}
 function providerDetail(){
  const model=usageModel();if(!model)return usageHome();
+ const unit=rowUnit(usageUnit);
  const back='<button class="u-back" id="usage-back">‹ Usage</button>';
  if(usageView.provider==='other'){
   const sorted=[...model.rows].sort((a,b)=>b.used.requests-a.used.requests||(b.requestLimit?1:0)-(a.requestLimit?1:0)).slice(4);
-  return back+'<h3 class="u-title">Other providers</h3><div class="u-card u-list">'+sorted.map(r=>providerRow(r,model.names)).join('')+'</div>';
+  return back+'<h3 class="u-title">Other providers</h3><div class="u-card u-list">'+sorted.map(r=>providerRow(r,model.names,unit)).join('')+'</div>';
  }
  const p=model.byId[usageView.provider];if(!p){usageView={provider:null,model:null};return usageHome();}
  const resets=p.dayResets==='America/Los_Angeles'?'midnight Pacific':'midnight UTC',color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const pg=gaugeFor(p);
- const head='<div class="u-card"><div class="u-ttl"><strong>Usage today</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):'no cap reported')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
-  '<div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests'+answered(p.used)+'</span></div></div>';
- const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),g=gaugeFor(p,m);
-  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
+ const pg=gaugeFor(p,null,unit);
+ const head='<div class="u-card"><div class="u-ttl"><strong>'+(unit==='tokens'?'Tokens today':'Requests today')+'</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):unit==='tokens'?'no daily token cap':'no daily request cap')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
+  '<div class="u-lim"><span>'+(unit==='tokens'?'<b>'+tokenFigure(p.tokenLimit?p.tokensOnCapped:p.used.tokens,p.tokenLimit)+'</b>':'<b>'+requestFigure(p.used,p.requestLimit)+'</b>')+'</span></div></div>';
+ const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),tpd=m.pairs.find(x=>x.key==='tpd'),g=gaugeFor(p,m,unit);
+  const figure=unit==='tokens'?tokenFigure(tpd?tpd.used:m.used.tokens,tpd?.limit):rpd?requestFigure({...m.used,requests:rpd.used},rpd.limit):requestFigure(m.used,null);
+  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+figure+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g,unit)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
   '<h3 class="u-hdr">Models</h3><div class="u-card u-list">'+(used.length?used.map(modelRow).join(''):'<p class="s-empty">No requests today.</p>')+(idle.length?'<details class="u-idle"><summary>'+plural(idle.length,'more model')+' · unused today</summary>'+idle.map(modelRow).join('')+'</details>':'')+'</div>'+
