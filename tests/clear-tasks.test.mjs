@@ -16,7 +16,6 @@ test('clearAllTasks removes all jobs and storage entries', () => {
     },
     persistJobs(){},
     render(){},
-    // Minimal globals required by the script
     KappaProgress:{recoveryReceipt(){},},
     KappaJobs:{},
     KappaActions:{},
@@ -35,13 +34,11 @@ test('clearAllTasks removes all jobs and storage entries', () => {
     taskRetryPending:new Set(),
   };
 
-  // Simulate an existing stored jobs entry
   box.localStorage.setItem('kappaforge.jobs.v2', JSON.stringify([{number:2}]));
 
   vm.createContext(box);
   vm.runInContext(src, box);
 
-  // Call the new function
   box.clearAllTasks();
 
   assert.deepEqual(box.trackedJobs, []);

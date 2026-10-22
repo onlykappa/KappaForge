@@ -168,6 +168,16 @@ function clearAllTasks(){
   persistJobs();
   if(typeof render==="function") render();
 }
+globalThis.clearAllTasks = clearAllTasks;
+
+// Delete all stored tasks and UI state
+function clearAllTasks(){
+  trackedJobs=[];
+  localStorage.removeItem("kappaforge.jobs.v2");
+  localStorage.removeItem("kappaforge.latest.job");
+  persistJobs();
+  if(typeof render==="function") render();
+}
 async function taskRetry(number){
  const job=trackedJobs.find(j=>j.number===number);if(!job||taskRetryPending.has(number))return;
  if(!backend||!access){alert("Connect AI first.");return}
