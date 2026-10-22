@@ -1,0 +1,29 @@
+name: Multi-agent check
+# Builds two independent stages of a small in-memory project at the same time through the real coding gateway and
+# prints which provider wrote each stage, the timing, the reviewer's verdicts and the checkpoint. Writes nothing to any
+# repository.
+on:
+  push:
+    branches:
+    - multi-agent-check
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Build two stages with parallel workers
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+        KAPPA_ROUTER_REQUIRED: 'true'
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python -m tools.multi_agent_check
