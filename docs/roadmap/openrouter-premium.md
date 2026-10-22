@@ -210,10 +210,20 @@ back to free.
 - KappaForge cannot see OpenRouter's per-request activity. The owner can check it at openrouter.ai → Activity.
 - **Safeguards now in place:** price-verified discovery, the audit guard, and premium only through the gated path.
 
-### Not verified live
-- No paid request was sent while building this: the owner's spec forbids real paid tests without a separate approval and
-  a tiny budget.
-- After merge, the first real rescue should be watched in Usage.
+### Live paid test (owner-approved, $0.10 cap, 22 Oct 2026)
+- **How it ran:** `.github/workflows/premium-smoke.yml` (a push to `premium-smoke-test`) ran `tools/premium-smoke.mjs`. That is
+  this checkout's premium code, with a throwaway in-memory budget capped at $0.10.
+- **Rescue:**
+  - The quote picked `deepseek/deepseek-v4-flash-0731`, at most $0.000346.
+  - One rescue was sent and answered "OK" (HTTP 200, 1.0 s).
+  - It was **confirmed at $0.000006** from OpenRouter's reported cost.
+  - A second rescue of the same step was refused (`step_already_rescued`) and nothing was sent.
+- **OpenRouter's own total:** $0.000758995 before and after. A charge this small had not shown yet, or rounds away.
+- **Catalog facts:**
+  - 468 models, of which 18 have names ending in `:free`, and every one of those is priced at zero.
+  - `openrouter/free` is priced at zero, so price-verified discovery keeps it.
+- **Still to see live:** a rescue inside a real task, through the deployed gateway and Settings → Usage. That needs the
+  merge and deploy.
 
 ## Step 4. Finish
 
