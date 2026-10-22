@@ -1,4 +1,3 @@
-import {mistralAdmin} from "./mistral-admin.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
@@ -195,7 +194,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/usage/mistral", "/providers/probe", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -260,7 +259,6 @@ export default {
       }
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
-    if(new URL(request.url).pathname==="/usage/mistral")return json(await mistralAdmin(env).catch(()=>({configured:true,error:"Mistral usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/probe"){
       if(!env.MEMORY)return json({error:"Shared routing storage unavailable"},503,cors);

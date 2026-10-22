@@ -68,7 +68,6 @@ try{
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
  summary.google=await page.evaluate(()=>settingsAPI('/usage/google').catch(e=>({error:e.message})));
- summary.mistral=await page.evaluate(()=>settingsAPI('/usage/mistral').catch(e=>({error:e.message})));
  await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});
  await page.locator('[data-period=month]').click();
