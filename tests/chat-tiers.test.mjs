@@ -44,12 +44,12 @@ test('the Mistral classifier decides when the message is not obvious, and rules 
  }finally{globalThis.fetch=real;}
 });
 
-test('one chat message is sent to at most three models',async()=>{
+test('one chat message reaches at most three models that start answering',async()=>{
  const {default:worker}=await import('../chat-backend/src/index.js');
- const real=globalThis.fetch,sent=[],models=['ministral-14b-latest','ministral-8b-latest','codestral-latest','voxtral-small-latest','mistral-code-latest'];
+ let instant=false;const real=globalThis.fetch,sent=[],models=['ministral-14b-latest','ministral-8b-latest','codestral-latest','voxtral-small-latest','mistral-code-latest'];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
   if(u.endsWith('/models'))return Response.json({data:models.map(id=>({id,capabilities:{completion_chat:true}}))});
-  if(init.method==='POST'&&u.endsWith('/chat/completions')){sent.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){sent.push(JSON.parse(init.body).model);return instant?new Response('{}',{status:500}):new Response('not json',{status:200});}
   return new Response('{}',{status:404});};
  try{
   const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CHAT_PROVIDERS:'mistral',CHAT_ACCESS_TOKEN:'owner-token',MISTRAL_API_KEY:'k-send-cap',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory()};
@@ -57,5 +57,10 @@ test('one chat message is sent to at most three models',async()=>{
   assert.ok(r.status>=500);
   assert.equal(sent.length,3,'five failing models, three tries: '+sent.join(', '));
   assert.equal(sent[0],'ministral-8b-latest','a greeting goes to the simple tier first');
+  // Instant refusals (needs payment, busy) never started a reply, so they do not use up the three sends.
+  instant=true;sent.length=0;
+  const again=await worker.fetch(new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify({messages:[{role:'user',text:'hello there'}],preferences:{fallback:true}})}),{...env,MISTRAL_API_KEY:'k-send-cap-2',MEMORY:memory()});
+  assert.ok(again.status>=500);
+  assert.equal(sent.length,5,'every model that refused at once was still tried: '+sent.join(', '));
  }finally{globalThis.fetch=real;}
 });

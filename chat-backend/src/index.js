@@ -124,7 +124,7 @@ function safeEqual(a, b) {
     bad |= (x[i] || 0) ^ (y[i] || 0);
   return bad === 0;
 }
-const CHAT_FIRST_BYTE_MS=20000;
+const CHAT_FIRST_BYTE_MS=20000,QUICK_REFUSAL_MS=5000;
 export default {
   async fetch(request, env, context) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
@@ -834,6 +834,8 @@ export default {
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401)outcomeCategory="authentication";else if(response.status===402)outcomeCategory="billing_blocked";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
           clearTimeout(timeout);if(response.status===429)outcomeBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();await record(null,false);
+          // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
+          if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
           if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
