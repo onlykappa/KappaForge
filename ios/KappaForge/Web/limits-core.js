@@ -129,16 +129,21 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[],routed=null,hid
 //   plan: {percent,label,maxed} for a plan allowance the provider reports itself (Ollama's monthly included credit).
 function gauge({limit=null,used=null,shared=null,sharedUsed=null,neurons=null,plan=null,live=[],rest=null,unit='requests',now=Date.now()}={}){
  const out=[],add=(u,l,label,daily,kind)=>{if(l>0&&Number.isFinite(u))out.push({percent:Math.round(u/l*1000)/10,label,daily,kind});};
+ // A per-minute limit is shown at today's busiest minute (how close it came to maxing), and maxes the gauge while the
+ // current minute is used up. A daily token figure worked out from a per-minute limit only counts where there is a
+ // real daily request cap beside it; alone it is always near zero and says nothing.
  if(limit&&used){
   add(used.requests,limit.rpd,'of today’s requests',true,'requests');
-  add(used.tokens,tokenCeiling(limit),'of today’s tokens',true,'tokens');
-  add(used.minuteRequests,limit.rpm,'this minute',false,'requests');
-  add(used.minuteTokens,limit.tpm,'of this minute’s tokens',false,'tokens');
+  add(used.tokens,tokenCeiling(limit),'of today’s tokens',Number.isFinite(limit.tpd)||Number.isFinite(limit.rpd),'tokens');
+  add(used.peakMinuteRequests,limit.rpm,'at today’s busiest minute',false,'requests');
+  add(used.peakMinuteTokens,limit.tpm,'of tokens at today’s busiest minute',false,'tokens');
  }
  if(shared&&sharedUsed){
   add(sharedUsed.requests,shared.rpd,'of today’s shared requests',true,'requests');
-  add(sharedUsed.minuteRequests,shared.rpm,'of this minute (shared)',false,'requests');
+  add(sharedUsed.peakMinuteRequests,shared.rpm,'at today’s busiest minute (shared)',false,'requests');
  }
+ const now1=[limit&&used&&limit.rpm>0&&used.minuteRequests>=limit.rpm,limit&&used&&limit.tpm>0&&used.minuteTokens>=limit.tpm,
+  shared&&sharedUsed&&shared.rpm>0&&sharedUsed.minuteRequests>=shared.rpm].some(Boolean);
  if(neurons&&Number.isFinite(neurons.used))add(neurons.used,neurons.limit,'of today’s neurons (shared)',true,'tokens');
  if(plan&&Number.isFinite(plan.percent))out.push({percent:plan.percent,label:plan.label||'of the monthly plan',daily:true,kind:'tokens'});
  for(const entry of live||[])for(const [name,r] of Object.entries(entry?.limits||{})){
@@ -149,9 +154,11 @@ function gauge({limit=null,used=null,shared=null,sharedUsed=null,neurons=null,pl
  const fitting=unit==='tokens'?out.filter(x=>x.kind==='tokens'):out;
  if(rest&&rest.until>now)return {percent:100,maxed:true,label:'resting at its limit',until:rest.until};
  if(plan?.maxed)return {percent:100,maxed:true,label:plan.label||'of the monthly plan',until:plan.until||null};
+ if(now1)return {percent:100,maxed:true,label:'this minute’s limit',until:(Math.floor(now/60000)+1)*60000};
  if(!fitting.length)return null;
  const daily=fitting.filter(x=>x.daily),pool=daily.length?daily:fitting,best=pool.reduce((a,b)=>b.percent>a.percent?b:a);
- const full=fitting.find(x=>x.percent>=100);
+ // A busiest-minute peak at the limit was maxed then, not now; only a day's allowance used up maxes the gauge.
+ const full=fitting.find(x=>x.percent>=100&&x.daily);
  return full?{...full,maxed:true}:{...best,maxed:false};
 }
 root.KappaLimits={matches,limitFor,canonical,noQuota,splitLabel,dayStart,usage,tokenCeiling,gauge};

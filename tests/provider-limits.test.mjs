@@ -229,13 +229,14 @@ test('usage leaves out removed models entirely and counts failed attempts apart 
 });
 
 test('every model gets a usage percentage from whichever limit applies, or Maxed',()=>{
- const G=KappaLimits.gauge,now=Date.UTC(2026,9,22,15),used=(o={})=>({requests:0,tokens:0,minuteRequests:0,minuteTokens:0,...o});
+ const G=KappaLimits.gauge,now=Date.UTC(2026,9,22,15),used=(o={})=>({requests:0,tokens:0,minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,...o});
  // Gemini and Groq: requests per day per model.
  let g=G({limit:{rpd:20},used:used({requests:5}),now});assert.equal(g.percent,25);assert.equal(g.daily,true);
  // Mistral: tokens per minute only, counted as a full day of that limit.
  g=G({limit:{tpm:500000},used:used({tokens:72000000}),now});assert.equal(g.percent,10);assert.match(g.label,/tokens/);
  // NVIDIA: 40 a minute shared by every model; no daily cap, so this minute leads.
- g=G({shared:{rpm:40},sharedUsed:used({minuteRequests:10}),used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/minute/);
+ g=G({shared:{rpm:40},sharedUsed:used({peakMinuteRequests:10}),used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/busiest minute/);
+ assert.equal(G({shared:{rpm:40},sharedUsed:used({peakMinuteRequests:40}),used:used(),now}).maxed,false,'a peak at the limit earlier is not maxed now');
  // OpenRouter: 50 a day shared.
  g=G({shared:{rpd:50},sharedUsed:used({requests:45}),used:used(),now});assert.equal(g.percent,90);
  // Workers AI: the account's daily neurons.
@@ -247,7 +248,9 @@ test('every model gets a usage percentage from whichever limit applies, or Maxed
  g=G({limit:{rpd:20},used:used({requests:3}),rest:{until:now+600000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+600000);
  g=G({shared:{rpm:40},sharedUsed:used({minuteRequests:40}),now});assert.equal(g.maxed,true);
  // A daily limit leads over a fuller per-minute one unless that one is used up.
- g=G({limit:{rpd:100,rpm:10},used:used({requests:10,minuteRequests:8}),now});assert.equal(g.percent,10);
+ g=G({limit:{rpd:100,rpm:10},used:used({requests:10,peakMinuteRequests:8}),now});assert.equal(g.percent,10);
+ // Mistral-style: only a per-minute token limit; its derived daily figure does not lead over the busiest minute.
+ g=G({limit:{tpm:1000},used:used({tokens:5000,peakMinuteTokens:600}),now});assert.equal(g.percent,60);assert.match(g.label,/busiest minute/);
  // The tokens view counts token limits only.
  assert.equal(G({limit:{rpd:20},used:used({requests:5}),unit:'tokens',now}),null);
 });

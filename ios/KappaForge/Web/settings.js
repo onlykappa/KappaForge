@@ -70,9 +70,12 @@ function providerSwitches(){
 function sectionPanel(title,body,desc=''){return '<section class="panel"><h3>'+title+'</h3>'+(desc?'<p class="muted">'+desc+'</p>':'')+body+'</section>';}
 // Usage leaves out models removed after the model audit: their test attempts got no reply and they are never used again.
 // Exports keep the full history.
+// Models with no quota at all (0 requests allowed, so never routed) are left out the same way.
 function shownEvents(){
- const removed=new Set((capabilities?.providers||[]).flatMap(p=>(p.removed||[]).map(m=>p.id==='gemini'?m:p.id+':'+m)));
- return removed.size?usageEvents.filter(e=>!e||!removed.has(e.model)):usageEvents;
+ const list=capabilities?.providers||[],L=globalThis.KappaLimits,ids=list.map(p=>p.id);
+ const removed=new Set(list.flatMap(p=>(p.removed||[]).map(m=>p.id==='gemini'?m:p.id+':'+m)));
+ const noQuota=label=>{if(!L||!capabilities?.limits)return false;const s=L.splitLabel(label,ids);return L.noQuota(capabilities.limits,s.provider,s.model);};
+ return usageEvents.filter(e=>!e||!removed.has(e.model)&&!noQuota(e.model));
 }
 function usageSummary(){return KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart(usagePeriod)});}
 function usageStats(s){return '<div class="usage-stats">'+[['Measured tokens',s.requests&&s.unknownTokens<s.requests?s.total.toLocaleString():'Unavailable'],['Provider attempts',s.requests.toLocaleString()],['Average latency',s.requests?(s.averageLatency/1000).toFixed(1)+'s':'Unavailable'],['Estimated cost',!s.requests||s.unknownCosts?'Unavailable':'$'+s.cost.toFixed(4)]].map(([l,v])=>'<div class="s-stat"><small>'+l+'</small><strong>'+v+'</strong></div>').join('')+'</div>';}
@@ -110,7 +113,7 @@ function gaugeFor(p,m=null,unit='requests'){
  return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
   shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
 }
-const gaugeShort=g=>g.daily?'used today':/minute/.test(g.label)?'this minute':'used';
+const gaugeShort=g=>g.daily?'used today':/busiest minute/.test(g.label)?'peak minute':/minute/.test(g.label)?'this minute':'used';
 const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
 // No limit known at all (none published, no counters from the provider) and never refused: open.
 function gaugeRight(g){
