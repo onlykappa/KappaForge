@@ -94,8 +94,8 @@ test('chat stops after the attempt cap and skips a provider whose account reject
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
   assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
-  assert.equal(calls.filter(m=>m.startsWith('groq-')).length,1,'a Groq outage cools its whole account');
-  assert.ok(reservations.length<=4,'a cooling account is skipped after one refusal, not asked about each of its 80 models ('+reservations.length+')');
+  assert.equal(calls.filter(m=>m.startsWith('groq-')).length,3,'a Groq outage cools its whole account after three of its models fail');
+  assert.ok(reservations.length<=6,'a cooling account is skipped after one refusal, not asked about each of its 80 models ('+reservations.length+')');
  }finally{globalThis.fetch=original}
 });
 
@@ -112,7 +112,7 @@ test('the coding gateway applies the same cap and keeps its existing failure cod
   const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
-  assert.equal(calls.length,1);assert.equal(reservations.length,2,'the cooling Groq account is skipped after one refusal');
+  assert.equal(calls.length,3,'three of its models fail before the account counts as down');assert.equal(reservations.length,4,'the cooling Groq account is then skipped after one refusal');
  }finally{globalThis.fetch=original}
 });
 
@@ -205,8 +205,13 @@ test('a keyless provider\'s 401 and a gateway\'s server error rest only that mod
  // A whole-account rest an older version wrote for one NVIDIA model's hang no longer blocks the others.
  value.pools['nvidia:nvidia']={provider:'nvidia',model:'deepseek-ai/deepseek-v4.1-flash',category:'timeout',status:0,failures:6,blocked:false,until:Date.now()+1920000,updatedAt:Date.now()};
  assert.equal(await tryRoute('n','nvidia','qwen/qwen3-next'),true,'a stale account-wide hang rest is ignored');
- assert.equal(await tryRoute('g','groq','llama-4-scout',503),true);
- assert.equal(await tryRoute('h','groq','llama-4-maverick'),false,'an outage at a provider without per-model deployments still pauses it');
+ // Every provider: one model's hang rests only that model; three different models failing in a row is an outage.
+ assert.equal(await tryRoute('g','ollama','minimax-m3.1-flash',502),true);
+ assert.equal(await tryRoute('h','ollama','gpt-oss:120b',200),true,'one hung Ollama model does not bench Ollama');
+ assert.equal(await tryRoute('i','groq','llama-4-scout',503),true);
+ assert.equal(await tryRoute('j','groq','llama-4-maverick',503),true,'a second model failing still leaves the account open');
+ assert.equal(await tryRoute('k','groq','qwen3-32b',502),true);
+ assert.equal(await tryRoute('l','groq','openai/gpt-oss-120b'),false,'three different models failing pauses the account');
 });
 
 test('an account block stored for a keyless provider\'s 401 is ignored; a keyed provider\'s still applies',async()=>{

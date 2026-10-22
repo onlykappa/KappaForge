@@ -58,18 +58,19 @@ export async function reserveProvider(env,route,requestId,{tokens=0}={}){
  if(!p)throw new Error("Unknown provider route");
  const response=await stubFor(env).fetch("https://memory.internal/router/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:p.quotaPool||route.provider,
-  quotaScope:p.quotaScope||"account",failureScope:p.failureScope==="model"?"model":"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens)
+  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens)
  })});
  const data=await response.json().catch(()=>({}));
  if(!response.ok&&response.status!==429)throw new Error("Routing reservation storage failed");
  return {...data,status:response.status};
 }
 
-// Failures that concern one model, not the account: a 401 from a provider used without a key (the model needs an
-// account), and a server error or hang from a free-model gateway or a provider that runs each model on its own
-// deployment (failureScope "model", such as NVIDIA), where one model failing says nothing about the others.
+// Failures that concern one model, never the account: a 401 from a provider used without a key (the model needs an
+// account), and any server error from a free-model gateway, where each model runs on a different upstream, so even
+// several failing is no outage. Elsewhere hangs and server errors rest only the model too (router-state.js), unless
+// several of an account's models fail together.
 const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
-const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||(status===0||status>=500)&&(registry.providers[provider]?.freeOnly===true||registry.providers[provider]?.failureScope==="model");
+const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||(status===0||status>=500)&&registry.providers[provider]?.freeOnly===true;
 
 // Google's 429 names the exhausted quota: a per-day quota rests the model until its quota day ends, a
 // per-minute one until Google's retry delay. Other bodies give no reset.
