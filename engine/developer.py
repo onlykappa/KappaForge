@@ -1311,6 +1311,12 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
             touched = set()
             for i in numbers:
                 stage, outcome = stages[i - 1], results[i]
+                if isinstance(outcome, Exception) and not getattr(outcome, 'terminal', False):
+                    # Every provider was busy with the other workers (or the answer failed): now that they are done, build
+                    # this stage once more on its own, on top of their work, before counting it as not done.
+                    if progress:
+                        progress.now(f"Step {i} of {len(stages)} could not get a free AI alongside the others; building it now on its own")
+                    outcome = attempt(i, stage)
                 paths = set(outcome[2]) if isinstance(outcome, tuple) else set()
                 if paths & touched:
                     # Two workers edited the same file after all: redo this stage on top of what is already applied.

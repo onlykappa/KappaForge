@@ -142,6 +142,23 @@ class ParallelBuildTests(unittest.TestCase):
                              (False, "misses the test"))
         self.assertIn("IT ALSO EDITED: b.py", model.call_args.args[1])
 
+    def test_a_worker_that_found_no_free_ai_is_built_again_after_the_others(self):
+        tries = {"ui.js": 0}
+
+        def fake(api_key, step, repo, current, files, guide, allowed, design, allow_empty=False):
+            own = "api.py" if "endpoint" in step.split("Do only this stage now:")[1].split("\n")[0] else "ui.js"
+            if own == "ui.js":
+                tries["ui.js"] += 1
+                if tries["ui.js"] == 1:
+                    raise RuntimeError("Integrated provider gateway failed (HTTP 503, code free_route_unavailable)")
+                self.assertEqual(current["api.py"], "new\n", "the retry builds on the other worker's change")
+            return "m", "s", {own: "new\n"}, "e"
+
+        model, summary, changes, explanation = self.build(
+            [Stage("Add the endpoint", ["api.py"], True), Stage("Add the screen", ["ui.js"], True)], fake)
+        self.assertEqual(changes, {"api.py": "new\n", "ui.js": "new\n"})
+        self.assertEqual(tries["ui.js"], 2)
+
     def test_dependent_stages_still_run_in_order(self):
         order = []
 
