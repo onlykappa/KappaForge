@@ -13,7 +13,7 @@ import {githubHeaders,githubRead} from "./github.js";
 import {actionsRequest,actionsConfigured,actionsControl} from "./actions.js";
 import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./review.js";
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
-import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
+import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY,catalogLimits} from "./providers.js";
 import {routingStore} from "./router-state.js";
 import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptTokensUpper} from "./premium.js";
 import {premiumStore} from "./premium-store.js";
@@ -272,7 +272,9 @@ export default {
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
-        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);}
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
+          // Each model's own per-request token limits where its catalog publishes them (OpenRouter has no daily token cap).
+          p.modelLimits=Object.fromEntries((p.models||[]).map(m=>[m,catalogLimits(p.id,m)]).filter(([,l])=>l));}
         // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now
         // (the whole account when the limit is shared), so Usage shows a live percentage and "Maxed".
         const LIMIT=/rate_limit|limit_reached|quota|minute_tokens|concurrency/,nowMs=Date.now();

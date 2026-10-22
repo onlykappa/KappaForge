@@ -125,7 +125,7 @@ const gaugeShort=g=>g.daily?'used today':/busiest minute/.test(g.label)?'peak mi
 const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
 // No limit known at all (none published, no counters from the provider) and never refused: open.
 function gaugeRight(g,unit='requests'){
- if(!g)return '<b>Open</b>'+(unit==='tokens'?'no token cap':unit==='requests'?'no request cap':'no cap reported');
+ if(!g)return '<b>Open</b>'+(unit==='tokens'?'no daily token cap':unit==='requests'?'no daily request cap':'no cap reported');
  if(g.maxed)return '<b class="u-low">Maxed</b>'+(g.until?'resets in '+untilReset(g.until):'limit reached');
  return '<b'+(g.percent>=80?' class="u-low"':'')+'>'+gaugeNumber(g.percent)+'%</b>'+gaugeShort(g);
 }
@@ -248,7 +248,10 @@ function providerDetail(){
  const head='<div class="u-card"><div class="u-ttl"><strong>'+(unit==='tokens'?'Tokens today':'Requests today')+'</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):unit==='tokens'?'no daily token cap':'no daily request cap')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
   '<div class="u-lim"><span>'+(unit==='tokens'?'<b>'+tokenFigure(p.tokenLimit?p.tokensOnCapped:p.used.tokens,p.tokenLimit)+'</b>':'<b>'+requestFigure(p.used,p.requestLimit)+'</b>')+'</span></div></div>';
  const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),tpd=m.pairs.find(x=>x.key==='tpd'),g=gaugeFor(p,m,unit);
-  const figure=unit==='tokens'?tokenFigure(tpd?tpd.used:m.used.tokens,tpd?.limit):rpd?requestFigure({...m.used,requests:rpd.used},rpd.limit):requestFigure(m.used,null);
+  // With no daily token cap (OpenRouter), the model's own per-request limits are the real token values to show.
+  const own=!tpd&&(capabilities?.providers||[]).find(x=>x.id===p.id)?.modelLimits?.[m.model];
+  const perRequest=own?' · up to '+[own.context&&compact(own.context)+' in',own.maxOutput&&compact(own.maxOutput)+' out'].filter(Boolean).join(', ')+' per request':'';
+  const figure=unit==='tokens'?tokenFigure(tpd?tpd.used:m.used.tokens,tpd?.limit)+perRequest:rpd?requestFigure({...m.used,requests:rpd.used},rpd.limit):requestFigure(m.used,null);
   return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+figure+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g,unit)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
