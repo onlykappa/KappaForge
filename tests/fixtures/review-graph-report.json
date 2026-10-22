@@ -1,0 +1,127 @@
+{
+ "summary": "Analyzed 19 changed file(s):\n  - 59 changed function(s)/class(es)\n  - 21 affected flow(s)\n  - 21 test gap(s) (11 with no tested caller found, 10 reached only through a caller)\n  - Overall risk score: 0.75\n  - Untested: x, id, fetch, main, _wire\n  - Reached only through a caller: note_progress, checkpoint, host, listed, _text",
+ "risk_score": 0.75,
+ "changed_functions": [
+  {
+   "name": "x",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 73
+  },
+  {
+   "name": "providerActivation",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 58
+  },
+  {
+   "name": "id",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 72
+  },
+  {
+   "name": "note_progress",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/engine/developer.py",
+   "line_start": 1083
+  }
+ ],
+ "affected_flows": [
+  {
+   "name": "__init__"
+  },
+  {
+   "name": "main"
+  }
+ ],
+ "test_gaps": [
+  {
+   "name": "x",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 73,
+   "coverage": "none"
+  },
+  {
+   "name": "id",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 72,
+   "coverage": "none"
+  },
+  {
+   "name": "note_progress",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/developer.py",
+   "line_start": 1083,
+   "coverage": "indirect"
+  },
+  {
+   "name": "checkpoint",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/developer.py",
+   "line_start": 1333,
+   "coverage": "indirect"
+  },
+  {
+   "name": "host",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/free_list_check.py",
+   "line_start": 26,
+   "coverage": "indirect"
+  },
+  {
+   "name": "listed",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/free_list_check.py",
+   "line_start": 38,
+   "coverage": "indirect"
+  },
+  {
+   "name": "fetch",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/free_list_check.py",
+   "line_start": 77,
+   "coverage": "none"
+  },
+  {
+   "name": "main",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/free_list_check.py",
+   "line_start": 82,
+   "coverage": "none"
+  },
+  {
+   "name": "_wire",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/progress_notes.py",
+   "line_start": 20,
+   "coverage": "none"
+  },
+  {
+   "name": "load",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/progress_notes.py",
+   "line_start": 24,
+   "coverage": "none"
+  },
+  {
+   "name": "_text",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/progress_notes.py",
+   "line_start": 50,
+   "coverage": "indirect"
+  },
+  {
+   "name": "finished_stages",
+   "file": "/home/runner/work/KappaForge/KappaForge/project/engine/progress_notes.py",
+   "line_start": 72,
+   "coverage": "none"
+  }
+ ],
+ "test_gaps_uncovered": 11,
+ "review_priorities": [
+  {
+   "name": "providerActivation",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 58
+  },
+  {
+   "name": "id",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/chat-backend/tools/verify-settings.mjs",
+   "line_start": 72
+  },
+  {
+   "name": "note_progress",
+   "file_path": "/home/runner/work/KappaForge/KappaForge/project/engine/developer.py",
+   "line_start": 1083
+  }
+ ],
+ "functions_truncated": false
+}

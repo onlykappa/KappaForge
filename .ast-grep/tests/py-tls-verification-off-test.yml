@@ -1,0 +1,7 @@
+id: py-tls-verification-off
+valid:
+- requests.get(url, timeout=10)
+- requests.get(url, verify=True)
+invalid:
+- requests.get(url, verify=False)
+- ctx = ssl._create_unverified_context()

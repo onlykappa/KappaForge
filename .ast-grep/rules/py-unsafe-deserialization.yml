@@ -1,0 +1,11 @@
+id: py-unsafe-deserialization
+language: python
+severity: error
+message: deserializes data that can run code (pickle, marshal, yaml.load without SafeLoader)
+rule:
+  any:
+  - pattern: pickle.load($$$)
+  - pattern: pickle.loads($$$)
+  - pattern: marshal.loads($$$)
+  - pattern: yaml.load($DATA)
+  - pattern: yaml.unsafe_load($$$)

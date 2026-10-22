@@ -1,0 +1,2 @@
+# ast-grep for the structural security scan (engine/structural_scan.py, sgconfig.yml). Pinned by hash.
+ast-grep-cli==0.51.0 --hash=sha256:17007574681fe872473850780304b3df57ca98ac575d88957972fea8c3810c26

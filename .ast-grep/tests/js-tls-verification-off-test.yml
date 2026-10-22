@@ -1,0 +1,6 @@
+id: js-tls-verification-off
+valid:
+- "https.request({host, rejectUnauthorized: true})"
+invalid:
+- "https.request({host, rejectUnauthorized: false})"
+- process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'

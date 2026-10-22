@@ -21,6 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from engine import recovery
+from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
 from engine.verify import open_problems as requirements_open, review_record
@@ -179,10 +180,21 @@ def dispatch_tests(repo, branch, sha, token, paths=()):
             raise PermissionError('Bounded validation requires the reviewed workflow ref')
         inputs['automatic_fixes'] = 'false'
     gh(f"repos/{ROOT}/actions/workflows/{workflow}/dispatches", token, {"ref": ref, "inputs": inputs})
+    if not pinned:
+        request_review(repo, branch, sha, token)
     # App changes are also compiled with Xcode, UI-tested in the simulator and packaged as an unsigned IPA.
     from engine import native_build
     if native_build.needed(repo, paths):
         native_build.dispatch(branch, sha, token)
+
+
+def request_review(repo, branch, sha, token):
+    """Risk-scored review comment on the PR (review-graph.yml). Best effort: it never stops the task."""
+    inputs = {"repo": repo.split("/", 1)[1], "branch": branch, "candidate_sha": sha}
+    try:
+        gh(f"repos/{ROOT}/actions/workflows/review-graph.yml/dispatches", token, {"ref": "main", "inputs": inputs})
+    except (urllib.error.URLError, ValueError) as exc:
+        print("Review graph not started: " + (f"HTTP {exc.code}" if hasattr(exc, "code") else type(exc).__name__), flush=True)
 
 
 MAX_STAGES = 5
@@ -847,6 +859,12 @@ def flagged_changes(sources, changes):
         for label, pattern in FLAGS:
             if any(pattern.search(line) for line in added):
                 found.setdefault(label, []).append(path)
+    # Structural rules (ast-grep) add what word patterns miss, such as shell=True or a literal key.
+    structural = structural_scan.scan(sources, changes)
+    if structural is None:
+        print("Structural scan unavailable (ast-grep not installed or failed); word-pattern flags still apply", flush=True)
+    for label, paths in (structural or {}).items():
+        found.setdefault(label, []).extend(p for p in paths if p not in found.get(label, []))
     return found
 
 

@@ -1,0 +1,9 @@
+id: js-eval
+valid:
+- JSON.parse(text)
+- setTimeout(() => run(), 100)
+- setTimeout(run, 100)
+invalid:
+- eval(code)
+- const f = new Function('a', body)
+- setTimeout("run()", 100)

@@ -1,0 +1,8 @@
+id: py-eval-exec
+language: python
+severity: error
+message: runs dynamically built Python code (eval/exec)
+rule:
+  any:
+  - pattern: eval($$$)
+  - pattern: exec($$$)
