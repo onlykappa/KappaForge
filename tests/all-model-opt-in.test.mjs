@@ -295,3 +295,15 @@ test('specialist tool models stay listed but are never sent chat',async()=>{
  try{assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',MISTRAL_API_KEY:'tools-'+Math.random()},'mistral'),['mistral-small-latest']);}
  finally{globalThis.fetch=original}
 });
+
+test('model tests stop at half of a daily allowance and leave the rest for chat and tasks',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value;const store={get:async()=>structuredClone(value),put:async(k,n)=>{value=structuredClone(n)}};
+ const day=Date.UTC(2026,9,22),quota={key:'openrouter:*',day,dayEnd:day+86400000,tokens:10,rpd:4};
+ const reserve=async(n,testShare)=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({requestId:('share-'+n).padEnd(32,'0'),provider:'openrouter',model:'m'+n,accountPool:'openrouter',quotaPool:'openrouter',quotaScope:'account',maxConcurrent:8,leaseMs:120000,quota,testShare})}))).json();
+ assert.equal((await reserve('a',0.5)).allowed,true);assert.equal((await reserve('b',0.5)).allowed,true);
+ const third=await reserve('c',0.5);assert.equal(third.allowed,false);assert.equal(third.reason,'test_budget','a test may not take the third of four');
+ assert.equal((await reserve('d')).allowed,true,'chat still may');
+ assert.equal((await reserve('e')).allowed,true);assert.equal((await reserve('f')).reason,'daily_quota');
+});

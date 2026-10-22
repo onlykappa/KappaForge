@@ -228,7 +228,7 @@ function modelDetail(){
 }
 // Model check: one short message to every routable chat model, run in batches by the backend.
 let probe={running:false,total:null,results:[],error:'',at:0};
-const PROBE_LABELS={answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
+const PROBE_LABELS={saved_for_chat:'Skipped: daily limit kept for chat',answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
 function probePanel(){
  const answered=probe.results.filter(r=>r.outcome==='answered'),tokens=answered.reduce((n,r)=>n+(Number(r.tokens)||0),0);
  const status=probe.running?'Testing '+probe.results.length+' of '+(probe.total??'…')+' models…':probe.total!==null?answered.length+' of '+probe.total+' models answered · '+tokens.toLocaleString()+' tokens · '+new Date(probe.at).toLocaleTimeString():'Not run yet.';

@@ -9,6 +9,8 @@ import {reserveProvider,reportProviderOutcome,estimateTokens} from "./router-coo
 // Probes do not consume the KappaForge daily request cap; provider reservations still apply.
 const PROMPT="Reply with the single word OK.";
 const MAX_BATCH=8,TIMEOUT_MS=25000,MAX_WAIT_MS=20000;
+// A model check never takes a model or provider past half of its daily request allowance.
+const TEST_SHARE=0.5;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Spacing between this check's own calls to one provider, from its per-second cap (Mistral allows about one).
 const spacingMs=route=>{const l=globalThis.KappaLimits?.limitFor(registry.limits,route.provider,route.model)||{};return Number.isFinite(l.rps)&&l.rps>0?Math.ceil(1000/l.rps):0;};
@@ -33,10 +35,10 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
   // A short shared cooldown (a provider's per-minute limit) is waited out once rather than reported, so the
   // check measures the model instead of its own pace.
   try{
-   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});
-   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}
+   reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});
+   if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=MAX_WAIT_MS){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);requestId=crypto.randomUUID();reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});}
   }catch{results.push({...row,outcome:"coordination_unavailable"});continue;}
-  if(!reserved.allowed){results.push({...row,outcome:"cooling_down",detail:reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
+  if(!reserved.allowed){results.push({...row,outcome:reserved.reason==="test_budget"?"saved_for_chat":"cooling_down",detail:reserved.reason==="test_budget"?"Not tested: half of today's "+reserved.limit+" requests are already used, and the rest is kept for chat and tasks":reserved.reason||null,retryAt:reserved.retryAt||null});continue;}
   const gap=(lastCall[route.provider]||0)+spacingMs(route)-Date.now();if(gap>0)await sleep(gap);lastCall[route.provider]=Date.now();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
   let response=null,result=null,status=0,category="",errorBody=null;
@@ -75,9 +77,9 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
 const AUDIT_TIMEOUT_MS=90000,AUDIT_TOKENS=1024;
 async function auditOnce(env,route){
  const requestId=crypto.randomUUID(),started=Date.now(),row={status:null,outcome:"error",latencyMs:null,detail:null,reply:null,finish:null,reasoningChars:0};
- let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true});}catch{return {...row,outcome:"coordination_unavailable"};}
+ let reserved;try{reserved=await reserveProvider(env,route,requestId,{tokens:estimateTokens(PROMPT),fresh:true,testShare:TEST_SHARE});}catch{return {...row,outcome:"coordination_unavailable"};}
  if(!reserved.allowed&&reserved.retryAt&&reserved.retryAt-Date.now()<=60000){await sleep(Math.max(0,reserved.retryAt-Date.now())+250);return auditOnce(env,route);}
- if(!reserved.allowed)return {...row,outcome:"limit_reached",detail:reserved.reason||null};
+ if(!reserved.allowed)return {...row,outcome:reserved.reason==="test_budget"?"saved_for_chat":"limit_reached",detail:reserved.reason||null};
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),AUDIT_TIMEOUT_MS);
  let response=null,status=0,category="",errorBody=null,usage=null;
  try{

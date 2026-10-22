@@ -40,7 +40,7 @@ export async function routingStore(state,request){
  if(request.method!=="POST")return Response.json({error:"Method not allowed"},{status:405});
  let input;try{input=await request.json()}catch{return Response.json({error:"Invalid JSON"},{status:400});}
  if(url.pathname==="/router/reserve"){
-  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null,fresh=false}=input||{};
+  const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null,fresh=false,testShare=null}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!validId(accountPool)||!validId(quotaPool)||
      !["account","model"].includes(quotaScope)||!Number.isInteger(maxConcurrent)||maxConcurrent<1||maxConcurrent>8||!Number.isInteger(leaseMs)||leaseMs<1000||leaseMs>MAX_LEASE_MS)
    return Response.json({error:"Invalid reservation"},{status:400});
@@ -70,6 +70,10 @@ export async function routingStore(state,request){
     if(count.minute!==minute){count.minute=minute;count.minuteCount=0;count.minuteTokens=0;}
     const scope=q.key.endsWith(":*")?"pool":"route";
     if(Number.isFinite(q.rpd)&&count.dayCount>=q.rpd)return {allowed:false,reason:"daily_quota",retryAt:q.dayEnd,used:count.dayCount,limit:q.rpd,scope};
+    // Model tests may use only part of a daily allowance (testShare), so checking every model leaves the day's
+    // requests for chat and tasks. OpenRouter's 50 a day is shared by all its free models.
+    if(Number.isFinite(testShare)&&testShare>0&&testShare<1&&Number.isFinite(q.rpd)&&count.dayCount+1>q.rpd*testShare)
+     return {allowed:false,reason:"test_budget",retryAt:q.dayEnd,used:count.dayCount,limit:q.rpd,scope:"route"};
     if(Number.isFinite(q.rpm)&&count.minuteCount>=q.rpm)return {allowed:false,reason:"minute_quota",retryAt:(minute+1)*60000,scope};
     if(Number.isFinite(q.tpm)&&q.tokens>q.tpm)return {allowed:false,reason:"request_too_large",retryAt:null,scope:"route"};
     if(Number.isFinite(q.tpm)&&count.minuteTokens+q.tokens>q.tpm)return {allowed:false,reason:"minute_tokens",retryAt:(minute+1)*60000,scope};

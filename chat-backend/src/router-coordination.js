@@ -56,12 +56,12 @@ export const estimateTokens=value=>Math.ceil((typeof value==="string"?value:JSON
 
 // fresh: the owner's model check sends every model a message even while it rests from an earlier failure, so its
 // count is live; real limits (quotas, requests at once) still apply.
-export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false}={}){
+export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false,testShare=null}={}){
  const p=routeConfig(route.provider);
  if(!p)throw new Error("Unknown provider route");
  const response=await stubFor(env).fetch("https://memory.internal/router/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:p.quotaPool||route.provider,
-  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens),fresh:fresh===true
+  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens),fresh:fresh===true,testShare:Number.isFinite(testShare)?testShare:undefined
  })});
  const data=await response.json().catch(()=>({}));
  if(!response.ok&&response.status!==429)throw new Error("Routing reservation storage failed");
