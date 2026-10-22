@@ -216,3 +216,47 @@ test('Gemma\'s mixture-of-experts name uses the Gemma 4 26B allowance',()=>{
  const g=L.usage([],limits,ids,{show:['gemini'],routed:{gemini:['gemma-4-26b-a4b-it','gemma-4-31b-it']}}).find(r=>r.id==='gemini');
  assert.equal(g.tokenLimit,2*16000*1440);
 });
+
+test('usage leaves out removed models entirely and counts failed attempts apart from answers',()=>{
+ const now=Date.UTC(2026,9,22,15),at=now-3600000,limits={providers:{nvidia:{scope:'provider',rpm:40}}};
+ const events=[{model:'nvidia:01-ai/yi-large',at,total:null,ok:false},{model:'nvidia:deepseek-ai/deepseek-v4.1-flash',at,total:null,ok:false},
+  {model:'nvidia:deepseek-ai/deepseek-v4.1-flash',at,total:null,ok:false},{model:'nvidia:nvidia/nemotron-3-ultra-550b-a55b',at,total:1800,ok:true}];
+ const [p]=KappaLimits.usage(events,limits,['nvidia'],{now,show:['nvidia'],hidden:{nvidia:['01-ai/yi-large']}}).filter(r=>r.id==='nvidia');
+ assert.deepEqual(p.models.map(m=>m.model).sort(),['deepseek-ai/deepseek-v4.1-flash','nvidia/nemotron-3-ultra-550b-a55b'],'a removed model is not listed');
+ assert.equal(p.used.requests,3,'and its attempts count nowhere');
+ const hung=p.models.find(m=>m.model==='deepseek-ai/deepseek-v4.1-flash').used;
+ assert.equal(hung.requests,2);assert.equal(hung.ok,0);assert.equal(hung.tokens,0,'requests without a reply use no tokens');
+});
+
+test('every model gets a usage percentage from whichever limit applies, or Maxed',()=>{
+ const G=KappaLimits.gauge,now=Date.UTC(2026,9,22,15),used=(o={})=>({requests:0,tokens:0,minuteRequests:0,minuteTokens:0,peakMinuteRequests:0,peakMinuteTokens:0,...o});
+ // Gemini and Groq: requests per day per model.
+ let g=G({limit:{rpd:20},used:used({requests:5}),now});assert.equal(g.percent,25);assert.equal(g.daily,true);
+ // Mistral: tokens per minute only, counted as a full day of that limit.
+ g=G({limit:{tpm:500000},used:used({tokens:72000000}),now});assert.equal(g.percent,10);assert.match(g.label,/tokens/);
+ // NVIDIA: 40 a minute shared by every model; no daily cap, so this minute leads.
+ g=G({shared:{rpm:40},sharedUsed:used({peakMinuteRequests:10}),used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/busiest minute/);
+ assert.equal(G({shared:{rpm:40},sharedUsed:used({peakMinuteRequests:40}),used:used(),now}).maxed,false,'a peak at the limit earlier is not maxed now');
+ // OpenRouter: 50 a day shared.
+ g=G({shared:{rpd:50},sharedUsed:used({requests:45}),used:used(),now});assert.equal(g.percent,90);
+ // Workers AI: the account's daily neurons.
+ g=G({neurons:{used:2500,limit:10000},used:used(),now});assert.equal(g.percent,25);assert.match(g.label,/neurons/);
+ // Ollama, Kilo, Z.ai: no published limit, but the provider's own counters from its last answer.
+ g=G({live:[{at:now-60000,limits:{requests:{limit:1000,remaining:600,reset:now+3600000}}}],now});assert.equal(g.percent,40);
+ assert.equal(G({live:[{at:now-7200000,limits:{requests:{limit:1000,remaining:600,reset:now-60000}}}],now}),null,'a counter whose window reset says nothing');
+ // Resting at a limit, or any limit used up, is maxed.
+ g=G({limit:{rpd:20},used:used({requests:3}),rest:{until:now+600000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+600000);
+ g=G({shared:{rpm:40},sharedUsed:used({minuteRequests:40}),now});assert.equal(g.maxed,true);
+ // A daily limit leads over a fuller per-minute one unless that one is used up.
+ g=G({limit:{rpd:100,rpm:10},used:used({requests:10,peakMinuteRequests:8}),now});assert.equal(g.percent,10);
+ // Mistral-style: only a per-minute token limit; its derived daily figure does not lead over the busiest minute.
+ g=G({limit:{tpm:1000},used:used({tokens:5000,peakMinuteTokens:600}),now});assert.equal(g.percent,60);assert.match(g.label,/busiest minute/);
+ // The tokens view counts token limits only.
+ assert.equal(G({limit:{rpd:20},used:used({requests:5}),unit:'tokens',now}),null);
+});
+
+test('a plan the provider reports itself (Ollama) leads the gauge and maxes it when used up',()=>{
+ const now=Date.UTC(2026,9,22);
+ let g=KappaLimits.gauge({plan:{percent:27.5,label:'of the monthly plan'},now});assert.equal(g.percent,27.5);assert.equal(g.maxed,false);
+ g=KappaLimits.gauge({plan:{percent:100,maxed:true,until:now+86400000},now});assert.equal(g.maxed,true);assert.equal(g.until,now+86400000);
+});

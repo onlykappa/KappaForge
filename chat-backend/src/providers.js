@@ -43,7 +43,14 @@ export function providerDiscoveryDiagnostic(env,id){
 // Live model list per configured provider, cached ten minutes per key. The provider's own /models
 // response is the account-specific availability source. Providers in KAPPA_ALL_MODEL_PROVIDERS route
 // every chat model it lists; the rest keep reviewed free models, capped at maxModelsPerProvider.
+// Models the owner removed (the model audit found a permanent error) are never routed or counted; specialist tools
+// (audio, video, documents, decisions) are kept in the model list but never sent chat.
 export async function providerModels(env,id){
+ const p=registry.providers[id]||{},removed=new Set([...(p.removedModels||[]),...(p.toolModels||[]).map(t=>t.model)]);
+ const models=await listedModels(env,id);
+ return removed.size?models.filter(model=>!removed.has(model)):models;
+}
+async function listedModels(env,id){
  const p=registry.providers[id];
  const statusKey=discoveryKey(env,id);
  const setStatus=value=>discoveryStatus.set(statusKey,value);
@@ -153,10 +160,13 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  // model review, capabilities and context remain authoritative.
  const preferred=registry.routing?.preferredModelFamily;
  const reasoning=r=>channel==="chat"&&REASONING_MODEL.test(r.model);
+ // Coding takes turns across providers (each one's first model, then each one's second, …), so one provider's long
+ // list of slow or unserved models cannot use up a task's time before the others are asked.
+ const turn=new Map(),seen={};for(const r of routes)turn.set(r,seen[r.provider]=(seen[r.provider]??-1)+1);
  // The preferred family (DeepSeek) leads coding; chat keeps Gemini first, where a short reply should come fast.
  const preferredRoute=r=>channel==="coding"&&typeof preferred==="string"&&r.model.toLowerCase().includes(preferred);
  routes.sort((a,b)=>Number(reasoning(a))-Number(reasoning(b))||Number(preferredRoute(b))-Number(preferredRoute(a))||
-  (channel==="coding"?(Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
+  (channel==="coding"?(turn.get(a)-turn.get(b)||Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
    (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0)):0));
  if(manual){
   const chosen=routes.find(r=>r.label===manual);
@@ -193,8 +203,16 @@ export async function callProvider(env,route,chat,streaming,signal){
  const maxTokens=Math.min(chat.maxTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
  const messages=[{role:"system",content:chat.system},...chat.messages];
  if(p.kind==="workers-ai"){
+  const run=()=>env.AI.run(route.model,{messages,max_tokens:maxTokens,temperature:chat.temperature,stream:streaming});
   try{
-   const out=await env.AI.run(route.model,{messages,max_tokens:maxTokens,temperature:chat.temperature,stream:streaming});
+   let out;
+   try{out=await run();}
+   catch(error){
+    // Meta's licensed models (error 5016) answer only after the account sends "agree" once; accept and ask again.
+    if(!/\b5016\b/.test(String(error?.message)))throw error;
+    await env.AI.run(route.model,{prompt:"agree"}).catch(()=>{});
+    out=await run();
+   }
    return streaming?new Response(out,{headers:{"Content-Type":"text/event-stream"}}):Response.json(out);
   }catch(error){
    // Daily free allocation exhausted or model retired: let routing move on.

@@ -17,7 +17,8 @@ import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,provi
 import {routingStore} from "./router-state.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
-import {probeModels} from "./model-probe.js";
+import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
+import {ollamaPlan} from "./ollama-plan.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
@@ -128,6 +129,8 @@ function safeEqual(a, b) {
   return bad === 0;
 }
 const CHAT_FIRST_BYTE_MS=20000,QUICK_REFUSAL_MS=5000;
+// A model as the owner reads it in activity lines: "gemini-3.8-flash", "Mistral codestral-latest".
+const label=route=>route.provider==="gemini"?route.model:String(REGISTRY.providers[route.provider]?.name||route.provider).replace(/\s*\(.*\)\s*$/,"")+" "+String(route.model).split("/").pop();
 export default {
   async fetch(request, env, context) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
@@ -165,7 +168,7 @@ export default {
         let snapshot=null;try{snapshot=await routingSnapshot(env)}catch{}
         const now=Date.now(),routeState=snapshot?.routes?.[provider+":"+model]||null;
         const providerPools=Object.values(snapshot?.pools||{}).filter(row=>row?.provider===provider);
-        const poolState=providerPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
+        const poolState=providerPools.filter(row=>row.blocked||!(row.status===0||row.status>=500)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0]||null;
         const blocked=!!routeState?.blocked||!!poolState?.blocked,until=Math.max(routeState?.until||0,poolState?.until||0);
         const health=snapshot===null?"unknown":blocked?"blocked":until>now?"cooldown":"clear";
         const lastFailure=[poolState,routeState].filter(Boolean).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
@@ -199,7 +202,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -246,7 +249,9 @@ export default {
           // keyless pool) are ignored. A few rested models leave the provider usable.
           const poolKey=await accountPoolFor(env,id,p)+":"+(p.quotaPool||id),keyless=poolKey.split(":").length===2,now=Date.now();
           const legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless),live=row=>row&&!legacy(row)&&(row.blocked||row.until>now);
-          const pool=live(snapshot.pools?.[poolKey])?snapshot.pools[poolKey]:null;
+          // One model's old hang recorded against the whole account no longer stops it (router-state.js), so it is not shown as one.
+          const stale=row=>row&&!row.blocked&&(row.status===0||row.status>=500);
+          const pool=live(snapshot.pools?.[poolKey])&&!stale(snapshot.pools[poolKey])?snapshot.pools[poolKey]:null;
           const resting=Object.entries(snapshot.routes||{}).filter(([key,row])=>key.startsWith(id+":")&&live(row)).map(([,row])=>row);
           const active=pool?.blocked?"blocked":pool?"cooldown":resting.length?"models_resting":"unknown";
           health[id]={state:active,retryAt:pool?.until||Math.max(0,...resting.map(row=>row.until||0))||null,category:pool?.category||resting[0]?.category||null,status:pool?.status||null,restingModels:resting.length};
@@ -256,8 +261,21 @@ export default {
         health.gemini={state:geminiPool?.blocked?"blocked":geminiPool?.until>Date.now()?"cooldown":Object.values(snapshot.routes||{}).some(row=>row.provider==="gemini"&&row.until>Date.now())?"cooldown":"unknown",retryAt:geminiPool?.until||null,category:geminiPool?.category||null};
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
+        // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);}
+        // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now
+        // (the whole account when the limit is shared), so Usage shows a live percentage and "Maxed".
+        const LIMIT=/rate_limit|limit_reached|quota|minute_tokens|concurrency/,nowMs=Date.now();
+        for(const p of providers){
+         const prefix=p.id+":",pick=o=>Object.fromEntries(Object.entries(o||{}).filter(([k])=>k.startsWith(prefix)).map(([k,v])=>[k.slice(prefix.length),v]));
+         p.live=pick(snapshot?.live);
+         p.limited=Object.fromEntries(Object.entries(pick(snapshot?.routes)).filter(([,r])=>r&&!r.blocked&&r.until>nowMs&&LIMIT.test(r.category||"")).map(([m,r])=>[m,{until:r.until,category:r.category}]));
+         const pool=Object.values(snapshot?.pools||{}).find(r=>r?.provider===p.id&&!r.blocked&&r.until>nowMs&&LIMIT.test(r.category||""));
+         p.poolLimited=pool?{until:pool.until,category:pool.category}:null;
+        }
         const neurons=providers.some(p=>p.id==="workers-ai"&&p.enabled)?await workersAiNeurons(env).catch(()=>null):null;
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        const ollama=providers.some(p=>p.id==="ollama"&&p.enabled)?await ollamaPlan(env).catch(()=>null):null;
+        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
@@ -265,9 +283,16 @@ export default {
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
+    if(new URL(request.url).pathname==="/providers/models-list"){
+      try{return json(await modelCatalog(env),200,cors)}
+      catch{return json({error:"Model list unavailable. Check backend credentials or provider status."},502,cors)}
+    }
     if(new URL(request.url).pathname==="/providers/probe"){
       if(!env.MEMORY)return json({error:"Shared routing storage unavailable"},503,cors);
       const body=await request.json().catch(()=>({}));
+      // audit: one-by-one check of the named models (labels as the check reports them), at most three per call.
+      if(Array.isArray(body.audit)){try{return json(await auditModels(env,body.audit.filter(l=>typeof l==="string").slice(0,3).map(l=>l.slice(0,200))),200,cors)}
+       catch{return json({error:"Model audit unavailable. Check backend credentials or provider status."},502,cors)}}
       try{return json(await probeModels(env,{offset:body.offset,limit:body.limit,provider:typeof body.provider==="string"?body.provider.slice(0,40):null}),200,cors)}
       catch{return json({error:"Model check unavailable. Check backend credentials or provider status."},502,cors)}
     }
@@ -780,12 +805,17 @@ export default {
             selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
             fallbackEnabled:prefs.fallback!==false,hasMedia:chat.hasMedia,hasTools:chat.hasTools,structuredOutput:planning}},failClosed?503:422,cors);
       }
+      // A streamed chat reply starts at once with "activity" lines (the kind of message, which AIs are asked, the parts of a
+      // split question) so the app can show what is happening before the first word; the answer then follows in the
+      // same stream. Everything below runs inside answerChat, which reports through note().
+      const answerChat=async note=>{
       // Automatic chat picks the kind of message first and puts the models that fit it in front; only a few are sent.
       const automaticChat=!planning&&(!prefs.model||prefs.model==="auto");
       const latestText=String((Array.isArray(input.messages)?input.messages.filter(m=>m?.role==="user").at(-1)?.text:"")||"");
       const chosen=automaticChat?await chooseTier(env,latestText,{hasMedia:chat.hasMedia,disabled:new Set(Array.isArray(prefs.disabledProviders)?prefs.disabledProviders:[])}).catch(()=>null):null;
       if(chosen)candidates=orderForTier(candidates,chosen.tier);
       const tierInfo=chosen?{tier:chosen.tier,tierBy:chosen.by}:{};
+      if(chosen)note(({simple:"Quick message",general:"Everyday question",coding:"Coding question",complex:"Complex question"})[chosen.tier]+(chosen.by==="mistral"?" · sorted by Mistral":""));
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
@@ -798,7 +828,9 @@ export default {
       // A complex question is split into parts answered by different providers at once; the main model then writes
       // the one reply from their notes. Any failure falls back to answering it in one piece.
       if(chosen?.tier==="complex"&&!chat.hasMedia){
-       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub}).catch(()=>null);
+       note("Splitting it into parts for several AIs");
+       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub,note}).catch(()=>null);
+       if(!notes)note("Answering it in one piece");
        if(notes){
         const brief="RESEARCH NOTES for this question, written by specialist models that each answered one part. Check them, correct anything wrong, and combine them into one well-organized answer for the owner. Do not mention the notes, the parts or other models.\n\n"+notes.text;
         payload.systemInstruction.parts.push({text:brief});chat.system+="\n\n"+brief;
@@ -823,7 +855,11 @@ export default {
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
-        if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+        if(routeReservation.allowed)note("Asking "+label(route));
+        if(!routeReservation.allowed){
+          // An account that is cooling down or busy is skipped as a whole, and the refusal does not count as a try.
+          if(routeReservation.scope==="pool")rejectedProviders.add(route.provider);
+          attempt--;lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
@@ -853,12 +889,14 @@ export default {
           clearTimeout(timeout);if(response.status===429)outcomeBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();await record(null,false);
           // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
           if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
+          note(label(route)+(({402:" needs a paid plan",429:" is busy",503:" is unavailable"})[response.status]||" did not answer")+" · trying the next AI");
           if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;
         }
         if(streaming){
+          note("Answering with "+label(route));
           const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider,...tierInfo},abort:controller,timeout,signal:request.signal,context,
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
@@ -897,6 +935,28 @@ export default {
       const retryMessage=lastRetryAt?" Retry after "+new Date(lastRetryAt).toISOString()+".":" Try again later or use another enabled route.";
       const status=lastStatus===429?429:503;
       return json({error:(status===429?"Enabled AI routes are temporarily rate-limited or busy.":"No enabled AI route completed this request.")+retryMessage,code:status===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,failure:lastFailure},status,{...cors,...(lastRetryAt?{"Retry-After":String(Math.max(1,Math.ceil((lastRetryAt-Date.now())/1000)))}:{})});
+      };
+      if(!planning&&input.stream===true){
+        // Stream at once: activity lines while the route is chosen, then the answer's own packets, or one error packet.
+        const {readable,writable}=new TransformStream(),writer=writable.getWriter(),encoder=new TextEncoder(),started=Date.now();
+        const send=packet=>writer.write(encoder.encode(JSON.stringify(packet)+"\n")).catch(()=>{});
+        const work=(async()=>{
+          try{
+            const answer=await answerChat(text=>send({type:"activity",text,ms:Date.now()-started}));
+            if(/x-ndjson/.test(answer.headers.get("content-type")||"")){
+              const reader=answer.body.getReader();
+              for(;;){const {done,value}=await reader.read();if(done)break;await writer.write(value);}
+            }else{
+              const data=await answer.json().catch(()=>({}));
+              await send(data.reply?{type:"done",reply:data.reply,model:data.model,usage:data.usage,routing:data.routing}:{type:"error",error:data.error||"AI request failed",code:data.code||null,retryAt:data.retryAt||null});
+            }
+          }catch{await send({type:"error",error:"AI request timed out or failed"});}
+          finally{await writer.close().catch(()=>{});}
+        })();
+        context?.waitUntil?.(work);
+        return new Response(readable,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
+      }
+      return await answerChat(()=>{});
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }

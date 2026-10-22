@@ -68,9 +68,18 @@ function providerSwitches(){
  return '<div class="s-providers"><strong>Configured providers</strong><p class="muted">Server policy determines eligible free routes; your device choices can restrict them further. Some free tiers retain prompts or use them for training; disable any provider you do not want to receive your prompts. Discovery does not prove inference capacity. Keep provider keys in Worker secrets; coding uses the authenticated gateway.</p>'+list.map(p=>{const status=providerStatus(p);return '<label class="s-provider"><input type="checkbox" data-provider="'+esc(p.id)+'" '+(!p.configured||p.enabled===false?'disabled ':'')+(p.enabled!==false&&p.configured&&!preferences.disabledProviders.includes(p.id)?'checked':'')+'> <span><b>'+esc(p.name)+'</b> · '+esc(status.kind==='available'?p.models.join(', '):status.label)+'</span></label>'}).join('')+'</div>';
 }
 function sectionPanel(title,body,desc=''){return '<section class="panel"><h3>'+title+'</h3>'+(desc?'<p class="muted">'+desc+'</p>':'')+body+'</section>';}
-function usageSummary(){return KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart(usagePeriod)});}
+// Usage leaves out models removed after the model audit: their test attempts got no reply and they are never used again.
+// Exports keep the full history.
+// Models with no quota at all (0 requests allowed, so never routed) are left out the same way.
+function shownEvents(){
+ const list=capabilities?.providers||[],L=globalThis.KappaLimits,ids=list.map(p=>p.id);
+ const removed=new Set(list.flatMap(p=>(p.removed||[]).map(m=>p.id==='gemini'?m:p.id+':'+m)));
+ const noQuota=label=>{if(!L||!capabilities?.limits)return false;const s=L.splitLabel(label,ids);return L.noQuota(capabilities.limits,s.provider,s.model);};
+ return usageEvents.filter(e=>!e||!removed.has(e.model)&&!noQuota(e.model));
+}
+function usageSummary(){return KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart(usagePeriod)});}
 function usageStats(s){return '<div class="usage-stats">'+[['Measured tokens',s.requests&&s.unknownTokens<s.requests?s.total.toLocaleString():'Unavailable'],['Provider attempts',s.requests.toLocaleString()],['Average latency',s.requests?(s.averageLatency/1000).toFixed(1)+'s':'Unavailable'],['Estimated cost',!s.requests||s.unknownCosts?'Unavailable':'$'+s.cost.toFixed(4)]].map(([l,v])=>'<div class="s-stat"><small>'+l+'</small><strong>'+v+'</strong></div>').join('')+'</div>';}
-function budgetAlert(){const s=KappaCore.aggregate(usageEvents,{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
+function budgetAlert(){const s=KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart('month')});const alerts=[];for(const [key,value,label] of [['tokenBudget',s.total,'measured tokens'],['requestBudget',s.requests,'provider attempts']])if(preferences[key]>0&&value>=preferences[key]*preferences.alertPercent/100)alerts.push(value.toLocaleString()+' / '+preferences[key].toLocaleString()+' '+label);return alerts.length?'<p class="s-warning" role="status">Monthly budget threshold: '+esc(alerts.join(' · '))+'. Budgets here are advisory. Unknown tokens are excluded.</p>':'';}
 // Usage home: today's KappaForge requests and tokens against their daily allowances, providers grouped,
 // and a drill-down to each provider and model. Allowances come from config/providers.json "limits".
 const compact=n=>{const v=Math.abs(n);return v>=1e9?+(n/1e9).toFixed(2)+'B':v>=1e6?+(n/1e6).toFixed(v%1e6?2:0)+'M':v>=1e4?+(n/1e3).toFixed(v%1e3?1:0)+'K':Number(n).toLocaleString();};
@@ -79,7 +88,7 @@ const pct=(used,limit)=>limit>0?Math.round(used/limit*1000)/10:null;
 let usageView={provider:null,model:null};
 const PROVIDER_COLORS={gemini:'#0a84ff',groq:'#ff9f0a',zai:'#bf5af2',ollama:'#e5e5ea',mistral:'#ff6b35',nvidia:'#76b900',openrouter:'#ff453a','workers-ai':'#64d2ff',other:'#8e8e93'};
 const successColor=p=>p===null?'var(--text)':p>=90?'#30d158':p>=50?'#ff9f0a':'#ff453a';
-function untilReset(at){const ms=Math.max(0,at-Date.now()),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return h?h+' h '+m+' m':m+' m';}
+function untilReset(at){const ms=Math.max(0,at-Date.now()),d=Math.floor(ms/86400000),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return d>=2?d+' d '+Math.floor(ms%86400000/3600000)+' h':h?h+' h '+m+' m':m+' m';}
 function uMeter(percent,color){const p=Math.max(0,Number(percent)||0);return '<div class="u-meter" role="img" aria-label="'+p+'% used"><i style="width:'+Math.min(100,p)+'%;'+(p>0?'min-width:3px;':'')+'background:'+(p>100?'#ff453a':p>=80?'#ff9f0a':color)+'"></i></div>';}
 const PROVIDER_MARKS={groq:'Q','workers-ai':'C',openrouter:'O'};
 function uBarCard(title,right,used,limit,unit,color,note=''){const p=pct(used,limit);return '<div class="u-card"><div class="u-ttl"><strong>'+title+'</strong><span>'+right+'</span></div>'+uMeter(p,color)+'<div class="u-lim"><span><b>'+compact(used)+'</b> of '+compact(limit)+' '+unit+'</span><span>'+(p??0)+'%</span></div>'+(note?'<p class="u-note">'+note+'</p>':'')+'</div>';}
@@ -87,13 +96,35 @@ function usageModel(){
  const L=globalThis.KappaLimits,list=capabilities?.providers||[];
  if(!L||!capabilities?.limits||!list.length)return null;
  const names=Object.fromEntries(list.map(p=>[p.id,p.name])),enabled=list.filter(p=>p.enabled!==false&&p.configured!==false).map(p=>p.id);
- const rows=L.usage(usageEvents,capabilities.limits,list.map(p=>p.id),{show:enabled,routed:Object.fromEntries(list.filter(p=>Array.isArray(p.models)&&p.models.length).map(p=>[p.id,p.models]))}).filter(p=>enabled.includes(p.id)||p.used.requests);
- return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p]))};
+ const rows=L.usage(shownEvents(),capabilities.limits,list.map(p=>p.id),{show:enabled,routed:Object.fromEntries(list.filter(p=>Array.isArray(p.models)&&p.models.length).map(p=>[p.id,p.models])),hidden:Object.fromEntries(list.map(p=>[p.id,p.removed||[]]))}).filter(p=>enabled.includes(p.id)||p.used.requests);
+ return {rows,names,byId:Object.fromEntries(rows.map(p=>[p.id,p])),tools:Object.fromEntries(list.map(p=>[p.id,p.tools||[]])),
+  // A model with usage today that the provider no longer offers (not routed, not a tool) is labeled, not hidden: its use was real.
+  offered:(id,name)=>{const routed=list.find(p=>p.id===id)?.models;return !Array.isArray(routed)||!routed.length||routed.some(n=>n===name||L.canonical(capabilities.limits,id,n)===name);}};
+}
+// How full a provider (m null) or one of its models is: today's use against the tightest limit that applies, the
+// provider's own rate-limit counters, Workers AI neurons, and "Maxed" while the router rests it at a limit.
+function gaugeFor(p,m=null,unit='requests'){
+ const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
+ const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
+ // Ollama reports its monthly plan itself: the whole plan for the provider, each model's share of it for a model.
+ const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
+ const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;
+ if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
+  shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
+}
+const gaugeShort=g=>g.daily?'used today':/busiest minute/.test(g.label)?'peak minute':/minute/.test(g.label)?'this minute':'used';
+const gaugeNumber=n=>n>0&&n<10?+n.toFixed(1):Math.round(n);
+// No limit known at all (none published, no counters from the provider) and never refused: open.
+function gaugeRight(g){
+ if(!g)return '<b>Open</b>no cap reported';
+ if(g.maxed)return '<b class="u-low">Maxed</b>'+(g.until?'resets in '+untilReset(g.until):'limit reached');
+ return '<b'+(g.percent>=80?' class="u-low"':'')+'>'+gaugeNumber(g.percent)+'%</b>'+gaugeShort(g);
 }
 function providerRow(p,names,unit='requests'){
- const byTokens=unit==='tokens'&&p.tokenLimit,left=byTokens?Math.max(0,100-pct(p.tokensOnCapped,p.tokenLimit)):p.requestLimit?Math.max(0,100-pct(p.used.requests,p.requestLimit)):null,color=PROVIDER_COLORS[p.id]||'#8e8e93';
+ const g=gaugeFor(p,null,unit),color=PROVIDER_COLORS[p.id]||'#8e8e93';
  const detail=[p.requestLimit?compact(p.used.requests)+' of '+compact(p.requestLimit)+' requests':plural(p.used.requests,'request'),p.tokenLimit?compact(p.tokensOnCapped)+' of '+compact(p.tokenLimit)+' tokens':compact(p.used.tokens)+' tokens'].join(' · ');
- return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(left===null?0:100-left,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>no limit set':'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
+ return '<button class="u-prow" data-usage-provider="'+esc(p.id)+'"><span class="u-av" style="color:'+color+';background:'+color+'2e">'+esc(PROVIDER_MARKS[p.id]||(names[p.id]||p.id)[0].toUpperCase())+'</span><span class="u-pn"><strong>'+esc(names[p.id]||p.id)+'</strong><small>'+detail+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';
 }
 // Which allowance the Usage page counts. Each view keeps the same layout with its own unit.
 const USAGE_UNITS=[['requests','Requests'],['tokens','Tokens'],['neurons','Neurons'],['plan','Plan usage']];
@@ -109,7 +140,7 @@ function uUnitPicker(){const name=USAGE_UNITS.find(u=>u[0]===usageUnit)[1];
 const USAGE_PERIODS=[['day','Day','today'],['week','Week','last 7 days'],['month','Month','this month'],['year','Year','this year']];
 function periodTokens(period){
  const since=KappaCore.periodStart(period),kept=KappaCore.periodStart('day')-89*86400000;let n=0;
- for(const e of usageEvents)if(e&&e.at>=since&&Number.isFinite(e.total)&&e.total>0)n+=e.total;
+ for(const e of shownEvents())if(e&&e.at>=since&&Number.isFinite(e.total)&&e.total>0)n+=e.total;
  for(const [day,v] of Object.entries(usageDays)){const at=Date.parse(day+'T00:00:00Z');if(at>=since&&at<kept&&Number.isFinite(v?.tokens))n+=v.tokens;}
  return n;
 }
@@ -123,7 +154,7 @@ function usageHome(){
  const nextUtc=(()=>{const d=new Date();d.setUTCHours(24,0,0,0);return d.getTime();})(),resets='Resets in '+untilReset(nextUtc);
  const used=state.dailyRequests?.used||0,cap=state.dailyPolicyLimit,p=pct(used,cap)??0;
  const today=KappaCore.periodStart('day');let tokensToday=0,okToday=0,attemptsToday=0;
- for(const e of usageEvents){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
+ for(const e of shownEvents()){if(!e||!Number.isFinite(e.at))continue;const t=Number.isFinite(e.total)&&e.total>0?e.total:0;if(e.at>=today){tokensToday+=t;if(e.kind!=='probe'&&!e.cancelled){attemptsToday++;if(e.ok!==false)okToday++;}}}
  const success=attemptsToday?Math.round(okToday/attemptsToday*100)+'%':'—';
  const tokenLimit=model.rows.reduce((n,r)=>n+(r.tokenLimit||0),0),tokensCapped=model.rows.reduce((n,r)=>n+(r.tokenLimit?r.tokensOnCapped:0),0),cappedNames=model.rows.filter(r=>r.tokenLimit).map(r=>model.names[r.id]||r.id);
  const tokenBar=tokenLimit?uBarCard('Daily tokens',resets,tokensCapped,tokenLimit,'tokens available','#bf5af2','The most the free tiers of '+esc(cappedNames.join(', '))+' allow today: published daily token caps; for models limited per minute, tokens per minute × the requests allowed per day (Gemini), or a full day of the per-minute limit where there is no daily limit (Mistral). Counts only models KappaForge routes. Larger requests reach it sooner.'):'';
@@ -143,13 +174,18 @@ function usageHome(){
   return uHero(uRing(np,'of today used',known),known?'<b>'+compact(n.used)+'</b> / '+compact(n.limit)+' neurons':'Neurons unavailable',
    [[compact(w?.used.requests||0),'Workers AI requests'],[compact(w?.used.tokens||0),'tokens today'],[untilReset(nextUtc),'until reset']])+
    (known?uBarCard('Daily neurons',resets,n.used,n.limit,'neurons used','#64d2ff','From Cloudflare account analytics; it can lag a few minutes.'):'<div class="u-card"><p class="u-note">'+esc(n?.error||'Workers AI is not enabled on this backend.')+'</p></div>')+one('workers-ai');}
- if(usageUnit==='plan'){const o=model.byId.ollama;
-  return uHero(uRing(0,'',false),'Ollama plan usage',[[compact(o?.used.requests||0),'Ollama requests'],[compact(o?.used.tokens||0),'tokens today'],[o?plural(o.models.filter(m=>!m.unused).length,'model'):'—','used today']])+
-   '<div class="u-card"><p class="u-note">Ollama shows plan usage as a percentage on ollama.com only; it has no API for it yet, so KappaForge can’t read it. The numbers above are KappaForge’s own Ollama traffic today.</p></div>'+one('ollama');}
+ if(usageUnit==='plan'){const o=model.byId.ollama,plan=capabilities.ollamaPlan,known=Number.isFinite(plan?.percent);
+  const left=known&&Number.isFinite(plan.leftUsd)?'$'+plan.leftUsd.toFixed(2)+' of $'+plan.allowanceUsd.toFixed(2)+' left':known?(100-plan.percent)+'% of the '+plan.window+' limit left':'Ollama plan usage';
+  return uHero(uRing(known?plan.percent:0,known?(plan.window?'of the '+plan.window+' limit':'of this month used'):'',known),left,
+   [[compact(o?.used.requests||0),'Ollama requests today'],[compact(o?.used.tokens||0),'tokens today'],[known&&plan.resetsAt?untilReset(plan.resetsAt):'—','until reset']])+
+   '<div class="u-card"><p class="u-note">'+(known?'From Ollama’s own plan balance (included monthly credit, refreshed every minute).'+(plan.purchasedUsd>0?' Purchased credit left: $'+plan.purchasedUsd.toFixed(2)+'.':''):esc(plan?.error||'Ollama is not enabled on this backend.'))+'</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
  return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(tokensToday),'tokens today'],uPeriodCell(),[success,'chat &amp; tasks succeeded']],true)+
   uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+tokenBar+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158');
 }
+// A request that got no reply (hung, refused, rate-limited) still reached the provider but used no tokens: say so.
+function answered(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);
+ return !u.requests?' · '+compact(u.tokens)+' tokens':failed===u.requests?' · none answered':(failed?' · '+compact(failed)+' failed':'')+' · '+compact(u.tokens)+' tokens';}
 function providerDetail(){
  const model=usageModel();if(!model)return usageHome();
  const back='<button class="u-back" id="usage-back">‹ Usage</button>';
@@ -159,9 +195,11 @@ function providerDetail(){
  }
  const p=model.byId[usageView.provider];if(!p){usageView={provider:null,model:null};return usageHome();}
  const resets=p.dayResets==='America/Los_Angeles'?'midnight Pacific':'midnight UTC',color=PROVIDER_COLORS[p.id]||'#8e8e93';
- const head=p.requestLimit?uBarCard('Requests today',Math.round(Math.max(0,100-pct(p.used.requests,p.requestLimit)))+'% left',p.used.requests,p.requestLimit,'requests',color):'<div class="u-card"><div class="u-ttl"><strong>Requests today</strong><span>no limit set</span></div><div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests · '+compact(p.used.tokens)+' tokens</span></div></div>';
- const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),left=rpd?Math.max(0,100-rpd.percent):null;
-  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+' · '+compact(m.used.tokens)+' tokens</small>'+uMeter(rpd?rpd.percent:0,color)+'</span><span class="u-right">'+(left===null?'<b>—</b>'+(m.limit?'per-minute limits':'no limit set'):'<b'+(left<20?' class="u-low"':'')+'>'+Math.round(left)+'%</b>left')+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
+ const pg=gaugeFor(p);
+ const head='<div class="u-card"><div class="u-ttl"><strong>Usage today</strong><span>'+(pg?pg.maxed?'Maxed'+(pg.until?' · resets in '+untilReset(pg.until):''):gaugeNumber(pg.percent)+'% '+esc(pg.label):'no cap reported')+'</span></div>'+uMeter(pg?pg.percent:0,color)+
+  '<div class="u-lim"><span><b>'+compact(p.used.requests)+'</b> requests'+answered(p.used)+'</span></div></div>';
+ const modelRow=m=>{const rpd=m.pairs.find(x=>x.key==='rpd'),g=gaugeFor(p,m);
+  return '<button class="u-prow" data-usage-model="'+esc(m.model)+'"><span class="u-pn"><strong>'+esc(m.model)+'</strong><small>'+(rpd?compact(rpd.used)+' of '+compact(rpd.limit)+' requests':plural(m.used.requests,'request'))+answered(m.used)+(model.tools[p.id]?.includes(m.model)?' · specialist tool':model.offered(p.id,m.model)?'':' · not offered now')+'</small>'+uMeter(g?g.percent:0,color)+'</span><span class="u-right">'+gaugeRight(g)+'</span><span class="u-chev" aria-hidden="true">›</span></button>';};
  const used=p.models.filter(m=>!m.unused),idle=p.models.filter(m=>m.unused);
  return back+'<h3 class="u-title">'+esc(model.names[p.id]||p.id)+'</h3><p class="u-sub">'+plural(p.models.length,'model')+' · resets '+resets+'</p>'+head+
   '<h3 class="u-hdr">Models</h3><div class="u-card u-list">'+(used.length?used.map(modelRow).join(''):'<p class="s-empty">No requests today.</p>')+(idle.length?'<details class="u-idle"><summary>'+plural(idle.length,'more model')+' · unused today</summary>'+idle.map(modelRow).join('')+'</details>':'')+'</div>'+
@@ -189,7 +227,7 @@ function probePanel(){
  const answered=probe.results.filter(r=>r.outcome==='answered'),tokens=answered.reduce((n,r)=>n+(Number(r.tokens)||0),0);
  const status=probe.running?'Testing '+probe.results.length+' of '+(probe.total??'…')+' models…':probe.total!==null?answered.length+' of '+probe.total+' models answered · '+tokens.toLocaleString()+' tokens · '+new Date(probe.at).toLocaleTimeString():'Not run yet.';
  const rows=probe.results.map(r=>'<tr class="probe-'+(r.outcome==='answered'?'ok':'fail')+'"><th>'+esc(r.label)+'</th><td>'+esc(PROBE_LABELS[r.outcome]||r.outcome)+(r.status&&r.outcome!=='answered'?' <small>HTTP '+r.status+'</small>':'')+'</td><td>'+(Number.isFinite(r.tokens)?r.tokens.toLocaleString():'—')+'</td><td>'+(Number.isFinite(r.latencyMs)?(r.latencyMs/1000).toFixed(1)+'s':'—')+'</td></tr>').join('');
- return sectionPanel('Test every model',sb('model-probe',probe.running?'Testing…':'Test every model',false)+'<p class="muted" role="status">'+esc(probe.error||status)+'</p>'+(rows?'<div class="table-scroll"><table><caption>One message sent, one reply expected</caption><thead><tr><th>Model</th><th>Result</th><th>Tokens</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>':''),
+ return sectionPanel('Test every model',sb('model-probe',probe.running?'Testing…':'Test every model',false)+sb('model-list','Download model list (PDF)')+'<p class="muted" role="status">'+esc(probe.error||status)+'</p>'+(rows?'<div class="table-scroll"><table><caption>One message sent, one reply expected</caption><thead><tr><th>Model</th><th>Result</th><th>Tokens</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>':''),
   'Sends “Reply with the single word OK.” to each chat model KappaForge can use and records every reply in Usage. Paid models may charge a fraction of a cent. Models resting after a recent failure are reported, not retried.');
 }
 async function runProbe(){
@@ -292,6 +330,12 @@ function bindSettings(){
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
  on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ on('model-list',async()=>{
+  // Every model in use, the specialist tools kept and the removed models with their reasons; statuses from the last test.
+  try{const data=await settingsAPI('/providers/models-list',{},60000);
+   exportFile('KappaForge-models-'+new Date().toISOString().slice(0,10)+'.pdf',KappaModelPDF.build(data,probe.results),'application/pdf');}
+  catch(e){settingsNotice='Model list unavailable: '+e.message;render();}
+ });
  on('model-probe',()=>{if(confirm('Send one short test message to every chat model KappaForge can use? Paid models may charge a fraction of a cent.'))return runProbe();});
  document.getElementById('memory-search')?.addEventListener('input',e=>document.querySelectorAll('[data-memory-text]').forEach(n=>n.hidden=!n.dataset.memoryText.includes(e.target.value.toLowerCase())));
  document.querySelectorAll('[data-delete-memory]').forEach(b=>b.onclick=()=>{const note=savedMemories[Number(b.dataset.deleteMemory)];if(confirm('Delete this memory across synchronized devices? You can restore it from Recently deleted.')){deleteMemory(note);render()}});

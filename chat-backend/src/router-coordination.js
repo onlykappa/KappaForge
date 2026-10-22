@@ -14,7 +14,8 @@ function resetDeadline(value,now){
   let delay=0;for(const part of value.matchAll(/(\d+(?:\.\d+)?)(ms|[dhms])/gi))delay+=Number(part[1])*({d:86400000,h:3600000,m:60000,s:1000,ms:1})[part[2].toLowerCase()];
   return now+delay;
  }
- if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>now/1000?number*1000:now+number*1000;}
+ // A plain number is a delay in seconds, or an epoch time: in milliseconds (OpenRouter) or seconds.
+ if(/^\d+(?:\.\d+)?$/.test(value)){const number=Number(value);return number>1e12?number:number>now/1000?number*1000:now+number*1000;}
  const date=Date.parse(value);return Number.isFinite(date)?date:null;
 }
 export async function accountPoolFor(env,provider,config){
@@ -53,22 +54,25 @@ export function routeQuota(route,tokens=0,now=Date.now()){
 // Rough prompt size in tokens (about four characters each), for the tokens-per-minute check.
 export const estimateTokens=value=>Math.ceil((typeof value==="string"?value:JSON.stringify(value??"")).length/4);
 
-export async function reserveProvider(env,route,requestId,{tokens=0}={}){
+// fresh: the owner's model check sends every model a message even while it rests from an earlier failure, so its
+// count is live; real limits (quotas, requests at once) still apply.
+export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false}={}){
  const p=routeConfig(route.provider);
  if(!p)throw new Error("Unknown provider route");
  const response=await stubFor(env).fetch("https://memory.internal/router/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:p.quotaPool||route.provider,
-  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens)
+  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:routeQuota(route,tokens),fresh:fresh===true
  })});
  const data=await response.json().catch(()=>({}));
  if(!response.ok&&response.status!==429)throw new Error("Routing reservation storage failed");
  return {...data,status:response.status};
 }
 
-// Failures that concern one model, not the account: a 401 from a provider used without a key (the model needs an
-// account), and a server error from a free-model gateway, where each model runs on a different upstream.
+// Failures that concern one model, never the account: a 401 from a provider used without a key (the model needs an
+// account), and any server error from a free-model gateway, where each model runs on a different upstream, so even
+// several failing is no outage. Elsewhere hangs and server errors rest only the model too (router-state.js).
 const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
-const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||status>=500&&registry.providers[provider]?.freeOnly===true;
+const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||(status===0||status>=500)&&registry.providers[provider]?.freeOnly===true;
 
 // Google's 429 names the exhausted quota: a per-day quota rests the model until its quota day ends, a
 // per-minute one until Google's retry delay. Other bodies give no reset.
@@ -79,6 +83,18 @@ export function quotaResetFromBody(route,body,now=Date.now()){
  if(ids.some(id=>/PerDay/i.test(id)))return routeQuota(route,0,now)?.dayEnd||null;
  const delay=details.map(d=>/^(\d+(?:\.\d+)?)s$/.exec(String(d?.retryDelay||""))?.[1]).find(Boolean);
  return delay?now+Math.ceil(Number(delay))*1000:null;
+}
+
+// The provider's own counters from its rate-limit headers (x-ratelimit-limit-requests / -remaining-requests,
+// -tokens, a plain x-ratelimit-limit, …): what a model may still use, even where no limit is published.
+export function liveLimits(headers,now=Date.now()){
+ if(!headers?.forEach)return null;
+ const out={};
+ headers.forEach((value,key)=>{const m=/^x-ratelimit-(limit|remaining|reset)(?:-(.+))?$/i.exec(key);if(!m)return;
+  const name=(m[2]||"requests").toLowerCase().slice(0,40),row=out[name]??={};
+  if(m[1].toLowerCase()==="reset")row.reset=resetDeadline(String(value),now);else{const n=Number(value);if(Number.isFinite(n)&&n>=0)row[m[1].toLowerCase()]=n;}});
+ const kept=Object.entries(out).filter(([,r])=>r.limit>0&&Number.isFinite(r.remaining)).slice(0,8);
+ return kept.length?Object.fromEntries(kept.map(([k,r])=>[k,{limit:r.limit,remaining:Math.min(r.remaining,r.limit),reset:Number.isFinite(r.reset)?r.reset:null}])):null;
 }
 
 export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null,body=null}){
@@ -97,6 +113,8 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
  const resetAt=Number.isFinite(bodyReset)?bodyReset:deadlines.length?Math.max(...deadlines):undefined;
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
   requestId,provider:route.provider,model:route.model,status,category,modelScoped:modelScoped(env,route.provider,status),
+  full:status>=200&&status<300&&(exhausted("x-ratelimit-remaining-requests")||exhausted("x-ratelimit-remaining-tokens")),
+  live:liveLimits(headers)||undefined,
   retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,
   usage:usage?{inputTokens:usage.promptTokenCount,outputTokens:usage.candidatesTokenCount,totalTokens:usage.totalTokenCount}:undefined,
   remaining:remainingHeader!==null&&remainingHeader!==undefined&&/^\d+$/.test(remainingHeader)?Number(remainingHeader):undefined,

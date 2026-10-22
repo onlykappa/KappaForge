@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
 import {discover} from '../chat-backend/src/intelligence.js';
@@ -93,8 +94,8 @@ test('chat stops after the attempt cap and skips a provider whose account reject
   const r=await worker.fetch(chat({messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
-  assert.equal(reservations.length,64,'83 candidate routes stop at maxRouteAttempts');
   assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
+  assert.equal(calls.length,64,'each failing Groq model hands off to the next until the attempt cap');
  }finally{globalThis.fetch=original}
 });
 
@@ -111,7 +112,23 @@ test('the coding gateway applies the same cap and keeps its existing failure cod
   const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
-  assert.equal(reservations.length,64,'80 candidate routes stop at maxRouteAttempts');assert.ok(calls.length>=1);
+  assert.equal(calls.length,64,'each failing model hands off to the next until the attempt cap');
+ }finally{globalThis.fetch=original}
+});
+
+test('the coding gateway still stops at the attempt cap when each model fails on its own',async()=>{
+ const original=globalThis.fetch,calls=[],reservations=[];
+ globalThis.fetch=async(url,init={})=>{const u=String(url);
+  if(u.endsWith('/v1/models'))return Response.json({data:Array.from({length:80},(_,i)=>({id:'mistral-code-'+i,capabilities:{completion_chat:true}}))});
+  if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
+  return new Response('{}',{status:404});
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CODE_PROVIDERS:'mistral',KAPPA_PRIVATE_CODE_PROVIDERS:'mistral',
+   MISTRAL_API_KEY:'cap-code-mistral',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['mistral']});
+  assert.ok([429,503].includes(r.status));
+  assert.equal(calls.length,64,'80 models failing one by one stop at maxRouteAttempts');
  }finally{globalThis.fetch=original}
 });
 
@@ -179,8 +196,32 @@ test('a keyless provider\'s 401 and a gateway\'s server error rest only that mod
  assert.equal(await tryRoute(2,'kilo','kilo-auto/free'),true,'one model needing an account does not block the keyless pool');
  assert.equal(await tryRoute(3,'openrouter','vendor/a:free',502),true);
  assert.equal(await tryRoute(4,'openrouter','vendor/b:free'),true,'a gateway upstream error rests only that model');
- assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',503),true);
- assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b'),false,'an outage at a single-vendor provider still pauses it');
+ // NVIDIA runs each model on its own deployment: one model's error or hang (recorded as 502) rests that model only.
+ assert.equal(await tryRoute(5,'nvidia','deepseek-ai/deepseek-v4.1-flash',502),true);
+ assert.equal(await tryRoute(6,'nvidia','nvidia/nemotron-3-ultra-550b-a55b',200),true,'one hung NVIDIA model does not cool down the other models');
+ assert.equal(await tryRoute(7,'nvidia','deepseek-ai/deepseek-v4.1-flash'),false,'the hung model itself rests');
+ assert.equal(await tryRoute(8,'nvidia','nvidia/nemotron-3-ultra-550b-a55b',429),true);
+ assert.equal(await tryRoute(9,'nvidia','qwen/qwen3.5-coder'),false,'the account-wide 40 a minute limit still pauses the account');
+ // A whole-account rest an older version wrote for one NVIDIA model's hang no longer blocks the others.
+ value.pools['nvidia:nvidia']={provider:'nvidia',model:'deepseek-ai/deepseek-v4.1-flash',category:'timeout',status:0,failures:6,blocked:false,until:Date.now()+1920000,updatedAt:Date.now()};
+ assert.equal(await tryRoute('n','nvidia','qwen/qwen3-next'),true,'a stale account-wide hang rest is ignored');
+ // Every provider: one model's hang rests only that model, however many of its models fail; the next one is tried.
+ assert.equal(await tryRoute('g','ollama','minimax-m3.1-flash',502),true);
+ assert.equal(await tryRoute('h','ollama','gpt-oss:120b',200),true,'one hung Ollama model does not bench Ollama');
+ assert.equal(await tryRoute('i','groq','llama-4-scout',503),true);
+ assert.equal(await tryRoute('j','groq','llama-4-maverick',503),true,'a second model failing still leaves the account open');
+ assert.equal(await tryRoute('k','groq','qwen3-32b',502),true);
+ assert.equal(await tryRoute('l','groq','openai/gpt-oss-120b',429),true,'three different models failing still leaves the account open');
+ assert.equal(await tryRoute('m','groq','openai/gpt-oss-120b'),false,'a model at its own limit rests');
+ assert.equal(await tryRoute('o','groq','llama-3.3-70b-versatile',200),true,'Groq limits are per model, so its other models stay open');
+ // An answer that used up the last of a limit: the next request skips the model without being refused first.
+ const full=async(n,provider,model,headers)=>{await reserveProvider(env,{provider,model},id(n));
+  await reportProviderOutcome(env,{requestId:id(n),route:{provider,model},status:200,headers:new Headers(headers)});};
+ await full('p','groq','moonshotai/kimi-k2',{'x-ratelimit-remaining-requests':'0','x-ratelimit-reset-requests':'30s'});
+ assert.equal(await tryRoute('q','groq','moonshotai/kimi-k2'),false,'a model the provider says is used up is skipped');
+ assert.equal(await tryRoute('r','groq','allam-2-7b'),true,'only that model');
+ await full('s','ollama','gpt-oss:120b',{'x-ratelimit-remaining-requests':'0','x-ratelimit-reset-requests':'30s'});
+ assert.equal(await tryRoute('t','ollama','minimax-m3'),false,'an account-wide limit used up skips the whole account');
 });
 
 test('an account block stored for a keyless provider\'s 401 is ignored; a keyed provider\'s still applies',async()=>{
@@ -195,4 +236,62 @@ test('an account block stored for a keyless provider\'s 401 is ignored; a keyed 
  value.pools['groq:0123456789abcdef:groq']={provider:'groq',status:401,blocked:true,until:0,updatedAt:Date.now()};
  assert.equal((await reserve('kilo-after-00000000000000000000000','kilo','kilo')).allowed,true);
  assert.equal((await reserve('groq-after-00000000000000000000000','groq','groq:0123456789abcdef')).allowed,false);
+});
+
+test('parallel workers share a per-model account across its models, and a missing model rests a day',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value;const store={get:async k=>structuredClone(value),put:async(k,next)=>{value=structuredClone(next)}};
+ const call=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(n,model,quotaScope)=>call({requestId:('parallel-'+n).padEnd(32,'0'),provider:'gemini',model,accountPool:'gemini',quotaPool:'gemini',quotaScope,maxConcurrent:1,leaseMs:120000});
+ assert.equal((await reserve('a','gemini-3.6-flash','model')).allowed,true);
+ assert.equal((await reserve('b','gemini-3.5-flash-lite','model')).allowed,true,'a second worker takes another model of the same account');
+ const same=await reserve('c','gemini-3.6-flash','model');
+ assert.equal(same.allowed,false);assert.equal(same.scope,'route','only that busy model is skipped');
+ assert.equal((await call({requestId:'parallel-d'.padEnd(32,'0'),provider:'ollama',model:'x',accountPool:'ollama',quotaPool:'ollama',quotaScope:'account',maxConcurrent:1,leaseMs:120000})).allowed,true);
+ const shared=await call({requestId:'parallel-e'.padEnd(32,'0'),provider:'ollama',model:'y',accountPool:'ollama',quotaPool:'ollama',quotaScope:'account',maxConcurrent:1,leaseMs:120000});
+ assert.equal(shared.scope,'pool','an account-wide limit still counts across models');
+ const outcome=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/outcome',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ await outcome({requestId:'parallel-a'.padEnd(32,'0'),provider:'gemini',model:'gemini-3.6-flash',status:404});
+ assert.ok(value.routes['gemini:gemini-3.6-flash'].until-Date.now()>23*3600000,'a model the provider says does not exist rests a day');
+});
+
+test('models the owner removed for needing payment are never routed, even when the provider lists them',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>catalog(['gpt-oss:120b','kimi-k3','glm-5.3','gemma4:31b','muse-spark-open']);
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'ollama',OLLAMA_API_KEY:'removed-models-ollama'};
+  assert.deepEqual(await providerModels(env,'ollama'),['gpt-oss:120b','gemma4:31b']);
+ }finally{globalThis.fetch=original}
+});
+
+test('the model audit removals cover every provider, Gemini included',async()=>{
+ const registry=JSON.parse(readFileSync(new URL('../config/providers.json',import.meta.url),'utf8'));
+ for(const id of ['nvidia','workers-ai','ollama','openrouter','kilo']){const p=registry.providers[id];
+  assert.ok(p.removedModels.length&&p.removedModels.every(m=>p.removedWhy[m]),id+' lists a reason for every removed model');}
+ assert.deepEqual(registry.providers.mistral.toolModels.map(t=>t.kind),['Audio','Audio','Audio','Audio'],'audio models are kept as tools');
+ assert.ok(!registry.providers.ollama.removedModels.includes('mistral-large-4'),'a model still being rolled out is kept');
+ const {discover}=await import('../chat-backend/src/intelligence.js');
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({models:['gemini-2.5-flash','gemini-3.6-flash','gemini-2.5-flash-lite'].map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
+ try{assert.deepEqual(await discover({GEMINI_API_KEY:'removed-gemini-'+Math.random(),KAPPA_ALL_MODEL_PROVIDERS:'gemini'}),['gemini-3.6-flash']);}
+ finally{globalThis.fetch=original}
+});
+
+test('a Workers AI model that needs its license accepted gets "agree" once and then answers',async()=>{
+ const {callProvider}=await import('../chat-backend/src/providers.js');
+ const calls=[];let agreed=false;
+ const env={AI:{run:async(model,input)=>{calls.push(input.prompt||'chat');
+  if(input.prompt==='agree'){agreed=true;return {response:'Thank you for agreeing'};}
+  if(!agreed)throw new Error("5016: Prior to using this model, you must submit the prompt 'agree'.");
+  return {response:'OK'};}}};
+ const r=await callProvider(env,{provider:'workers-ai',model:'@cf/meta/llama-3.2-11b-vision-instruct'},{system:'s',messages:[{role:'user',content:'hi'}],maxTokens:16,temperature:0},false);
+ assert.equal((await r.json()).response,'OK');
+ assert.deepEqual(calls,['chat','agree','chat']);
+});
+
+test('specialist tool models stay listed but are never sent chat',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>catalog(['voxtral-mini-latest','mistral-small-latest']);
+ try{assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',MISTRAL_API_KEY:'tools-'+Math.random()},'mistral'),['mistral-small-latest']);}
+ finally{globalThis.fetch=original}
 });

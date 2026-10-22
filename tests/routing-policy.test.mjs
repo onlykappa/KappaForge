@@ -340,6 +340,7 @@ test('DeepSeek outage falls back to another approved provider and retains per-ro
   const result=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['nvidia','mistral','groq'],messages:[{role:'user',content:'exact authorized source'}],maxTokens:80,responseFormat:'json_object'});
   const body=await result.json();assert.equal(result.status,200,JSON.stringify(body));
   assert.equal(body.route,'mistral:mistral-small-latest');
+  // Coding takes turns across providers: after NVIDIA's first model, Mistral's first comes before NVIDIA's second.
   assert.deepEqual(posted,['deepseek-ai/deepseek-v4.1-flash','mistral-small-latest']);
  }finally{globalThis.fetch=original}
 });
@@ -364,9 +365,11 @@ for(const exhausted of [false,true])test('timed-out routes share one bounded bud
  try{
   const response=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',requestId:crypto.randomUUID(),providers:['nvidia','mistral','groq'],messages:[{role:'user',content:'exact source'}],maxTokens:80});
   const body=await response.json();assert.equal(response.status,exhausted?503:200,JSON.stringify(body));
-  if(exhausted){assert.equal(body.code,'request_timeout');assert.ok(now-clock()<195000);assert.equal(body.attempts.filter(row=>row.attempted).length,3)}
+  // A model that sends nothing is left after 20 seconds, so three hung models cost about a minute, not the whole budget.
+  if(exhausted){assert.equal(body.code,'free_route_unavailable');assert.ok(now-clock()<=65000,'three hangs took '+(now-clock())+'ms');assert.equal(body.attempts.filter(row=>row.attempted).length,3)}
   else{assert.equal(body.route,'groq:openai/gpt-oss-120b');assert.equal(body.routing.history[0].category,'timeout')}
   assert.equal(calls.length,3);
   assert.ok(waits.at(-1)<120000,'one provider cannot consume the old entire runner wait');
+  assert.ok(waits.includes(20000),'each attempt waits at most 20 seconds for the first word');
  }finally{globalThis.fetch=fetch;globalThis.setTimeout=timer;globalThis.clearTimeout=clear;Date.now=clock}
 });

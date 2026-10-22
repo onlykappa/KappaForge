@@ -1,0 +1,16 @@
+# Confirmation pass after the 2026-10-22 audit: models kept although they did not answer (hangs, overloads, limits,
+# a rollout), and the Workers AI Llama vision model that needed its license accepted.
+workers-ai:@cf/meta/llama-3.2-11b-vision-instruct
+nvidia:deepseek-ai/deepseek-v4.1-flash
+nvidia:google/gemma-4-31b-it
+nvidia:meta/llama-3.2-90b-vision-instruct
+gemini-flash-latest
+gemma-4-31b-it
+gemini-pro-latest
+ollama:mistral-large-4
+mistral:mistral-small-2603
+mistral:mistral-small-latest
+openrouter:poolside/laguna-xs-2.1:free
+openrouter:google/gemma-4-26b-a4b-it:free
+openrouter:xingchen-agi/xing4.0-29b-a4b:free
+kilo:poolside/laguna-xs-2.1:free

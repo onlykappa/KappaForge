@@ -4,6 +4,8 @@ export const MODELS=registry.routing?.primary?.freeModels||[];
 export const FLASH=/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$/;
 const MAX_GEMINI=8,MAX_GEMINI_PAGES=50;
 const EXCLUDE=new RegExp(registry.exclude,'i');
+// Gemini models the owner removed (the model audit found them retired) are never routed.
+const REMOVED=new Set(registry.routing?.primary?.removedModels||[]);
 function rank(name){const m=name.match(FLASH);return m?(m[2]?0:1000)-Number(m[1])*10+(m[3]?1:0):2000}
 // Models that just failed rest instead of costing every message an attempt: a retired one (404) for an hour,
 // a rate-limited one (429) for a minute. Per Worker isolate; a cold start simply tries them again.
@@ -32,7 +34,7 @@ export async function discover(env){
  // Discovery confirms the model is currently available. With KAPPA_ALL_MODEL_PROVIDERS including gemini,
  // every chat model this key lists is routed; otherwise the static freeModels allowlist keeps a newly
  // discovered paid or preview model out of automatic fallback.
- const sorted=[...available].sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
+ const sorted=[...available].filter(m=>!REMOVED.has(m)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
  const models=fullCatalog(env,'gemini')?sorted.filter(m=>!EXCLUDE.test(m)):
   sorted.filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m))).slice(0,MAX_GEMINI);
  if(models.length)discovered={key,at:Date.now(),models};
