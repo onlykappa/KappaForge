@@ -93,13 +93,20 @@ export async function usageStore(state,request){
  if(request.method==='POST'){
   const event=await request.json();
   await storage.put('usage:'+String(event.at).padStart(13,'0')+':'+event.id,event);
-  // Retain 90 days. Paginated reads below avoid unbounded object responses.
+  // Daily totals outlive the 90-day event history so Usage can show a whole year.
+  const day='usage-day:'+new Date(Number(event.at)||Date.now()).toISOString().slice(0,10),total=Number(event.total);
+  const sum=await storage.get(day)||{tokens:0,requests:0};
+  await storage.put(day,{tokens:sum.tokens+(Number.isFinite(total)&&total>0?total:0),requests:sum.requests+1});
+  // Retain 90 days of events and 400 days of daily totals. Paginated reads below avoid unbounded object responses.
   const old=await storage.list({prefix:'usage:',end:'usage:'+String(Date.now()-90*86400000),limit:100});
   if(old.size)await storage.delete([...old.keys()]);
+  const oldDays=await storage.list({prefix:'usage-day:',end:'usage-day:'+new Date(Date.now()-400*86400000).toISOString().slice(0,10),limit:100});
+  if(oldDays.size)await storage.delete([...oldDays.keys()]);
   return Response.json({stored:true});
  }
  const cursor=url.searchParams.get('cursor')||'';
  if(cursor&&!/^usage:\d{13}:[a-f0-9-]{36}$/.test(cursor))return Response.json({error:'Invalid cursor'},{status:400});
  const entries=await storage.list({prefix:'usage:',start:'usage:'+String(Date.now()-90*86400000),reverse:true,limit:501,...(cursor?{end:cursor}:{})});
- const rows=[...entries];return Response.json({events:rows.slice(0,500).map(([,v])=>v),cursor:rows.length>500?rows[499][0]:null,retentionDays:90});
+ const rows=[...entries],days=cursor?undefined:Object.fromEntries([...await storage.list({prefix:'usage-day:',limit:500})].map(([k,v])=>[k.slice(10),v]));
+ return Response.json({events:rows.slice(0,500).map(([,v])=>v),cursor:rows.length>500?rows[499][0]:null,retentionDays:90,days});
 }

@@ -1,7 +1,7 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse} from "./providers.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
@@ -51,6 +51,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
  if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
+ const promptTokens=estimateTokens(input.messages.map(m=>m.content).join("\n"));
  let lastStatus=0,lastRetryAt=null,attempts=0;
  let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
  let attemptStarted=0;
@@ -86,7 +87,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   }
   const reservationId=baseId.slice(0,31)+"-"+String(attempts).padStart(4,"0");attempts++;
   let reserved;
-  try{reserved=await reserveProvider(env,route,reservationId)}catch{return new Response(JSON.stringify({error:"Shared route reservation failed; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
+  try{reserved=await reserveProvider(env,route,reservationId,{tokens:promptTokens})}catch{return new Response(JSON.stringify({error:"Shared route reservation failed; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
   if(!reserved.allowed){lastStatus=429;lastRetryAt=reserved.retryAt||lastRetryAt;setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
   const controller=new AbortController();let timedOut=false;
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
@@ -100,10 +101,10 @@ export async function inferenceRouter(env,input,callerSignal=null){
    }
    lastStatus=response.status;
    if(!response.ok){
-    await response.body?.cancel();
+    const body=response.status===429?(await response.text().catch(()=>"")).slice(0,20000):(await response.body?.cancel(),null);
     const category=response.status===429?"rate_limit":response.status===401?"authentication":response.status===402?"billing_blocked":response.status>=500?"provider_outage":"provider_rejection";
     if(response.status===401)rejectedProviders.add(route.provider);
-    await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers});
+    await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers,body});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;
    }

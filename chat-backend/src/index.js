@@ -1,3 +1,4 @@
+import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
 import {streamReply} from "./streaming.js";
@@ -13,7 +14,7 @@ import {reviewPR,mergePR,requestFix,closePR,undoLast,requestTests} from "./revie
 import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent-work.js";
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY} from "./providers.js";
 import {routingStore} from "./router-state.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels} from "./model-probe.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
@@ -193,7 +194,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/providers/probe", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -236,10 +237,14 @@ export default {
       try{
         const policy=routePolicy(env),snapshot=env.MEMORY?await routingSnapshot(env):{pools:{},routes:{},usage:{},activeReservations:0,quotaRemaining:null,quotaSource:"unknown"};
         const health={};for(const [id,p] of Object.entries(REGISTRY.providers)){
-          const poolRows=Object.values(snapshot.pools||{}).filter(row=>row.provider===id),pool=poolRows.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
-          const routeRows=Object.entries(snapshot.routes||{}).filter(([key])=>key.startsWith(id+":" )).map(([,row])=>row);
-          const active=pool?.blocked?"blocked":pool?.until>Date.now()?"cooldown":routeRows.some(row=>row.blocked)?"route_blocked":routeRows.some(row=>row.until>Date.now())?"cooldown":"unknown";
-          health[id]={state:active,retryAt:pool?.until||Math.max(0,...routeRows.map(row=>row.until||0))||null,category:pool?.category||routeRows.find(row=>row.category)?.category||null};
+          // Same rules as routing: only the current key's pool counts, and legacy blocks (HTTP 402, or 401 on a
+          // keyless pool) are ignored. A few rested models leave the provider usable.
+          const poolKey=await accountPoolFor(env,id,p)+":"+(p.quotaPool||id),keyless=poolKey.split(":").length===2,now=Date.now();
+          const legacy=row=>row.blocked&&(row.status===402||row.status===401&&keyless),live=row=>row&&!legacy(row)&&(row.blocked||row.until>now);
+          const pool=live(snapshot.pools?.[poolKey])?snapshot.pools[poolKey]:null;
+          const resting=Object.entries(snapshot.routes||{}).filter(([key,row])=>key.startsWith(id+":")&&live(row)).map(([,row])=>row);
+          const active=pool?.blocked?"blocked":pool?"cooldown":resting.length?"models_resting":"unknown";
+          health[id]={state:active,retryAt:pool?.until||Math.max(0,...resting.map(row=>row.until||0))||null,category:pool?.category||resting[0]?.category||null,status:pool?.status||null,restingModels:resting.length};
         }
         const primary=REGISTRY.routing?.primary||{},geminiAllowed=providerAllowed(env,"chat","gemini");
         const geminiPools=Object.values(snapshot.pools||{}).filter(row=>row.provider==="gemini"),geminiPool=geminiPools.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
@@ -254,6 +259,7 @@ export default {
       }
       catch{return json({error:"Provider discovery unavailable. Check backend credentials or provider status."},502,cors)}
     }
+    if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/probe"){
       if(!env.MEMORY)return json({error:"Shared routing storage unavailable"},503,cors);
       const body=await request.json().catch(()=>({}));
@@ -789,13 +795,13 @@ export default {
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
-        let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId)}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
+        let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
         if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
-        let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="";
+        let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
           const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing,status);
-          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata});
+          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
           lastRetryAt=outcome.retryAt||lastRetryAt;
           if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
@@ -815,7 +821,7 @@ export default {
         outcomeStatus=response.status;outcomeHeaders=response.headers;
         if(response.status===429)outcomeCategory="rate_limit";else if(response.status===401)outcomeCategory="authentication";else if(response.status===402)outcomeCategory="billing_blocked";else if(response.status>=500)outcomeCategory="provider_outage";
         if (!response.ok) {
-          clearTimeout(timeout);await response.body?.cancel();await record(null,false);
+          clearTimeout(timeout);if(response.status===429)outcomeBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();await record(null,false);
           if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
