@@ -141,6 +141,40 @@ export default {
       return json({ ok: ready, version: app.version }, ready ? 200 : 503);
     }
     const pathname=new URL(request.url).pathname;
+if (pathname === "/weather") {
+  const url = new URL(request.url);
+  const city = url.searchParams.get("city");
+  const lat = url.searchParams.get("lat");
+  const lon = url.searchParams.get("lon");
+  let latitude, longitude;
+  if (lat && lon) {
+    latitude = Number(lat);
+    longitude = Number(lon);
+  } else if (city) {
+    const geoResp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+    if (geoResp.ok) {
+      const geoData = await geoResp.json();
+      if (geoData.results && geoData.results[0]) {
+        latitude = geoData.results[0].latitude;
+        longitude = geoData.results[0].longitude;
+      }
+    }
+  }
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    const cacheKey = `${latitude},${longitude}`;
+    const now = Date.now();
+    const cached = weatherCache.get(cacheKey);
+    if (cached && now - cached.at < 5 * 60 * 1000) {
+      return json(cached.data);
+    }
+    const weatherResp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&hourly=temperature_2m,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`);
+    if (!weatherResp.ok) return new Response("Weather service error", {status:502});
+    const weatherData = await weatherResp.json();
+    weatherCache.set(cacheKey, {at: now, data: weatherData});
+    return json(weatherData);
+  }
+  return new Response("Invalid location parameters", {status:400});
+}
 // Weather endpoint handling
 if (pathname === "/weather") {
   const url = new URL(request.url);
