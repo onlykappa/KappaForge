@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
 import {discover} from '../chat-backend/src/intelligence.js';
@@ -261,4 +262,27 @@ test('models the owner removed for needing payment are never routed, even when t
   const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'ollama',OLLAMA_API_KEY:'removed-models-ollama'};
   assert.deepEqual(await providerModels(env,'ollama'),['gpt-oss:120b','gemma4:31b']);
  }finally{globalThis.fetch=original}
+});
+
+test('the model audit removals cover every provider, Gemini included',async()=>{
+ const registry=JSON.parse(readFileSync(new URL('../config/providers.json',import.meta.url),'utf8'));
+ for(const id of ['nvidia','workers-ai','mistral','ollama','openrouter','kilo'])assert.ok(registry.providers[id].removedModels.length&&registry.providers[id].removedModelsReason,id);
+ assert.ok(!registry.providers.ollama.removedModels.includes('mistral-large-4'),'a model still being rolled out is kept');
+ const {discover}=await import('../chat-backend/src/intelligence.js');
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({models:['gemini-2.5-flash','gemini-3.6-flash','gemini-2.5-flash-lite'].map(n=>({name:'models/'+n,supportedGenerationMethods:['generateContent']}))});
+ try{assert.deepEqual(await discover({GEMINI_API_KEY:'removed-gemini-'+Math.random(),KAPPA_ALL_MODEL_PROVIDERS:'gemini'}),['gemini-3.6-flash']);}
+ finally{globalThis.fetch=original}
+});
+
+test('a Workers AI model that needs its license accepted gets "agree" once and then answers',async()=>{
+ const {callProvider}=await import('../chat-backend/src/providers.js');
+ const calls=[];let agreed=false;
+ const env={AI:{run:async(model,input)=>{calls.push(input.prompt||'chat');
+  if(input.prompt==='agree'){agreed=true;return {response:'Thank you for agreeing'};}
+  if(!agreed)throw new Error("5016: Prior to using this model, you must submit the prompt 'agree'.");
+  return {response:'OK'};}}};
+ const r=await callProvider(env,{provider:'workers-ai',model:'@cf/meta/llama-3.2-11b-vision-instruct'},{system:'s',messages:[{role:'user',content:'hi'}],maxTokens:16,temperature:0},false);
+ assert.equal((await r.json()).response,'OK');
+ assert.deepEqual(calls,['chat','agree','chat']);
 });

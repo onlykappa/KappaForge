@@ -39,7 +39,24 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "removedModels": [
+        "@cf/cloudflare/clairic",
+        "@cf/cloudflare/clef",
+        "@cf/cloudflare/clef-flash",
+        "@cf/deepseek-ai/deepseek-v4-flash-0731",
+        "@cf/deepseek-ai/deepseek-v4-pro-0813",
+        "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+        "@cf/meta-llama/llama-2-7b-chat-hf-lora",
+        "@cf/moonshotai/kimi-k2.6",
+        "@cf/moonshotai/kimi-k2.7-code",
+        "@cf/swiss-ai/apertus-v1.5-8b",
+        "@cf/utter-project/eurollm-9b-it",
+        "@cf/zai-org/glm-5.2",
+        "@cf/zai-org/glm-5.3",
+        "@cf/zai-org/glm-5.3-flash"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 5035 not available on the Workers Free plan, 5018 account not allowed, 4003 no model config, not a chat model (clef/clairic need structured input), or empty replies with a 1,024-token allowance"
     },
     "groq": {
       "freeRequestTokenBudget": 8000,
@@ -131,7 +148,13 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "removedModels": [
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "thinkingmachines/inkling-small:free",
+        "thinkingmachines/inkling:free"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 403 only available on agentic harnesses, or 404 no longer served"
     },
     "mistral": {
       "name": "Mistral",
@@ -161,7 +184,14 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "removedModels": [
+        "voxtral-mini-2602",
+        "voxtral-mini-latest",
+        "voxtral-mini-realtime-2602",
+        "voxtral-mini-realtime-latest"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 400 Invalid model for chat (audio transcription models)"
     },
     "nvidia": {
       "name": "NVIDIA NIM",
@@ -196,11 +226,81 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "removedModels": [
+        "01-ai/yi-large",
+        "adept/fuyu-8b",
+        "ai21labs/jamba-1.5-large-instruct",
+        "aisingapore/sea-lion-7b-instruct",
+        "bigcode/starcoder2-15b",
+        "databricks/dbrx-instruct",
+        "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "google/codegemma-1.1-7b",
+        "google/codegemma-7b",
+        "google/deplot",
+        "google/diffusiongemma-26b-a4b-it",
+        "google/gemma-2b",
+        "google/gemma-3-12b-it",
+        "google/gemma-3-4b-it",
+        "google/recurrentgemma-2b",
+        "ibm/granite-3.0-3b-a800m-instruct",
+        "ibm/granite-3.0-8b-instruct",
+        "ibm/granite-34b-code-instruct",
+        "ibm/granite-8b-code-instruct",
+        "meta/codellama-70b",
+        "meta/llama2-70b",
+        "microsoft/kosmos-2",
+        "microsoft/phi-3-vision-128k-instruct",
+        "microsoft/phi-3.5-moe-instruct",
+        "mistralai/codestral-22b-instruct-v0.1",
+        "mistralai/mistral-7b-instruct-v0.3",
+        "mistralai/mistral-large",
+        "mistralai/mistral-large-2-instruct",
+        "mistralai/mixtral-8x22b-v0.1",
+        "moonshotai/kimi-k2.6",
+        "nv-mistralai/mistral-nemo-12b-instruct",
+        "nvidia/ai-synthetic-video-detector",
+        "nvidia/cosmos-reason2-8b",
+        "nvidia/llama-3.1-nemotron-51b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "nvidia/llama3-chatqa-1.5-70b",
+        "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-4-340b-instruct",
+        "nvidia/nemotron-4-340b-reward",
+        "nvidia/nemotron-nano-3-30b-a3b",
+        "nvidia/nemotron-parse",
+        "nvidia/neva-22b",
+        "nvidia/nvclip",
+        "nvidia/riva-translate-4b-instruct",
+        "nvidia/vila",
+        "writer/palmyra-creative-122b",
+        "writer/palmyra-fin-70b-32k",
+        "writer/palmyra-med-70b",
+        "writer/palmyra-med-70b-32k",
+        "zyphra/zamba2-7b-instruct"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: HTTP 404 'Function not found for account' (not hosted for this account), or not a chat model (diffusion text model with empty replies, video detector, single-message document parser)"
     },
     "ollama": {
-      "removedModels": ["deepseek-v4-pro:0813", "deepseek-v4.1-flash", "deepseek-v4.1-flash:1017", "glm-5.2", "glm-5.3", "glm-5.3-flash", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "minimax-m2.7", "minimax-m3", "mistral-large-3:675b", "muse-spark-open"],
-      "removedModelsReason": "Answered HTTP 402 (needs paid credits) in the live model check on 2026-10-22; removed at the owner's request",
+      "removedModels": [
+        "clef:27b",
+        "deepseek-v4-pro:0813",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash:1017",
+        "glm-5.2",
+        "glm-5.3",
+        "glm-5.3-flash",
+        "kimi-k2.6",
+        "kimi-k2.7-code",
+        "kimi-k3",
+        "minimax-m2.7",
+        "minimax-m3",
+        "mistral-large-3:675b",
+        "muse-spark-open"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: HTTP 402 needs paid credits (13), or a decision model that does not take chat (clef:27b)",
       "name": "Ollama Cloud",
       "kind": "openai",
       "base": "https://ollama.com/v1",
@@ -282,7 +382,11 @@
         "tools": false,
         "streaming": true,
         "media": false
-      }
+      },
+      "removedModels": [
+        "nvidia/nemotron-3-super-120b-a12b:free"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 404 no longer served"
     },
     "llm7": {
       "name": "LLM7.io (key optional)",
@@ -456,7 +560,12 @@
         "media": true
       },
       "contextTokens": null,
-      "maxOutputTokens": null
+      "maxOutputTokens": null,
+      "removedModels": [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
+      ],
+      "removedModelsReason": "Model audit 2026-10-22: 404 no longer available to new users"
     },
     "chatRouterModels": [
       "ministral-3b-latest",

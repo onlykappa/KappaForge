@@ -202,8 +202,16 @@ export async function callProvider(env,route,chat,streaming,signal){
  const maxTokens=Math.min(chat.maxTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
  const messages=[{role:"system",content:chat.system},...chat.messages];
  if(p.kind==="workers-ai"){
+  const run=()=>env.AI.run(route.model,{messages,max_tokens:maxTokens,temperature:chat.temperature,stream:streaming});
   try{
-   const out=await env.AI.run(route.model,{messages,max_tokens:maxTokens,temperature:chat.temperature,stream:streaming});
+   let out;
+   try{out=await run();}
+   catch(error){
+    // Meta's licensed models (error 5016) answer only after the account sends "agree" once; accept and ask again.
+    if(!/\b5016\b/.test(String(error?.message)))throw error;
+    await env.AI.run(route.model,{prompt:"agree"}).catch(()=>{});
+    out=await run();
+   }
    return streaming?new Response(out,{headers:{"Content-Type":"text/event-stream"}}):Response.json(out);
   }catch(error){
    // Daily free allocation exhausted or model retired: let routing move on.
