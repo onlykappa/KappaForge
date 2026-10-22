@@ -564,6 +564,8 @@
       "mistral": {
         "scope": "model",
         "source": "Mistral Admin, Default Workspace limits; -latest aliases use the dated model's row",
+        "monthlyTokens": 1000000000,
+        "monthlyTokensSource": "Experiment (free) plan, 1B tokens a month as published by free-tier trackers; not shown in the Mistral Admin capture",
         "models": [
           {
             "match": "labs-leanstral",

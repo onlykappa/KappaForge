@@ -196,7 +196,9 @@ test('daily token capacity counts per-minute token limits, not only published da
  assert.equal(L.tokenCeiling({rpm:30,rpd:14400,tpm:16000}),16000*1440,'held to a full day of the per-minute limit');
  assert.equal(L.tokenCeiling({tpm:500000,rps:1}),null,'no daily bound, no ceiling');
  const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
- assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);assert.equal(by('mistral').tokenLimit,null);
+ assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);
+ const oct=L.usage([{at:Date.parse('2026-10-21T12:00:00Z'),model:'mistral:mistral-small-2603',total:500,ok:true}],limits,ids,{now:Date.parse('2026-10-21T13:00:00Z'),show:ids}).find(r=>r.id==='mistral');
+ assert.equal(oct.tokenLimit,Math.floor(1e9/31),'Mistral: a 31st of its monthly allowance in October');assert.equal(oct.tokensOnCapped,500);
 });
 
 test('aliases of one model family share one allowance in provider totals',()=>{

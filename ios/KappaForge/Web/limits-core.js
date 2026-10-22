@@ -111,7 +111,15 @@ function usage(events,limits,providerIds,{now=Date.now(),show=[]}={}){
   const once=list=>[...new Map(list.map(m=>[m.limit?.match||m.model,m.limit])).values()];
   const capped=models.filter(m=>tokenCeiling(m.limit)!==null);
   const requestLimit=Number.isFinite(p.limit?.rpd)?p.limit.rpd:once(models.filter(m=>Number.isFinite(m.limit?.rpd))).reduce((n,l)=>n+l.rpd,0)||null;
-  const tokenLimit=once(capped).reduce((n,l)=>n+tokenCeiling(l),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
+  let tokenLimit=once(capped).reduce((n,l)=>n+tokenCeiling(l),0)||null,tokensOnCapped=capped.reduce((n,m)=>n+m.used.tokens,0);
+  // A monthly token allowance (Mistral) bounds models that have no daily limit: today's share is an even split
+  // of the month, and every token those models use counts against it.
+  const monthly=limits?.providers?.[p.id]?.monthlyTokens;
+  if(Number.isFinite(monthly)&&monthly>0){
+   const d=new Date(now),days=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
+   tokenLimit=(tokenLimit||0)+Math.floor(monthly/days);
+   tokensOnCapped+=models.filter(m=>tokenCeiling(m.limit)===null).reduce((n,m)=>n+m.used.tokens,0);
+  }
   return {...p,used:finish(p.used),pairs:providerPairs,models,worst,known:!!p.scope,requestLimit,tokenLimit,tokensOnCapped};
  });
 }
