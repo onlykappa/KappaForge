@@ -71,12 +71,14 @@ const apiServer=createServer(async(req,res)=>{
  await page.route('https://api.github.com/**',route=>{const url=route.request().url();const task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);if(task)return route.fulfill({headers:{'access-control-allow-origin':'*'},json:task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}});const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
  page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept('recovery-passphrase-123');else await dialog.accept()});
  await page.goto(base);console.log(name+': loaded interface');assert.equal(await page.locator('.top #settingsbtn').count(),0);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');if(name==='mobile-safari'){
+  // Phones open on Home; open the chat to check the pushed view below.
+  assert.equal(await page.evaluate(()=>view),'start');assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'start');await page.evaluate(()=>navigate('chat'));
   await page.evaluate(()=>document.documentElement.style.setProperty('--kappa-safe-top','59px'));
   const menu=await page.locator('#menubtn').boundingBox();assert.ok(menu.y>=59,'Menu must sit below the iPhone status bar');
   assert.equal(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content'),'default');
   // An open chat is a pushed view: Back leads to the Chats list, which shows the floating tab bar.
   await page.locator('#menubtn').click();assert.equal(await page.evaluate(()=>view),'chats');
-  assert.equal(await page.locator('.mobile-nav button').count(),3);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
+  assert.equal(await page.locator('.mobile-nav button').count(),4);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
   await page.locator('.mobile-nav [data-page=home]').click();assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'home');
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--kappa-safe-top');navigate('chat')});assert.equal(await page.locator('.mobile-nav').isVisible(),false,'A chat hides the tab bar');
  }await openSettings(page);console.log(name+': opened settings');
@@ -169,6 +171,8 @@ const apiServer=createServer(async(req,res)=>{
  await page.locator('.task-card>summary').click();await page.evaluate(()=>render());assert.equal(await page.locator('.task-card').getAttribute('open'),null,'collapsed details survive refresh');
  await page.locator('.task-card>summary').click();
  await page.reload();await page.waitForFunction(()=>typeof trackedJobs!=='undefined');
+ // Phones reopen on Home; go back to the chat that holds the card.
+ if(await isPhone(page))await page.evaluate(()=>navigate('chat'));
  assert.equal(await page.locator('.agent-activity').count(),1,'reload restores one card');
  await page.waitForFunction(()=>!jobTrackingBusy);fixtureBody=fixtureEvents.failed;await page.evaluate(()=>checkJobResult());
  assert.match(await page.locator('#content').innerText(),/NEEDS ATTENTION/);assert.equal(await page.locator('.agent-activity [data-since]').count(),0,'failure timers freeze');

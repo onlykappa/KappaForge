@@ -38,9 +38,9 @@ test('every view belongs to one tab; non-root views are pushed with a back butto
  for(const v of ['chats','home','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
  for(const v of ['chat','tasks','reviews','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
 });
-test('the phone tab bar contains only Chats, Dashboard and More',()=>{
+test('the phone tab bar contains Home, Chats, Dashboard and More',()=>{
  const box=shell({view:'chat'});const html=box.renderTabBar();
- assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['chats','home','more']);
+ assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['start','chats','home','more']);
  assert.match(html,/data-page="chats" aria-current="page"/,'a chat sits under the Chats tab');
  assert.doesNotMatch(html,/tab-badge/,'no badge remains for the removed Reviews tab');
 });
@@ -72,6 +72,20 @@ test('a finished task does not offer Retry, and Edit mode moves every chat into 
  assert.doesNotMatch(box.renderChatList(),/data-task-retry/);
  vm.runInContext('chatEditing=true',box);const html=box.renderChatList();
  assert.doesNotMatch(html,/chat-card/);assert.match(html,/data-delete-chat="a"/);
+});
+
+test('Home greets, offers the last chat, shows chats that need you and today\'s numbers',()=>{
+ const now=Date.now();
+ const chats=[{id:'a',title:'Broken build',at:now,messages:[{role:'user',text:'fix it'}]},{id:'b',title:'Weather today',at:now-1000,messages:[{role:'assistant',text:'Sunny'}]}];
+ const box=shell({view:'start',chats,trackedJobs:[{number:7,chatId:'a',message:'failed'},{number:8,chatId:'x',message:'waiting',progress:{startedAt:1}}],
+  preferences:{model:'auto',routing:'balanced'},localProfile:{name:'Personal workspace'},workflowMonitor:{runs:[{state:'success',createdAt:new Date().toISOString()},{state:'failure',createdAt:new Date().toISOString()},{state:'in_progress',createdAt:new Date().toISOString()}]}});
+ assert.match(box.homeHeader(),/Good (morning|afternoon|evening)[^]*data-page="profile"[^]*>PW</);
+ const html=box.renderHomePage();
+ assert.match(html,/id="homeask"[^]*Auto · balanced/);
+ assert.match(html,/data-id="b"[^]*Continue “Weather today”/,'continues the latest chat that does not need attention');
+ assert.match(html,/Needs you<small>1 task[^]*#7[^]*data-task-retry="7"/);
+ assert.match(html,/<b class="tnum">1<\/b><small>Running[^]*<b class="tnum">1<span>\/2<\/span><\/b><small>Builds passed/,'running tasks, and finished builds today that passed');
+ assert.equal(box.shellTab('start'),'start');assert.equal(box.shellPushed('start'),false);
 });
 
 // ui.js: the task card's large ring.

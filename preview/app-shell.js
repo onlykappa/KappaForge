@@ -1,11 +1,13 @@
 /* KappaForge 2.2 phone shell: floating tab bar, Chats and More pages, pushed views and the collapsing large title.
    Classic script: shares globals with the other app-*.js files. Wider screens keep the sidebar layout. */
-const SHELL_TABS=[["chats","Chats","chat"],["home","Dashboard","gauge"],["more","More","more-circle"]];
+const SHELL_TABS=[["start","Home","home"],["chats","Chats","chat"],["home","Dashboard","gauge"],["more","More","more-circle"]];
 // Each view belongs to one tab; a view that is not its tab's root is a pushed view with a back button.
-const SHELL_TAB_OF={chat:"chats",chats:"chats",home:"home",tasks:"home",reviews:"home",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
-const SHELL_TITLES={chats:"Chats",home:"Dashboard",tasks:"Tasks",reviews:"Reviews",more:"More",projects:"Projects",saved:"Saved items",settings:"Settings",profile:"Account",help:"Help"};
+const SHELL_TAB_OF={start:"start",chat:"chats",chats:"chats",home:"home",tasks:"home",reviews:"home",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
+const SHELL_TITLES={start:"Home",chats:"Chats",home:"Dashboard",tasks:"Tasks",reviews:"Reviews",more:"More",projects:"Projects",saved:"Saved items",settings:"Settings",profile:"Account",help:"Help"};
 const isPhone=()=>matchMedia("(max-width:840px)").matches;
 const shellTab=v=>SHELL_TAB_OF[v]||"chats";
+// Phones open on Home; wider screens keep opening the last chat.
+const launchView=()=>isPhone()?"start":"chat";
 // Settings sections push one level deeper inside Settings.
 const shellPushed=v=>v==="settings"?true:shellTab(v)!==v;
 function shellBack(){
@@ -73,6 +75,28 @@ function renderChatList(){
   (list.length?groups.map(([name,items],i)=>(i===0?'<h2 class="chats-sec">'+name+edit+'</h2>':'<h2 class="chats-day">'+name+'</h2>')+'<div class="chat-list">'+items.map(chatItem).join("")+'</div>').join("")+(!groups.length&&edit?'<div class="chat-list-tools">'+edit+'</div>':''):
   '<p class="ios-empty">'+(q?"No matching conversations":"Your conversations will appear here.")+'</p>');
 }
+// Home: a greeting, an ask box that starts a new chat, suggestions, the "Needs you" rail and today's numbers.
+function homeGreeting(){const h=new Date().getHours();return h<5?"Good evening":h<12?"Good morning":h<18?"Good afternoon":"Good evening";}
+function homeHeader(){
+ const initials=(localProfile.name||"K").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
+ return '<div class="chats-head"><span class="chats-date">'+esc(new Date().toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}))+'</span><div class="chats-title"><h1 class="large-title">'+homeGreeting()+'</h1>'+
+  '<button type="button" class="home-avatar" data-page="profile" aria-label="Account: '+esc(localProfile.name)+'">'+esc(initials)+'</button></div></div>';
+}
+function renderHomePage(){
+ const jobs=typeof trackedJobs!=="undefined"?trackedJobs:[];
+ const byTime=[...chats].sort((a,b)=>(b.at||0)-(a.at||0)),needs=byTime.filter(c=>chatTaskState(c).tone==="bad");
+ const last=byTime.find(c=>c.messages?.length&&!needs.includes(c));
+ const model=preferences.model==="auto"?"Auto · "+preferences.routing:preferences.model.split(":").pop();
+ const running=jobs.filter(j=>!j.finished&&!["failed","tests-failed"].includes(j.message)&&j.progress?.status!=="failed").length;
+ const start=new Date();start.setHours(0,0,0,0);
+ const runs=(typeof workflowMonitor!=="undefined"?workflowMonitor.runs:[]).filter(r=>Date.parse(r.createdAt)>=start.getTime()),done=runs.filter(r=>["success","failure","timed_out"].includes(r.state));
+ const glance=(n,of,label)=>'<button type="button" class="home-glance" data-page="home"><b class="tnum">'+esc(n)+(of!==""?'<span>/'+esc(of)+'</span>':'')+'</b><small>'+label+'</small></button>';
+ return '<form class="home-ask" id="homeask"><label class="sr-only" for="homeaskinput">Ask KappaForge</label><textarea id="homeaskinput" rows="2" placeholder="Ask anything, or describe a task to build…" enterkeyhint="send"></textarea>'+
+  '<div class="home-ask-bar"><button type="button" class="home-model" id="homemodel" aria-label="Model: '+esc(model)+'. Change in Settings">'+esc(model)+'</button><button type="submit" class="home-send" aria-label="Send">'+uiIcon("send")+'</button></div></form>'+
+  '<div class="home-sugg">'+(last?'<button type="button" class="home-chip" data-id="'+esc(last.id)+'">'+uiIcon("chat")+'Continue “'+esc(last.title)+'”</button>':'')+'<button type="button" class="home-chip" id="homeplan">'+uiIcon("bolt")+'Plan a task</button></div>'+
+  (needs.length?'<h2 class="chats-sec">Needs you<small>'+needs.length+(needs.length===1?" task":" tasks")+'</small></h2><div class="chat-rail">'+needs.map(c=>chatCard(c,chatTaskState(c))).join("")+'</div>':'')+
+  '<h2 class="chats-sec">At a glance</h2><div class="home-glances">'+glance(running,"","Running")+glance((data.prs||[]).length,"","Open PRs")+glance(done.length?done.filter(r=>r.state==="success").length:"–",done.length||"","Builds passed")+'</div>';
+}
 function renderMorePage(){
  const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0);
  const appearance={system:"Follow system",light:"Light",dark:"OLED Black"}[preferences.appearance]||"";
@@ -98,7 +122,7 @@ function applyShell(){
  if(view==="chat"&&phone)document.getElementById("heading").textContent=active()?.title||"New chat";
  updateTitleCollapse();
 }
-function largeTitle(){return view==="chat"?"":view==="chats"&&isPhone()?chatListHeader():'<h1 class="large-title">'+esc(SHELL_TITLES[view]||"")+'</h1>'}
+function largeTitle(){return view==="chat"?"":view==="start"?homeHeader():view==="chats"&&isPhone()?chatListHeader():'<h1 class="large-title">'+esc(SHELL_TITLES[view]||"")+'</h1>'}
 function updateTitleCollapse(){
  const t=document.querySelector(".large-title");
  document.body.classList.toggle("title-collapsed",!!t&&t.getBoundingClientRect().bottom<(document.querySelector(".top")?.getBoundingClientRect().bottom||0));
@@ -109,8 +133,13 @@ function bindShell(){
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
  document.getElementById("chatsearchbtn")?.addEventListener("click",()=>{chatSearchOpen=!(chatSearchOpen||conversationSearch);if(!chatSearchOpen)conversationSearch="";render();document.getElementById("chatsearch")?.focus()});
  document.getElementById("chatnew")?.addEventListener("click",fresh);
+ // Home's ask box sends its text as the first message of a new chat.
+ document.getElementById("homeask")?.addEventListener("submit",e=>{e.preventDefault();const text=document.getElementById("homeaskinput").value.trim();if(!text)return;fresh();document.getElementById("message").value=text;document.getElementById("form").requestSubmit()});
+ document.getElementById("homeaskinput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("homeask").requestSubmit()}});
+ document.getElementById("homemodel")?.addEventListener("click",()=>{navigate("settings");settingsSection="models";render()});
+ document.getElementById("homeplan")?.addEventListener("click",()=>{fresh();document.getElementById("task").click()});
  document.getElementById("chatedit")?.addEventListener("click",()=>{chatEditing=!chatEditing;render()});
  document.querySelectorAll("#content [data-delete-chat]").forEach(b=>b.addEventListener("click",()=>{if(deleteChat(b.dataset.deleteChat))render()}));
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }
-matchMedia("(max-width:840px)").addEventListener("change",()=>{if(!isPhone()&&["chats","more"].includes(view))view=view==="chats"?"chat":"settings";render()});
+matchMedia("(max-width:840px)").addEventListener("change",()=>{if(!isPhone()&&["start","chats","more"].includes(view))view=view==="more"?"settings":"chat";render()});

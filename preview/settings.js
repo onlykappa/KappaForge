@@ -327,10 +327,36 @@ function settingSummary(id){
  if(id==='updates')return APP_VERSION;
  return '';
 }
-function settingsHome(){
- const groups=[...new Set(settingSections.map(s=>s[3]))];
- return '<div class="settings-v2 s-home"><h2 class="sr-only" id="settings-section-heading" tabindex="-1">Settings</h2>'+issuesCard()+(settingsNotice?'<p class="s-notice" role="status">'+esc(settingsNotice)+'</p>':'')+'<label class="s-search-label"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings"></label>'+groups.map(g=>'<section class="s-group" data-group><h3>'+esc(g)+'</h3><div class="s-card">'+settingSections.filter(s=>s[3]===g).map(([id,title,terms,,icon])=>'<button type="button" class="s-row" data-section="'+id+'" data-search="'+esc((title+' '+terms).toLowerCase())+'">'+settingIcon(icon)+'<span class="s-row-title">'+esc(title)+'</span><span class="s-row-value">'+esc(settingSummary(id))+'</span>'+settingIcon('chevron')+'</button>').join('')+'</div></section>').join('')+'<p id="settings-no-results" class="muted s-empty" hidden>No matching settings.</p></div>';
+// Settings home (Hub): search, a connection card, tiles for Models, Usage, Memory and Sync, then the other sections as rows.
+const S_TILES=['models','usage','memory'],S_ROWS=['personalization','privacy','services','developer','updates'];
+function settingsCompact(n){return n>=1e6?(n/1e6).toFixed(2).replace(/\.?0+$/,'')+'M':n>=1e4?Math.round(n/1e3)+'K':n.toLocaleString();}
+function settingTileSummary(id){
+ if(id==='models'){const n=(capabilities?.providers||[]).filter(p=>providerStatus(p).kind==='available').length;return (preferences.model==='auto'?'Auto':settingSummary('models'))+(n?' · '+n+(n===1?' provider':' providers'):'');}
+ if(id==='usage'){const u=usageSummary();return u.requests&&u.unknownTokens<u.requests?settingsCompact(u.total)+' tokens':'No usage yet';}
+ if(id==='memory'){const n=savedMemories.length;return n+(n===1?' memory':' memories');}
+ return '';
 }
+function settingsHub(){
+ const n=settingsIssues().length,checking=verifyRun&&!lastVerify;
+ const state=n?{tone:'bad',label:n+(n===1?' issue':' issues')}:checking?{tone:'',label:'Checking…'}:capabilities?{tone:'ok',label:'Online · Verified'}:backend&&access?{tone:'warn',label:'Saved · not verified'}:{tone:'bad',label:'Not connected'};
+ const model=preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model.split(':').pop();
+ const providers=(capabilities?.providers||[]).filter(p=>providerStatus(p).kind==='available').map(p=>p.name);
+ const terms=id=>esc(settingSections.find(x=>x[0]===id).slice(1,3).join(' ').toLowerCase());
+ const tile=id=>{const [,title,,,icon]=settingSections.find(x=>x[0]===id);return '<button type="button" class="s-tile" data-section="'+id+'" data-search="'+terms(id)+'">'+settingIcon(icon)+'<span><b>'+esc(title==='AI Models'?'Models':title==='Usage & Billing'?'Usage':title)+'</b><small>'+esc(settingTileSummary(id))+'</small></span></button>';};
+ const row=id=>{const [,title,,,icon]=settingSections.find(x=>x[0]===id);return '<button type="button" class="s-row" data-section="'+id+'" data-search="'+terms(id)+'"><span class="s-sq">'+settingIcon(icon)+'</span><span class="s-row-title">'+esc(title)+'</span><span class="s-row-value">'+esc(id==='personalization'?({system:'Follow system',light:'Light',dark:'OLED Black'})[preferences.appearance]||'':settingSummary(id))+'</span>'+settingIcon('chevron')+'</button>';};
+ return '<div class="settings-v2 s-home s-hub"><h2 class="sr-only" id="settings-section-heading" tabindex="-1">Settings</h2>'+
+  '<label class="s-search-label"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings"></label>'+
+  issuesCard()+(settingsNotice?'<p class="s-notice" role="status">'+esc(settingsNotice)+'</p>':'')+
+  '<section class="s-conn" data-group><button type="button" class="s-conn-head" data-section="overview" data-search="'+terms('overview')+'"><span class="s-live '+state.tone+'"><i aria-hidden="true"></i><span class="s-row-value">'+esc(state.label)+'</span></span><small>'+esc(APP_VERSION+' · '+(window.webkit?.messageHandlers?.kappa?'iOS':'Web'))+'</small>'+settingIcon('chevron')+'</button>'+
+   '<strong class="s-conn-model">'+esc(model)+'</strong><p class="muted">'+esc(providers.length?providers.slice(0,3).join(', ')+(providers.length>3?' and '+(providers.length-3)+' more':''):capabilities?'No provider is available right now':'Verify to see which providers answer')+'</p>'+
+   (n?'':'<div class="s-conn-actions">'+sb('s-refresh',checking?'Checking…':'Verify & refresh',false)+sb('settingsconnect',backend&&access?'Manage':'Connect AI')+'</div>')+'</section>'+
+  '<section class="s-tiles" data-group>'+S_TILES.map(tile).join('')+
+   // Sync lives in Memory; the tile opens it there.
+   '<button type="button" class="s-tile" data-sync-tile>'+settingIcon('refresh')+(vaultPassphrase?'':'<em class="s-tag">Off</em>')+'<span><b>Sync</b><small>'+(syncBusy?'In progress':vaultPassphrase?'On for this device':'Off')+'</small></span></button></section>'+
+  '<section class="s-group" data-group><div class="s-card">'+S_ROWS.map(row).join('')+'</div></section>'+
+  '<p id="settings-no-results" class="muted s-empty" hidden>No matching settings.</p></div>';
+}
+function settingsHome(){return settingsHub();}
 function renderSettings(){
  const section=settingSections.find(s=>s[0]===settingsSection);if(!section)return settingsHome();let body='';
  if(settingsSection==='overview')body=sectionPanel('Your assistant',sf('AI connection',sb('settingsconnect',backend&&access?'Manage connection':'Connect AI'),capabilities?'Verified backend configuration':backend&&access?'Credentials saved on this device. Run diagnostics to verify.':'Not configured')+sf('Active model',esc(preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model))+sf('Synchronization',esc(syncBusy?'In progress':vaultPassphrase?'Enabled on this device':'Not enabled'),lastSyncAt?'Last successful sync: '+new Date(lastSyncAt).toLocaleString():'Enable the same vault passphrase separately on each device.')+sf('App health',esc(navigator.onLine?'Online':'Offline'),APP_VERSION+' · '+(window.webkit?.messageHandlers?.kappa?'Installed iOS':'Web deployment'))+sb('s-refresh','Verify connection & refresh',false))+usageStats(usageSummary())+budgetAlert();
@@ -368,8 +394,9 @@ function bindSettings(){
  autoVerify();
  const openSection=id=>{settingsSection=id;usageView={provider:null,model:null};settingsNotice='';render();scrollTo(0,0);document.querySelector('.content')?.scrollTo?.(0,0);document.getElementById('settings-section-heading')?.focus({preventScroll:true});};
  document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>openSection(b.dataset.section));
+ document.querySelector('[data-sync-tile]')?.addEventListener('click',()=>openSection('memory'));
  document.getElementById('settings-back')?.addEventListener('click',()=>openSection(''));
- document.getElementById('settings-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase().trim();let count=0;document.querySelectorAll('[data-section]').forEach(b=>{b.hidden=!b.dataset.search.includes(q);if(!b.hidden)count++;});document.querySelectorAll('[data-group]').forEach(g=>g.hidden=!g.querySelector('[data-section]:not([hidden])'));document.getElementById('settings-no-results').hidden=count>0;});
+ document.getElementById('settings-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase().trim();let count=0;document.querySelectorAll('[data-section]').forEach(b=>{b.hidden=!b.dataset.search.includes(q);if(!b.hidden)count++;});const syncTile=document.querySelector('[data-sync-tile]');if(syncTile)syncTile.hidden=!!q;document.querySelectorAll('[data-group]').forEach(g=>g.hidden=!g.querySelector('[data-section]:not([hidden])'));document.getElementById('settings-no-results').hidden=count>0;});
  document.querySelectorAll('[data-provider]').forEach(el=>el.addEventListener('change',()=>{const id=el.dataset.provider;preferences.disabledProviders=el.checked?preferences.disabledProviders.filter(p=>p!==id):[...preferences.disabledProviders,id];savePreferences();settingsNotice='Provider choice saved on this device.';render();}));
  document.querySelectorAll('[data-pref]').forEach(el=>el.addEventListener('change',()=>{preferences[el.dataset.pref]=el.type==='checkbox'?el.checked:el.type==='number'?Number(el.value):el.value;savePreferences();settingsNotice='Preferences saved on this device.';if(el.tagName!=='TEXTAREA')render();}));
  document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{usagePeriod=b.dataset.period;try{localStorage.setItem('kappaforge.usagePeriod',usagePeriod)}catch{}render()});
