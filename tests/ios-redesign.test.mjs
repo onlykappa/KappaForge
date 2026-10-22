@@ -53,15 +53,25 @@ test('Tasks and Reviews return to Dashboard with Back',()=>{
  }
 });
 
-test('the Chats list groups by day, searches, and shows each chat\'s task state',()=>{
+test('the Chats list puts chats that need you in a card rail, then Recent and Earlier, and searches',()=>{
  const now=Date.now(),old=now-3*86400000;
- const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];
+ const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'c',title:'Weather today',at:now-1000,messages:[{role:'assistant',text:'<think>Okay, so I am trying</think>Sunny and 18°C'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];
  const box=shell({chats,trackedJobs:[{number:7,chatId:'a',message:'failed'}]});
  const html=box.renderChatList();
- assert.ok(html.indexOf('Today')<html.indexOf('Live task card')&&html.indexOf('Earlier')<html.indexOf('Release notes'));
- assert.match(html,/data-id="a"[^]*ios-sq bad[^]*Task #7 needs attention/);
- box.conversationSearch='release';const found=box.renderChatList();assert.doesNotMatch(found,/Live task card/);assert.match(found,/Release notes/);
+ assert.match(html,/Needs you<small>1 task<\/small>[^]*class="chat-card"[^]*#7[^]*Live task card[^]*data-id="a"[^]*data-task-retry="7"/);
+ assert.ok(html.indexOf('chat-rail')<html.indexOf('Recent')&&html.indexOf('Recent')<html.indexOf('Weather today')&&html.indexOf('Earlier')<html.indexOf('Release notes'));
+ assert.equal((html.match(/Live task card/g)||[]).length,1,'a chat in the rail is not repeated in Recent');
+ assert.match(html,/Sunny and 18°C/);assert.doesNotMatch(html,/think|trying/,'reasoning text never leaks into a preview');
+ assert.doesNotMatch(html,/id="chatsearch"/,'search opens from the Search button');
+ box.conversationSearch='release';const found=box.renderChatList();assert.doesNotMatch(found,/Live task card/);assert.match(found,/id="chatsearch"[^]*Release notes/);
  box.conversationSearch='zzz';assert.match(box.renderChatList(),/No matching conversations/);
+});
+test('a finished task does not offer Retry, and Edit mode moves every chat into the list with Delete',()=>{
+ const chats=[{id:'a',title:'Old failure',at:Date.now(),messages:[]}];
+ const box=shell({chats,trackedJobs:[{number:9,chatId:'a',message:'failed',finished:true}]});
+ assert.doesNotMatch(box.renderChatList(),/data-task-retry/);
+ vm.runInContext('chatEditing=true',box);const html=box.renderChatList();
+ assert.doesNotMatch(html,/chat-card/);assert.match(html,/data-delete-chat="a"/);
 });
 
 // ui.js: the task card's large ring.
