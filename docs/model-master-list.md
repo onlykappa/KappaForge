@@ -5,7 +5,7 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **90 removed**, out of 206.
+**105 kept** (95 working, 10 unavailable today), **11 specialist tools** kept but not used for chat, and **98 removed**, out of 214.
 
 The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
@@ -13,7 +13,7 @@ The app's Settings → AI Models → Download model list (PDF) builds this list 
 |---|---|---|---|---|
 | Google Gemini | 11 | 10 | 1 | 3 |
 | Groq | 4 | 4 | 0 | 0 |
-| Mistral | 14 | 12 | 2 | 10 |
+| Mistral | 14 | 12 | 2 | 18 |
 | Cloudflare Workers AI | 23 | 23 | 0 | 11 |
 | NVIDIA Build | 16 | 13 | 3 | 49 |
 | OpenRouter | 14 | 11 | 3 | 3 |
@@ -201,20 +201,28 @@ These are not chat models, so a chat test fails them, but they are useful for th
 | `gemini-2.5-flash` | Retired by the provider | This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features |
 | `gemini-2.5-flash-lite` | Retired by the provider | This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the lates |
 
-### Mistral (10)
+### Mistral (18)
 
 | Model | Reason | Provider's message |
 |---|---|---|
-| `labs-leanstral-1-5-1` | Labs model: enable it in Mistral settings | Labs model, off by default (403): an admin must enable Labs models in Mistral organization settings. You can turn this on |
+| `labs-leanstral-1-5` | Labs model: enable it in Mistral settings | Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed |
+| `labs-leanstral-1-5-1` | Labs model: enable it in Mistral settings | Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed |
 | `glm-5-2` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
 | `mistral-large-2512` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
 | `mistral-large-4` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
 | `mistral-large-latest` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
 | `zai-glm-5-3` | Not in your subscription tier | Not in your subscription tier (403): This model is not available in your subscription tier |
-| `magistral-medium-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22) |
-| `magistral-small-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22) |
-| `mistral-medium-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22) |
-| `mistral-vibe-cli-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22) |
+| `magistral-medium-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `magistral-small-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium-2604` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium-3` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium-3-5` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium-3.5` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-medium-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-vibe-cli-fast` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-vibe-cli-latest` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
+| `mistral-vibe-cli-with-tools` | Refuses every request (no free quota in practice) | Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request |
 
 ### Cloudflare Workers AI (11)
 

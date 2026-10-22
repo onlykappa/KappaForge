@@ -219,12 +219,25 @@
       },
       "removedModels": [
         "glm-5-2",
+        "labs-leanstral-1-5",
+        "labs-leanstral-1-5-1",
+        "magistral-medium-latest",
+        "magistral-small-latest",
         "mistral-large-2512",
         "mistral-large-4",
         "mistral-large-latest",
+        "mistral-medium",
+        "mistral-medium-2604",
+        "mistral-medium-3",
+        "mistral-medium-3-5",
+        "mistral-medium-3.5",
+        "mistral-medium-latest",
+        "mistral-vibe-cli-fast",
+        "mistral-vibe-cli-latest",
+        "mistral-vibe-cli-with-tools",
         "zai-glm-5-3"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: 403 not available in the account's subscription tier",
+      "removedModelsReason": "Model audit 2026-10-22: not in the subscription tier (403), refuses every request (429), or a Labs model that is off (403)",
       "toolModels": [
         {
           "model": "voxtral-mini-2602",
@@ -252,7 +265,20 @@
         "mistral-large-latest": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
         "mistral-large-4": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
         "zai-glm-5-3": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
-        "glm-5-2": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)"
+        "glm-5-2": "Not in your subscription tier (403): This model is not available in your subscription tier (on the account's limits page, but the free tier does not include it)",
+        "mistral-medium": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-2604": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3-5": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-3.5": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-medium-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "magistral-medium-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "magistral-small-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-fast": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-latest": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "mistral-vibe-cli-with-tools": "Refuses every request: 429 'Rate limit exceeded' to the first request in every check (5 checks, 2026-10-21/22); removed at the owner's request",
+        "labs-leanstral-1-5": "Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed",
+        "labs-leanstral-1-5-1": "Labs model (403): an admin must enable Labs models in Mistral organization settings; the owner could not find the setting, so it is removed"
       }
     },
     "nvidia": {
