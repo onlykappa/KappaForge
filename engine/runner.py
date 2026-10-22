@@ -584,13 +584,13 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     try:
         model_timeout()
         if os.getenv("KAPPA_ROUTER_REQUIRED", "").strip().lower() == "true":
-            return run_integrated_router(prompt, max_output_tokens, allowed, json_mode)
+            return run_integrated_router(prompt, max_output_tokens, allowed, json_mode, skip)
         return _run_model(api_key, prompt, max_output_tokens, allowed, json_mode, skip)
     finally:
         MODEL_DEADLINE = previous
 
 
-def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False):
+def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     """Send authorized coding inference through KappaForge's shared Durable-Object router."""
     from engine import recovery, gateway
     endpoint = os.getenv("KAPPA_ROUTER_URL", "").strip().rstrip("/")
@@ -612,6 +612,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     pinned_route = getattr(getattr(journal, "scope", None), "inference_route", None)
     pinned_model = None
     fallback = True
+    excluded = sorted(set(skip))
+    if len(excluded) > 160 or any(not isinstance(route, str) or not re.fullmatch(r'[A-Za-z0-9@._:/-]{1,200}', route) for route in excluded):
+        raise ValueError('Invalid excluded model routes')
+    if pinned_route and pinned_route in excluded:
+        raise gateway.GatewayUnavailable('The pinned route was rejected; no alternative route is authorized', terminal=True)
     if pinned_route:
         provider, separator, pinned_model = pinned_route.partition(":")
         policy = PROVIDERS.get("providers", {}).get(provider, {})
@@ -636,6 +641,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "maxTokens": min(max(1, int(max_output_tokens)), 8192),
         "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
+        "excludedRoutes": excluded,
     }
     if pinned_model:
         payload["model"] = pinned_route
@@ -690,6 +696,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     model, output = data.get("route"), data.get("text")
     if not isinstance(model, str) or not re.fullmatch(r"[a-z0-9-]+:.{1,180}", model, re.I) or not isinstance(output, str) or not output.strip():
         raise gateway.GatewayUnavailable("Integrated provider gateway returned an incomplete inference result", terminal=bool(pinned_route))
+    if model in excluded:
+        raise gateway.GatewayUnavailable('Integrated gateway returned an excluded route', terminal=True)
     if pinned_route and model != pinned_route:
         raise gateway.GatewayUnavailable("Integrated provider gateway did not honor the task-pinned route", terminal=True)
     raw_usage = data.get('usage') if isinstance(data.get('usage'), dict) else {}
@@ -920,11 +928,13 @@ def main():
             if recoverable and kind not in ('authorization', 'access') and journal.defer(exc):
                 print('Recovery checkpoint saved; automatic continuation queued. ' + recovery.clean(exc))
                 return
-            journal.state['status'] = 'blocked'
-            journal.persist()
-            journal.publish('blocked', 'Automatic recovery stopped: ' + recovery.clean(exc, 180))
+            journal.stop(exc)
             reason = str(exc)[:900] or type(exc).__name__
-            saved_pr = getattr(Progress.latest, "saved_pr", "")
+            saved_pr = journal.state.get('pr') or getattr(Progress.latest, "saved_pr", "")
+            if journal.state.get('candidate'):
+                reason += " Saved candidate: " + journal.state['candidate']
+            if Progress.latest:
+                Progress.latest.fail(recovery.clean(exc, 240))
             if saved_pr:
                 reason += " Validated stages are saved at " + saved_pr
             report_failure(issue["number"], token, reason, "review the saved recovery history and provide missing access or guidance")

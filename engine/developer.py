@@ -25,7 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from engine import recovery
-from engine.edit_errors import EditMismatch, SourceNotRead
+from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
@@ -530,13 +530,6 @@ def mirror_ios_copies(repo, changes, existing):
     return mirrored
 
 
-class GenerationFailure(ValueError):
-    """Rejected proposals are recoverable without treating scope failures as transport errors."""
-    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False):
-        super().__init__(message)
-        self.compact = compact
-        self.provider_routes = provider_routes
-        self.retry_at, self.terminal = retry_at, terminal
 
 
 # A genuinely different route after large answers fail: smaller context and output
@@ -607,7 +600,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                     recovery.SPLITTING.reset(handle)
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
                                     " | Earlier large attempt: " + reason,
-                                    provider_routes=getattr(last, 'provider_routes', False),
+                                    provider_routes=getattr(last, 'provider_routes', False), blocked=getattr(last, 'blocked', False),
                                     retry_at=getattr(last, 'retry_at', 0), terminal=getattr(last, 'terminal', False)) from last
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
@@ -938,7 +931,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     detail = "Generated change failed validation after " + str(len(errors)) + " attempts: " + " | ".join(errors)
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
-    raise GenerationFailure(detail, compact=not hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
+    raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
                             retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
 
 
@@ -1189,7 +1182,7 @@ class Progress:
     def _write(self):
         since = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(self.started))
         failed = getattr(self, "failed", "")
-        lines = (["✅ " + d for d in self.done] + (["⏳ " + self.current + " · started " + since] if self.current else [])
+        lines = ([("⚠️ " if i < len(self.records) and self.records[i].get("status") == "blocked" else "✅ ") + d for i, d in enumerate(self.done)] + (["⏳ " + self.current + " · started " + since] if self.current else [])
                  + (["❌ " + failed] if failed else []) + ["◻ " + a for a in ([] if failed else self.ahead)])
         self.revision += 1
         self.written = time.monotonic()
@@ -1428,7 +1421,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             elif not previous_review_problems:
                 outstanding = []
         else:
-            problems.append("Requirement review unavailable; task completion is not verified")
+            problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
@@ -1461,8 +1454,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                                      require_test and not has_tests(changes))
         except ValueError as exc:
             print("Self-review fix failed: " + str(exc)[:300])
-            if any(marker in str(exc).lower() for marker in ('blocked path', 'forbidden path', 'unsafe path',
-                                                              'protected path', 'unauthorized', 'authorization expired')):
+            if recovery.diagnose(exc)[1] == 'stop':
                 # Only source/format failures get more review rounds. Never turn
                 # a security or authorization rejection into another attempt.
                 break
@@ -1644,7 +1636,10 @@ def produce_development_pr(issue, api_key, token):
 
 def review_body(number, model, explanation, summary, changes, design="", problems=()):
     # The app shows the "What this does" section on its review card; keep the heading stable.
-    # Fixes read the design notes back from here.
+    # Fixes read the design notes back from here. Never promote a model's claims
+    # into a verified result while saving an incomplete checkpoint.
+    if problems:
+        explanation = "Not finished: saved implementation checkpoint; verification is incomplete.\n\nAgent-reported changes (not verified): " + (explanation or summary)
     return (f"Owner-approved development for {ROOT}#{number}. Model: `{model}`\n\n"
             f"## What this does\n{explanation or summary}\n\n## Technical summary\n{summary}\n\n"
             + (f"## Design notes\n{design}\n\n" if design else "") +

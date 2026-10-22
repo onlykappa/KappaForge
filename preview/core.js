@@ -1,9 +1,11 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto'};
 function settings(value={}){
  const s={...defaults};
+ if(typeof value.weatherCity==='string')s.weatherCity=value.weatherCity.trim().slice(0,120);
+ if(['auto','celsius','fahrenheit'].includes(value.weatherUnits))s.weatherUnits=value.weatherUnits;
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
  for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark']}))if(values.includes(value[k]))s[k]=value[k];
  // Gemini model IDs, or provider:model for the free fallback providers (e.g. groq:llama-3.3-70b-versatile).

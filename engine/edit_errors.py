@@ -13,3 +13,13 @@ class SourceNotRead(ValueError):
         message = "Refusing to overwrite a file that was not read: " if overwrite else "Edits target a file that was not read: "
         super().__init__(message + path)
         self.path = path
+
+
+class GenerationFailure(ValueError):
+    """Rejected proposals are recoverable without treating scope failures as transport errors."""
+    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False, blocked=False):
+        super().__init__(message)
+        self.compact = compact
+        self.blocked = blocked
+        self.provider_routes = provider_routes
+        self.retry_at, self.terminal = retry_at, terminal

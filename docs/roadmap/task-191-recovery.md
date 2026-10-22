@@ -1,115 +1,119 @@
-# Task #191: investigate and repair the failed autonomous weather mission
+# Task #191: repair the autonomous weather mission
 
-This draft focuses on the failures exposed by task #191. It is separate from
-PR #194's OpenRouter/premium work. Keep this PR a draft; do not merge, deploy,
-release, spend provider credits, or restart task #191 as part of this investigation.
-Record evidence and test results here so another developer can continue.
+This is the implementation roadmap and evidence for draft PR #195. It is separate
+from #194's OpenRouter/premium work. The owner requested implementation on
+2026-10-22. Keep this PR a draft. No merge, production deployment, release, paid
+inference, old-journal migration or restart of task #191 is included.
 
-## Evidence inspected
+## Evidence and root causes
 
-- [Original task and bot progress/failure ledger](https://github.com/onlykappa/KappaForge/issues/191).
-- [Incomplete weather checkpoint, PR #192](https://github.com/onlykappa/KappaForge/pull/192),
+- [Original task, bot progress and failure ledger](https://github.com/onlykappa/KappaForge/issues/191).
+- [Incomplete weather checkpoint #192](https://github.com/onlykappa/KappaForge/pull/192),
   candidate `3d9ef29b2125c2976501633bb7f129b9514178b7`.
-- [Failed workflow](https://github.com/onlykappa/KappaForge/actions/runs/39805542149),
-  code job `119917745997`, and the owner's screenshot of repair round 2.
-- Baseline for this repair: main `677a4f8579204ddce4432062b8eb97363b99b9dc`.
+- [Failed run](https://github.com/onlykappa/KappaForge/actions/runs/39805542149),
+  code job `119917745997`, plus the owner's screenshot of repair round 2.
+- Baseline main: `677a4f8579204ddce4432062b8eb97363b99b9dc`.
 
-## Findings
+The missing edit anchor contained the literal `/authorization`. Recovery searched
+that source excerpt for authorization words and persisted `blocked_authorization`.
+A later unread-file error then attempted an invalid transition back to recovering;
+terminal reporting masked the original error with another transition exception.
+The initial patch fixed individual exceptions. The continuation also preserves
+the diagnosis through aggregate generation failures and final checkpoint saves.
+Actual permission denials still stop; no state-machine protection is relaxed.
 
-1. **Confirmed false authorization failure.** `EditMismatch` embeds an 80-character
-   source excerpt. The missing route-list anchor includes `/authorization`.
-   `recovery.diagnose()` searched the entire exception string for that word before
-   checking for an edit mismatch. It persisted `blocked_authorization` for a
-   recoverable proposal error. A subsequent unread-file error attempted
-   `blocked_authorization -> recovering`; terminal error reporting then attempted
-   `blocked_authorization -> failed_terminal`. Both transitions were rejected,
-   obscuring the original error. Keep the state-machine protections intact.
-2. **Confirmed ineffective model switch.** The activity says it is switching away
-   from `ollama:gpt-oss:120b`, but subsequent gateway evidence selects it again.
-   `run_model(..., skip=...)` passes exclusions only to the direct-provider path;
-   `run_integrated_router()` has no skip argument. The integrated gateway needs
-   an explicit, validated exclusion contract; retries must remain within the
-   owner's allowed providers and any pinned route restrictions.
-3. **Confirmed incomplete weather implementation.** PR #192 adds two duplicate
-   `/weather` handlers and no app/tool integration. The handlers appear immediately
-   after pathname parsing, before the normal app authentication/path handling.
-   The review's claim that the allowlist alone makes the route unreachable is an
-   unverified hypothesis: test the actual request path and authentication boundary
-   rather than copying that claim into a repair. Review request-method checks too.
-4. **Confirmed inadequate weather test.** `tests/weather.test.mjs` in #192 uses
-   `test` and `expect` without importing a Node test runner/assertions, makes a live
-   network call with an empty environment, and is absent from the root npm test
-   command. Its existence is not proof of passing tests or working chat weather.
-5. **Unverified completion.** The self-review reports “Requirement review
-   unavailable.” The draft description nevertheless says weather is functional
-   and verified. The progress card also marks “Found 3 problems” as a successful
-   step while PROGRESS.md retains an earlier saved-stage status after the crash.
-   Preserve the original requirements and distinguish saved code, unresolved
-   findings, verified behavior, and workflow failure.
+The run announced switching away from Ollama but selected it again: Python's
+`skip` list was dropped on the integrated gateway path. Exclusions now cross that
+boundary, are validated and applied before route attempts, and returned excluded
+routes are rejected. An excluded pinned route stops rather than broadening scope.
 
-## Ordered repair plan
+The saved weather patch in #192 had duplicate handlers before normal app auth,
+no app/tool integration, and an undiscovered test using unimported `test`/`expect`.
+The review's blanket claim that the path allowlist made the route unreachable
+was inaccurate for those early handlers. The checker now distinguishes missing
+allowlist entries, pre-authentication handlers and duplicate handlers.
 
-- [x] 1. Read the task, screenshot, trusted failure ledger, saved PR and run logs;
-  identify the causal chain before changing recovery behavior.
-- [x] 2. Classify edit mismatches and unread-source errors by internal exception
-  type before examining source-bearing text. Use that diagnosis consistently for
-  generation hard stops. Preserve exact unique matching, protected-path checks,
-  authorization expiry, read-before-write and bounded retry budgets.
-- [x] 3. Regress missing/ambiguous anchors containing authorization/security words,
-  persistence/reload, an unread-file failure followed by a valid retry, and genuine
-  authorization failures. No provider credentials or live inference are needed.
-- [ ] 4. Implement and test model exclusions through Python -> gateway -> route
-  selection. Cover repeated rejected proposals, all routes excluded, pinned
-  routes, request validation, and honest reporting when no alternative exists.
-- [ ] 5. Investigate every task #191 requirement against the saved candidate.
-  Record a requirement/evidence matrix. Reproduce duplicate handlers, actual
-  routing/auth behavior, test discovery, unavailable requirement review, and stale
-  failure/progress summaries. Fix each confirmed cause and add behavioral tests.
-- [ ] 6. Complete weather through the real app/tool path, reconciling PR #192
-  rather than merging a duplicate partial implementation. Cover explicit city
-  before saved location, no assumed GPS/default city, C/F units, finite/ranged
-  coordinates, current/hourly/daily data, local timestamps, bounded cache,
-  timeouts, upstream failures, invalid cities and graceful responses. Authenticate
-  the endpoint and reject unsupported methods before any external request.
-- [ ] 7. Integrate weather tests into CI using the existing Node runner and
-  assertions. Test discovery/invocation and natural-language output through the
-  same execution path as the app; separate deterministic tests from live checks.
-- [ ] 8. Fix failure reporting to retain the original cause, saved draft/SHA and
-  next action, and finish the progress note when the worker exits. Keep “review
-  unavailable” incomplete; never describe a saved stage as a completed feature.
-- [ ] 9. Run full independent validation and record exact results/limitations.
-  When explicitly authorized to perform live verification, demonstrate Spokane
-  Valley weather from a successful real API response through the actual tool
-  path. Do not claim deployment, live success or task completion from mocked tests.
+## Ordered roadmap
 
-## Validation and handoff
+- [x] 1. Inspect the screenshot, task, trusted ledger, saved code and workflow logs;
+  establish the causal chain before modifying recovery.
+- [x] 2. Use typed edit and unread-source failures; retain their meaning through
+  aggregate generation errors. Preserve exact uniqueness, read-before-write,
+  protected paths, authorization expiry, pinned routes and retry budgets.
+- [x] 3. Regress source-bearing authorization words, journal persistence/reload,
+  unread-file recovery, aggregate failure and genuine authorization denial.
+- [x] 4. Carry rejected-model exclusions through Python and the integrated gateway.
+  Test exclusions, all routes excluded, malformed input, pinned route refusal,
+  excluded response rejection and the actual gateway/Durable Object path.
+- [x] 5. Audit the original requirements against #192 and replace its incomplete
+  approach with the authenticated implementation below. Detect pre-auth and
+  duplicate routes accurately. Preserve unavailable requirement review as an
+  incomplete result and include its redacted diagnostic.
+- [x] 6. Implement a callable weather registry, discovery through `/capabilities`,
+  and invocation directly from the existing authenticated `/chat` route. No new
+  weather HTTP handler is needed. Geocode the explicit city
+  before any saved default. Ask for a city when none is known, handle its followup,
+  and never assume/request GPS. Save city and units through the actual app settings.
+- [x] 7. Add current, hourly and seven-day weather, precipitation probability, wind,
+  local timestamps, C/F handling, finite/ranged coordinates, upstream validation,
+  cancellation, an 8-second operation timeout, and a bounded 5-minute cache.
+  Wire real-module tests into the standard npm suite. Sync the iOS web bundle.
+- [x] 8. Preserve original failure, saved candidate and PR in final progress/notes.
+  Failure diagnostic writes cannot replace the original error. Show warnings as
+  warnings in both snapshots and plain text. Label incomplete draft summaries as
+  unverified agent claims rather than claiming successful behavior or testing.
+- [x] 9. Run local full suites, independent baseline-derived validation scripts,
+  web/bundle checks, dependency-map checks, and a real API test through the exact
+  authenticated chat handler. Review new-commit Linux CI before promotion.
 
-Baseline edit recovery: 6 tests passed; baseline journal: 49 passed. The repair
-adds regression coverage and must retain those checks. Run the full Python suite,
-`npm test`, `python scripts/check-web.py`, and agent preflight. Check the dependency
-map after moving exception classes. The policy references `engine/validate_change.py`,
-but that file does not exist on this baseline; report its absence, do not invent
-a successful validator result. CI provides verification on Linux independently
-of this Windows development environment.
+## Requirement / implementation / evidence matrix
 
-This initial patch repairs the false authorization classification and records the
-remaining investigation. It does not complete weather, migrate old blocked
-journals, relax the state machine, or restart the existing task. Any recovery of
-old state must revalidate current owner authorization and the exact candidate;
-never blanket-convert blocked tasks to runnable ones.
+| Task #191 requirement | Implementation | Evidence |
+| --- | --- | --- |
+| Discover and invoke a real weather capability | `weatherTools`, `invokeWeatherTool`, authenticated `/capabilities` discovery and `/chat` invocation | `tests/weather.test.mjs`: discovery/auth tests |
+| Normal app conversation uses weather data | existing app `/chat` request invokes tool and returns formatted JSON reply | full Worker handler integration tests; live check |
+| Explicit city, saved fallback, no assumed GPS | `weatherArguments`, city followup, sanitized `weatherCity` setting | location precedence, missing location and followup tests |
+| C/F preference handling | explicit unit wording, saved units, browser locale for auto | sanitizer and request/response unit tests |
+| Current conditions, wind and timestamps | validated Open-Meteo current data and local timezone | real-module tests and live Spokane Valley response |
+| Hourly/daily forecasts and rain probability | normalized hourly/seven-day series; requested hourly/week/tomorrow formatting | forecast/date/probability assertions |
+| Free public API and correct geocoding | fixed Open-Meteo HTTPS origins, no model inference or API key | captured upstream URLs and explicit live check |
+| Timeouts, caching and graceful failure | shared 8-second signal, caller cancellation, 64-entry/5-minute cache, validated responses | cache expiry/units/bounds, malformed data, error and cancellation tests |
+| Preserve chat, routing, secrets, existing authorization | normal auth/CORS/method checks, existing authenticated chat route, bounded exclusions | full JS/Python suites and negative authorization tests |
+| Honest autonomous recovery and progress | typed failures, exclusion propagation, final notes, warning rendering, incomplete-summary labels | `tests/test_task_191.py`, existing recovery and simulated-task suites |
+| Independent verification and live proof | ordinary tests plus optional `node tools/check-weather.mjs` | exact results below; production deployment remains pending |
 
-### Initial patch results (Windows, 2026-10-22)
+## Reconciliation with #192
 
-- New tests reproduced the failure using the unmodified baseline classifier;
-  the replay produced false authorization classifications and an invalid state
-  transition. The real authorization-denial regression still passed.
-- Updated journal suite: 52 passed. Full JavaScript suite: 465 passed.
-- Full Python suite: 441 run, 437 passed, 3 skipped (real ast-grep unavailable),
-  1 failed: existing `test_the_map_ranks_kappaforge_itself_sensibly` constructs
-  Windows backslash paths but expects slash paths. No assertion was weakened.
-- Web checks passed using the bundled Python as `python3` and UTF-8 mode for
-  subprocesses. Agent preflight, dependency map generation/check and diff checks
-  passed. Local checkout line endings were normalized to Git's LF content for
-  byte-sensitive tests; no source-content change was needed for those tests.
-- `engine/validate_change.py` is absent; no validator success or live task/weather
-  verification is claimed. Linux CI results must be reviewed before promotion.
+This PR implements the weather feature from the trusted main baseline. Do not
+merge #192's duplicate unauthenticated handlers or broken test into it. The old
+PR stays an incomplete historical checkpoint; this draft supersedes that weather
+implementation and preserves its task/run references. Task #191 is not marked
+complete or automatically restarted by this PR.
+
+## Validation
+
+The initial classifier regressions fail against the original classifier and pass
+with the fix. The continuation exercises actual routing and Worker boundaries,
+not a weather implementation written inside a test. Full suite results are
+recorded in the PR description after final validation.
+
+The explicit live test `node tools/check-weather.mjs` passed on 2026-10-22 at
+16:31:25 UTC through the local authenticated `/chat` handler and real geocoding
+and forecast APIs: Spokane Valley, Washington, United States; timezone
+America/Los_Angeles; current data timestamp 2026-10-22 09:30 local; 168 hourly
+entries and 7 daily entries. The reply used actual temperature/wind data and
+included its source and timestamp. No deployed Worker or paid model was called.
+
+The earlier Windows repository-map fixture failure is fixed by using GitHub-style
+POSIX paths in its input; its behavioral assertions are unchanged. The optional
+real ast-grep tests are skipped locally when the binary is absent; Linux CI
+installs the pinned binary. `engine/validate_change.py`, referenced in KAPPA.md,
+does not exist at the baseline; no successful run of that missing script is claimed.
+
+## Remaining rollout gates
+
+- [ ] Review all applicable CI results for this PR's final head.
+- [ ] Owner approval to merge/deploy; then verify weather in the deployed app.
+- [ ] Install/release the updated iOS web bundle if needed for the new settings UI.
+- [ ] If task #191 is explicitly resumed later, revalidate current authorization,
+  exact task scope and saved candidate. Never blanket-unblock old journals.

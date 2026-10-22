@@ -43,6 +43,7 @@ function validate(input){
  if(input.responseFormat!==undefined&&input.responseFormat!==null&&input.responseFormat!=="json_object")return "Unsupported response format";
  if(input.model!==undefined&&(typeof input.model!=="string"||input.model.length>180))return "Invalid model";
  if(input.providers!==undefined&&(!Array.isArray(input.providers)||input.providers.length>registry.order.length+1||input.providers.some(id=>typeof id!=="string")))return "Invalid provider allowlist";
+ if(input.excludedRoutes!==undefined&&(!Array.isArray(input.excludedRoutes)||input.excludedRoutes.length>160||input.excludedRoutes.some(route=>typeof route!=="string"||!/^[A-Za-z0-9@._:/-]{1,200}$/.test(route))))return "Invalid excluded model routes";
  if(input.requestId!==undefined&&(typeof input.requestId!=="string"||!/^[a-f0-9-]{36}$/i.test(input.requestId)))return "Invalid request id";
  return "";
 }
@@ -67,7 +68,9 @@ export async function inferenceRouter(env,input,callerSignal=null){
  const requested=Array.isArray(input.providers)?input.providers:[];
  const available=providerAllowed(env,"coding","gemini",{privateCode:true,requested})?await discover(env).catch(()=>[]):[];
  const prefs={model:input.model||"auto",fallback:input.fallback!==false};
- const routes=await fallbackRoutes(env,available,prefs,false,{channel:"coding",privateCode:true,hasStructuredOutput:input.responseFormat==="json_object",requestedProviders:requested});
+ const discoveredRoutes=await fallbackRoutes(env,available,prefs,false,{channel:"coding",privateCode:true,hasStructuredOutput:input.responseFormat==="json_object",requestedProviders:requested});
+ const excluded=new Set(input.excludedRoutes||[]);
+ const routes=discoveredRoutes.filter(route=>!excluded.has(route.provider+":"+route.model));
  if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));

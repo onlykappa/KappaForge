@@ -93,10 +93,10 @@ class RankingTests(unittest.TestCase):
         self.assertIn("app/billing.py", short)
 
     def test_the_map_ranks_kappaforge_itself_sensibly(self):
-        files = {str(p.relative_to(ROOT)): p.read_text(errors="replace")
+        files = {p.relative_to(ROOT).as_posix(): p.read_text(errors="replace")
                  for p in ROOT.glob("**/*") if p.is_file() and developer.SOURCE_RE.search(p.name)
-                 and not developer.SKIP_RE.search(str(p.relative_to(ROOT)) + "/") and ".git/" not in str(p)
-                 and not str(p.relative_to(ROOT)).startswith(("ios/KappaForge/Web/", "engine/vendor/"))}
+                 and not developer.SKIP_RE.search(p.relative_to(ROOT).as_posix() + "/") and ".git/" not in p.as_posix()
+                 and not p.relative_to(ROOT).as_posix().startswith(("ios/KappaForge/Web/", "engine/vendor/"))}
         live = repo_map.RepoMap(files)
         top = lambda task, n=8: live.rank(task)[:n]
         self.assertIn("chat-backend/src/neurons.js", top("Count Workers AI Neurons used today on the usage page"))
