@@ -43,7 +43,7 @@ try{
  // PROBE_PROVIDER: test only that provider's models, every one, through the probe endpoint.
  if(process.env.PROBE_PROVIDER){
   summary.providerProbe=await page.evaluate(async provider=>{const results=[];let offset=0,total=null;
-   for(let i=0;i<20&&offset!==null;i++){const d=await settingsAPI('/providers/probe',{provider,offset},120000);total=d.total;results.push(...(d.results||[]).map(({label,outcome,status,tokens,reply})=>({label,outcome,status,tokens,reply})));offset=d.next;}
+   for(let i=0;i<20&&offset!==null;i++){const d=await settingsAPI('/providers/probe',{provider,offset},120000);total=d.total;results.push(...(d.results||[]).map(({label,outcome,status,tokens,reply,detail})=>({label,outcome,status,tokens,reply,detail})));offset=d.next;}
    return {provider,total,results};},process.env.PROBE_PROVIDER);
  }
  if(probe){

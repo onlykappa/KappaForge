@@ -257,9 +257,16 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         set -euo pipefail
-        if [ "$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)" != "$GITHUB_SHA" ]; then
-          echo "::notice::main moved on during this build; the newer commit's build releases instead."
-          exit 0
+        main_sha="$(gh api repos/onlykappa/KappaForge/git/ref/heads/main --jq .object.sha)"
+        if [ "$main_sha" != "$GITHUB_SHA" ]; then
+          # Only a newer commit that changes the app starts its own build (see the push paths above); otherwise
+          # this build is still the latest app and must publish, or nothing would.
+          app_changes="$(gh api "repos/onlykappa/KappaForge/compare/$GITHUB_SHA...$main_sha" --jq '[.files[].filename | select(test("^(ios|preview|scripts)/|^\\.github/workflows/ios-build\\.yml$"))] | length')"
+          if [ "$app_changes" != "0" ]; then
+            echo "::notice::main moved on with app changes during this build; the newer commit's build releases instead."
+            exit 0
+          fi
+          echo "main moved on without app changes; publishing this build."
         fi
         VERSION="${{ needs.native.outputs.version }}"
         test -n "$VERSION"
