@@ -47,7 +47,8 @@ export async function probeModels(env,{offset=0,limit=MAX_BATCH,provider=null}={
    response=route.provider==="gemini"
     ?await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+":generateContent",{method:"POST",signal:controller.signal,
       headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:PROMPT}]}],generationConfig:{maxOutputTokens:256,temperature:0}})})
-    :await callProvider(env,route,{system:"Answer briefly.",messages:[{role:"user",content:PROMPT}],maxTokens:64,temperature:0,hasMedia:false,hasTools:false,responseFormat:null},false,controller.signal);
+    // Thinking models spend their first tokens reasoning (79 before "OK" on nemotron-3.5-lightning): 64 read as an empty reply.
+    :await callProvider(env,route,{system:"Answer briefly.",messages:[{role:"user",content:PROMPT}],maxTokens:512,temperature:0,hasMedia:false,hasTools:false,responseFormat:null},false,controller.signal);
    status=response.status;
    if(response.ok){
     const data=await response.json();

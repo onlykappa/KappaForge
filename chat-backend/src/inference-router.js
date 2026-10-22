@@ -132,8 +132,9 @@ export async function inferenceRouter(env,input,callerSignal=null){
   if(rejectedProviders.has(route.provider)){skip("provider_resting_or_rejected");continue;}
   lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
-  let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens);
-  const context=p.context||MAX_CONTEXT,estimatedInput=Math.ceil(input.messages.reduce((n,m)=>n+m.content.length,0)/3.5);
+  // A route's own limits (a model's published context and output) only ever tighten the provider's.
+  let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens,route.provider!=="gemini"&&route.maxOutput||Infinity);
+  const context=Math.min(p.context||MAX_CONTEXT,route.provider!=="gemini"&&route.context||Infinity),estimatedInput=Math.ceil(input.messages.reduce((n,m)=>n+m.content.length,0)/3.5);
   // Conservative free-plan per-request envelope, distinct from context size or
   // remaining quota. Never truncate the request or raise a configured limit.
   if(p.freeRequestTokenBudget)maxTokens=Math.min(maxTokens,p.freeRequestTokenBudget-estimatedInput-256);

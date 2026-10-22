@@ -47,6 +47,9 @@ export function providerDiscoveryDiagnostic(env,id){
 // every chat model it lists; the rest keep reviewed free models, capped at maxModelsPerProvider.
 // Models the owner removed (the model audit found a permanent error) are never routed or counted; specialist tools
 // (audio, video, documents, decisions) are kept in the model list but never sent chat.
+const modelLimits=new Map();
+// A model's own context and output limits from its provider's catalog, when the catalog publishes them.
+export const catalogLimits=(id,model)=>modelLimits.get(id+":"+model)||null;
 export async function providerModels(env,id){
  const p=registry.providers[id]||{},removed=new Set([...(p.removedModels||[]),...(p.toolModels||[]).map(t=>t.model)]);
  const models=await listedModels(env,id);
@@ -108,6 +111,10 @@ async function listedModels(env,id){
   // name says. Unpublished, malformed or variable ("-1") prices are not free. (Without the owner's paid opt-in.)
   const priced=p.freeOnly&&!fullCatalog(env,id)?body.data.filter(m=>!m?.pricing||chargesNothing(m.pricing)):body.data;
   const ids=freeModels(env,id,priced.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
+  // Each model's own limits where the catalog publishes them (OpenRouter: context_length and the top provider's
+  // max_completion_tokens), so a request is never sent to a model that cannot take it.
+  for(const m of body.data){const context=Number(m?.context_length??m?.context_window),maxOutput=Number(m?.top_provider?.max_completion_tokens??m?.max_completion_tokens);
+   if(typeof m?.id==="string"&&(context>0||maxOutput>0))modelLimits.set(id+":"+m.id,{context:context>0?context:null,maxOutput:maxOutput>0?maxOutput:null});}
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
   const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
@@ -151,7 +158,10 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
    const p=registry.providers[id];
    if(!providerAllowed(env,channel,id,{privateCode,requested})||disabled.has(id)&&!manual?.startsWith(id+":"))continue;
    if(hasMedia&&!p.capabilities?.media||hasTools&&!p.capabilities?.tools||hasStructuredOutput&&!p.capabilities?.structuredOutput)continue;
-  for(const model of await providerModels(env,id))routes.push({provider:id,model,label:id+":"+model,capabilities:p.capabilities,context:p.context||null,maxOutput:p.maxOutput||null});
+  // The tighter of the provider's configured limit and the model's own published one.
+  const tighter=(a,b)=>a&&b?Math.min(a,b):a||b||null;
+  for(const model of await providerModels(env,id)){const own=catalogLimits(id,model);
+   routes.push({provider:id,model,label:id+":"+model,capabilities:p.capabilities,context:tighter(p.context,own?.context),maxOutput:tighter(p.maxOutput,own?.maxOutput)});}
   }
  }
  // Models the account dashboard shows with no quota at all (0 requests per minute or day) cannot answer.
