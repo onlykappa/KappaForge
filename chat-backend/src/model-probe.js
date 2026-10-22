@@ -104,6 +104,10 @@ async function auditOnce(env,route){
  row.status=status||null;row.latencyMs=Date.now()-started;
  row.outcome=status===502&&category?category:status===0?category:outcomeFor(status);
  try{await reportProviderOutcome(env,{requestId,route,status,category,headers:response?.headers||null,usage,body:errorBody})}catch{}
+ // Recorded in Usage like the quick check, so an audited model's answer shows there too.
+ const label=route.provider==="gemini"?route.model:route.provider+":"+route.model;
+ let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
+ try{await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(telemetry({usageMetadata:usage},label,row.latencyMs,row.outcome==="answered",false,"probe",pricing,row.status||0))})}catch{}
  return row;
 }
 export async function auditModels(env,labels){
