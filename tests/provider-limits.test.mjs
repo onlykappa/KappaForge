@@ -197,8 +197,8 @@ test('daily token capacity counts per-minute token limits, not only published da
  assert.equal(L.tokenCeiling({tpm:500000,rps:1}),500000*1440,'per-minute only: a full day of it');assert.equal(L.tokenCeiling({rps:1}),null);
  const rows=L.usage([],limits,ids,{show:ids}),by=id=>rows.find(r=>r.id===id);
  assert.equal(by('gemini').tokenLimit,321080000);assert.equal(by('groq').tokenLimit,1100000);
- const m=L.usage([],limits,ids,{show:ids,routed:{mistral:['mistral-small-2603','ministral-8b-2410','ministral-8b-latest']}}).find(r=>r.id==='mistral');
- assert.equal(m.tokenLimit,(20000+50000+625000)*1440,'Mistral: a day of each routed model\'s per-minute limit, nothing for models it does not route');
+ const m=L.usage([],limits,ids,{show:ids,routed:{mistral:['mistral-small-2603','ministral-8b-2512','ministral-8b-latest']}}).find(r=>r.id==='mistral');
+ assert.equal(m.tokenLimit,(20000+625000)*1440,'Mistral: a day of each routed model\'s per-minute limit, nothing for models it does not route');
 });
 
 test('aliases of one model family share one allowance in provider totals',()=>{
