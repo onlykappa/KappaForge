@@ -29,8 +29,9 @@ class WaveTests(unittest.TestCase):
 
 
 class ParallelBuildTests(unittest.TestCase):
-    def build(self, stages, fake, checkpoint=None):
-        with patch.object(developer, "generate", side_effect=fake):
+    def build(self, stages, fake, checkpoint=None, review=(True, "")):
+        with patch.object(developer, "generate", side_effect=fake), \
+                patch.object(developer, "review_stage", side_effect=review if callable(review) else lambda *a: review):
             return developer.build_in_stages("k", "Build a feature", "o/r", {"api.py": "old\n", "ui.js": "old\n"},
                                              {"api.py": 4, "ui.js": 4}, "", None, stages, checkpoint=checkpoint)
 
@@ -94,6 +95,52 @@ class ParallelBuildTests(unittest.TestCase):
             [Stage("Add the endpoint", ["api.py"], True), Stage("Add the screen", ["ui.js"], True)], fake)
         self.assertEqual(changes, {"api.py": "new\n"})
         self.assertTrue(any("Step 2 of 2 was not done" in u for u in developer.UNFINISHED))
+
+    def test_each_worker_sees_its_own_files_and_little_else(self):
+        seen = {}
+
+        def fake(api_key, step, repo, current, files, guide, allowed, design, allow_empty=False):
+            own = "api.py" if "endpoint" in step.split("Do only this stage now:")[1].split("\n")[0] else "ui.js"
+            seen[own] = set(current)
+            return "m", "s", {own: "new\n"}, "e"
+
+        with patch.object(developer, "WORKER_SHARED_CHARS", 5):
+            self.build([Stage("Add the endpoint", ["api.py"], True), Stage("Add the screen", ["ui.js"], True)], fake)
+        self.assertEqual(seen, {"api.py": {"api.py", "ui.js"}, "ui.js": {"ui.js", "api.py"}}, "a small shared file still fits")
+        big = {"api.py": "x" * 10, "ui.js": "y" * 10, "huge.py": "z" * 100000, "notes.md": "mentioned"}
+        picked = developer.worker_sources(Stage("Update notes.md for the endpoint", ["api.py"], True), big)
+        self.assertEqual(list(picked)[:2], ["api.py", "notes.md"], "own files, then files the stage names")
+        self.assertNotIn("huge.py", picked, "the rest only within the shared budget")
+
+    def test_the_reviewer_sends_a_problem_back_once(self):
+        prompts = []
+
+        def fake(api_key, step, repo, current, files, guide, allowed, design, allow_empty=False):
+            prompts.append(step)
+            own = "api.py" if "endpoint" in step.split("Do only this stage now:")[1].split("\n")[0] else "ui.js"
+            fixed = "A reviewer checked your first attempt" in step
+            return "m", "s", {own: ("fixed" if fixed else "first") + "\n"}, "e"
+
+        reviews = []
+
+        def review(api_key, task, stage, changes, before, allowed=None):
+            reviews.append(str(stage))
+            return (False, "the endpoint does not validate input") if "endpoint" in stage and len(reviews) <= 2 else (True, "")
+
+        model, summary, changes, explanation = self.build(
+            [Stage("Add the endpoint", ["api.py"], True), Stage("Add the screen", ["ui.js"], True)], fake, review=review)
+        self.assertEqual(changes, {"api.py": "fixed\n", "ui.js": "first\n"})
+        redo = [p for p in prompts if "A reviewer checked your first attempt" in p]
+        self.assertEqual(len(redo), 1)
+        self.assertIn("the endpoint does not validate input", redo[0])
+
+    def test_a_review_that_cannot_run_never_blocks(self):
+        with patch.object(developer, "run_model", side_effect=RuntimeError("no provider")):
+            self.assertEqual(developer.review_stage("k", "t", Stage("s", ["a.py"], True), {"a.py": "x\n"}, {}), (True, ""))
+        with patch.object(developer, "run_model", return_value=("m", '{"ok":false,"problem":"misses the test"}')) as model:
+            self.assertEqual(developer.review_stage("k", "t", Stage("s", ["a.py"], True), {"a.py": "x\n", "b.py": "y\n"}, {}),
+                             (False, "misses the test"))
+        self.assertIn("IT ALSO EDITED: b.py", model.call_args.args[1])
 
     def test_dependent_stages_still_run_in_order(self):
         order = []
