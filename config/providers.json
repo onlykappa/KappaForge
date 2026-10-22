@@ -635,7 +635,9 @@
           {
             "match": "mistral-medium",
             "tpm": 20000,
-            "rps": 1
+            "rps": 1,
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
           },
           {
             "match": "mistral-small",
@@ -660,6 +662,31 @@
             "match": "voxtral-mini",
             "tpm": 50000,
             "rps": 1
+          },
+          {
+            "match": "magistral-medium",
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
+          },
+          {
+            "match": "magistral-small",
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
+          },
+          {
+            "match": "mistral-vibe-cli",
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
+          },
+          {
+            "match": "mistral-vibe-cli-fast",
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
+          },
+          {
+            "match": "mistral-vibe-cli-with-tools",
+            "rpm": 0,
+            "note": "Answers HTTP 429 \"Rate limit exceeded\" to the first small request in every test (4 runs, 2026-10-21/22), so it is not routed or counted"
           }
         ]
       },
