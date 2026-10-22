@@ -17,7 +17,7 @@ await mkdir(out,{recursive:true});
 // A local test Worker on 127.0.0.1 needs Chrome's private-network checks off; the deployed Worker does not.
 const local=process.env.KAPPA_ALLOW_LOCAL==='1'?{args:['--disable-features=PrivateNetworkAccessSendPreflights,BlockInsecurePrivateNetworkRequests,LocalNetworkAccessChecks','--proxy-bypass-list=127.0.0.1']}:{};
 const browser=await chromium.launch({...local,...(process.env.PLAYWRIGHT_CHROMIUM?{executablePath:process.env.PLAYWRIGHT_CHROMIUM}:{})});
-const summary={at:new Date().toISOString(),probe:null,providers:null,eligibility:null,errors:[]};
+const summary={at:new Date().toISOString(),google:null,probe:null,providers:null,eligibility:null,errors:[]};
 try{
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,serviceWorkers:'block',
   userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'});
@@ -39,7 +39,7 @@ try{
  await page.waitForFunction(()=>capabilities!==null||lastVerify?.error,null,{timeout:120000});
  // Why each provider is or is not routable, as the Worker reports it (no credentials are included).
  summary.eligibility=await page.evaluate(()=>capabilities?{routingPolicy:{version:capabilities.routingPolicy?.version,chatProviders:capabilities.routingPolicy?.chatProviders,codingProviders:capabilities.routingPolicy?.codingProviders},
-  providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
+  providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length,health:p.health||null}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
  if(probe){
   await open('models');await page.locator('#model-probe').click();
   await page.waitForFunction(()=>!probe.running&&probe.total!==null||probe.error,null,{timeout:45*60000,polling:2000});
@@ -47,7 +47,7 @@ try{
   summary.probe=await page.evaluate(()=>({total:probe.total,error:probe.error,results:probe.results.map(({label,outcome,status,tokens,latencyMs})=>({label,outcome,status,tokens,latencyMs}))}));
   await page.locator('section.panel',{hasText:'Test every model'}).screenshot({path:join(out,'1-model-test.png'),animations:'disabled'});
  }
- await open('usage');await page.locator('#s-refresh').click();
+ await open('usage');await page.locator('#usage-refresh').click();
  await page.waitForFunction(()=>!settingsBusy,null,{timeout:120000});
  await page.waitForTimeout(500);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2-usage-home.png'),fullPage:true,animations:'disabled'});
@@ -61,6 +61,10 @@ try{
  }
  await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  summary.neurons=await page.evaluate(()=>capabilities?.neurons??null);
+ summary.google=await page.evaluate(()=>settingsAPI('/usage/google').catch(e=>({error:e.message})));
+ await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
+ await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});
+ await page.locator('[data-period=month]').click();
  // Drill into the busiest provider and its busiest model, as a person tapping through would.
  const first=page.locator('[data-usage-provider]').first();
  if(await first.count()){
