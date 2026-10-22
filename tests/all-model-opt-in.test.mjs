@@ -236,3 +236,20 @@ test('an account block stored for a keyless provider\'s 401 is ignored; a keyed 
  assert.equal((await reserve('kilo-after-00000000000000000000000','kilo','kilo')).allowed,true);
  assert.equal((await reserve('groq-after-00000000000000000000000','groq','groq:0123456789abcdef')).allowed,false);
 });
+
+test('parallel workers share a per-model account across its models, and a missing model rests a day',async()=>{
+ const {routingStore}=await import('../chat-backend/src/router-state.js');
+ let value;const store={get:async k=>structuredClone(value),put:async(k,next)=>{value=structuredClone(next)}};
+ const call=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/reserve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ const reserve=(n,model,quotaScope)=>call({requestId:('parallel-'+n).padEnd(32,'0'),provider:'gemini',model,accountPool:'gemini',quotaPool:'gemini',quotaScope,maxConcurrent:1,leaseMs:120000});
+ assert.equal((await reserve('a','gemini-3.6-flash','model')).allowed,true);
+ assert.equal((await reserve('b','gemini-3.5-flash-lite','model')).allowed,true,'a second worker takes another model of the same account');
+ const same=await reserve('c','gemini-3.6-flash','model');
+ assert.equal(same.allowed,false);assert.equal(same.scope,'route','only that busy model is skipped');
+ assert.equal((await call({requestId:'parallel-d'.padEnd(32,'0'),provider:'ollama',model:'x',accountPool:'ollama',quotaPool:'ollama',quotaScope:'account',maxConcurrent:1,leaseMs:120000})).allowed,true);
+ const shared=await call({requestId:'parallel-e'.padEnd(32,'0'),provider:'ollama',model:'y',accountPool:'ollama',quotaPool:'ollama',quotaScope:'account',maxConcurrent:1,leaseMs:120000});
+ assert.equal(shared.scope,'pool','an account-wide limit still counts across models');
+ const outcome=async body=>(await routingStore({storage:store},new Request('https://memory.internal/router/outcome',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+ await outcome({requestId:'parallel-a'.padEnd(32,'0'),provider:'gemini',model:'gemini-3.6-flash',status:404});
+ assert.ok(value.routes['gemini:gemini-3.6-flash'].until-Date.now()>23*3600000,'a model the provider says does not exist rests a day');
+});

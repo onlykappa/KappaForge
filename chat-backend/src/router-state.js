@@ -73,10 +73,12 @@ export async function routingStore(state,request){
     if(Number.isFinite(q.tpm)&&q.tokens>q.tpm)return {allowed:false,reason:"request_too_large",retryAt:null,scope:"route"};
     if(Number.isFinite(q.tpm)&&count.minuteTokens+q.tokens>q.tpm)return {allowed:false,reason:"minute_tokens",retryAt:(minute+1)*60000,scope};
    }
-   const active=Object.values(data.reservations).filter(row=>row.pool===pool).length;
-   if(active>=maxConcurrent)return {allowed:false,reason:"concurrency",scope:"pool",retryAt:Math.min(...Object.values(data.reservations).filter(row=>row.pool===pool).map(row=>row.expiresAt))};
+   // Where limits are per model (Gemini, Mistral, Groq), requests at once are counted per model too, so parallel workers
+   // each take a different model of the same account; elsewhere the account's limit is shared by all its models.
+   const slot=quotaScope==="model"?pool+"|"+model:pool,busy=Object.values(data.reservations).filter(row=>(row.slot||row.pool)===slot);
+   if(busy.length>=maxConcurrent)return {allowed:false,reason:"concurrency",scope:quotaScope==="model"?"route":"pool",retryAt:Math.min(...busy.map(row=>row.expiresAt))};
    if(q){count.dayCount++;count.minuteCount++;count.minuteTokens+=q.tokens;count.dayEnd=q.dayEnd;data.quotas[q.key]=count;}
-   const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,startedAt:now,expiresAt};
+   const expiresAt=now+leaseMs;data.reservations[requestId]={provider,model,accountPool,quotaPool,quotaScope,pool,slot,startedAt:now,expiresAt};
    return {allowed:true,expiresAt};
   });
   return Response.json(result,{status:result.allowed?200:429});
@@ -145,8 +147,9 @@ export async function routingStore(state,request){
     const scope=blocked?"pool":modelSpecific||serverFailure?"route":(code===429||category==="rate_limit")&&reservation?.quotaScope==="model"?"route":"pool";
     const target=scope==="pool"?data.pools:data.routes,id=scope==="pool"?pool:route,old=target[id]||{};
     const retry=retryAfterSeconds(retryAfter,now),resetDelay=Number.isFinite(resetAt)&&resetAt>now?Math.min(MAX_COOLDOWN_MS/1000,Math.ceil((resetAt-now)/1000)):null;
-    const defaultDelay=code===404?3600:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
-    // A model rejected twice in a row is not offered again for six hours; a success clears the count.
+    const defaultDelay=code===404?86400:code===429?60:Math.min(3600,30*Math.pow(2,Math.min(6,old.failures||0)));
+    // A model the provider says does not exist (404) is not offered again for a day; one rejected twice in a row for
+    // six hours; a success clears the count.
     // A model that needs payment (402) will not start answering on its own: rest it for a day at the first refusal.
     const delay=Math.max(retry===null?defaultDelay:retry,resetDelay||0,modelSpecific&&(old.failures||0)>=1?21600:0,code===402?86400:0);
     target[id]={provider,model,category:category||({401:"authentication",402:"billing_blocked",403:"provider_denied",404:"model_unavailable",429:"rate_limit"}[code]||"provider_error"),
