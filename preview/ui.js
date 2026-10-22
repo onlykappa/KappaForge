@@ -3,7 +3,7 @@ const UI_ICONS={
  stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',menu:'<path d="M4 7h16M4 12h16M4 17h10"/>',new:'<path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15l-1 5Z"/>',
  chat:'<path d="M20 11a8 8 0 0 1-8 8H5l-3 3v-7a8 8 0 1 1 18-4Z"/>',home:'<path d="m3 10 9-7 9 7v10H3V10Z"/><path d="M9 20v-7h6v7"/>',projects:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M8 5V3h8v2M3 11h18"/>',tasks:'<rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 11 2 2 6-6M8 17h8"/>',reviews:'<path d="M6 3v12a4 4 0 0 0 4 4h5M18 21V9a4 4 0 0 0-4-4h-3"/><circle cx="6" cy="3" r="2"/><circle cx="18" cy="21" r="2"/>',
  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',saved:'<path d="M6 3h12v18l-6-4-6 4V3Z"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',settings:'<path d="m9 3-1 3-3 1-2 4 2 3 1 4 4 1 3 2 4-2 1-4 3-3-2-4-3-1-2-3H9Z"/><circle cx="12" cy="12" r="3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 8a2.5 2.5 0 1 1 4.5 1.5L12 12v1M12 17h.01"/>',
- plus:'<path d="M12 5v14M5 12h14"/>',send:'<path d="M12 20V4m-6 6 6-6 6 6"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',file:'<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3V7Z"/>',chevron:'<path d="m9 5 7 7-7 7"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',retry:'<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',send:'<path d="M12 20V4m-6 6 6-6 6 6"/>',list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',file:'<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3V7Z"/>',chevron:'<path d="m9 5 7 7-7 7"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',retry:'<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>',
  back:'<path d="m15 4.5-7.5 7.5 7.5 7.5"/>',gauge:'<path d="M4.2 17.5a9 9 0 1 1 15.6 0"/><path d="m12 13 4-4.5"/><circle cx="12" cy="13.5" r="1.2"/>','more-circle':'<circle cx="12" cy="12" r="9"/><circle cx="7.8" cy="12" r=".6"/><circle cx="12" cy="12" r=".6"/><circle cx="16.2" cy="12" r=".6"/>',
  bolt:'<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8Z"/>',check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',warn:'<path d="M10.3 4.2a2 2 0 0 1 3.4 0l7.4 13.1a2 2 0 0 1-1.7 3H4.6a2 2 0 0 1-1.7-3l7.4-13.1Z"/><path d="M12 9.5v4.3M12 16.9h.01"/>',
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',flask:'<path d="M9 3.5h6M10 3.5v5.2L4.8 17.8A1.8 1.8 0 0 0 6.4 20.5h11.2a1.8 1.8 0 0 0 1.6-2.7L14 8.7V3.5M7.3 14h9.4"/>',
@@ -27,6 +27,8 @@ function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!doc
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
 // Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
 // times, a progress card while planned stages are written, and the full report one tap away.
+// What KappaForge did for a reply (the kind of message, the AIs it asked, the parts of a split question): one tidy line
+// that opens into the steps. Live while the reply is being prepared.
 function renderTaskActivity(m,i=-1){
  const report=String(m.text||''),model=KappaJobs.taskModel(report),{rows,stages,current}=model;
  const lines=report.split(/\n/).map(x=>x.trim()).filter(Boolean);
@@ -199,6 +201,14 @@ function findingsCard(list){
   (list.length>5?'<details class="issues-more"><summary>+'+(list.length-5)+' more issue'+(list.length>6?'s':'')+'</summary><ul>'+list.slice(5).map(f=>'<li><span class="severity '+esc(f.level)+'">'+esc(f.level[0].toUpperCase()+f.level.slice(1))+'</span><span>'+esc(f.text)+'</span>'+(f.resolved?'<small class="finding-resolution">Verified</small>':'')+'</li>').join('')+'</ul></details>':'')+'</details>';
 }
 
+function renderTrail(m){
+ const steps=Array.isArray(m.activity)?m.activity:[];
+ if(!steps.length)return '';
+ const last=steps[steps.length-1],secs=Math.max(1,Math.round((Number(last.ms)||0)/1000)),asked=new Set(steps.filter(x=>/^Asking /.test(x.text)).map(x=>x.text)).size,parts=steps.find(x=>/^Split into \d+ parts/.test(x.text));
+ const working=m.streaming&&!String(m.text||'').trim();
+ const summary=working?esc(last.text)+'…':(parts?esc(parts.text.replace(/, answered.*$/,''))+' · ':'')+(asked>1?'Asked '+asked+' AIs':asked===1?esc(steps.filter(x=>/^Answering with /.test(x.text)).pop()?.text||'Asked 1 AI'):'Worked')+' · '+secs+'s';
+ return '<details class="activity-trail'+(working?' live':'')+'"><summary>'+uiIcon('list')+'<span>'+summary+'</span></summary><ol>'+steps.map(x=>'<li>'+esc(x.text)+'</li>').join('')+'</ol></details>';
+}
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
  // Task reports carry audit findings; they become an Issues found card under the report.
@@ -213,7 +223,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&(m.offerTask||KappaIntent.suggestsTask(m.text))?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(!user&&!progress?renderTrail(m):'')+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}
@@ -316,7 +326,13 @@ async function receiveAssistant(response,chat,prefix,signal){
   if(response.headers.get('content-type')?.includes('application/x-ndjson')){
    for await(const packet of KappaStream.packets(response.body)){
     checkStop();if(packet.usage)usageEvents.push(packet.usage);
-    if(packet.type==='delta'&&typeof packet.text==='string'){full+=packet.text;if(full.length>100000)throw Error('Response too large');setActivity('');if(!smooth)paint();}
+    if(packet.type==='activity'&&typeof packet.text==='string'){
+     // A step of what KappaForge is doing before the answer starts: shown live in the reply's trail.
+     (message.activity??=[]).push({text:packet.text.slice(0,200),ms:Number(packet.ms)||0});if(message.activity.length>40)message.activity.splice(0,message.activity.length-40);
+     setActivity(packet.text);const index=chat.messages.indexOf(message),stack=view==='chat'&&current===chat.id&&document.querySelector('[data-message-index="'+index+'"] .message-stack');
+     if(stack){const old=stack.querySelector('.activity-trail'),open=old?.open,html=renderTrail(message);if(old)old.outerHTML=html;else stack.insertAdjacentHTML('afterbegin',html);if(open)stack.querySelector('.activity-trail').open=true;}
+    }
+    else if(packet.type==='delta'&&typeof packet.text==='string'){full+=packet.text;if(full.length>100000)throw Error('Response too large');setActivity('');if(!smooth)paint();}
     else if(packet.type==='done'){terminal=packet;}
     else if(packet.type==='error')throw Error(packet.error||'Response interrupted');
    }

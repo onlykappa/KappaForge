@@ -128,6 +128,8 @@ function safeEqual(a, b) {
   return bad === 0;
 }
 const CHAT_FIRST_BYTE_MS=20000,QUICK_REFUSAL_MS=5000;
+// A model as the owner reads it in activity lines: "gemini-3.8-flash", "Mistral codestral-latest".
+const label=route=>route.provider==="gemini"?route.model:String(REGISTRY.providers[route.provider]?.name||route.provider).replace(/\s*\(.*\)\s*$/,"")+" "+String(route.model).split("/").pop();
 export default {
   async fetch(request, env, context) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
@@ -780,12 +782,17 @@ export default {
             selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
             fallbackEnabled:prefs.fallback!==false,hasMedia:chat.hasMedia,hasTools:chat.hasTools,structuredOutput:planning}},failClosed?503:422,cors);
       }
+      // A streamed chat reply starts at once with "activity" lines (the kind of message, which AIs are asked, the parts of a
+      // split question) so the app can show what is happening before the first word; the answer then follows in the
+      // same stream. Everything below runs inside answerChat, which reports through note().
+      const answerChat=async note=>{
       // Automatic chat picks the kind of message first and puts the models that fit it in front; only a few are sent.
       const automaticChat=!planning&&(!prefs.model||prefs.model==="auto");
       const latestText=String((Array.isArray(input.messages)?input.messages.filter(m=>m?.role==="user").at(-1)?.text:"")||"");
       const chosen=automaticChat?await chooseTier(env,latestText,{hasMedia:chat.hasMedia,disabled:new Set(Array.isArray(prefs.disabledProviders)?prefs.disabledProviders:[])}).catch(()=>null):null;
       if(chosen)candidates=orderForTier(candidates,chosen.tier);
       const tierInfo=chosen?{tier:chosen.tier,tierBy:chosen.by}:{};
+      if(chosen)note(({simple:"Quick message",general:"Everyday question",coding:"Coding question",complex:"Complex question"})[chosen.tier]+(chosen.by==="mistral"?" · sorted by Mistral":""));
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
@@ -798,7 +805,9 @@ export default {
       // A complex question is split into parts answered by different providers at once; the main model then writes
       // the one reply from their notes. Any failure falls back to answering it in one piece.
       if(chosen?.tier==="complex"&&!chat.hasMedia){
-       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub}).catch(()=>null);
+       note("Splitting it into parts for several AIs");
+       const notes=await research(env,latestText,candidates,{pricing,telemetry,usageStub,note}).catch(()=>null);
+       if(!notes)note("Answering it in one piece");
        if(notes){
         const brief="RESEARCH NOTES for this question, written by specialist models that each answered one part. Check them, correct anything wrong, and combine them into one well-organized answer for the owner. Do not mention the notes, the parts or other models.\n\n"+notes.text;
         payload.systemInstruction.parts.push({text:brief});chat.system+="\n\n"+brief;
@@ -823,6 +832,7 @@ export default {
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
+        if(routeReservation.allowed)note("Asking "+label(route));
         if(!routeReservation.allowed){
           // An account that is cooling down or busy is skipped as a whole, and the refusal does not count as a try.
           if(routeReservation.scope==="pool")rejectedProviders.add(route.provider);
@@ -856,12 +866,14 @@ export default {
           clearTimeout(timeout);if(response.status===429)outcomeBody=(await response.text().catch(()=>"")).slice(0,20000);else await response.body?.cancel();await record(null,false);
           // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
           if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
+          note(label(route)+(({402:" needs a paid plan",429:" is busy",503:" is unavailable"})[response.status]||" did not answer")+" · trying the next AI");
           if(response.status===401)rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;
         }
         if(streaming){
+          note("Answering with "+label(route));
           const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider,...tierInfo},abort:controller,timeout,signal:request.signal,context,
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
@@ -900,6 +912,28 @@ export default {
       const retryMessage=lastRetryAt?" Retry after "+new Date(lastRetryAt).toISOString()+".":" Try again later or use another enabled route.";
       const status=lastStatus===429?429:503;
       return json({error:(status===429?"Enabled AI routes are temporarily rate-limited or busy.":"No enabled AI route completed this request.")+retryMessage,code:status===429?"free_capacity_cooldown":"free_route_unavailable",retryAt:lastRetryAt,failure:lastFailure},status,{...cors,...(lastRetryAt?{"Retry-After":String(Math.max(1,Math.ceil((lastRetryAt-Date.now())/1000)))}:{})});
+      };
+      if(!planning&&input.stream===true){
+        // Stream at once: activity lines while the route is chosen, then the answer's own packets, or one error packet.
+        const {readable,writable}=new TransformStream(),writer=writable.getWriter(),encoder=new TextEncoder(),started=Date.now();
+        const send=packet=>writer.write(encoder.encode(JSON.stringify(packet)+"\n")).catch(()=>{});
+        const work=(async()=>{
+          try{
+            const answer=await answerChat(text=>send({type:"activity",text,ms:Date.now()-started}));
+            if(/x-ndjson/.test(answer.headers.get("content-type")||"")){
+              const reader=answer.body.getReader();
+              for(;;){const {done,value}=await reader.read();if(done)break;await writer.write(value);}
+            }else{
+              const data=await answer.json().catch(()=>({}));
+              await send(data.reply?{type:"done",reply:data.reply,model:data.model,usage:data.usage,routing:data.routing}:{type:"error",error:data.error||"AI request failed",code:data.code||null,retryAt:data.retryAt||null});
+            }
+          }catch{await send({type:"error",error:"AI request timed out or failed"});}
+          finally{await writer.close().catch(()=>{});}
+        })();
+        context?.waitUntil?.(work);
+        return new Response(readable,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
+      }
+      return await answerChat(()=>{});
     } catch {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }
