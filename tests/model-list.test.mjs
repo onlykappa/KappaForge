@@ -53,3 +53,15 @@ test('Ollama plan usage comes from its own balance and usage, current and legacy
   assert.equal(await ollamaPlan({},Date.UTC(2026,9,22)+300000),null,'no key, no request');
  }finally{globalThis.fetch=original}
 });
+
+test('the OpenRouter account says whether bought credits raised free models to 1,000 a day',async()=>{
+ const {openrouterAccount}=await import('../chat-backend/src/openrouter-account.js');
+ const original=globalThis.fetch;
+ globalThis.fetch=async url=>String(url).endsWith('/key')?Response.json({data:{is_free_tier:false,usage:0.001}}):Response.json({data:{total_credits:10,total_usage:0.001}});
+ try{
+  const a=await openrouterAccount({OPENROUTER_API_KEY:'k'},Date.UTC(2026,9,22));
+  assert.deepEqual([a.freeTier,a.dailyFreeLimit,a.creditsUsd],[false,1000,10]);
+  globalThis.fetch=async()=>Response.json({data:{is_free_tier:true}});
+  assert.equal((await openrouterAccount({OPENROUTER_API_KEY:'k'},Date.UTC(2026,9,23))).dailyFreeLimit,50,'no credits bought: 50 a day');
+ }finally{globalThis.fetch=original}
+});

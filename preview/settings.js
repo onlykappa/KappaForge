@@ -105,11 +105,19 @@ function usageModel(){
 // provider's own rate-limit counters, Workers AI neurons, and "Maxed" while the router rests it at a limit.
 function gaugeFor(p,m=null,unit='requests'){
  const L=globalThis.KappaLimits,info=(capabilities?.providers||[]).find(x=>x.id===p.id)||{};
- const shared=p.scope==='provider'?p.limit:null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
+ // OpenRouter's daily free-model allowance follows the account itself: 50 a day on the free tier, 1,000 once credits are bought.
+ const orDaily=p.id==='openrouter'?capabilities?.openrouterAccount?.dailyFreeLimit:null;
+ const shared=p.scope==='provider'?(orDaily?{...p.limit,rpd:orDaily}:p.limit):null,neurons=p.id==='workers-ai'&&capabilities?.neurons?.limit>0?capabilities.neurons:null;
  // Ollama reports its monthly plan itself: the whole plan for the provider, each model's share of it for a model.
  const o=p.id==='ollama'&&Number.isFinite(capabilities?.ollamaPlan?.percent)?capabilities.ollamaPlan:null,maxed=o&&o.percent>=100&&!(o.purchasedUsd>0);
  const plan=o?(m?{percent:o.models?.[m.model]?.percent??0,label:'of the monthly plan',maxed,until:o.resetsAt}:{percent:o.percent,label:o.window?'of the '+o.window+' limit':'of the monthly plan',maxed,until:o.resetsAt}):null;
  if(m)return L.gauge({limit:m.limit?.scope==='model'?m.limit:null,used:m.used,shared,sharedUsed:p.used,neurons,plan,live:info.live?.[m.model]?[info.live[m.model]]:[],rest:info.limited?.[m.model]||info.poolLimited,unit});
+ // A provider with no allowance of its own beyond per-model per-minute limits (Mistral) is as full as its fullest model;
+ // a daily token figure worked out from those per-minute limits would always read near zero.
+ if(!p.requestLimit&&!shared&&!neurons&&!plan){
+  const all=(p.models||[]).filter(x=>!x.unused).map(x=>gaugeFor(p,x,unit)).filter(Boolean);
+  if(all.length)return all.reduce((a,b)=>b.maxed&&!a.maxed||b.maxed===a.maxed&&b.percent>a.percent?b:a);
+ }
  return L.gauge({limit:p.requestLimit||p.tokenLimit?{rpd:p.requestLimit||undefined,tpd:p.tokenLimit||undefined}:null,used:{...p.used,tokens:p.tokenLimit?p.tokensOnCapped:p.used.tokens},
   shared,sharedUsed:p.used,neurons,plan,live:Object.values(info.live||{}),rest:info.poolLimited,unit});
 }
@@ -222,7 +230,7 @@ function modelDetail(){
 }
 // Model check: one short message to every routable chat model, run in batches by the backend.
 let probe={running:false,total:null,results:[],error:'',at:0};
-const PROBE_LABELS={answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
+const PROBE_LABELS={saved_for_chat:'Skipped: daily limit kept for chat',answered:'Answered',rate_limited:'Rate limited',needs_credits:'Needs credits',key_rejected:'Key rejected',denied:'Access denied',not_found:'Not found',rejected:'Rejected request',provider_error:'Provider error',timeout:'Timed out',network_failure:'Network error',empty_response:'Empty reply',cooling_down:'Resting after a failure',coordination_unavailable:'Routing storage unavailable',error:'Error'};
 function probePanel(){
  const answered=probe.results.filter(r=>r.outcome==='answered'),tokens=answered.reduce((n,r)=>n+(Number(r.tokens)||0),0);
  const status=probe.running?'Testing '+probe.results.length+' of '+(probe.total??'…')+' models…':probe.total!==null?answered.length+' of '+probe.total+' models answered · '+tokens.toLocaleString()+' tokens · '+new Date(probe.at).toLocaleTimeString():'Not run yet.';
