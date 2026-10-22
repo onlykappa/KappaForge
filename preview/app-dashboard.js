@@ -517,7 +517,8 @@ function render(){
 const scrollState=captureInterfaceScroll();
 history();document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===view));
 document.getElementById("heading").textContent=view==="chat"?"KappaForge":({home:"Dashboard",projects:"Projects",tasks:"Tasks",reviews:"Reviews",settings:"Settings",saved:"Saved items",profile:"Account & profile",help:"Help & about",start:"Home",chats:"Chats",more:"More"})[view];
-document.getElementById("composer").classList.toggle("hide",view!=="chat");
+// An open chat sheet hides the composer, and with it the native editor drawn over it.
+document.getElementById("composer").classList.toggle("hide",view!=="chat"||!!chatSheet&&isPhone());
 let html="";const c=active();
 if(view==="chat"){html=c?.messages.length?c.messages.map((m,i)=>KappaJobs.isSubmission(m)?"":renderMessage(m,i)).join(""):'<div class="welcome"><span class="welcome-symbol">'+uiIcon('spark')+'</span><h1>A little clarity.<br>A lot of possibility.</h1><p class="muted">Think it through, make a plan, or build what comes next.</p><div class="welcome-hints"><button data-draft="Help me think through an idea">Explore an idea</button><button data-draft="Help me plan a project">Plan a project</button><button data-draft="Help me debug my code">Work on code</button></div></div>';}
 if(view==="chats")html=renderChatList();
@@ -528,6 +529,8 @@ if(view==="profile")html=renderProfile();
 if(view==="help")html=renderHelp();
 
 if(view==="chat"&&pendingJob&&(!pendingJob.conversationId||pendingJob.conversationId===current))html+=jobApproval();
+if(view!=="chat")chatSheet=null;
+if(view==="chat"&&chatSheet&&isPhone())html+=chatSheetHTML();
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');

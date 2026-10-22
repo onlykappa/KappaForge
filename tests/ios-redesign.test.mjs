@@ -88,6 +88,20 @@ test('Home greets, offers the last chat, shows chats that need you and today\'s 
  assert.equal(box.shellTab('start'),'start');assert.equal(box.shellPushed('start'),false);
 });
 
+test('the + sheet offers attachments, Plan a task and the route; the task sheet holds the PR and Copy summary',()=>{
+ const sel={value:'speed'};
+ const box=shell({view:'chat',trackedJobs:[{number:9,chatId:'a',message:'failed',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],
+  sheetShown:'',document:{getElementById:id=>id==='composermodel'?sel:null,querySelector:()=>null}});
+ vm.runInContext("iosSheet=(t,b,o)=>'<section data-title=\"'+t+'\" data-close=\"'+o.closeAttr+'\">'+b+'</section>'",box);
+ vm.runInContext("chatSheet={kind:'plus'}",box);
+ const plus=box.chatSheetHTML();
+ for(const k of ['photos','camera','files','folder'])assert.match(plus,new RegExp('data-plus="'+k+'"'));
+ assert.match(plus,/id="plantoggle"/);assert.match(plus,/data-route="speed" aria-pressed="true"[^]*route-check/);assert.match(plus,/data-close="data-chat-sheet-close"/);
+ vm.runInContext("chatSheet={kind:'task',id:'9',tab:'findings',copy:'3'}",box);
+ const task=box.chatSheetHTML();
+ assert.match(task,/data-title="Task #9"[^]*data-task-tab="findings" aria-pressed="true"[^]*data-task-sheet-body[^]*pull\/199[^]*data-task-copy="3"/);
+});
+
 // ui.js: the task card's large ring.
 test('the task card ring reports steps done, and a dashed track while the total is unknown',()=>{
  const src=read('ui.js'),start=src.indexOf('function heroRing('),end=src.indexOf('\nconst sinceAttr');

@@ -97,6 +97,35 @@ function renderHomePage(){
   (needs.length?'<h2 class="chats-sec">Needs you<small>'+needs.length+(needs.length===1?" task":" tasks")+'</small></h2><div class="chat-rail">'+needs.map(c=>chatCard(c,chatTaskState(c))).join("")+'</div>':'')+
   '<h2 class="chats-sec">At a glance</h2><div class="home-glances">'+glance(running,"","Running")+glance((data.prs||[]).length,"","Open PRs")+glance(done.length?done.filter(r=>r.state==="success").length:"–",done.length||"","Builds passed")+'</div>';
 }
+// Chat sheets on phones: the + menu (attach, Plan a task, route) and a task's sheet (progress, findings, PR, copy).
+let chatSheet=null,planMode=false;
+const CHAT_ROUTES=[["balanced","Automatic","Balanced · picks per request"],["speed","Prefer speed","Flash Lite first"],["quality","Prefer quality","Full Flash first"],["cost","Prefer Lite","Lowest cost first"]];
+function chatSheetHTML(){
+ if(chatSheet?.kind==="plus"){
+  const route=document.getElementById("composermodel")?.value||"balanced";
+  return iosSheet("Add to message",'<div class="plus-tiles">'+[["photos","photo","Photos"],["camera","camera","Camera"],["files","file","Files"],["folder","folder","Folder"]].map(([k,i,t])=>'<button type="button" class="plus-tile" data-plus="'+k+'">'+uiIcon(i)+'<span>'+t+'</span></button>').join("")+'</div>'+
+   '<div class="ios-group icons"><label class="ios-row plan-row"><span class="ios-sq" aria-hidden="true">'+uiIcon("bolt")+'</span><span class="ios-row-text"><b>Plan a task</b><small>Send turns this message into a draft PR</small></span><input type="checkbox" class="ios-switch" id="plantoggle"'+(planMode?" checked":"")+'></label></div>'+
+   '<h2 class="ios-gh">Model</h2><div class="ios-group">'+CHAT_ROUTES.map(([v,t,sub])=>'<button type="button" class="ios-row" data-route="'+v+'" aria-pressed="'+(route===v)+'"><span class="ios-row-text"><b>'+t+'</b><small>'+sub+'</small></span>'+(route===v?'<span class="route-check" aria-hidden="true">'+uiIcon("check")+'</span>':'')+'</button>').join("")+'</div>',{closeAttr:"data-chat-sheet-close"});
+ }
+ if(chatSheet?.kind==="task"){
+  const job=(typeof trackedJobs!=="undefined"?trackedJobs:[]).find(j=>String(j.number)===chatSheet.id);
+  return iosSheet("Task #"+chatSheet.id,'<div class="ios-seg" role="group" aria-label="Task details">'+[["progress","Progress"],["findings","Findings"]].map(([k,t])=>'<button type="button" data-task-tab="'+k+'" aria-pressed="'+(chatSheet.tab===k)+'">'+t+'</button>').join("")+'</div>'+
+   '<div class="task-sheet-body" data-task-sheet-body></div>'+
+   '<div class="ios-group icons">'+(job?.prUrl?iosRow({tag:"a",attrs:'href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer"',icon:"merge",title:"Draft pull request",sub:esc(job.prUrl.split("/").slice(-2).join(" #"))}):'')+
+   (chatSheet.copy!==undefined?iosRow({attrs:'data-task-copy="'+esc(chatSheet.copy)+'"',icon:"copy",title:"Copy summary",chevron:false}):'')+'</div>',{detent:"large",closeAttr:"data-chat-sheet-close"});
+ }
+ return "";
+}
+// The task sheet shows the live card's own step list and findings, so both stay in step with the card behind it.
+function fillTaskSheet(){
+ const box=document.querySelector("[data-task-sheet-body]");if(!box||chatSheet?.kind!=="task")return;
+ const card=document.querySelector('[data-progress-detail="'+chatSheet.id+':steps"]')?.closest(".agent-activity");
+ const part=chatSheet.tab==="findings"?card?.querySelector(".issues-card ul"):card?.querySelector(".task-steps");
+ box.replaceChildren(part?part.cloneNode(true):Object.assign(document.createElement("p"),{className:"ios-empty",textContent:chatSheet.tab==="findings"?"No findings reported.":"No steps reported yet."}));
+}
+function openChatSheet(next){chatSheet=next;if(!next)sheetShown="";render();}
+// Header subtitle in a chat: the chat's task state; network status only when offline.
+function chatSubtitle(){const s=active()?chatTaskState(active()):null;return navigator.onLine?(s?.label||""):"Offline";}
 function renderMorePage(){
  const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0);
  const appearance={system:"Follow system",light:"Light",dark:"OLED Black"}[preferences.appearance]||"";
@@ -120,6 +149,7 @@ function applyShell(){
  else back.innerHTML=uiIcon("menu");
  if(view!=="chat")document.getElementById("heading").textContent=SHELL_TITLES[view]||document.getElementById("heading").textContent;
  if(view==="chat"&&phone)document.getElementById("heading").textContent=active()?.title||"New chat";
+ const sub=document.getElementById("chatsub");if(sub){const t=view==="chat"&&phone?chatSubtitle():"";sub.textContent=t;sub.hidden=!t;sub.classList.toggle("bad",/attention|Offline/.test(t));}
  updateTitleCollapse();
 }
 function largeTitle(){return view==="chat"||view==="settings"&&settingsSection&&settingsSection!=="usage"?"":view==="start"?homeHeader():view==="chats"&&isPhone()?chatListHeader():'<h1 class="large-title">'+esc(SHELL_TITLES[view]||"")+'</h1>'}
@@ -133,6 +163,20 @@ function bindShell(){
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
  document.getElementById("chatsearchbtn")?.addEventListener("click",()=>{chatSearchOpen=!(chatSearchOpen||conversationSearch);if(!chatSearchOpen)conversationSearch="";render();document.getElementById("chatsearch")?.focus()});
  document.getElementById("chatnew")?.addEventListener("click",fresh);
+ document.querySelectorAll("#content [data-chat-sheet-close]").forEach(b=>b.addEventListener("click",()=>openChatSheet(null)));
+ document.querySelectorAll("#content [data-task-more]").forEach(b=>b.addEventListener("click",()=>openChatSheet({kind:"task",id:b.dataset.taskMore,tab:"progress",copy:b.dataset.copyIndex})));
+ document.querySelectorAll("#content [data-task-tab]").forEach(b=>b.addEventListener("click",()=>{chatSheet.tab=b.dataset.taskTab;render()}));
+ fillTaskSheet();
+ document.querySelectorAll("#content [data-route]").forEach(b=>b.addEventListener("click",()=>{const sel=document.getElementById("composermodel");sel.value=b.dataset.route;sel.dispatchEvent(new Event("change",{bubbles:true}));openChatSheet(null)}));
+ document.getElementById("plantoggle")?.addEventListener("change",e=>{planMode=e.target.checked;document.body.classList.toggle("plan-mode",planMode);openChatSheet(null)});
+ // Photos and Camera reuse the attach input with a narrower picker; Files and Folder use the existing buttons.
+ document.querySelectorAll("#content [data-plus]").forEach(b=>b.addEventListener("click",()=>{
+  const input=document.getElementById("attachinput"),kind=b.dataset.plus,accept=input.getAttribute("accept");
+  openChatSheet(null);
+  if(kind==="folder")return document.getElementById("folderbtn").click();
+  if(kind!=="files"){input.setAttribute("accept","image/*");if(kind==="camera")input.setAttribute("capture","environment")}
+  input.click();setTimeout(()=>{input.setAttribute("accept",accept);input.removeAttribute("capture")},0);
+ }));
  // Home's ask box sends its text as the first message of a new chat.
  document.getElementById("homeask")?.addEventListener("submit",e=>{e.preventDefault();const text=document.getElementById("homeaskinput").value.trim();if(!text)return;fresh();document.getElementById("message").value=text;document.getElementById("form").requestSubmit()});
  document.getElementById("homeaskinput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!(/iPhone|iPad|Android/i).test(navigator.userAgent)){e.preventDefault();document.getElementById("homeask").requestSubmit()}});
@@ -143,3 +187,8 @@ function bindShell(){
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }
 matchMedia("(max-width:840px)").addEventListener("change",()=>{if(!isPhone()&&["start","chats","more"].includes(view))view=view==="more"?"settings":"chat";render()});
+// Phones: + opens the add sheet instead of the small popover; with Plan a task on, Send plans the message as a task.
+if(typeof document!=="undefined"){
+document.querySelector("#attachment-menu summary")?.addEventListener("click",e=>{if(!isPhone())return;e.preventDefault();openChatSheet({kind:"plus"})});
+document.getElementById("form")?.addEventListener("submit",e=>{if(!planMode)return;e.preventDefault();e.stopImmediatePropagation();planMode=false;document.body.classList.remove("plan-mode");document.getElementById("task").click()},true);
+}

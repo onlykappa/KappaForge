@@ -296,3 +296,45 @@ body.sheet-open{overflow:hidden}
 .home-glance b span{font-size:1.06rem;color:var(--label-3)}
 .home-glance small{font-size:var(--t-cap);color:var(--label-2);font-weight:500}
 .home-glance:active,.home-chip:active{opacity:.7}
+/* Inside a chat on phones: a flat header (round Back, title with the task state, round New chat), a + button beside a
+   message pill with Send inside it, and the + and task sheets. */
+@media(max-width:840px){
+ body[data-view=chat] .top{gap:10px;padding-left:max(12px,env(safe-area-inset-left,0px))!important;padding-right:max(12px,env(safe-area-inset-right,0px))!important;padding-bottom:8px!important;background:linear-gradient(var(--bg) 60%,transparent)!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+ body[data-view=chat] #menubtn{flex:none;width:44px;min-width:44px;height:44px;padding:0;justify-content:center;border-radius:50%;background:var(--cell)}
+ body[data-view=chat] #menubtn span{display:none}
+ body[data-view=chat] .top-title{position:static;transform:none;flex:1;min-width:0;max-width:none;text-align:left!important;opacity:1!important}
+ body[data-view=chat] .top-title strong{font-size:17px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ body[data-view=chat] .top-title .header-presence{display:none!important}
+ .chat-sub{display:block;font-size:12px;color:color-mix(in srgb,var(--text) 70%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .chat-sub.bad{color:var(--bad-text)}
+ body[data-view=chat] .top .header-new{flex:none;width:44px;height:44px;border-radius:50%;background:var(--cell)}
+ .compose-inner{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+ #form{position:relative;margin-left:56px;padding:5px 48px 5px 14px;min-height:46px;border-radius:23px;background:var(--ios-glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:0 0 0 .5px var(--sep),var(--glass-shadow)}
+ .rt #form{background:var(--ios-glass-solid);-webkit-backdrop-filter:none;backdrop-filter:none}
+ #form textarea{padding:7px 0 5px!important;min-height:36px!important}
+ #form .controls{margin:0!important;gap:0!important}
+ #form .composer-model,#form .composer-task,.composer .mini{display:none!important}
+ #form .attachment-menu{position:absolute;left:-56px;bottom:0}
+ #form .attachment-menu>summary{width:46px!important;height:46px!important;min-height:46px!important;border-radius:50%;background:var(--ios-glass);color:var(--text);box-shadow:0 0 0 .5px var(--sep)}
+ #form .attachment-menu>summary svg{width:22px;height:22px}
+ #form .send-button{position:absolute;right:4px;bottom:4px;width:38px!important;height:38px!important}
+ body.plan-mode #form{box-shadow:0 0 0 1.5px var(--text),var(--glass-shadow)}
+ body.plan-mode #form::before{content:"Plan task";position:absolute;left:10px;top:-30px;padding:4px 10px;border-radius:999px;background:var(--accent-fill);color:var(--on-accent);font-size:12px;font-weight:700}
+ .task-actions .task-more{width:36px;margin-left:auto;padding:0!important;justify-content:center}
+}
+.task-actions .task-more svg{width:18px;height:18px}
+.plus-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.plus-tile{display:flex;flex-direction:column;align-items:center;gap:6px;min-height:76px;padding:12px 4px;border:0;border-radius:18px;background:var(--cell);color:var(--text);font:inherit;font-size:var(--t-foot);font-weight:600}
+.plus-tile svg{width:24px;height:24px}.plus-tile:active{opacity:.7}
+.ios-sheet .plus-tile{background:var(--cell-2)}
+.plan-row{cursor:pointer}
+.ios-switch{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:51px;height:31px;margin:0;border-radius:16px;background:var(--fill);cursor:pointer;transition:background .2s}
+.ios-switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.25);transition:transform .2s var(--spring)}
+.ios-switch:checked{background:var(--ok)}.ios-switch:checked::after{transform:translateX(20px)}
+.ios-switch:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.route-check{color:var(--ok)}.route-check svg{width:18px;height:18px;stroke-width:2.6}
+.task-sheet-body{margin:0 0 12px;padding:6px 14px;border-radius:14px;background:var(--cell-2)}
+.task-sheet-body ul{list-style:none;margin:0;padding:6px 0;display:flex;flex-direction:column;gap:10px}
+.task-sheet-body li{display:flex;gap:8px;align-items:baseline;font-size:var(--t-sub)}
+@media(prefers-reduced-motion:reduce){.ios-switch,.ios-switch::after{transition:none}}
+@media(max-width:840px){body[data-view=chat] .content{padding-top:16px}}
