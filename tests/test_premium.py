@@ -74,6 +74,7 @@ class PremiumEngineTests(unittest.TestCase):
         self.assertIsNone(current.premium_request, "the rescue request is used once")
         self.assertIn("Premium rescue recommended", developer._PREMIUM_SEEN[-1])
         self.assertIn("Nothing was charged", developer._PREMIUM_SEEN[-1])
+        self.assertLessEqual(len(developer._PREMIUM_SEEN[-1]), 200, "fits one feed line")
 
     def test_an_eligible_quote_dispatches_the_rescue_once_and_then_calls_are_free(self):
         current = journal(premium_request={"step": "check", "reason": "check_rounds_exhausted"})

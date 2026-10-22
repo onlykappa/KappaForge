@@ -1077,9 +1077,9 @@ def _premium(info):
     cap, most = _money(info, 'maxUsd'), _money(info, 'taskLeftUsd')
     refused = info.get('refused') if isinstance(info.get('refused'), str) else None
     if refused == 'premium_off':
-        text = (f"Premium rescue recommended for {step}: the free models could not finish it. {model} would cost at most "
-                f"${cap or 0:.2f} (task budget left ${most or 0:.2f}). Nothing was charged: allow one rescue or turn on Premium "
-                "Mode in Settings → Usage, or keep using free models")
+        # Short enough for one feed line (200 characters): the choice itself is in Settings → Usage.
+        text = (f"Premium rescue recommended for {step}: {model}, at most ${cap or 0:.2f} (${most or 0:.2f} left for this task). "
+                "Nothing was charged. Choose in Settings → Usage")
     elif refused:
         text = f"Premium rescue not used ({_REFUSALS.get(refused, refused[:40])}); staying on free models"
     elif info.get('quote') and info.get('eligible'):
