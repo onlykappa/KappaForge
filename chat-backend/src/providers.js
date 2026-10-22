@@ -43,9 +43,10 @@ export function providerDiscoveryDiagnostic(env,id){
 // Live model list per configured provider, cached ten minutes per key. The provider's own /models
 // response is the account-specific availability source. Providers in KAPPA_ALL_MODEL_PROVIDERS route
 // every chat model it lists; the rest keep reviewed free models, capped at maxModelsPerProvider.
-// Models the owner removed (a probe found they need payment) are never routed or counted.
+// Models the owner removed (the model audit found a permanent error) are never routed or counted; specialist tools
+// (audio, video, documents, decisions) are kept in the model list but never sent chat.
 export async function providerModels(env,id){
- const removed=new Set(registry.providers[id]?.removedModels||[]);
+ const p=registry.providers[id]||{},removed=new Set([...(p.removedModels||[]),...(p.toolModels||[]).map(t=>t.model)]);
  const models=await listedModels(env,id);
  return removed.size?models.filter(model=>!removed.has(model)):models;
 }

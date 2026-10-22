@@ -41,9 +41,6 @@
         "media": false
       },
       "removedModels": [
-        "@cf/cloudflare/clairic",
-        "@cf/cloudflare/clef",
-        "@cf/cloudflare/clef-flash",
         "@cf/deepseek-ai/deepseek-v4-flash-0731",
         "@cf/deepseek-ai/deepseek-v4-pro-0813",
         "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
@@ -56,7 +53,37 @@
         "@cf/zai-org/glm-5.3",
         "@cf/zai-org/glm-5.3-flash"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: 5035 not available on the Workers Free plan, 5018 account not allowed, 4003 no model config, not a chat model (clef/clairic need structured input), or empty replies with a 1,024-token allowance"
+      "removedModelsReason": "Model audit 2026-10-22: 5035 not available on the Workers Free plan, 5018 account not allowed, 4003 no model config, not a chat model (clef/clairic need structured input), or empty replies with a 1,024-token allowance",
+      "toolModels": [
+        {
+          "model": "@cf/cloudflare/clairic",
+          "kind": "Decision",
+          "note": "Fills structured fields; needs model and fields input, not chat"
+        },
+        {
+          "model": "@cf/cloudflare/clef",
+          "kind": "Decision",
+          "note": "Answers set questions from a state; needs model, state and questions input"
+        },
+        {
+          "model": "@cf/cloudflare/clef-flash",
+          "kind": "Decision",
+          "note": "Faster Clef; needs model, state and questions input"
+        }
+      ],
+      "removedWhy": {
+        "@cf/deepseek-ai/deepseek-v4-flash-0731": "Paid plan only: 5035: Model @cf/deepseek-ai/deepseek-v4-flash-0731 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/deepseek-ai/deepseek-v4-pro-0813": "Paid plan only: 5035: Model @cf/deepseek-ai/deepseek-v4-pro-0813 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/deepseek-ai/deepseek-v4.1-flash-1017": "Paid plan only: 5035: Model @cf/deepseek-ai/deepseek-v4.1-flash-1017 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/meta-llama/llama-2-7b-chat-hf-lora": "Empty replies even with room: Replied empty twice, even with 1,024 tokens of room",
+        "@cf/moonshotai/kimi-k2.6": "Paid plan only: 5035: Model @cf/moonshotai/kimi-k2.6 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/moonshotai/kimi-k2.7-code": "Paid plan only: 5035: Model @cf/moonshotai/kimi-k2.7-code is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/swiss-ai/apertus-v1.5-8b": "Account not allowed: 5018: This account is not allowed to access @cf/swiss-ai/apertus-v1.5-8b.",
+        "@cf/utter-project/eurollm-9b-it": "No model config at the provider: 4003: AI model does not have config",
+        "@cf/zai-org/glm-5.2": "Paid plan only: 5035: Model @cf/zai-org/glm-5.2 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/zai-org/glm-5.3": "Paid plan only: 5035: Model @cf/zai-org/glm-5.3 is not available on the Workers Free plan. (needs the paid Workers plan)",
+        "@cf/zai-org/glm-5.3-flash": "Paid plan only: 5035: Model @cf/zai-org/glm-5.3-flash is not available on the Workers Free plan. (needs the paid Workers plan)"
+      }
     },
     "groq": {
       "freeRequestTokenBudget": 8000,
@@ -154,7 +181,12 @@
         "thinkingmachines/inkling-small:free",
         "thinkingmachines/inkling:free"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: 403 only available on agentic harnesses, or 404 no longer served"
+      "removedModelsReason": "Model audit 2026-10-22: 403 only available on agentic harnesses, or 404 no longer served",
+      "removedWhy": {
+        "nvidia/nemotron-3-super-120b-a12b:free": "Retired by the provider: 404 on OpenRouter, Kilo and NVIDIA alike",
+        "thinkingmachines/inkling-small:free": "Only available inside agent tools: thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed o",
+        "thinkingmachines/inkling:free": "Only available inside agent tools: thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on"
+      }
     },
     "mistral": {
       "name": "Mistral",
@@ -185,13 +217,30 @@
         "streaming": true,
         "media": false
       },
-      "removedModels": [
-        "voxtral-mini-2602",
-        "voxtral-mini-latest",
-        "voxtral-mini-realtime-2602",
-        "voxtral-mini-realtime-latest"
-      ],
-      "removedModelsReason": "Model audit 2026-10-22: 400 Invalid model for chat (audio transcription models)"
+      "removedModels": [],
+      "removedModelsReason": "Model audit 2026-10-22: 400 Invalid model for chat (audio transcription models)",
+      "toolModels": [
+        {
+          "model": "voxtral-mini-2602",
+          "kind": "Audio",
+          "note": "Speech-to-text transcription"
+        },
+        {
+          "model": "voxtral-mini-latest",
+          "kind": "Audio",
+          "note": "Speech-to-text transcription"
+        },
+        {
+          "model": "voxtral-mini-realtime-2602",
+          "kind": "Audio",
+          "note": "Live speech-to-text transcription"
+        },
+        {
+          "model": "voxtral-mini-realtime-latest",
+          "kind": "Audio",
+          "note": "Live speech-to-text transcription"
+        }
+      ]
     },
     "nvidia": {
       "name": "NVIDIA NIM",
@@ -238,7 +287,6 @@
         "google/codegemma-1.1-7b",
         "google/codegemma-7b",
         "google/deplot",
-        "google/diffusiongemma-26b-a4b-it",
         "google/gemma-2b",
         "google/gemma-3-12b-it",
         "google/gemma-3-4b-it",
@@ -259,7 +307,6 @@
         "mistralai/mixtral-8x22b-v0.1",
         "moonshotai/kimi-k2.6",
         "nv-mistralai/mistral-nemo-12b-instruct",
-        "nvidia/ai-synthetic-video-detector",
         "nvidia/cosmos-reason2-8b",
         "nvidia/llama-3.1-nemotron-51b-instruct",
         "nvidia/llama-3.1-nemotron-70b-instruct",
@@ -270,7 +317,6 @@
         "nvidia/nemotron-4-340b-instruct",
         "nvidia/nemotron-4-340b-reward",
         "nvidia/nemotron-nano-3-30b-a3b",
-        "nvidia/nemotron-parse",
         "nvidia/neva-22b",
         "nvidia/nvclip",
         "nvidia/riva-translate-4b-instruct",
@@ -281,11 +327,78 @@
         "writer/palmyra-med-70b-32k",
         "zyphra/zamba2-7b-instruct"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: HTTP 404 'Function not found for account' (not hosted for this account), or not a chat model (diffusion text model with empty replies, video detector, single-message document parser)"
+      "removedModelsReason": "Model audit 2026-10-22: HTTP 404 'Function not found for account' (not hosted for this account), or not a chat model (diffusion text model with empty replies, video detector, single-message document parser)",
+      "toolModels": [
+        {
+          "model": "google/diffusiongemma-26b-a4b-it",
+          "kind": "Text diffusion",
+          "note": "Experimental diffusion text model; did not answer chat within 90s"
+        },
+        {
+          "model": "nvidia/ai-synthetic-video-detector",
+          "kind": "Video",
+          "note": "Detects AI-generated video; takes video, not chat"
+        },
+        {
+          "model": "nvidia/nemotron-parse",
+          "kind": "Documents",
+          "note": "Reads documents and images into text; takes exactly one message with the document"
+        }
+      ],
+      "removedWhy": {
+        "01-ai/yi-large": "Not hosted for this account (404)",
+        "adept/fuyu-8b": "Not hosted for this account (404)",
+        "ai21labs/jamba-1.5-large-instruct": "Not hosted for this account (404)",
+        "aisingapore/sea-lion-7b-instruct": "Not hosted for this account (404)",
+        "bigcode/starcoder2-15b": "Not hosted for this account (404)",
+        "databricks/dbrx-instruct": "Not hosted for this account (404)",
+        "deepseek-ai/deepseek-coder-6.7b-instruct": "Not hosted for this account (404)",
+        "google/codegemma-1.1-7b": "Not hosted for this account (404)",
+        "google/codegemma-7b": "Not hosted for this account (404)",
+        "google/deplot": "Not hosted for this account (404)",
+        "google/gemma-2b": "Not hosted for this account (404)",
+        "google/gemma-3-12b-it": "Not hosted for this account (404)",
+        "google/gemma-3-4b-it": "Not hosted for this account (404)",
+        "google/recurrentgemma-2b": "Not hosted for this account (404)",
+        "ibm/granite-3.0-3b-a800m-instruct": "Not hosted for this account (404)",
+        "ibm/granite-3.0-8b-instruct": "Not hosted for this account (404)",
+        "ibm/granite-34b-code-instruct": "Not hosted for this account (404)",
+        "ibm/granite-8b-code-instruct": "Not hosted for this account (404)",
+        "meta/codellama-70b": "Not hosted for this account (404)",
+        "meta/llama2-70b": "Not hosted for this account (404)",
+        "microsoft/kosmos-2": "Not hosted for this account (404)",
+        "microsoft/phi-3-vision-128k-instruct": "Not hosted for this account (404)",
+        "microsoft/phi-3.5-moe-instruct": "Not hosted for this account (404)",
+        "mistralai/codestral-22b-instruct-v0.1": "Not hosted for this account (404)",
+        "mistralai/mistral-7b-instruct-v0.3": "Not hosted for this account (404)",
+        "mistralai/mistral-large": "Not hosted for this account (404)",
+        "mistralai/mistral-large-2-instruct": "Not hosted for this account (404)",
+        "mistralai/mixtral-8x22b-v0.1": "Not hosted for this account (404)",
+        "moonshotai/kimi-k2.6": "Not hosted for this account (404)",
+        "nv-mistralai/mistral-nemo-12b-instruct": "Not hosted for this account (404)",
+        "nvidia/cosmos-reason2-8b": "Not hosted for this account (404)",
+        "nvidia/llama-3.1-nemotron-51b-instruct": "Not hosted for this account (404)",
+        "nvidia/llama-3.1-nemotron-70b-instruct": "Not hosted for this account (404)",
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1": "Not hosted for this account (404)",
+        "nvidia/llama3-chatqa-1.5-70b": "Not hosted for this account (404)",
+        "nvidia/mistral-nemo-minitron-8b-8k-instruct": "Not hosted for this account (404)",
+        "nvidia/nemotron-3-super-120b-a12b": "Not hosted for this account (404)",
+        "nvidia/nemotron-4-340b-instruct": "Not hosted for this account (404)",
+        "nvidia/nemotron-4-340b-reward": "Not hosted for this account (404)",
+        "nvidia/nemotron-nano-3-30b-a3b": "Not hosted for this account (404)",
+        "nvidia/neva-22b": "Not hosted for this account (404)",
+        "nvidia/nvclip": "Not hosted for this account (404)",
+        "nvidia/riva-translate-4b-instruct": "Not hosted for this account (404)",
+        "nvidia/vila": "Not hosted for this account (404)",
+        "writer/palmyra-creative-122b": "Not hosted for this account (404)",
+        "writer/palmyra-fin-70b-32k": "Not hosted for this account (404)",
+        "writer/palmyra-med-70b": "Not hosted for this account (404)",
+        "writer/palmyra-med-70b-32k": "Not hosted for this account (404)",
+        "zyphra/zamba2-7b-instruct": "Not hosted for this account (404)"
+      }
     },
     "ollama": {
       "removedModels": [
-        "clef:27b",
         "deepseek-v4-pro:0813",
         "deepseek-v4.1-flash",
         "deepseek-v4.1-flash:1017",
@@ -327,6 +440,28 @@
         "tools": false,
         "streaming": true,
         "media": false
+      },
+      "toolModels": [
+        {
+          "model": "clef:27b",
+          "kind": "Decision",
+          "note": "Decision model served on Ollama's /v1/systemone, not chat"
+        }
+      ],
+      "removedWhy": {
+        "deepseek-v4-pro:0813": "Needs payment (402)",
+        "deepseek-v4.1-flash": "Needs payment (402)",
+        "deepseek-v4.1-flash:1017": "Needs payment (402)",
+        "glm-5.2": "Needs payment (402)",
+        "glm-5.3": "Needs payment (402)",
+        "glm-5.3-flash": "Needs payment (402)",
+        "kimi-k2.6": "Needs payment (402)",
+        "kimi-k2.7-code": "Needs payment (402)",
+        "kimi-k3": "Needs payment (402)",
+        "minimax-m2.7": "Needs payment (402)",
+        "minimax-m3": "Needs payment (402)",
+        "mistral-large-3:675b": "Needs payment (402)",
+        "muse-spark-open": "Needs payment (402)"
       }
     },
     "zai": {
@@ -386,7 +521,10 @@
       "removedModels": [
         "nvidia/nemotron-3-super-120b-a12b:free"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: 404 no longer served"
+      "removedModelsReason": "Model audit 2026-10-22: 404 no longer served",
+      "removedWhy": {
+        "nvidia/nemotron-3-super-120b-a12b:free": "Retired by the provider: 404 on OpenRouter, Kilo and NVIDIA alike"
+      }
     },
     "llm7": {
       "name": "LLM7.io (key optional)",
@@ -565,7 +703,11 @@
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite"
       ],
-      "removedModelsReason": "Model audit 2026-10-22: 404 no longer available to new users"
+      "removedModelsReason": "Model audit 2026-10-22: 404 no longer available to new users",
+      "removedWhy": {
+        "gemini-2.5-flash": "Retired by the provider: This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the lates",
+        "gemini-2.5-flash-lite": "Retired by the provider: This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for"
+      }
     },
     "chatRouterModels": [
       "ministral-3b-latest",

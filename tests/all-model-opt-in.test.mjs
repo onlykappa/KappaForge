@@ -266,7 +266,9 @@ test('models the owner removed for needing payment are never routed, even when t
 
 test('the model audit removals cover every provider, Gemini included',async()=>{
  const registry=JSON.parse(readFileSync(new URL('../config/providers.json',import.meta.url),'utf8'));
- for(const id of ['nvidia','workers-ai','mistral','ollama','openrouter','kilo'])assert.ok(registry.providers[id].removedModels.length&&registry.providers[id].removedModelsReason,id);
+ for(const id of ['nvidia','workers-ai','ollama','openrouter','kilo']){const p=registry.providers[id];
+  assert.ok(p.removedModels.length&&p.removedModels.every(m=>p.removedWhy[m]),id+' lists a reason for every removed model');}
+ assert.deepEqual(registry.providers.mistral.toolModels.map(t=>t.kind),['Audio','Audio','Audio','Audio'],'audio models are kept as tools');
  assert.ok(!registry.providers.ollama.removedModels.includes('mistral-large-4'),'a model still being rolled out is kept');
  const {discover}=await import('../chat-backend/src/intelligence.js');
  const original=globalThis.fetch;
@@ -285,4 +287,11 @@ test('a Workers AI model that needs its license accepted gets "agree" once and t
  const r=await callProvider(env,{provider:'workers-ai',model:'@cf/meta/llama-3.2-11b-vision-instruct'},{system:'s',messages:[{role:'user',content:'hi'}],maxTokens:16,temperature:0},false);
  assert.equal((await r.json()).response,'OK');
  assert.deepEqual(calls,['chat','agree','chat']);
+});
+
+test('specialist tool models stay listed but are never sent chat',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>catalog(['voxtral-mini-latest','mistral-small-latest']);
+ try{assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',MISTRAL_API_KEY:'tools-'+Math.random()},'mistral'),['mistral-small-latest']);}
+ finally{globalThis.fetch=original}
 });

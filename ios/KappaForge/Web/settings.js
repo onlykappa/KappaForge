@@ -189,7 +189,7 @@ function probePanel(){
  const answered=probe.results.filter(r=>r.outcome==='answered'),tokens=answered.reduce((n,r)=>n+(Number(r.tokens)||0),0);
  const status=probe.running?'Testing '+probe.results.length+' of '+(probe.total??'…')+' models…':probe.total!==null?answered.length+' of '+probe.total+' models answered · '+tokens.toLocaleString()+' tokens · '+new Date(probe.at).toLocaleTimeString():'Not run yet.';
  const rows=probe.results.map(r=>'<tr class="probe-'+(r.outcome==='answered'?'ok':'fail')+'"><th>'+esc(r.label)+'</th><td>'+esc(PROBE_LABELS[r.outcome]||r.outcome)+(r.status&&r.outcome!=='answered'?' <small>HTTP '+r.status+'</small>':'')+'</td><td>'+(Number.isFinite(r.tokens)?r.tokens.toLocaleString():'—')+'</td><td>'+(Number.isFinite(r.latencyMs)?(r.latencyMs/1000).toFixed(1)+'s':'—')+'</td></tr>').join('');
- return sectionPanel('Test every model',sb('model-probe',probe.running?'Testing…':'Test every model',false)+'<p class="muted" role="status">'+esc(probe.error||status)+'</p>'+(rows?'<div class="table-scroll"><table><caption>One message sent, one reply expected</caption><thead><tr><th>Model</th><th>Result</th><th>Tokens</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>':''),
+ return sectionPanel('Test every model',sb('model-probe',probe.running?'Testing…':'Test every model',false)+sb('model-list','Download model list (PDF)')+'<p class="muted" role="status">'+esc(probe.error||status)+'</p>'+(rows?'<div class="table-scroll"><table><caption>One message sent, one reply expected</caption><thead><tr><th>Model</th><th>Result</th><th>Tokens</th><th>Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>':''),
   'Sends “Reply with the single word OK.” to each chat model KappaForge can use and records every reply in Usage. Paid models may charge a fraction of a cent. Models resting after a recent failure are reported, not retried.');
 }
 async function runProbe(){
@@ -292,6 +292,12 @@ function bindSettings(){
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
  on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ on('model-list',async()=>{
+  // Every model in use, the specialist tools kept and the removed models with their reasons; statuses from the last test.
+  try{const data=await settingsAPI('/providers/models-list',{},60000);
+   exportFile('KappaForge-models-'+new Date().toISOString().slice(0,10)+'.pdf',KappaModelPDF.build(data,probe.results),'application/pdf');}
+  catch(e){settingsNotice='Model list unavailable: '+e.message;render();}
+ });
  on('model-probe',()=>{if(confirm('Send one short test message to every chat model KappaForge can use? Paid models may charge a fraction of a cent.'))return runProbe();});
  document.getElementById('memory-search')?.addEventListener('input',e=>document.querySelectorAll('[data-memory-text]').forEach(n=>n.hidden=!n.dataset.memoryText.includes(e.target.value.toLowerCase())));
  document.querySelectorAll('[data-delete-memory]').forEach(b=>b.onclick=()=>{const note=savedMemories[Number(b.dataset.deleteMemory)];if(confirm('Delete this memory across synchronized devices? You can restore it from Recently deleted.')){deleteMemory(note);render()}});

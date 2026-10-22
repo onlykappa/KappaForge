@@ -5,18 +5,20 @@ checked again one by one (90-second wait, larger reply allowance, the provider's
 adding providers: a model under Removed failed for a permanent reason and is listed in that provider's `removedModels`
 in `config/providers.json`.
 
-**106 kept** (92 working, 14 unavailable today) and **90 removed**, out of 196.
+**106 kept** (92 working, 14 unavailable today), **11 specialist tools** kept but not used for chat, and **79 removed**, out of 196.
+
+The app's Settings → AI Models → Download model list (PDF) builds this list from the live backend at any time.
 
 | Provider | Kept | Working | Unavailable today | Removed |
 |---|---|---|---|---|
 | Google Gemini | 12 | 9 | 3 | 2 |
 | Groq | 4 | 4 | 0 | 0 |
-| Mistral | 14 | 12 | 2 | 4 |
-| Cloudflare Workers AI | 23 | 22 | 1 | 14 |
-| NVIDIA Build | 16 | 13 | 3 | 52 |
+| Mistral | 14 | 12 | 2 | 0 |
+| Cloudflare Workers AI | 23 | 22 | 1 | 11 |
+| NVIDIA Build | 16 | 13 | 3 | 49 |
 | OpenRouter | 14 | 11 | 3 | 3 |
 | Kilo Code | 13 | 12 | 1 | 1 |
-| Ollama Cloud | 9 | 8 | 1 | 14 |
+| Ollama Cloud | 9 | 8 | 1 | 13 |
 | Z.ai | 1 | 1 | 0 | 0 |
 
 ## Kept models
@@ -172,6 +174,24 @@ in `config/providers.json`.
 |---|---|---|
 | `glm-4.7-flash` | Working (after fix) | Answered on the one-by-one check |
 
+## Specialist tools (kept, not used for chat)
+
+These are not chat models, so a chat test fails them, but they are useful for their own jobs.
+
+| Provider | Model | Kind | What it does |
+|---|---|---|---|
+| Mistral | `voxtral-mini-2602` | Audio | Speech-to-text transcription |
+| Mistral | `voxtral-mini-latest` | Audio | Speech-to-text transcription |
+| Mistral | `voxtral-mini-realtime-2602` | Audio | Live speech-to-text transcription |
+| Mistral | `voxtral-mini-realtime-latest` | Audio | Live speech-to-text transcription |
+| Ollama Cloud | `clef:27b` | Decision | Decision model served on Ollama's /v1/systemone, not chat |
+| Cloudflare Workers AI | `@cf/cloudflare/clairic` | Decision | Fills structured fields; needs model and fields input, not chat |
+| Cloudflare Workers AI | `@cf/cloudflare/clef` | Decision | Answers set questions from a state; needs model, state and questions input |
+| Cloudflare Workers AI | `@cf/cloudflare/clef-flash` | Decision | Faster Clef; needs model, state and questions input |
+| NVIDIA Build | `nvidia/nemotron-parse` | Documents | Reads documents and images into text; takes exactly one message with the document |
+| NVIDIA Build | `google/diffusiongemma-26b-a4b-it` | Text diffusion | Experimental diffusion text model; did not answer chat within 90s |
+| NVIDIA Build | `nvidia/ai-synthetic-video-detector` | Video | Detects AI-generated video; takes video, not chat |
+
 ## Removed models
 
 ### Google Gemini (2)
@@ -181,25 +201,13 @@ in `config/providers.json`.
 | `gemini-2.5-flash` | Retired by the provider | This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features |
 | `gemini-2.5-flash-lite` | Retired by the provider | This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the lates |
 
-### Mistral (4)
-
-| Model | Reason | Provider's message |
-|---|---|---|
-| `voxtral-mini-2602` | Not a chat model | Invalid model: voxtral-mini-2602 |
-| `voxtral-mini-latest` | Not a chat model | Invalid model: voxtral-mini-latest |
-| `voxtral-mini-realtime-2602` | Not a chat model | Invalid model: voxtral-mini-realtime-2602 |
-| `voxtral-mini-realtime-latest` | Not a chat model | Invalid model: voxtral-mini-realtime-latest |
-
-### Cloudflare Workers AI (14)
+### Cloudflare Workers AI (11)
 
 | Model | Reason | Provider's message |
 |---|---|---|
 | `@cf/swiss-ai/apertus-v1.5-8b` | Account not allowed | 5018: This account is not allowed to access @cf/swiss-ai/apertus-v1.5-8b. |
 | `@cf/meta-llama/llama-2-7b-chat-hf-lora` | Empty replies even with room | Replied empty twice, even with 1,024 tokens of room |
 | `@cf/utter-project/eurollm-9b-it` | No model config at the provider | 4003: AI model does not have config |
-| `@cf/cloudflare/clairic` | Not a chat model | 5006: Error: required properties at '/' are 'model,fields' |
-| `@cf/cloudflare/clef` | Not a chat model | 5006: Error: required properties at '/' are 'model,state,questions' |
-| `@cf/cloudflare/clef-flash` | Not a chat model | 5006: Error: required properties at '/' are 'model,state,questions' |
 | `@cf/deepseek-ai/deepseek-v4-flash-0731` | Paid plan only | 5035: Model @cf/deepseek-ai/deepseek-v4-flash-0731 is not available on the Workers Free plan. (needs the paid Workers plan) |
 | `@cf/deepseek-ai/deepseek-v4-pro-0813` | Paid plan only | 5035: Model @cf/deepseek-ai/deepseek-v4-pro-0813 is not available on the Workers Free plan. (needs the paid Workers plan) |
 | `@cf/deepseek-ai/deepseek-v4.1-flash-1017` | Paid plan only | 5035: Model @cf/deepseek-ai/deepseek-v4.1-flash-1017 is not available on the Workers Free plan. (needs the paid Workers plan) |
@@ -209,13 +217,10 @@ in `config/providers.json`.
 | `@cf/zai-org/glm-5.3` | Paid plan only | 5035: Model @cf/zai-org/glm-5.3 is not available on the Workers Free plan. (needs the paid Workers plan) |
 | `@cf/zai-org/glm-5.3-flash` | Paid plan only | 5035: Model @cf/zai-org/glm-5.3-flash is not available on the Workers Free plan. (needs the paid Workers plan) |
 
-### NVIDIA Build (52)
+### NVIDIA Build (49)
 
 | Model | Reason | Provider's message |
 |---|---|---|
-| `google/diffusiongemma-26b-a4b-it` | Not a chat model | No answer within 90s |
-| `nvidia/ai-synthetic-video-detector` | Not a chat model | Internal error while making inference request |
-| `nvidia/nemotron-parse` | Not a chat model | Expected exactly one message. Expected exactly one message. |
 | `01-ai/yi-large` | Not hosted for this account (404) | Not found for this account |
 | `adept/fuyu-8b` | Not hosted for this account (404) | Not found for this account |
 | `ai21labs/jamba-1.5-large-instruct` | Not hosted for this account (404) | Not found for this account |
@@ -280,7 +285,7 @@ in `config/providers.json`.
 |---|---|---|
 | `nvidia/nemotron-3-super-120b-a12b:free` | Retired by the provider | Provider returned error |
 
-### Ollama Cloud (14)
+### Ollama Cloud (13)
 
 | Model | Reason | Provider's message |
 |---|---|---|
@@ -297,4 +302,3 @@ in `config/providers.json`.
 | `minimax-m3` | Needs payment (402) | Needs paid credits (402) |
 | `mistral-large-3:675b` | Needs payment (402) | Needs paid credits (402) |
 | `muse-spark-open` | Needs payment (402) | Needs paid credits (402) |
-| `clef:27b` | Not a chat model | clef:27b is a decision model and only supports /v1/systemone |

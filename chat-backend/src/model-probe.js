@@ -118,3 +118,16 @@ export async function auditModels(env,labels){
  for(const label of labels)if(!results.some(r=>r.label===label))results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});
  return {results};
 }
+
+// The owner's model list: every model KappaForge routes now, the specialist tools it keeps but never sends chat, and the
+// models removed after the model audit with the reason for each, grouped by provider.
+export async function modelCatalog(env){
+ const routes=await probeRoutes(env),groups=new Map();
+ const group=id=>{if(!groups.has(id)){const p=id==="gemini"?registry.routing?.primary||{}:registry.providers[id]||{};
+  groups.set(id,{id,name:id==="gemini"?"Google Gemini":String(p.name||id).replace(/\s*\(.*\)\s*$/,""),models:[],tools:(p.toolModels||[]).map(t=>({...t})),
+   removed:(p.removedModels||[]).map(model=>({model,reason:p.removedWhy?.[model]||p.removedModelsReason||"Removed after the model audit"}))});}return groups.get(id);};
+ for(const route of routes)group(route.provider).models.push(route.model);
+ for(const id of Object.keys(registry.providers))if(registry.providers[id]?.toolModels?.length||registry.providers[id]?.removedModels?.length)group(id);
+ if(registry.routing?.primary?.removedModels?.length)group("gemini");
+ return {at:Date.now(),providers:[...groups.values()].sort((a,b)=>b.models.length-a.models.length||a.name.localeCompare(b.name))};
+}
