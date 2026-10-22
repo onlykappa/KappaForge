@@ -1,3 +1,4 @@
+import './weather.test.mjs';
 import './recovery-wake.test.mjs';
 import './cloud.mjs';
 import './free-route-policy.test.mjs';

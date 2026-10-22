@@ -2,6 +2,7 @@ import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
+import {weatherTools,weatherRequest,weatherArguments,invokeWeatherTool,formatWeather} from "./weather.js";
 import {streamReply} from "./streaming.js";
 import {getTimeContext} from "./time.js";
 import {projectHealth} from "./project-health.js";
@@ -214,7 +215,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
-    if (!env.CHAT_ACCESS_TOKEN || (["/chat", "/plan"].includes(new URL(request.url).pathname) && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
+    if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
@@ -299,7 +300,7 @@ export default {
               example:example?{model:example.model,maxUsd:example.maxUsd}:null};
           }catch{premium={error:"Premium status unavailable",enabled:false};}
         }
-        return json({version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        return json({tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
@@ -618,6 +619,12 @@ export default {
     }
 
 
+    const weatherFollowup=!planning&&input.messages.at(-2)?.role==="assistant"&&input.messages.at(-2).text.startsWith("Which city should I check?")&&/^[\p{L} .,'-]{2,120}$/u.test(input.messages.at(-1).text);
+    if(!planning&&(weatherRequest(input.messages.at(-1).text)||weatherFollowup)){
+      const text=weatherFollowup?"Weather in "+input.messages.at(-1).text:input.messages.at(-1).text;
+      try{const report=await invokeWeatherTool("weather",weatherArguments(text,input.preferences||{}),{signal:request.signal});return json({reply:formatWeather(report,text),tool:report},200,cors)}
+      catch(error){return json({reply:error.message,tool:{name:"weather",status:"unavailable"}},200,cors)}
+    }
     let requestPrefs;
     try{requestPrefs=requestRoutingPreferences(planning?input.request:input.messages.at(-1).text,input.preferences||{})}
     catch(error){return json({error:error.message,code:"invalid_inference_route"},400,cors)}

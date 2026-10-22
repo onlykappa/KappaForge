@@ -105,9 +105,12 @@ try{
  // The most recent attempts (model, outcome, status), newest first, for auditing what answered.
  summary.recent=await page.evaluate(()=>[...usageEvents].filter(e=>e&&Number.isFinite(e.at)).sort((a,b)=>b.at-a.at).slice(0,25).map(e=>({at:new Date(e.at).toISOString(),model:e.model,kind:e.kind,ok:e.ok,status:e.status??null,fallback:e.fallback,total:e.total??null,latency:e.latency??null})));
  summary.google=await page.evaluate(()=>settingsAPI('/usage/google').catch(e=>({error:e.message})));
+ // The token period switch (day, week, month, year) lives in the Tokens view; Requests shows requests only.
+ await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=tokens]').click();await page.waitForTimeout(200);
  await page.locator('[data-period=year]').click();await page.waitForTimeout(200);await page.evaluate(()=>scrollTo(0,0));
  await page.screenshot({path:join(out,'2b-usage-year.png'),animations:'disabled'});
  await page.locator('[data-period=month]').click();
+ await page.locator('#usage-unit').click();await page.locator('[data-usage-unit=requests]').click();await page.waitForTimeout(200);
  // Drill into the busiest provider and its busiest model, as a person tapping through would.
  const first=page.locator('[data-usage-provider]').first();
  if(await first.count()){

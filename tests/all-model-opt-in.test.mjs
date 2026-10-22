@@ -296,6 +296,23 @@ test('specialist tool models stay listed but are never sent chat',async()=>{
  finally{globalThis.fetch=original}
 });
 
+
+test('task 191 excluded routes are never sent and all-excluded requests report unavailable',async()=>{
+ const original=globalThis.fetch,calls=[];
+ globalThis.fetch=async(url,init={})=>{
+  if(String(url).endsWith('/models'))return catalog(['openai/gpt-oss-120b','openai/gpt-oss-20b']);
+  if(String(url).endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return Response.json({choices:[{message:{content:'valid answer'},finish_reason:'stop'}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}});}
+  throw Error('Unexpected external call');
+ };
+ try{
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',GROQ_API_KEY:'skip-fixture',MEMORY:memory()};
+  const input={version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'repair weather'}],maxTokens:100,providers:['groq'],excludedRoutes:['groq:openai/gpt-oss-120b']};
+  const reply=await inferenceRouter(env,input);assert.equal(reply.status,200);assert.deepEqual(calls,['openai/gpt-oss-20b']);
+  const unavailable=await inferenceRouter({...env,MEMORY:memory()},{...input,excludedRoutes:[...input.excludedRoutes,'groq:openai/gpt-oss-20b']});assert.equal(unavailable.status,503);assert.equal((await unavailable.json()).code,'free_route_unavailable');assert.equal(calls.length,1);
+  for(const invalid of [null,{},['bad route'],Array(161).fill('groq:x')])assert.equal((await inferenceRouter(env,{...input,excludedRoutes:invalid})).status,400);
+ }finally{globalThis.fetch=original;}
+});
+
 test('model tests stop at half of a daily allowance and leave the rest for chat and tasks',async()=>{
  const {routingStore}=await import('../chat-backend/src/router-state.js');
  let value;const store={get:async()=>structuredClone(value),put:async(k,n)=>{value=structuredClone(n)}};

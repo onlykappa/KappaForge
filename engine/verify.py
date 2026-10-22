@@ -7,6 +7,7 @@ written inside the test file. Then a model review compares the change with every
 Problems go back to the model as a follow-up stage; what still fails is reported plainly, never as success.
 """
 import ast
+from contextvars import ContextVar
 import difflib
 import io
 import os
@@ -85,7 +86,13 @@ def worker_problems(sources, changes):
     listed = ROUTES_RE.search(new)
     allowed = set(re.findall(r'"(/[\w/-]*)"', listed.group(1))) if listed else set()
     for route in sorted(set(ROUTE_USE_RE.findall(new)) - set(ROUTE_USE_RE.findall(old))):
-        if listed and route not in allowed:
+        uses = [m for m in ROUTE_USE_RE.finditer(new) if m[1] == route]
+        auth = new.find('if (!auth.startsWith(')
+        if auth >= 0 and any(m.start() < auth for m in uses):
+            problems.append(f'{WORKER}: the new route "{route}" handles requests before app authorization; move it after authentication and method checks')
+        if len(uses) > 1:
+            problems.append(f'{WORKER}: duplicate handlers for the new route "{route}"; keep one authenticated implementation')
+        if listed and route not in allowed and all(m.start() > listed.start() for m in uses):
             problems.append(f'{WORKER}: the new route "{route}" is not in the allowed path list near the top of fetch(), '
                             'so every request to it gets 404 "Not found" before reaching your handler: add it there')
     try:
@@ -402,8 +409,12 @@ def executable_evidence(path, source, quote):
     return quote in source
 
 
+REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
+
+
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's bounded source-backed verdict; None leaves verification incomplete."""
+    REVIEW_FAILURE.set('')
     try:
         requested = []
         unavailable_sources, original_requirements = set(), {}
@@ -470,6 +481,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     except Exception as exc:  # Wiring checks still run; the caller preserves unavailable review as incomplete.
         if getattr(exc, 'gateway_failure', False):
             raise  # A provider failure cannot trigger new coding calls through review repair.
+        from engine.recovery import clean
+        REVIEW_FAILURE.set(type(exc).__name__ + ': ' + clean(exc, 180))
         return None
 
 

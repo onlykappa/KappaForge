@@ -243,6 +243,52 @@ class RecoveryJournalTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertEqual(recovery.diagnose(error)[0], kind)
 
+    def test_task_191_source_words_do_not_block_edit_recovery(self):
+        from engine.edit_errors import SourceNotRead
+        for word in ('/authorization', 'unauthorized', 'protected path', 'authorization expired', 'HTTP 403'):
+            for count in (0, 2):
+                with self.subTest(word=word, count=count):
+                    error = developer.EditMismatch('value.py', word, 'value = 1\n', count)
+                    self.assertEqual(recovery.diagnose(error), ('edit_anchor', 'reread_source'))
+                    self.journal.event(error, model='writer')
+                    self.assertEqual(self.journal.state['executionState'], 'recovering')
+        # This is the next failure in task #191; it must not crash on a transition
+        # out of a falsely persisted blocked_authorization state.
+        self.journal.event(SourceNotRead('tests/authorization.test.mjs', overwrite=True))
+        restored = self.world.journal()
+        self.assertEqual(restored.state['events'][-1]['kind'], 'missing_context')
+        self.assertEqual(restored.state['executionState'], 'recovering')
+        self.assertEqual(restored.state['events'][-1]['files'], ['tests/authorization.test.mjs'])
+
+    def test_task_191_generation_rereads_anchor_then_unread_file_and_succeeds(self):
+        source = '# /authorization\nvalue = 1\n'
+        candidate = {'value.py': source, 'test_weather.py': 'ready = False\n'}
+        reads = []
+        def load(path):
+            reads.append(path)
+            return candidate[path]
+        self.journal.loader = load
+        missing = {'files': [{'path': 'value.py', 'edits': [
+            {'find': '# /authorization expired\nvalue = 0', 'replace': 'value = 2'}]}]}
+        unread = {'files': [{'path': 'test_weather.py', 'content': 'ready = True\n'}]}
+        with patch.object(developer, 'run_model', side_effect=[('writer', json.dumps(missing)),
+                ('writer', json.dumps(unread)), ('other', json.dumps(unread))]) as model:
+            _, _, changes, _ = developer.generate('key', 'repair weather', recovery.ROOT,
+                                                  {'value.py': source}, {p: len(t) for p, t in candidate.items()})
+        self.assertEqual(changes, {'test_weather.py': 'ready = True\n'})
+        self.assertEqual(candidate['test_weather.py'], 'ready = False\n')
+        self.assertEqual(reads, ['value.py', 'test_weather.py'])
+        self.assertEqual(model.call_count, 3)
+        self.assertIn('test_weather.py', model.call_args.args[1])
+        self.assertEqual(self.world.journal().state['executionState'], 'recovering')
+
+    def test_real_authorization_failure_still_stops_recovery(self):
+        error = PermissionError('authorization expired')
+        self.assertEqual(recovery.diagnose(error), ('authorization', 'stop'))
+        self.assertFalse(self.journal.defer(error))
+        restored = self.world.journal()
+        self.assertEqual(restored.state['executionState'], 'blocked_authorization')
+
     def test_durable_requirements_models_and_rejected_proposals_survive_restart(self):
         j = self.journal
         j.checkpoint('b' * 40, base='main', pr=self.world.prs[0]['html_url'], files=['value.py'])

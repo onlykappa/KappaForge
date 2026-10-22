@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from contextvars import ContextVar
+from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 
 CURRENT = ContextVar('recovery_journal', default=None)
 SPLITTING = ContextVar('recovery_split_active', default=False)
@@ -77,6 +78,16 @@ def diagnose(error):
         return 'invalid_response', 'switch_or_defer'
     if getattr(error, 'code', '') == 'request_too_large' or type(error).__name__ == 'GatewayRequestTooLarge':
         return 'request_size', 'reduce_source_context'
+    # Source snippets and filenames are evidence, not authorization decisions.
+    # Task #191's missing anchor included the literal route "/authorization".
+    if isinstance(error, EditMismatch):
+        return 'edit_anchor', 'reread_source'
+    if isinstance(error, SourceNotRead):
+        return 'missing_context', 'read_dependencies'
+    if isinstance(error, GenerationFailure):
+        if error.blocked:
+            return 'authorization', 'stop'
+        return ('provider_outage', 'switch_or_defer') if error.provider_routes else ('validation', 'smaller_stages')
     text = str(error).lower()
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'
@@ -258,7 +269,7 @@ class Journal:
                     part['digest'] = self.scope.digest
                     self.write(f'repos/{ROOT}/issues/comments/{row}', {'body':'### KappaForge failure ledger\n\n<!-- KAPPA_FAILURES_V1 '+self.wire(part)+' -->'}, 'PATCH')
                 self.renewed_scope = False
-            execution = RecoveryCoordinator.state(draft['status'], draft['events'][-1].get('error', '') if draft['events'] else '')
+            execution = RecoveryCoordinator.state(draft['status'])
             if execution not in RecoveryCoordinator.STATES:
                 raise ValueError('Unknown recovery state: ' + str(draft['status']))
             if draft['status'] == 'blocked' and draft['events']:
@@ -396,6 +407,22 @@ class Journal:
             self.notes.save(self.write, ROOT, self.scope.number)
         except Exception as error:  # noqa: BLE001 - notes are advisory
             print('Progress note not saved: ' + clean(error, 160), flush=True)
+
+    def stop(self, error):
+        """Persist the real cause and checkpoint without masking the caller's error."""
+        try:
+            self.event(error, outcome='blocked', strategy='stop',
+                       next_action='Review the saved draft and failure evidence')
+        except Exception as diagnostic_error:
+            print('Failure checkpoint could not be saved (' + type(diagnostic_error).__name__ + ')', flush=True)
+        self.note(stop={'reason': clean(error, 240),
+                        'next': 'Review saved draft ' + self.state.get('pr', '')},
+                  status='Stopped before completion: ' + clean(error, 180) +
+                         '; saved candidate ' + self.state.get('candidate', ''))
+        try:
+            self.publish('blocked', 'Automatic recovery stopped: ' + clean(error, 180))
+        except Exception as diagnostic_error:
+            print('Failure progress could not be published (' + type(diagnostic_error).__name__ + ')', flush=True)
 
     def resumes_left(self, kind):
         """Automatic continuations still available for a failure of this kind."""
