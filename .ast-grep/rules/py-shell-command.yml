@@ -1,0 +1,13 @@
+id: py-shell-command
+language: python
+severity: error
+message: runs a shell command (shell=True, os.system or os.popen)
+rule:
+  any:
+  - kind: keyword_argument
+    all:
+    - has: {field: name, regex: ^shell$}
+    - has: {field: value, kind: "true"}
+    inside: {kind: call, stopBy: end}
+  - pattern: os.system($$$)
+  - pattern: os.popen($$$)

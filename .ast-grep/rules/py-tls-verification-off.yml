@@ -1,0 +1,11 @@
+id: py-tls-verification-off
+language: python
+severity: error
+message: turns off TLS certificate checks
+rule:
+  any:
+  - kind: keyword_argument
+    all:
+    - has: {field: name, regex: ^verify$}
+    - has: {field: value, kind: "false"}
+  - pattern: ssl._create_unverified_context($$$)

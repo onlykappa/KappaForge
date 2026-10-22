@@ -60,3 +60,32 @@ class LongTaskBriefTests(unittest.TestCase):
                 {'number': 1, 'body': ''}, 'fixture', 'fixture', [], 'fixture', 'fixture')
         self.assertIn(TASK, model.call_args.args[1])
         self.assertIn('return 2', changes['app/main.py'])
+
+
+class ResumedBriefTests(unittest.TestCase):
+    def test_resumed_repair_is_told_what_progress_md_says_is_done_and_left(self):
+        from types import SimpleNamespace
+        from engine import progress_notes
+        notes = progress_notes.Notes(1, 'onlykappa/KappaForge')
+        notes.update(plan=['Change the return value', 'Add a test'], done=['Stage 1 (written by groq:x): changed it'],
+                     files=['app/main.py'], stop={'reason': 'HTTP 429 rate-limited'})
+        journal = SimpleNamespace(state={}, notes=notes, checkpoint=lambda *a, **k: None, loader=None)
+        current = recovery.CURRENT.set(journal)
+        self.addCleanup(recovery.CURRENT.reset, current)
+        github = lambda path, _token: [{'filename': 'app/main.py', 'status': 'modified', 'patch': 'fixture'}] if '/files?' in path else []
+        with patch.object(developer, 'gh', side_effect=github), \
+                patch.object(developer, 'list_tree', return_value=(EXISTING, {})), \
+                patch.object(developer, 'project_guide', return_value=''), \
+                patch.object(developer, 'read_source', return_value=SOURCES['app/main.py']), \
+                patch.object(developer, 'requirements_open', return_value=['Finish the saved checkpoint']), \
+                patch.object(developer, 'is_private', return_value=False), \
+                patch.object(developer, 'code_providers', return_value={'groq'}), \
+                patch.object(developer, 'check_the_work', return_value=({'app/main.py': 'x'}, '', [])), \
+                patch.object(developer, 'generate', return_value=('fixture', 'done', {'app/main.py': 'x'}, '')) as generate:
+            developer.revise_branch({'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
+                                    'fixture', 'fixture', [], 'fixture', 'fixture')
+        prompt = generate.call_args.args[1]
+        self.assertIn('SAVED PROGRESS', prompt)
+        self.assertIn('1. [done] Change the return value', prompt)
+        self.assertIn('2. [not done] Add a test', prompt)
+        self.assertIn(TAIL.strip(), prompt, 'the notes never displace the owner brief')

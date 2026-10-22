@@ -61,14 +61,16 @@ export function providerActivation(settings){
  const reviewed=p=>p.freeOnly===true||Array.isArray(p.freeModels)&&p.freeModels.length>0;
  const candidates=registry.order.filter(id=>{
   const p=registry.providers[id];
-  return reviewed(p)&&(p.kind==='workers-ai'?!!binding('AI'):!p.key||p.keyOptional||binding(p.key)?.type==='secret_text');
+  return p.metered!==true&&reviewed(p)&&(p.kind==='workers-ai'?!!binding('AI'):!p.key||p.keyOptional||binding(p.key)?.type==='secret_text');
  });
  if(reviewed(registry.routing.primary)&&binding('GEMINI_API_KEY')?.type==='secret_text')candidates.unshift('gemini');
  const variables={};
  for(const name of ['KAPPA_FREE_PROVIDERS','KAPPA_CHAT_PROVIDERS','KAPPA_CODE_PROVIDERS','KAPPA_PRIVATE_CODE_PROVIDERS']){
   const existing=binding(name);
   if(existing&&existing.type!=='plain_text')throw Error('Provider permissions must be plain-text bindings');
-  variables[name]=[...new Set([...(existing?.text||'').split(',').map(x=>x.trim()).filter(Boolean),...candidates])].join(',');
+  // Providers marked privateCode:false are never added to the private-code list automatically.
+  const adds=name==='KAPPA_PRIVATE_CODE_PROVIDERS'?candidates.filter(id=>registry.providers[id]?.privateCode!==false):candidates;
+  variables[name]=[...new Set([...(existing?.text||'').split(',').map(x=>x.trim()).filter(Boolean),...adds])].join(',');
  }
  const expected={...settings,bindings:[...bindings.filter(b=>!Object.hasOwn(variables,b.name)),...Object.entries(variables).map(([name,text])=>({name,type:'plain_text',text}))]};
  return {variables,expectedHash:fingerprint(expected).hash};

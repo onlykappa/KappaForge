@@ -19,6 +19,10 @@ SPLITTING = ContextVar('recovery_split_active', default=False)
 MARKER = 'KAPPA_RECOVERY_V1'
 ROOT = 'onlykappa/KappaForge'
 MAX_CONTINUATIONS = 3
+# Waiting out a provider limit or outage is not a failed attempt: those resumes have their own, larger allowance so a
+# long task keeps going across rate limits. maxWaitSeconds and the authorization expiry still bound the total wait.
+MAX_QUOTA_RESUMES = 12
+QUOTA_KINDS = ('rate_limit', 'provider_outage')
 RECOVERY_SCAN_SECONDS = 300
 MAX_EVENTS = 40
 # GitHub comment content has a 65,536-character ceiling; UTF-8 bytes are
@@ -158,7 +162,8 @@ class Journal:
                          and isinstance(state['events'], list) and len(state['events']) <= MAX_EVENTS
                          and isinstance(state['requirements'], list) and len(state['requirements']) <= 100
                          and isinstance(state['rejected'], dict) and len(state['rejected']) <= MAX_EVENTS
-                         and isinstance(state['continuations'], int) and 0 <= state['continuations'] <= MAX_CONTINUATIONS)
+                         and isinstance(state['continuations'], int) and 0 <= state['continuations'] <= MAX_CONTINUATIONS + MAX_QUOTA_RESUMES
+                         and 0 <= state.get('quotaResumes', 0) <= min(state['continuations'], MAX_QUOTA_RESUMES))
                 if valid:
                     if renewed_scope:
                         state = dict(state, digest=self.scope.digest, authorization=self.scope.identity, expiresAt=int(self.scope.expires*1000))
@@ -205,12 +210,16 @@ class Journal:
                 continue
         self._committed = copy.deepcopy(self.state)
         self.loader = None
+        from engine import progress_notes
+        self.notes = progress_notes.load(all_comments, self.scope.number, self.scope.repo, clean)
         # Only the validated, trusted journal comment may be edited across runs.
         from engine.intent_guard import ACTIVE
         active = ACTIVE.get()
         if active and active.digest == self.scope.digest and self.comment:
             active.own_comments.add(str(self.comment))
             active.own_comments.update(str(row[0]) for row in self.ledger_rows)
+        if active and active.digest == self.scope.digest and self.notes.comment:
+            active.own_comments.add(str(self.notes.comment))
 
     @staticmethod
     def wire(value):
@@ -380,6 +389,21 @@ class Journal:
                           files=sorted(set(files) | set(self.state['files'])), status='running')
         self.persist()
 
+    def note(self, **changes):
+        """Update the task's PROGRESS.md comment. Best effort: a failed note never stops the task."""
+        try:
+            self.notes.update(clock=self.clock, **changes)
+            self.notes.save(self.write, ROOT, self.scope.number)
+        except Exception as error:  # noqa: BLE001 - notes are advisory
+            print('Progress note not saved: ' + clean(error, 160), flush=True)
+
+    def resumes_left(self, kind):
+        """Automatic continuations still available for a failure of this kind."""
+        quota = self.state.get('quotaResumes', 0)
+        if kind in QUOTA_KINDS:
+            return MAX_QUOTA_RESUMES - quota
+        return MAX_CONTINUATIONS - (self.state['continuations'] - quota)
+
     def requirements(self, values):
         merged = list(dict.fromkeys(self.state['requirements'] + list(values)))
         if len(merged) > 100 or any(not isinstance(v, str) or len(v) > 4000 for v in merged) or sum(map(len, merged)) > 12000:
@@ -391,9 +415,10 @@ class Journal:
     def defer(self, error):
         kind, _ = diagnose(error)
         if (self.scope.inference_route or kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
-                or self.state['continuations'] >= MAX_CONTINUATIONS or self.scope.expires <= self.clock() + 1200):
+                or self.resumes_left(kind) <= 0 or self.scope.expires <= self.clock() + 1200):
             self.event(error, model=self.scope.inference_route or '', strategy='stop', outcome='blocked',
                        next_action='Owner review required; automatic continuations exhausted or access blocked')
+            self.note(stop={'reason': clean(error, 240), 'next': 'Stopped; needs the owner'}, status='Stopped: needs your review')
             return False
         now = self.clock()
         self.state.setdefault('waitingSince', now)
@@ -403,12 +428,17 @@ class Journal:
         end = min(self.scope.expires - 1200, self.state['waitingSince'] + self.project.get('maxWaitSeconds', 21600))
         if due > end:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
+            self.note(stop={'reason': clean(error, 240), 'next': 'Waiting deadline reached'}, status='Paused: waited too long for a provider')
             return False
         self.state['nextAt'] = due
+        self.state['quotaWait'] = kind in QUOTA_KINDS
         self.state['waitReason'] = ('retry' if getattr(error, 'gateway_failure', False)
                                     and max(getattr(error, 'retry_at', 0), availability.get('retryAt', 0)) <= now else 'cooldown')
         self.event(error, model=self.scope.inference_route or '', strategy='checkpoint_and_continue', outcome='waiting',
                    next_action='Resume saved work on the next recovery scan (scheduled every 5 minutes; GitHub may delay it)')
+        self.note(stop={'reason': clean(error, 240), 'next': 'Resume ' + time.strftime('%H:%M UTC', time.gmtime(due))
+                        + ' with the next available model'}, status='Paused for a provider limit; resumes automatically'
+                  if kind in QUOTA_KINDS else 'Paused; resumes automatically')
         self.publish('waiting' if self.state['waitReason'] == 'cooldown' else 'queued',
                      'Progress saved. Waiting for the recorded provider cooldown.' if self.state['waitReason'] == 'cooldown'
                      else 'Progress saved. Gateway retry scheduled; provider quota remaining is unknown.')
@@ -482,6 +512,8 @@ class Journal:
             self.persist()
         finally:
             self._resuming = False
+        if self.notes.comment:
+            self.note(status='Running: resumed saved work')
         self.publish('running', 'Runner acknowledged the saved task. Execution started.')
         return True
 
@@ -506,7 +538,8 @@ class Journal:
             return False
         self.check_project_access()
         n = self.state['continuations'] + 1
-        if n > MAX_CONTINUATIONS:
+        quota = self.state.get('quotaResumes', 0) + (1 if self.state.get('quotaWait') else 0)
+        if n > MAX_CONTINUATIONS + MAX_QUOTA_RESUMES or quota > MAX_QUOTA_RESUMES or n - quota > MAX_CONTINUATIONS:
             return False
         main = self.read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
         ref = f'refs/heads/kappa/recovery-{self.scope.number}-{self.scope.digest[:12]}-{n}'
@@ -519,7 +552,7 @@ class Journal:
                 return False
             # Recover a crash between reserving the ref and persisting dispatch state.
             self.read(f'repos/{ROOT}/git/ref/heads/{ref.removeprefix("refs/heads/")}')
-        self.state.update(continuations=n, status='dispatching', dispatchAttempts=0)
+        self.state.update(continuations=n, quotaResumes=quota, quotaWait=False, status='dispatching', dispatchAttempts=0)
         self.persist()
         self.dispatch()
         return True
@@ -610,8 +643,11 @@ def resume_checks(journal, pr, token):
         journal.state.update(status='ready', nextAt=0)
         journal.state.pop('waitingSince', None)
         journal.persist()
+        journal.note(complete=True, status='Independent checks passed; ready for owner review')
         journal.publish('ready', 'Independent checks passed for the saved candidate. Ready for owner review.')
         return 'ready'
+    if journal.notes.comment:
+        journal.note(status='Independent verification is running for the saved candidate')
     journal.publish('testing', 'Independent verification is running for the saved candidate.')
     return 'testing'
 

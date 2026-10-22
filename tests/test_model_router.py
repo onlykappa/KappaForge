@@ -130,15 +130,30 @@ class ModelRoutingTests(unittest.TestCase):
             self.assertEqual(runner.provider_models("zai"), ["glm-4.7-flash"])
             urlopen.assert_not_called()
             self.assertEqual(runner.provider_headers(runner.PROVIDERS["providers"]["llm7"])["Authorization"], "Bearer llm7-key")
+    def test_metered_chat_provider_needs_named_opt_in_and_never_runs_coding_probes(self):
+        from engine import provider_check
+        for opt, expected in [('', False), ('*', False), ('huggingface', True)]:
+            with patch.dict(os.environ, {'KAPPA_ALL_MODEL_PROVIDERS': opt, 'HUGGINGFACE_API_KEY': 'fixture'}):
+                self.assertEqual(runner.full_catalog('huggingface'), expected)
+                with patch.object(runner.urllib.request, 'urlopen') as upstream:
+                    self.assertEqual(runner.provider_models('huggingface'), [])
+                    self.assertEqual(provider_check.check_provider('huggingface')[0][2], 'chat only')
+                    upstream.assert_not_called()
+
     def test_code_only_goes_to_providers_allowed_for_the_repository(self):
         keys = {k: "" for k in ("CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
                                 "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "KAPPA_CODE_PROVIDERS", "KAPPA_PRIVATE_CODE_PROVIDERS")}
         with patch.dict(os.environ, {**keys, "GROQ_API_KEY": "k"}):
-            everything = set(runner.PROVIDERS["order"])
+            everything = {pid for pid in runner.PROVIDERS["order"] if runner.PROVIDERS["providers"][pid].get("agent") is not False}
             self.assertEqual(runner.code_providers(False), everything, "owner allows every provider by default")
-            self.assertEqual(runner.code_providers(True), everything)
+            self.assertEqual(runner.code_providers(True), everything - {"huggingface"},
+                             'providers marked "privateCode": false never get private code by default')
         with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
             self.assertEqual(runner.code_providers(True), {"groq", "cerebras"})
+            self.assertEqual(runner.code_providers(False), {"kilo"})
+        with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq,huggingface"}):
+            self.assertEqual(runner.code_providers(True), {"groq"}, "chat-only providers stay excluded even with a coding allowlist entry")
+        with patch.dict(os.environ, {**keys, "KAPPA_PRIVATE_CODE_PROVIDERS": "groq, cerebras", "KAPPA_CODE_PROVIDERS": "kilo"}):
             self.assertEqual(runner.code_providers(False), {"kilo"})
 
     def test_fallback_skips_disallowed_providers_and_retries_with_a_smaller_reply_limit(self):

@@ -11,6 +11,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
+    - name: Install ast-grep so the structural scan tests run for real
+      run: python -m pip install --quiet --no-deps --require-hashes -r .github/ast-grep-requirements.txt
+      shell: bash
     - name: Preflight agent tools and build settings
       shell: bash
       run: |-
@@ -25,6 +28,26 @@ jobs:
     - name: Check the dependency map the chat reads is current
       # A warning, not a failure: agent-written PRs cannot run the generator themselves.
       run: python3 scripts/dependency-map.py --check || echo "::warning title=dependency map::dependency_map.json is stale; run python3 scripts/dependency-map.py"
+      shell: bash
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Install ast-grep
+      run: python -m pip install --quiet --no-deps --require-hashes -r .github/ast-grep-requirements.txt
+      shell: bash
+    - name: Test the structural security rules
+      run: ast-grep test --skip-snapshot-tests
+      shell: bash
+    - name: Scan the shipped code
+      # Test fixtures hold fake keys and dev tools start processes on purpose; the iOS folder copies preview/.
+      # Errors fail the job; warnings (HTML built from variables) are listed for review.
+      run: ast-grep scan --globs '!tests/**' --globs '!chat-backend/tools/**' --globs '!ios/KappaForge/Web/**' --globs '!.ast-grep/**'
       shell: bash
   worker:
     runs-on: ubuntu-latest

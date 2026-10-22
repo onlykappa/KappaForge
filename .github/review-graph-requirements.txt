@@ -1,0 +1,2 @@
+# code-review-graph for the Review graph workflow (.github/workflows/review-graph.yml); runs in a job with no token.
+code-review-graph==2.3.9

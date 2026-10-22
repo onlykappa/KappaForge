@@ -1,0 +1,14 @@
+id: js-html-injection
+language: javascript
+severity: warning
+message: writes HTML built from a variable (possible script injection); escape it or use textContent
+rule:
+  any:
+  - pattern: $EL.innerHTML = $VALUE
+  - pattern: $EL.outerHTML = $VALUE
+  - pattern: $EL.insertAdjacentHTML($POS, $VALUE)
+  - pattern: document.write($VALUE)
+constraints:
+  VALUE:
+    not:
+      kind: string
