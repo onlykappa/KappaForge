@@ -40,6 +40,14 @@ try{
  // Why each provider is or is not routable, as the Worker reports it (no credentials are included).
  summary.eligibility=await page.evaluate(()=>capabilities?{routingPolicy:{version:capabilities.routingPolicy?.version,chatProviders:capabilities.routingPolicy?.chatProviders,codingProviders:capabilities.routingPolicy?.codingProviders},
   providers:(capabilities.providers||[]).map(p=>({id:p.id,configured:p.configured,hasKey:p.hasKey,enabled:p.enabled,reason:p.eligibility?.reason||null,discovery:p.discovery?.state||null,discoveryDetail:p.discovery?.detail||null,discoveryCount:p.discovery?.discoveredCount??null,models:(p.models||[]).length,modelNames:p.id==="mistral"?(p.models||[]):undefined,health:p.health||null}))}:{error:lastVerify?.error?.message||'capabilities unavailable'});
+ // CHAT_TEST: send one message through the real chat screen, as the owner would, and keep the reply and route.
+ if(process.env.CHAT_TEST){
+  await page.evaluate(()=>navigate('chat'));await page.locator('#message').fill(process.env.CHAT_TEST||'hi');
+  await page.locator('#form button[type=submit]').click();
+  await page.waitForFunction(()=>!sending,null,{timeout:180000,polling:500});await page.waitForTimeout(500);
+  summary.chatTest=await page.evaluate(()=>{const m=active()?.messages||[],last=m[m.length-1]||{};return {sent:m[m.length-2]?.text||null,reply:String(last.text||'').slice(0,600),model:last.model||null,error:last.error||null};});
+  await page.screenshot({path:join(out,'0-chat-test.png'),animations:'disabled'});
+ }
  // PROBE_PROVIDER: test only that provider's models, every one, through the probe endpoint.
  if(process.env.PROBE_PROVIDER){
   summary.providerProbe=await page.evaluate(async provider=>{const results=[];let offset=0,total=null;

@@ -57,6 +57,8 @@ jobs:
         KAPPA_APP_TOKEN: ${{ secrets.KAPPA_APP_TOKEN }}
         PROBE: ${{ github.event_name == 'push' && github.ref_name == 'live-usage-check' || inputs.probe }}
         PROBE_PROVIDER: ${{ startsWith(github.ref_name, 'live-usage-check-provider-') && github.ref_name || '' }}
+        # One real chat message through the app, on the quick check.
+        CHAT_TEST: ${{ github.ref_name == 'live-usage-check-quick' && 'hi' || '' }}
       run: |-
         set -Eeuo pipefail
         test -n "$KAPPA_APP_TOKEN" || { echo "::error::Add the KAPPA_APP_TOKEN Actions secret (same value as the Worker's CHAT_ACCESS_TOKEN)."; exit 1; }

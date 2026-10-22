@@ -152,8 +152,9 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  // Preference orders eligible routes only. Explicit picks, permissions, free
  // model review, capabilities and context remain authoritative.
  const preferred=registry.routing?.preferredModelFamily;
- const preferredRoute=r=>typeof preferred==="string"&&r.model.toLowerCase().includes(preferred);
- routes.sort((a,b)=>Number(preferredRoute(b))-Number(preferredRoute(a))||
+ const reasoning=r=>channel==="chat"&&REASONING_MODEL.test(r.model);
+ const preferredRoute=r=>typeof preferred==="string"&&r.model.toLowerCase().includes(preferred)&&!reasoning(r);
+ routes.sort((a,b)=>Number(reasoning(a))-Number(reasoning(b))||Number(preferredRoute(b))-Number(preferredRoute(a))||
   (channel==="coding"?(Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
    (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0)):0));
  if(manual){
@@ -207,6 +208,33 @@ export async function callProvider(env,route,chat,streaming,signal){
    ...(chat.responseFormat?{response_format:chat.responseFormat}:{}),...(streaming?{stream_options:{include_usage:true}}:{})})});
 }
 
+// Reasoning models write their private thinking between <think> tags (some omit the opening tag); a reply never shows it.
+export function stripThinking(text){
+ if(typeof text!=="string"||!/<\/?think>/i.test(text))return text;
+ let out=text.replace(/<think>[\s\S]*?<\/think>/gi,"");
+ if(/<\/think>/i.test(out))out=out.replace(/^[\s\S]*?<\/think>/i,"");
+ return out.replace(/<think>[\s\S]*$/i,"").replace(/^\s+/,"");
+}
+// The same for a streamed reply: thinking is held back as it arrives and only the answer after it is passed on.
+export function thinkingFilter(){
+ let state="start",held="";
+ return text=>{
+  held+=text;
+  if(state==="answer"){const out=held;held="";return out;}
+  if(state==="start"){
+   const lead=held.replace(/^\s+/,"");
+   if(lead.length<7&&"<think>".startsWith(lead.toLowerCase()))return "";
+   if(!/^<think>/i.test(lead)){state="answer";const out=held;held="";return out;}
+   state="thinking";
+  }
+  const end=held.search(/<\/think>/i);
+  if(end<0){held=held.slice(-8);return "";}
+  state="answer";const out=held.slice(end+8).replace(/^\s+/,"");held="";return out;
+ };
+}
+// Reasoning models think before answering: slow for chat (a greeting can take many seconds), so chat tries them last.
+export const REASONING_MODEL=/distill|(?:^|[-_/:@])(?:r1|qwq|reasoner|reasoning|thinking|magistral)(?:$|[-_/:.])/i;
+
 const usage=u=>u&&{promptTokenCount:u.prompt_tokens,candidatesTokenCount:u.completion_tokens,totalTokenCount:u.total_tokens};
 const finish=reason=>reason?(reason==="length"?"MAX_TOKENS":"STOP"):undefined;
 
@@ -248,19 +276,19 @@ export function normalizeResult(route,data){
   // Newer Workers AI models (GLM, gpt-oss) answer in OpenAI chat format rather than {response}.
   const openai=data?.choices?.[0]?.message?.content;
   const text=typeof data?.response==="string"?data.response:data?.response!=null?JSON.stringify(data.response):typeof openai==="string"?openai:"";
-  return {candidates:[{content:{parts:[{text}]},finishReason:"STOP"}],usageMetadata:usage(data?.usage)};
+  return {candidates:[{content:{parts:[{text:stripThinking(text)}]},finishReason:"STOP"}],usageMetadata:usage(data?.usage)};
  }
  const choice=data?.choices?.[0];
- return {candidates:[{content:{parts:[{text:choice?.message?.content||""}]},finishReason:finish(choice?.finish_reason)||"STOP"}],usageMetadata:usage(data?.usage)};
+ return {candidates:[{content:{parts:[{text:stripThinking(choice?.message?.content||"")}]},finishReason:finish(choice?.finish_reason)||"STOP"}],usageMetadata:usage(data?.usage)};
 }
 
 // Streaming chunk -> Gemini-shaped chunk. Workers AI sends no finish reason; streamReply treats a clean end as finished.
 export function chunkNormalizer(route){
- const p=registry.providers[route.provider];
- if(p.kind==="workers-ai")return raw=>{validateProviderResponse(raw,{stream:true,workers:true});return ({candidates:[{content:{parts:[{text:typeof raw?.response==="string"?raw.response:raw?.choices?.[0]?.delta?.content||""}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});};
+ const p=registry.providers[route.provider],visible=thinkingFilter();
+ if(p.kind==="workers-ai")return raw=>{validateProviderResponse(raw,{stream:true,workers:true});return ({candidates:[{content:{parts:[{text:visible(typeof raw?.response==="string"?raw.response:raw?.choices?.[0]?.delta?.content||"")}]}}],usageMetadata:usage(raw?.usage),error:raw?.error});};
  return raw=>{
   validateProviderResponse(raw,{stream:true});
   const choice=raw?.choices?.[0];
-  return {candidates:choice?[{content:{parts:[{text:choice.delta?.content||""}]},finishReason:finish(choice.finish_reason)}]:[],usageMetadata:usage(raw?.usage),error:raw?.error};
+  return {candidates:choice?[{content:{parts:[{text:visible(choice.delta?.content||"")}]},finishReason:finish(choice.finish_reason)}]:[],usageMetadata:usage(raw?.usage),error:raw?.error};
  };
 }
