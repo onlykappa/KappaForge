@@ -1,3 +1,4 @@
+import {chooseTier,orderForTier} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
@@ -774,6 +775,12 @@ export default {
             selection:manualGemini?"explicit_gemini":typeof prefs.model==="string"&&prefs.model.includes(":")?"explicit_provider":"automatic",
             fallbackEnabled:prefs.fallback!==false,hasMedia:chat.hasMedia,hasTools:chat.hasTools,structuredOutput:planning}},failClosed?503:422,cors);
       }
+      // Automatic chat picks the kind of message first and puts the models that fit it in front; only a few are sent.
+      const automaticChat=!planning&&(!prefs.model||prefs.model==="auto");
+      const latestText=String((Array.isArray(input.messages)?input.messages.filter(m=>m?.role==="user").at(-1)?.text:"")||"");
+      const chosen=automaticChat?await chooseTier(env,latestText,{hasMedia:chat.hasMedia,disabled:new Set(Array.isArray(prefs.disabledProviders)?prefs.disabledProviders:[])}).catch(()=>null):null;
+      if(chosen)candidates=orderForTier(candidates,chosen.tier);
+      const tierInfo=chosen?{tier:chosen.tier,tierBy:chosen.by}:{};
       if(!env.MEMORY)return json({error:"Usage storage unavailable; AI paused to avoid untracked spending."},503,cors);
       const usageStub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const reservation=await usageStub.fetch("https://memory.internal/usage/reserve",{method:"POST",body:JSON.stringify({limit:Math.max(0,Number(env.MONTHLY_REQUEST_LIMIT)||0)})});
@@ -790,14 +797,17 @@ export default {
       // Full catalogs can list hundreds of routes: bound the attempts (each costs several subrequests)
       // and skip a provider's remaining models once its account rejects the key or billing.
       const maxAttempts=REGISTRY.routing?.defaults?.maxRouteAttempts||12,rejectedProviders=new Set();
+      // Chat sends a message to at most this many models; routes skipped before sending (resting, full) do not count.
+      const maxSends=planning?Infinity:REGISTRY.routing?.defaults?.maxChatSends||3;let sends=0;
       for (const route of candidates) {
-        if(Date.now()>=inferenceDeadline||attempt>=maxAttempts)break;
+        if(Date.now()>=inferenceDeadline||attempt>=maxAttempts||sends>=maxSends)break;
         if(rejectedProviders.has(route.provider))continue;
         const model=route.label,gemini=route.provider==="gemini";
         const started=Date.now();attempt++;
         const routeRequestId=crypto.randomUUID();
         let routeReservation;try{routeReservation=await reserveProvider(env,route,routeRequestId,{tokens:estimateTokens(gemini?payload:chat)})}catch{return json({error:"Shared provider reservation failed; inference was not sent."},503,cors)}
         if(!routeReservation.allowed){lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+        sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
@@ -830,7 +840,7 @@ export default {
           continue;
         }
         if(streaming){
-          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider},abort:controller,timeout,signal:request.signal,context,
+          const body=streamReply(response,{record,model,routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",provider:route.provider,...tierInfo},abort:controller,timeout,signal:request.signal,context,
             normalize:gemini?undefined:chunkNormalizer(route),implicitFinish:route.provider==="workers-ai"});
           return new Response(body,{headers:{...cors,"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Content-Type-Options":"nosniff"}});
         }
@@ -839,7 +849,7 @@ export default {
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {
-          if (!planning) {const usage=await record(result,true);return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced"} }, 200, cors);}
+          if (!planning) {const usage=await record(result,true);return json({ reply: answer, model, usage, routing:{attempts:attempt,reason:input.preferences?.routing||"balanced",...tierInfo} }, 200, cors);}
           let proposal;
           try { proposal = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
           catch { await record(result,false);continue; }
