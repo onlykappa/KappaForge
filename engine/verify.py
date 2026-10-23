@@ -12,6 +12,7 @@ import difflib
 import io
 import os
 import tokenize
+import warnings
 from engine.js_analysis import analyze as analyze_js, executable_quote
 import json
 import posixpath
@@ -26,7 +27,6 @@ ROUTES_RE = re.compile(r'\[\s*((?:"/[\w/-]*"\s*,\s*)*"/chat"\s*(?:,\s*"/[\w/-]*"
 ROUTE_USE_RE = re.compile(r'(?:pathname|executionPath)\s*===?\s*"(/[\w/-]+)"')
 # A test that exercises real code imports, requires or reads a file of the repository.
 JS_IMPORT_RE = re.compile(r"""(?:\bfrom\s+|\brequire\(\s*|\bimport\(\s*|\bnew URL\(\s*|readFileSync\([^)]*?)['"](\.{1,2}/[^'"]+)['"]""")
-PY_IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+(engine|tools|scripts)\b", re.M)
 PREF_RE = re.compile(r"""\bpreferences\.([A-Za-z_]\w*)\s*=(?!=)|data-pref=["']([A-Za-z_]\w*)|\bss\(\s*['"]([A-Za-z_]\w*)['"]""")
 JS_FUNC_RE = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(|\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>")
 # Callback APIs a model often awaits as if they returned a promise.
@@ -55,6 +55,73 @@ def repeated_body_read(old, new):
                for pair in analysis['bodyReads'])
 
 
+def parse_quietly(text):
+    """Parse candidate Python without printing its SyntaxWarnings (such as invalid escapes) into the engine log."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        return ast.parse(text)
+
+
+PY_LOADERS = {"spec_from_file_location", "SourceFileLoader", "run_path", "import_module", "load_source"}
+
+
+def imports_repository_module(path, text, source_paths):
+    """Whether a Python test statically imports one of the repository's own modules (the test is parsed, never run)."""
+    modules = set()
+    for source in source_paths:
+        if not source.endswith(".py"):
+            continue
+        module = source[:-3].replace("/", ".")
+        module = module[:-len(".__init__")] if module.endswith(".__init__") else module
+        modules.add(module)
+        # A src layout puts the packages below src/ on the import path.
+        if module.startswith("src."):
+            modules.add(module[len("src."):])
+    try:
+        tree = parse_quietly(text)
+    except SyntaxError:
+        return False
+    package = path.split("/")[:-1]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name in modules for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                if node.level > len(package):
+                    continue
+                base = ".".join(package[:len(package) - node.level + 1] + ([node.module] if node.module else []))
+            else:
+                base = node.module or ""
+            if base in modules or any(".".join(filter(None, (base, alias.name))) in modules for alias in node.names):
+                return True
+        elif isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) in PY_LOADERS:
+            # importlib/runpy load a file by path or a module by name, e.g. scripts/dependency-map.py, which
+            # cannot be imported normally. Only string literals inside the loader call count.
+            for literal in (n.value for arg in node.args for n in ast.walk(arg) if isinstance(n, ast.Constant) and isinstance(n.value, str)):
+                literal = literal[2:] if literal.startswith("./") else literal
+                if literal in modules or any(literal == source or literal.endswith("/" + source) for source in source_paths if source.endswith(".py")):
+                    return True
+    return False
+
+
+def reads_repository_file(text, file_paths):
+    """Whether a Python test names a repository file in code (not a docstring), as when it reads a workflow it runs."""
+    try:
+        tree = parse_quietly(text)
+    except SyntaxError:
+        return False
+    docstrings = {id(body[0].value) for node in ast.walk(tree)
+                  if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                  for body in [node.body] if body and isinstance(body[0], ast.Expr)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            literal = node.value[2:] if node.value.startswith("./") else node.value
+            if any(literal == f or literal.endswith("/" + f) for f in file_paths):
+                return True
+    return False
+
+
 def tests_without_real_code(changes, all_paths=()):
     """Changed test files that never load a repository source file test only code they define themselves."""
     sources = [p for p in set(all_paths) | set(changes) if not TEST_RE.search(p) and CODE_LIKE.search(p)]
@@ -64,7 +131,9 @@ def tests_without_real_code(changes, all_paths=()):
         if not TEST_RE.search(path) or not CODE_LIKE.search(path):
             continue
         if path.endswith(".py"):
-            real = PY_IMPORT_RE.search(text)
+            # Like a JavaScript readFileSync of a repository file; documentation is not code under test.
+            files = [p for p in set(all_paths) | set(changes) if not TEST_RE.search(p) and not p.endswith((".md", ".txt"))]
+            real = imports_repository_module(path, text, sources) or reads_repository_file(text, files)
         else:
             # An import/require/readFileSync of a source file, by relative path or from the repository root, or a
             # source folder the test serves or loads ('preview', path.join(root, 'preview')).
