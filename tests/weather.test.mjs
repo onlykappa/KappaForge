@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import worker from '../chat-backend/src/index.js';
 import '../preview/core.js';
 import {weatherTools,weatherRequest,weatherArguments,invokeWeatherTool,formatWeather} from '../chat-backend/src/weather.js';
-const fixture=()=>({timezone:'America/Los_Angeles',current:{time:'2026-10-22T09:00',temperature_2m:51,weather_code:3,wind_speed_10m:5,wind_direction_10m:180},hourly:{time:Array.from({length:48},(_,i)=>`2026-10-${22+Math.floor(i/24)}T${String(i%24).padStart(2,'0')}:00`),temperature_2m:Array(48).fill(52),precipitation_probability:Array(48).fill(25),wind_speed_10m:Array(48).fill(6)},daily:{time:Array.from({length:7},(_,i)=>`2026-10-${22+i}`),temperature_2m_min:Array(7).fill(42),temperature_2m_max:Array(7).fill(60),precipitation_probability_max:Array(7).fill(30),wind_speed_10m_max:Array(7).fill(12)}});
+const fixture=()=>({timezone:'America/Los_Angeles',current:{time:'2026-10-22T09:00',temperature_2m:51,apparent_temperature:47,weather_code:3,wind_speed_10m:5,wind_direction_10m:180},hourly:{time:Array.from({length:48},(_,i)=>`2026-10-${22+Math.floor(i/24)}T${String(i%24).padStart(2,'0')}:00`),temperature_2m:Array(48).fill(52),precipitation_probability:Array(48).fill(25),wind_speed_10m:Array(48).fill(6)},daily:{time:Array.from({length:7},(_,i)=>`2026-10-${22+i}`),temperature_2m_min:Array(7).fill(42),temperature_2m_max:Array(7).fill(60),precipitation_probability_max:Array(7).fill(30),wind_speed_10m_max:Array(7).fill(12)}});
 function upstream(data=fixture()) {const calls=[];return {calls,fetcher:async(url,init)=>{calls.push({url:new URL(url),init});return Response.json(String(url).includes('geocoding-api')?{results:[{name:'Spokane Valley',admin1:'Washington',country:'United States',latitude:47.67,longitude:-117.24}]}:data)}};}
 const request=(path,body,token='weather-test',method='POST')=>new Request('https://worker.test'+path,{method,headers:{Origin:'null',Authorization:'Bearer '+token,'Content-Type':'application/json'},...(method==='POST'?{body:JSON.stringify(body)}:{})});
 const env={CHAT_ACCESS_TOKEN:'weather-test',GEMINI_API_KEY:'fixture'};
@@ -70,5 +70,46 @@ test('city followup after a location question works without an LLM key or geoloc
   const result=await worker.fetch(request('/chat',{messages:[{role:'assistant',text:'Which city should I check? You can save a default city.'},{role:'user',text:'Paris'}],preferences:{weatherUnits:'celsius'}}),{CHAT_ACCESS_TOKEN:'weather-test'},{});
   const data=await result.json();assert.equal(result.status,200);assert.equal(data.tool.source,'Open-Meteo');assert.match(data.reply,/51°C/);
   assert.deepEqual(weatherArguments('What is the forecast for tomorrow?',{weatherCity:'Paris'}),{city:'Paris',units:'celsius'});
+ }finally{globalThis.fetch=original;}
+});
+
+
+// Issue #111 (the #117 cleanup): device location sent with one weather message, and feels-like.
+test('device coordinates are used only when no city is typed or saved, and feels-like is reported',async()=>{
+ const original=globalThis.fetch,mock=upstream();globalThis.fetch=mock.fetcher;
+ try{
+  const ask=text=>({messages:[{role:'user',text}],preferences:{weatherUnits:'fahrenheit'},weatherLocation:{latitude:47.6588,longitude:-117.4260}});
+  const near=await worker.fetch(request('/chat',ask('Will it rain today?')),env,{});const data=await near.json();
+  assert.equal(near.status,200);assert.equal(mock.calls.length,1,'coordinates skip the city lookup');
+  assert.equal(mock.calls[0].url.hostname,'api.open-meteo.com');
+  assert.equal(mock.calls[0].url.searchParams.get('latitude'),'47.66');assert.equal(mock.calls[0].url.searchParams.get('longitude'),'-117.43');
+  assert.match(mock.calls[0].url.searchParams.get('current'),/apparent_temperature/);
+  assert.match(data.reply,/^Your location \(47\.66, -117\.43\)/);assert.match(data.reply,/51°F \(feels like 47°F\)/);
+  const typed=await worker.fetch(request('/chat',ask('What is the weather in Spokane Valley?')),env,{});
+  assert.match((await typed.json()).reply,/^Spokane Valley/,'a typed city wins over the device');
+  const saved=await worker.fetch(request('/chat',{...ask('Will it rain today?'),preferences:{weatherCity:'Spokane Valley'}}),env,{});
+  assert.match((await saved.json()).reply,/^Spokane Valley/,'a saved city wins over the device');
+  assert.ok(mock.calls.some(c=>c.url.hostname.startsWith('geocoding')),'the city, not the device, was looked up (repeat answers come from the 5-minute cache)');
+ }finally{globalThis.fetch=original;}
+});
+test('bad device coordinates are refused before any upstream call; missing feels-like is left out',async()=>{
+ const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('unexpected')};
+ try{
+  for(const weatherLocation of [{latitude:91,longitude:0},{latitude:'47',longitude:1},{latitude:1},[1,2]]){
+   const data=await(await worker.fetch(request('/chat',{messages:[{role:'user',text:'Will it rain today?'}],weatherLocation}),env,{})).json();
+   assert.match(data.reply,/latitude|Which city/,JSON.stringify(weatherLocation));
+  }
+  assert.equal(calls,0);
+ }finally{globalThis.fetch=original;}
+ const data={...fixture(),current:{...fixture().current,apparent_temperature:undefined}};
+ const report=await invokeWeatherTool('weather',{latitude:1,longitude:1},{store:new Map(),fetcher:async()=>Response.json(data)});
+ assert.equal(report.current.feelsLike,null);assert.doesNotMatch(formatWeather(report),/feels like/);
+});
+test('a city typed after the app reports location is off still answers the weather',async()=>{
+ const original=globalThis.fetch,mock=upstream();globalThis.fetch=mock.fetcher;
+ try{
+  const prompt="Location access is off, so I didn't use your location (change it in Settings → Personalization).\n\nWhich city should I check? You can also save a default city in Settings → Personalization.";
+  const data=await(await worker.fetch(request('/chat',{messages:[{role:'user',text:'Will it rain today?'},{role:'assistant',text:prompt},{role:'user',text:'Paris'}]}),env,{})).json();
+  assert.equal(data.tool.source,'Open-Meteo');assert.match(data.reply,/Spokane Valley|Paris/);
  }finally{globalThis.fetch=original;}
 });

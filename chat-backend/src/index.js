@@ -674,10 +674,10 @@ const workerImplementation = {
     }
 
 
-    const weatherFollowup=!planning&&input.messages.at(-2)?.role==="assistant"&&input.messages.at(-2).text.startsWith("Which city should I check?")&&/^[\p{L} .,'-]{2,120}$/u.test(input.messages.at(-1).text);
+    const weatherFollowup=!planning&&input.messages.at(-2)?.role==="assistant"&&input.messages.at(-2).text.includes("Which city should I check?")&&/^[\p{L} .,'-]{2,120}$/u.test(input.messages.at(-1).text);
     if(!planning&&(weatherRequest(input.messages.at(-1).text)||weatherFollowup)){
       const text=weatherFollowup?"Weather in "+input.messages.at(-1).text:input.messages.at(-1).text;
-      try{const report=await invokeWeatherTool("weather",weatherArguments(text,input.preferences||{}),{signal:request.signal});return json({reply:formatWeather(report,text),tool:report},200,cors)}
+      try{const report=await invokeWeatherTool("weather",weatherArguments(text,input.preferences||{},weatherFollowup?null:input.weatherLocation),{signal:request.signal});return json({reply:formatWeather(report,text),tool:report},200,cors)}
       catch(error){return json({reply:error.message,tool:{name:"weather",status:"unavailable"}},200,cors)}
     }
     let requestPrefs;

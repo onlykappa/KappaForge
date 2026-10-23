@@ -1,11 +1,12 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto',voice:'hannah',voiceEngine:'cloud'};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto',weatherLocation:'ask',voice:'hannah',voiceEngine:'cloud'};
 function settings(value={}){
  const s={...defaults};
  if(typeof value.weatherCity==='string')s.weatherCity=value.weatherCity.trim().slice(0,120);
  if(['auto','celsius','fahrenheit'].includes(value.weatherUnits))s.weatherUnits=value.weatherUnits;
+ if(['ask','allowed','off'].includes(value.weatherLocation))s.weatherLocation=value.weatherLocation;
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
  for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark'],voice:['hannah','autumn','diana','austin','daniel','troy'],voiceEngine:['cloud','device']}))if(values.includes(value[k]))s[k]=value[k];
  // Gemini model IDs, or provider:model for the free fallback providers (e.g. groq:llama-3.3-70b-versatile).
@@ -32,7 +33,34 @@ function aggregate(events,{since=0,until=Infinity}={}){
 function periodStart(period,now=Date.now()){const d=new Date(now);d.setUTCHours(0,0,0,0);if(period==='week')d.setUTCDate(d.getUTCDate()-6);if(period==='month')d.setUTCDate(1);if(period==='year')d.setUTCMonth(0,1);if(period==='all')return 0;return d.getTime();}
 function mergeNotes(local,remote,deleted=[]){const tombstones=new Set(deleted);return [...new Set([...local,...remote])].filter(n=>typeof n==='string'&&!tombstones.has(n));}
 function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(Number),y=String(b).replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)?1:-1;}return 0;}
-root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions};
+// Weather location: the same question and city rules as chat-backend/src/weather.js (tests keep them in step). The
+// device is asked only for a weather question that names no city, with no saved city, unless the owner turned it off.
+function weatherQuestion(text){
+ text=String(text||'').trim().replace(/’/g,"'");
+ if(/\b(?:implement|repair|debug|code|endpoint|unit test|pull request)\b/i.test(text))return false;
+ return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain|snow|temperature|wind|umbrella)\b/i.test(text);
+}
+function weatherLocationNeeded(text,prefs={}){
+ if(!weatherQuestion(text)||prefs.weatherLocation==='off'||String(prefs.weatherCity||'').trim())return false;
+ let city=(String(text).replace(/’/g,"'").match(/\b(?:in|for)\s+(.+?)(?=[?!]|$)/i)?.[1]||'').replace(/\s+(?:today|tomorrow|right now|this week|in (?:fahrenheit|celsius)).*$/i,'').trim();
+ if(/^(?:today|tomorrow|this week|the next|celsius|fahrenheit)\b/i.test(city))city='';
+ return !city;
+}
+// One reading, rounded to about 1 km. iOS answers through the native bridge (CoreLocation); browsers use
+// navigator.geolocation. Rejects with code 'denied' or 'unavailable'. Nothing here stores the coordinates.
+function deviceLocation({native=root.webkit?.messageHandlers?.kappa,geolocation=root.navigator?.geolocation,timeout=15000}={}){
+ const fail=code=>Object.assign(Error(code==='denied'?'Location permission denied':'Location unavailable'),{code});
+ const rounded=(lat,lon)=>Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180?{latitude:Math.round(lat*100)/100,longitude:Math.round(lon*100)/100}:null;
+ return new Promise((resolve,reject)=>{
+  let done=false;const finish=(value,error)=>{if(done)return;done=true;clearTimeout(timer);if(native&&root.KappaLocationNative===receive)delete root.KappaLocationNative;error?reject(error):resolve(value)};
+  const timer=setTimeout(()=>finish(null,fail('unavailable')),timeout);
+  const receive=event=>{const place=event?.type==='location'&&rounded(event.latitude,event.longitude);place?finish(place):finish(null,fail(event?.code==='denied'?'denied':'unavailable'))};
+  if(native){root.KappaLocationNative=receive;try{native.postMessage({action:'location'})}catch{finish(null,fail('unavailable'))}return}
+  if(!geolocation?.getCurrentPosition)return finish(null,fail('unavailable'));
+  geolocation.getCurrentPosition(p=>{const place=rounded(p?.coords?.latitude,p?.coords?.longitude);place?finish(place):finish(null,fail('unavailable'))},e=>finish(null,fail(e?.code===1?'denied':'unavailable')),{enableHighAccuracy:false,maximumAge:600000,timeout});
+ });
+}
+root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions,weatherQuestion,weatherLocationNeeded,deviceLocation};
 })(globalThis);
 
 // Interpret lifecycle metadata, not words quoted inside an audit's findings.

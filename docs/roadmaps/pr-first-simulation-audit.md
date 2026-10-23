@@ -63,3 +63,23 @@ What the runs establish:
 - The dominant failure is the gateway under load (finding 7), not the engine or the models; the main quality gap is the reviewer's evidence format (finding 8).
 
 Reproduce: push to the `lifecycle-simulation` branch or run the *Lifecycle simulation* workflow by hand. The full JSON report is the run's artifact.
+
+## Weather cleanup (#117 / #111), included in this PR
+
+#117 was closed because it could not work: an unreachable route, a callback-based `getCurrentPosition` used with `await`, coordinates never sent, units dropped on reload, and a test that only tested a mock. #195 rebuilt weather around typed or saved cities. Three things from #111 were still missing; this PR adds them:
+
+- **Location, asked once and only for weather.** The app asks for one location reading only when a weather question names no city and you have no saved city. It never asks for other messages and never tracks in the background. The reading is rounded to about 1 km, sent only with that message and never saved.
+  - iOS uses a native one-shot CoreLocation request (`LocationRequester.swift`); the iOS permission prompt explains why location is needed.
+  - Browsers use `navigator.geolocation`, correctly wrapped in a Promise.
+  - New setting *Use my location for weather*: **Ask the first time** / **Allowed** / **Off**.
+- **Permission denied:** the setting turns **Off**, KappaForge never asks again, and the reply says so and asks for a city; typing the city answers it.
+- **Unavailable or timed out:** the reply says so plainly, and it can ask again next time.
+- **Which location the Worker uses:** a typed city, then the saved city, then the device location. Bad coordinates are refused before any outside request.
+- **Feels like** now appears in current conditions; it is left out when Open-Meteo doesn't send it.
+- **Tests** (`tests/weather.test.mjs`, `tests/weather-location.test.mjs`):
+  - the coordinates path and which location wins;
+  - bad coordinates and the feels-like rules;
+  - that the app and the Worker agree on what counts as a weather question;
+  - the browser and native location paths (granted, denied, unavailable, timeout);
+  - the real chat send handler for granted, denied, "never ask again", unavailable, and non-weather or city questions;
+  - the iOS permission declaration and the absence of any background-location API.

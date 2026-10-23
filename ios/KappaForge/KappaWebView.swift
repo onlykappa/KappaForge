@@ -147,6 +147,7 @@ struct KappaWebView: UIViewRepresentable {
         let showUpdates: () -> Void
         let voice = VoiceRecorder()
         let media = MediaPicker()
+        let location = LocationRequester()
         // The + sheet tile that opened the next file panel (photos, camera or files), set just before the panel opens.
         private var pendingPicker: (kind: String, at: Date)?
         init(showSecurity: @escaping () -> Void, showUpdates: @escaping () -> Void) {
@@ -161,6 +162,7 @@ struct KappaWebView: UIViewRepresentable {
             if body["action"] == "voiceStart", let webView = message.webView { voice.start(in: webView) }
             if body["action"] == "voiceStop" { voice.stop() }
             if body["action"] == "voiceCancel" { voice.cancel() }
+            if body["action"] == "location", let webView = message.webView { location.request(in: webView) }
             if body["action"] == "pickerKind", let kind = body["kind"] { pendingPicker = (kind, Date()) }
             if body["action"] == "security" { showSecurity() }
             if body["action"] == "updates" { showUpdates() }
