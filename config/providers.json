@@ -56,6 +56,24 @@
       "removedModelsReason": "Model audit 2026-10-22: 5035 not available on the Workers Free plan, 5018 account not allowed, 4003 no model config, not a chat model (clef/clairic need structured input), or empty replies with a 1,024-token allowance",
       "toolModels": [
         {
+          "model": "@cf/openai/whisper-large-v3-turbo",
+          "kind": "Audio",
+          "note": "Speech-to-text transcription (voice); uses Workers AI neurons",
+          "speech": "stt"
+        },
+        {
+          "model": "@cf/deepgram/aura-1",
+          "kind": "Audio",
+          "note": "Text-to-speech (voice replies); uses Workers AI neurons",
+          "speech": "tts"
+        },
+        {
+          "model": "@cf/myshell-ai/melotts",
+          "kind": "Audio",
+          "note": "Text-to-speech (voice replies); uses Workers AI neurons",
+          "speech": "tts"
+        },
+        {
           "model": "@cf/cloudflare/clairic",
           "kind": "Decision",
           "note": "Fills structured fields; needs model and fields input, not chat"
@@ -107,6 +125,41 @@
       "accountPool": "groq",
       "quotaPool": "groq",
       "quotaScope": "model",
+      "toolModels": [
+        {
+          "model": "whisper-large-v3-turbo",
+          "kind": "Audio",
+          "note": "Speech-to-text transcription (voice); 20 rpm, 2,000 rpd, 28,800 audio seconds a day",
+          "speech": "stt"
+        },
+        {
+          "model": "whisper-large-v3",
+          "kind": "Audio",
+          "note": "Speech-to-text transcription (voice); 20 rpm, 2,000 rpd, 28,800 audio seconds a day",
+          "speech": "stt"
+        },
+        {
+          "model": "canopylabs/orpheus-v1-english",
+          "kind": "Audio",
+          "note": "Text-to-speech (voice replies); 10 rpm, 100 rpd, 3,600 tokens a day",
+          "speech": "tts"
+        },
+        {
+          "model": "meta-llama/llama-prompt-guard-2-22m",
+          "kind": "Safety",
+          "note": "Prompt-injection classifier, not chat"
+        },
+        {
+          "model": "meta-llama/llama-prompt-guard-2-86m",
+          "kind": "Safety",
+          "note": "Prompt-injection classifier, not chat"
+        },
+        {
+          "model": "openai/gpt-oss-safeguard-20b",
+          "kind": "Safety",
+          "note": "Policy safety classifier, not chat"
+        }
+      ],
       "maxConcurrent": 1,
       "capabilities": {
         "chat": true,
@@ -248,12 +301,14 @@
         {
           "model": "voxtral-mini-2602",
           "kind": "Audio",
-          "note": "Speech-to-text transcription"
+          "note": "Speech-to-text transcription",
+          "speech": "stt"
         },
         {
           "model": "voxtral-mini-latest",
           "kind": "Audio",
-          "note": "Speech-to-text transcription"
+          "note": "Speech-to-text transcription",
+          "speech": "stt"
         },
         {
           "model": "voxtral-mini-realtime-2602",

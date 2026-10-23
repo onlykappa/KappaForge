@@ -99,7 +99,7 @@ function corsHeaders(request) {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action, X-Voice-Language",
-    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-reset",
+    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-reset, X-Voice-Model, X-Voice-Notice",
     "Vary": "Origin"
   } : null;
 }
@@ -336,7 +336,7 @@ const workerImplementation = {
     if(pathname==="/voice/transcribe"){const r=await transcribe(env,request);return json(r.body,r.status,cors)}
     if(pathname==="/voice/speak"){
       const r=await speak(env,await request.json().catch(()=>null));
-      return r.audio?new Response(r.audio,{status:200,headers:{"Content-Type":r.type,"Cache-Control":"no-store",...cors}}):json(r.body,r.status,cors);
+      return r.audio?new Response(r.audio,{status:200,headers:{"Content-Type":r.type,"Cache-Control":"no-store","X-Voice-Model":r.model,...(r.notice?{"X-Voice-Notice":r.notice}:{}),...cors}}):json(r.body,r.status,cors);
     }
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/models-list"){

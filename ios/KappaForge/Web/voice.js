@@ -1,10 +1,11 @@
-/* Talk to chat. The mic records, Groq Whisper (on the backend) writes the words, and replies are read aloud by
-   Groq Orpheus or, when its small free allowance runs out, the phone's own voice. Voice mode loops: listen, send,
-   speak the reply, listen again. Recording is native in the iOS app (AVAudioRecorder) and MediaRecorder elsewhere. */
+/* Talk to chat. The mic records; the backend turns speech into text with the speech models on the model list (Groq
+   Whisper, Mistral Voxtral, Workers AI Whisper) and reads replies aloud with its voices (Groq Orpheus, Workers AI Aura
+   and MeloTTS), or the phone's own voice once all of them refuse. Voice mode loops: listen, send, speak the reply,
+   listen again. Recording is native in the iOS app (AVAudioRecorder) and MediaRecorder elsewhere. */
 const KappaVoice=(()=>{
  'use strict';
  const SPEECH=0.32,SILENCE_MS=1300,DICTATE_SILENCE_MS=2600,MAX_MS=60000,CHUNK=200,SPOKEN_MAX=600;
- const state={mode:null,phase:'idle',recorder:null,audio:null,speaking:null,groqOffUntil:0,termsShown:false,heard:'',reply:''};
+ const state={mode:null,phase:'idle',recorder:null,audio:null,speaking:null,serverOffUntil:0,noticeShown:false,heard:'',reply:''};
  const native=()=>!!(window.KappaNativeVoice&&window.webkit?.messageHandlers?.kappa);
  const el=id=>document.getElementById(id);
 
@@ -106,9 +107,9 @@ const KappaVoice=(()=>{
   state.audio??=new Audio();state.audio.src=SILENT_WAV;state.audio.play().catch(()=>{});
   try{speechSynthesis.speak(new SpeechSynthesisUtterance(''))}catch{}
  }
- async function groqClip(text){
+ async function cloudClip(text){
   const r=await fetch(backend+'/voice/speak',{method:'POST',headers:{Authorization:'Bearer '+access,'Content-Type':'application/json'},body:JSON.stringify({text,voice:preferences.voice})});
-  if(r.ok)return r.blob();
+  if(r.ok){const notice=r.headers.get('X-Voice-Notice');if(notice&&!state.noticeShown){state.noticeShown=true;toast(notice)}return r.blob()}
   const data=await r.json().catch(()=>({}));const e=Error(data.error||'Text to speech failed.');e.code=data.code;throw e;
  }
  function playClip(blob,token){return new Promise((resolve,reject)=>{
@@ -127,22 +128,22 @@ const KappaVoice=(()=>{
   u.onend=u.onerror=()=>resolve();token.stop=()=>{speechSynthesis.cancel();resolve()};
   speechSynthesis.speak(u);
  })}
- // Groq first while it has allowance; any refusal hands the rest of the reply to the device voice.
+ // The backend's voices (Groq Orpheus, then Workers AI) while they answer; a refusal hands the rest to the device voice.
  async function say(text){
   const spoken=speakable(text);if(!spoken)return;
   const token={};state.speaking=token;
   const parts=chunks(spoken);
-  let groq=preferences.voiceEngine!=='device'&&Date.now()>=state.groqOffUntil&&!!backend&&!!access;
-  let next=groq?groqClip(parts[0]):null;
+  let cloud=preferences.voiceEngine!=='device'&&Date.now()>=state.serverOffUntil&&!!backend&&!!access;
+  let next=cloud?cloudClip(parts[0]):null;
   for(let i=0;i<parts.length;i++){
    if(state.speaking!==token)return;
-   if(groq){
-    try{const clip=await next;next=i+1<parts.length?groqClip(parts[i+1]):null;next?.catch(()=>{});await playClip(clip,token);continue}
+   if(cloud){
+    try{const clip=await next;next=i+1<parts.length?cloudClip(parts[i+1]):null;next?.catch(()=>{});await playClip(clip,token);continue}
     catch(e){
-     groq=false;next=null;
-     if(e.code==='voice_quota')state.groqOffUntil=Date.now()+15*60000;
-     else if(e.code==='voice_terms'){state.groqOffUntil=Infinity;if(!state.termsShown){state.termsShown=true;toast(e.message)}}
-     else state.groqOffUntil=Date.now()+2*60000;
+     cloud=false;next=null;
+     if(e.code==='voice_quota')state.serverOffUntil=Date.now()+15*60000;
+     else if(e.code==='voice_terms'){state.serverOffUntil=Infinity;if(!state.noticeShown){state.noticeShown=true;toast(e.message)}}
+     else state.serverOffUntil=Date.now()+2*60000;
     }
    }
    await deviceSay(parts[i],token);
