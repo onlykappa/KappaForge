@@ -1,5 +1,5 @@
 import test from 'node:test';
-import assertStrict from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const native=readFileSync(new URL('../ios/KappaForge/KappaWebView.swift',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
