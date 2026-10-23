@@ -314,6 +314,20 @@ test('cancellation releases only its lease and never erases another account fail
  const state=await (await invoke(store,'/router/status')).json();assert.equal(state.pools['acct:shared'].blocked,true);assert.equal(state.activeReservations,0);
 });
 
+test('a late output-limited result cannot erase a newer real quota failure',async()=>{
+ const store=storage(),clock=Date.now;let now=1800000000000;Date.now=()=>now;
+ const base={provider:'groq',model:'model-a',accountPool:'acct',quotaPool:'shared',quotaScope:'model',maxConcurrent:2};
+ try{
+  // All writes can land in one clock tick; partial output is not proof that quota recovered.
+  await invoke(store,'/router/reserve',{...base,requestId:'partial'});
+  await invoke(store,'/router/reserve',{...base,requestId:'limited'});
+  await invoke(store,'/router/outcome',{...base,requestId:'limited',status:429,category:'rate_limit',retryAfter:'60'});
+  await invoke(store,'/router/outcome',{...base,requestId:'partial',status:206,category:'output_limit'});
+  const state=await (await invoke(store,'/router/status')).json();
+  assert.equal(state.routes['groq:model-a'].category,'rate_limit');assert.ok(state.routes['groq:model-a'].until>now);assert.equal(state.activeReservations,0);
+ }finally{Date.now=clock;}
+});
+
 
 test('Groq requests outside the reviewed free token envelope are refused before inference with exact provenance',async()=>{
  const state={storage:storage()},env={ROUTING_POLICY_VERSION:'v1',GROQ_API_KEY:'fixture',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>routingStore(state,new Request(u,o))})}};

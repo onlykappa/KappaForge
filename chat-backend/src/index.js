@@ -958,12 +958,12 @@ const workerImplementation = {
           attempt--;lastStatus=429;lastRetryAt=retryDeadline(lastRetryAt,routeReservation.retryAt);lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
-        const record=async(result,ok)=>{
-          const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
+        const record=async(result,ok,{category=""}={})=>{
+          const status=ok?200:request.signal.aborted?499:category==="output_limit"?206:outcomeStatus>=400?outcomeStatus:502;
           const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing,status);
-          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
+          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":category||outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
           lastRetryAt=retryDeadline(lastRetryAt,outcome.retryAt);
-          if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
+          if(!ok)lastFailure={source:category==="output_limit"?"normalization":outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:category||outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
@@ -999,6 +999,7 @@ const workerImplementation = {
         }
         let result;try{result=await response.json()}catch{outcomeStatus=502;outcomeCategory="malformed_json";await record(null,false);continue}finally{clearTimeout(timeout)}
         try{if(!gemini)result=normalizeResult(route,result);else validateProviderResponse(result,{gemini:true})}catch{outcomeStatus=502;outcomeCategory="malformed_response";await record(null,false);continue;}
+        if(result?.candidates?.[0]?.finishReason==="MAX_TOKENS"){await record(result,false,{category:"output_limit"});continue;}
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {

@@ -1,5 +1,6 @@
 import '../../preview/stream.js';
 import {validateProviderResponse} from './providers.js';
+import {OutputLimitError} from './output-limit.js';
 
 export const IDLE_MS=45000;
 // Never replay a request after any streamed output. One telemetry event per attempt.
@@ -14,7 +15,7 @@ export function streamReply(response,{record,model,routing,abort,timeout,signal,
    // of silence, never for being long (a 45-second total cut long and thinking replies off mid-answer).
    let idle=timeout;const bump=()=>{clearTimeout(idle);idle=setTimeout(()=>abort.abort(),idleMs)};bump();
    const work=(async()=>{
-    let answer='',metadata={},finished=false,error='';
+    let answer='',metadata={},finished=false,error='',category='';
     try{
      for await(const raw of KappaStream.sse(response.body)){
       bump();
@@ -23,18 +24,19 @@ export function streamReply(response,{record,model,routing,abort,timeout,signal,
       if(chunk.usageMetadata)metadata.usageMetadata=chunk.usageMetadata;
       const candidate=chunk.candidates?.[0];
       const text=candidate?.content?.parts?.filter(p=>!p.thought&&typeof p.text==='string').map(p=>p.text).join('')||'';
-      if(text){answer+=text;if(answer.length>100000)throw Error('Response exceeded the output limit');emit({type:'delta',text});}
-      if(candidate?.finishReason==='MAX_TOKENS')throw Error('Response truncated at provider output limit');
+      if(text){answer+=text;if(answer.length>100000)throw new OutputLimitError();emit({type:'delta',text});}
+      if(candidate?.finishReason==='MAX_TOKENS')category='output_limit';
       if(candidate?.finishReason)finished=candidate.finishReason==='STOP';
      }
+     if(category==='output_limit')throw new OutputLimitError();
      // Providers without finish reasons (Workers AI) count a clean end of stream as complete.
      if(implicitFinish&&answer.trim())finished=true;
      if(!finished||!answer.trim())throw Error('Response ended before completion');
-    }catch{error=abort.signal.aborted?'Response stopped or timed out.':'Response interrupted. Retry when the connection is available.';}
+    }catch(cause){category=cause instanceof OutputLimitError?'output_limit':'';error=abort.signal.aborted?'Response stopped or timed out.':category?'Response reached the output limit. Your partial reply is preserved; ask for a shorter answer or the next part.':'Response interrupted. Retry when the connection is available.';}
     finally{
      clearTimeout(idle);signal?.removeEventListener('abort',stop);
-     let usage;try{usage=await record(metadata,!error&&finished)}catch{error='Usage could not be saved. Your partial response is preserved.';}
-     if(!cancelled){emit(error?{type:'error',error,usage}:{type:'done',reply:answer.trim(),model,usage,routing});output.close();}
+     let usage;try{usage=await record(metadata,!error&&finished,{category})}catch{error='Usage could not be saved. Your partial response is preserved.';}
+     if(!cancelled){emit(error?{type:'error',error,usage,...(category?{code:category}:{})}:{type:'done',reply:answer.trim(),model,usage,routing});output.close();}
     }
    })();
    context?.waitUntil(work);

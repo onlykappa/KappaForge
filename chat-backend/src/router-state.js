@@ -127,12 +127,18 @@ export async function routingStore(state,request){
     current.remaining=remaining;current.remainingSource=remainingSource;current.remainingAt=now;
    }
    current.estimatedRequests=(current.estimatedRequests||0)+1;current.updatedAt=now;data.usage[pool]=current;
+   // Partial output (206/output_limit) releases the lease without outage backoff.
+   // Real exhausted quota headers still rest the affected bucket below.
    const route=routeKey(provider,model),failure=status===0||status>=400&&status!==499;
    // Cancellation releases a lease, but is not evidence of restored health.
    // An older success cannot erase a newer authentication/quota/outage failure.
    if(!failure&&status!==499){
-    if(!data.routes[route]||data.routes[route].updatedAt<=(reservation.startedAt||0))delete data.routes[route];
-    if(pool&&(!data.pools[pool]||data.pools[pool].updatedAt<=(reservation.startedAt||0)))delete data.pools[pool];
+    // A capped answer releases its slot but cannot certify recovery from another
+    // request's failure (including failures recorded in the same millisecond).
+    if(category!=="output_limit"){
+     if(!data.routes[route]||data.routes[route].updatedAt<=(reservation.startedAt||0))delete data.routes[route];
+     if(pool&&(!data.pools[pool]||data.pools[pool].updatedAt<=(reservation.startedAt||0)))delete data.pools[pool];
+    }
     // The answer used up the last of a limit (the provider's rate-limit headers say 0 left): the model, or the whole
     // account where the limit is shared, rests until it resets, so the next request moves on without being refused.
     if(full===true&&Number.isFinite(resetAt)&&resetAt>now){
@@ -163,7 +169,7 @@ export async function routingStore(state,request){
    // The provider's own counters for this model, newest answer wins.
    const validLive=live&&typeof live==="object"&&!Array.isArray(live)?Object.entries(live).slice(0,8).filter(([k,r])=>typeof k==="string"&&k.length<=40&&r&&Number.isFinite(r.limit)&&r.limit>0&&Number.isFinite(r.remaining)):[];
    if(validLive.length){data.live ||= {};data.live[routeKey(provider,model)]={at:now,limits:Object.fromEntries(validLive.map(([k,r])=>[k,{limit:r.limit,remaining:Math.max(0,Math.min(r.remaining,r.limit)),reset:Number.isFinite(r.reset)?r.reset:null}]))};}
-   data.outcomes[requestId]={at:now,status,provider,model};
+   data.outcomes[requestId]={at:now,status,provider,model,category:typeof category==="string"?category.slice(0,60):""};
    return {stored:true,duplicate:false,retryAt:Math.max(data.pools[pool]?.until||0,data.routes[route]?.until||0)||null};
   });
   return Response.json(result,{status:result.stored?200:409});

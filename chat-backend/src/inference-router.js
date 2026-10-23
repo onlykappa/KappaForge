@@ -6,6 +6,7 @@ import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,es
 import {providerAllowed} from "./routing-policy.js";
 import {premiumRescue,premiumAvailable,recordFreeAnswer,validRescue} from "./premium.js";
 import {retryDeadline} from "./retry-deadline.js";
+import {OutputLimitError} from "./output-limit.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
 // Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
@@ -26,11 +27,12 @@ async function collect(response,route,{onChunk}){
   if(candidate?.finishReason)finish=candidate.finishReason;
  }
  // Match chat's completion contract: EOF and output-limit truncation are not a complete coding answer.
+ if(finish==="MAX_TOKENS")throw new OutputLimitError(usage);
  if(finish!=="STOP"&&!(route.provider==="workers-ai"&&!finish&&text.trim()))throw Error("Provider stream ended before completion");
  return {candidates:[{content:{parts:[{text}]},finishReason:finish||"STOP"}],usageMetadata:usage};
 }
 const safeError=(message,status=400)=>Response.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
-const completeResult=result=>{const finish=result?.candidates?.[0]?.finishReason;if(finish&&finish!=="STOP")throw Error("Provider output is incomplete");return result;};
+const completeResult=result=>{const finish=result?.candidates?.[0]?.finishReason;if(finish==="MAX_TOKENS")throw new OutputLimitError(result.usageMetadata);if(finish&&finish!=="STOP")throw Error("Provider output is incomplete");return result;};
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
 
 function validate(input){
@@ -167,6 +169,11 @@ export async function inferenceRouter(env,input,callerSignal=null){
    ?fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+(stream?":streamGenerateContent?alt=sse":":generateContent"),{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal})
    :callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,reasoningEffort:input.reasoningEffort,hasMedia:false,hasTools:false,responseFormat:jsonFormat},stream,controller.signal);
   let streamed=true;
+  const invalidOutput=async error=>{
+   const category=error instanceof OutputLimitError?"output_limit":"malformed_response";
+   lastStatus=category==="output_limit"?206:502;setFailure({source:"normalization",category,upstreamStatus:response.status});
+   await reportOutcome({requestId:reservationId,route,status:lastStatus,category,headers:response.headers,usage:error.usage||null});
+  };
   try{
    attempt.attempted=true;attemptStarted=Date.now();
    response=await send(true);
@@ -187,7 +194,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
     continue;
    }
    if(streamed){
-    let collected;try{collected=await collect(response,route,{onChunk:heard});}catch(error){if(controller.signal.aborted)throw error;lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    let collected;try{collected=await collect(response,route,{onChunk:heard});}catch(error){if(controller.signal.aborted)throw error;await invalidOutput(error);continue;}
     clearTimeout(quiet);
     const text=collected.candidates[0].content.parts[0].text;usage=collected.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
@@ -196,14 +203,14 @@ export async function inferenceRouter(env,input,callerSignal=null){
    }
    try{data=await response.json()}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_json",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
-    try{completeResult(validateProviderResponse(data,{gemini:true}));}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    try{completeResult(validateProviderResponse(data,{gemini:true}));}catch(error){await invalidOutput(error);continue;}
     const candidate=data.candidates?.[0]||{},text=(candidate.content?.parts||[]).filter(p=>typeof p.text==="string").map(p=>p.text).join("\n");
     usage=data.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
     return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
-   let normalized;try{normalized=completeResult(normalizeResult(route,data));}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+   let normalized;try{normalized=completeResult(normalizeResult(route,data));}catch(error){await invalidOutput(error);continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});

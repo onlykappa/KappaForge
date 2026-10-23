@@ -15,6 +15,18 @@ const end=source.indexOf('\n\nfunction renderSavedItems(',start);
 assert.ok(start>=0&&end>start);
 const ctx={esc:s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),renderChatText:s=>String(s).replace(/[&<>\"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[ch])),uiIcon:()=>'<svg></svg>',KappaIntent:globalThis.KappaIntent,KappaJobs:globalThis.KappaJobs,KappaActions:globalThis.KappaActions,KappaProgress:globalThis.KappaProgress};
 vm.runInNewContext(source.slice(start,end),ctx);
+
+test('source recovery says the file is missing from the current prompt and explains the next action',()=>{
+ const now=Date.now(),progress=globalThis.KappaProgress.normalize({version:1,taskId:'205',attemptId:'runner',attemptAt:now,revision:1,status:'running',updatedAt:now,startedAt:now,steps:[],
+  recovery:{candidate:'eddbc7d'.padEnd(40,'0'),last:{model:'ollama:gpt-oss:120b',error:'Edits target a file that was not read: tests/ios-keyboard-layout.test.mjs',next:'read_dependencies'}}},205);
+ ctx.trackedJobs=[{number:205,queuedAt:now,progress,message:'progress'}];
+ try{
+  const html=ctx.renderTaskActivity({progressKey:'progress:205:live'});
+  assert.match(html,/Required file missing from current model context: tests\/ios-keyboard-layout.test.mjs/);
+  assert.match(html,/Next: Reload required source files/);
+  assert.doesNotMatch(html,/file that was not read|Next: read_dependencies/);
+ }finally{delete ctx.trackedJobs;}
+});
 test('progress remains compact with escaped summary and expandable report',()=>{
  const html=ctx.renderMessage({role:'assistant',text:'**KappaForge is working on it**\n✅ Reading 137 source files\nChecking <script>alert(1)</script>',progressKey:'progress:88:1'},0);
  assert.match(html,/agent-activity/);

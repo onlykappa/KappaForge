@@ -62,7 +62,7 @@ def error(status, data=None, headers=None, pinned=False):
                    if key == 'upstreamStatus' and type(value) is int and 100 <= value <= 599
                    or key == 'source' and value in ('upstream', 'coordination', 'normalization', 'transport', 'gateway_guard')
                    or key == 'category' and value in ('rate_limit', 'authentication', 'provider_outage', 'provider_rejection',
-                       'context_limit', 'concurrency', 'cooldown', 'billing_blocked', 'provider_denied', 'model_unavailable', 'malformed_json', 'malformed_response', 'empty_response', 'timeout', 'network_failure')}
+                       'context_limit', 'concurrency', 'cooldown', 'billing_blocked', 'provider_denied', 'model_unavailable', 'malformed_json', 'malformed_response', 'empty_response', 'output_limit', 'timeout', 'network_failure')}
     for key in ('provider', 'model'):
         value = failure.get(key)
         if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,180}', value):
