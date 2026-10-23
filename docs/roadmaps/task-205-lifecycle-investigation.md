@@ -162,6 +162,8 @@ Reviewed the three supplied screenshots, task #205 comments/journal, PR #206 met
 
 ## Source map
 
+The later isolated provider and lifecycle audit is documented in [the expanded simulation roadmap](provider-lifecycle-stress-audit.md). Its application fixes remain in the disposable lab; this PR remains documentation-only. Address the credential-bearing complex runner, false-green experiment status, generic Python import detection, and ignored explicit Gemini selection alongside the lifecycle priorities above. Preserve all authorization and completion guards.
+
 Permalinks below use the immutable main revision that executed task #205. #203 changes context/fallback handling; verify symbols again before implementation.
 
 - [`engine/developer.py` — `def dispatch_tests`](https://github.com/onlykappa/KappaForge/blob/053bcc9d6b046fd065edd053dd51e8c45d692a65/engine/developer.py#L178)
