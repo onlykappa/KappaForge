@@ -109,7 +109,16 @@ jobs:
         fi
         complete=false
         if [ "$RESULT" = success ] && [ -n "$title" ] && [[ "$title" != "Draft (incomplete)"* ]]; then complete=true; fi
-        marker=$(jq -cn --arg sha "$SHA" --arg kind sandbox --arg conclusion "$RESULT" --argjson task "$issue" --argjson runId "$CHECK_RUN_ID" --argjson workComplete "$complete" '{version:1,task:$task,sha:$sha,kind:$kind,conclusion:$conclusion,runId:$runId,workComplete:$workComplete}')
+        # The engine starts an iOS build only when app files changed (engine/native_build.py NATIVE_PATHS); the task
+        # card must not wait for one that was never started. Unknown or truncated file lists keep it required.
+        native=true
+        if changed=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$SHA" --jq '.files[].filename' 2>/dev/null) && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 300 ]; then
+          native=false
+          while IFS= read -r path; do
+            case "$path" in ios/*|preview/*|scripts/*|config/*|.github/workflows/ios-build.yml) native=true ;; esac
+          done <<< "$changed"
+        fi
+        marker=$(jq -cn --arg sha "$SHA" --arg kind sandbox --arg conclusion "$RESULT" --argjson task "$issue" --argjson runId "$CHECK_RUN_ID" --argjson workComplete "$complete" --argjson nativeRequired "$native" '{version:1,task:$task,sha:$sha,kind:$kind,conclusion:$conclusion,runId:$runId,workComplete:$workComplete,nativeRequired:$nativeRequired}')
         body+=$(printf '\n\n<!-- KAPPA_VALIDATION_V1 %s -->' "$marker")
         gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the test result on task $issue."
       shell: bash

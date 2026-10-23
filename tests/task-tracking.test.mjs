@@ -101,9 +101,9 @@ test('mixed task launch transports original parent authority and exact child ins
 function validationRuns(number,sha,conclusion='success'){
  return [['Sandbox validation','sandbox-tests.yml'],['iOS build','ios-build.yml']].map(([prefix,file],index)=>({id:index+10,path:'.github/workflows/'+file,display_title:prefix+' kappa/dev-'+number+' @ '+sha,status:'completed',conclusion}));
 }
-function validationComment(kind,sha,{complete=true,conclusion='success',task=9}={}){
+function validationComment(kind,sha,{complete=true,conclusion='success',task=9,nativeRequired}={}){
  const heading=kind==='native'?'### iOS build '+(conclusion==='success'?'passed':'failed'):'### Tests '+(conclusion==='success'?'passed':'failed')+(complete?'':' — but the work is not finished');
- return {id:kind==='native'?101:100,user:{login:'github-actions[bot]'},body:heading+'\n<!-- KAPPA_VALIDATION_V1 '+JSON.stringify({version:1,task,sha,kind,conclusion,workComplete:complete,runId:kind==='native'?11:10})+' -->'};
+ return {id:kind==='native'?101:100,user:{login:'github-actions[bot]'},body:heading+'\n<!-- KAPPA_VALIDATION_V1 '+JSON.stringify({version:1,task,sha,kind,conclusion,workComplete:complete,runId:kind==='native'?11:10,nativeRequired})+' -->'};
 }
 
 test('incomplete test reports retain failed requirement status and cannot become task verification',()=>{
@@ -158,4 +158,22 @@ test('polling verifies only a complete current candidate after both required che
  await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);assert.notEqual(run('trackedJobs[0].routeTracking.outcome'),'verified');
  complete=true;phase++;await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),true);assert.equal(run('trackedJobs[0].routeTracking.outcome'),'verified');
  currentSha='b'.repeat(40);await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);assert.equal(run('trackedJobs[0].routeTracking.outcome'),'acknowledged');
+});
+
+test('a task whose commit changed no app files is verified without an iOS build that was never started',()=>{
+ const {run}=setup(),sha='a'.repeat(40),at=Date.now();
+ const sandboxOnly=validationRuns(9,sha).slice(0,1).map(globalThis.KappaActions.normalizeRun);
+ const report=nativeRequired=>({...globalThis.KappaJobs.report(validationComment('sandbox',sha,{nativeRequired})).validation});
+ const job=nativeRequired=>({number:9,prUrl:'x',candidate:{sha,at,incomplete:false},validationRuns:sandboxOnly,validationReports:{sandbox:report(nativeRequired)},validationObservedAt:at});
+ run('trackedJobs.push('+JSON.stringify(job(false))+')');run('updateTaskVerification(trackedJobs[0])');
+ assert.equal(run("taskValidation(trackedJobs[0]).map(r=>r.title).join()"),'Sandbox tests');
+ assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),true);
+ run('trackedJobs[0]='+JSON.stringify(job(undefined)));run('updateTaskVerification(trackedJobs[0])');
+ assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false,'reports without the field still wait for the iOS build');
+ run('trackedJobs[0]='+JSON.stringify({...job(false),candidate:{sha:'b'.repeat(40),at,incomplete:false}}));
+ assert.equal(run('nativeRequired(trackedJobs[0])'),true,'a report for another commit says nothing about this one');
+ run('trackedJobs[0]='+JSON.stringify({...job(false),validationRuns:validationRuns(9,sha,'failure').map(globalThis.KappaActions.normalizeRun)}));run('updateTaskVerification(trackedJobs[0])');
+ assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false,'an iOS build that did run and failed still counts');
+ const native=validationComment('native',sha);native.body=native.body.replace('"kind":"native"','"kind":"native","nativeRequired":false');
+ assert.equal(globalThis.KappaJobs.report(native).validation.nativeRequired,true,'only the sandbox report can waive the iOS build');
 });

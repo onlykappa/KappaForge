@@ -504,6 +504,8 @@ function taskValidation(job){
  const rows=[];
  for(const [prefix,title,kind,path] of [['Sandbox validation','Sandbox tests','sandbox','.github/workflows/sandbox-tests.yml'],['iOS build','iOS build','native','.github/workflows/ios-build.yml']]){
   const run=newest(prefix,path),report=known&&job.validationReports?.[kind]?.sha===sha?job.validationReports[kind]:null;
+  // No iOS build is started when no app files changed; the trusted sandbox report for this commit says so.
+  if(kind==='native'&&!run&&!report&&!nativeRequired(job))continue;
   if(run){
    const active=KappaActions.isActive(run),progress=typeof workflowMonitor==='undefined'?null:workflowMonitor.details[run.id]?.data?.progress;
    rows.push({title,runId:run.id,state:active?'current':run.state==='success'?'done':['failure','timed_out','cancelled','action_required','stale'].includes(run.state)?'failed':'upcoming',
@@ -515,9 +517,13 @@ function taskValidation(job){
  }
  return rows;
 }
+function nativeRequired(job){
+ const report=job.validationReports?.sandbox;
+ return !(report&&report.sha===job.candidate?.sha&&report.nativeRequired===false);
+}
 function updateTaskVerification(job){
  const checks=taskValidation(job),complete=job.candidate?.incomplete===false&&job.validationReports?.sandbox?.sha===job.candidate?.sha&&job.validationReports.sandbox.workComplete===true;
- job.verification={sha:job.candidate?.sha||'',at:Date.now(),incomplete:job.candidate?.incomplete===true,failed:checks.some(r=>r.state==='failed'),verified:!!complete&&checks.length===2&&checks.every(r=>r.state==='done')&&Date.now()-(job.validationObservedAt||0)<=30000};
+ job.verification={sha:job.candidate?.sha||'',at:Date.now(),incomplete:job.candidate?.incomplete===true,failed:checks.some(r=>r.state==='failed'),verified:!!complete&&checks.length>=(nativeRequired(job)?2:1)&&checks.every(r=>r.state==='done')&&Date.now()-(job.validationObservedAt||0)<=30000};
 }
 // The chat keeps live Actions updates while one of its tasks is being validated.
 const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c=>c.id===j.chatId));
