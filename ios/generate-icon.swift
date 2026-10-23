@@ -5,16 +5,20 @@ let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "ios/Kap
 try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
 let size = 1024
 let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-    NSColor(calibratedRed: 0.329, green: 0.337, blue: 0.725, alpha: 1).setFill()
+    // Black tile, purple star: the voice circle's colors.
+    NSColor.black.setFill()
     NSBezierPath(rect: rect).fill()
     let star = NSBezierPath()
     let points: [(CGFloat, CGFloat)] = [(512,123),(587,405),(880,512),(587,608),(512,901),(421,608),(144,512),(421,405)]
     star.move(to: NSPoint(x: points[0].0, y: points[0].1))
     for p in points.dropFirst() { star.line(to: NSPoint(x: p.0, y: p.1)) }
     star.close()
-    NSColor.white.setFill()
-    star.fill()
-    NSColor(calibratedRed: 0.851, green: 0.843, blue: 1, alpha: 1).setFill()
+    let purple = NSGradient(colors: [NSColor(calibratedRed: 0.725, green: 0.690, blue: 1, alpha: 1),
+                                     NSColor(calibratedRed: 0.490, green: 0.447, blue: 0.949, alpha: 1),
+                                     NSColor(calibratedRed: 0.329, green: 0.337, blue: 0.725, alpha: 1)],
+                            atLocations: [0, 0.55, 1], colorSpace: .sRGB)
+    purple?.draw(in: star, angle: -45)
+    NSColor(calibratedRed: 0.616, green: 0.576, blue: 1, alpha: 1).setFill()
     NSBezierPath(ovalIn: NSRect(x: 720, y: 737, width: 86, height: 86)).fill()
     return true
 }

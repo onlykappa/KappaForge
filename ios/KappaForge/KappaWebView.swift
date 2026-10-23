@@ -146,6 +146,9 @@ struct KappaWebView: UIViewRepresentable {
         let showSecurity: () -> Void
         let showUpdates: () -> Void
         let voice = VoiceRecorder()
+        let media = MediaPicker()
+        // The + sheet tile that opened the next file panel (photos, camera or files), set just before the panel opens.
+        private var pendingPicker: (kind: String, at: Date)?
         init(showSecurity: @escaping () -> Void, showUpdates: @escaping () -> Void) {
             self.showSecurity = showSecurity
             self.showUpdates = showUpdates
@@ -158,6 +161,7 @@ struct KappaWebView: UIViewRepresentable {
             if body["action"] == "voiceStart", let webView = message.webView { voice.start(in: webView) }
             if body["action"] == "voiceStop" { voice.stop() }
             if body["action"] == "voiceCancel" { voice.cancel() }
+            if body["action"] == "pickerKind", let kind = body["kind"] { pendingPicker = (kind, Date()) }
             if body["action"] == "security" { showSecurity() }
             if body["action"] == "updates" { showUpdates() }
             if body["action"] == "export", let name = body["name"], let content = body["content"], content.utf8.count < 1_000_000 {
@@ -255,6 +259,16 @@ struct KappaWebView: UIViewRepresentable {
                      initiatedByFrame frame: WKFrameInfo,
                      completionHandler: @escaping ([URL]?) -> Void) {
             guard frame.isMainFrame, fileCompletion == nil else { completionHandler(nil); return }
+            let kind = pendingPicker.flatMap { Date().timeIntervalSince($0.at) < 5 ? $0.kind : nil }
+            pendingPicker = nil
+            if kind == "photos" || kind == "camera", let controller = presenter(webView) {
+                fileCompletion = completionHandler
+                media.present(kind ?? "photos", multiple: parameters.allowsMultipleSelection, from: controller) { [weak self] urls in
+                    self?.fileCompletion = nil
+                    completionHandler(urls)
+                }
+                return
+            }
             fileCompletion = completionHandler
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
             picker.allowsMultipleSelection = parameters.allowsMultipleSelection

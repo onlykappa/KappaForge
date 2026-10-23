@@ -306,6 +306,14 @@ function updateKeyboard(){
   appliedInset=Math.max(0,previous+document.getElementById('composer').getBoundingClientRect().bottom-(window.KappaNativeKeyboardTop-4));
  }
  document.documentElement.style.setProperty('--keyboard-inset',open?appliedInset+'px':'0px');
+ // The iOS app's keyboard covers the page without resizing it, and the chat only gains bottom padding, so the newest
+ // messages would stay behind the keyboard. Scroll the chat up by however much more the keyboard now covers.
+ // (Safari moves the page itself.)
+ const shift=open?appliedInset:0;
+ // Small corrections while the inset settles are ignored, so they cannot creep the chat upward.
+ const was=updateKeyboard.shift||0;
+ if(window.KappaNativeComposer&&typeof view!=='undefined'&&view==='chat'&&shift-was>24){const by=shift-was;requestAnimationFrame(()=>scrollBy(0,by))}
+ if(Math.abs(shift-was)>24||!shift)updateKeyboard.shift=shift;
  syncNativeComposer();
  // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }
