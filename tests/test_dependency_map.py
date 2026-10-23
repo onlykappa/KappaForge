@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -18,3 +19,17 @@ class DependencyMapTests(unittest.TestCase):
                 self.assertTrue(path.startswith("ios/") or (dependency_map.ROOT / path).exists(), path)
         # The Worker passes at most 6000 characters of the map to the model.
         self.assertLess(len(dependency_map.render(dependency_map.build())), 6000)
+
+    def test_a_map_over_budget_stays_valid_json_and_says_what_it_left_out(self):
+        data = dependency_map.build()
+        full = json.loads(dependency_map.render(data, budget=10 ** 6))
+        self.assertNotIn("omitted", full)
+        for budget in (5000, 4000, 3500):
+            text = dependency_map.render(data, budget=budget)
+            self.assertLessEqual(len(text), budget)
+            small = json.loads(text)
+            self.assertGreater(small["omitted"].get("test_links", 0), 0)
+            self.assertIn("note", small["omitted"])
+            self.assertEqual(len(small["modules"]), len(full["modules"]), "every module stays listed")
+        with self.assertRaises(ValueError):
+            dependency_map.render(data, budget=100)
