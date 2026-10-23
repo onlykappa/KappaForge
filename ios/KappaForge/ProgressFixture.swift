@@ -24,6 +24,7 @@ enum ProgressFixture {
             globalThis.fetch=async(url,options)=>{
               if(!String(url).startsWith('https://fixture.invalid/'))throw Error('Live network forbidden in simulator fixture');
               const body=JSON.parse(options.body),path=new URL(url).pathname;
+              if(path==='/operation-capabilities')return Response.json({contract:KappaIntent.capabilities.contract,rollout:{mode:'active',percent:100}});
               if(path==='/authorize'&&body.path==='/retry'&&body.payload.task===103)return Response.json({authorized:true});
               if(path==='/retry'&&body.task===103&&body.authorization?.id){
                 const count=Number(localStorage.getItem('simulator.retry.count')||0)+1;
@@ -83,6 +84,14 @@ enum ProgressFixture {
           const job = {number:103,chatId:chat.id,title:'Task progress (test data)',mode:'develop',message:scenario==='ready'?'tests-passed':'progress',
             prUrl:validating?'https://github.com/onlykappa/KappaForge/pull/104':'',
             queuedAt:scenario==='queued'?now-3000:began-3000,activeAt:now,progress};
+          if (scenario === 'ready') {
+            const sha='a'.repeat(40);
+            job.candidate={sha,at:now,incomplete:false};
+            job.validationReports={sandbox:{sha,conclusion:'success',workComplete:true,runId:1},native:{sha,conclusion:'success',runId:2}};
+            job.validationRuns=[['Sandbox validation','sandbox-tests.yml'],['iOS build','ios-build.yml']].map(([title,file],index)=>KappaActions.normalizeRun({id:index+1,path:'.github/workflows/'+file,display_title:title+' kappa/dev-103 @ '+sha,status:'completed',conclusion:'success'}));
+            job.validationObservedAt=now;
+            updateTaskVerification(job);
+          }
           trackedJobs = trackedJobs.filter(j=>j.number!==103); trackedJobs.push(job);
           ensureTaskCard(job); persistJobs(); save(); render();
           document.activeElement?.blur(); scrollTo(0,0);

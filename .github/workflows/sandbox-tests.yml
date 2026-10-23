@@ -60,6 +60,7 @@ jobs:
     timeout-minutes: 3
     permissions:
       actions: write
+      contents: read
       issues: write
       pull-requests: read
     steps:
@@ -69,9 +70,14 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         BRANCH: ${{ inputs.branch }}
+        SHA: ${{ inputs.candidate_sha }}
       run: |
         [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
-        gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="${BASH_REMATCH[1]}" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
+        issue="${BASH_REMATCH[1]}"
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 0
+        head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null || true)
+        [ "$head" = "$SHA" ] || exit 0
+        gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="$issue" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
       shell: bash
     - name: Post the test result on the task, where the chat sees it
       # kappa/dev-N belongs to task issue N. Only the branch name and the result are used.
@@ -80,11 +86,16 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         RESULT: ${{ needs.verify.result }}
         BRANCH: ${{ inputs.branch }}
+        SHA: ${{ inputs.candidate_sha }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         AUTOMATIC_FIXES: ${{ inputs.automatic_fixes }}
+        CHECK_RUN_ID: ${{ github.run_id }}
       run: |
         [[ "$BRANCH" =~ ^kappa/dev-([0-9]+)$ ]] || exit 0
         issue="${BASH_REMATCH[1]}"
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 0
+        head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha 2>/dev/null || true)
+        [ "$head" = "$SHA" ] || exit 0
         # The agent marks a PR "Draft (incomplete)" when checking its work against the task left problems open.
         title=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json title -q '.[0].title' 2>/dev/null || true)
         if [ "$RESULT" = success ] && [[ "$title" == "Draft (incomplete)"* ]]; then
@@ -96,6 +107,10 @@ jobs:
         else
           body=$(printf '### Tests failed ❌ — fixing\n\nTests failed on the latest commit of `%s`. KappaForge is starting a fix automatically; if it gets stuck it will ask for your guidance.\n\n[Test log](%s)' "$BRANCH" "$RUN_URL")
         fi
+        complete=false
+        if [ "$RESULT" = success ] && [ -n "$title" ] && [[ "$title" != "Draft (incomplete)"* ]]; then complete=true; fi
+        marker=$(jq -cn --arg sha "$SHA" --arg kind sandbox --arg conclusion "$RESULT" --argjson task "$issue" --argjson runId "$CHECK_RUN_ID" --argjson workComplete "$complete" '{version:1,task:$task,sha:$sha,kind:$kind,conclusion:$conclusion,runId:$runId,workComplete:$workComplete}')
+        body+=$(printf '\n\n<!-- KAPPA_VALIDATION_V1 %s -->' "$marker")
         gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the test result on task $issue."
       shell: bash
     - name: Post the test result to Discord

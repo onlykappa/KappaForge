@@ -215,6 +215,7 @@ jobs:
         RESULT: ${{ needs.native.result }}
         BRANCH: ${{ inputs.branch }}
         SHA: ${{ inputs.candidate_sha }}
+        CHECK_RUN_ID: ${{ github.run_id }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         set -Eeuo pipefail
@@ -233,6 +234,8 @@ jobs:
           body=$(printf '### iOS build failed ❌ — fixing\n\nThe native iOS build or its simulator tests failed on the latest commit of `%s`. KappaForge is reading the build log and starting a fix automatically.\n\n[Build log](%s)' "$BRANCH" "$RUN_URL")
           gh workflow run agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f issue_number="$issue" -f action=fix || echo "::warning::Could not start the automatic fix; tap Fix it on the Dashboard."
         fi
+        marker=$(jq -cn --arg sha "$SHA" --arg kind native --arg conclusion "$RESULT" --argjson task "$issue" --argjson runId "$CHECK_RUN_ID" '{version:1,task:$task,sha:$sha,kind:$kind,conclusion:$conclusion,runId:$runId,workComplete:false}')
+        body+=$(printf '\n\n<!-- KAPPA_VALIDATION_V1 %s -->' "$marker")
         gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the iOS build result on task $issue."
       shell: bash
   release:

@@ -58,6 +58,7 @@ class ExecutionScope:
             from engine.projects import registered
             registered(self.repo)
         self.resume_from = None
+        self.restrictions = {}
         matches = MARKER.findall(self.body)
         if "Approved from KappaForge Chat." in self.body:
             if len(matches) != 1:
@@ -67,6 +68,13 @@ class ExecutionScope:
                 raise PermissionError("Authorization does not match the task scope")
             self.expires = record.get("expiresAt", 0) / 1000
             self.identity = record.get("id")
+            restrictions = record.get('restrictions', {})
+            if (not isinstance(restrictions, dict) or set(restrictions) - {'noPR', 'noTests', 'noCode', 'noMerge'}
+                    or any(type(value) is not bool for value in restrictions.values())):
+                raise PermissionError('Invalid owner restrictions')
+            self.restrictions = restrictions
+            if self.mode in WRITE_MODES and any(restrictions.get(key) for key in ('noPR', 'noTests', 'noCode')):
+                raise PermissionError('Owner restrictions prevent this development workflow')
             previous = record.get('resumeFrom')
             if isinstance(previous, dict) and isinstance(previous.get('authorization'), str) and re.fullmatch(r'[a-f0-9]{64}', previous.get('digest', '')):
                 self.resume_from = previous
@@ -123,6 +131,8 @@ class ExecutionScope:
         if parsed.netloc != "api.github.com":
             raise PermissionError("Execution scope cannot authorize an external endpoint")
         p = parsed.path
+        if self.restrictions.get('noMerge') and p.endswith('/merge'):
+            raise PermissionError('Owner prohibited merging')
         if self.mode in WRITE_MODES and self.state == "verifying" and self.release_pr and self.release_sha:
             if p == f"/repos/{self.repo}/pulls/{self.release_pr}/merge" and method == "PUT" and payload == {"sha": self.release_sha, "merge_method": "squash"}:
                 return

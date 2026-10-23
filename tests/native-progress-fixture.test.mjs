@@ -3,7 +3,22 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import '../preview/task-progress.js';
+import '../preview/intent-guard.js';
+import '../preview/core.js';
+import '../preview/actions-core.js';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+
+test('native ready fixture satisfies production candidate verification without weakening the UI assertion',()=>{
+ const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','ready');
+ const box={KappaProgress:globalThis.KappaProgress,KappaActions:globalThis.KappaActions,KappaJobs:globalThis.KappaJobs,Date,trackedJobs:[],chats:[],backend:'',access:'',checkJobResult(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},document:{activeElement:null},fetch(){throw Error('No live fixture network calls')}};
+ vm.createContext(box);const tasks=read('preview/app-tasks.js');
+ vm.runInContext(tasks.slice(tasks.indexOf('function taskValidation('),tasks.indexOf('// The chat keeps live Actions updates')),box);
+ vm.runInContext(source,box);const job=box.trackedJobs[0];
+ assert.equal(globalThis.KappaJobs.verifiedTask(job),true);assert.equal(job.verification.sha,job.candidate.sha);
+ assert.equal(box.taskValidation(job).filter(r=>r.state==='done').length,2);
+ job.candidate.sha='b'.repeat(40);assert.equal(globalThis.KappaJobs.verifiedTask(job),false);
+ assert.match(read('ios/KappaForgeUITests/LaunchTests.swift'),/\("ready", "READY FOR REVIEW"\)/);
+});
 test('native progress screenshot fixture is restricted to Debug simulator builds',()=>{
  const fixture=read('ios/KappaForge/ProgressFixture.swift');
  assert.match(fixture,/^#if DEBUG && targetEnvironment\(simulator\)/m);
@@ -20,7 +35,7 @@ test('the native recovery fixture saves eligibility across relaunch without cred
  function launch(saved=[]){
   const buttons=[],box={KappaProgress:globalThis.KappaProgress,Date,Number,
    backend:'fixture.invalid',access:'fixture-only',trackedJobs:saved,chats:saved.length?[{id:saved[0].chatId,messages:[]}]:[],
-   URL,Response,crypto:globalThis.crypto,localStorage:{getItem(){return null},setItem(){}},confirm:()=>true,toast(){},alert(message){throw Error(message)},
+   URL,Response,TextEncoder,taskHistoryDevice:'fixture-device',crypto:globalThis.crypto,localStorage:{getItem(){return null},setItem(){}},confirm:()=>true,toast(){},alert(message){throw Error(message)},
    current:'',view:'',jobPollAfter:0,checkJobResult(){throw Error('Live polling is forbidden')},
    ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},
    document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>buttons.push(b)}},
@@ -42,12 +57,13 @@ test('the native recovery fixture saves eligibility across relaunch without cred
 
 test('native fixture exercises the production Retry control and exact authorization/transport boundary',async()=>{
  const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','recovery');
- const proofs=[],saved=new Map(),box={KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,crypto:globalThis.crypto,
+ const proofs=[],saved=new Map(),box={KappaIntent:globalThis.KappaIntent,KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,TextEncoder,taskHistoryDevice:'fixture-device',crypto:globalThis.crypto,
   localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},backend:'',access:'',trackedJobs:[],chats:[],current:'',view:'',jobPollAfter:0,
-  checkJobResult(){throw Error('No live issue polling')},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
+  checkJobResult(){throw Error('No live issue polling')},recordRoute(){},operationContext:()=>({}),writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
   document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>proofs.push(b)}}};
  vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');
+ vm.runInContext(app.slice(app.indexOf('const operationQueue='),app.indexOf('// What the app does')),box);
  vm.runInContext(app.slice(app.indexOf('async function userAuthorizedFetch('),app.indexOf('// Guidance or a retry')),box);
  vm.runInContext(app.slice(app.indexOf('const taskRetryPending='),app.indexOf('async function taskGuide(')),box);
  const candidate=box.trackedJobs[0].progress.recovery.candidate;
@@ -56,5 +72,6 @@ test('native fixture exercises the production Retry control and exact authorizat
  assert.equal(box.trackedJobs[0].number,103);assert.equal(box.trackedJobs[0].progress.recovery.candidate,candidate);
  assert.equal(box.trackedJobs[0].recoveryRequest.status,'recovery_requested');
  assert.ok(proofs.some(p=>p.textContent==='Fixture retry transport 1'));
+ assert.ok(proofs.some(p=>p.history?.number===103&&p.history.state==='restored'));
  await assert.rejects(box.fetch('https://production.invalid/jobs',{}),/Live network forbidden/);
 });

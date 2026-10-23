@@ -56,7 +56,7 @@ function chatItem(c){
  const row='<button type="button" class="chat-li" data-id="'+esc(c.id)+'"><span class="chat-glyph '+s.tone+'" aria-hidden="true">'+uiIcon(s.icon)+(s.tone==="bad"?'<i></i>':'')+'</span>'+
   '<span class="chat-li-text"><b>'+esc(c.title)+'</b><small>'+esc(s.label||chatPreview(c))+'</small></span><time class="tnum">'+esc(shellTime(c.at))+'</time></button>';
  // Edit mode: each row gets a Delete button, as in Mail or Messages.
- return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row;
+ return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="text-button" data-rename-chat="'+esc(c.id)+'" aria-label="Rename conversation '+esc(c.title)+'">Rename</button><button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row;
 }
 function chatListHeader(){
  return '<div class="chats-head"><span class="chats-date">'+esc(new Date().toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}))+'</span><div class="chats-title"><h1 class="large-title">Chats</h1>'+
@@ -183,6 +183,7 @@ function bindShell(){
  document.getElementById("homemodel")?.addEventListener("click",()=>{navigate("settings");settingsSection="models";render()});
  document.getElementById("homeplan")?.addEventListener("click",()=>{fresh();document.getElementById("task").click()});
  document.getElementById("chatedit")?.addEventListener("click",()=>{chatEditing=!chatEditing;render()});
+ document.querySelectorAll('#content [data-rename-chat]').forEach(b=>b.addEventListener('click',async()=>{const chat=chats.find(c=>c.id===b.dataset.renameChat);if(!chat)return;const title=prompt('Conversation name',chat.title);if(title===null)return;try{await executeAppCapability({id:'chats.rename',params:{chat:chat.id,title:title.trim()}},{source:'user-control'});render()}catch(e){toast(e.message)}}));
  document.querySelectorAll("#content [data-delete-chat]").forEach(b=>b.addEventListener("click",()=>{if(deleteChat(b.dataset.deleteChat))render()}));
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }

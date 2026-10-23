@@ -34,7 +34,7 @@ def complete(run, api, wait=time.sleep):
     issue = api(f'repos/onlykappa/KappaForge/issues/{number}')
     scope = activate(issue)
     provenance = MARKER.findall(scope.body)
-    if scope.mode not in WRITE_MODES or not provenance or json.loads(provenance[0]).get('allowMerge') is not True or repo != scope.repo:
+    if scope.mode not in WRITE_MODES or scope.restrictions.get('noMerge') or not provenance or json.loads(provenance[0]).get('allowMerge') is not True or repo != scope.repo:
         return 'merge_not_authorized'
     prs = api(f'repos/{repo}/pulls?state=open&head=onlykappa:{branch}')
     if len(prs) != 1:
