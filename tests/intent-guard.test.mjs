@@ -146,7 +146,7 @@ test('authorized Worker execution creates exactly the user task and dispatches o
   assert.match(issue.body.body,/Fix the keyboard problem and test it/);
   assert.match(issue.body.body,/kappa-authorization/);
   assert.match(issue.body.body,/conversationId/);
-  assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403);
+  const replay=await worker.fetch(req('/jobs',f.payload),f.env);assert.equal(replay.status,202);assert.equal(replay.headers.get('X-Operation-Replayed'),'true');
   assert.equal(writes.filter(w=>w.path.endsWith('/dispatches')).length,1);
  }finally{globalThis.fetch=old}
 });
@@ -171,7 +171,7 @@ test('long-running watch and continuous tasks stay authorized for a week, others
 
 test('chat offers Start as task only under request-like messages that did not start work',()=>{
  const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
- const fn=source.slice(source.indexOf('function renderMessage('),source.indexOf('function renderSavedItems('));
+ const fn=source.slice(source.indexOf('function renderRouteEvidence('),source.indexOf('function renderSavedItems('));
  const box={KappaIntent:globalThis.KappaIntent,uiIcon:()=>'',esc:s=>s,renderChatText:s=>s,renderTaskActivity:()=>'',renderTrail:()=>''};
  vm.runInNewContext(fn+';this.renderMessage=renderMessage',box);
  const offered=m=>box.renderMessage(m,0).includes('task-offer');
@@ -234,4 +234,19 @@ test('oversized task briefs return a length error without issuing authorization'
  assert.equal(response.status,413);assert.equal(body.code,'task_too_long');
  assert.match(body.error,/limit is 60000/);assert.equal(f.records.size,0);
  f.payload.authorization.id='invalid id';assert.equal((await f.issue()).status,403,'identity checks remain enforced');
+});
+
+
+test('cancellation persists revocation on partial remote failure and status cannot claim termination',async()=>{
+ const f=fixture();await f.issue();const original=globalThis.fetch,calls=[];
+ await authorizationStore(f.state,req('/authorization/bind',{...f.payload.authorization,issueNumber:198}));
+ globalThis.fetch=async(url,options={})=>{calls.push({url,method:options.method});return new Response(null,{status:503})};
+ try{
+  const revoked=await worker.fetch(req('/cancel',f.payload.authorization),f.env);assert.equal(revoked.status,200);
+  const receipt=await revoked.json();assert.equal(receipt.state,'cancelled');assert.ok(receipt.cancellation.authorizationRevokedAt);assert.ok(receipt.cancellation.requestedAt);assert.equal(receipt.cancellation.runnerAcknowledgedAt,null);assert.equal(receipt.cancellation.terminatedAt,null);assert.ok(receipt.cancellation.errors.length);
+  assert.equal(f.records.get('authorization:'+f.payload.authorization.id).state,'cancelled');
+  calls.length=0;const status=await worker.fetch(req('/cancel/status',f.payload.authorization),f.env);assert.equal(status.status,200);assert.equal((await status.json()).cancellation.terminatedAt,null);assert.ok(calls.every(c=>!c.method));
+  const wrong=await worker.fetch(req('/cancel/status',{...f.payload.authorization,conversationId:'another-chat'}),f.env);assert.equal(wrong.status,403);
+  assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403);
+ }finally{globalThis.fetch=original}
 });

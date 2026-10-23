@@ -1,0 +1,272 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+import '../preview/intent-guard.js';
+import '../preview/core.js';
+import {validateRequest,authorizationStore} from '../chat-backend/src/intent-guard.js';
+import {taskBody} from '../chat-backend/src/agent-work.js';
+import worker from '../chat-backend/src/index.js';
+const I=globalThis.KappaIntent,C=I.capabilities;
+const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
+const corpus=JSON.parse(read('tests/fixtures/operation-routing.json'));
+for(const row of corpus)test('routing corpus: '+row.request,()=>{
+ const plan=I.planRequest(row.request,{chatId:'chat',taskIds:[198]});assert.equal(plan.steps.length,row.steps);
+ if(row.workflow)assert.equal(plan.steps[0].decision.workflow.kind,row.workflow);
+ if(row.steps>1)assert.equal(I.permits(row.request,'develop'),false,'the unsplit request cannot become a coding task');
+});
+function app(jobs=[],savedStore){
+ const store=savedStore||new Map([['kappaforge.jobs.v2',JSON.stringify(jobs)]]),calls=[],chat=JSON.parse(store.get('chats')||'null')?.[0]||{id:'chat',title:'Original',messages:[]},key='chats';
+ const box={KappaIntent:I,TextEncoder,crypto:webcrypto,recentJob:null,chats:[chat],key,preferences:{appearance:'dark'},current:'chat',pendingJob:null,planError:'Planner offline',backend:'https://worker.test',access:'owner',
+  localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
+  save(){store.set(key,JSON.stringify(box.chats))},render(){},persistJobs(){},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},
+  acceptTaskRetry(){},KappaJobs:{...globalThis.KappaJobs,conversationContext:()=>''},userAuthorizedFetch:async(path,payload,text)=>{calls.push({path,payload:JSON.parse(JSON.stringify(payload)),text});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
+  proposeTaskAutomatically:async(text,_notify,_context,id,_chat,options)=>{calls.push({text,id,options:JSON.parse(JSON.stringify(options))});Object.assign(options.receipt,{status:'dispatched'});return true;},
+  fetch:async()=>{throw Error('No arbitrary network or model calls')}};
+ vm.createContext(box);const source=read('preview/app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
+ vm.runInContext(source.slice(source.indexOf('function requestHasTask('),source.indexOf('async function userAuthorizedFetch(')),box);
+ const send=async text=>{chat.messages.push({role:'user',text});const plan=box.chatTaskPlan(text,chat);await box.runChatAction(plan,text,chat);return chat.messages.at(-1);};
+ return {box,chat,store,calls,send,jobs:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box))};
+}
+
+test('durable action receipts collapse concurrent delivery and survive restart without reapplying a rename',async()=>{
+ const h=app(),proposal={id:'chats.rename',params:{chat:'chat',title:'Work'}},context={source:'user-control',requestId:'durable-rename',chatId:'chat'};let writes=0;
+ const save=h.box.save;h.box.save=()=>{writes++;save()};
+ const results=await Promise.all([h.box.executeAppCapability(proposal,{...context}),h.box.executeAppCapability(proposal,{...context})]);
+ assert.equal(writes,1);assert.equal(results[0],results[1]);
+ const restarted=app([],h.store);restarted.box.save=()=>{throw Error('A receipt must not repeat the handler')};
+ assert.equal(await restarted.box.executeAppCapability(proposal,{...context}),results[0]);assert.equal(restarted.chat.title,'Work');
+ await assert.rejects(restarted.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'Changed'}},{...context}),/identity already/);
+});
+
+test('receipt storage failure stops the mutation before any handler or remote request',async()=>{
+ const h=app();h.box.localStorage.setItem=(key,value)=>{if(key==='kappaforge.operations.v1')throw Error('Storage full');h.store.set(key,value)};
+ await assert.rejects(h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'Lost'}},{source:'user-control',requestId:'storage-denied'}),/Storage full/);
+ assert.equal(h.chat.title,'Original');assert.equal(h.calls.length,0);
+});
+
+test('a failure halfway through history persistence compensates every affected local store',async()=>{
+ const h=app([{number:198,message:'failed'}]);const write=h.box.localStorage.setItem;let failed=false;
+ h.box.localStorage.setItem=(key,value)=>{if(key==='kappaforge.dismissedTasks.v1'&&value.includes('198')&&!failed){failed=true;throw Error('Interrupted history persistence')}write(key,value)};
+ await assert.rejects(h.box.executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control',requestId:'partial-history'}),/Local changes were restored/);
+ assert.equal(h.jobs()[0].number,198);const restored=JSON.parse(h.store.get('kappaforge.taskHistory.v2'))[198];assert.equal(restored.state,'restored');assert.ok(restored.version.counter>1);assert.equal(h.store.has('kappaforge.historyUndo.v1'),false);
+ const receipt=JSON.parse(h.store.get('kappaforge.operations.v1'))['partial-history'];assert.equal(receipt.compensated,true);assert.equal(receipt.state,'failed');
+ const replica=app([{number:198,message:'failed'}]),published={...restored,state:'cleared',version:{...restored.version,counter:restored.version.counter-1}};
+ replica.box.mergeTaskHistory([],[published]);assert.equal(replica.jobs().length,0);
+ replica.box.mergeTaskHistory([],[restored]);assert.equal(replica.jobs()[0].number,198,'newer compensation wins a partially published tombstone on another device');
+ await assert.rejects(h.box.executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control',requestId:'partial-history'}),/not repeated/);
+ assert.equal(h.jobs().length,1);
+});
+
+test('a crash after the write-ahead receipt cannot automatically repeat the mutation',async()=>{
+ const h=app(),proposal={id:'chats.rename',params:{chat:'chat',title:'Work'}},context={source:'user-control',requestId:'interrupted'};
+ await h.box.executeAppCapability(proposal,{...context});
+ const receipts=JSON.parse(h.store.get('kappaforge.operations.v1'));receipts.interrupted.state='started';delete receipts.interrupted.result;delete receipts.interrupted.receipt;h.store.set('kappaforge.operations.v1',JSON.stringify(receipts));
+ const restarted=app([],h.store);restarted.box.save=()=>{throw Error('Must not execute again')};
+ await assert.rejects(restarted.box.executeAppCapability(proposal,{...context}),/unconfirmed/);
+ assert.equal(restarted.box.routingDiagnostics().operations.unconfirmed,1);
+});
+
+test('uncertain retry recovers its saved Worker receipt with a read and no second dispatch',async()=>{
+ const h=app([{number:198,message:'failed'}]),proposal={id:'tasks.retry',params:{task:198}},context={source:'user-control',requestId:'uncertain-retry',chatId:'chat'};
+ h.box.userAuthorizedFetch=async()=>{throw Error('Response lost after dispatch')};
+ await assert.rejects(h.box.executeAppCapability(proposal,{...context}),/may be partial/);
+ const reads=[];h.box.fetch=async url=>{reads.push(url);return Response.json({receipt:{status:202,body:JSON.stringify({status:'dispatch_requested',message:'Original dispatch.'})}})};
+ const receipt={};assert.equal(await h.box.executeAppCapability(proposal,{...context,receipt}),'Original dispatch.');assert.equal(receipt.outcome,'dispatched');
+ assert.deepEqual(reads,['https://worker.test/operation-status']);assert.equal(h.calls.length,0);
+});
+
+test('rollout hold stops local effects and compare mode records decisions while executing once',async()=>{
+ const h=app(),proposal={id:'settings.update',params:{key:'appearance',value:'light'}};
+ const policy=mode=>h.store.set('kappaforge.operationContract.v1',JSON.stringify({backend:h.box.backend,contract:C.contract,rollout:{mode,percent:100}}));
+ policy('hold');await assert.rejects(h.box.executeAppCapability(proposal,{source:'user-control'}),/paused/);assert.equal(h.box.preferences.appearance,'dark');
+ policy('compare');let count=0;const save=h.box.savePreferences;h.box.savePreferences=()=>{count++;save()};
+ await h.box.executeAppCapability(proposal,{source:'user-control',requestId:'compare-once'});assert.equal(count,1);assert.equal(h.box.preferences.appearance,'light');
+ assert.equal(h.box.routingDiagnostics().operations.comparisons.length,1);assert.equal(h.calls.length,0);
+});
+
+test('a paused Worker policy is cached for subsequent offline actions',async()=>{
+ const h=app();h.box.fetch=async()=>Response.json({contract:C.contract,rollout:{mode:'hold',percent:100},error:'Paused by rollout'},{status:409});
+ await assert.rejects(h.box.refreshOperationContract(),/Paused/);
+ await assert.rejects(h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'No'}},{source:'user-control'}),/paused/);assert.equal(h.chat.title,'Original');
+});
+function confirmSource(h,state){
+ const sha='a'.repeat(40),at=Date.now();
+ vm.runInContext('trackedJobs.push('+JSON.stringify({number:999,chatId:'chat',message:'tests-passed',candidate:{sha,at,incomplete:false},verification:{sha,at,verified:true},lastCheckedAt:at,routeTracking:{requestId:state.requestId,index:0,requestedAt:at,decision:state.steps[0].decision}})+')',h.box);
+}
+test('mixed cleanup and development have separate scope, restrictions, receipts and reports',async()=>{
+ const h=app([{number:198,message:'failed'}]);const request='clear old tasks and add automatic cleanup; do not merge';
+ const reply=await h.send(request);assert.equal(h.jobs().length,0);assert.equal(h.calls.length,1);
+ assert.equal(h.calls[0].text,'add automatic cleanup; do not merge');assert.equal(h.calls[0].options.ownerRequest,request);assert.equal(h.calls[0].options.actionIndex,1);
+ assert.match(reply.text,/Cleared 1/);assert.match(reply.text,/dispatch confirmed/);assert.equal(reply.routeEvidence[0].outcome,'verified');assert.equal(reply.routeEvidence[1].outcome,'dispatched');
+ assert.equal(h.box.routingDiagnostics().counts.operationalDevelopment,0);
+});
+test('independent operations survive failure; dependent code and data actions stop',async()=>{
+ const h=app();h.box.clearTaskHistory=()=>{throw Error('Disk unavailable')};
+ const reply=await h.send('clear old tasks then add cleanup and set theme to light');
+ assert.equal(h.calls.length,0);assert.equal(h.box.preferences.appearance,'light');
+ assert.deepEqual(JSON.parse(JSON.stringify(reply.routeEvidence)).map(e=>e.outcome),['failed','blocked','verified']);
+ assert.match(reply.text,/prerequisite/);assert.equal(h.chat.pendingActions.steps[1].status,'blocked');
+ // Explicit continuation cannot silently retry the failed effect or unblock its dependency.
+ await h.send('continue actions');assert.equal(h.calls.length,0);
+});
+test('restrictions block only incompatible steps and survive splitting',async()=>{
+ const h=app([{number:198,message:'failed'}]);const reply=await h.send('clear old tasks and add cleanup, no tests');
+ assert.equal(h.jobs().length,0);assert.equal(h.calls.length,0);assert.match(reply.text,/restrictions prevent/);
+ assert.ok(reply.routeEvidence.every(e=>e.restrictions.noTests));
+});
+test('a task reference resolves from one conversation task without unnecessary clarification',async()=>{
+ const h=app([{number:198,chatId:'chat',message:'failed'},{number:199,chatId:'another',message:'failed'}]);
+ await h.send('retry this task');assert.equal(h.calls[0].path,'/retry');assert.equal(h.calls[0].payload.task,198);assert.equal(h.calls[0].text,'retry task #198');assert.equal(h.chat.pendingActions,null);
+ assert.equal(h.box.routingDiagnostics().counts.clarifications,0);
+});
+test('ambiguous target asks one focused question and a target-only answer authorizes only that task',async()=>{
+ const h=app([{number:198,chatId:'chat',message:'failed'},{number:199,chatId:'chat',message:'failed'}]);
+ const question=await h.send('retry this task');assert.match(question.text,/#198, #199/);assert.equal(h.calls.length,0);
+ await h.send('#999');assert.equal(h.calls.length,0,'a target outside the presented candidates cannot broaden scope');
+ const result=await h.send('#198');assert.equal(h.calls.length,1);assert.equal(h.calls[0].payload.task,198);assert.match(result.text,/Dispatch requested/);assert.equal(h.chat.pendingActions,null);assert.equal(h.box.routingDiagnostics().counts.clarifications,1,'answered questions still count in the diagnostic window');
+});
+test('clarification survives restart and does not repeat independent completed actions',async()=>{
+ const h=app([{number:198,chatId:'chat'},{number:199,chatId:'chat'}]);
+ await h.send('retry this task and rename this chat to Work');assert.equal(h.chat.title,'Work');assert.equal(h.calls.length,0);
+ const state=JSON.parse(h.store.get(h.box.key))[0].pendingActions;h.chat.pendingActions=state;
+ const reply=await h.send('198');assert.equal(h.calls.length,1);assert.equal(reply.routeEvidence.length,1);assert.equal(h.chat.title,'Work');
+});
+test('missing values get a narrow question; exact dates are supplied by the owner',async()=>{
+ const h=app([{number:198,message:'failed',finishedAt:Date.parse('2026-01-05')}]);
+ assert.match((await h.send('rename this chat')).text,/What name/);await h.send('Private name');assert.equal(h.chat.title,'Private name');
+ assert.match((await h.send('set weather city')).text,/What value/);await h.send('Private city');assert.equal(h.box.preferences.weatherCity,'Private city');
+ assert.match((await h.send('clear tasks older than last month')).text,/exact cutoff/);assert.equal(h.jobs().length,1);await h.send('2026-02-01');assert.equal(h.jobs().length,0);
+ const evidence=JSON.stringify(h.box.routingDiagnostics());assert.ok(!evidence.includes('Private name'));assert.ok(!evidence.includes('Private city'));assert.ok(!evidence.includes('older than last month'));
+});
+test('no operation failure or unsupported capability starts coding or autonomous retries',async()=>{
+ const h=app([{number:198,chatId:'chat'}]);h.box.userAuthorizedFetch=async()=>Response.json({error:'Offline'},{status:503});
+ assert.match((await h.send('retry task #198')).text,/Operation failed/);assert.equal(h.calls.length,0);
+ assert.match((await h.send('delete old tasks on GitHub')).text,/remote operation/);assert.equal(h.calls.length,0);assert.equal(h.box.routingDiagnostics().counts.unsupportedFallbacks,1);
+});
+test('mixed task authorization recomputes immutable child scope including read-only mode',()=>{
+ const ownerRequest='clear old tasks and add cleanup; do not merge',step=I.planRequest(ownerRequest).steps[1];
+ const payload={instructions:step.text,mode:'develop',requestScope:{ownerRequest,actionIndex:1}};
+ assert.doesNotThrow(()=>validateRequest('/jobs',payload,ownerRequest,'user-request'));
+ for(const mutated of [{...payload,instructions:'add unrelated feature'},{...payload,requestScope:{ownerRequest,actionIndex:0}},{...payload,requestScope:{ownerRequest,actionIndex:'1'}}])assert.throws(()=>validateRequest('/jobs',mutated,ownerRequest,'user-request'));
+ const read='clear tasks and investigate why cleanup failed',readStep=I.planRequest(read).steps[1];
+ assert.throws(()=>validateRequest('/jobs',{instructions:readStep.text,mode:'develop',approved:true,confirmed:true,requestScope:{ownerRequest:read,actionIndex:1}},read,'user-control'),/read-only/);
+ const body=taskBody('onlykappa/KappaForge','develop',step.text,'',null,{ownerRequest,actionIndex:1});assert.match(body,/> Owner mixed request/);assert.match(body,/> clear old tasks and add cleanup/);
+});
+test('requested recovery is not misreported as dispatch or verified execution',async()=>{
+ const h=app([{number:198,chatId:'chat',message:'failed'}]);h.box.userAuthorizedFetch=async()=>Response.json({status:'waiting',message:'Cooldown saved; no continuation dispatched.'});
+ const reply=await h.send('retry task #198');assert.equal(reply.routeEvidence[0].outcome,'requested');assert.match(reply.text,/no continuation/);
+});
+
+
+test('multiple missing values present one question at a time',async()=>{
+ const h=app();const first=await h.send('rename this chat and set theme');
+ assert.match(first.text,/What name/);assert.doesNotMatch(first.text,/What value/);
+ const second=await h.send('Work');assert.equal(h.chat.title,'Work');assert.match(second.text,/What value/);
+ await h.send('light');assert.equal(h.box.preferences.appearance,'light');assert.equal(h.chat.pendingActions,null);
+});
+
+test('a verified prerequisite resumes only its dependent action on explicit continuation',async()=>{
+ const h=app([{number:198,message:'failed'}]);await h.send('add cleanup then clear old tasks');
+ assert.equal(h.calls.length,1);assert.equal(h.jobs().length,1,'dispatch is not completed software');
+ const pending=h.chat.pendingActions,source=pending.steps[0];
+ h.box.recordRoute(source.decision,null,'verified',pending.requestId,source.index);confirmSource(h,pending);
+ await h.send('continue actions');assert.equal(h.calls.length,1,'source is not dispatched twice');assert.deepEqual(h.jobs().map(j=>j.number),[999]);
+});
+
+
+test('offline mixed work completes local effects without attempting a coding network fallback',async()=>{
+ const h=app([{number:198,message:'failed'}]);h.box.backend='';h.box.access='';
+ const source=read('preview/app-dashboard.js');vm.runInContext(source.slice(source.indexOf('async function proposeTaskAutomatically('),source.indexOf('function jobApproval(')),h.box);
+ const reply=await h.send('clear old tasks and add cleanup and rename this chat to Work');
+ assert.equal(h.jobs().length,0);assert.equal(h.chat.title,'Work');assert.equal(h.calls.length,0);assert.match(reply.text,/connection isn't set up/);
+ assert.deepEqual(JSON.parse(JSON.stringify(reply.routeEvidence)).map(e=>e.outcome),['verified','failed','verified']);
+});
+
+test('Worker authorization binds exact mixed scope and rejects tampering before external writes',async()=>{
+ const records=new Map(),storage={get:async key=>records.get(key),put:async(key,value)=>records.set(key,value)};storage.transaction=fn=>fn(storage);
+ const env={CHAT_ACCESS_TOKEN:'owner',GITHUB_JOB_TOKEN:'fixture',MEMORY:{idFromName:()=>'',get:()=>({fetch:(url,options)=>authorizationStore({storage},new Request(url,options))})}};
+ const send=(path,value)=>worker.fetch(new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'null',Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify(value)}),env);
+ const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('No external mutations')};
+ try{
+  const ownerRequest='clear old tasks and add cleanup; do not merge',step=I.planRequest(ownerRequest).steps[1],payload={instructions:step.text,mode:'develop',requestScope:{ownerRequest,actionIndex:1},contract:C.contract,authorization:{id:'scoped-request-200',conversationId:'chat'}};
+  const response=await send('/authorize',{path:'/jobs',payload,userText:ownerRequest,source:'user-request'});assert.equal(response.status,200);assert.equal(records.size,1);
+  assert.equal((await send('/jobs',{...payload,instructions:'add an unrelated feature'})).status,403);
+  assert.equal((await send('/jobs',{...payload,instructions:ownerRequest,requestScope:undefined})).status,400);
+  assert.equal(calls,0);
+ }finally{globalThis.fetch=original}
+});
+
+test('large mixed briefs retain all source requirements without duplicating them past GitHub limits',()=>{
+ const ownerRequest='clear old tasks and add '+ 'x'.repeat(55000)+' FINAL OWNER REQUIREMENT; do not merge';
+ const step=I.planRequest(ownerRequest).steps[1],body=taskBody('onlykappa/KappaForge','develop',step.text,'',{issuedAt:1},{ownerRequest,actionIndex:1});
+ assert.ok(body.length<65536);assert.ok(body.includes(step.text));assert.match(body,/> clear old tasks and \[Scoped action text reproduced verbatim above/);assert.ok(body.includes('FINAL OWNER REQUIREMENT'));assert.match(body,/"noMerge":true/);
+});
+
+
+test('a confirmed retry dispatch satisfies the dispatch operation, without claiming execution completed',async()=>{
+ const h=app([{number:198,message:'failed'}]);const reply=await h.send('retry task #198 then rename this chat to Work');
+ assert.equal(h.calls[0].path,'/retry');assert.equal(h.chat.title,'Work');
+ assert.deepEqual(JSON.parse(JSON.stringify(reply.routeEvidence)).map(e=>e.outcome),['dispatched','verified']);
+ assert.equal(h.chat.pendingActions,null);
+});
+
+
+test('an unspecified ordinary setting asks for exactly the missing preference and value',async()=>{
+ const h=app();assert.match((await h.send('change settings')).text,/which ordinary preference and value/);
+ await h.send('theme to light');assert.equal(h.box.preferences.appearance,'light');assert.equal(h.calls.length,0);assert.equal(h.chat.pendingActions,null);
+});
+
+
+test('saved plan fields are revalidated against the immutable owner turn before continuation',async()=>{
+ const h=app([{number:198,message:'failed'}]);await h.send('add cleanup then clear old tasks');assert.equal(h.jobs().length,1);
+ const pending=h.chat.pendingActions;pending.steps[1].text='cancel task #198';pending.steps[1].dependsOn=[];pending.steps[1].operation=C.resolve('cancel task #198');
+ const reply=await h.send('continue actions');assert.match(reply.text,/scope could not be verified/);assert.equal(h.jobs().length,1);assert.equal(h.calls.length,1);assert.equal(h.chat.pendingActions,null);
+});
+
+
+test('a saved completion claim without local evidence cannot unblock a dependent action',async()=>{
+ const h=app([{number:198,message:'failed'}]);await h.send('add cleanup then clear old tasks');
+ h.chat.pendingActions.steps[0].status='verified';await h.send('continue actions');assert.equal(h.jobs().length,1,'trusted dispatch receipt overrides a forged completion claim');
+});
+
+test('an outstanding prepared approval can be rebuilt after restart without repeating completed operations',async()=>{
+ const h=app([{number:198,message:'failed'}]);let approvals=0;
+ h.box.proposeTaskAutomatically=async(_text,_notify,_context,_id,_chat,options)=>{approvals++;h.box.pendingJob={routeRequestId:options.routeRequestId};Object.assign(options.receipt,{status:'requested',awaitingApproval:true});return true};
+ await h.send('clear old tasks and add cleanup and rename this chat');assert.equal(approvals,1);assert.equal(h.jobs().length,0);
+ h.box.pendingJob=null;await h.send('Work');assert.equal(approvals,2);assert.equal(h.chat.title,'Work');assert.equal(h.jobs().length,0);
+});
+
+
+test('verified dependencies continue autonomously within the original active scope, never after expiry',async()=>{
+ const h=app([{number:198,message:'failed'}]);h.box.document={hidden:false};h.box.sending=false;
+ await h.send('add cleanup then clear old tasks');const state=h.chat.pendingActions;
+ h.box.recordRoute(state.steps[0].decision,null,'verified',state.requestId,0);confirmSource(h,state);
+ await h.box.continuePendingPlans();assert.deepEqual(h.jobs().map(j=>j.number),[999]);assert.equal(h.calls.length,1);assert.equal(h.chat.pendingActions,null);
+ const expired=app([{number:198,message:'failed'}]);expired.box.document={hidden:false};expired.box.sending=false;
+ await expired.send('add cleanup then clear old tasks');const old=expired.chat.pendingActions;old.expiresAt=1;
+ expired.box.recordRoute(old.steps[0].decision,null,'verified',old.requestId,0);
+ await expired.box.continuePendingPlans();assert.equal(expired.jobs().length,1,'expired authorization cannot auto-run a later operation');
+});
+
+
+test('automatic continuation never retries an unsupported action just because its dependency succeeded',async()=>{
+ const h=app();h.box.document={hidden:false};h.box.sending=false;
+ await h.send('clear old tasks then delete old tasks on GitHub');const messages=h.chat.messages.length;
+ await h.box.continuePendingPlans();assert.equal(h.chat.messages.length,messages);assert.equal(h.calls.length,0);
+});
+
+
+test('a historical verified routing event cannot release dependencies without fresh current-candidate evidence',async()=>{
+ for(const reason of ['missing','offline','changed-head','stale','history-only']){
+  const h=app([{number:198,message:'failed'}]);h.box.document={hidden:false};h.box.sending=false;
+  await h.send('add cleanup then clear old tasks');const state=h.chat.pendingActions;
+  h.box.recordRoute(state.steps[0].decision,null,'verified',state.requestId,0);
+  if(reason!=='missing'){
+   confirmSource(h,state);
+   vm.runInContext(reason==='offline'?"trackedJobs.at(-1).pollError='Offline'":reason==='changed-head'?"trackedJobs.at(-1).candidate.sha='b'.repeat(40)":reason==='history-only'?"trackedJobs.at(-1).historyOnly=true":"trackedJobs.at(-1).lastCheckedAt=1",h.box);
+  }
+  await h.box.continuePendingPlans();assert.ok(h.jobs().some(j=>j.number===198),reason+' proof must keep cleanup blocked');assert.equal(h.calls.length,1,'the source request is not dispatched again');
+ }
+});

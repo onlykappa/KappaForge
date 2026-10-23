@@ -76,7 +76,7 @@ test('a stalled or failed task offers Retry; a fix round shows its badge; a fini
  assert.match(failed,/NEEDS ATTENTION/);assert.match(failed,/data-task-retry="90"/);
  const fixing=card({text:'✅ Tests failed at: npm test · 1s\n⏳ Reading the failure and writing fix 2 of 3 · started 2026-10-18 18:02:11 UTC\n◻ Write the fix',progressKey:'progress:90:2'},{jobs:[{number:90,message:'progress'}]});
  assert.match(fixing,/task-fix">Fix 2 of 3/);
- const text='✅ Read project · 2s\n✅ Opened draft PR #7; tests are running · 3s',jobs=[{number:7,message:'tests-passed',prUrl:'https://github.com/onlykappa/KappaForge/pull/7'}];
+ const text='✅ Read project · 2s\n✅ Opened draft PR #7; tests are running · 3s',jobs=[{number:7,candidate:{sha:'a'.repeat(40),at:1,incomplete:false},verification:{sha:'a'.repeat(40),at:1,verified:true},message:'tests-passed',prUrl:'https://github.com/onlykappa/KappaForge/pull/7'}];
  assert.doesNotMatch(card({text,progressKey:'progress:7:1'},{jobs}),/data-task-card="3" open/,'a finished card folds to one line');
  assert.match(card({text,progressKey:'progress:7:1',collapsed:false},{jobs}),/data-task-card="3" open/,'the owner opened it');
  assert.doesNotMatch(card({text:checklist,progressKey:'progress:90:1',collapsed:true},{jobs:[{number:90,message:'progress'}]}),/data-task-card="3" open/,'the owner folded it');
@@ -96,19 +96,19 @@ function appTasks({runs=[],details={},jobs=[]}={}){
  vm.runInContext(slice(tasks,'function ensureTaskCard(','// Card actions.')+slice(tasks,'function updateTaskFindings(','async function taskRead('),box);
  return {box,toasts,store,announced};
 }
-const run=(id,title,extra={})=>K.normalizeRun({id,name:'Sandbox branch tests',display_title:title,status:'completed',conclusion:'success',created_at:'2026-10-18T10:00:00Z',run_started_at:'2026-10-18T10:00:00Z',updated_at:'2026-10-18T10:03:05Z',html_url:'https://github.com/onlykappa/KappaForge/actions/runs/'+id,...extra});
+const run=(id,title,extra={})=>K.normalizeRun({id,name:'Sandbox branch tests',display_title:title,path:title.startsWith('iOS build')?'.github/workflows/ios-build.yml':'.github/workflows/sandbox-tests.yml',status:'completed',conclusion:'success',created_at:'2026-10-18T10:00:00Z',run_started_at:'2026-10-18T10:00:00Z',updated_at:'2026-10-18T10:03:05Z',html_url:'https://github.com/onlykappa/KappaForge/actions/runs/'+id,...extra});
 test('a task\'s own test and iOS runs become its validation rows, with a fallback from its reports',()=>{
  const sha='a'.repeat(40);
  const {box}=appTasks({runs:[run(1,'Sandbox validation kappa/dev-7 @ '+sha,{conclusion:'failure'}),run(2,'Sandbox validation kappa/dev-7 @ '+sha,{status:'in_progress',conclusion:null}),run(3,'iOS build kappa/dev-7 @ '+sha),run(4,'Sandbox validation kappa/dev-70 @ '+sha)],
   details:{2:{data:{progress:{label:'Step 3/7: npm test',percent:42}}}}});
- const rows=JSON.parse(JSON.stringify(box.taskValidation({number:7,prUrl:'https://github.com/onlykappa/KappaForge/pull/9',message:'complete'})));
+ const rows=JSON.parse(JSON.stringify(box.taskValidation({number:7,candidate:{sha},prUrl:'https://github.com/onlykappa/KappaForge/pull/9',message:'complete'})));
  assert.deepEqual(rows.map(r=>[r.title,r.runId,r.state,r.detail]),[['Sandbox tests',2,'current','Step 3/7: npm test'],['iOS build',3,'done','Succeeded in 3m 5s']],'the newest run of this task only, never task 70');
  assert.equal(rows[0].progress,42);assert.equal(rows[0].since,'2026-10-18T10:00:00Z');
  const none=appTasks().box;
  assert.equal(none.taskValidation({number:7,message:'progress'}).length,0,'nothing before the draft PR');
- assert.deepEqual(JSON.parse(JSON.stringify(none.taskValidation({number:7,prUrl:'x',message:'tests-failed'}))).map(r=>[r.title,r.state,r.detail]),[['Sandbox tests','failed','Tests failed']]);
- assert.equal(none.taskValidation({number:7,prUrl:'x',message:'complete'})[0].state,'current');
- assert.equal(none.taskValidation({number:7,prUrl:'x',message:'merged',finished:true})[0].state,'done');
+ assert.ok(none.taskValidation({number:7,prUrl:'x',message:'tests-failed'}).every(r=>r.state==='upcoming'),'legacy reports without current-commit evidence remain unverified');
+ assert.equal(none.taskValidation({number:7,prUrl:'x',message:'complete'})[0].state,'upcoming');
+ assert.equal(none.taskValidation({number:7,prUrl:'x',message:'merged',finished:true})[0].state,'upcoming');
 });
 test('checklist changes announce the new step, notify on finish or failure, and record how long it took once',()=>{
  const job={number:9,chatId:'c',mode:'develop'};
@@ -182,7 +182,7 @@ test('assistant claims of running work are recognized with the task numbers they
 test('open repository tasks started elsewhere are followed and shown without a chat card',()=>{
  const tasks=read('app-tasks.js'),dash=read('app-dashboard.js');
  const checked=[];
- const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
+ const box={dismissedTaskIds:new Set(),esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
   taskValidation:()=>[],chats:[],trackedJobs:[{number:98,finished:true}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
  vm.createContext(box);
  vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
@@ -202,7 +202,7 @@ test('open repository tasks started elsewhere are followed and shown without a c
 // 2.2.5 adopted #119 without its mode, so its "draft PR" report marked it Finished and hid the failure after it.
 test('adopted tasks keep their mode, and ones adopted without it are read again',()=>{
  const tasks=read('app-tasks.js'),checked=[];
- const box={JSON,Date,String,Number,trackedJobs:[{number:119,adopted:true,finished:true,message:'complete',lastReportId:9}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
+ const box={dismissedTaskIds:new Set(),JSON,Date,String,Number,trackedJobs:[{number:119,adopted:true,finished:true,message:'complete',lastReportId:9}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
  vm.createContext(box);vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
  const now=new Date().toISOString(),label=[{name:'kappa-task'}];
  box.adoptRepositoryTasks([{repo:'KappaForge',number:119,labels:label,created_at:now,body:'Repository: onlykappa/KappaForge\nMode: develop\n\nAdd weather'},

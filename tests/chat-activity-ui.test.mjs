@@ -92,7 +92,7 @@ test('completion follows validation and tracked lifecycle rather than an exhaust
  try{
   assert.match(render('complete'),/activity-tag">TESTING/);
   assert.doesNotMatch(render('complete'),/agent-activity finished/);
-  assert.match(render('tests-passed'),/activity-tag">READY FOR REVIEW/);
+  assert.match(render('tests-passed'),/activity-tag">TESTING/);
   assert.match(render('tests-failed'),/activity-tag">NEEDS ATTENTION/);
   assert.match(render('merged',true),/activity-tag">DONE/);
   assert.match(render('cancelled',true),/activity-tag">CANCELLED/);
@@ -113,7 +113,7 @@ test('structured cards expose truthful units, queued versus active timing and te
   assert.match(html,/Working <time data-since=/);assert.match(html,/Queued <time>2s/);
   assert.match(html,/aria-valuenow="1"/);assert.match(html,/Read &lt;files&gt;/);assert.match(html,/task-step current/);
   job.progress={...p,units:null};html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/task-bar indeterminate/);assert.doesNotMatch(html,/aria-valuenow=/);
-  job.message='tests-passed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/READY FOR REVIEW/);assert.doesNotMatch(html,/data-since=/);
+  job.message='tests-passed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/TESTING/);assert.doesNotMatch(html,/READY FOR REVIEW/);
   job.message='tests-failed';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/NEEDS ATTENTION/);assert.doesNotMatch(html,/data-since=/);
   job.finished=true;job.message='cancelled';html=ctx.renderTaskActivity({progressKey:'progress:9:live'});assert.match(html,/CANCELLED/);assert.doesNotMatch(html,/data-since=/);
  }finally{delete ctx.trackedJobs}

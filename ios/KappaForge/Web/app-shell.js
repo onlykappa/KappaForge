@@ -21,13 +21,14 @@ function chatPreview(c){
 }
 // A chat's task state picks its icon: running, testing, needs attention, ready or plain conversation.
 function chatTaskState(c){
- const job=(typeof trackedJobs!=="undefined"?trackedJobs:[]).filter(j=>j.chatId===c.id).sort((a,b)=>(b.activeAt||b.queuedAt||0)-(a.activeAt||a.queuedAt||0))[0];
+ const jobs=(typeof trackedJobs!=="undefined"?trackedJobs:[]).filter(j=>j.chatId===c.id).sort((a,b)=>(b.activeAt||b.queuedAt||0)-(a.activeAt||a.queuedAt||0));
+ const job=jobs.find(j=>KappaJobs.needsAttention(j))||jobs[0];
  if(!job)return {icon:"chat",tone:"",label:""};
  const state=chatJobState(job);state.job=job;return state;
 }
 function chatJobState(job){
- if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return {icon:"warn",tone:"bad",label:"Task #"+job.number+" needs attention"};
- if(job.message==="tests-passed")return {icon:"check",tone:"ok",label:"Task #"+job.number+" is ready for review"};
+ if(KappaJobs.needsAttention(job))return {icon:"warn",tone:"bad",label:"Task #"+job.number+" needs attention"};
+ if(KappaJobs.verifiedTask(job))return {icon:"check",tone:"ok",label:"Task #"+job.number+" is ready for review"};
  if(job.finished)return {icon:"check",tone:"",label:"Task #"+job.number+" finished"};
  if(job.prUrl)return {icon:"flask",tone:"warn",label:"Task #"+job.number+" tests running"};
  if(!job.progress?.startedAt&&job.message==="waiting")return {icon:"clock",tone:"",label:"Task #"+job.number+" is queued"};
@@ -56,7 +57,7 @@ function chatItem(c){
  const row='<button type="button" class="chat-li" data-id="'+esc(c.id)+'"><span class="chat-glyph '+s.tone+'" aria-hidden="true">'+uiIcon(s.icon)+(s.tone==="bad"?'<i></i>':'')+'</span>'+
   '<span class="chat-li-text"><b>'+esc(c.title)+'</b><small>'+esc(s.label||chatPreview(c))+'</small></span><time class="tnum">'+esc(shellTime(c.at))+'</time></button>';
  // Edit mode: each row gets a Delete button, as in Mail or Messages.
- return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row;
+ return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="text-button" data-rename-chat="'+esc(c.id)+'" aria-label="Rename conversation '+esc(c.title)+'">Rename</button><button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row;
 }
 function chatListHeader(){
  return '<div class="chats-head"><span class="chats-date">'+esc(new Date().toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}))+'</span><div class="chats-title"><h1 class="large-title">Chats</h1>'+
@@ -134,10 +135,10 @@ function moreTokensToday(){
  return u.requests&&u.unknownTokens<u.requests?(typeof compact==="function"?compact(u.total):u.total.toLocaleString()):"–";
 }
 function renderMorePage(){
- const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0),needs=chats.filter(c=>chatTaskState(c).tone==="bad").length;
+ const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0),needs=(typeof trackedJobs==='undefined'?[]:trackedJobs).filter(j=>KappaJobs.needsAttention(j)).length;
  const memories=typeof savedMemories!=="undefined"?savedMemories.length:0;
  return '<div class="ios-group more-model"><h2 class="more-label">Model</h2><div class="more-routes" role="group" aria-label="Model route">'+MORE_ROUTES.map(([v,t])=>'<button type="button" data-more-route="'+v+'" aria-pressed="'+(preferences.routing===v)+'">'+t+'</button>').join("")+'</div></div>'+
-  '<div class="more-glance"><button type="button" class="home-glance" data-more-section="usage"><b class="tnum">'+esc(moreTokensToday())+'</b><small>Tokens today</small></button><button type="button" class="home-glance" data-page="chats"><b class="tnum'+(needs?' st-bad':'')+'">'+needs+'</b><small>'+(needs===1?"Task needs you":"Tasks need you")+'</small></button></div>'+
+  '<div class="more-glance"><button type="button" class="home-glance" data-more-section="usage"><b class="tnum">'+esc(moreTokensToday())+'</b><small>Tokens today</small></button><button type="button" class="home-glance" data-page="tasks"><b class="tnum'+(needs?' st-bad':'')+'">'+needs+'</b><small>'+(needs===1?"Task needs you":"Tasks need you")+'</small></button></div>'+
   '<div class="ios-group icons">'+iosRow({attrs:'data-page="projects"',icon:"projects",title:"Projects",value:esc((data.repos||[]).length||knownRepos.length)})+iosRow({attrs:'data-page="tasks"',icon:"tasks",title:"Tasks",value:esc((data.issues||[]).length)})+
    iosRow({attrs:'data-page="saved"',icon:"saved",title:"Saved answers",value:esc(saved)})+iosRow({attrs:'data-more-section="memory"',icon:"spark",title:"Memory",value:esc(memories)})+'</div>'+
   '<div class="ios-group icons more-app">'+iosRow({attrs:'data-page="settings"',icon:"settings",title:"Settings"})+iosRow({attrs:'data-more-section="updates"',icon:"retry",title:"Updates",value:esc(KappaConfig.version)})+'</div>'+
@@ -193,6 +194,7 @@ function bindShell(){
  document.getElementById("homemodel")?.addEventListener("click",()=>{navigate("settings");settingsSection="models";render()});
  document.getElementById("homeplan")?.addEventListener("click",()=>{fresh();document.getElementById("task").click()});
  document.getElementById("chatedit")?.addEventListener("click",()=>{chatEditing=!chatEditing;render()});
+ document.querySelectorAll('#content [data-rename-chat]').forEach(b=>b.addEventListener('click',async()=>{const chat=chats.find(c=>c.id===b.dataset.renameChat);if(!chat)return;const title=prompt('Conversation name',chat.title);if(title===null)return;try{await executeAppCapability({id:'chats.rename',params:{chat:chat.id,title:title.trim()}},{source:'user-control'});render()}catch(e){toast(e.message)}}));
  document.querySelectorAll("#content [data-delete-chat]").forEach(b=>b.addEventListener("click",()=>{if(deleteChat(b.dataset.deleteChat))render()}));
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }

@@ -15,7 +15,7 @@ async function go(page,target){
  // The account page opens from the avatar on Home; More has no profile card.
  if(target==='profile'){await page.locator('.mobile-nav [data-page=start]').click();await page.locator('#content [data-page=profile]').click();return}
  if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
- await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
+ await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content '+(target==='tasks'?'.ios-row':'')+'[data-page='+target+']').click();
 }
 async function openSettings(page){if(await isPhone(page)){await go(page,'settings');return}await openNavigation(page);await page.locator('#settingsbtn').click();}
 // Settings opens on a grouped list; each row opens its own page with a back button.
@@ -24,10 +24,10 @@ async function settingsHome(page){if(await page.locator('#settings-back').isVisi
 async function openSection(page,id){await settingsHome(page);await page.locator('[data-section='+id+']').click();await page.waitForFunction(id=>settingsSection===id,id);}
 const {createServer}=require('node:http');
 const {readFile}=require('node:fs/promises');
-const {join,extname,resolve}=require('node:path');
+const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
-const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+'/')){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
+const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
 let lastChatPreferences,issuedJob=22;let taskReports={};
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
@@ -36,7 +36,8 @@ const apiServer=createServer(async(req,res)=>{
  if(req.headers.authorization!=='Bearer fixture-private-token'){res.writeHead(401).end(JSON.stringify({error:'Unauthorized fixture request'}));return;}
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
- if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
+ if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
+ else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;
   const prompt=data.messages.at(-1).text;
@@ -70,7 +71,7 @@ const apiServer=createServer(async(req,res)=>{
   }
  },{credentials,backendURL});
  await page.route('https://api.github.com/**',route=>{const url=route.request().url();const task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);if(task)return route.fulfill({headers:{'access-control-allow-origin':'*'},json:task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}});const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
- page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept('recovery-passphrase-123');else await dialog.accept()});
+ page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept(dialog.message()==='Conversation name'?'Renamed from control':'recovery-passphrase-123');else await dialog.accept()});
  await page.goto(base);console.log(name+': loaded interface');assert.equal(await page.locator('.top #settingsbtn').count(),0);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');if(name==='mobile-safari'){
   // Phones open on Home; open the chat to check the pushed view below.
   assert.equal(await page.evaluate(()=>view),'start');assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'start');await page.evaluate(()=>navigate('chat'));
@@ -150,7 +151,7 @@ const apiServer=createServer(async(req,res)=>{
  // Clearly labeled fixture: actual Python Progress -> GitHub-shaped comments -> task poll -> persisted UI.
  // No production model calls or GitHub writes occur in this test.
  const fixtureBase=Date.now()-100000;
- const fixtureEvents=JSON.parse(require('node:child_process').execFileSync('python3',[resolve(__dirname,'fixtures/task-progress-events.py'),String(fixtureBase)],{encoding:'utf8'}));
+ const fixtureEvents=JSON.parse(require('node:child_process').execFileSync(process.env.PYTHON||'python3',[resolve(__dirname,'fixtures/task-progress-events.py'),String(fixtureBase)],{encoding:'utf8'}));
  await page.evaluate(base=>{
   chats.unshift({id:'progress-fixture',title:'Progress regression fixture',at:Date.now(),messages:[{role:'user',text:'Progress regression fixture'}]});current='progress-fixture';
   trackedJobs.push({number:77,chatId:current,title:'Task progress fixture',message:'waiting',mode:'develop',queuedAt:base-3000,activeAt:base-3000,progress:KappaProgress.queued(77,base-3000)});
@@ -184,6 +185,56 @@ const apiServer=createServer(async(req,res)=>{
  await page.screenshot({path:'/tmp/kappaforge-'+name+'-progress-failed.png',fullPage:true,animations:'disabled'});
  console.log(name+': real runner snapshot fixture, polling, measured progress, collapsed state, restart and failure passed');
 
+ // Registered app operations run through the real composer and UI controls, without coding/model requests.
+ const forbidden=[];const watch=request=>{if(['/plan','/jobs','/chat'].includes(new URL(request.url()).pathname))forbidden.push(request.url())};page.on('request',watch);
+ await page.evaluate(()=>{trackedJobs=[{number:700,message:'failed',chatId:null},{number:701,message:'progress',chatId:null,progress:{...KappaProgress.queued(701),status:'running'}}];recentJob=null;persistJobs()});
+ const operation=async text=>{await page.locator('#message').fill(text);await page.locator('#form').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>!sending);return page.evaluate(()=>active().messages.at(-1).text)};
+ assert.match(await operation('delete every old task, do not create a PR and do not run tests'),/Cleared 1 inactive task/);
+ assert.deepEqual(await page.evaluate(()=>trackedJobs.map(j=>j.number)),[701]);
+ assert.match(await operation('restore task #700'),/Restored 1/);
+ assert.equal(await page.evaluate(()=>trackedJobs.find(j=>j.number===700).historyOnly),true);
+ assert.match(await operation('hide failed tasks with ids 700'),/Hidden 1/);
+ assert.match(await operation('undo clear'),/Restored 1/);
+ await operation('clear failed tasks');
+ assert.match(await operation('rename this chat'),/What name/);
+ assert.match(await operation('Routing test'),/renamed/);assert.equal(await page.evaluate(()=>active().title),'Routing test');
+ await page.evaluate(()=>trackedJobs.push({number:703,message:'failed',chatId:null}));
+ const mixed=await operation('clear old tasks then add automatic cleanup, no PR');
+ assert.match(mixed,/Cleared 1/);assert.match(mixed,/restrictions prevent/);
+ assert.ok(await page.locator('.route-evidence summary').count()>0,'why this route is available on operational replies');
+ const stats=await page.evaluate(()=>routingDiagnostics().counts);assert.equal(stats.operationalDevelopment,0);assert.equal(stats.unnecessaryClarifications,0);
+ assert.match(await operation('rename this chat to Registry test'),/renamed/);assert.equal(await page.evaluate(()=>active().title),'Registry test');
+ assert.match(await operation('Set weather units to Fahrenheit'),/Saved weatherUnits: fahrenheit/);
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.settings.v2')).weatherUnits),'fahrenheit');
+ assert.match(await operation('change settings'),/specify a supported operation/);
+ assert.match(await operation('Fix task deletion, do not create a PR'),/restrictions prevent/);
+ const renamedId=await page.evaluate(()=>current);await page.evaluate(()=>{view='chats';render()});await page.locator('#chatedit').click();
+ await page.locator('[data-rename-chat="'+renamedId+'"]').click();await page.waitForFunction(()=>chats.some(c=>c.title==='Renamed from control'));
+ await page.evaluate(()=>{view='tasks';trackedJobs.push({number:702,message:'failed',chatId:null});render()});await page.locator('#clear-task-history').click();await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===702));
+ await page.locator('#undo-task-history').click();await page.waitForFunction(()=>trackedJobs.some(j=>j.number===702&&j.historyOnly&&j.finished));
+ assert.deepEqual(forbidden,[],name+' operational requests never invoke coding or model APIs');page.off('request',watch);
+ const protocol=await page.evaluate(async()=>{
+  const proposal={id:'settings.update',params:{key:'weatherUnits',value:'celsius'}},identity='browser-operation-'+current;
+  let writes=0;const original=savePreferences;savePreferences=()=>{writes++;return original()};
+  try{await Promise.all([executeAppCapability(proposal,{source:'user-control',requestId:identity}),executeAppCapability(proposal,{source:'user-control',requestId:identity})])}finally{savePreferences=original}
+  const key='kappaforge.operationContract.v1',old=localStorage.getItem(key);
+  localStorage.setItem(key,JSON.stringify({backend,contract:KappaIntent.capabilities.contract,rollout:{mode:'hold',percent:100}}));
+  let paused='';try{await executeAppCapability({id:'settings.update',params:{key:'weatherUnits',value:'fahrenheit'}},{source:'user-control'})}catch(e){paused=e.message}
+  localStorage.setItem(key,JSON.stringify({backend,contract:KappaIntent.capabilities.contract,rollout:{mode:'compare',percent:100}}));
+  await executeAppCapability({id:'settings.update',params:{key:'weatherUnits',value:'celsius'}},{source:'user-control'});
+  const comparisons=routingDiagnostics().operations.comparisons.length;
+  if(old===null)localStorage.removeItem(key);else localStorage.setItem(key,old);
+  return {writes,paused,units:preferences.weatherUnits,comparisons};
+ });
+ assert.equal(protocol.writes,1,name+' duplicate receipt prevents a second persisted mutation');assert.match(protocol.paused,/paused/);assert.equal(protocol.units,'celsius');assert.ok(protocol.comparisons>0);
+ await page.evaluate(()=>{const job={number:799,title:'Clear from Dashboard',chatId:current,message:'failed',activeAt:Date.now()};trackedJobs.unshift(job);ensureTaskCard(job);persistJobs();view='home';render()});
+ await page.locator('.agent-task[data-open-task="799"]').click({button:'right'});
+ await page.locator('[data-task-act="delete"]').click();await page.locator('[data-task-act="delete"]').click();
+ await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===799));
+ assert.equal(await page.evaluate(()=>chats.some(c=>c.messages.some(m=>m.progressKey==='progress:799:live'))),false,name+' Dashboard deletion clears the chat card too');
+ assert.equal(await page.evaluate(()=>taskHistoryRecords[799]?.state==='cleared'),true,name+' Dashboard uses canonical history');
+ await page.evaluate(()=>{trackedJobs=[];persistJobs();view='chat';render()});
+ console.log(name+': registered capabilities, wording variations, restrictions, shared UI controls and active-task preservation passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});

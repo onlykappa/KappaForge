@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import '../preview/core.js';
 const read=path=>readFileSync(new URL('../preview/'+path,import.meta.url),'utf8');
 const plainOf=x=>JSON.parse(JSON.stringify(x));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -26,7 +27,7 @@ test('pull request activity counts the last 7 days from GitHub records only',()=
 // app-shell.js: phone navigation.
 function shell(extra={}){
  const box={esc,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener(){},uiIcon:n=>'<svg data-i="'+n+'"></svg>',plain:t=>String(t||''),
-  KappaJobs:{isSubmission:()=>false},data:{prs:[{draft:true,head:{ref:'kappa/dev-1'}},{draft:false,head:{ref:'kappa/dev-2'}},{draft:false,head:{ref:'main'}}]},
+  KappaJobs:{...globalThis.KappaJobs,isSubmission:()=>false},data:{prs:[{draft:true,head:{ref:'kappa/dev-1'}},{draft:false,head:{ref:'kappa/dev-2'}},{draft:false,head:{ref:'main'}}]},
   isDevPR:p=>/^kappa\/dev-/.test(p.head?.ref||''),conversationSearch:'',chats:[],trackedJobs:[],Date,...extra};
  vm.createContext(box);vm.runInContext(read('app-shell.js'),box);
  // Top-level const helpers are bindings of the script, not properties of the context.
@@ -117,25 +118,22 @@ test('holding a dashboard task offers Open, Retry, guidance, GitHub links, Copy 
  const src=read('app-dashboard.js'),start=src.indexOf('function taskMenuSheet('),end=src.indexOf('async function taskMenuAction(');
  const box={esc,clip:(t,n)=>String(t).slice(0,n),iosRow:o=>'<row '+(o.attrs||'')+' tone="'+(o.tone||'')+'">'+o.title+'|'+(o.sub||'')+'</row>',iosSheet:(t,b)=>'<sheet title="'+t+'">'+b+'</sheet>',
   trackedJobs:[{number:198,title:'Weather',message:'failed',url:'https://github.com/onlykappa/KappaForge/issues/198',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],taskMenu:198,taskMenuConfirm:false};
- vm.createContext(box);vm.runInContext(src.slice(start,end),box);
+ box.KappaJobs=globalThis.KappaJobs;
+ const tasks=read('app-tasks.js');
+ vm.createContext(box);vm.runInContext(tasks.slice(tasks.indexOf('function taskHasActiveExecution('),tasks.indexOf('async function deleteTaskHistory('))+src.slice(start,end),box);
  const html=box.taskMenuSheet();
  assert.match(html,/title="Task #198"[^]*data-task-act="open"[^]*data-task-act="retry"[^]*data-task-act="guide"/);
- assert.match(html,/issues\/198[^]*pull\/199[^]*data-task-act="copy"[^]*data-task-act="delete" tone="bad">Delete task\|Removes it from this app/);
+ assert.match(html,/issues\/198[^]*pull\/199[^]*data-task-act="copy"[^]*data-task-act="delete" tone="bad">Delete task\|Clears inactive history/);
  box.taskMenuConfirm=true;assert.match(box.taskMenuSheet(),/Tap again to delete/);
  box.trackedJobs[0].finished=true;box.trackedJobs[0].message='done';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="(retry|guide)"/,'a finished task that did not fail has nothing to retry');
+ box.trackedJobs[0].progress={status:'running'};
+ assert.match(box.taskMenuSheet(),/data-task-act="delete" disabled aria-disabled="true"/);
 });
 
-test('a deleted task leaves the list and is not adopted again from GitHub, until it is retried',()=>{
- const src=read('app-tasks.js'),store={};
- const box={localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v},removeItem:k=>{delete store[k]}},recentJob:{number:5},JSON,Number,Array,Date,
-  KappaProgress:{queued:n=>({number:n})},ensureTaskCard(){},checkJobResult(){},save(){},render(){},taskCheckpoint(){},persistMemories(){}};
- vm.createContext(box);vm.runInContext(src.slice(0,src.indexOf('// What the app does with a sent chat message'))+src.slice(src.indexOf('function adoptRepositoryTasks('),src.indexOf('// A request already has a task'))+src.slice(src.indexOf('function resumeJob('),src.indexOf('// A task owns one card')),box);
- vm.runInContext('trackedJobs.push({number:9,message:"failed"})',box);
- box.removeTask(9);box.removeTask(5);
- assert.deepEqual(JSON.parse(store['kappaforge.jobs.v2']).map(j=>j.number),[]);assert.equal(vm.runInContext('recentJob',box),null);
- const issue={number:9,repo:'KappaForge',labels:[{name:'kappa-task'}],created_at:new Date().toISOString(),body:''};
- box.adoptRepositoryTasks([issue]);assert.equal(vm.runInContext('trackedJobs.length',box),0,'not adopted again');
- box.resumeJob(9,null);assert.equal(vm.runInContext('trackedJobs.length',box),1);assert.deepEqual(JSON.parse(store['kappaforge.jobs.removed']),[5],'retrying brings it back');
+test('older failed tasks remain visible beneath newer running work and More counts tasks individually',()=>{
+ const box=shell({trackedJobs:[{number:1,chatId:'a',at:1,message:'failed'},{number:2,chatId:'a',at:2,message:'tests-failed'},{number:3,chatId:'a',at:3,progress:{status:'running'}},{number:4,message:'failed'},{number:5,message:'failed',historyOnly:true},{number:6,message:'closed'}]});
+ assert.equal(box.chatTaskState({id:'a'}).tone,'bad');
+ assert.equal(box.trackedJobs.filter(j=>box.KappaJobs.needsAttention(j)).length,3);
 });
 
 // ui.js: the task card's large ring.

@@ -482,7 +482,7 @@ test('guidance without an open PR starts a fresh attempt, and retry fixes a fail
   open=true;const f=await worker.fetch(req('/retry',{task:21}),env),fd=await f.json();
   assert.equal(f.status,202,JSON.stringify(fd));assert.equal(fd.status,'fix_started');assert.deepEqual(dispatched.at(-1),{issue_number:'21',action:'fix'});
   assert.equal((await worker.fetch(req('/retry',{task:22}),env)).status,404,'closed tasks are not retried');
-  assert.equal((await worker.fetch(req('/retry',{task:'x'}),env)).status,400);
+  assert.equal((await worker.fetch(req('/retry',{task:'x'}),env)).status,403,'registry rejects malformed task IDs during authorization');
   assert.equal(dispatched.length,3);
  }finally{globalThis.fetch=original}
 });

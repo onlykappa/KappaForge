@@ -357,7 +357,7 @@ function todayView(){
  const attention=[
   ...failing.map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',icon:"cross",tone:"bad",title:esc(r.name)+" failed",sub:esc([r.branch,r.sha.slice(0,7),r.duration?KappaActions.formatDuration(r.duration):""].filter(Boolean).join(" · ")),value:esc(runAgo(r.updatedAt,now))})),
   ...trackedJobs.filter(j=>!j.finished&&(["failed","tests-failed"].includes(j.message)||j.progress?.status==="failed")).map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"warn",tone:"bad",title:"Task #"+esc(j.number)+" needs attention",sub:esc(clip(j.title||"",80))})),
-  ...trackedJobs.filter(j=>!j.finished&&j.message==="tests-passed").map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"reviews",tone:"ok",title:"Task #"+esc(j.number)+" is ready for review",sub:"Tests passed"}))
+  ...trackedJobs.filter(j=>!j.finished&&KappaJobs.verifiedTask(j)).map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"reviews",tone:"ok",title:"Task #"+esc(j.number)+" is ready for review",sub:"Tests passed"}))
  ].join("");
  const builds=latest.slice(0,6).map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',title:esc(r.name),sub:esc([r.branch,r.sha.slice(0,7)].filter(Boolean).join(" · ")),value:esc(r.duration?KappaActions.formatDuration(r.duration):runAgo(r.updatedAt,now))}).replace('<span class="ios-row-text">',runBadge(r.state)+'<span class="ios-row-text">')).join("");
  return widgets+agentTasksPanel()+(attention?'<h2 class="ios-gh">Needs attention</h2><div class="ios-group icons">'+attention+'</div>':'')+
@@ -436,7 +436,9 @@ function taskStatusText(issue){
  const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
  if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
- if(job.message==="tests-passed")return "Tests passed · ready for review";
+ if(KappaJobs.verifiedTask(job))return "Current commit verified · ready for review";
+ if(job.message==="tests-passed"||job.message==="native-passed")return "Checks reported · verifying current commit";
+ if(job.message==="tests-incomplete")return "Checks passed · work remains incomplete";
  if(job.finished)return TASK_ENDED[job.message]||"Finished";
  if(KappaProgress.expired?.(job.progress)&&["waiting","recovering"].includes(job.progress?.status))return "Authorization expired · retry to resume";if(job.progress?.status==="waiting")return "Waiting for automatic continuation";if(job.progress?.status==="recovering")return "Recovering from an error";return KappaProgress.stale(job)?"No update for a while · may be stuck":job.message==="waiting"?"Queued":"Running";
 }
@@ -468,17 +470,18 @@ function agentTasksPanel(){
 // Hold a task on the Dashboard (or right-click it) for its actions. Delete removes it from this app only.
 function taskMenuSheet(){
  const job=trackedJobs.find(j=>j.number===taskMenu);if(!job){taskMenu=0;return ""}
- const failed=["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed",open=!job.finished;
- const row=(act,icon,title,sub="",tone="")=>iosRow({attrs:'data-task-act="'+act+'"',icon,tone,title,sub,chevron:false});
+ const failed=KappaJobs.needsAttention(job),open=!job.finished,deletable=inactiveTask(job);
+ const row=(act,icon,title,sub="",tone="")=>iosRow({attrs:'data-task-act="'+act+'"'+(act==="delete"&&!deletable?' disabled aria-disabled="true"':''),icon,tone,title,sub,chevron:false});
  const link=(href,icon,title)=>iosRow({tag:"a",attrs:'href="'+esc(href)+'" target="_blank" rel="noopener noreferrer"',icon,title});
  return iosSheet("Task #"+job.number,'<p class="task-menu-title">'+esc(clip(job.title||"Development task",120))+'</p>'+
   '<div class="ios-group icons">'+row("open","chat","Open in chat")+(failed||open?row("retry","retry","Retry",failed?"Ask for recovery of the saved work":"Restart from the saved work"):"")+
   (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(job.authorization&&open?row("cancel","stop","Cancel task","","warn"):"")+'</div>'+
   (job.url||job.prUrl?'<div class="ios-group icons">'+(job.url?link(job.url,"repo","View on GitHub"):"")+(job.prUrl?link(job.prUrl,"merge","Open draft PR"):"")+(job.url?row("copy","copy","Copy link"):"")+'</div>':'')+
-  '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task","Removes it from this app. The GitHub issue stays.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
+  '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task",deletable?"Clears inactive history. Undo is available for 30 days. GitHub stays unchanged.":"Active or unknown work stays tracked. Cancel and wait for termination first.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
 }
 async function taskMenuAction(act){
  const n=taskMenu,job=trackedJobs.find(j=>j.number===n);if(!job)return;
+ if(act==="delete"&&!inactiveTask(job)){toast("Active or unknown work stays tracked. Cancel and wait for termination first.");return}
  if(act==="delete"&&!taskMenuConfirm){taskMenuConfirm=true;render();return}
  taskMenu=0;taskMenuConfirm=false;render();
  if(act==="open")openTaskInChat(n);
@@ -486,7 +489,7 @@ async function taskMenuAction(act){
  if(act==="guide")await taskGuide(n);
  if(act==="cancel")await cancelAuthorizedJob(n);
  if(act==="copy"){try{await copyInterfaceText(job.url);toast("Link copied")}catch(e){toast(e.message)}}
- if(act==="delete"){removeTask(n);render();toast("Task #"+n+" deleted from this app")}
+ if(act==="delete"){try{const result=await deleteTaskHistory(n);render();toast(result)}catch(e){render();toast("Task history was not cleared: "+e.message)}}
 }
 // A long press (or right-click) on a task row opens its menu instead of the chat.
 function bindTaskHold(row){
@@ -567,7 +570,7 @@ if(view==="chat"&&chatSheet)html+=chatSheetHTML();
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
-if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+(data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
+if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button><button class="btn secondary" id="clear-task-history">Clear inactive history</button><button class="btn secondary" id="undo-task-history">Undo history clear</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
@@ -631,11 +634,13 @@ document.querySelectorAll("[data-plugin-request]").forEach(b=>b.addEventListener
  current=current||null;navigate("chat");document.getElementById("message").value=draft;focusMessageInput();
 }));
 bindSettings();bindShell();bindDashboard();bindInterface(scrollState);
+document.getElementById('undo-task-history')?.addEventListener('click',async()=>{try{const result=await executeAppCapability({id:'tasks.undo-history',params:{}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}});
+document.getElementById('clear-task-history')?.addEventListener('click',async()=>{try{const result=await executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}});
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
-document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
+document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){const step=c.pendingActions?.requestId===pendingJob?.routeRequestId?c.pendingActions.steps[pendingJob.routeActionIndex]:null;if(step){step.status="failed";step.awaitingApproval=false;step.result="The owner declined this task.";recordRoute(step.decision,null,"failed",c.pendingActions.requestId,step.index);}c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
 }
 
 
@@ -643,9 +648,13 @@ document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pending
 let planError="";
 // explicit: the owner asked for a task (Plan task, "start a task"), so any text is planned and a planner miss falls back to a
 // develop task, launched as the owner's own control. approval: an uncertain request is planned into an Approve/Deny card only.
-async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false}={}){
+async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false,ownerRequest=null,actionIndex=null,routeRequestId=null,receipt=null}={}){
  const intent=KappaIntent.classify(text);
+ if(KappaIntent.isOperation(text)){if(typeof recordRoute==='function'){const denied=KappaIntent.executionDecision(text);recordRoute({...denied,workflow:{...denied.workflow,kind:'development'}},KappaIntent.capabilities.resolve(text),'blocked',requestId);}planError='Send this app operation in chat; it cannot start development.';return false;}
+ const decision=KappaIntent.executionDecision(text);
+ const conflict=KappaIntent.taskConflict(text,decision.workflow.mode);if(conflict){planError=conflict;return false;}
  if(!explicit&&!approval&&!["execution","investigation"].includes(intent))return false;
+ if(typeof recordRoute==='function')recordRoute(decision,null,'requested',routeRequestId||requestId,actionIndex||0);
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
@@ -660,14 +669,15 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
   else if(!data.isTask){if(intent!=="execution"&&!explicit){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}p=fallback("")}
   const planned=String(p.title||"").trim();
   pendingJob={title:planned.length>=5&&planned.length<=105?planned:title.length>=5?title:"KappaForge task",instructions:String(text).trim(),repo:p.repo,mode:intent==="investigation"?"audit":p.mode,context,requestId,conversationId,
+   ...(ownerRequest?{requestScope:{ownerRequest,actionIndex},routeRequestId,routeActionIndex:actionIndex}:{}),
    ...(explicit?{authorizationSource:"user-control",confirmed:true}:{})};
   // Owner explicitly requested hands-off development. Only safe task modes start
   // automatically; uncertain requests and potentially destructive or long-running modes wait for Approve (shown in the chat).
   if(!approval&&preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
-   await launchJob();
-  }else{view="chat";if(conversationId&&chats.some(c=>c.id===conversationId))current=conversationId;render()}
+   const result=await launchJob();if(receipt)Object.assign(receipt,result||{status:"requested"});if(result?.status==="failed")throw Error(result.error);
+  }else{if(receipt)Object.assign(receipt,{status:"requested",awaitingApproval:true});view="chat";if(conversationId&&chats.some(c=>c.id===conversationId))current=conversationId;render()}
   return true;
- }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
+ }catch(e){if(typeof recordRoute==='function')recordRoute(decision,null,'failed',routeRequestId||requestId,actionIndex||0);planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
  const brief=pendingJob.instructions.length>400?pendingJob.instructions.slice(0,399)+"…":pendingJob.instructions;

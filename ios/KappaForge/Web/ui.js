@@ -45,10 +45,10 @@ function renderTaskActivity(m,i=-1){
  if(job?.progress||job?.queuedAt)return renderExecutionActivity(m,job,i);
  const finished=model.finished;
  const lifecycle=job?.message||'';
- const validationFailed=['failed','tests-failed'].includes(lifecycle);
- const testing=finished&&(job&&!job.finished&&!['tests-passed','merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
+ const verified=KappaJobs.verifiedTask(job),validationFailed=!!job?.verification?.incomplete||!!job?.verification?.failed||['failed','tests-failed','native-failed','tests-incomplete'].includes(lifecycle);
+ const testing=finished&&(job&&!job.finished&&!verified&&!['merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
  const tag=job?.finished&&lifecycle==='cancelled'?'CANCELLED':job?.finished&&lifecycle==='closed'?'CLOSED':
-  fail||validationFailed?'NEEDS ATTENTION':lifecycle==='tests-passed'?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
+  fail||validationFailed?'NEEDS ATTENTION':verified?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
  // After the draft PR: the task's own test and iOS runs, live from the Workflow Monitor (app-tasks.js).
  const checks=job&&typeof taskValidation==='function'?taskValidation(job):[];
  const shown=[...rows,...checks];
@@ -103,14 +103,14 @@ function renderExecutionActivity(m,job,i=-1){
   steps:legacy.map((r,i)=>({id:String(i),title:r.title,detail:r.detail,status:({done:'completed',current:'running',failed:'failed',upcoming:'queued'})[r.state],startedAt:Date.parse(r.since)||0,displayTime:r.time})),
   units:null,findings:[]
  };
- const life=job.message,failed=p.status==='failed'||['failed','tests-failed'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||['tests-passed','tests-failed','failed'].includes(life);
+ const life=job.message,verified=KappaJobs.verifiedTask(job),failed=!!job.verification?.incomplete||p.status==='failed'||!!job.verification?.failed||['failed','tests-failed','native-failed','tests-incomplete'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||verified||failed;
  const expired=KappaProgress.expired?.(p,now)&&['waiting','recovering'].includes(p.status);
- const status=expired?'blocked':life==='tests-passed'?'ready':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
+ const status=expired?'blocked':verified?'ready':failed?'failed':life==='tests-passed'||life==='native-passed'?'testing':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
  const labels={queued:'QUEUED',running:'IN PROGRESS',recovering:'RECOVERING',waiting:'WAITING TO RESUME',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
  const active=p.steps.find(r=>['running','recovering','waiting'].includes(r.status)),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
  const reminder=!ended&&!expired&&KappaProgress.retryReminder(job,now),stale=KappaProgress.stale(job,now),unavailable=!!job.pollError;
  const recoveryDisplay=!ended&&!expired?KappaProgress.recoveryDisplay(job,now):null;
- const headline=expired?'Task authorization expired. Retry explicitly to resume saved work.':recoveryDisplay?recoveryDisplay.text:status==='waiting'?'Waiting for recovery.':status==='recovering'?'Diagnosing the error and trying a different recovery strategy':status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?'Task cancelled':status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
+ const headline=job.verification?.incomplete?'Checks do not establish completion; the draft still has unfinished requirements.':job.cancellation&&!job.cancellation.terminatedAt?'Authorization revoked; cancellation requested. Runner termination has not been confirmed.':expired?'Task authorization expired. Retry explicitly to resume saved work.':recoveryDisplay?recoveryDisplay.text:status==='waiting'?'Waiting for recovery.':status==='recovering'?'Diagnosing the error and trying a different recovery strategy':status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?(job.cancellation?'Observed task runners stopped; authorization remains revoked.':'Task cancelled'):status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
  const times=KappaProgress.timing({...p,finishedAt:p.finishedAt||job.finishedAt},job.queuedAt,now),duration=ms=>KappaActions.formatDuration(Math.round(ms/1000));
  const id=String(job.number),unit=p.units,percent=unit?Math.round(unit.done/unit.total*100):0;
  const timing='<div class="task-timing"><span>Queued <time'+(!p.startedAt&&!ended?' data-since="'+new Date(job.queuedAt||now).toISOString()+'"':'')+'>'+duration(times.queuedMs)+'</time></span><span>'+(status==='waiting'?'Waiting':'Working')+' <time'+(p.startedAt&&!ended?' data-since="'+new Date(p.startedAt).toISOString()+'"':'')+'>'+duration(times.activeMs)+'</time></span></div>';
@@ -214,6 +214,10 @@ function renderTrail(m){
  const summary=working?esc(last.text)+'…':(parts?esc(parts.text.replace(/, answered.*$/,''))+' · ':'')+(asked>1?'Asked '+asked+' AIs':asked===1?esc(steps.filter(x=>/^Answering with /.test(x.text)).pop()?.text||'Asked 1 AI'):'Worked')+' · '+secs+'s';
  return '<details class="activity-trail'+(working?' live':'')+'"><summary>'+uiIcon('list')+'<span>'+summary+'</span></summary><ol>'+steps.map(x=>'<li>'+esc(x.text)+'</li>').join('')+'</ol></details>';
 }
+function renderRouteEvidence(events){
+ if(!Array.isArray(events)||!events.length)return '';
+ return '<details class="route-evidence"><summary>Why this route</summary>'+events.map(e=>'<p>'+esc(['blocked','needs-clarification'].includes(e.outcome)?'No action ran for this step because its target, authorization or prerequisite is unresolved.':e.outcome==='failed'?'The requested action failed; no broader recovery was authorized.':KappaIntent.routeExplanation({workflow:{kind:e.workflow}}))+' '+esc((e.capability||e.workflow)+' · '+e.outcome+' · '+e.verification)+'</p>').join('')+'</details>';
+}
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
  // Task reports carry audit findings; they become an Issues found card under the report.
@@ -228,7 +232,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&(m.offerTask||KappaIntent.suggestsTask(m.text))?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(!user&&!progress?renderTrail(m):'')+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(!user&&!progress?renderTrail(m):'')+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+(!user?renderRouteEvidence(m.routeEvidence):'')+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}
@@ -257,7 +261,7 @@ const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.do
  window.addEventListener('offline',syncNetworkStatus);
  syncNetworkStatus();
  // Start as task: the planner fills in repository, mode and title; the manual form only if planning can't run.
- document.querySelectorAll('[data-start-task]').forEach(b=>b.onclick=async()=>{const c=active(),m=c?.messages[Number(b.dataset.startTask)];if(!m)return;m.executionHandled=true;m.offerTask=false;save();render();if(await proposeTaskAutomatically(m.text,true,KappaJobs.conversationContext(c.messages.slice(0,c.messages.indexOf(m))),crypto.randomUUID(),c.id,{explicit:true})){m.taskStarted=true;save()}else prepareJob(m.text,'develop')});
+ document.querySelectorAll('[data-start-task]').forEach(b=>b.onclick=async()=>{const c=active(),m=c?.messages[Number(b.dataset.startTask)];if(!m)return;m.offerTask=false;if(KappaIntent.isOperation(m.text)){m.executionHandled=false;await runChatAction(chatTaskPlan(m.text,c),m.text,c);return;}const conflict=KappaIntent.taskConflict(m.text,'develop');if(conflict){toast(conflict);return;}m.executionHandled=true;save();render();if(await proposeTaskAutomatically(m.text,true,KappaJobs.conversationContext(c.messages.slice(0,c.messages.indexOf(m))),crypto.randomUUID(),c.id,{explicit:true})){m.taskStarted=true;save()}else prepareJob(m.text,'develop')});
  document.querySelectorAll('[data-save-message]').forEach(b=>b.onclick=()=>{const m=active()?.messages[Number(b.dataset.saveMessage)];if(m){m.saved=!m.saved;active().at=Date.now();save();render();toast(m.saved?'Message saved':'Message unsaved')}});
  document.querySelectorAll('[data-retry-message]').forEach(b=>b.onclick=()=>{if(sending)return;const messages=active()?.messages||[];const last=messages.slice(0,Number(b.dataset.retryMessage)).reverse().find(m=>m.role==='user');if(!last)return;if(/\[Attached:/.test(last.text)){document.getElementById('message').value=last.text;toast('Reattach the original files, then send to retry.');return;}document.getElementById('message').value=last.text;document.getElementById('form').requestSubmit();});
  document.querySelectorAll('[data-copy-code]').forEach(b=>b.onclick=async()=>{try{await copyInterfaceText(b.closest('.code-block').querySelector('code').textContent);toast('Code copied')}catch(e){toast(e.message)}});

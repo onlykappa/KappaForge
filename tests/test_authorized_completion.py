@@ -24,6 +24,13 @@ def fixture(merge=True,conclusion='success'):
 
 class CompletionTests(unittest.TestCase):
     def tearDown(self):ACTIVE.set(None)
+    def test_owner_no_merge_limit_overrides_a_stale_allow_merge_flag(self):
+        run, api, writes, issue, _ = fixture(True)
+        record = json.loads(issue['body'].split('<!-- kappa-authorization:')[1].split(' -->')[0])
+        record['restrictions'] = {'noMerge': True}
+        issue['body'] = issue['body'].split('<!-- kappa-authorization:')[0] + '<!-- kappa-authorization:' + json.dumps(record) + ' -->'
+        self.assertEqual(complete(run, api), 'merge_not_authorized')
+        self.assertEqual(writes, [])
     def test_merge_requires_original_user_permission(self):
         run,api,writes,_,_=fixture(False)
         self.assertEqual(complete(run,api),'merge_not_authorized');self.assertEqual(writes,[])
