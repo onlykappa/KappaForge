@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
 // Load the core module to get compareVersions
 const coreSource = readFileSync(new URL('../preview/core.js', import.meta.url), 'utf8');
