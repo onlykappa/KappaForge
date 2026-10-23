@@ -610,6 +610,29 @@ function jobChatUpdate(job,signature,body,quiet=false){
  if(!target.messages.some(m=>m.jobReport===deliveryKey))target.messages.push({role:"assistant",text:body,jobReport:deliveryKey});
  job.delivered=[...(job.delivered||[]),signature];if(!quiet)job.activeAt=Date.now();target.at=Date.now();save();persistJobs();return true;
 }
+function collectTaskFailureHistory(job,body){
+ const match=String(body||'').match(/<!-- KAPPA_FAILURES_V1 ([\\s\\S]*?) -->/);if(!match)return false;
+ let shard;try{shard=JSON.parse(match[1])}catch{return false}
+ if(!shard||!shard.records||typeof shard.records!=='object')return false;
+ const rows=[];
+ for(const [fingerprint,record] of Object.entries(shard.records)){
+  const history=Array.isArray(record?.history)&&record.history.length?record.history:[record];
+  history.forEach((item,index)=>{
+   if(!item||typeof item!=='object')return;
+   const error=String(item.error||record.cause||'').slice(0,1000);if(!error)return;
+   const at=Number(item.at||record.at)||0,model=String(item.model||record.model||'').slice(0,140);
+   rows.push({id:String(fingerprint)+':'+String(at)+':'+index,at,kind:String(item.kind||record.kind||'failure').slice(0,80),
+    error,model,strategy:String(item.strategy||record.strategy||'').slice(0,100),
+    next:String(item.next||record.next||'').slice(0,300),
+    files:Array.isArray(item.files||record.files)?(item.files||record.files).filter(x=>typeof x==='string').slice(0,10):[],
+    runUrl:String(item.runUrl||record.runUrl||'').startsWith('https://github.com/')?String(item.runUrl||record.runUrl):''});
+  });
+ }
+ const merged=new Map([...(job.failureHistory||[]),...rows].map(x=>[x.id,x]));
+ const next=[...merged.values()].sort((a,b)=>a.at-b.at).slice(-10);
+ if(JSON.stringify(next)===JSON.stringify(job.failureHistory||[]))return false;
+ job.failureHistory=next;return true;
+}
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
  // Tracked even when its chat was deleted or replaced by a sync, so Running never counts a task nobody follows.
