@@ -30,6 +30,7 @@ from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
+from engine import verify
 from engine.verify import open_problems as requirements_open, review_record
 
 ROOT = "onlykappa/KappaForge"
@@ -1526,8 +1527,11 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
 MAX_CHECK_ROUNDS = 3
 
 
-def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None):
+def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
+                   receipt=None):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
+
+    `receipt` is GitHub's record of this task's draft PR (verify.pr_receipt); it alone decides PR lifecycle asks.
 
     Returns the final changes, a one-paragraph verdict for the owner, and the problems still open."""
     from engine import verify
@@ -1569,9 +1573,12 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             for text, prior in requirement_catalog.items():
                 if text not in current_requirements:
                     reqs.append({**prior, 'met': False})
-                    found.append('A requirement disappeared between repair rounds: ' + text)
+                    if not verify.lifecycle_requirement(text):
+                        found.append('A requirement disappeared between repair rounds: ' + text)
+            verify.resolve_lifecycle(reqs, receipt)
+            # Lifecycle asks are KappaForge's own actions, not code work for a repair round.
             previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
-                                       for r in reqs if r.get("met") is not True] + found
+                                       for r in reqs if r.get("met") is not True and r.get("kind") != "lifecycle"] + found
             if not reqs:
                 previous_review_problems.append("Requirement review returned no requirements; verification is incomplete")
             elif not previous_review_problems:
@@ -1608,7 +1615,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     "against the task found these problems. Fix every one of them now, editing the real code paths they "
                     "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20])
                     + "\n\nREQUIREMENT CHECKLIST (retain every item in all subsequent reviews):\n"
-                    + "\n".join('- ' + text for text in requirement_catalog)
+                    + "\n".join('- ' + text for text in requirement_catalog if not verify.lifecycle_requirement(text))
+                    + "\n\nKappaForge itself opens and updates this task's draft PR and reports progress: never add code, "
+                    "scripts or workflows that open PRs or send notifications.\n"
                     + ("\n\nPREVIOUS REPAIR COULD NOT BE APPLIED. Use a different source-exact edit based on the "
                        "current files, not the rejected proposal:\n" + "\n".join(repair_failures[-2:]) if repair_failures else ""))
         if rescue_round:
@@ -1760,7 +1769,8 @@ def produce_development_pr(issue, api_key, token):
     progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress,
-                                                     **({'checkpoint': lambda changes: checkpoint('recovery', 'Saved review repair', changes, 'Unverified repair checkpoint')} if journal else {}))
+                                                     **({'checkpoint': lambda changes: checkpoint('recovery', 'Saved review repair', changes, 'Unverified repair checkpoint')} if journal else {}),
+                                                     receipt=verify.pr_receipt(saved["pr"], repo, branch))
     explanation = explanation or summary
     if verdict and open_problems and explanation:
         # The model describes what it meant to build; with problems open that description is not a fact.
@@ -1922,7 +1932,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
-    pending = requirements_open(pr)
+    pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task
@@ -1955,7 +1965,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         try:
             changes, verdict, remaining = check_the_work(api_key, task, repo, head_sha, repo_token, sources, existing,
                                                         changes, guide, allowed, design, has_tests(existing), Progress.latest,
-                                                        **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}))
+                                                        **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
+                                                        receipt=verify.pr_receipt(pr, repo, branch))
         finally:
             UNFINISHED[:] = prior
         explanation = verdict + "\n\n" + explanation + "\n\n" + review_record(remaining)
@@ -2034,7 +2045,8 @@ def fix_pull_request(issue, api_key, token):
         run = sandbox_result(branch, head, token, repo)
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
-    pending = requirements_open(pr)
+    # The draft PR this runs on is GitHub's proof of the PR lifecycle asks; only code work starts a repair.
+    pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
     # An unfinished requirement is already actionable, as is a completed failed
     # check. Waiting for an unrelated in-flight check can strand this repair:
     # a successful native build does not dispatch another fix. Older checks stay
@@ -2090,7 +2102,7 @@ def fix_pull_request(issue, api_key, token):
         gh(f"repos/{repo}/pulls/{pr['number']}", repo_token,
            {'body': (pr.get('body') or '') + '\n\n' + review_record(['Repair checkpoint awaiting full requirement review and independent tests'])}, method='PATCH')
     if journal:
-        journal.event('Tests failed or original requirements remain unmet', strategy='repair_from_test_evidence',
+        journal.event('Tests failed' if failures else 'Original requirements remain unmet', strategy='repair_from_test_evidence',
                       next_action='Read failed assertions and preserve original requirements')
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
                                                                 native_history, **({'checkpoint': checkpoint_revision} if journal else {}))
