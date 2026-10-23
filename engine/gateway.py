@@ -55,6 +55,15 @@ def safe_message(value):
     return text or None
 
 
+def platform_error(body):
+    """Cloudflare's JSON error details (error_code, error_name, title, retryable), or None for any other body."""
+    if not isinstance(body, dict) or not any(key in body for key in ('error_code', 'error_name', 'title')):
+        return None
+    code = body.get('error_code')
+    return {'errorCode': code if type(code) is int else None, 'errorName': safe_message(body.get('error_name')),
+            'title': safe_message(body.get('title')), 'retryable': body.get('retryable') if type(body.get('retryable')) is bool else None}
+
+
 def error(status, data=None, headers=None, pinned=False):
     data = data if isinstance(data, dict) else {}
     code = data.get('code')

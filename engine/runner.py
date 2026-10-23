@@ -740,8 +740,12 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             evidence['unparsedResponse'] = gateway.response_provenance(raw, exc.headers)
         elif failure.code == 'unreported':
             # The Worker's uncoded refusals carry one of its own fixed messages ("Shared routing limits unavailable;
-            # inference was not sent"): keep it, sanitized, so the failing branch is named.
+            # inference was not sent"): keep it, sanitized, so the failing branch is named. Cloudflare's own platform
+            # errors (e.g. 1102, Worker exceeded resource limits) arrive as JSON problem details with no "error".
             evidence['gatewayMessage'] = gateway.safe_message(body.get('error'))
+            platform = gateway.platform_error(body)
+            if platform:
+                evidence['platformError'] = platform
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

@@ -60,6 +60,22 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertNotIn('unparsedResponse', evidence)
         self.assertIsNone(gateway.safe_message(None))
 
+    def test_a_cloudflare_platform_error_is_named(self):
+        import urllib.error
+        body = json.dumps({'type': 'https://developers.cloudflare.com/support/troubleshooting/cloudflare-errors/',
+                           'title': 'Error 1102: Worker exceeded resource limits', 'status': 503, 'error_code': 1102,
+                           'error_name': 'worker_exceeded_resources', 'retryable': True, 'ray_id': '8f1c'}).encode()
+        error = urllib.error.HTTPError('https://fixture.example/router/infer', 503, 'unavailable', {}, io.BytesIO(body))
+        output = io.StringIO()
+        with patch.dict(os.environ, {'KAPPA_ROUTER_URL': 'https://fixture.example', 'KAPPA_ROUTER_TOKEN': 'x' * 40}), \
+                patch.object(runner.urllib.request, 'urlopen', side_effect=error), contextlib.redirect_stdout(output), \
+                self.assertRaises(gateway.GatewayUnavailable):
+            runner.run_integrated_router('brief', 100, ['groq'])
+        evidence = json.loads(output.getvalue().split('KAPPA_ROUTER_RESULT ', 1)[1].splitlines()[0])
+        self.assertEqual(evidence['platformError'], {'errorCode': 1102, 'errorName': 'worker_exceeded_resources',
+                                                     'title': 'Error 1102: Worker exceeded resource limits', 'retryable': True})
+        self.assertIsNone(gateway.platform_error({'error': 'Shared routing limits unavailable'}))
+
     def test_transport_and_invalid_gateway_responses_preserve_sanitized_evidence(self):
         import urllib.error
         for cause, category in [(TimeoutError('secret fixture'), 'timeout'),
