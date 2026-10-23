@@ -26,7 +26,7 @@ const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
-let lastChatPreferences,issuedJob=22,premiumEnabled=false;let taskReports={};
+let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={};
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -35,8 +35,9 @@ const apiServer=createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
  if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
- else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2,premium:{enabled:premiumEnabled,configured:true,taskCapUsd:1,monthCapUsd:5,selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'DeepSeek V4.1 Flash 1017'}}};
+ else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2,premium:{enabled:premiumEnabled,configured:true,...premiumLimits,dailyLeftUsd:premiumLimits.dailyCapUsd,monthLeftUsd:premiumLimits.monthCapUsd,account:{balanceUsd:9,availableUsd:4},selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'DeepSeek V4.1 Flash 1017'}}};
  else if(req.url==='/premium'&&data.action==='set'){premiumEnabled=data.enabled===true;result={enabled:premiumEnabled};}
+ else if(req.url==='/premium'&&data.action==='limits'){premiumLimits=data.limits;result={saved:true,...premiumLimits};}
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;
   const prompt=data.messages.at(-1).text;
@@ -90,6 +91,12 @@ const apiServer=createServer(async(req,res)=>{
  assert.equal(await page.locator('#premium-mode').isVisible(),true,name+' Premium control is visible');
  assert.equal(await page.getByText('Automatic open-model selection',{exact:true}).isVisible(),true);
  assert.match(await page.locator('#content').innerText(),/DeepSeek V4\.1 Flash 1017/);
+ assert.match(await page.locator('#content').innerText(),/Spendable under account and key limits: \$4\.00/);
+ await page.locator('#premium-limit-task').fill('2');await page.locator('#premium-limit-daily').fill('3');await page.locator('#premium-limit-month').fill('9');await page.locator('#premium-limits-save').click();
+ await page.waitForFunction(()=>capabilities.premium.monthCapUsd===9);assert.equal(await page.locator('#premium-mode').isChecked(),false,'saving limits does not enable Premium');
+ await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-limit-month').inputValue(),'9');assert.equal(await page.locator('#premium-limit-daily').inputValue(),'3');
+ await page.route(backendURL+'/premium',route=>route.fulfill({status:503,json:{error:'Limits could not be saved'}}),{times:1});
+ await page.locator('#premium-limit-month').fill('12');await page.locator('#premium-limits-save').click();await page.waitForFunction(()=>document.getElementById('premium-limit-month')?.value==='9');assert.equal(premiumLimits.monthCapUsd,9,'failed save preserves actual limits');
  await page.locator('#premium-mode').check();await page.waitForFunction(()=>capabilities.premium.enabled===true);
  await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-mode').isChecked(),true,name+' Premium reads persisted backend state');
  await page.locator('#premium-mode').uncheck();await page.waitForFunction(()=>capabilities.premium.enabled===false);

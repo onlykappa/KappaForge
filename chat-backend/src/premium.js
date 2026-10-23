@@ -10,6 +10,8 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {providerAllowed} from "./routing-policy.js";
 import {RESCUE_REASONS} from "./premium-store.js";
+import {openrouterAccount} from './openrouter-account.js';
+import {routingSnapshot,reserveProvider,reportProviderOutcome} from './router-coordination.js';
 
 const CATALOG_TTL_MS=3600000,CATALOG="https://openrouter.ai/api/v1/models",API="https://openrouter.ai/api/v1/";
 // OpenRouter answers these before any inference runs, so they carry no charge. Anything else without a reported cost
@@ -47,25 +49,36 @@ export function maxCharge(pricing,promptTokens,maxTokens,margin=premiumConfig()?
 
 // Exact reviewed open-weight coding models, in quality preference order. Live eligibility and budget checks always
 // apply before preference. A new model or a lookalike vendor name cannot enter through a broad family prefix.
-export function pickPremium(models,{promptTokens,maxTokens,budgetUsd},config=premiumConfig()){
- if(config?.provider!=="openrouter"||config.selectionPolicy!=="reviewed-quality-first-v1"||!Array.isArray(models)||![promptTokens,maxTokens,budgetUsd].every(Number.isFinite)||promptTokens<0||maxTokens<1024||budgetUsd<=0)return null;
- const reviewed=new Map((config.models||[]).filter(m=>m?.id&&m.license&&m.weights).map((m,i)=>[m.id,{...m,rank:i}]));
- const candidates=[];
- for(const m of models){
-  if(typeof m?.id!=="string"||/[:/]free$/.test(m.id)||/^openrouter\//.test(m.id)||m.id.startsWith("~"))continue;
-  const review=reviewed.get(m.id);if(!review)continue;
-  const pricing=verifiedPricing(m);if(!pricing)continue;
-  if(pricing.completion*1e6>config.maxOutputPricePerMillion||pricing.prompt*1e6>config.maxInputPricePerMillion)continue;
-  if(m.architecture?.output_modalities&&!m.architecture.output_modalities.includes("text"))continue;
-  if(!Array.isArray(m.supported_parameters)||!m.supported_parameters.includes("max_tokens"))continue;
-  const context=Number(m.context_length)||0,limit=Number(m.top_provider?.max_completion_tokens)||Infinity;
-  const tokens=Math.min(maxTokens,limit);
-  if(!Number.isFinite(context)||tokens<1024||promptTokens+2*tokens>context)continue;
-  const maxUsd=maxCharge(pricing,promptTokens,tokens,config.safetyMargin);
-  if(!(maxUsd<=budgetUsd))continue;
-  candidates.push({model:m.id,name:review.name,rank:review.rank,selectionPolicy:config.selectionPolicy,maxUsd,maxTokens:tokens,pricing});
+export function premiumSelection(models,{promptTokens,maxTokens,budgetUsd,health={}},config=premiumConfig()){
+ const skipped=[],none=()=>({pick:null,skipped});
+ if(config?.provider!=="openrouter"||config.selectionPolicy!=="reviewed-quality-first-v1"||!Array.isArray(models)||![promptTokens,maxTokens,budgetUsd].every(Number.isFinite)||promptTokens<0||maxTokens<1024||budgetUsd<=0)return none();
+ for(const [rank,review] of (config.models||[]).entries()){
+  const m=models.find(m=>m?.id===review.id),pricing=verifiedPricing(m);
+  let reason='';
+  const route=health['openrouter:'+review.id];
+  if(!review.license||!review.weights||/[:/]free$/.test(review.id)||/^openrouter\//.test(review.id)||review.id.startsWith('~'))reason='unreviewed';
+  else if(!m)reason='unavailable';
+  else if(route&&(route.blocked||route.until>Date.now()))reason='cooldown';
+  else if(!pricing)reason='pricing_unverified';
+  else if(pricing.completion*1e6>config.maxOutputPricePerMillion||pricing.prompt*1e6>config.maxInputPricePerMillion)reason='price_ceiling';
+  else if(m.architecture?.output_modalities&&!m.architecture.output_modalities.includes('text'))reason='text_unsupported';
+  else if(!Array.isArray(m.supported_parameters)||!m.supported_parameters.includes('max_tokens'))reason='token_limit_unsupported';
+  const context=Number(m?.context_length)||0,limit=m?.top_provider?.max_completion_tokens;
+  const tokens=Math.min(maxTokens,limit===undefined||limit===null?Infinity:Number(limit));
+  if(!reason&&(!Number.isFinite(context)||!Number.isFinite(tokens)||tokens<1024||promptTokens+2*tokens>context))reason='context_limit';
+  const maxUsd=reason?null:maxCharge(pricing,promptTokens,tokens,config.safetyMargin);
+  if(!reason&&!(maxUsd<=budgetUsd))reason='budget';
+  if(reason){skipped.push({model:review.id,reason});continue;}
+  return {pick:{model:m.id,name:review.name,rank,selectionPolicy:config.selectionPolicy,maxUsd,maxTokens:tokens,pricing},skipped};
  }
- return candidates.sort((a,b)=>a.rank-b.rank||a.maxUsd-b.maxUsd||a.model.localeCompare(b.model))[0]||null;
+ return none();
+}
+export const pickPremium=(models,options,config=premiumConfig())=>premiumSelection(models,options,config).pick;
+const SKIP_TEXT={unavailable:'is unavailable',cooldown:'is cooling down after a recent failure',pricing_unverified:'has unverified pricing',price_ceiling:'exceeds the price ceiling',text_unsupported:'does not support text output',token_limit_unsupported:'cannot enforce the output limit',context_limit:'cannot fit the input and output',budget:'exceeds the available budget',unreviewed:'is not approved'};
+export function selectionExplanation(pick,skipped,config=premiumConfig()){
+ if(!pick)return 'No reviewed model currently fits the request, limits and available budget.';
+ const name=id=>config.models.find(m=>m.id===id)?.name||id;
+ return 'Using '+pick.name+(skipped.length?' because '+skipped.map(x=>name(x.model)+' '+(SKIP_TEXT[x.reason]||'is ineligible')).join('; '):' as the preferred eligible coding model')+'.';
 }
 
 export async function premiumCatalog(now=Date.now(),fetcher=fetch){
@@ -100,28 +113,44 @@ export function premiumAvailable(env,requested){
 // Quote (no dispatch) or rescue (one dispatch) for a blocked task step. Returns the premium summary for the response.
 export async function premiumRescue(env,{task,step,reason,quote,requestId,system,messages,promptChars,maxTokens,temperature,signal,deadline,freeMayRecover}){
  if(!premiumAvailable(env))return {task,step,refused:"premium_unavailable"};
- const config=premiumConfig(),caps={taskCapUsd:config.taskCapUsd,monthCapUsd:config.monthCapUsd};
- const base={task,step,reason,quote:!!quote,taskCapUsd:config.taskCapUsd,monthCapUsd:config.monthCapUsd};
+ const config=premiumConfig();
  const spent=await premiumOp(env,{op:"status",task});
+ const caps={taskCapUsd:spent.taskCapUsd,dailyCapUsd:spent.dailyCapUsd,monthCapUsd:spent.monthCapUsd};
+ const base={task,step,reason,quote:!!quote,...caps};
  const promptTokens=promptTokensUpper(promptChars);
- const models=await premiumCatalog();
+ const [models,snapshot,account]=await Promise.all([premiumCatalog(),routingSnapshot(env),openrouterAccount(env,Date.now(),{fresh:!quote})]);
  if(!models)return {...base,refused:"pricing_unverified"};
- const budgetUsd=Math.max(0,Math.min(config.taskCapUsd-(spent.taskUsd||0),config.monthCapUsd-(spent.monthUsd||0)));
- const pick=pickPremium(models,{promptTokens,maxTokens:Math.min(maxTokens,config.maxTokensPerCall),budgetUsd});
+ if(!Number.isFinite(account?.availableUsd))return {...base,refused:'balance_unverified',account};
+ const externalLeft=Math.max(0,account.availableUsd-(spent.outstandingUsd||0));
+ if(caps.taskCapUsd<=(spent.taskUsd||0))return {...base,refused:'task_cap'};
+ if(caps.monthCapUsd<=spent.monthUsd)return {...base,refused:'month_cap'};
+ if(spent.dailyLeftUsd<=0)return {...base,refused:'daily_cap'};
+ if(externalLeft<=0)return {...base,refused:'openrouter_balance'};
+ const budgetUsd=Math.max(0,Math.min(caps.taskCapUsd-(spent.taskUsd||0),caps.monthCapUsd-(spent.monthUsd||0),spent.dailyLeftUsd,externalLeft));
+ const options={promptTokens,maxTokens:Math.min(maxTokens,config.maxTokensPerCall),budgetUsd,health:snapshot.routes};
+ const selection=premiumSelection(models,options),pick=selection.pick;
  // No reviewed model fits the remaining budget: show the preferred eligible model against the full task cap.
- const shown=pick||pickPremium(models,{promptTokens,maxTokens:Math.min(maxTokens,config.maxTokensPerCall),budgetUsd:config.taskCapUsd});
- const ask={task,step,reason,model:shown?.model,estimateUsd:shown?.maxUsd,freeMayRecover,...caps};
- if(!shown)return {...base,refused:"no_model_fits",...await premiumOp(env,{op:"quote",...ask}).then(d=>({taskLeftUsd:d.taskLeftUsd,monthLeftUsd:d.monthLeftUsd}))};
+ const shown=pick||pickPremium(models,{...options,budgetUsd:caps.taskCapUsd});
+ const explanation=selectionExplanation(pick,selection.skipped);
+ const ask={task,step,reason,model:shown?.model,estimateUsd:shown?.maxUsd,freeMayRecover,...caps,selection:{explanation,skipped:selection.skipped}};
+ if(!shown)return {...base,refused:"no_model_fits",selection:ask.selection,...await premiumOp(env,{op:"quote",...ask}).then(d=>({taskLeftUsd:d.taskLeftUsd,dailyLeftUsd:d.dailyLeftUsd,monthLeftUsd:d.monthLeftUsd}))};
  const decision=await premiumOp(env,{op:"quote",...ask});
- const summary={...base,provider:"openrouter",model:shown.model,selectionPolicy:shown.selectionPolicy,selectionReason:shown.rank===0?"preferred_reviewed_model":"preferred_models_ineligible",maxUsd:shown.maxUsd,taskLeftUsd:decision.taskLeftUsd,monthLeftUsd:decision.monthLeftUsd,source:decision.source||null};
+ const summary={...base,provider:"openrouter",model:shown.model,selectionPolicy:shown.selectionPolicy,selectionReason:shown.rank===0?"preferred_reviewed_model":"preferred_models_ineligible",selection:ask.selection,accountAvailableUsd:externalLeft,maxUsd:shown.maxUsd,taskLeftUsd:decision.taskLeftUsd,dailyLeftUsd:decision.dailyLeftUsd,monthLeftUsd:decision.monthLeftUsd,source:decision.source||null};
  if(!decision.eligible)return {...summary,refused:decision.reason,offer:decision.offer?{step:decision.offer.step,at:decision.offer.at}:undefined};
- if(!pick)return {...summary,refused:(decision.taskLeftUsd??0)<=(decision.monthLeftUsd??0)?"task_cap":"month_cap"};
+ if(!pick)return {...summary,refused:externalLeft<shown.maxUsd?'openrouter_balance':decision.dailyLeftUsd<shown.maxUsd?'daily_cap':decision.taskLeftUsd<=decision.monthLeftUsd?'task_cap':'month_cap'};
  if(quote)return {...summary,eligible:true};
  if(signal?.aborted)return {...summary,refused:"cancelled"};
+ if(Date.now()>=deadline)return {...summary,refused:'request_expired'};
+ const route={provider:'openrouter',model:pick.model},routeId=requestId+':premium';
+ const lease=await reserveProvider(env,route,routeId,{paid:true});
+ if(!lease.allowed)return {...summary,refused:'provider_unavailable',retryAt:lease.retryAt||null,unavailableReason:lease.reason};
  // The dispatch itself: reserve (authorization, evidence, one rescue per step, caps: one transaction), then send.
- const hold=await premiumOp(env,{op:"reserve",requestId,...ask,model:pick.model,estimateUsd:pick.maxUsd});
- if(!hold.allowed)return {...summary,refused:hold.reason||"refused"};
- const started=Date.now();let httpStatus=0,data=null,text="",usd=null,generation=null;
+ let hold;
+ try{hold=await premiumOp(env,{op:"reserve",requestId,...ask,model:pick.model,estimateUsd:pick.maxUsd,account:{availableUsd:account.availableUsd,checkedAt:account.checkedAt}})}
+ catch(error){await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});throw error;}
+ if(!hold.allowed){await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});return {...summary,refused:hold.reason||"refused"};}
+ if(signal?.aborted||Date.now()>=deadline){await premiumOp(env,{op:'settle',requestId,usd:0,response:'not sent'});await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});return {...summary,refused:signal?.aborted?'cancelled':'request_expired'};}
+ const started=Date.now();let httpStatus=0,data=null,text="",usd=null,generation=null,responseHeaders=null;
  try{
   const r=await fetch(API+"chat/completions",{method:"POST",
    headers:{Authorization:"Bearer "+env.OPENROUTER_API_KEY,"Content-Type":"application/json","X-Title":"KappaForge"},
@@ -129,7 +158,7 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
     // OpenRouter refuses rather than routes to a provider dearer than the prices the maximum charge was computed from.
     provider:{require_parameters:true,max_price:{prompt:pick.pricing.prompt*1e6,completion:pick.pricing.completion*1e6,request:pick.pricing.request}},usage:{include:true}}),
    signal:AbortSignal.any([AbortSignal.timeout(Math.max(1000,Math.min(150000,deadline-Date.now()))),...(signal?[signal]:[])])});
-  httpStatus=r.status;
+  httpStatus=r.status;responseHeaders=r.headers;
   if(r.ok){
    data=await r.json();generation=typeof data?.id==="string"?data.id:null;
    text=String(data?.choices?.[0]?.message?.content||"");
@@ -137,9 +166,10 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
   }else await r.body?.cancel();
  }catch{}
  // The charge: reported in the answer, else looked up once by generation id, else unresolved at its maximum.
- if(usd===null&&generation)usd=await generationCost(env,generation);
+ if(usd===null&&generation)usd=await generationCost(env,generation,pick.model);
  if(usd===null&&REFUSED_UNBILLED.has(httpStatus))usd=0;
- const settled=await premiumOp(env,{op:"settle",requestId,usd:usd??undefined,response:text.trim()?"answered":httpStatus?"HTTP "+httpStatus:"no reply"}).catch(()=>({state:"unresolved"}));
+ const settled=await premiumOp(env,{op:"settle",requestId,generation,usd:usd??undefined,response:text.trim()?"answered":httpStatus?"HTTP "+httpStatus:"no reply"}).catch(()=>({state:"unresolved"}));
+ await reportProviderOutcome(env,{requestId:routeId,route,status:signal?.aborted?499:text.trim()?200:httpStatus===200?502:httpStatus,category:httpStatus===200&&!text.trim()?'empty_response':'',headers:responseHeaders}).catch(()=>{});
  const u=data?.usage||{};
  const result={...summary,source:hold.source,dispatched:true,model:pick.model,status:httpStatus,latencyMs:Date.now()-started,billing:settled.state||"unresolved",
   usd:settled.state==="confirmed"?settled.usd:null,taskUsd:settled.taskUsd,monthUsd:settled.monthUsd,
@@ -147,12 +177,12 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
  return text.trim()?{...result,text}:{...result,failed:httpStatus?"HTTP "+httpStatus:"no reply"};
 }
 
-async function generationCost(env,id){
+async function generationCost(env,id,model){
  try{
   await new Promise(r=>setTimeout(r,1500));
   const r=await fetch(API+"generation?id="+encodeURIComponent(id),{headers:{Authorization:"Bearer "+env.OPENROUTER_API_KEY},signal:AbortSignal.timeout(8000)});
-  const cost=r.ok?(await r.json())?.data?.total_cost:null;
-  return Number.isFinite(cost)?cost:null;
+  const row=r.ok?(await r.json())?.data:null;
+  return row?.id===id&&row.model===model&&Number.isFinite(row.total_cost)&&row.total_cost>=0?row.total_cost:null;
  }catch{return null;}
 }
 

@@ -823,6 +823,7 @@
       "maxOutputPricePerMillion": 3,
       "safetyMargin": 1.25,
       "taskCapUsd": 1,
+      "dailyCapUsd": 5,
       "monthCapUsd": 5,
       "maxTokensPerCall": 8000
     }

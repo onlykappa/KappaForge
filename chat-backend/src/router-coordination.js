@@ -58,12 +58,12 @@ export const estimateTokens=value=>Math.ceil((typeof value==="string"?value:JSON
 // count is live; real limits (quotas, requests at once) still apply.
 // recheck: an audit asking a model the limits table marks as having no quota (0 allowed) skips that table entry, so
 // the provider itself is asked whether it still refuses.
-export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false,testShare=null,recheck=false}={}){
+export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false,testShare=null,recheck=false,paid=false}={}){
  const p=routeConfig(route.provider);
  if(!p)throw new Error("Unknown provider route");
  const response=await stubFor(env).fetch("https://memory.internal/router/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-  requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:p.quotaPool||route.provider,
-  quotaScope:p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:recheck&&globalThis.KappaLimits?.noQuota(registry.limits,route.provider,route.model)?null:routeQuota(route,tokens),fresh:fresh===true,testShare:Number.isFinite(testShare)?testShare:undefined
+  requestId,provider:route.provider,model:route.model,accountPool:await accountPoolFor(env,route.provider,p),quotaPool:paid&&route.provider==='openrouter'?'openrouter-premium':p.quotaPool||route.provider,
+  quotaScope:paid&&route.provider==='openrouter'?'model':p.quotaScope||"account",maxConcurrent:p.maxConcurrent||1,leaseMs:registry.routing?.defaults?.leaseMs||120000,quota:paid&&route.provider==='openrouter'||recheck&&globalThis.KappaLimits?.noQuota(registry.limits,route.provider,route.model)?null:routeQuota(route,tokens),fresh:fresh===true,testShare:Number.isFinite(testShare)?testShare:undefined
  })});
  const data=await response.json().catch(()=>({}));
  if(!response.ok&&response.status!==429)throw new Error("Routing reservation storage failed");
