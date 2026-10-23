@@ -1,0 +1,228 @@
+"""The lifecycle simulation harness: its simulated GitHub, its rules and its hidden acceptance tests."""
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+import urllib.error
+import urllib.request
+from unittest.mock import patch
+
+from engine import developer
+from tools import lifecycle_simulation as sim
+
+# Reference solutions, written by hand, prove the hidden acceptance tests are fair before any model is judged by them.
+REFERENCE = {
+    "easy": {"units/convert.py": '''"""Temperature conversions."""
+
+ABSOLUTE_ZERO_C = -273.15
+ABSOLUTE_ZERO_F = -459.67
+
+
+def celsius_to_fahrenheit(celsius):
+    """Degrees Celsius to degrees Fahrenheit."""
+    return celsius * 9 / 5 + 32
+
+
+def fahrenheit_to_celsius(fahrenheit):
+    """Degrees Fahrenheit to degrees Celsius."""
+    if fahrenheit < ABSOLUTE_ZERO_F:
+        raise ValueError("below absolute zero")
+    return (fahrenheit - 32) * 5 / 9
+
+
+def celsius_to_kelvin(celsius):
+    """Degrees Celsius to kelvin."""
+    if celsius < ABSOLUTE_ZERO_C:
+        raise ValueError("below absolute zero")
+    return celsius + 273.15
+'''},
+    "medium": {"web/cart.js": '''export function total(cart) {
+  return cart.reduce((sum, line) => sum + line.priceCents * line.qty, 0);
+}
+const valid = n => Number.isInteger(n) && n >= 0;
+export function subtotal(cart) {
+  for (const line of cart) if (!valid(line.priceCents) || !valid(line.qty)) throw new TypeError('invalid cart line');
+  return total(cart);
+}
+export function applyDiscount(cart, code) {
+  const normal = String(code).trim().toUpperCase();
+  if (normal === 'SAVE10') return Math.round(subtotal(cart) * 0.9);
+  if (normal === 'FREESHIP') return subtotal(cart.filter(line => line.sku !== 'shipping'));
+  throw new Error('Unknown discount code: ' + code);
+}
+export function withTax(cents, ratePercent) {
+  if (cents < 0 || ratePercent < 0) throw new RangeError('negative amount or rate');
+  return cents + Math.round(cents * ratePercent / 100);
+}
+'''},
+    "complex": {"inventory/store.py": '''from inventory.models import Item
+
+
+class Store:
+    def __init__(self):
+        self.items = {}
+        self.history = []
+
+    def add(self, item: Item):
+        if item.qty < 0:
+            raise ValueError("qty must not be negative")
+        existing = self.items.get(item.sku)
+        if existing:
+            existing.qty += item.qty
+        else:
+            self.items[item.sku] = item
+        self.history.append(("add", item.sku, item.qty))
+
+    def get(self, sku):
+        return self.items.get(sku)
+
+    def remove(self, sku, qty):
+        if sku not in self.items:
+            raise KeyError(sku)
+        if not isinstance(qty, int) or isinstance(qty, bool) or qty <= 0 or qty > self.items[sku].qty:
+            raise ValueError("bad quantity")
+        self.items[sku].qty -= qty
+        if self.items[sku].qty == 0:
+            del self.items[sku]
+        self.history.append(("remove", sku, qty))
+
+    def low_stock(self, threshold):
+        return sorted((i for i in self.items.values() if i.qty < threshold), key=lambda i: i.sku)
+''', "inventory/report.py": '''def text_report(items):
+    lines = [f"{i.sku}: {i.name} x{i.qty}" for i in sorted(items, key=lambda i: i.sku)]
+    return "\\n".join(lines)
+
+
+def _field(value):
+    text = str(value)
+    if any(c in text for c in ',"\\n'):
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def csv_report(items):
+    rows = ["sku,name,qty,price"] + [",".join(_field(v) for v in (i.sku, i.name, i.qty, f"{i.price_cents / 100:.2f}"))
+                                     for i in sorted(items, key=lambda i: i.sku)]
+    return "\\n".join(rows) + "\\n"
+
+
+def history_report(store):
+    return "\\n".join(f"{n}. {action} {sku} x{qty}" for n, (action, sku, qty) in enumerate(store.history, 1))
+''', "web/cart.js": '''export function total(cart) {
+  return cart.reduce((sum, line) => sum + line.priceCents * line.qty, 0);
+}
+export function applyDiscount(cart, code) {
+  if (code === 'SAVE10') return Math.round(total(cart) * 0.9);
+  if (code === 'FREESHIP') return total(cart.filter(line => line.sku !== 'shipping'));
+  throw new Error('Unknown code ' + code);
+}
+export const itemCount = cart => cart.reduce((n, line) => n + line.qty, 0);
+'''},
+}
+
+
+def run_hidden(scenario, files):
+    """Run only the hidden acceptance tests on a project, on this machine (trusted reference code only)."""
+    with tempfile.TemporaryDirectory() as root:
+        for path, text in {**files, **scenario["hidden"]}.items():
+            os.makedirs(os.path.dirname(os.path.join(root, path)) or root, exist_ok=True)
+            with open(os.path.join(root, path), "w") as handle:
+                handle.write(text)
+        results = []
+        if any(p.endswith(".py") for p in scenario["hidden"]):
+            results.append(subprocess.run(["python3", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", ".",
+                                           "-p", "test_zz_acceptance*.py"], cwd=root, capture_output=True, text=True))
+        js = [p for p in scenario["hidden"] if p.endswith(".mjs")]
+        if js:
+            results.append(subprocess.run(["node", "--test", *js], cwd=root, capture_output=True, text=True))
+        return results
+
+
+class HiddenAcceptanceTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node runs the JavaScript acceptance tests")
+    def test_reference_solutions_pass_and_the_starting_projects_fail(self):
+        for scenario in sim.SCENARIOS:
+            with self.subTest(scenario["key"]):
+                for done in run_hidden(scenario, {**scenario["files"], **REFERENCE[scenario["key"]]}):
+                    self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+                self.assertTrue(any(done.returncode for done in run_hidden(scenario, scenario["files"])),
+                                "the hidden tests must fail before the work is done")
+
+
+class SimGitHubTests(unittest.TestCase):
+    def setUp(self):
+        self.gh = sim.SimGitHub("onlykappa/kappaforge-sim-x", 9100, "t", {"a.py": "x = 1\n"})
+        self.repo = "repos/onlykappa/kappaforge-sim-x"
+
+    def commit(self, parent, files):
+        tree = self.gh.gh(self.repo + "/git/trees", "t", {"base_tree": self.gh.commits[parent]["tree"], "tree": [
+            {"path": p, "mode": "100644", "type": "blob", "content": c} for p, c in files.items()]})["sha"]
+        return self.gh.gh(self.repo + "/git/commits", "t", {"message": "m", "tree": tree, "parents": [parent]})["sha"]
+
+    def test_history_branches_and_pull_requests_behave_like_github(self):
+        base = self.gh.base
+        first = self.commit(base, {"a.py": "x = 2\n"})
+        self.gh.gh(self.repo + "/git/refs", "t", {"ref": "refs/heads/kappa/dev-9100", "sha": first})
+        with self.assertRaises(urllib.error.HTTPError):
+            self.gh.gh(self.repo + "/git/refs", "t", {"ref": "refs/heads/kappa/dev-9100", "sha": first})
+        unrelated = self.commit(base, {"b.py": "y\n"})
+        with self.assertRaises(urllib.error.HTTPError, msg="not a fast-forward"):
+            self.gh.gh(self.repo + "/git/refs/heads/kappa/dev-9100", "t", {"sha": unrelated, "force": False}, method="PATCH")
+        pr = self.gh.gh(self.repo + "/pulls", "t", {"title": "Draft", "head": "kappa/dev-9100", "base": "main", "draft": True, "body": ""})
+        self.assertEqual(self.gh.gh(self.repo + f"/pulls/{pr['number']}/files", "t"), [{"filename": "a.py", "status": "modified"}])
+        self.assertEqual(self.gh.gh(self.repo + "/pulls?state=open&head=onlykappa:kappa/dev-9100", "t")[0]["number"], pr["number"])
+
+    def test_rule_breaks_are_recorded_and_unknown_calls_refused(self):
+        with self.assertRaises(urllib.error.HTTPError):
+            self.gh.gh(self.repo + "/git/refs/heads/main", "t", {"sha": self.gh.base}, method="PATCH")
+        pr = self.gh.gh(self.repo + "/pulls", "t", {"title": "Draft", "head": "main", "base": "main", "draft": True, "body": ""})
+        self.gh.gh(self.repo + f"/pulls/{pr['number']}", "t", {"draft": False}, method="PATCH")
+        with self.assertRaises(urllib.error.HTTPError):
+            self.gh.gh(self.repo + f"/pulls/{pr['number']}/merge", "t", {}, method="PUT")
+        rules = {e["rule"] for e in self.gh.events if e["kind"] == "violation"}
+        self.assertEqual(rules, {"main_moved", "draft_marked_ready", "merge_attempted"})
+        with self.assertRaises(sim.RealGitHubBlocked):
+            self.gh.gh("repos/onlykappa/KappaForge/issues/1/comments", "t", {"body": "x"})
+        with self.assertRaises(sim.RealGitHubBlocked):
+            sim.guarded_urlopen(urllib.request.Request("https://api.github.com/user"))
+
+
+class ScriptedScenarioTests(unittest.TestCase):
+    """The easy scenario through the real engine with a scripted model: the harness wiring and its lifecycle rules."""
+
+    def answer(self, key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+        if "You are planning a code change" in prompt:
+            return "scripted", json.dumps({"read": ["units/convert.py", "tests/test_convert.py"], "design": "Mirror the existing helper.",
+                                           "stages": ["Add the two conversions", "Test them"],
+                                           "stage_files": [["units/convert.py"], ["tests/test_convert.py"]]})
+        if "You are reviewing a change" in prompt:
+            return "scripted", json.dumps({"requirements": [{"text": "Add fahrenheit_to_celsius", "met": True, "evidence": {
+                "path": "units/convert.py", "quote": "def fahrenheit_to_celsius"}}], "problems": []})
+        if "THIS IS STAGE 1" in prompt:
+            return "scripted", json.dumps({"summary": "Add conversions", "files": [{"path": "units/convert.py", "content":
+                                                                                  REFERENCE["easy"]["units/convert.py"]}]})
+        if "THIS IS STAGE 2" in prompt:
+            return "scripted", json.dumps({"summary": "Tests", "files": [{"path": "tests/test_convert.py", "edits": [{
+                "find": "from units.convert import celsius_to_fahrenheit",
+                "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
+        return "scripted", "{}"
+
+    def test_easy_scenario_runs_the_real_engine_and_keeps_every_lifecycle_rule(self):
+        easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
+        with patch.object(developer, "run_model", side_effect=self.answer), \
+                patch.object(developer, "review_stage", return_value=(True, "")):
+            outcome = sim.run_scenario(easy, [], docker=False, minutes=5)
+        self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
+        self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
+        self.assertEqual(outcome["changed_files"], ["tests/test_convert.py", "units/convert.py"])
+        self.assertIn("## Goal", outcome["plan_body"])
+        kinds = [e["kind"] for e in outcome["timeline"]]
+        self.assertLess(kinds.index("pr_opened"), kinds.index("branch_updated"))
+        self.assertIn("checks_requested", kinds)
+        self.assertEqual(outcome["tests"], {"skipped": "Docker is not available here; the workflow runs this on GitHub's runner"})
+
+
+if __name__ == "__main__":
+    unittest.main()

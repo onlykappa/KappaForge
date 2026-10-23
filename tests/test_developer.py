@@ -516,11 +516,17 @@ class PrFirstTests(unittest.TestCase):
                 "body": "Repository: onlykappa/KappaForge\nMode: develop\n\nMake add() accept numeric strings."}
 
     def test_the_plan_shows_the_goal_stages_files_and_approach(self):
-        layout = developer.plan_layout(self.issue(), [developer.Stage("Cast both inputs", ["app/main.py"], False)], "Convert early.")
+        layout = developer.plan_layout(self.issue(), [developer.Stage("Cast both inputs", ["app/main.py"], False)])
         self.assertIn("## Goal\n**Cast inputs**\n\nMake add() accept numeric strings.", layout)
         self.assertIn("## Plan\n1. Cast both inputs (files: `app/main.py`)", layout)
-        self.assertIn("## Approach\nConvert early.", layout)
         self.assertNotIn("Mode: develop", layout)
+        calls, fake_gh = self.world()
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
+            produce_development_pr(self.issue(), "key", "token")
+        opened, final = [body for p, body, m in calls if p == self.ROOT_ + "/pulls" and body], \
+            [body for p, body, m in calls if p == self.ROOT_ + "/pulls/50"][-1]
+        self.assertIn("## Design notes\nConvert at the boundary.", opened[0]["body"], "the planned approach shows on the draft")
+        self.assertEqual(final["body"].count("Convert at the boundary."), 1, "the design is shown once")
 
     def test_no_code_is_written_when_the_draft_cannot_be_opened(self):
         calls, fake_gh = self.world(pr_status=422)

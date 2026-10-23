@@ -1737,12 +1737,12 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     if journal:
         note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
     saved = {"sha": sha, "pr": None, "changes": {}}
-    layout = plan_layout(issue, stages, design)
+    layout = plan_layout(issue, stages)
     if adopt is not None:
         saved.update(sha=adopt["head"]["sha"], pr=adopt)
         progress.act("git", f"Continuing on draft PR #{adopt['number']}, which holds the plan")
     else:
-        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout))
+        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
         progress.act("git", f"Opened draft PR #{saved['pr']['number']} with the goal and plan; writing the code next")
     progress.saved_pr = saved["pr"]["html_url"]
     if journal:
@@ -1849,15 +1849,14 @@ CHECKPOINT_SAVED = ("Saved implementation checkpoint. Complete the original task
                     "use Fix it if interrupted.")
 
 
-def plan_layout(issue, stages, design=""):
+def plan_layout(issue, stages):
     """The goal and the plan, in the owner's words and the planner's stages, shown before any code is written."""
     goal = "\n".join(line for line in (issue.get("body") or "").splitlines()
                      if not re.match(r"^(?:Repository|Mode|Authorization|Scope)\s*:", line, re.I)).strip()
     steps = [str(stage) + (" (files: " + ", ".join(f"`{f}`" for f in stage.files) + ")" if getattr(stage, "files", ()) else "")
              for stage in stages] or ["Write the change in one step"]
     return (f"## Goal\n**{(issue.get('title') or 'KappaForge task').strip()[:200]}**\n\n{goal[:3000]}\n\n"
-            "## Plan\n" + "\n".join(f"{n}. {step[:400]}" for n, step in enumerate(steps, 1))
-            + (f"\n\n## Approach\n{design[:2000]}" if design else ""))
+            "## Plan\n" + "\n".join(f"{n}. {step[:400]}" for n, step in enumerate(steps, 1)))
 
 
 def plan_status(code=False, checked=False):
@@ -1870,7 +1869,7 @@ def plan_status(code=False, checked=False):
             "- [ ] Your review: this PR stays a draft until you review it. KappaForge never marks it ready or merges it.")
 
 
-def open_plan_draft(repo, token, number, issue, base, sha, branch, layout):
+def open_plan_draft(repo, token, number, issue, base, sha, branch, layout, design=""):
     """The plan as the branch's first commit (no files change) and the draft PR showing it, before any code.
 
     Failing here stops the task before any code is generated; a half-made branch is removed so a retry starts clean."""
@@ -1888,7 +1887,8 @@ def open_plan_draft(repo, token, number, issue, base, sha, branch, layout):
         pr = gh(f"repos/{repo}/pulls", token, {
             "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}", "head": branch, "base": base, "draft": True,
             "body": (f"Owner-approved development for {ROOT}#{number}. KappaForge opened this draft with the plan before writing "
-                     f"any code.\n\n{layout}\n\n{plan_status()}\n\n" + review_record([PLAN_STARTED]))})
+                     f"any code.\n\n{layout}\n\n" + (f"## Design notes\n{design}\n\n" if design else "")
+                     + f"{plan_status()}\n\n" + review_record([PLAN_STARTED]))})
         if not pr.get("html_url") or not pr.get("number"):
             raise KeyError("pull request receipt")
     except (urllib.error.URLError, KeyError, TypeError) as exc:
