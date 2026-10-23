@@ -125,7 +125,7 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
 },report(comment){
  if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string')return null;
  const marker=comment.body.match(/<!-- KAPPA_VALIDATION_V1 (\{[^]*?\}) -->/);let validation=null;
- if(marker)try{const v=JSON.parse(marker[1]);if(v.version===1&&Number.isSafeInteger(v.task)&&/^[a-f0-9]{40}$/.test(v.sha)&&['sandbox','native'].includes(v.kind)&&['success','failure'].includes(v.conclusion)&&Number.isSafeInteger(v.runId)&&v.runId>0)validation={version:1,task:v.task,sha:v.sha,kind:v.kind,conclusion:v.conclusion,runId:v.runId,workComplete:v.workComplete===true}}catch{}
+ if(marker)try{const v=JSON.parse(marker[1]);if(v.version===1&&Number.isSafeInteger(v.task)&&/^[a-f0-9]{40}$/.test(v.sha)&&['sandbox','native'].includes(v.kind)&&['success','failure'].includes(v.conclusion)&&Number.isSafeInteger(v.runId)&&v.runId>0)validation={version:1,task:v.task,sha:v.sha,kind:v.kind,conclusion:v.conclusion,runId:v.runId,workComplete:v.workComplete===true,nativeRequired:!(v.kind==='sandbox'&&v.nativeRequired===false)}}catch{}
  const body=comment.body.replace(/<!--[\s\S]*?-->/g,'').replace(/\\`/g,'`').trim();
  const heading=body.split('\n')[0];let status;
  if(/^### (?:KappaForge task failed|Self-repair watch: failed)/i.test(heading))status='failed';
