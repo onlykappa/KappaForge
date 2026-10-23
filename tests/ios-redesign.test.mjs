@@ -34,25 +34,71 @@ function shell(extra={}){
 }
 test('every view belongs to one tab; non-root views are pushed with a back button',()=>{
  const box=shell();
- for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','tasks'],['reviews','reviews'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
- for(const v of ['chats','home','tasks','reviews','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
- for(const v of ['chat','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
+ for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','more'],['reviews','home'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
+ for(const v of ['chats','home','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
+ for(const v of ['chat','tasks','reviews','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
 });
-test('the tab bar marks the current tab and badges pull requests waiting for review',()=>{
+test('the phone tab bar contains Home, Chats, Dashboard and More',()=>{
  const box=shell({view:'chat'});const html=box.renderTabBar();
- assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['chats','home','tasks','reviews','more']);
+ assert.deepEqual([...html.matchAll(/data-page="([a-z]+)"/g)].map(m=>m[1]),['start','chats','home','more']);
  assert.match(html,/data-page="chats" aria-current="page"/,'a chat sits under the Chats tab');
- assert.match(html,/data-page="reviews"[^]*class="tab-badge" aria-label="2 to review">2</);
+ assert.doesNotMatch(html,/tab-badge/,'no badge remains for the removed Reviews tab');
 });
-test('the Chats list groups by day, searches, and shows each chat\'s task state',()=>{
+test('Reviews returns to Dashboard and Tasks to More with Back',()=>{
+ for(const [page,tab,label] of [['reviews','home','Dashboard'],['tasks','more','More']]){
+  const box=shell({view:page,navigate:target=>{box.view=target}});
+  assert.equal(box.shellBackLabel(),label);
+  assert.match(box.renderTabBar(),new RegExp('data-page="'+tab+'" aria-current="page"'));
+  box.shellBack();assert.equal(box.view,tab);
+ }
+});
+test('the Chats list puts chats that need you in a card rail, then Recent and Earlier, and searches',()=>{
  const now=Date.now(),old=now-3*86400000;
- const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];
+ const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'c',title:'Weather today',at:now-1000,messages:[{role:'assistant',text:'<think>Okay, so I am trying</think>Sunny and 18°C'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];
  const box=shell({chats,trackedJobs:[{number:7,chatId:'a',message:'failed'}]});
  const html=box.renderChatList();
- assert.ok(html.indexOf('Today')<html.indexOf('Live task card')&&html.indexOf('Earlier')<html.indexOf('Release notes'));
- assert.match(html,/data-id="a"[^]*ios-sq bad[^]*Task #7 needs attention/);
- box.conversationSearch='release';const found=box.renderChatList();assert.doesNotMatch(found,/Live task card/);assert.match(found,/Release notes/);
+ assert.match(html,/Needs you<small>1 task<\/small>[^]*class="chat-card"[^]*#7[^]*Live task card[^]*data-id="a"[^]*data-task-retry="7"/);
+ assert.ok(html.indexOf('chat-rail')<html.indexOf('Recent')&&html.indexOf('Recent')<html.indexOf('Weather today')&&html.indexOf('Earlier')<html.indexOf('Release notes'));
+ assert.equal((html.match(/Live task card/g)||[]).length,1,'a chat in the rail is not repeated in Recent');
+ assert.match(html,/Sunny and 18°C/);assert.doesNotMatch(html,/think|trying/,'reasoning text never leaks into a preview');
+ assert.doesNotMatch(html,/id="chatsearch"/,'search opens from the Search button');
+ box.conversationSearch='release';const found=box.renderChatList();assert.doesNotMatch(found,/Live task card/);assert.match(found,/id="chatsearch"[^]*Release notes/);
  box.conversationSearch='zzz';assert.match(box.renderChatList(),/No matching conversations/);
+});
+test('a finished task does not offer Retry, and Edit mode moves every chat into the list with Delete',()=>{
+ const chats=[{id:'a',title:'Old failure',at:Date.now(),messages:[]}];
+ const box=shell({chats,trackedJobs:[{number:9,chatId:'a',message:'failed',finished:true}]});
+ assert.doesNotMatch(box.renderChatList(),/data-task-retry/);
+ vm.runInContext('chatEditing=true',box);const html=box.renderChatList();
+ assert.doesNotMatch(html,/chat-card/);assert.match(html,/data-delete-chat="a"/);
+});
+
+test('Home greets, offers the last chat, shows chats that need you and today\'s numbers',()=>{
+ const now=Date.now();
+ const chats=[{id:'a',title:'Broken build',at:now,messages:[{role:'user',text:'fix it'}]},{id:'b',title:'Weather today',at:now-1000,messages:[{role:'assistant',text:'Sunny'}]}];
+ const box=shell({view:'start',chats,trackedJobs:[{number:7,chatId:'a',message:'failed'},{number:8,chatId:'x',message:'waiting',progress:{startedAt:1}}],
+  preferences:{model:'auto',routing:'balanced'},localProfile:{name:'Personal workspace'},workflowMonitor:{runs:[{state:'success',createdAt:new Date().toISOString()},{state:'failure',createdAt:new Date().toISOString()},{state:'in_progress',createdAt:new Date().toISOString()}]}});
+ assert.match(box.homeHeader(),/Good (morning|afternoon|evening)[^]*data-page="profile"[^]*>PW</);
+ const html=box.renderHomePage();
+ assert.match(html,/id="homeask"[^]*Auto · balanced/);
+ assert.match(html,/data-id="b"[^]*Continue “Weather today”/,'continues the latest chat that does not need attention');
+ assert.match(html,/Needs you<small>1 task[^]*#7[^]*data-task-retry="7"/);
+ assert.match(html,/<b class="tnum">1<\/b><small>Running[^]*<b class="tnum">1<span>\/2<\/span><\/b><small>Builds passed/,'running tasks, and finished builds today that passed');
+ assert.equal(box.shellTab('start'),'start');assert.equal(box.shellPushed('start'),false);
+});
+
+test('the + sheet offers attachments, Plan a task and the route; the task sheet holds the PR and Copy summary',()=>{
+ const sel={value:'speed'};
+ const box=shell({view:'chat',trackedJobs:[{number:9,chatId:'a',message:'failed',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],
+  sheetShown:'',document:{getElementById:id=>id==='composermodel'?sel:null,querySelector:()=>null}});
+ vm.runInContext("iosSheet=(t,b,o)=>'<section data-title=\"'+t+'\" data-close=\"'+o.closeAttr+'\">'+b+'</section>'",box);
+ vm.runInContext("chatSheet={kind:'plus'}",box);
+ const plus=box.chatSheetHTML();
+ for(const k of ['photos','camera','files','folder'])assert.match(plus,new RegExp('data-plus="'+k+'"'));
+ assert.match(plus,/id="plantoggle"/);assert.match(plus,/data-route="speed" aria-pressed="true"[^]*route-check/);assert.match(plus,/data-close="data-chat-sheet-close"/);
+ vm.runInContext("chatSheet={kind:'task',id:'9',tab:'findings',copy:'3'}",box);
+ const task=box.chatSheetHTML();
+ assert.match(task,/data-title="Task #9"[^]*data-task-tab="findings" aria-pressed="true"[^]*data-task-sheet-body[^]*pull\/199[^]*data-task-copy="3"/);
 });
 
 // ui.js: the task card's large ring.

@@ -7,12 +7,9 @@ final class LaunchTests: XCTestCase {
         let web = app.webViews.firstMatch
         // The first launch on a freshly booted simulator renders the bundled interface slowly (about 40s observed in CI).
         XCTAssertTrue(web.waitForExistence(timeout: 60), "Bundled WKWebView must load")
-        // Phones: the chat is a pushed view. Back leads to Chats; Settings lives under the More tab.
-        let back = web.buttons["Back to Chats"]
-        XCTAssertTrue(back.waitForExistence(timeout: 60), "Shared interface back button must render")
-        back.tap()
+        // Phones open on Home with the tab bar; Settings lives under the More tab.
         let more = web.buttons["More"]
-        XCTAssertTrue(more.waitForExistence(timeout: 15), "The tab bar must be accessible")
+        XCTAssertTrue(more.waitForExistence(timeout: 60), "The tab bar must be accessible")
         more.tap()
         let settings = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings")).firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "The More page must list Settings")
@@ -34,6 +31,13 @@ final class LaunchTests: XCTestCase {
         app.launch()
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 15))
+        // Phones open on Home; start a new chat from the Chats tab to reach the composer.
+        let chatsTab = web.buttons["Chats"]
+        XCTAssertTrue(chatsTab.waitForExistence(timeout: 60), "The Chats tab must be accessible")
+        chatsTab.tap()
+        let newChat = web.buttons["New"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 15), "The Chats list must offer New")
+        newChat.tap()
         let editor = app.textViews["native-composer"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15), "Chat composer must expose its text editor")
         editor.tap()
@@ -163,9 +167,13 @@ final class LaunchTests: XCTestCase {
         let back = web.buttons["Back to Chats"]
         XCTAssertTrue(back.waitForExistence(timeout: 60))
         back.tap()
-        XCTAssertTrue(web.searchFields["Search conversations"].waitForExistence(timeout: 15), "The Chats list must render")
+        let searchButton = web.buttons["Search conversations"]
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 15), "The Chats list must render")
         capture("chats")
-        for (tab, name) in [("Dashboard", "dashboard today"), ("More", "more")] {
+        searchButton.tap()
+        XCTAssertTrue(web.searchFields["Search conversations"].waitForExistence(timeout: 15), "Search must open the conversation search field")
+        searchButton.tap()
+        for (tab, name) in [("Home", "home"), ("Dashboard", "dashboard today"), ("More", "more")] {
             let button = web.buttons[tab]
             XCTAssertTrue(button.waitForExistence(timeout: 15), "Tab must be accessible: " + tab)
             button.tap()
