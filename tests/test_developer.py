@@ -363,12 +363,11 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", aimed_at_copy)), self.assertRaises(ValueError):
             developer.generate("key", "task", "onlykappa/OmniPC", sources, existing)
 
-    def test_gives_up_after_three_invalid_answers(self):
-        bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
+    def test_unsafe_paths_remain_hard_stops(self):
+        bad = json.dumps({"files": [{"path": "../x.yml", "content": "x"}]})
         with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertGreaterEqual(ai.call_count, 1)
-        self.assertLessEqual(ai.call_count, 5)
+        self.assertEqual(ai.call_count, 1)
 
 
 class DeveloperAuthorizationTests(unittest.TestCase):
