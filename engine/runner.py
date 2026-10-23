@@ -950,6 +950,7 @@ def main():
                 print("Continuation already consumed, superseded or blocked; no work dispatched.")
                 return
             fixing = action == 'fix'
+            adopt = None
             if action.startswith('resume:'):
                 from engine.developer import gh, token_for, review_record
                 repo = journal.scope.repo
@@ -958,7 +959,10 @@ def main():
                 pulls = gh(f"repos/{repo}/pulls?state=open&head=onlykappa:{branch}", rt)
                 if len(pulls) > 1:
                     raise PermissionError('Ambiguous candidate PR; owner review required')
-                fixing = bool(pulls)
+                # A draft holding only the plan (the run stopped before any code was saved) gets its code written,
+                # not a repair: there is nothing to fix yet.
+                adopt = pulls[0] if pulls and not journal.state['files'] and journal.state['pr'] == pulls[0].get('html_url') else None
+                fixing = bool(pulls) and adopt is None
                 if not pulls and journal.state['pr']:
                     raise PermissionError('Saved PR is closed; automatic continuation will not reopen it')
                 if not pulls and journal.state['files']:
@@ -983,7 +987,7 @@ def main():
                 url = fix_pull_request(issue, api_key, token)
                 print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
             else:
-                url = produce_development_pr(issue, api_key, token)
+                url = produce_development_pr(issue, api_key, token, **({'adopt': adopt} if adopt else {}))
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
             journal.state['status'] = ('ready' if journal.state['status'] == 'ready' else 'testing') if url else 'blocked'
             journal.persist()

@@ -1668,7 +1668,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     return changes, verdict, problems
 
 
-def produce_development_pr(issue, api_key, token):
+def produce_development_pr(issue, api_key, token, adopt=None):
+    """Plan, open the draft PR with the goal and plan, then write the code on it and leave it for the owner's review.
+
+    `adopt` is this task's own open draft that holds only its plan (a run stopped after opening it); the code is
+    then written on that draft instead of opening another."""
     if (issue.get("user") or {}).get("login", "").lower() != OWNER:
         raise ValueError("Only the repository owner can request development")
     body = issue.get("body") or ""
@@ -1685,7 +1689,10 @@ def produce_development_pr(issue, api_key, token):
         if exc.code != 404:
             raise
         leftover = False
-    if leftover:
+    if adopt is not None and not (leftover and (adopt.get("head") or {}).get("ref") == branch and adopt.get("draft") is True
+                                  and adopt.get("state", "open") == "open" and not gh(f"repos/{repo}/pulls/{int(adopt['number'])}/files", repo_token)):
+        raise PermissionError("Only this task's own open draft holding just its plan can be continued")
+    if leftover and adopt is None:
         open_prs = gh(f"repos/{repo}/pulls?state=open&head={OWNER}:{branch}", repo_token)
         if open_prs:
             raise ValueError(f"This task already has an open PR ({open_prs[0].get('html_url', branch)}); use Fix it "
@@ -1696,7 +1703,8 @@ def produce_development_pr(issue, api_key, token):
     task = ((issue.get("title") or "") + "\n" + body
             + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:])
                if guidance else ""))
-    progress = Progress(number, token, ahead=["Choose which files to read", "Write the change", "Open a draft PR and start the tests"])
+    progress = Progress(number, token, ahead=["Choose which files to read", "Open the draft PR with the plan", "Write the change",
+                                              "Start the tests"])
     progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     journal = recovery.CURRENT.get()
@@ -1729,6 +1737,16 @@ def produce_development_pr(issue, api_key, token):
     if journal:
         note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
     saved = {"sha": sha, "pr": None, "changes": {}}
+    layout = plan_layout(issue, stages, design)
+    if adopt is not None:
+        saved.update(sha=adopt["head"]["sha"], pr=adopt)
+        progress.act("git", f"Continuing on draft PR #{adopt['number']}, which holds the plan")
+    else:
+        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout))
+        progress.act("git", f"Opened draft PR #{saved['pr']['number']} with the goal and plan; writing the code next")
+    progress.saved_pr = saved["pr"]["html_url"]
+    if journal:
+        journal.checkpoint(saved["sha"], base=base, pr=saved["pr"]["html_url"])
 
     def checkpoint(model, summary, changes, explanation):
         # Save only validated proposals, never code from a rejected answer. The marker blocks merge even if CI passes.
@@ -1745,12 +1763,11 @@ def produce_development_pr(issue, api_key, token):
         saved["sha"], saved["changes"] = commit["sha"], dict(changes)
         if journal:
             journal.checkpoint(commit['sha'], base=base, files=changes)
-        if not saved["pr"]:
-            saved["pr"] = gh(f"repos/{repo}/pulls", repo_token, {
-                "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}",
-                "head": branch, "base": base, "draft": True,
-                "body": review_body(number, model, explanation, summary, changes, design,
-                                    ["Saved implementation checkpoint. Complete the original task and verify every requirement before merging; use Fix it if interrupted."])})
+        if not saved.get("coded"):
+            # The draft stops saying no code exists: a run interrupted from here on is repaired, not restarted.
+            gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, {
+                "body": review_body(number, model, explanation, summary, changes, design, [CHECKPOINT_SAVED], layout)}, method="PATCH")
+            saved["coded"] = True
         progress.act("write", "Saved validated stage on draft PR " + saved["pr"]["html_url"])
         progress.saved_pr = saved["pr"]["html_url"]
         if journal:
@@ -1792,7 +1809,7 @@ def produce_development_pr(issue, api_key, token):
         gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
     payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
-        "body": review_body(number, model, explanation, summary, changes, design, open_problems)}
+        "body": review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
     if saved["pr"]:
         pr = gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, payload, method="PATCH")
     else:
@@ -1827,13 +1844,70 @@ def produce_development_pr(issue, api_key, token):
     return pr["html_url"]
 
 
-def review_body(number, model, explanation, summary, changes, design="", problems=()):
+PLAN_STARTED = "Implementation has not started yet; only the goal and plan are on this draft"
+CHECKPOINT_SAVED = ("Saved implementation checkpoint. Complete the original task and verify every requirement before merging; "
+                    "use Fix it if interrupted.")
+
+
+def plan_layout(issue, stages, design=""):
+    """The goal and the plan, in the owner's words and the planner's stages, shown before any code is written."""
+    goal = "\n".join(line for line in (issue.get("body") or "").splitlines()
+                     if not re.match(r"^(?:Repository|Mode|Authorization|Scope)\s*:", line, re.I)).strip()
+    steps = [str(stage) + (" (files: " + ", ".join(f"`{f}`" for f in stage.files) + ")" if getattr(stage, "files", ()) else "")
+             for stage in stages] or ["Write the change in one step"]
+    return (f"## Goal\n**{(issue.get('title') or 'KappaForge task').strip()[:200]}**\n\n{goal[:3000]}\n\n"
+            "## Plan\n" + "\n".join(f"{n}. {step[:400]}" for n, step in enumerate(steps, 1))
+            + (f"\n\n## Approach\n{design[:2000]}" if design else ""))
+
+
+def plan_status(code=False, checked=False):
+    tick = lambda done: "x" if done else " "
+    return ("## Status\n"
+            "- [x] Goal and plan written; draft opened before any code\n"
+            f"- [{tick(code)}] Code written on this draft\n"
+            f"- [{tick(code and checked)}] Work checked against the goal\n"
+            "- [ ] Independent tests (results are posted on the task)\n"
+            "- [ ] Your review: this PR stays a draft until you review it. KappaForge never marks it ready or merges it.")
+
+
+def open_plan_draft(repo, token, number, issue, base, sha, branch, layout):
+    """The plan as the branch's first commit (no files change) and the draft PR showing it, before any code.
+
+    Failing here stops the task before any code is generated; a half-made branch is removed so a retry starts clean."""
+    try:
+        tree = gh(f"repos/{repo}/git/commits/{sha}", token)["tree"]["sha"]
+        commit = gh(f"repos/{repo}/git/commits", token, {"message": f"KappaForge plan for {ROOT}#{number}\n\n{layout[:6000]}",
+                                                        "tree": tree, "parents": [sha]})
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        raise RuntimeError("Could not save the plan, so no draft PR was opened and no code was written") from exc
+    try:
+        gh(f"repos/{repo}/git/refs", token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        raise RuntimeError("Could not create the task branch, so no draft PR was opened and no code was written") from exc
+    try:
+        pr = gh(f"repos/{repo}/pulls", token, {
+            "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}", "head": branch, "base": base, "draft": True,
+            "body": (f"Owner-approved development for {ROOT}#{number}. KappaForge opened this draft with the plan before writing "
+                     f"any code.\n\n{layout}\n\n{plan_status()}\n\n" + review_record([PLAN_STARTED]))})
+        if not pr.get("html_url") or not pr.get("number"):
+            raise KeyError("pull request receipt")
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        try:
+            gh(f"repos/{repo}/git/refs/heads/{branch}", token, method="DELETE")
+        except (urllib.error.URLError, KeyError, TypeError):
+            pass
+        raise RuntimeError("Could not open the draft PR with the plan; no code was written") from exc
+    return {"sha": commit["sha"], "pr": pr}
+
+
+def review_body(number, model, explanation, summary, changes, design="", problems=(), layout=""):
     # The app shows the "What this does" section on its review card; keep the heading stable.
     # Fixes read the design notes back from here. Never promote a model's claims
     # into a verified result while saving an incomplete checkpoint.
     if problems:
         explanation = "Not finished: saved implementation checkpoint; verification is incomplete.\n\nAgent-reported changes (not verified): " + (explanation or summary)
     return (f"Owner-approved development for {ROOT}#{number}. Model: `{model}`\n\n"
+            + (layout + "\n\n" + plan_status(code=True, checked=not problems) + "\n\n" if layout else "") +
             f"## What this does\n{explanation or summary}\n\n## Technical summary\n{summary}\n\n"
             + (f"## Design notes\n{design}\n\n" if design else "") +
             "## Changed files\n" + "\n".join("- `" + p + "`" for p in changes) +

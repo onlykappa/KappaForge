@@ -714,6 +714,27 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(fix.call_count, 1)
         self.assertEqual(len(self.world.prs), 1)
 
+    def test_runner_continues_a_plan_only_draft_instead_of_repairing_it(self):
+        # The run stopped after opening the draft with the plan and before any code was saved.
+        self.journal.checkpoint('b' * 40, base='main', pr=self.world.prs[0]['html_url'])
+        self.journal.defer(RuntimeError('offline'))
+        self.world.now += 301
+        self.journal.queue()
+        action = f'resume:1:{self.journal.scope.digest[:12]}'
+        with patch.dict(os.environ, {'GITHUB_TOKEN': 'fixture', 'GEMINI_API_KEY': 'fixture',
+                'GITHUB_EVENT_NAME': 'workflow_dispatch', 'KAPPA_TASK_SCOPE': 'write', 'INPUT_ACTION': action}), \
+                patch.object(runner, 'choose_issue', return_value=self.world.issue), \
+                patch.object(runner, 'github', side_effect=lambda path, token=None, payload=None: self.world.read(path) if payload is None else self.world.write(path, payload, 'POST')), \
+                patch.object(developer, 'gh', side_effect=lambda path, token, payload=None, method=None: self.world.read(path) if payload is None else self.world.write(path, payload, method or 'POST')), \
+                patch.object(runner, 'request', side_effect=lambda url, payload=None, token=None, method=None: self.world.write(url.removeprefix('https://api.github.com/'), payload, method)), \
+                patch.object(developer, 'fix_pull_request') as fix, \
+                patch.object(developer, 'produce_development_pr', return_value=self.world.prs[0]['html_url']) as produce:
+            runner.main()
+        fix.assert_not_called()
+        self.assertEqual(produce.call_count, 1)
+        self.assertEqual(produce.call_args.kwargs['adopt']['html_url'], self.world.prs[0]['html_url'])
+        self.assertEqual(len(self.world.prs), 1)
+
     def test_exhausted_proposals_replan_into_smaller_validated_stages(self):
         bad = '{"files":[ BAD ]}'
         plan = json.dumps({'read': ['value.py'], 'stages': ['Change value and add its test', 'Add the remaining helper']})
