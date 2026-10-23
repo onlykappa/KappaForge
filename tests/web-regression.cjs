@@ -82,6 +82,10 @@ const apiServer=createServer(async(req,res)=>{
   assert.equal(await page.locator('.mobile-nav button').count(),4);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
   await page.locator('.mobile-nav [data-page=home]').click();assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'home');
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--kappa-safe-top');navigate('chat')});assert.equal(await page.locator('.mobile-nav').isVisible(),false,'A chat hides the tab bar');
+  // Swiping in from the left edge goes Back; it never opens the hidden sidebar and leaves the page inert (a freeze).
+  await page.evaluate(()=>{const fire=(t,x)=>document.querySelector('.content').dispatchEvent(new PointerEvent(t,{pointerType:'touch',clientX:x,clientY:400,bubbles:true,cancelable:true}));fire('pointerdown',8);fire('pointermove',60);fire('pointermove',140);fire('pointerup',140)});
+  assert.deepEqual(await page.evaluate(()=>[view,document.querySelector('.main').inert,document.querySelector('.mobile-nav').inert,document.body.classList.contains('sidebar-open')]),['chats',false,false,false],'edge swipe returns to Chats without freezing the page');
+  await page.evaluate(()=>{setSidebar(true);navigate('chat')});assert.equal(await page.evaluate(()=>document.querySelector('.main').inert),false,'the sidebar never opens on phones');
  }await openSettings(page);console.log(name+': opened settings');
  // The setup check runs on its own; a healthy setup leaves no card on the Settings home.
  await page.locator('[data-section=overview] .s-row-value',{hasText:'Verified'}).waitFor();assert.equal(await page.locator('.s-issues, .s-checking').count(),0,'healthy setup hides the check card');

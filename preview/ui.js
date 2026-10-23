@@ -17,6 +17,9 @@ let conversationSearch='',uiLastChat=null,uiLastCount=0,uiLastView='',uiInitiali
 let localProfile={name:'Personal workspace'};try{const p=JSON.parse(localStorage.getItem('kappaforge.profile.v21')||'{}');if(typeof p.name==='string'&&p.name.trim())localProfile.name=p.name.slice(0,50)}catch{}
 function setSidebar(open,restoreFocus=false){
  const sidebar=document.getElementById('sidebar'),mobile=matchMedia('(max-width:840px)').matches;
+ // Phones use the tab bar and never show the sidebar (ios.css hides it). Opening it there would leave the page and
+ // the tab bar inert behind an invisible panel, which looks like a frozen app, so it always stays closed.
+ if(mobile)open=false;
  if(!mobile){sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('role');document.body.classList.toggle('sidebar-collapsed',!open);sidebar.inert=!open;sidebar.classList.remove('open');document.body.classList.remove('sidebar-open');}
  else{sidebar.classList.toggle('open',open);document.body.classList.toggle('sidebar-open',open);sidebar.inert=!open;if(open){sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('role','dialog');}else{sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('role');}}
  document.querySelector('.main').inert=mobile&&open;document.querySelector('.mobile-nav').inert=mobile&&open;if(mobile&&open)document.getElementById('close-sidebar').focus({preventScroll:true});
@@ -267,7 +270,21 @@ const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.do
  document.querySelectorAll('[data-cancel-task]').forEach(button=>button.onclick=()=>cancelAuthorizedJob(Number(button.dataset.cancelTask)));
  resizeComposer();
 }
-function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');syncNativeComposer();}
+// Measuring the composer forces a layout of the whole page, which takes seconds in a long chat. Measure only when the
+// text, its width or the view changed, and touch the root --composer-height only when the height really changed
+// (changing it restyles the page).
+let composerMeasured={key:'',height:''};
+function resizeComposer(){
+ const el=document.getElementById('message'),composer=document.getElementById('composer');
+ const key=[el.value,innerWidth,view,document.getElementById('attachlist')?.childElementCount,document.getElementById('activitystatus')?.hidden,composer.className].join('\u0001');
+ if(key!==composerMeasured.key||!composerMeasured.height){
+  el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';
+  const height=composer.getBoundingClientRect().height+'px';
+  if(height!==composerMeasured.height)document.documentElement.style.setProperty('--composer-height',height);
+  composerMeasured={key,height};
+ }
+ syncNativeComposer();
+}
 function updateKeyboard(){
  const vv=window.visualViewport;
  const typing=window.KappaNativeComposer?!!window.KappaNativeComposerFocused:document.activeElement===document.getElementById('message');
@@ -303,7 +320,8 @@ function initInterface(){
  });
  let gesture=null;
  document.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch'||!matchMedia('(max-width:840px)').matches)return;const open=document.body.classList.contains('sidebar-open');if(e.target.closest('input,textarea,select,pre,table,button,a,summary'))return;if((!open&&e.clientX<30)||(open&&e.target.closest('#sidebar')))gesture={x:e.clientX,y:e.clientY,open};},{passive:true});
- document.addEventListener('pointermove',e=>{if(!gesture)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx)){gesture=null;return;}if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){if((gesture.open&&dx<0)||(!gesture.open&&dx>0)){if(e.cancelable)e.preventDefault();setSidebar(!gesture.open);}gesture=null;}},{passive:false});
+ document.addEventListener('pointermove',e=>{if(!gesture)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx)){gesture=null;return;}if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){// On phones a swipe in from the left edge goes Back, as in other iPhone apps.
+if(!gesture.open&&dx>0&&document.body.classList.contains('pushed')&&typeof shellBack==='function'){if(e.cancelable)e.preventDefault();shellBack();}gesture=null;}},{passive:false});
  document.addEventListener('pointerup',()=>gesture=null,{passive:true});document.addEventListener('pointercancel',()=>gesture=null,{passive:true});
 }
 
