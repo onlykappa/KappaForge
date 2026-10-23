@@ -414,27 +414,70 @@ const TASK_FAILURE_KINDS={
  model_deadline:['Model took too long','The model didn’t finish in time.']};
 const TASK_STRATEGIES={reread_source:'Re-read the file',smaller_stages:'Split into smaller stages',switch_or_defer:'Switch provider or wait',reduce_source_context:'Send less source',read_dependencies:'Read the needed files',stop:'Stop',compact:'Smaller retry'};
 function taskFailureKind(kind){return TASK_FAILURE_KINDS[kind]||[String(kind||'Failure').replace(/_/g,' '),''];}
+// Open task and attempt survive re-renders (task polling redraws Settings); only one task is open at a time.
+let openDiagnosticTask=null,openDiagnosticAttempts=new Set();
+const taskWhen=at=>{at=Number(at);return at?new Date(at<1e12?at*1000:at):null};
+function taskStopped(list){const last=list[list.length-1];return last.kind==='authorization'||/after 5 (?:distinct )?attempts|^Stopped/i.test(String(last.error)+' '+String(last.next));}
 function taskDiagnosticsHTML(){
  const jobs=taskDiagnosticJobs();
- const when=at=>{at=Number(at);return at?new Date(at<1e12?at*1000:at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Time unavailable'};
+ const when=at=>taskWhen(at)?.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})||'Time unavailable';
  const cards=jobs.map(job=>{
-  const list=job.failureHistory.slice(-10),last=list[list.length-1],stopped=last.kind==='authorization'||/after 5 (?:distinct )?attempts|^Stopped/i.test(String(last.error)+' '+String(last.next));
+  const list=job.failureHistory.slice(-10),last=list[list.length-1],stopped=taskStopped(list);
   const [lastLabel]=taskFailureKind(last.kind);
   const rows=list.map((d,i)=>{
-   const [label,meaning]=taskFailureKind(d.kind),hard=d.kind==='authorization'||(i===list.length-1&&stopped);
+   const [label,meaning]=taskFailureKind(d.kind),hard=d.kind==='authorization'||(i===list.length-1&&stopped),key=job.number+':'+i;
    const meta=[when(d.at),d.model?String(d.model).replace(/^[a-z-]+:/,''):'',d.strategy?'Next: '+(TASK_STRATEGIES[d.strategy]||String(d.strategy).replace(/_/g,' ')):''].filter(Boolean);
    const files=d.files?.length?'<div class="tf-files">'+d.files.map(f=>'<span>'+esc(f)+'</span>').join('')+'</div>':'';
    const logs=d.runUrl?'<a class="tf-link" href="'+esc(d.runUrl)+'" target="_blank" rel="noopener noreferrer">Run logs ↗</a>':'';
-   return '<li class="task-failure'+(hard?' hard':'')+'"><div class="tf-head"><b>Attempt '+(i+1)+' · '+esc(label)+'</b></div><p class="tf-meta">'+esc(meta.join(' · '))+'</p>'+(meaning?'<p class="tf-meaning">'+esc(meaning)+'</p>':'')+
-    '<pre class="tf-error">'+esc(d.error)+'</pre>'+files+(d.next?'<p class="tf-next"><b>What happens next:</b> '+esc(d.next)+'</p>':'')+logs+'</li>';
+   return '<li class="task-failure'+(hard?' hard':'')+'"><details class="tf-attempt" data-attempt="'+esc(key)+'"'+(openDiagnosticAttempts.has(key)?' open':'')+'><summary><span class="tf-head"><b>Attempt '+(i+1)+' · '+esc(label)+'</b><small class="tf-meta">'+esc(meta.join(' · '))+'</small></span>'+settingIcon('chevron')+'</summary>'+
+    (meaning?'<p class="tf-meaning">'+esc(meaning)+'</p>':'')+'<pre class="tf-error">'+esc(d.error)+'</pre>'+files+(d.next?'<p class="tf-next"><b>What happens next:</b> '+esc(d.next)+'</p>':'')+logs+'</details></li>';
   }).join('');
   const pr=String(job.prUrl||'').match(/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/)?.[0];
   const summary='<div class="tf-summary'+(stopped?' hard':'')+'"><b>'+(stopped?'Why it stopped: ':'Latest problem: ')+esc(lastLabel)+'</b>'+(last.next?'<p>'+esc(last.next)+'</p>':'')+(pr?'<a class="tf-link" href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a>':'')+'</div>';
-  return '<details class="k-details task-diagnostics"'+(job===jobs[0]?' open':'')+'><summary class="k-row"><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<ol class="tf-timeline">'+rows+'</ol></div></details>';
+  const report='<button type="button" class="k-btn tf-report" data-task-report="'+esc(job.number)+'">Download report</button>';
+  return '<details class="k-details task-diagnostics" data-task="'+esc(job.number)+'"'+(String(openDiagnosticTask)===String(job.number)?' open':'')+'><summary class="k-row"><span class="tf-dot'+(stopped?' hard':'')+'" aria-hidden="true"></span><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+esc(lastLabel)+' · '+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<p class="tf-hint">Tap an attempt to see its full error.</p><ol class="tf-timeline">'+rows+'</ol>'+report+'</div></details>';
  }).join('');
- return kBtns(kBtn('task-diagnostics-refresh','Refresh task diagnostics',true))+
-  '<p class="k-foot">The last ten failed attempts per task: what went wrong in plain words, the exact error, the files involved and what KappaForge does next. Read from each task’s GitHub recovery ledger and cached on this device.</p>'+
+ return kBtns(kBtn('task-diagnostics-refresh','Refresh',true),...(cards?[kBtn('task-diagnostics-download','Download all')]:[]))+
+  '<p class="k-foot">Tap a task to see why it failed. Each report lists every attempt with the exact error, files and what KappaForge did next; download one to share it for investigation. Read from each task’s GitHub recovery ledger and cached on this device.</p>'+
   (cards?'<div class="k-grp">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
+}
+// A shareable plain-text report: readable on its own, with the raw ledger rows at the end for investigation. Holds only
+// what the recovery ledger already published on the task issue (the engine scrubs errors before saving them).
+function taskDiagnosticReport(jobs){
+ const iso=at=>taskWhen(at)?.toISOString()||'unknown';
+ const lines=['# KappaForge task diagnostics','','Generated: '+new Date().toISOString(),'App version: '+(typeof APP_VERSION!=='undefined'?APP_VERSION:'unknown'),'Tasks: '+jobs.length,''];
+ for(const job of jobs){
+  const list=job.failureHistory.slice(-10),stopped=taskStopped(list),last=list[list.length-1];
+  lines.push('## Task #'+job.number+' · '+(job.title||'Saved task'),'','Status: '+(stopped?'stopped':'still recovering')+' · '+list.length+' failed attempt'+(list.length===1?'':'s'));
+  if(job.prUrl)lines.push('Draft PR: '+job.prUrl);
+  lines.push((stopped?'Why it stopped: ':'Latest problem: ')+taskFailureKind(last.kind)[0]+(last.next?' — '+last.next:''),'');
+  list.forEach((d,i)=>{
+   const [label,meaning]=taskFailureKind(d.kind);
+   lines.push('### Attempt '+(i+1)+' · '+label,'','- When: '+iso(d.at),'- Kind: '+(d.kind||'unknown')+(meaning?' ('+meaning+')':''),'- Model: '+(d.model||'unknown'),'- Strategy: '+(d.strategy||'none'));
+   if(d.files?.length)lines.push('- Files: '+d.files.join(', '));
+   if(d.next)lines.push('- What happens next: '+d.next);
+   if(d.runUrl)lines.push('- Run logs: '+d.runUrl);
+   const error=String(d.error||''),fence='`'.repeat(Math.max(3,...(error.match(/`+/g)||['']).map(x=>x.length+1)));
+   lines.push('',fence,error,fence,'');
+  });
+ }
+ lines.push('## Raw ledger rows','','```json',JSON.stringify(jobs.map(j=>({number:j.number,title:j.title||'',prUrl:j.prUrl||'',failureHistory:j.failureHistory.slice(-10)})),null,2),'```','');
+ return lines.join('\n');
+}
+function downloadTaskDiagnostics(number){
+ const jobs=taskDiagnosticJobs().filter(j=>number==null||String(j.number)===String(number));
+ if(!jobs.length)throw Error('No failure records to download.');
+ const day=new Date().toISOString().slice(0,10);
+ exportFile('KappaForge-'+(number==null?'tasks':'task-'+jobs[0].number)+'-diagnostics-'+day+'.md',taskDiagnosticReport(jobs),'text/markdown');
+ settingsNotice='Report ready'+(window.webkit?.messageHandlers?.kappa?': choose where to send it.':' in your downloads.');
+}
+function bindTaskDiagnostics(){
+ document.querySelectorAll('details.task-diagnostics').forEach(el=>el.addEventListener('toggle',()=>{
+  if(el.open){openDiagnosticTask=el.dataset.task;document.querySelectorAll('details.task-diagnostics[open]').forEach(other=>{if(other!==el)other.open=false})}
+  else if(String(openDiagnosticTask)===el.dataset.task)openDiagnosticTask=null;
+ }));
+ document.querySelectorAll('details.tf-attempt').forEach(el=>el.addEventListener('toggle',()=>{el.open?openDiagnosticAttempts.add(el.dataset.attempt):openDiagnosticAttempts.delete(el.dataset.attempt)}));
+ document.querySelectorAll('[data-task-report]').forEach(b=>b.onclick=()=>{try{downloadTaskDiagnostics(b.dataset.taskReport)}catch(e){settingsNotice=e.message}render()});
 }
 function settingsSectionBody(){
  const native=!!window.webkit?.messageHandlers?.kappa,model=preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model.split(':').pop();
@@ -564,7 +607,7 @@ function bindSettings(){
  document.querySelectorAll('[data-usage-unit]').forEach(b=>b.onclick=e=>{e.stopPropagation();usageUnit=b.dataset.usageUnit;usageMenuOpen=false;try{localStorage.setItem('kappaforge.usageUnit',usageUnit)}catch{}render();});
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
- on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);
+ on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);on('task-diagnostics-download',()=>{downloadTaskDiagnostics();render()});bindTaskDiagnostics();
  document.getElementById('premium-mode')?.addEventListener('change',async e=>{
   const enabled=e.target.checked;
   if(enabled&&!confirm(premiumEnableMessage())){e.target.checked=false;return;}

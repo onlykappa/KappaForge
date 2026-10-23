@@ -13,7 +13,9 @@ const record={kind:'validation',error:'Edit 1 for app.js did not match',model:'g
 
 function harness(comments){
  const settings=read('settings.js'),tasks=read('app-tasks.js');
- const box={trackedJobs:[{number:7,title:'Fix app',prUrl:'https://github.com/onlykappa/KappaForge/pull/9'}],settingsNotice:'',renders:0,persisted:0,
+ const exported=[];
+ const box={trackedJobs:[{number:7,title:'Fix app',prUrl:'https://github.com/onlykappa/KappaForge/pull/9'}],settingsNotice:'',renders:0,persisted:0,exported,
+  exportFile:(name,content,type)=>exported.push({name,content,type}),APP_VERSION:'9.9.9',window:{},Set,Math,
   esc:s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),settingIcon:()=>'',
   render(){box.renders++},persistJobs(){box.persisted++},taskComments:async()=>comments,JSON,Map,Number,String,Array,Date,Object};
  vm.createContext(box);
@@ -41,4 +43,34 @@ test('refresh reads the runner ledger, renders it escaped, and ignores look-alik
  assert.doesNotMatch(html,/Spoofed failure|attacker/);
  assert.match(html,/href="https:\/\/github.com\/onlykappa\/KappaForge\/actions\/runs\/1"/);
  assert.match(html,/Open draft PR/);
+});
+
+test('tasks start collapsed and expand one at a time; each attempt opens on its own and survives a redraw',async()=>{
+ const box=harness([ledger({c:record})]);
+ box.trackedJobs.push({number:8,title:'Second',failureHistory:[{at:1700000100,kind:'authorization',error:'Protected path cannot be changed by the agent: .github/x.yml',next:'Stopped.'}]});
+ await box.refreshTaskDiagnostics();
+ let html=box.taskDiagnosticsHTML();
+ assert.doesNotMatch(html,/<details class="k-details task-diagnostics"[^>]*\sopen/,'no task is open until tapped');
+ assert.doesNotMatch(html,/<details class="tf-attempt"[^>]*\sopen/,'attempts start collapsed');
+ assert.match(html,/Blocked by a safety rule · 2 failed attempts · stopped/,'the closed row already says why');
+ vm.runInContext("openDiagnosticTask='7';openDiagnosticAttempts.add('7:0')",box);
+ html=box.taskDiagnosticsHTML();
+ assert.match(html,/data-task="7" open/);assert.doesNotMatch(html,/data-task="8" open/);
+ assert.match(html,/data-attempt="7:0" open/);
+ const settings=read('settings.js');
+ assert.match(slice(settings,'function bindTaskDiagnostics(','\nfunction settingsSectionBody('),/other\.open=false/,'opening a task closes the others');
+ assert.match(settings,/bindTaskDiagnostics\(\);/);
+});
+
+test('a task report downloads with every attempt, the full error and the raw ledger rows',async()=>{
+ const box=harness([ledger({c:{...record,history:[{...record.history[0],error:'bad ```fence``` inside'}]}})]);
+ await box.refreshTaskDiagnostics();
+ box.downloadTaskDiagnostics('7');
+ const [file]=box.exported;
+ assert.match(file.name,/^KappaForge-task-7-diagnostics-\d{4}-\d{2}-\d{2}\.md$/);assert.equal(file.type,'text/markdown');
+ for(const part of ['# KappaForge task diagnostics','App version: 9.9.9','## Task #7 · Fix app','Draft PR: https://github.com/onlykappa/KappaForge/pull/9',
+  '### Attempt 1 · Failed a check','- Model: groq:llama','- Run logs: https://github.com/onlykappa/KappaForge/actions/runs/1','````\nbad ```fence``` inside\n````','## Raw ledger rows'])
+  assert.ok(file.content.includes(part),part);
+ box.downloadTaskDiagnostics();assert.match(box.exported[1].name,/^KappaForge-tasks-diagnostics-/);
+ box.trackedJobs[0].failureHistory=[];assert.throws(()=>box.downloadTaskDiagnostics(),/No failure records/);
 });
