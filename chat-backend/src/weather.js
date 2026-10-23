@@ -1,6 +1,6 @@
 // Open-Meteo: https://open-meteo.com/en/docs and /en/docs/geocoding-api.
-// No provider key, model inference or paid API. Device coordinates arrive only with the one weather message the
-// owner allowed them for (the app asks once, on the first weather question that names no city); they are not stored.
+// No provider key, model inference or paid API. Device coordinates arrive only with the one message the owner allowed
+// them for (the app asks once, for a weather question that names no city or another location question); not stored.
 const cache=new Map(),TTL=300000,MAX_CACHE=64;
 export const weatherTools=Object.freeze([{name:"weather",description:"Current weather, hourly and seven-day forecasts by city or explicit coordinates"}]);
 export class WeatherError extends Error{constructor(message,status=502){super(message);this.status=status;}}

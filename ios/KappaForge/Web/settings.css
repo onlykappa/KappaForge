@@ -175,4 +175,7 @@ a.k-row:hover{text-decoration:none}button.k-row:active,a.k-row:active,label.k-ro
 .tf-files span{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:4px 8px;border-radius:8px;background:var(--fill-2,rgba(118,118,128,.18));overflow-wrap:anywhere}
 .tf-next{margin:8px 0 0;font-size:14px;line-height:1.4}
 .tf-link{display:inline-block;margin-top:6px;font-size:14px}
-.tf-report{width:100%}
+.tf-cards{display:flex;flex-direction:column;gap:12px}
+.tf-cards .tf-card{margin:0}
+.tf-report{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.tf-report .s-icon{width:18px;height:18px}

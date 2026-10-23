@@ -434,18 +434,18 @@ function taskDiagnosticsHTML(){
   }).join('');
   const pr=String(job.prUrl||'').match(/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/)?.[0];
   const summary='<div class="tf-summary'+(stopped?' hard':'')+'"><b>'+(stopped?'Why it stopped: ':'Latest problem: ')+esc(lastLabel)+'</b>'+(last.next?'<p>'+esc(last.next)+'</p>':'')+(pr?'<a class="tf-link" href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a>':'')+'</div>';
-  const report='<button type="button" class="k-btn tf-report" data-task-report="'+esc(job.number)+'">Download report</button>';
-  return '<details class="k-details task-diagnostics" data-task="'+esc(job.number)+'"'+(String(openDiagnosticTask)===String(job.number)?' open':'')+'><summary class="k-row"><span class="tf-dot'+(stopped?' hard':'')+'" aria-hidden="true"></span><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+esc(lastLabel)+' · '+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<p class="tf-hint">Tap an attempt to see its full error.</p><ol class="tf-timeline">'+rows+'</ol>'+report+'</div></details>';
+  const report='<button type="button" class="k-btn tf-report" data-task-report="'+esc(job.number)+'">'+settingIcon('download')+'Download this task’s error log</button>';
+  return '<div class="k-grp tf-card"><details class="k-details task-diagnostics" data-task="'+esc(job.number)+'"'+(String(openDiagnosticTask)===String(job.number)?' open':'')+'><summary class="k-row"><span class="tf-dot'+(stopped?' hard':'')+'" aria-hidden="true"></span><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+esc(lastLabel)+' · '+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<p class="tf-hint">Tap an attempt to see its full error.</p><ol class="tf-timeline">'+rows+'</ol>'+report+'</div></details></div>';
  }).join('');
- return kBtns(kBtn('task-diagnostics-refresh','Refresh',true),...(cards?[kBtn('task-diagnostics-download','Download all')]:[]))+
-  '<p class="k-foot">Tap a task to see why it failed. Each report lists every attempt with the exact error, files and what KappaForge did next; download one to share it for investigation. Read from each task’s GitHub recovery ledger and cached on this device.</p>'+
-  (cards?'<div class="k-grp">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
+ return kBtns(kBtn('task-diagnostics-refresh','Refresh',true))+
+  '<p class="k-foot">Tap a task to see why it failed. To send one for investigation, open it and download its error log.</p>'+
+  (cards?'<div class="tf-cards">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
 }
 // A shareable plain-text report: readable on its own, with the raw ledger rows at the end for investigation. Holds only
 // what the recovery ledger already published on the task issue (the engine scrubs errors before saving them).
 function taskDiagnosticReport(jobs){
  const iso=at=>taskWhen(at)?.toISOString()||'unknown';
- const lines=['# KappaForge task diagnostics','','Generated: '+new Date().toISOString(),'App version: '+(typeof APP_VERSION!=='undefined'?APP_VERSION:'unknown'),'Tasks: '+jobs.length,''];
+ const lines=['# KappaForge task error log','','Generated: '+new Date().toISOString(),'App version: '+(typeof APP_VERSION!=='undefined'?APP_VERSION:'unknown'),''];
  for(const job of jobs){
   const list=job.failureHistory.slice(-10),stopped=taskStopped(list),last=list[list.length-1];
   lines.push('## Task #'+job.number+' · '+(job.title||'Saved task'),'','Status: '+(stopped?'stopped':'still recovering')+' · '+list.length+' failed attempt'+(list.length===1?'':'s'));
@@ -465,10 +465,10 @@ function taskDiagnosticReport(jobs){
  return lines.join('\n');
 }
 function downloadTaskDiagnostics(number){
- const jobs=taskDiagnosticJobs().filter(j=>number==null||String(j.number)===String(number));
- if(!jobs.length)throw Error('No failure records to download.');
+ const jobs=taskDiagnosticJobs().filter(j=>String(j.number)===String(number));
+ if(!jobs.length)throw Error('No failure records to download for this task.');
  const day=new Date().toISOString().slice(0,10);
- exportFile('KappaForge-'+(number==null?'tasks':'task-'+jobs[0].number)+'-diagnostics-'+day+'.md',taskDiagnosticReport(jobs),'text/markdown');
+ exportFile('KappaForge-task-'+jobs[0].number+'-error-log-'+day+'.md',taskDiagnosticReport(jobs),'text/markdown');
  settingsNotice='Report ready'+(window.webkit?.messageHandlers?.kappa?': choose where to send it.':' in your downloads.');
 }
 function bindTaskDiagnostics(){
@@ -507,7 +507,7 @@ function settingsSectionBody(){
  if(settingsSection==='personalization'){
   return kGroup('Response style',kChoices('data-style-set',personality,[['auto','Auto','Matches the question'],['friendly','Friendly','Warm and casual'],['professional','Professional','Clear and formal'],['developer','Developer','Code first, terse']],'k-choices k-styles'))+
   '<h3 class="k-gh">Appearance</h3><div class="k-swatches" role="group" aria-label="Appearance">'+[['system','System'],['light','Light'],['dark','OLED Black']].map(([v,t])=>'<button type="button" class="k-swatch '+v+'" data-pref-set="appearance" data-value="'+v+'" aria-pressed="'+(preferences.appearance===v)+'"><i aria-hidden="true"></i>'+t+'</button>').join('')+'</div>'+
-  kGroup('Language &amp; weather',kSelect('globe','language','Response language',[['auto','Automatic'],['English','English'],['Spanish','Spanish'],['French','French'],['German','German'],['Japanese','Japanese']])+kSelect('cloud','weatherUnits','Weather units',[['auto','Automatic'],['celsius','Celsius'],['fahrenheit','Fahrenheit']])+kSelect('pin','weatherLocation','Use my location for weather',[['ask','Ask the first time'],['allowed','Allowed'],['off','Off']])+
+  kGroup('Language &amp; weather',kSelect('globe','language','Response language',[['auto','Automatic'],['English','English'],['Spanish','Spanish'],['French','French'],['German','German'],['Japanese','Japanese']])+kSelect('cloud','weatherUnits','Weather units',[['auto','Automatic'],['celsius','Celsius'],['fahrenheit','Fahrenheit']])+kSelect('pin','locationAccess','Use my location',[['ask','Ask the first time'],['allowed','Allowed'],['off','Off']])+
    '<label class="k-row k-input">'+kSq('pin')+'<span class="k-tx"><b>Default weather city</b></span><input data-pref="weatherCity" maxlength="120" value="'+esc(preferences.weatherCity)+'" placeholder="City" aria-label="Default weather city"></label>')+
   kGroup('Voice',kSelect('wave','voiceEngine','Read replies with',[['cloud','Groq Orpheus, then Workers AI, then phone'],['device','Phone voice only']])+kSelect('mic','voice','Voice',[['hannah','Hannah'],['autumn','Autumn'],['diana','Diana'],['austin','Austin'],['daniel','Daniel'],['troy','Troy']]))+
   '<p class="k-foot">Tap the mic to dictate, or the wave to talk. Speech becomes text with the speech models on your model list. Orpheus allows about 100 short clips a day; Workers AI and the phone voice take over after that.</p>'+
@@ -607,7 +607,7 @@ function bindSettings(){
  document.querySelectorAll('[data-usage-unit]').forEach(b=>b.onclick=e=>{e.stopPropagation();usageUnit=b.dataset.usageUnit;usageMenuOpen=false;try{localStorage.setItem('kappaforge.usageUnit',usageUnit)}catch{}render();});
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
- on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);on('task-diagnostics-download',()=>{downloadTaskDiagnostics();render()});bindTaskDiagnostics();
+ on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);bindTaskDiagnostics();
  document.getElementById('premium-mode')?.addEventListener('change',async e=>{
   const enabled=e.target.checked;
   if(enabled&&!confirm(premiumEnableMessage())){e.target.checked=false;return;}

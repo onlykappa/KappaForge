@@ -18,23 +18,23 @@ test('the app and the Worker agree on what is a weather question and whether it 
 
 test('location is needed only for a weather question with no typed or saved city, unless turned off',()=>{
  assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{}),true);
- assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{weatherLocation:'allowed'}),true);
- assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{weatherLocation:'off'}),false);
+ assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{locationAccess:'allowed'}),true);
+ assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{locationAccess:'off'}),false);
  assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{weatherCity:'Paris'}),false);
  assert.equal(KappaCore.weatherLocationNeeded('Will it rain in Paris today?',{}),false);
  assert.equal(KappaCore.weatherLocationNeeded('Implement a weather endpoint',{}),false);
  assert.equal(KappaCore.weatherLocationNeeded('Tell me a joke',{}),false);
- assert.equal(KappaCore.settings({}).weatherLocation,'ask');
- assert.equal(KappaCore.settings({weatherLocation:'off'}).weatherLocation,'off');
- assert.equal(KappaCore.settings({weatherLocation:'always'}).weatherLocation,'ask','unknown values fall back to asking');
+ assert.equal(KappaCore.settings({}).locationAccess,'ask');
+ assert.equal(KappaCore.settings({locationAccess:'off'}).locationAccess,'off');
+ assert.equal(KappaCore.settings({locationAccess:'always'}).locationAccess,'ask','unknown values fall back to asking');
 });
 
 test('browser location: one rounded reading; denial and errors are coded',async()=>{
  const calls=[];
  const geo=result=>({getCurrentPosition:(ok,fail,options)=>{calls.push(options);result(ok,fail)}});
- const place=await KappaCore.deviceLocation({native:null,geolocation:geo(ok=>ok({coords:{latitude:47.65881,longitude:-117.42602}}))});
- assert.deepEqual(place,{latitude:47.66,longitude:-117.43});
- assert.equal(calls[0].enableHighAccuracy,false);
+ const place=await KappaCore.deviceLocation({native:null,geolocation:geo(ok=>ok({coords:{latitude:47.658812345,longitude:-117.426021987,accuracy:8.04}}))});
+ assert.deepEqual(place,{latitude:47.658812,longitude:-117.426022,accuracy:8},'precise to about 0.1 m, with its accuracy');
+ assert.equal(calls[0].enableHighAccuracy,true);assert.equal(calls[0].maximumAge,0,'never an old cached reading');
  await assert.rejects(KappaCore.deviceLocation({native:null,geolocation:geo((_ok,fail)=>fail({code:1}))}),{code:'denied'});
  await assert.rejects(KappaCore.deviceLocation({native:null,geolocation:geo((_ok,fail)=>fail({code:2}))}),{code:'unavailable'});
  await assert.rejects(KappaCore.deviceLocation({native:null,geolocation:geo(ok=>ok({coords:{latitude:120,longitude:0}}))}),{code:'unavailable'});
@@ -45,7 +45,9 @@ test('browser location: one rounded reading; denial and errors are coded',async(
 test('iOS location goes through the native bridge once and the callback is removed afterwards',async()=>{
  const posted=[];
  const native=event=>({postMessage:m=>{posted.push(m);queueMicrotask(()=>globalThis.KappaLocationNative(event))}});
- assert.deepEqual(await KappaCore.deviceLocation({native:native({type:'location',latitude:40.712776,longitude:-74.005974})}),{latitude:40.71,longitude:-74.01});
+ assert.deepEqual(await KappaCore.deviceLocation({native:native({type:'location',latitude:40.712776,longitude:-74.005974,accuracy:5,reduced:false})}),{latitude:40.712776,longitude:-74.005974,accuracy:5});
+ assert.deepEqual(await KappaCore.deviceLocation({native:native({type:'location',latitude:40.7,longitude:-74,accuracy:3000,reduced:true})}),{latitude:40.7,longitude:-74,accuracy:3000,reduced:true},'approximate iOS readings say so');
+ posted.length=1;
  assert.deepEqual(posted,[{action:'location'}]);assert.equal(globalThis.KappaLocationNative,undefined);
  await assert.rejects(KappaCore.deviceLocation({native:native({type:'error',code:'denied'})}),{code:'denied'});
  await assert.rejects(KappaCore.deviceLocation({native:native({type:'error',code:'unavailable'})}),{code:'unavailable'});
@@ -75,9 +77,9 @@ function chatHarness({text,preferences,location}){
 test('first weather question: location is asked, sent once with that message, and "allowed" is remembered',async()=>{
  const h=chatHarness({text:'Will it rain today?',preferences:KappaCore.settings({}),location:{latitude:47.66,longitude:-117.43}});
  await h.run();
- assert.deepEqual(h.sent[0].weatherLocation,{latitude:47.66,longitude:-117.43});
+ assert.deepEqual(h.sent[0].deviceLocation,{latitude:47.66,longitude:-117.43});
  assert.ok(h.activity.includes('location'));
- assert.equal(h.box.preferences.weatherLocation,'allowed');
+ assert.equal(h.box.preferences.locationAccess,'allowed');
  assert.ok(h.stored.every(p=>!('latitude' in p)&&!JSON.stringify(p).includes('47.66')),'coordinates are never saved with preferences');
  assert.equal(h.chat.messages.some(m=>m.text.includes('47.66')),false,'coordinates are not written into the chat');
 });
@@ -86,8 +88,8 @@ test('permission denied: no location is sent, the setting turns off, and the rep
  const denied=Object.assign(Error('Location permission denied'),{code:'denied'});
  const h=chatHarness({text:'Will it rain today?',preferences:KappaCore.settings({}),location:denied});
  await h.run();
- assert.equal('weatherLocation' in h.sent[0],false);
- assert.equal(h.box.preferences.weatherLocation,'off');
+ assert.equal('deviceLocation' in h.sent[0],false);
+ assert.equal(h.box.preferences.locationAccess,'off');
  const reply=h.chat.messages.at(-1).text;
  assert.match(reply,/^Location access is off, so I didn't use your location/);assert.match(reply,/Which city should I check\?/);
  const again=chatHarness({text:'Will it rain today?',preferences:h.box.preferences,location:{latitude:1,longitude:1}});
@@ -98,11 +100,11 @@ test('permission denied: no location is sent, the setting turns off, and the rep
 test('location unavailable keeps asking next time; non-weather and city questions never touch location',async()=>{
  const h=chatHarness({text:'Will it rain today?',preferences:KappaCore.settings({}),location:Object.assign(Error('x'),{code:'unavailable'})});
  await h.run();
- assert.equal(h.box.preferences.weatherLocation,'ask');assert.match(h.chat.messages.at(-1).text,/^I couldn't get your location this time\./);
+ assert.equal(h.box.preferences.locationAccess,'ask');assert.match(h.chat.messages.at(-1).text,/^I couldn't get your location this time\./);
  for(const text of ['Tell me a joke','Will it rain in Paris today?']){
   const other=chatHarness({text,preferences:KappaCore.settings({}),location:{latitude:1,longitude:1}});
   await other.run();
-  assert.equal(other.activity.includes('location'),false,text);assert.equal('weatherLocation' in other.sent[0],false,text);
+  assert.equal(other.activity.includes('location'),false,text);assert.equal('deviceLocation' in other.sent[0],false,text);
  }
 });
 
@@ -113,5 +115,5 @@ test('the iOS app declares why it asks and wires the one-shot native request',()
  assert.match(swift,/requestWhenInUseAuthorization\(\)/);assert.match(swift,/requestLocation\(\)/);
  assert.doesNotMatch(swift,/startUpdatingLocation|requestAlwaysAuthorization|allowsBackgroundLocationUpdates|UserDefaults/);
  assert.match(read('ios/KappaForge/KappaWebView.swift'),/body\["action"\] == "location"/);
- assert.match(read('preview/settings.js'),/kSelect\('pin','weatherLocation','Use my location for weather'/);
+ assert.match(read('preview/settings.js'),/kSelect\('pin','locationAccess','Use my location'/);
 });

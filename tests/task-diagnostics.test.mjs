@@ -67,10 +67,12 @@ test('a task report downloads with every attempt, the full error and the raw led
  await box.refreshTaskDiagnostics();
  box.downloadTaskDiagnostics('7');
  const [file]=box.exported;
- assert.match(file.name,/^KappaForge-task-7-diagnostics-\d{4}-\d{2}-\d{2}\.md$/);assert.equal(file.type,'text/markdown');
- for(const part of ['# KappaForge task diagnostics','App version: 9.9.9','## Task #7 · Fix app','Draft PR: https://github.com/onlykappa/KappaForge/pull/9',
+ assert.match(file.name,/^KappaForge-task-7-error-log-\d{4}-\d{2}-\d{2}\.md$/);assert.equal(file.type,'text/markdown');
+ for(const part of ['# KappaForge task error log','App version: 9.9.9','## Task #7 · Fix app','Draft PR: https://github.com/onlykappa/KappaForge/pull/9',
   '### Attempt 1 · Failed a check','- Model: groq:llama','- Run logs: https://github.com/onlykappa/KappaForge/actions/runs/1','````\nbad ```fence``` inside\n````','## Raw ledger rows'])
   assert.ok(file.content.includes(part),part);
- box.downloadTaskDiagnostics();assert.match(box.exported[1].name,/^KappaForge-tasks-diagnostics-/);
- box.trackedJobs[0].failureHistory=[];assert.throws(()=>box.downloadTaskDiagnostics(),/No failure records/);
+ assert.throws(()=>box.downloadTaskDiagnostics('99'),/No failure records/,'reports are per task only');
+ const settings=read('settings.js');
+ assert.doesNotMatch(settings,/Download all|task-diagnostics-download/);
+ assert.match(slice(settings,'function taskDiagnosticsHTML(','\nfunction taskDiagnosticReport('),/Download this task’s error log/);
 });

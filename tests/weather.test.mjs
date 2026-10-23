@@ -78,7 +78,7 @@ test('city followup after a location question works without an LLM key or geoloc
 test('device coordinates are used only when no city is typed or saved, and feels-like is reported',async()=>{
  const original=globalThis.fetch,mock=upstream();globalThis.fetch=mock.fetcher;
  try{
-  const ask=text=>({messages:[{role:'user',text}],preferences:{weatherUnits:'fahrenheit'},weatherLocation:{latitude:47.6588,longitude:-117.4260}});
+  const ask=text=>({messages:[{role:'user',text}],preferences:{weatherUnits:'fahrenheit'},deviceLocation:{latitude:47.6588,longitude:-117.4260,accuracy:12}});
   const near=await worker.fetch(request('/chat',ask('Will it rain today?')),env,{});const data=await near.json();
   assert.equal(near.status,200);assert.equal(mock.calls.length,1,'coordinates skip the city lookup');
   assert.equal(mock.calls[0].url.hostname,'api.open-meteo.com');
@@ -95,9 +95,9 @@ test('device coordinates are used only when no city is typed or saved, and feels
 test('bad device coordinates are refused before any upstream call; missing feels-like is left out',async()=>{
  const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('unexpected')};
  try{
-  for(const weatherLocation of [{latitude:91,longitude:0},{latitude:'47',longitude:1},{latitude:1},[1,2]]){
-   const data=await(await worker.fetch(request('/chat',{messages:[{role:'user',text:'Will it rain today?'}],weatherLocation}),env,{})).json();
-   assert.match(data.reply,/latitude|Which city/,JSON.stringify(weatherLocation));
+  for(const deviceLocation of [{latitude:91,longitude:0},{latitude:'47',longitude:1},{latitude:1},[1,2]]){
+   const data=await(await worker.fetch(request('/chat',{messages:[{role:'user',text:'Will it rain today?'}],deviceLocation}),env,{})).json();
+   assert.match(data.reply,/Which city/,JSON.stringify(deviceLocation));
   }
   assert.equal(calls,0);
  }finally{globalThis.fetch=original;}
