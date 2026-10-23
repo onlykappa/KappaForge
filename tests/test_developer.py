@@ -65,28 +65,34 @@ class DeveloperValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
 
-    def test_protected_path_proposal_is_rejected_then_replanned_with_diagnostic(self):
-        bad = json.dumps({"files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return a - b"}]},
-            {"path": ".github/workflows/open-draft-pr.yml", "content": "name: unsafe"},
+    def test_any_repository_file_can_be_proposed_but_unsafe_paths_still_stop(self):
+        proposal = json.dumps({"files": [
+            {"path": ".github/workflows/open-draft-pr.yml", "content": "name: owner-reviewed"},
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
         ]})
-        good = json.dumps({"files": [{"path": "app/main.py", "edits": [
-            {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
-        prompts = []
+        with patch.object(developer, "run_model", return_value=("test-model", proposal)) as model:
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn(".github/workflows/open-draft-pr.yml", changes)
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertIn("You may edit any file in the repository", model.call_args.args[1])
+        self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
 
+    def test_five_failed_attempts_use_distinct_repair_instructions(self):
+        bad = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "not present", "replace": "x"}]}]})
+        prompts = []
         def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
             prompts.append(prompt)
-            return ("test-model", bad if len(prompts) == 1 else good)
-
-        with patch.object(developer, "run_model", side_effect=model):
-            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertIn("int(a)", changes["app/main.py"])
-        self.assertEqual(len(prompts), 2)
-        self.assertIn("Protected path cannot be changed by the agent: .github/workflows/open-draft-pr.yml", prompts[1])
-        self.assertIn("Remove it from the proposal", prompts[1])
-        self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .github/workflows/open-draft-pr.yml")),
-                         ("protected_path", "exclude_protected_path"))
-        self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
+            return "same-model", bad
+        with patch.object(developer, "run_model", side_effect=model), self.assertRaises(ValueError):
+            developer.generate_with("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, developer.SMALL)
+        self.assertEqual(len(prompts), 5)
+        approaches = ["Re-read the exact source", "Use a different implementation path",
+                      "Break the change into smaller edits", "Choose a substantially different solution"]
+        for index, text in enumerate(approaches, start=1):
+            self.assertIn(text, prompts[index])
+            self.assertIn("Previously rejected proposals", prompts[index])
+        self.assertNotEqual(prompts[1], prompts[2])
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
         no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
@@ -148,20 +154,17 @@ class DeveloperValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/other.py", "edits": [{"find": "a", "replace": "b"}]}]})
 
-    def test_guardrails_ci_secrets_and_unsafe_paths_are_protected(self):
-        for path in [".github/workflows/agent.yml", ".git/config",
-                     "chat-backend/wrangler.toml", "chat-backend/src/review.js", "chat-backend/src/github.js",
-                     "chat-backend/src/providers.js", "config/providers.json",
-                     "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
-                     "../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                check_path(path)
-        self.assertEqual(check_path("chat-backend/src/index.js"), "chat-backend/src/index.js")
-        for path in ["engine/task_scope.py", "engine/developer.py", "engine/runner.py",
-                     "engine/repair_loop.py", "engine/validate_change.py",
-                     "tests/test_developer.py", "tests/test_workflow_safety.py"]:
+    def test_any_in_repo_path_is_editable_but_path_traversal_is_rejected(self):
+        editable = [".github/workflows/agent.yml", ".git/config", "chat-backend/wrangler.toml",
+                    "chat-backend/src/review.js", "chat-backend/src/github.js", "chat-backend/src/providers.js",
+                    "config/providers.json", "package-lock.json", "web/package-lock.json", ".env",
+                    "app/.env.local", "engine/developer.py", "tests/test_workflow_safety.py"]
+        for path in editable:
             with self.subTest(editable=path):
                 self.assertEqual(check_path(path), path)
+        for path in ["../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
+            with self.subTest(unsafe=path), self.assertRaisesRegex(ValueError, "Unsafe path"):
+                check_path(path)
 
     def test_unchanged_duplicate_and_oversized_results_are_rejected(self):
         bad = [
