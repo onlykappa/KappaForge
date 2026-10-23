@@ -118,7 +118,8 @@ async function listedModels(env,id){
    if(typeof m?.id==="string"&&(context>0||maxOutput>0))modelLimits.set(id+":"+m.id,{context:context>0?context:null,maxOutput:maxOutput>0?maxOutput:null});}
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
-  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
+  // A provider whose quota is per model may route more reviewed models than the global cap (maxModels).
+  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.providers[id]?.maxModels||registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
   setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;

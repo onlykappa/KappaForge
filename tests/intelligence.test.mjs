@@ -221,7 +221,7 @@ test('free providers take over when Gemini is rate limited, with live model disc
    return Response.json({choices:[{message:{content:'Answer from Groq'},finish_reason:'stop'}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}})}
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b']);
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','openai/gpt-oss-20b']);
   assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder:free']);
   assert.deepEqual(await providerModels(env,'cerebras'),[]);
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}]}),env);const d=await r.json();

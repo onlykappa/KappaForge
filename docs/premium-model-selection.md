@@ -83,14 +83,19 @@ The existing one-rescue-per-step, single-use approval, cancellation and atomic r
 Quote and reservation decisions read persisted owner limits, never caller-supplied caps. A limit lowered after a
 quote applies at reservation, including when concurrent tasks already have pending holds. Daily accounting derives
 from the original UTC dispatch dates of existing holds; no destructive migration or duplicate daily ledger is needed.
-Prompt reservations use a UTF-8 byte-token bound with framing room for up to 64 messages;
-characters divided by two was not a safe upper bound for code or multilingual text. Unresolved paid responses are
+Prompt reservations use a UTF-8 byte-token bound with framing room for up to 64 messages: when the messages are at
+hand, their actual UTF-8 byte length (a byte-level tokenizer emits at most one token per byte), otherwise three bytes
+per character. Characters divided by two was not a safe upper bound for code or multilingual text, and three bytes per
+character overstated ASCII code about sixfold, pushing moderate prompts past every reviewed model's context. Unresolved paid responses are
 not retried or assumed free. No tests in this change spend credits.
 
 The account reader requires a verified balance and key budget, checks all reported provider budgets, and returns the
-smallest allowance and its limiting factor. Missing, malformed or stale account evidence blocks dispatch. Outstanding
-local holds and charges confirmed since the provider check count against that snapshot atomically, so two local
-requests cannot each reserve the same funds. OpenRouter remains the authority for simultaneous spending by other
+smallest allowance and its limiting factor. When `/credits` cannot be read with the key, a credit limit on the key
+itself (enforced by OpenRouter) bounds spending; with neither, dispatch stays blocked. Missing, malformed or stale
+account evidence blocks dispatch. Charges the snapshot may not show yet count against it atomically: requests in
+flight, unresolved ones that ended within ten minutes of the check, and charges confirmed since it. Two local requests
+cannot each reserve the same funds. An unresolved charge older than that is already reflected in OpenRouter's balance,
+so it is not subtracted again (it still counts at its maximum toward the owner's task, daily and monthly limits). OpenRouter remains the authority for simultaneous spending by other
 apps and provider-side in-flight limits; a local preflight cannot lock the external account.
 
 ## Bounded billing reconciliation

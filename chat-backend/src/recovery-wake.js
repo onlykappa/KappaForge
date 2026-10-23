@@ -1,7 +1,9 @@
 // Event-driven delivery only. The trusted Python recovery controller remains the
 // authority for task scope, atomic continuation claims and candidate validation.
 import {githubHeaders} from './github.js';
+import {armPremiumBilling} from './premium-store.js';
 const ROOT='repos/onlykappa/KappaForge',KEY='recovery-wakes:v1',ACK_MS=120000;
+export const RECOVERY_KEY=KEY;
 const reply=(value,status=200)=>Response.json(value,{status});
 async function github(env,path,body){
  const r=await fetch('https://api.github.com/'+ROOT+'/'+path,{method:body?'POST':'GET',headers:{...githubHeaders(env,'KappaForge-recovery-wake'),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(8000)});
@@ -37,6 +39,8 @@ async function arm(storage,rows){
  const due=Object.values(rows).map(x=>x.stopped?x.expires:x.due);
  if(due.length)await storage.setAlarm(Math.max(Date.now()+1000,Math.min(...due)));
  else await storage.deleteAlarm();
+ // The slot is shared with billing reconciliation: restore its earlier wake if this replaced or deleted it.
+ await armPremiumBilling(storage);
 }
 export async function scheduleRecovery(env,task){
  if(!env.MEMORY)throw Error('Durable recovery storage unavailable');

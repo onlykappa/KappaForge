@@ -24,6 +24,15 @@ const dayOf=now=>new Date(now).toISOString().slice(0,10);
 export const premiumLimits=s=>({...{taskCapUsd:registry.routing.premium.taskCapUsd,dailyCapUsd:registry.routing.premium.dailyCapUsd,monthCapUsd:registry.routing.premium.monthCapUsd},...s?.settings?.limits});
 const dayTotal=(s,now)=>round(Object.values(s.holds).filter(h=>dayOf(h.at)===dayOf(now)).reduce((n,h)=>n+h.usd,0));
 const outstanding=s=>round(Object.values(s.holds).filter(h=>h.state!=='confirmed').reduce((n,h)=>n+h.usd,0));
+// A request can run for up to ~160s (150s fetch plus the generation lookup); reconciliation never claims it sooner.
+export const INFLIGHT_MS=200000;
+// OpenRouter's reported balance already includes every request that finished before it was read. Only charges it may
+// not show yet are subtracted from it: requests still in flight, ones that ended within BALANCE_GRACE_MS of the check
+// (a charge can post just after the answer), and confirmed charges settled since the check. Unresolved holds keep
+// counting at their maximum toward the owner's task, day and month caps; they are not subtracted from the balance
+// forever, which would permanently shrink the usable balance after one lost answer.
+const BALANCE_GRACE_MS=600000;
+export const notYetBilled=(s,checkedAt)=>round(Object.values(s.holds).filter(h=>h.state==='reserved'||h.state==='unresolved'&&(h.endedAt??h.at)+BALANCE_GRACE_MS>checkedAt||h.state==='confirmed'&&h.settledAt>=checkedAt).reduce((n,h)=>n+h.usd,0));
 const reconcileDue=h=>h.nextReconcileAt??(h.reconcileAttempts===undefined?h.at+180000:Infinity);
 const keyOf=(task,step)=>task+":"+step;
 
@@ -83,7 +92,7 @@ export async function premiumStore(state,request){
    case "status":{
     const m=s.months[monthOf(now)]||{reserved:0,confirmed:0,unresolved:0};
     const history=Object.entries(s.rescues).sort((a,b)=>b[1].at-a[1].at).slice(0,HISTORY).map(([,r])=>({...r}));
-    return {...caps,enabled:s.settings.enabled===true,updatedAt:s.settings.updatedAt,month:monthOf(now),taskUsd:Number.isInteger(task)&&task>0?taskTotal(s,task):null,dailyUsd:dayTotal(s,now),dailyLeftUsd:round(Math.max(0,caps.dailyCapUsd-dayTotal(s,now))),outstandingUsd:outstanding(s),reservedUsd:m.reserved,confirmedUsd:m.confirmed,unresolvedUsd:m.unresolved,monthUsd:monthTotal(m),
+    return {...caps,enabled:s.settings.enabled===true,updatedAt:s.settings.updatedAt,month:monthOf(now),taskUsd:Number.isInteger(task)&&task>0?taskTotal(s,task):null,dailyUsd:dayTotal(s,now),dailyLeftUsd:round(Math.max(0,caps.dailyCapUsd-dayTotal(s,now))),outstandingUsd:outstanding(s),balanceHoldUsd:notYetBilled(s,Number.isFinite(input.balanceCheckedAt)?input.balanceCheckedAt:now),reservedUsd:m.reserved,confirmedUsd:m.confirmed,unresolvedUsd:m.unresolved,monthUsd:monthTotal(m),
      history,lastRescue:history[0]||null,offers:Object.values(s.offers).filter(o=>!o.dismissed&&!s.rescues[keyOf(o.task,o.step)]).sort((a,b)=>b.at-a.at).slice(0,10),
      approvals:Object.entries(s.approvals).map(([k,a])=>({key:k,expiresAt:a.expiresAt}))};
    }
@@ -120,11 +129,10 @@ export async function premiumStore(state,request){
     if(!d.eligible)return {allowed:false,...d};
     const account=input.account;
     if(!account||!Number.isFinite(account.availableUsd)||account.availableUsd<0||!Number.isFinite(account.checkedAt)||account.checkedAt>now+1000||now-account.checkedAt>30000)return {allowed:false,reason:'balance_unverified',...d};
-    const recent=Object.values(s.holds).filter(h=>h.state==='confirmed'&&h.settledAt>=account.checkedAt).reduce((n,h)=>n+h.usd,0);
-    if(outstanding(s)+recent+input.estimateUsd>account.availableUsd)return {allowed:false,reason:'openrouter_balance',...d};
+    if(notYetBilled(s,account.checkedAt)+input.estimateUsd>account.availableUsd)return {allowed:false,reason:'openrouter_balance',...d};
     if(d.source==="one_rescue")s.approvals[key].used=true;
     const estimate=round(input.estimateUsd),model=MODEL.test(input.model||"")?input.model:null;
-    const hold=s.holds[requestId]={task,step,month:monthOf(now),usd:estimate,estimateUsd:estimate,state:"reserved",at:now,model,nextReconcileAt:now+180000,reconcileAttempts:0};
+    const hold=s.holds[requestId]={task,step,month:monthOf(now),usd:estimate,estimateUsd:estimate,state:"reserved",at:now,model,nextReconcileAt:now+INFLIGHT_MS+20000,reconcileAttempts:0};
     const m=month(s,hold.month);m.reserved=round(m.reserved+estimate);
     const t=s.tasks[task] ||= {usd:0,at:now};t.usd=round(t.usd+estimate);t.at=now;
     s.rescues[key]={task,step,requestId,at:now,reason:RESCUE_REASONS.includes(input.reason)?input.reason:null,model,selection:selectionRecord(input.selection),source:d.source,estimateUsd:estimate,usd:null,billing:"reserved",response:null,outcome:"pending"};
@@ -137,18 +145,22 @@ export async function premiumStore(state,request){
     if(hold.state==="confirmed")return {settled:false,reason:"already_confirmed",usd:hold.usd};
     if(op==="reconcile"&&hold.state!=="unresolved")return {settled:false,reason:"not_unresolved"};
     const rescue=s.rescues[keyOf(hold.task,hold.step)];
+    const lateGeneration=typeof input.generation==='string'&&/^gen-[A-Za-z0-9._:-]{1,170}$/.test(input.generation)&&!hold.generation;
     if(typeof input.generation==='string'&&/^gen-[A-Za-z0-9._:-]{1,170}$/.test(input.generation))hold.generation=input.generation;
     if(money(input.usd))move(s,hold,hold.state,"confirmed",round(input.usd));
-    else if(hold.state==="reserved")move(s,hold,"reserved","unresolved",hold.usd);
+    else if(hold.state==="reserved"){move(s,hold,"reserved","unresolved",hold.usd);hold.endedAt=now;}
+    // A generation that arrives after reconciliation gave up (no id yet) makes the charge checkable again.
+    if(hold.state==='unresolved'&&lateGeneration&&hold.nextReconcileAt===undefined&&now-hold.at<DAY){hold.nextReconcileAt=now+60000;hold.reconcileAttempts=Math.min(hold.reconcileAttempts||0,11);hold.reconciliation='checking';}
     if(hold.state==='confirmed'){hold.settledAt=now;hold.reconciliation='confirmed';delete hold.nextReconcileAt;}
     if(rescue?.requestId===requestId){rescue.usd=hold.state==="confirmed"?hold.usd:null;rescue.billing=hold.state;if(typeof input.response==="string")rescue.response=input.response.slice(0,40);rescue.reconciliation=hold.reconciliation||null;}
     return {settled:hold.state==="confirmed",state:hold.state,usd:hold.usd,taskUsd:taskTotal(s,hold.task),monthUsd:monthTotal(s.months[hold.month])};
    }
    case 'claim-reconciliation':{
-    const entry=Object.entries(s.holds).filter(([,h])=>h.state!=='confirmed'&&reconcileDue(h)<=now).sort((a,b)=>reconcileDue(a[1])-reconcileDue(b[1]))[0];
+    // A hold still inside its request's lifetime is in flight, not lost: leave it for its own settle.
+    const entry=Object.entries(s.holds).filter(([,h])=>h.state!=='confirmed'&&reconcileDue(h)<=now&&!(h.state==='reserved'&&now-h.at<INFLIGHT_MS)).sort((a,b)=>reconcileDue(a[1])-reconcileDue(b[1]))[0];
     if(!entry)return {pending:null};
     const [id,h]=entry;
-    if(h.state==='reserved')move(s,h,'reserved','unresolved',h.usd);
+    if(h.state==='reserved'){move(s,h,'reserved','unresolved',h.usd);h.endedAt=now;}
     h.reconcileAttempts=(h.reconcileAttempts||0)+1;
     const canCheck=!!h.generation&&h.reconcileAttempts<=12&&now-h.at<DAY,retry=canCheck&&h.reconcileAttempts<12;
     h.reconciliation=retry?'checking':'needs_review';

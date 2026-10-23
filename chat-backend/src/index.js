@@ -28,13 +28,20 @@ import {ollamaPlan} from "./ollama-plan.js";
 import {openrouterAccount} from "./openrouter-account.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
-import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
+import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./recovery-wake.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
 export class KappaMemory {
   constructor(state,env) { this.state = state; this.env=env; }
-  async alarm(){if(await this.state.storage.get(PREMIUM_KEY))await premiumBillingAlarm(this.state,this.env);else await recoveryAlarm(this.state,this.env);}
+  // Billing reconciliation and task recovery share this object's one alarm slot. Run each handler whose state exists
+  // (premium lives in owner-v1, recovery in recovery-v1 today, but neither may depend on that), isolating failures.
+  async alarm(){
+   const failures=[];
+   if(await this.state.storage.get(PREMIUM_KEY))await premiumBillingAlarm(this.state,this.env).catch(e=>failures.push(e));
+   if(await this.state.storage.get(RECOVERY_KEY))await recoveryAlarm(this.state,this.env).catch(e=>failures.push(e));
+   if(failures.length)throw failures[0];
+  }
   async fetch(request) {
     const url = new URL(request.url);
     if(url.pathname==="/recovery/schedule")return recoveryWakeStore(this.state,this.env,request);

@@ -445,3 +445,68 @@ test('the model audit never asks an unlisted model that could charge',async()=>{
   assert.ok(results.every(r=>r.outcome==='not_asked'));assert.equal(calls.paid.length,0);assert.equal(calls.free.length,0,'unverified suffixes cannot bypass pricing checks');
  });
 });
+
+// Review fixes (PR #202).
+test('a lost answer stays counted against the caps but is not subtracted from a balance read after it ended',async()=>{
+ const h=memory(),real=Date.now;let now=real();
+ try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,970);await evidence(h.op,971);await evidence(h.op,972);
+  await h.op({op:'reserve',task:970,step:'check',requestId:'lost-answer',estimateUsd:0.8,account:{availableUsd:5,checkedAt:now}});
+  await h.op({op:'settle',requestId:'lost-answer'});
+  assert.equal((await h.op({op:'status'})).unresolvedUsd,0.8,'the uncertain charge still counts toward the caps');
+  // Within the grace window a fresh balance may not show the charge yet, so it is still held back.
+  assert.equal((await h.op({op:'reserve',task:971,step:'check',requestId:'soon-after',estimateUsd:0.3,account:{availableUsd:1,checkedAt:now+1000}})).reason,'openrouter_balance');
+  // Later, OpenRouter's balance already reflects whatever it cost: it is not subtracted again.
+  now+=11*60000;
+  assert.equal((await h.op({op:'reserve',task:972,step:'check',requestId:'much-later',estimateUsd:0.3,account:{availableUsd:1,checkedAt:now}})).allowed,true);
+  assert.equal((await h.op({op:'status',balanceCheckedAt:now})).balanceHoldUsd,0.3,'only the new in-flight request is held against the balance');
+ }finally{Date.now=real}
+});
+
+test('reconciliation leaves a request in flight alone and re-arms when its generation arrives late',async()=>{
+ const h=memory(),real=Date.now;let now=real();
+ try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,975);
+  await h.op({op:'reserve',task:975,step:'check',requestId:'slow-request',estimateUsd:0.5,model:'deepseek/deepseek-v4.1-flash-1017'});
+  assert.ok(h.alarm.at-now>=200000,'the first check waits out the longest request');
+  now+=150000;assert.equal((await h.op({op:'claim-reconciliation'})).pending,null,'a reserved hold inside its request lifetime is not claimed');
+  // A hold whose reconciliation gave up for lack of an id becomes checkable when settle later brings the generation.
+  now+=100000;h.alarm.at=null;const claimed=await h.op({op:'claim-reconciliation'});assert.equal(claimed.pending.generation,null);
+  assert.equal((await h.op({op:'status'})).history[0].reconciliation,'needs_review');
+  await h.op({op:'settle',requestId:'slow-request',generation:'gen-late'});
+  const s=await h.op({op:'status'});assert.equal(s.history[0].reconciliation,'checking');assert.ok(h.alarm.at>now);
+ }finally{Date.now=real}
+});
+
+test('the prompt reservation uses UTF-8 bytes when the messages are known, still an upper bound',async()=>{
+ const {promptTokensFromBytes}=await import('../chat-backend/src/premium.js');
+ const code='const x = 1;\n'.repeat(3500);
+ assert.ok(promptTokensFromBytes(new TextEncoder().encode(code).length)<promptTokensUpper(code.length)/2.5,'code is not reserved at three tokens per character');
+ const cjk='漢字'.repeat(1000);
+ assert.ok(promptTokensFromBytes(new TextEncoder().encode(cjk).length)>=cjk.length,'multibyte text still reserves at least one token per character');
+});
+
+test('without readable credits a key credit limit bounds Premium; with neither it stays unverified',async()=>{
+ const {openrouterAccount}=await import('../chat-backend/src/openrouter-account.js');
+ const original=globalThis.fetch;
+ try{
+  for(const [key,expect] of [[{limit:5,limit_remaining:2.5,usage:2.5},{availableUsd:2.5,limitingFactor:'key_limit',creditsReadable:false}],[{limit:null,limit_remaining:null,usage:1},{availableUsd:null,limitingFactor:'credits_unreadable_no_key_limit',creditsReadable:false}]]){
+   resetOpenrouterAccount();
+   globalThis.fetch=async url=>String(url).endsWith('/credits')?new Response('{}',{status:403}):Response.json({data:key});
+   const a=await openrouterAccount({OPENROUTER_API_KEY:'fixture-'+expect.limitingFactor});
+   assert.deepEqual({availableUsd:a.availableUsd,limitingFactor:a.limitingFactor,creditsReadable:a.creditsReadable},expect);
+  }
+ }finally{globalThis.fetch=original;resetOpenrouterAccount()}
+});
+
+test('billing and recovery alarms share the slot: both handlers run and scheduling recovery keeps the billing wake',async()=>{
+ const {RECOVERY_KEY}=await import('../chat-backend/src/recovery-wake.js');
+ const h=memory(),real=Date.now;let now=real();
+ try{Date.now=()=>now;h.store.deleteAlarm=async()=>{h.alarm.at=null};
+  await h.op({op:'settings',enabled:true});await evidence(h.op,980);
+  await h.op({op:'reserve',task:980,step:'check',requestId:'shared-slot',estimateUsd:0.4});
+  const billingWake=h.alarm.at;assert.ok(billingWake);
+  await h.store.put(RECOVERY_KEY,{});
+  now=billingWake;h.alarm.at=null;
+  await new KappaMemory({storage:h.store},{OPENROUTER_API_KEY:'fixture'}).alarm();
+  assert.equal((await h.op({op:'status'})).history[0].reconciliation,'needs_review','the billing handler ran although recovery state exists');
+ }finally{Date.now=real}
+});

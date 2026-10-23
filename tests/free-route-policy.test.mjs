@@ -75,8 +75,8 @@ test("dynamic providers expose only individually reviewed free models",async()=>
  };
  try{
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",GROQ_API_KEY:"test"},"groq"),[
-   "openai/gpt-oss-120b","qwen/qwen3.8-27b"
-  ]);
+   "openai/gpt-oss-120b","qwen/qwen3.8-27b","openai/gpt-oss-20b"
+  ],"gpt-oss-20b is reviewed (answered the live audit); Groq's TTS, STT and guard models are not chat models");
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),[]);
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[],"unrelated catalog IDs cannot enable Mistral models");
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),[]);
@@ -112,7 +112,7 @@ test("automatic coding fallback cannot include model IDs outside approved free l
  try{
   const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq,nvidia,ollama",KAPPA_CODE_PROVIDERS:"groq,nvidia,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"groq,nvidia,ollama",GROQ_API_KEY:"test",NVIDIA_API_KEY:"test",OLLAMA_API_KEY:"test"};
   const routes=await fallbackRoutes(env,["gemini-3.1-flash-lite"],{},false,{channel:"coding",privateCode:true});
-  assert.deepEqual(routes.map(route=>route.label),["groq:openai/gpt-oss-120b","groq:qwen/qwen3.8-27b"]);
+  assert.deepEqual(routes.map(route=>route.label),["groq:openai/gpt-oss-120b","groq:qwen/qwen3.8-27b","groq:openai/gpt-oss-20b"]);
  }finally{globalThis.fetch=original}
 });
 

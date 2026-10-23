@@ -9,7 +9,7 @@
 // state, prices or budgets mean no dispatch.
 import registry from "../../config/providers.json" with {type:"json"};
 import {providerAllowed} from "./routing-policy.js";
-import {RESCUE_REASONS} from "./premium-store.js";
+import {RESCUE_REASONS,INFLIGHT_MS} from "./premium-store.js";
 import {openrouterAccount} from './openrouter-account.js';
 import {routingSnapshot,reserveProvider,reportProviderOutcome} from './router-coordination.js';
 
@@ -25,6 +25,11 @@ const price=v=>{if(v===undefined)return 0;if(v===null||v===""||!['string','numbe
 // UTF-8 uses at most three bytes per JavaScript UTF-16 code unit. Reserve a byte-token bound plus framing room for
 // the gateway's maximum 64 messages; characters/2 underestimates code and multilingual prompts.
 export const promptTokensUpper=chars=>Math.ceil(chars*3)+2048;
+// Tighter but still safe when the messages are at hand: every byte-level tokenizer emits at most one token per UTF-8
+// byte, so the request's byte length bounds its tokens. For code (mostly ASCII) this is about a sixth of chars*3,
+// which otherwise pushes moderate prompts past every reviewed model's context.
+export const promptTokensFromBytes=bytes=>Math.ceil(bytes)+2048;
+const utf8Bytes=(system,messages)=>new TextEncoder().encode((system||"")+(messages||[]).map(m=>typeof m?.content==="string"?m.content:JSON.stringify(m?.content??"")).join("")).length;
 
 // Every catalog price that can apply to a text request, verified. null when any is unknown.
 function verifiedPricing(m){
@@ -114,14 +119,15 @@ export function premiumAvailable(env,requested){
 export async function premiumRescue(env,{task,step,reason,quote,requestId,system,messages,promptChars,maxTokens,temperature,signal,deadline,freeMayRecover}){
  if(!premiumAvailable(env))return {task,step,refused:"premium_unavailable"};
  const config=premiumConfig();
- const spent=await premiumOp(env,{op:"status",task});
+ const [models,snapshot,account]=await Promise.all([premiumCatalog(),routingSnapshot(env),openrouterAccount(env,Date.now(),{fresh:!quote})]);
+ // Read after the balance so charges settled since OpenRouter's check are counted against it.
+ const spent=await premiumOp(env,{op:"status",task,balanceCheckedAt:Number.isFinite(account?.checkedAt)?account.checkedAt:Date.now()});
  const caps={taskCapUsd:spent.taskCapUsd,dailyCapUsd:spent.dailyCapUsd,monthCapUsd:spent.monthCapUsd};
  const base={task,step,reason,quote:!!quote,...caps};
- const promptTokens=promptTokensUpper(promptChars);
- const [models,snapshot,account]=await Promise.all([premiumCatalog(),routingSnapshot(env),openrouterAccount(env,Date.now(),{fresh:!quote})]);
+ const promptTokens=Array.isArray(messages)&&messages.length?Math.min(promptTokensUpper(promptChars),promptTokensFromBytes(utf8Bytes(system,messages))):promptTokensUpper(promptChars);
  if(!models)return {...base,refused:"pricing_unverified"};
  if(!Number.isFinite(account?.availableUsd))return {...base,refused:'balance_unverified',account};
- const externalLeft=Math.max(0,account.availableUsd-(spent.outstandingUsd||0));
+ const externalLeft=Math.max(0,account.availableUsd-(spent.balanceHoldUsd??spent.outstandingUsd??0));
  if(caps.taskCapUsd<=(spent.taskUsd||0))return {...base,refused:'task_cap'};
  if(caps.monthCapUsd<=spent.monthUsd)return {...base,refused:'month_cap'};
  if(spent.dailyLeftUsd<=0)return {...base,refused:'daily_cap'};
@@ -142,14 +148,17 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
  if(signal?.aborted)return {...summary,refused:"cancelled"};
  if(Date.now()>=deadline)return {...summary,refused:'request_expired'};
  const route={provider:'openrouter',model:pick.model},routeId=requestId+':premium';
- const lease=await reserveProvider(env,route,routeId,{paid:true});
+ // The lease outlives the longest dispatch (150s fetch plus the generation lookup), so concurrency holds throughout.
+ const lease=await reserveProvider(env,route,routeId,{paid:true,leaseMs:INFLIGHT_MS});
  if(!lease.allowed)return {...summary,refused:'provider_unavailable',retryAt:lease.retryAt||null,unavailableReason:lease.reason};
  // The dispatch itself: reserve (authorization, evidence, one rescue per step, caps: one transaction), then send.
  let hold;
  try{hold=await premiumOp(env,{op:"reserve",requestId,...ask,model:pick.model,estimateUsd:pick.maxUsd,account:{availableUsd:account.availableUsd,checkedAt:account.checkedAt}})}
  catch(error){await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});throw error;}
  if(!hold.allowed){await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});return {...summary,refused:hold.reason||"refused"};}
- if(signal?.aborted||Date.now()>=deadline){await premiumOp(env,{op:'settle',requestId,usd:0,response:'not sent'});await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{});return {...summary,refused:signal?.aborted?'cancelled':'request_expired'};}
+ // Nothing was sent: settle at zero. The lease is released even if the ledger call fails (the reservation then stays
+ // counted until reconciliation, the safe side).
+ if(signal?.aborted||Date.now()>=deadline){try{await premiumOp(env,{op:'settle',requestId,usd:0,response:'not sent'})}catch{}finally{await reportProviderOutcome(env,{requestId:routeId,route,status:499}).catch(()=>{})}return {...summary,refused:signal?.aborted?'cancelled':'request_expired'};}
  const started=Date.now();let httpStatus=0,data=null,text="",usd=null,generation=null,responseHeaders=null;
  try{
   const r=await fetch(API+"chat/completions",{method:"POST",
