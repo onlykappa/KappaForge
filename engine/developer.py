@@ -1939,13 +1939,13 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     # otherwise the model may treat the orchestration request as unfinished code work.
     receipt = verify.pr_receipt(pr, repo, branch)
     pr_lifecycle = [p for p in all_open_problems
-                    if verify.lifecycle_problem(p) and re.search(r"\\b(?:pull request|PR|draft)\\b", p, re.I)]
+                    if verify.lifecycle_problem(p) and re.search(r"\b(?:pull request|PR|draft)\b", p, re.I)]
     if receipt and receipt["open"] and receipt["draft"] and pr_lifecycle:
-        task += ("\\n\\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\\n"
-                 + "\\n".join("- " + p for p in pr_lifecycle) + "\\n"
+        task += ("\n\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\n"
+                 + "\n".join("- " + p for p in pr_lifecycle) + "\n"
                  + "KappaForge has already opened this task's draft PR. Do not create or change repository code, "
                  + "scripts, workflows, hooks, or commands to open, update, or notify about this PR. Continue only "
-                 + "with the unfinished code requirements and failed checks listed above.\\n")
+                 + "with the unfinished code requirements and failed checks listed above.\n")
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task
