@@ -980,7 +980,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if signature:
                 rejected_signatures.add(signature)
             if proposal is not None:
-                rejected_proposals.append(json.dumps(proposal.get("files", []), ensure_ascii=False)[:1600])
+                rejected_files = proposal.get("files", []) if isinstance(proposal, dict) else proposal
+                rejected_proposals.append(json.dumps(rejected_files, ensure_ascii=False)[:1600])
             error = recovery.clean(exc, 300) or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
