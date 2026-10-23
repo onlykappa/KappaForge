@@ -28,7 +28,7 @@ class SandboxCommandTests(unittest.TestCase):
         with patch.object(check.subprocess, "run", side_effect=lambda cmd, **kw: calls.append((cmd, kw)) or
                           subprocess.CompletedProcess(cmd, 0, "", "")):
             check.run_in_sandbox({"tests/test_a.py": "x"}, "python:3.13-slim", ["python", "-m", "unittest"])
-        bootstrap, execute = calls[1][0], calls[2][0]
+        bootstrap, execute = next(c[0] for c in calls if "-i" in c[0]), next(c[0] for c in calls if "65534:65534" in c[0])
         self.assertIn("python:3.13-slim", bootstrap)
         self.assertNotIn("x", bootstrap, "file text is streamed on stdin, never on the command line")
         for flag in ("--network", "--read-only", "--cap-drop", "--pids-limit", "--memory"):
@@ -39,7 +39,27 @@ class SandboxCommandTests(unittest.TestCase):
         for cmd, kw in calls:
             self.assertFalse({"-e", "--env", "--env-file", "-v", "--volume", "--privileged"} & set(cmd), cmd)
             self.assertNotIn("env", kw, "the runner environment is never handed to a container")
-        self.assertEqual([c[0][:3] for c in calls[-2:]], [["docker", "rm", "-f"], ["docker", "volume", "rm"]])
+        self.assertEqual([c[0][:3] for c in calls[-3:]], [["docker", "rm", "-f"], ["docker", "rm", "-f"], ["docker", "volume", "rm"]])
+
+    def test_images_are_pulled_before_the_timed_run_and_timeouts_still_clean_up(self):
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if cmd[:3] == ["docker", "image", "inspect"]:
+                return subprocess.CompletedProcess(cmd, 1, "", "")
+            if "65534:65534" in cmd:
+                raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        with patch.object(check.subprocess, "run", side_effect=run), self.assertRaises(subprocess.TimeoutExpired):
+            check.run_in_sandbox({"web/a.test.mjs": "x"}, "node:22-slim", ["node", "--test"])
+        pulls = [c[-1] for c in calls if c[:2] == ["docker", "pull"]]
+        self.assertEqual(pulls, ["python:3.13-slim", "node:22-slim"])
+        first_run = next(n for n, c in enumerate(calls) if c[:2] == ["docker", "run"])
+        self.assertLess(max(n for n, c in enumerate(calls) if c[:2] == ["docker", "pull"]), first_run, "pulls finish before any timed run")
+        removed = [c[-1] for c in calls if c[:3] == ["docker", "rm", "-f"]]
+        self.assertEqual(len(removed), 2, "the writer and the test container are both removed")
+        self.assertEqual(calls[-1][:3], ["docker", "volume", "rm"])
 
     def test_tests_never_run_as_plain_runner_processes(self):
         with patch.object(check, "run_in_sandbox", return_value=subprocess.CompletedProcess([], 0, "ok", "")) as sandbox:
@@ -78,9 +98,27 @@ class SandboxCanaryTests(unittest.TestCase):
             "            socket.create_connection(('1.1.1.1', 443), timeout=3)\n"
             "        with self.assertRaises(OSError):\n"
             "            open('tests/written.txt', 'w')\n")
+        node_probe = (
+            "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {writeFileSync} from 'node:fs';\n"
+            "test('boundary', async () => {\n"
+            "  assert.equal(process.env.KAPPA_CANARY_SECRET, undefined);\n"
+            "  assert.equal(process.env.GITHUB_TOKEN, undefined);\n"
+            "  await assert.rejects(fetch('https://example.com', {signal: AbortSignal.timeout(3000)}));\n"
+            "  assert.throws(() => writeFileSync('web/written.txt', 'x'));\n"
+            "});\n")
         with patch.dict(os.environ, {"KAPPA_CANARY_SECRET": "must-not-leak"}):
-            result = check.run_tests({"tests/__init__.py": "", "tests/test_canary.py": probe})
+            result = check.run_tests({"tests/__init__.py": "", "tests/test_canary.py": probe, "web/canary.test.mjs": node_probe})
         self.assertTrue(result["python"]["passed"], result["python"]["output"])
+        self.assertTrue(result["javascript"]["passed"], result["javascript"]["output"])
+
+    def test_failing_generated_tests_are_reported_as_failing(self):
+        result = check.run_tests({"tests/__init__.py": "", "tests/test_bad.py": "import unittest\n\n\nclass Bad(unittest.TestCase):\n"
+                                  "    def test_bad(self):\n        self.fail('expected')\n",
+                                  "web/bad.test.mjs": "import test from 'node:test';\nimport assert from 'node:assert';\n"
+                                  "test('bad', () => assert.equal(1, 2));\n"})
+        self.assertFalse(result["python"]["passed"])
+        self.assertFalse(result["javascript"]["passed"])
+        self.assertEqual(check.exit_code({"ok": True, "unfinished": [], "tests": result}), 1)
 
 
 if __name__ == "__main__":

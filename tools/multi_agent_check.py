@@ -83,22 +83,32 @@ def safe_path(name):
             and all(part not in ("", ".", "..") for part in name.split("/")))
 
 
+def pull_image(image):
+    """Download an image before any timed step, so a slow pull is not reported as failing tests."""
+    if subprocess.run(["docker", "image", "inspect", image], capture_output=True, timeout=30).returncode:
+        subprocess.run(["docker", "pull", "--quiet", image], capture_output=True, text=True, timeout=600, check=True)
+
+
 def run_in_sandbox(files, image, args, timeout=120):
     """Run a command on the project in a container with no network, no runner environment and a read-only copy."""
     if not all(safe_path(name) and isinstance(text, str) for name, text in files.items()):
         raise ValueError("Unsafe sandbox input")
     name = "multi-agent-check-" + uuid.uuid4().hex
-    volume = name + "-data"
+    writer, volume = name + "-write", name + "-data"
     try:
+        for needed in dict.fromkeys(("python:3.13-slim", image)):
+            pull_image(needed)
         subprocess.run(["docker", "volume", "create", volume], capture_output=True, text=True, timeout=30, check=True)
-        subprocess.run(["docker", "run", "--rm", "-i", *SANDBOX_LIMITS, "--mount", f"type=volume,src={volume},dst=/work",
-                        "python:3.13-slim", "python", "-c", BOOTSTRAP],
-                       input=json.dumps(files), capture_output=True, text=True, timeout=180, check=True)
+        subprocess.run(["docker", "run", "--name", writer, "--rm", "-i", *SANDBOX_LIMITS,
+                        "--mount", f"type=volume,src={volume},dst=/work", "python:3.13-slim", "python", "-c", BOOTSTRAP],
+                       input=json.dumps(files), capture_output=True, text=True, timeout=60, check=True)
         return subprocess.run(["docker", "run", "--name", name, "--rm", *SANDBOX_LIMITS, "--user", "65534:65534",
                                "--mount", f"type=volume,src={volume},dst=/work,readonly", "-w", "/work", image, *args],
                               capture_output=True, text=True, timeout=timeout)
     finally:
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+        # Containers left behind by a timeout are removed before their volume.
+        for container in (writer, name):
+            subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=15)
         subprocess.run(["docker", "volume", "rm", "-f", volume], capture_output=True, timeout=15)
 
 
