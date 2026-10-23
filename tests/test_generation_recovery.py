@@ -23,9 +23,9 @@ class GenerationRecoveryTests(unittest.TestCase):
         self.assertNotIn('SOURCE FILES', prompt)
 
     def test_json_repair_does_not_bypass_scope_checks_or_retry_forbidden_paths(self):
-        unsafe = json.dumps({'files': [{'path': '.github/evil.py', 'content': 'value = 2'}]})
+        unsafe = json.dumps({'files': [{'path': '../evil.py', 'content': 'value = 2'}]})
         with patch.object(developer, 'run_model', side_effect=[('writer', BAD), ('formatter', unsafe)]) as model:
-            with self.assertRaisesRegex(ValueError, 'Protected path'):
+            with self.assertRaisesRegex(ValueError, 'Unsafe path'):
                 developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
         self.assertEqual(model.call_count, 2)
 
