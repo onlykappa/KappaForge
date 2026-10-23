@@ -1932,7 +1932,20 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
-    pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
+    all_open_problems = requirements_open(pr)
+    pending = [p for p in all_open_problems if not verify.lifecycle_problem(p)]
+    # A failed-check repair still receives the original owner prompt below. When that prompt also
+    # asks KappaForge to open this draft PR, repeat the trusted receipt in the generation prompt:
+    # otherwise the model may treat the orchestration request as unfinished code work.
+    receipt = verify.pr_receipt(pr, repo, branch)
+    pr_lifecycle = [p for p in all_open_problems
+                    if verify.lifecycle_problem(p) and re.search(r"\b(?:pull request|PR|draft)\b", p, re.I)]
+    if receipt and receipt["open"] and receipt["draft"] and pr_lifecycle:
+        task += ("\n\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\n"
+                 + "\n".join("- " + p for p in pr_lifecycle) + "\n"
+                 + "KappaForge has already opened this task's draft PR. Do not create or change repository code, "
+                 + "scripts, workflows, hooks, or commands to open, update, or notify about this PR. Continue only "
+                 + "with the unfinished code requirements and failed checks listed above.\n")
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task
