@@ -259,7 +259,7 @@ Medium risk: Application behavior, API logic, settings, agent features.
 
 * Run the full applicable suite.
 * Add regression tests.
-* Merge automatically when verified.
+* Keep the pull request open for owner-controlled merge.
 
 High risk: Engine execution, authentication, signing, vault handling, deployment infrastructure, persistent storage.
 
