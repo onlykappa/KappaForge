@@ -6,7 +6,7 @@ let noteEdits={};try{noteEdits=JSON.parse(localStorage.getItem('kappaforge.memor
 let memoryCategories={};try{memoryCategories=JSON.parse(localStorage.getItem('kappaforge.memory.categories.v2')||'{}')}catch{}
 let settingsSection='',usagePeriod='month',usageEvents=[],usageDays={},capabilities=null,settingsNotice='',usageNotice='Not loaded. Refresh to retrieve authenticated backend records.',diagnostics=[],releaseInfo=null,releaseHistory=[],settingsBusy=false,lastSyncAt=0,projectReport=null,semanticMatches=null;
 // Settings home is a grouped list (id, title, search terms, group, icon); each row opens its own page.
-const settingSections=[['overview','Connection','Connection, model, usage, synchronization, app health, overview','Assistant','wifi'],['models','AI Models','Provider, automatic routing, fallback, reasoning, free providers','Assistant','cpu'],['personalization','Personalization','Response style, instructions, appearance, language, theme, voice, speech, dictation','Assistant','smile'],['memory','Memory','Browse, search, categories, delete, encrypted backups, sync, knowledge','Assistant','book'],['usage','Usage & Billing','Tokens, requests, latency, errors, budgets, historical trends','Account','chart'],['services','Connected Services','GitHub, Discord, integrations, plugins','Account','link'],['privacy','Privacy & Security','Authentication, credentials, biometric app lock, local data','App','lock'],['developer','Developer Tools','Connection tests, API diagnostics, errors, code search, project health','App','code'],['updates','Updates & About','Version, releases, changelog, IPA, SideStore','App','refresh']];
+const settingSections=[['overview','Connection','Connection, model, usage, synchronization, app health, overview','Assistant','wifi'],['models','AI Models','Provider, automatic routing, fallback, reasoning, free providers','Assistant','cpu'],['personalization','Personalization','Response style, instructions, appearance, language, theme, voice, speech, dictation','Assistant','smile'],['memory','Memory','Browse, search, categories, delete, encrypted backups, sync, knowledge','Assistant','book'],['usage','Usage & Billing','Tokens, requests, latency, errors, budgets, historical trends','Account','chart'],['tasks','Task diagnostics','Tasks, failed attempts, retries, logs, validation errors, recovery history','App','bolt'],['services','Connected Services','GitHub, Discord, integrations, plugins','Account','link'],['privacy','Privacy & Security','Authentication, credentials, biometric app lock, local data','App','lock'],['developer','Developer Tools','Connection tests, API diagnostics, errors, code search, project health','App','code'],['updates','Updates & About','Version, releases, changelog, IPA, SideStore','App','refresh']];
 const settingIcons={mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',wave:'<path d="M4 10v4M8 6.5v11M12 3.5v17M16 7.5v9M20 10v4"/>',cloud:'<path d="M7 18.5a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19.5 11 3.8 3.8 0 0 1 18 18.5z"/>',key:'<circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l3 3M14 9l2 2"/>',sync:'<path d="M19 8a7.5 7.5 0 0 0-13.5 1.5M5 16a7.5 7.5 0 0 0 13.5-1.5"/><path d="M19 4v4h-4M5 20v-4h4"/>',face:'<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M9.5 15.5a3.5 3.5 0 0 0 5 0"/>',pulse:'<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',search:'<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>',bolt:'<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',download:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',upload:'<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',trash:'<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>',chat:'<path d="M4 19.5l1.4-3.6A8 8 0 1 1 8.4 18.7z"/>',pr:'<circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/><path d="M6.5 8.2v7.6M17.5 15.8V10a3 3 0 0 0-3-3H11"/>',gauge:'<path d="M4.6 17.5a8.5 8.5 0 1 1 14.8 0M12 13.5l3.5-4"/>',globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',pin:'<path d="M12 21s6.5-6 6.5-11a6.5 6.5 0 0 0-13 0c0 5 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',wifi:'<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16.43a6 6 0 0 1 7 0M2 8.82a16 16 0 0 1 20 0M12 20h.01"/>',cpu:'<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',smile:'<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/>',book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',chart:'<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',code:'<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',refresh:'<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',chevron:'<path d="m9 6 6 6-6 6"/>',back:'<path d="m15 6-6 6 6 6"/>'};
 const settingIcon=name=>'<svg class="s-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+settingIcons[name]+'</svg>';
 function applyAppearance(){document.documentElement.dataset.appearance=preferences.appearance;const dark=preferences.appearance==='dark'||(preferences.appearance==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.querySelector('meta[name="theme-color"]')?.setAttribute('content',dark?'#000000':'#f8f8fa');}
@@ -334,11 +334,12 @@ function settingSummary(id){
  if(id==='personalization')return ({system:'System',light:'Light',dark:'Dark'})[preferences.appearance]||'';
  if(id==='memory')return String(savedMemories.length);
  if(id==='services')return capabilities?.github?'GitHub':'';
+ if(id==='tasks'){const jobs=typeof trackedJobs!=='undefined'?trackedJobs:[];const n=jobs.reduce((a,j)=>a+(j.failureHistory?.length||0),0);return n?n+' failure'+(n===1?'':'s'):jobs.length+' task'+(jobs.length===1?'':'s');}
  if(id==='updates')return APP_VERSION;
  return '';
 }
 // Settings home (Hub): search, a connection card, tiles for Models, Usage, Memory and Sync, then the other sections as rows.
-const S_TILES=['models','usage','memory'],S_ROWS=['personalization','privacy','services','developer','updates'];
+const S_TILES=['models','usage','memory'],S_ROWS=['personalization','privacy','tasks','services','developer','updates'];
 function settingsCompact(n){return n>=1e6?(n/1e6).toFixed(2).replace(/\.?0+$/,'')+'M':n>=1e4?Math.round(n/1e3)+'K':n.toLocaleString();}
 function settingTileSummary(id){
  if(id==='models'){const n=(capabilities?.providers||[]).filter(p=>providerStatus(p).kind==='available').length;return (preferences.model==='auto'?'Auto':settingSummary('models'))+(n?' · '+n+(n===1?' provider':' providers'):'');}
@@ -382,6 +383,38 @@ function kHero(tone,label,meta,title,sub,actions=''){return '<section class="k-h
 function connectionState(){
  const n=settingsIssues().length;
  return n?{tone:'bad',label:n+(n===1?' issue':' issues'),title:'Your assistant needs attention'}:verifyRun&&!lastVerify?{tone:'',label:'Checking…',title:'Checking your setup'}:capabilities?{tone:'ok',label:'Online · Verified',title:'Your assistant is connected'}:backend&&access?{tone:'warn',label:'Saved · not verified',title:'Verify your connection'}:{tone:'bad',label:'Not connected',title:'Connect your AI backend'};
+}
+function taskDiagnosticJobs(){
+ return (typeof trackedJobs!=='undefined'?trackedJobs:[]).filter(j=>Array.isArray(j.failureHistory)&&j.failureHistory.length)
+  .sort((a,b)=>(b.lastProgressAt||b.activeAt||0)-(a.lastProgressAt||a.activeAt||0));
+}
+async function refreshTaskDiagnostics(){
+ const jobs=(typeof trackedJobs!=='undefined'?trackedJobs:[]).filter(j=>Number.isSafeInteger(Number(j.number))).slice(0,30);
+ if(!jobs.length){settingsNotice='No tracked tasks are saved on this device.';render();return;}
+ let loaded=0;
+ for(const job of jobs){
+  const comments=await taskComments(job.number);
+  for(const comment of comments)if(collectTaskFailureHistory(job,comment.body))loaded++;
+ }
+ if(typeof persistJobs==='function')persistJobs();
+ settingsNotice='Checked '+jobs.length+' saved task'+(jobs.length===1?'':'s')+'; refreshed '+loaded+' failure record'+(loaded===1?'':'s')+'.';
+ render();
+}
+function taskDiagnosticsHTML(){
+ const jobs=taskDiagnosticJobs();
+ const cards=jobs.map(job=>{
+  const rows=job.failureHistory.slice(-10).map((d,i)=>{
+   const at=Number(d.at),when=at?new Date(at<1e12?at*1000:at).toLocaleString():'Time unavailable';
+   const files=d.files?.length?'<p><b>Proposed paths:</b> '+esc(d.files.join(', '))+'</p>':'';
+   const logs=d.runUrl?'<a href="'+esc(d.runUrl)+'" target="_blank" rel="noopener noreferrer">Open Actions run logs ↗</a>':'';
+   return '<article class="task-failure"><h4>Failure '+(i+1)+' · '+esc(d.kind||'validation')+'</h4><p class="k-foot">'+esc([when,d.model?'Model '+d.model:'',d.strategy?'Strategy '+d.strategy:''].filter(Boolean).join(' · '))+'</p><pre>'+esc(d.error)+'</pre>'+files+(d.next?'<p><b>Next recovery step:</b> '+esc(d.next)+'</p>':'')+(logs?'<p>'+logs+'</p>':'')+'</article>';
+  }).join('');
+  const pr=String(job.prUrl||'').match(/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/)?.[0];
+  return '<details class="k-details task-diagnostics"><summary class="k-row"><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+job.failureHistory.length+' recent failed proposal'+(job.failureHistory.length===1?'':'s')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+rows+(pr?'<p><a href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a></p>':'')+'</div></details>';
+ }).join('');
+ return kBtns(kBtn('task-diagnostics-refresh','Refresh task diagnostics',true))+
+  '<p class="k-foot">Shows the latest ten rejected proposal attempts per task, with the validator error, model, recovery strategy and Actions log link when available. Records are read from the task’s GitHub recovery ledger and cached on this device.</p>'+
+  (cards?'<div class="k-grp">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
 }
 function settingsSectionBody(){
  const native=!!window.webkit?.messageHandlers?.kappa,model=preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model.split(':').pop();
@@ -510,7 +543,7 @@ function bindSettings(){
  document.querySelectorAll('[data-usage-unit]').forEach(b=>b.onclick=e=>{e.stopPropagation();usageUnit=b.dataset.usageUnit;usageMenuOpen=false;try{localStorage.setItem('kappaforge.usageUnit',usageUnit)}catch{}render();});
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
- on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);
  document.getElementById('premium-mode')?.addEventListener('change',async e=>{
   const enabled=e.target.checked;
   if(enabled&&!confirm(premiumEnableMessage())){e.target.checked=false;return;}
