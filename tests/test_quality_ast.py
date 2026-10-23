@@ -128,11 +128,12 @@ class RepairLedgerTests(unittest.TestCase):
         self.assertTrue(any('Handle permission denial' in p for p in problems))
         self.assertIn('Handle permission denial', review.call_args.args[2])
 
-    def test_workflow_paths_can_be_included_in_task_proposals(self):
-        proposal = json.dumps({'files': [{'path': '.github/workflows/unsafe.yml', 'content': 'name: owner-review'}]})
-        with patch.object(developer, 'run_model', return_value=('model', proposal)):
-            result = developer.generate_with('key', 'task', 'onlykappa/KappaForge', {}, {}, '', None, developer.SMALL)
-        self.assertEqual(result[2]['.github/workflows/unsafe.yml'], 'name: owner-review')
+    def test_protected_path_stops_the_real_generation_loop_after_one_call(self):
+        proposal = json.dumps({'files': [{'path': '.github/workflows/unsafe.yml', 'content': 'x'}]})
+        with patch.object(developer, 'run_model', return_value=('model', proposal)) as model:
+            with self.assertRaisesRegex(ValueError, 'Protected path'):
+                developer.generate_with('key', 'task', 'onlykappa/KappaForge', {}, {}, '', None, developer.SMALL)
+        model.assert_called_once()
 
 
 if __name__ == '__main__':

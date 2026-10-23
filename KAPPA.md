@@ -25,7 +25,7 @@ KappaForge has permission to:
 * Create branches, commits, pull requests, and releases.
 * Execute tests, builds, linters, and diagnostic commands.
 * Improve performance, reliability, memory, UI, agent intelligence, and developer tooling.
-* Update GitHub Actions workflows and CI/CD configuration.
+* Propose GitHub Actions workflow and CI/CD changes for the owner to apply. The task agent cannot write `.github/`, `.git/` or `.env` files: workflows run with repository secrets on the agent's branch before any review.
 * Add or remove dependencies when justified and validated.
 * Implement safeguards, monitoring, diagnostics, and recovery mechanisms.
 * Keep every pull request unmerged until the owner presses GitHub's Merge button or gives a direct, explicit instruction to merge that specific pull request.

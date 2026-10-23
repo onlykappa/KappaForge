@@ -394,7 +394,8 @@ async function refreshTaskDiagnostics(){
  let loaded=0;
  for(const job of jobs){
   const comments=await taskComments(job.number);
-  for(const comment of comments)if(collectTaskFailureHistory(job,comment.body))loaded++;
+  // Only the task runner's own ledger comments count; anyone who can comment on the issue could imitate one.
+  for(const comment of comments)if(comment?.user?.login==='github-actions[bot]'&&String(comment.body||'').startsWith('### KappaForge failure ledger\n')&&collectTaskFailureHistory(job,comment.body))loaded++;
  }
  if(typeof persistJobs==='function')persistJobs();
  settingsNotice='Checked '+jobs.length+' saved task'+(jobs.length===1?'':'s')+'; refreshed '+loaded+' failure record'+(loaded===1?'':'s')+'.';
@@ -462,6 +463,7 @@ function settingsSectionBody(){
   '<input id="memory-import-file" type="file" accept=".json,application/json" hidden>'+
   '<details class="k-grp k-details"><summary class="k-row">'+kSq('trash')+'<span class="k-tx"><b>Recently deleted</b></span><span class="k-val">'+removedNotes.length+'</span>'+settingIcon('chevron')+'</summary>'+removedNotes.map((n,i)=>kRow({title:esc(n),value:'<button type="button" class="k-pill" data-restore-memory="'+i+'">Restore</button>'})).join('')+'</details>';
  }
+ if(settingsSection==='tasks')return taskDiagnosticsHTML();
  if(settingsSection==='services'){
   return kHero(capabilities?.github?'ok':'',capabilities?.github?'GitHub · Configured':'GitHub · Not verified','','GitHub','Uses your backend’s GitHub token.','<div class="k-chips"><span>Repositories</span><span>Task proposals</span><span>Pull requests</span><span>Build reports</span></div>')+
   kGroup('',kRow({icon:'chat',title:'Discord webhook',sub:'Task updates to a channel',value:'Manage',tag:'button',attrs:'id="discordmanage"',chev:true}))+

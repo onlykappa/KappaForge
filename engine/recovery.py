@@ -91,7 +91,7 @@ def diagnose(error):
     text = str(error).lower()
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'
-    if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'unsafe path', 'forbidden path', 'blocked path')):
+    if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'protected path', 'unsafe path', 'forbidden path', 'blocked path')):
         return 'authorization', 'stop'
     if isinstance(error, json.JSONDecodeError):
         truncated = error.pos >= len(error.doc.rstrip()) - 2 or 'unterminated' in text

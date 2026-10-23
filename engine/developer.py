@@ -52,13 +52,21 @@ LARGE = Budget(30, 20, 200000, 600000, 65536)
 PINNED = Budget(1, 1, 3500, 4000, 768)
 SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml|ya?ml|swift|cs|java|kt|go|rs|c|h|cpp|hpp|sh|sql)$")
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
-# All repository paths may be proposed for editing. Keep canonical in-repository path
-# validation here; PR review and CI validate changes before the owner chooses to merge.
+# Any repository path may be proposed except the few that act before the owner reviews: workflows run on the
+# agent's own branch and pull request with repository secrets (a new `on: push` workflow, or an edited
+# pull_request one), .git is not repository content, and .env files hold secrets. Everything else waits for CI and
+# the owner's merge.
+PROTECTED_RE = re.compile(r"^(?:\.github/|\.git/)|(?:^|/)\.env[^/]*$")
+
+
 def check_path(path):
     if (not isinstance(path, str) or ".." in path or "\\" in path or "//" in path
             or path.startswith("/") or path.endswith("/")
             or not re.fullmatch(r"[A-Za-z0-9_./ -]+", path)):
         raise ValueError("Unsafe path: " + str(path)[:120])
+    if PROTECTED_RE.search(path):
+        raise ValueError("Protected path cannot be changed by the agent: " + path +
+                         " (workflows run with repository secrets before review; describe the change for the owner instead)")
     return path
 
 
@@ -780,7 +788,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "Use content only for new files or a full rewrite of a file shown below. "
         + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
         f"At most {budget.changed_files} files per proposal. You may edit any file in the repository, including "
-        "workflows, deployment configuration, dependency manifests, security rules, and agent guardrails. "
+        "deployment configuration, dependency manifests, security rules, and agent guardrails, except .github/ "
+        "(workflows run with repository secrets before review), .git/ and .env files; describe needed workflow "
+        "changes in your explanation instead. "
         "All changes remain on the draft PR branch for CI and owner review; never merge. Preserve the task's "
         "requested behavior and do not add secrets or credentials. "
         "Before writing, think it through: where each part of your change runs and what information is available "

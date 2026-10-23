@@ -1,4 +1,7 @@
-"""Complete an explicitly merge-authorized task after trusted independent tests.
+"""Verify an explicitly merge-requested task after trusted independent tests.
+
+Merging is the owner's: the agent never marks a PR ready or merges it (KAPPA.md section 6; the execution scope refuses
+both). A verified PR is reported as waiting for the owner's Merge button.
 
 Runs from main, never checks out candidate code. GitHub protections still apply.
 """
@@ -75,18 +78,7 @@ def complete(run, api, wait=time.sleep):
     statuses = api(f'repos/{repo}/commits/{sha}/status')
     if statuses.get('total_count', 0) > 100 or (statuses.get('statuses') and statuses.get('state') != 'success'):
         return 'statuses_pending_or_failed'
-    scope.release_pr = pr['number']
-    scope.release_sha = sha
-    scope.release_node = pr.get('node_id')
-    scope.transition('executing')
-    scope.transition('verifying')
-    if pr.get('draft'):
-        api('graphql', {'query': 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}', 'variables': {'id': scope.release_node}})
-    result = api(f'repos/{repo}/pulls/{pr["number"]}/merge', {'sha': sha, 'merge_method': 'squash'}, 'PUT')
-    if result.get('merged') is not True:
-        return 'merge_blocked'
-    scope.transition('completed')
-    return 'merged'
+    return 'owner_merge_required'
 
 
 def main():

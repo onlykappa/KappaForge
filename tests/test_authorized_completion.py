@@ -34,10 +34,18 @@ class CompletionTests(unittest.TestCase):
     def test_merge_requires_original_user_permission(self):
         run,api,writes,_,_=fixture(False)
         self.assertEqual(complete(run,api),'merge_not_authorized');self.assertEqual(writes,[])
-    def test_explicit_merge_runs_after_checks_with_exact_sha(self):
+    def test_a_verified_merge_request_waits_for_the_owner_and_writes_nothing(self):
+        # #217: only the owner merges (KAPPA.md section 6). The execution scope refuses the merge and ready calls, so
+        # completion must stop before them instead of failing on a PermissionError.
         run,api,writes,_,_=fixture()
-        self.assertEqual(complete(run,api),'merged')
-        self.assertEqual(writes[-1],('repos/onlykappa/KappaForge/pulls/99/merge',{'sha':SHA,'merge_method':'squash'}))
+        self.assertEqual(complete(run,api),'owner_merge_required');self.assertEqual(writes,[])
+    def test_the_execution_scope_refuses_the_merge_completion_used_to_make(self):
+        from engine.intent_guard import activate
+        _,_,_,issue,_=fixture()
+        scope=activate(issue)
+        for url,payload,method in [('https://api.github.com/repos/onlykappa/KappaForge/pulls/99/merge',{'sha':SHA,'merge_method':'squash'},'PUT'),
+                                   ('https://api.github.com/graphql',{'query':'mutation($id:ID!){mergePullRequest(input:{pullRequestId:$id}){pullRequest{merged}}}','variables':{'id':'PR1'}},'POST')]:
+            with self.assertRaisesRegex(PermissionError,'owner'):scope.permit(url,payload,method)
     def test_failed_check_blocks_merge(self):
         run,api,writes,_,_=fixture(conclusion='failure')
         self.assertEqual(complete(run,api),'checks_pending_or_failed');self.assertEqual(writes,[])
@@ -53,14 +61,14 @@ class CompletionTests(unittest.TestCase):
         def wait(seconds):
             waits.append(seconds)
             if len(waits)==2:pr['mergeable']=True
-        self.assertEqual(complete(run,api,wait),'merged');self.assertEqual(len(waits),2)
+        self.assertEqual(complete(run,api,wait),'owner_merge_required');self.assertEqual(len(waits),2)
     def test_waits_for_checks_still_running_such_as_the_native_build(self):
         run,api,writes,_,_=fixture();state={'status':'in_progress','conclusion':None}
         def checks(path,payload=None,method=None):
             if '/check-runs?' in path:return {'total_count':1,'check_runs':[{'name':'native',**state}]}
             return api(path,payload,method)
         def wait(seconds):state.update(status='completed',conclusion='success')
-        self.assertEqual(complete(run,checks,wait),'merged')
+        self.assertEqual(complete(run,checks,wait),'owner_merge_required')
     def test_gives_up_on_checks_that_never_finish_without_merging(self):
         run,api,writes,_,_=fixture()
         def checks(path,payload=None,method=None):
@@ -77,9 +85,9 @@ class CompletionTests(unittest.TestCase):
                 return {'workflow_runs':[{'display_title':'iOS build kappa/dev-98 @ '+SHA,'event':'workflow_dispatch','head_branch':'main','status':status,'conclusion':conclusion}]}
             return api(path,payload,method)
         return run,with_native,writes
-    def test_app_changes_wait_for_the_dispatched_native_build_then_merge(self):
+    def test_app_changes_wait_for_the_dispatched_native_build_before_reporting(self):
         run,api,writes=self.native([('in_progress',None),('completed','success')]);waits=[]
-        self.assertEqual(complete(run,api,waits.append),'merged');self.assertTrue(waits)
+        self.assertEqual(complete(run,api,waits.append),'owner_merge_required');self.assertTrue(waits);self.assertEqual(writes,[])
     def test_a_failed_native_build_blocks_the_merge(self):
         run,api,writes=self.native([('completed','failure')])
         self.assertEqual(complete(run,api,lambda s:None),'native_verification_required');self.assertEqual(writes,[])
