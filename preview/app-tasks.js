@@ -611,7 +611,7 @@ function jobChatUpdate(job,signature,body,quiet=false){
  job.delivered=[...(job.delivered||[]),signature];if(!quiet)job.activeAt=Date.now();target.at=Date.now();save();persistJobs();return true;
 }
 function collectTaskFailureHistory(job,body){
- const match=String(body||'').match(/<!-- KAPPA_FAILURES_V1 ([\\s\\S]*?) -->/);if(!match)return false;
+ const match=String(body||'').match(/<!-- KAPPA_FAILURES_V1 ([\s\S]*?) -->/);if(!match)return false;
  let shard;try{shard=JSON.parse(match[1])}catch{return false}
  if(!shard||!shard.records||typeof shard.records!=='object')return false;
  const rows=[];
