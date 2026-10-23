@@ -58,17 +58,40 @@ def build():
     }
 
 
-def render(data):
-    # Paths occur in many import and test edges. Index them once, retaining every
-    # dependency and test association within the Worker's existing context budget.
-    paths = sorted({m['path'] for m in data['modules']} |
-                   {p for m in data['modules'] for k in ('depends_on', 'tests') for p in m.get(k, [])})
+# The Worker hands the model only the first 6000 characters of the map; a longer file would be cut mid-JSON.
+BUDGET = 5999
+
+
+def compact(data, modules, omitted):
+    # Paths occur in many import and test edges. Index them once.
+    paths = sorted({path for path, _, _ in modules} | {p for _, depends, tests in modules for p in (*depends, *tests)})
     index = {path: n for n, path in enumerate(paths)}
-    compact = dict(schema_version=3, repository=data['repository'], generated_by=data['generated_by'],
-                   columns=['path_index', 'dependency_indices', 'test_indices'], paths=paths,
-                   modules=[[index[m['path']], [index[p] for p in m['depends_on']],
-                             [index[p] for p in m.get('tests', [])]] for m in data['modules']])
-    return json.dumps(compact, separators=(',', ':')) + '\n'
+    out = dict(schema_version=3, repository=data['repository'], generated_by=data['generated_by'],
+               columns=['path_index', 'dependency_indices', 'test_indices'], paths=paths,
+               modules=[[index[path], [index[p] for p in depends], [index[p] for p in tests]] for path, depends, tests in modules])
+    if omitted:
+        out['omitted'] = omitted
+    return json.dumps(out, separators=(',', ':')) + '\n'
+
+
+def render(data, budget=BUDGET):
+    """The whole map when it fits the budget; otherwise drop test links, then dependency links, from the modules with
+    the most links first, and say how many were left out. The result is always complete, valid JSON."""
+    modules = [[m['path'], list(m['depends_on']), list(m.get('tests', []))] for m in data['modules']]
+    dropped = {'test_links': 0, 'dependency_links': 0}
+    for column, key in ((2, 'test_links'), (1, 'dependency_links')):
+        while True:
+            omitted = {**{k: v for k, v in dropped.items() if v},
+                       'note': 'Links left out to fit the chat context; read the code for the full picture.'} if any(dropped.values()) else None
+            text = compact(data, modules, omitted)
+            if len(text) <= budget:
+                return text
+            largest = max(modules, key=lambda m: len(m[column]))
+            if not largest[column]:
+                break
+            dropped[key] += len(largest[column])
+            largest[column] = []
+    raise ValueError(f"dependency map cannot fit {budget} characters even without links")
 
 
 def main():
