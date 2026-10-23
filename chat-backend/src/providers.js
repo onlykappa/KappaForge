@@ -149,14 +149,15 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  const primary=registry.routing?.primary||{};
  const routes=geminiAllowed?geminiModels.map(model=>{const own=geminiLimits(model),cap=(a,b)=>a&&b?Math.min(a,b):a||b;
   return {provider:"gemini",model,label:model,capabilities:primary.capabilities,context:cap(primary.contextTokens,own.context),maxOutput:cap(primary.maxOutputTokens,own.maxOutput)};}):[];
- const manual=typeof prefs.model==="string"&&/^[a-z-]+:.+/.test(prefs.model)?prefs.model:null;
+ // Gemini models are labelled by bare model name, every other provider as "provider:model".
+ const manual=typeof prefs.model==="string"&&(/^[a-z-]+:.+/.test(prefs.model)||routes.some(r=>r.label===prefs.model))?prefs.model:null;
  const automatic=!prefs.model||prefs.model==="auto";
  const hasTools=options.hasTools===true;
  const hasStructuredOutput=options.hasStructuredOutput===true;
  // Automatic still needs an initial route when Gemini is unavailable. Fallback
  // controls trying another route after selection, not eligibility for selection.
  const needsInitialRoute=automatic&&(withinContext(routes,options).length===0||!!registry.routing?.preferredModelFamily);
- if((!hasMedia||primary.capabilities?.media)&&(!hasTools||primary.capabilities?.tools)&&(!hasStructuredOutput||primary.capabilities?.structuredOutput)&&(prefs.fallback!==false||manual||needsInitialRoute)){
+ if((!hasMedia||primary.capabilities?.media)&&(!hasTools||primary.capabilities?.tools)&&(!hasStructuredOutput||primary.capabilities?.structuredOutput)&&(prefs.fallback!==false||manual?.includes(":")||needsInitialRoute)){
   for(const id of registry.order){
    const p=registry.providers[id];
    if(!providerAllowed(env,channel,id,{privateCode,requested})||disabled.has(id)&&!manual?.startsWith(id+":"))continue;
