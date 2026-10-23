@@ -31,7 +31,18 @@ function aggregate(events,{since=0,until=Infinity}={}){
 }
 function periodStart(period,now=Date.now()){const d=new Date(now);d.setUTCHours(0,0,0,0);if(period==='week')d.setUTCDate(d.getUTCDate()-6);if(period==='month')d.setUTCDate(1);if(period==='year')d.setUTCMonth(0,1);if(period==='all')return 0;return d.getTime();}
 function mergeNotes(local,remote,deleted=[]){const tombstones=new Set(deleted);return [...new Set([...local,...remote])].filter(n=>typeof n==='string'&&!tombstones.has(n));}
-function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(Number),y=String(b).replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)?1:-1;}return 0;}
+function compareVersions(a,b){
+  const parse = v=>String(v).replace(/^v/,'').split('.').map(s=>{
+    const num = Number(s.replace(/\D.*$/,'')||0);
+    return Number.isNaN(num)?0:num;
+  });
+  const x=parse(a), y=parse(b);
+  for(let i=0;i<3;i++){
+    const xi=x[i]||0, yi=y[i]||0;
+    if(xi!==yi) return xi>yi?1:-1;
+  }
+  return 0;
+}
 root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions};
 })(globalThis);
 
