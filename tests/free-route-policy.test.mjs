@@ -146,6 +146,15 @@ test("Automatic without fallback can select one approved non-Gemini chat route",
  }finally{globalThis.fetch=original}
 });
 
+test("an explicit bare Gemini model is used instead of the first Gemini model",async()=>{
+ const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"gemini",KAPPA_CODE_PROVIDERS:"gemini",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini",KAPPA_CHAT_PROVIDERS:"gemini"};
+ const models=["gemini-3.5-flash-lite","gemini-3.1-flash-lite"],options={channel:"coding",privateCode:true,requestedProviders:["gemini"]};
+ assert.deepEqual((await fallbackRoutes(env,models,{model:models[1],fallback:false},false,options)).map(r=>r.label),[models[1]]);
+ assert.deepEqual((await fallbackRoutes(env,models,{model:models[1],fallback:true},false,options)).map(r=>r.label),[models[1],models[0]],"the chosen model leads, the rest stay as fallbacks");
+ assert.deepEqual((await fallbackRoutes(env,models,{model:models[1],fallback:false},false,{channel:"chat"})).map(r=>r.label),[models[1]]);
+ assert.deepEqual(await fallbackRoutes({...env,KAPPA_CODE_PROVIDERS:"",KAPPA_PRIVATE_CODE_PROVIDERS:""},models,{model:models[1],fallback:false},false,options),[],"selection never grants a provider permission");
+});
+
 test("chat route failure identifies a missing Worker chat allowlist without disclosing secrets",async()=>{
  const original=globalThis.fetch;let upstreamCalls=0;
  globalThis.fetch=async url=>{if(/api\.groq\.com|generativelanguage\.googleapis\.com/.test(String(url)))upstreamCalls++;throw Error("fixture unavailable")};

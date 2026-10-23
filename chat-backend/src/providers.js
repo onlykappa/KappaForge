@@ -149,7 +149,8 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  const primary=registry.routing?.primary||{};
  const routes=geminiAllowed?geminiModels.map(model=>{const own=geminiLimits(model),cap=(a,b)=>a&&b?Math.min(a,b):a||b;
   return {provider:"gemini",model,label:model,capabilities:primary.capabilities,context:cap(primary.contextTokens,own.context),maxOutput:cap(primary.maxOutputTokens,own.maxOutput)};}):[];
- const manual=typeof prefs.model==="string"&&/^[a-z-]+:.+/.test(prefs.model)?prefs.model:null;
+ // Gemini models are labelled by bare model name, every other provider as "provider:model".
+ const manual=typeof prefs.model==="string"&&(/^[a-z-]+:.+/.test(prefs.model)||routes.some(r=>r.label===prefs.model))?prefs.model:null;
  const automatic=!prefs.model||prefs.model==="auto";
  const hasTools=options.hasTools===true;
  const hasStructuredOutput=options.hasStructuredOutput===true;
