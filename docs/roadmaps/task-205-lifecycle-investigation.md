@@ -1,6 +1,34 @@
 # Task #205: failure analysis and implementation roadmap
 
-Status: investigation only. This draft adds documentation; it does not change application code, workflows, permissions, task #205, or PR #206. Implementation requires a later development request. Evidence was inspected on 2026-10-23.
+Status: implementation under way. This document records the investigation and is the working plan for the fixes; it is written for the agent doing the work. Evidence was inspected on 2026-10-23.
+
+## Execution status
+
+Each fix is its own PR from `main` (`71cddc0`). They touch separate code and can merge in any order.
+
+| Roadmap item | PR | State |
+| --- | --- | --- |
+| P0 credential-bearing complex runner + false-green exit status (`tools/multi_agent_check.py`) | #208 | Open. Real Docker canary passed on GitHub CI: no host secrets visible, network blocked, read-only mount. |
+| P1 undeclared `jsdom`; `ui-chat.test.mjs` ran in no CI job | #209 | Open |
+| P1 explicit bare Gemini model ignored (`providers.js:fallbackRoutes`) | #210 | Open |
+| P1 generic Python imports rejected as fake tests (`verify.tests_without_real_code`) | #211 | Open |
+| P1 dependency map 40 chars from the Worker's 6000-char slice; committed map stale | #212 | Open |
+| P0 lifecycle asks decided from source review; repair chases "no PR exists" (#205 root cause) | #213 | Open |
+| P1 task card waits for an iOS build that was never dispatched | #214 | Open |
+
+After merging, regenerate `dependency_map.json` (`python3 scripts/dependency-map.py`); #208 and #211 add test links.
+
+### Remaining queue (next PRs, in order)
+
+1. **Placeholder audit evidence.** The review must reject audit "evidence" that only counts files or lines, or unconditionally reports "no bugs" (`scripts/audit.js` in #205). Add a deterministic check in `verify.wiring_problems`. Fixture: the #205 candidate script.
+2. **Protected-path stop message.** `recovery.diagnose` maps a protected-path rejection to authorization and tells the owner to "provide missing access". That's wrong: the fix is to drop the edit. Give policy rejections their own wording. Keep the stop.
+3. **Native trigger overlap and checkout binding.** `ios-build.yml` also runs on `pull_request` for app paths, so a draft update can start a duplicate native run. Check every dispatch checks out `candidate_sha` (today it checks out the branch input) and refuses a moved head. Deduplicate by task + SHA + kind only after confirming the event overlap from run history.
+4. **User-visible truth in the task card.** Persist a "Draft #N created" milestone across retries. Label attempt, total and validation time separately. Distinguish policy rejection, missing context, provider unavailable and real access errors.
+5. **PR-first contract (needs the owner's decision).** Is "open a fresh draft first" before any code, or after the first safe checkpoint (current behavior)? Don't implement it until the owner chooses.
+6. **Provider diagnostics and failure provenance.** Show per-provider coding/chat eligibility and capture raw failure bodies and request IDs for non-JSON 503s (see the [provider audit](provider-lifecycle-stress-audit.md)). Keep #203's cutoff recovery and backoff.
+7. **P2 repeated, model-pinned sampling**, permitted providers only. Report distributions and limits, not rankings.
+
+Rules for every PR in this queue: keep authorization, protected-path, cancellation, candidate-SHA, quota and no-merge boundaries. Don't widen provider permissions. Reproduce a failure first (a test that fails on `main`), then fix it.
 
 Branch baseline: main at `71cddc0f74737518210cf7fae930f1d11379c516`, after PR #203 merged with all checks passing. Incident source links intentionally refer to the older revision that executed task #205.
 

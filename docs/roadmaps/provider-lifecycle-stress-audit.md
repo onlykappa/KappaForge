@@ -50,6 +50,8 @@ The initial bind-mounted code evaluation was invalid because the runner's Docker
 
 ## Deterministic findings and lab-only upgrades
 
+Ported to production as separate PRs: finding 1 → #211, 2 → #210, 3 and 6 → #208, 4 → #209, 5 → #212. Status is tracked in [the lifecycle roadmap](task-205-lifecycle-investigation.md#execution-status).
+
 1. **Generic Python imports falsely rejected.** The verifier accepts only engine/tools/scripts imports. A test importing app.calculator fails when the real helper is mutated, yet the verifier calls it a fake test. Lab upgrade resolves static AST imports against candidate repository paths, including custom packages, aliases, relative imports and src layouts. This establishes source linkage, not complete behavioral test quality; dynamic imports and runtime path manipulation need separate treatment.
 
 2. **Explicit Gemini selection ignored.** fallbackRoutes recognizes only provider-prefixed manual labels, but Gemini uses bare model labels. The requested second Gemini model is replaced by the first. A failing-before/passing-after test verifies the lab-only recognition fix without broadening provider permissions.
