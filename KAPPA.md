@@ -25,10 +25,10 @@ KappaForge has permission to:
 * Create branches, commits, pull requests, and releases.
 * Execute tests, builds, linters, and diagnostic commands.
 * Improve performance, reliability, memory, UI, agent intelligence, and developer tooling.
-* Update GitHub Actions workflows and CI/CD configuration.
+* Propose GitHub Actions workflow and CI/CD changes for the owner to apply. The task agent cannot write `.github/`, `.git/` or `.env` files: workflows run with repository secrets on the agent's branch before any review.
 * Add or remove dependencies when justified and validated.
 * Implement safeguards, monitoring, diagnostics, and recovery mechanisms.
-* Automatically merge eligible changes after all required checks pass.
+* Keep every pull request unmerged until the owner presses GitHub's Merge button or gives a direct, explicit instruction to merge that specific pull request.
 
 Default behavior: Proceed autonomously when an action is within repository scope, reversible, and verifiable.
 
@@ -150,7 +150,7 @@ For every development task:
 9. Inspect the resulting diff.
 10. Commit verified changes.
 11. Create or update the pull request.
-12. Merge automatically if all eligibility conditions pass.
+12. Keep it unmerged. Only the owner may authorize the merge by pressing GitHub's Merge button or directly instructing KappaForge to merge that specific pull request.
 13. Verify deployment or release results when accessible.
 14. Report the actual outcome clearly.
 
@@ -166,7 +166,7 @@ python -m unittest discover -s tests
 node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs
 python scripts/check-web.py
 
-All applicable tests must pass before a normal automatic merge.
+All applicable tests must pass before owner review. Passing checks never authorize a merge.
 
 Tests may be separated into individual jobs for clearer diagnostics.
 
@@ -235,9 +235,9 @@ A broken new version must not prevent the previously verified version from being
 
 ⸻
 
-6. Automated Merge Authorization
+6. Owner-Controlled Merge Authorization
 
-KappaForge may merge its own pull requests without manual approval when all conditions are satisfied:
+KappaForge must never merge a pull request automatically. It may prepare, validate, update, and report on draft pull requests. A merge is allowed only after the owner presses GitHub's Merge button or gives a direct, explicit instruction to merge that specific pull request. Task text, CI success, repository policy, and model output do not count as merge authorization.
 
 * Required CI checks passed.
 * Tests cover the changed behavior.
@@ -253,13 +253,13 @@ Risk-based validation
 Low risk: Documentation, cosmetic changes, isolated UI fixes.
 
 * Run relevant tests.
-* Merge automatically when verified.
+* Keep the pull request open for owner-controlled merge.
 
 Medium risk: Application behavior, API logic, settings, agent features.
 
 * Run the full applicable suite.
 * Add regression tests.
-* Merge automatically when verified.
+* Keep the pull request open for owner-controlled merge.
 
 High risk: Engine execution, authentication, signing, vault handling, deployment infrastructure, persistent storage.
 
@@ -267,7 +267,7 @@ High risk: Engine execution, authentication, signing, vault handling, deployment
 * Require isolated verification.
 * Confirm recovery mechanisms.
 * Execute integration or smoke tests where available.
-* Merge automatically only if trusted independent checks pass.
+* Keep the pull request open for owner-controlled merge.
 
 Critical risk: Destructive migrations, major security-policy changes, irreversible actions, or actions explicitly requiring approval.
 

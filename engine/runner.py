@@ -724,8 +724,9 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             raise PermissionError("Integrated provider gateway rejected its runner credential") from None
+        raw = exc.read(8192)
         try:
-            body = json.loads(exc.read(8192).decode('utf-8'))
+            body = json.loads(raw.decode('utf-8'))
         except (ValueError, UnicodeError):
             body = None
         premium_used(body.get('premium') if isinstance(body, dict) else None)
@@ -733,6 +734,18 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
                     'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
+        if not isinstance(body, dict):
+            # A refusal that is not the Worker's own JSON came from in front of it (Cloudflare). Keep only what names
+            # the cause: never the body text itself.
+            evidence['unparsedResponse'] = gateway.response_provenance(raw, exc.headers)
+        elif failure.code == 'unreported':
+            # The Worker's uncoded refusals carry one of its own fixed messages ("Shared routing limits unavailable;
+            # inference was not sent"): keep it, sanitized, so the failing branch is named. Cloudflare's own platform
+            # errors (e.g. 1102, Worker exceeded resource limits) arrive as JSON problem details with no "error".
+            evidence['gatewayMessage'] = gateway.safe_message(body.get('error'))
+            platform = gateway.platform_error(body)
+            if platform:
+                evidence['platformError'] = platform
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)
@@ -950,6 +963,7 @@ def main():
                 print("Continuation already consumed, superseded or blocked; no work dispatched.")
                 return
             fixing = action == 'fix'
+            adopt = None
             if action.startswith('resume:'):
                 from engine.developer import gh, token_for, review_record
                 repo = journal.scope.repo
@@ -958,7 +972,10 @@ def main():
                 pulls = gh(f"repos/{repo}/pulls?state=open&head=onlykappa:{branch}", rt)
                 if len(pulls) > 1:
                     raise PermissionError('Ambiguous candidate PR; owner review required')
-                fixing = bool(pulls)
+                # A draft holding only the plan (the run stopped before any code was saved) gets its code written,
+                # not a repair: there is nothing to fix yet.
+                adopt = pulls[0] if pulls and not journal.state['files'] and journal.state['pr'] == pulls[0].get('html_url') else None
+                fixing = bool(pulls) and adopt is None
                 if not pulls and journal.state['pr']:
                     raise PermissionError('Saved PR is closed; automatic continuation will not reopen it')
                 if not pulls and journal.state['files']:
@@ -983,7 +1000,7 @@ def main():
                 url = fix_pull_request(issue, api_key, token)
                 print("Owner-requested fix pushed: " + url if url else "Fix stopped before pushing; see the issue comment.")
             else:
-                url = produce_development_pr(issue, api_key, token)
+                url = produce_development_pr(issue, api_key, token, **({'adopt': adopt} if adopt else {}))
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
             journal.state['status'] = ('ready' if journal.state['status'] == 'ready' else 'testing') if url else 'blocked'
             journal.persist()

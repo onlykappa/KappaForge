@@ -39,6 +39,31 @@ class GatewayUnavailable(ProviderRoutesUnavailable):
     gateway_failure = True
 
 
+def response_provenance(raw, headers):
+    """What a non-JSON gateway response was, without its text: type, size, Cloudflare ray ID and HTML title."""
+    headers = headers or {}
+    title = re.search(rb"<title>([^<]{1,160})</title>", raw or b"", re.I)
+    clean = lambda value, limit: re.sub(r"[^A-Za-z0-9 _.:;/|()=-]", "", str(value or ""))[:limit] or None
+    return {'contentType': clean(headers.get('Content-Type'), 80), 'bytes': len(raw or b""),
+            'cfRay': clean(headers.get('CF-Ray'), 40), 'server': clean(headers.get('Server'), 40),
+            'title': clean(title.group(1).decode('utf-8', 'replace'), 120) if title else None}
+
+
+def safe_message(value):
+    """A short gateway message in plain characters, or None: never arbitrary provider text."""
+    text = re.sub(r"[^A-Za-z0-9 _.,:;()/'-]", "", value)[:160].strip() if isinstance(value, str) else ""
+    return text or None
+
+
+def platform_error(body):
+    """Cloudflare's JSON error details (error_code, error_name, title, retryable), or None for any other body."""
+    if not isinstance(body, dict) or not any(key in body for key in ('error_code', 'error_name', 'title')):
+        return None
+    code = body.get('error_code')
+    return {'errorCode': code if type(code) is int else None, 'errorName': safe_message(body.get('error_name')),
+            'title': safe_message(body.get('title')), 'retryable': body.get('retryable') if type(body.get('retryable')) is bool else None}
+
+
 def error(status, data=None, headers=None, pinned=False):
     data = data if isinstance(data, dict) else {}
     code = data.get('code')

@@ -1,0 +1,53 @@
+name: Lifecycle simulation
+# Runs whole development tasks, easy to complex, through the real engine and the real coding gateway against a
+# simulated GitHub (tools/lifecycle_simulation.py). No repository, issue or PR is written. Generated code runs only in
+# networkless, credential-free sandbox containers. Push to the lifecycle-simulation branch, or start it by hand.
+on:
+  push:
+    branches:
+    - lifecycle-simulation
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Scenarios to run (comma separated)
+        required: false
+        default: easy,medium,complex
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: lifecycle-simulation
+  cancel-in-progress: false
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Run the scenarios through the real engine and gateway
+      env:
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+        KAPPA_ROUTER_REQUIRED: 'true'
+        KAPPA_CODE_PROVIDERS: ${{ vars.KAPPA_CODE_PROVIDERS }}
+        KAPPA_PRIVATE_CODE_PROVIDERS: ${{ vars.KAPPA_PRIVATE_CODE_PROVIDERS }}
+        ONLY: ${{ inputs.only || 'easy,medium,complex' }}
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        [[ "$ONLY" =~ ^[a-z,]+$ ]] || { echo "::error::Invalid scenario list"; exit 1; }
+        PYTHONUNBUFFERED=1 python -m tools.lifecycle_simulation --only "$ONLY" --out lifecycle-simulation.json
+      shell: bash
+    - name: Keep the full report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lifecycle-simulation-report
+        path: lifecycle-simulation.json
+        if-no-files-found: warn
+        retention-days: 30

@@ -52,13 +52,11 @@ LARGE = Budget(30, 20, 200000, 600000, 65536)
 PINNED = Budget(1, 1, 3500, 4000, 768)
 SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml|ya?ml|swift|cs|java|kt|go|rs|c|h|cpp|hpp|sh|sql)$")
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
-# Engine code and its regression tests are editable, including this file and runner.py.
-# Keep CI workflows, deployment credentials, provider policy, and secrets protected.
-# Engine changes still go through a draft PR and independently dispatched sandbox tests.
-PROTECTED_RE = re.compile(
-    r"^(?:\.github/|\.git/|chat-backend/wrangler\.toml$|scripts/preflight\.py$|config/providers\.json$|"
-    r"chat-backend/src/(?:review|github|providers)\.js$)"
-    r"|(?:^|/)(?:\.env[^/]*|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock)$")
+# Any repository path may be proposed except the few that act before the owner reviews: workflows run on the
+# agent's own branch and pull request with repository secrets (a new `on: push` workflow, or an edited
+# pull_request one), .git is not repository content, and .env files hold secrets. Everything else waits for CI and
+# the owner's merge.
+PROTECTED_RE = re.compile(r"^(?:\.github/|\.git/)|(?:^|/)\.env[^/]*$")
 
 
 def check_path(path):
@@ -67,7 +65,8 @@ def check_path(path):
             or not re.fullmatch(r"[A-Za-z0-9_./ -]+", path)):
         raise ValueError("Unsafe path: " + str(path)[:120])
     if PROTECTED_RE.search(path):
-        raise ValueError("Protected path cannot be changed by the agent: " + path)
+        raise ValueError("Protected path cannot be changed by the agent: " + path +
+                         " (workflows run with repository secrets before review; describe the change for the owner instead)")
     return path
 
 
@@ -546,7 +545,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                       COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE)
     try:
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
-                                                             require_test, allow_empty)
+                                                             require_test, allow_empty, max_attempts=3)
     except (RuntimeError, GenerationFailure) as exc:
         from engine.reliability import RecoveryBudgetExceeded
         if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):
@@ -554,9 +553,13 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
+        attempts_used = min(5, max(0, getattr(exc, 'attempts', 0)))
+        remaining_attempts = 5 - attempts_used
         budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
-        note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
+        if not remaining_attempts:
+            raise GenerationFailure("No validated proposal after 5 distinct attempts. " + reason, attempts=attempts_used) from exc
+        note("fix", "Large proposal could not be validated; reducing context and output for the remaining distinct attempts")
         print("Retrying with compact generation: " + reason)
         ordered = list(dict.fromkeys(source_priorities(sources, existing, task, journal) + list(sources)))
         small = {p: sources[p] for p in ordered if p in sources}
@@ -566,11 +569,18 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                          "\n\nORIGINAL TASK:\n" + task)
         try:
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
-                                                                 guide, allowed, budget, design, require_test, allow_empty)
+                                                                 guide, allowed, budget, design, require_test, allow_empty,
+                                                                 max_attempts=remaining_attempts, attempt_offset=attempts_used,
+                                                                 prior_errors=getattr(exc, 'errors', ()),
+                                                                 prior_proposals=getattr(exc, 'rejected_proposals', ()))
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
                 raise
+            attempts_used += min(remaining_attempts, max(0, getattr(last, 'attempts', 0)))
+            if attempts_used >= 5:
+                raise GenerationFailure("No validated proposal after 5 distinct attempts. " + str(last)[:1800],
+                                        attempts=attempts_used, blocked=getattr(last, 'blocked', False)) from last
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -721,7 +731,7 @@ def source_priorities(sources, existing, task, journal=None):
     return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
 
 
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
     priority = source_priorities(working_sources, existing, task, journal)
@@ -777,8 +787,12 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "short but unique, preferably under 300 characters; split long minified handlers into small edits. "
         "Use content only for new files or a full rewrite of a file shown below. "
         + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
-        f"At most {budget.changed_files} files. Never edit .github/, deployment config, lockfiles, secrets "
-        "or the agent's own guardrail files. Never weaken authentication or authorization. "
+        f"At most {budget.changed_files} files per proposal. You may edit any file in the repository, including "
+        "deployment configuration, dependency manifests, security rules, and agent guardrails, except .github/ "
+        "(workflows run with repository secrets before review), .git/ and .env files; describe needed workflow "
+        "changes in your explanation instead. "
+        "All changes remain on the draft PR branch for CI and owner review; never merge. Preserve the task's "
+        "requested behavior and do not add secrets or credentials. "
         "Before writing, think it through: where each part of your change runs and what information is available "
         "there, and every case it must handle (every request, not just the first; limits; missing data). "
         "Trace every new value from producer through transport to its final consumer. Adding a field to a request "
@@ -835,7 +849,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             context, shown_sources, partial_sources = source_context()
         return instruction_head + context + history + suffix
     fit_instruction()
-    errors = []
+    errors = list(prior_errors)
+    rejected_proposals = list(prior_proposals)
+    attempts_made = 0
     evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
@@ -851,16 +867,24 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     route_error = None
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
-    max_attempts = 5
+    repair_methods = ("", "Re-read the exact source and use a shorter unique anchor.",
+                          "Use a different implementation path while preserving the requirements.",
+                          "Break the change into smaller edits and address the first failing validation.",
+                          "Choose a substantially different solution and verify each edit against current source.")
     for attempt in range(max_attempts):
-        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt + 1) + "/" + str(max_attempts) +
+        attempt_number = attempt + attempt_offset
+        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt_number + 1) + "/5" +
+                 "\nRequired distinct repair approach: " + repair_methods[attempt_number] +
+                 ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
+                  "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
-                 "\nRoot-cause guidance: " + diagnose_generation_failure(errors[-1], sources) +
+                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], sources) if errors else
+                  "The previous pass failed before producing a validated proposal. Use its error evidence above.") +
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
-                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        if not attempt:  # A retry is already announced by its "rejected …; trying again" line.
+                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt_number else ""
+        if not attempt_number:  # A retry is already announced by its "rejected …; trying again" line.
             note("code", "Writing code")
         prompt = fit_instruction(retry)
         if malformed is not None and not format_repair_used and len(malformed) <= 32000:
@@ -889,6 +913,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         try:
             model, output = run_model(api_key, prompt, max_output_tokens=budget.output_tokens, allowed=allowed,
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
+            attempts_made += 1
         except RuntimeError as exc:
             if router_required and isinstance(exc, gateway.GatewayRequestTooLarge) and context:
                 # A stricter transport envelope can reject a locally fitting prompt.
@@ -934,7 +959,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 raise ValueError("Repeated rejected proposal: no source changes since previous validation")
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
-            if scope is not None and attempt:
+            if scope is not None and attempt_number:
                 scope.recover(signature, round_id=round_id)
             if isinstance(proposal, dict) and isinstance(proposal.get('files'), list) and any(
                     isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
@@ -978,11 +1003,14 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 malformed = output
             if signature:
                 rejected_signatures.add(signature)
+            if proposal is not None:
+                rejected_files = proposal.get("files", []) if isinstance(proposal, dict) else proposal
+                rejected_proposals.append(json.dumps(rejected_files, ensure_ascii=False)[:1600])
             error = recovery.clean(exc, 300) or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 
-            print(f"Validation attempt {attempt + 1}/{max_attempts} from {model} failed: {error[:180]}")
+            print(f"Validation attempt {attempt_number + 1}/5 from {model} failed: {error[:180]}")
             note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             failures[model] += 1
             if failures[model] >= MODEL_FAILURES_BEFORE_SWITCH and model not in avoid:
@@ -998,7 +1026,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
     raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
-                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
+                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False),
+                            attempts=attempt_offset + attempts_made, errors=errors,
+                            rejected_proposals=rejected_proposals)
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
@@ -1668,7 +1698,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     return changes, verdict, problems
 
 
-def produce_development_pr(issue, api_key, token):
+def produce_development_pr(issue, api_key, token, adopt=None):
+    """Plan, open the draft PR with the goal and plan, then write the code on it and leave it for the owner's review.
+
+    `adopt` is this task's own open draft that holds only its plan (a run stopped after opening it); the code is
+    then written on that draft instead of opening another."""
     if (issue.get("user") or {}).get("login", "").lower() != OWNER:
         raise ValueError("Only the repository owner can request development")
     body = issue.get("body") or ""
@@ -1685,7 +1719,10 @@ def produce_development_pr(issue, api_key, token):
         if exc.code != 404:
             raise
         leftover = False
-    if leftover:
+    if adopt is not None and not (leftover and (adopt.get("head") or {}).get("ref") == branch and adopt.get("draft") is True
+                                  and adopt.get("state", "open") == "open" and not gh(f"repos/{repo}/pulls/{int(adopt['number'])}/files", repo_token)):
+        raise PermissionError("Only this task's own open draft holding just its plan can be continued")
+    if leftover and adopt is None:
         open_prs = gh(f"repos/{repo}/pulls?state=open&head={OWNER}:{branch}", repo_token)
         if open_prs:
             raise ValueError(f"This task already has an open PR ({open_prs[0].get('html_url', branch)}); use Fix it "
@@ -1696,7 +1733,8 @@ def produce_development_pr(issue, api_key, token):
     task = ((issue.get("title") or "") + "\n" + body
             + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:])
                if guidance else ""))
-    progress = Progress(number, token, ahead=["Choose which files to read", "Write the change", "Open a draft PR and start the tests"])
+    progress = Progress(number, token, ahead=["Choose which files to read", "Open the draft PR with the plan", "Write the change",
+                                              "Start the tests"])
     progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     journal = recovery.CURRENT.get()
@@ -1729,6 +1767,16 @@ def produce_development_pr(issue, api_key, token):
     if journal:
         note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
     saved = {"sha": sha, "pr": None, "changes": {}}
+    layout = plan_layout(issue, stages)
+    if adopt is not None:
+        saved.update(sha=adopt["head"]["sha"], pr=adopt)
+        progress.act("git", f"Continuing on draft PR {adopt['html_url']}, which holds the plan")
+    else:
+        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
+        progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
+    progress.saved_pr = saved["pr"]["html_url"]
+    if journal:
+        journal.checkpoint(saved["sha"], base=base, pr=saved["pr"]["html_url"])
 
     def checkpoint(model, summary, changes, explanation):
         # Save only validated proposals, never code from a rejected answer. The marker blocks merge even if CI passes.
@@ -1745,12 +1793,11 @@ def produce_development_pr(issue, api_key, token):
         saved["sha"], saved["changes"] = commit["sha"], dict(changes)
         if journal:
             journal.checkpoint(commit['sha'], base=base, files=changes)
-        if not saved["pr"]:
-            saved["pr"] = gh(f"repos/{repo}/pulls", repo_token, {
-                "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}",
-                "head": branch, "base": base, "draft": True,
-                "body": review_body(number, model, explanation, summary, changes, design,
-                                    ["Saved implementation checkpoint. Complete the original task and verify every requirement before merging; use Fix it if interrupted."])})
+        if not saved.get("coded"):
+            # The draft stops saying no code exists: a run interrupted from here on is repaired, not restarted.
+            gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, {
+                "body": review_body(number, model, explanation, summary, changes, design, [CHECKPOINT_SAVED], layout)}, method="PATCH")
+            saved["coded"] = True
         progress.act("write", "Saved validated stage on draft PR " + saved["pr"]["html_url"])
         progress.saved_pr = saved["pr"]["html_url"]
         if journal:
@@ -1792,7 +1839,7 @@ def produce_development_pr(issue, api_key, token):
         gh(f"repos/{repo}/git/refs", repo_token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
     payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
-        "body": review_body(number, model, explanation, summary, changes, design, open_problems)}
+        "body": review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
     if saved["pr"]:
         pr = gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, payload, method="PATCH")
     else:
@@ -1827,13 +1874,76 @@ def produce_development_pr(issue, api_key, token):
     return pr["html_url"]
 
 
-def review_body(number, model, explanation, summary, changes, design="", problems=()):
+PLAN_STARTED = "Implementation has not started yet; only the goal and plan are on this draft"
+CHECKPOINT_SAVED = ("Saved implementation checkpoint. Complete the original task and verify every requirement before merging; "
+                    "use Fix it if interrupted.")
+
+
+CONTROL_LINE_RE = re.compile(r"^\s*(?:Repository|Mode|Authorization|Scope|Allow flagged changes|Repair files)\s*:", re.I)
+
+
+def plan_layout(issue, stages):
+    """The goal and the plan, in the owner's words and the planner's stages, shown before any code is written."""
+    # Only the request itself: never the authorization marker or other hidden comments, and never the earlier chat
+    # quoted as background (the draft may live in a public repository), nor the task's control lines.
+    request = re.sub(r"<!--.*?(?:-->|$)", "", issue.get("body") or "", flags=re.S)
+    request = re.split(r"\n\s*\n(?:Conversation context \(|Approved from KappaForge Chat\.)", request, maxsplit=1)[0]
+    goal = "\n".join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)).strip()
+    steps = [str(stage) + (" (files: " + ", ".join(f"`{f}`" for f in stage.files) + ")" if getattr(stage, "files", ()) else "")
+             for stage in stages] or ["Write the change in one step"]
+    return (f"## Goal\n**{(issue.get('title') or 'KappaForge task').strip()[:200]}**\n\n{goal[:3000]}\n\n"
+            "## Plan\n" + "\n".join(f"{n}. {step[:400]}" for n, step in enumerate(steps, 1)))
+
+
+def plan_status(code=False, checked=False):
+    tick = lambda done: "x" if done else " "
+    return ("## Status\n"
+            "- [x] Goal and plan written; draft opened before any code\n"
+            f"- [{tick(code)}] Code written on this draft\n"
+            f"- [{tick(code and checked)}] Work checked against the goal\n"
+            "- [ ] Independent tests (results are posted on the task)\n"
+            "- [ ] Your review: this PR stays a draft until you review it. KappaForge never marks it ready or merges it.")
+
+
+def open_plan_draft(repo, token, number, issue, base, sha, branch, layout, design=""):
+    """The plan as the branch's first commit (no files change) and the draft PR showing it, before any code.
+
+    Failing here stops the task before any code is generated; a half-made branch is removed so a retry starts clean."""
+    try:
+        tree = gh(f"repos/{repo}/git/commits/{sha}", token)["tree"]["sha"]
+        commit = gh(f"repos/{repo}/git/commits", token, {"message": f"KappaForge plan for {ROOT}#{number}\n\n{layout[:6000]}",
+                                                        "tree": tree, "parents": [sha]})
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        raise RuntimeError("Could not save the plan, so no draft PR was opened and no code was written") from exc
+    try:
+        gh(f"repos/{repo}/git/refs", token, {"ref": "refs/heads/" + branch, "sha": commit["sha"]})
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        raise RuntimeError("Could not create the task branch, so no draft PR was opened and no code was written") from exc
+    try:
+        pr = gh(f"repos/{repo}/pulls", token, {
+            "title": f"Draft (incomplete): {(issue.get('title') or 'KappaForge task')[:90]}", "head": branch, "base": base, "draft": True,
+            "body": (f"Owner-approved development for {ROOT}#{number}. KappaForge opened this draft with the plan before writing "
+                     f"any code.\n\n{layout}\n\n" + (f"## Design notes\n{design}\n\n" if design else "")
+                     + f"{plan_status()}\n\n" + review_record([PLAN_STARTED]))})
+        if not pr.get("html_url") or not pr.get("number"):
+            raise KeyError("pull request receipt")
+    except (urllib.error.URLError, KeyError, TypeError) as exc:
+        try:
+            gh(f"repos/{repo}/git/refs/heads/{branch}", token, method="DELETE")
+        except (urllib.error.URLError, KeyError, TypeError):
+            pass
+        raise RuntimeError("Could not open the draft PR with the plan; no code was written") from exc
+    return {"sha": commit["sha"], "pr": pr}
+
+
+def review_body(number, model, explanation, summary, changes, design="", problems=(), layout=""):
     # The app shows the "What this does" section on its review card; keep the heading stable.
     # Fixes read the design notes back from here. Never promote a model's claims
     # into a verified result while saving an incomplete checkpoint.
     if problems:
         explanation = "Not finished: saved implementation checkpoint; verification is incomplete.\n\nAgent-reported changes (not verified): " + (explanation or summary)
     return (f"Owner-approved development for {ROOT}#{number}. Model: `{model}`\n\n"
+            + (layout + "\n\n" + plan_status(code=True, checked=not problems) + "\n\n" if layout else "") +
             f"## What this does\n{explanation or summary}\n\n## Technical summary\n{summary}\n\n"
             + (f"## Design notes\n{design}\n\n" if design else "") +
             "## Changed files\n" + "\n".join("- `" + p + "`" for p in changes) +
@@ -2135,7 +2245,9 @@ def fix_pull_request(issue, api_key, token):
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)
     remaining = {p: text for p, text in final.items() if text != saved['changes'].get(p)}
-    commit = (commit_changes(repo, saved['sha'], remaining, modes, f"fix: make sandbox tests pass for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
+    # Say what triggered the repair: failed checks, or only work the original task still needs (#205).
+    purpose = "make sandbox tests pass" if failures else "finish the unfinished requirements"
+    commit = (commit_changes(repo, saved['sha'], remaining, modes, f"fix: {purpose} for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
               if remaining else {'sha': saved['sha']})
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
@@ -2161,7 +2273,8 @@ def fix_pull_request(issue, api_key, token):
     if not pending:
         gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {"body": previous + "\n\n## Latest fix\n" + (explanation or summary)}, method="PATCH")
     gh(f"repos/{repo}/issues/{pr['number']}/comments", repo_token,
-       {"body": f"### Fix applied after failed run {run['id']} ({model})\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
+       {"body": (f"### Fix applied after failed run {run['id']} ({model})" if failures else
+                 f"### Unfinished work continued ({model})") + f"\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": f"### KappaForge fix ready\n\n{note}\n\n{pr['html_url']}"})
     notify(f"🔧 KappaForge pushed a fix to {repo}; tests are running again.\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
     return pr["html_url"]

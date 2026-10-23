@@ -36,7 +36,7 @@ export function routerCaps(env){
 export async function reserveRouterRequest(env,requestId,limit=100,minuteLimit=20){
  const response=await stubFor(env).fetch("https://memory.internal/router/request-reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId,limit,minuteLimit})});
  const data=await response.json().catch(()=>({}));
- if(!response.ok&&response.status!==429)throw new Error("Shared request limit storage failed");
+ if(!response.ok&&response.status!==429)throw new Error("Shared request limit storage failed (HTTP "+response.status+")");
  return {...data,status:response.status};
 }
 

@@ -1,11 +1,12 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto',voice:'hannah',voiceEngine:'cloud'};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto',locationAccess:'ask',voice:'hannah',voiceEngine:'cloud'};
 function settings(value={}){
  const s={...defaults};
  if(typeof value.weatherCity==='string')s.weatherCity=value.weatherCity.trim().slice(0,120);
  if(['auto','celsius','fahrenheit'].includes(value.weatherUnits))s.weatherUnits=value.weatherUnits;
+ if(['ask','allowed','off'].includes(value.locationAccess))s.locationAccess=value.locationAccess;
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
  for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark'],voice:['hannah','autumn','diana','austin','daniel','troy'],voiceEngine:['cloud','device']}))if(values.includes(value[k]))s[k]=value[k];
  // Gemini model IDs, or provider:model for the free fallback providers (e.g. groq:llama-3.3-70b-versatile).
@@ -32,7 +33,51 @@ function aggregate(events,{since=0,until=Infinity}={}){
 function periodStart(period,now=Date.now()){const d=new Date(now);d.setUTCHours(0,0,0,0);if(period==='week')d.setUTCDate(d.getUTCDate()-6);if(period==='month')d.setUTCDate(1);if(period==='year')d.setUTCMonth(0,1);if(period==='all')return 0;return d.getTime();}
 function mergeNotes(local,remote,deleted=[]){const tombstones=new Set(deleted);return [...new Set([...local,...remote])].filter(n=>typeof n==='string'&&!tombstones.has(n));}
 function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(Number),y=String(b).replace(/^v/,'').split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)?1:-1;}return 0;}
-root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions};
+// Device location: the same question rules as chat-backend/src/weather.js and location.js (tests keep them in step).
+// The device is asked only for a question that needs it: a weather question with no typed or saved city, or a
+// location question ("where am I", "near me"); never for code or tasks, and never once the owner turned it off.
+function weatherQuestion(text){
+ text=String(text||'').trim().replace(/’/g,"'");
+ if(/\b(?:implement|repair|debug|code|endpoint|unit test|pull request)\b/i.test(text))return false;
+ return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain|snow|temperature|wind|umbrella)\b/i.test(text);
+}
+const LOCATION_CODE=/\b(?:implement|repair|debug|code|endpoint|unit test|pull request|function|refactor|commit|deploy)\b/i;
+const LOCATION_WHERE=/\b(?:where am i|where i am|my (?:current |exact |precise )?(?:location|coordinates|gps|position|address|lat(?:itude)?|long(?:itude)?)|current location|what (?:city|town|state|country|county|street|neighbou?rhood|zip(?: code)?|postcode) am i in)\b/i;
+const LOCATION_NEARBY=/\b(?:near me|close to me|around me|nearby|nearest|closest|around here|near here|from here|from me|my area|this area|how far (?:am i|away am i))\b/i;
+const LOCATION_BEYOND=/\b(?:how far|distance|directions?|route|drive|walk|near|nearest|closest|weather|time|restaurants?|food|coffee|gas|hotel|store|shop)\b/i;
+function locationQuestion(text){
+ text=String(text||'').trim().replace(/’/g,"'");
+ if(!text||LOCATION_CODE.test(text))return null;
+ if(LOCATION_WHERE.test(text))return LOCATION_BEYOND.test(text)?'nearby':'where';
+ return LOCATION_NEARBY.test(text)?'nearby':null;
+}
+function locationNeeded(text,prefs={}){
+ if(prefs.locationAccess==='off')return false;
+ return weatherLocationNeeded(text,prefs)||!!locationQuestion(text);
+}
+function weatherLocationNeeded(text,prefs={}){
+ if(!weatherQuestion(text)||prefs.locationAccess==='off'||String(prefs.weatherCity||'').trim())return false;
+ let city=(String(text).replace(/’/g,"'").match(/\b(?:in|for)\s+(.+?)(?=[?!]|$)/i)?.[1]||'').replace(/\s+(?:today|tomorrow|right now|this week|in (?:fahrenheit|celsius)).*$/i,'').trim();
+ if(/^(?:today|tomorrow|this week|the next|celsius|fahrenheit)\b/i.test(city))city='';
+ return !city;
+}
+// One precise reading with its accuracy in metres. iOS answers through the native bridge (CoreLocation, best
+// accuracy; reduced=true when Precise Location is off); browsers use high-accuracy navigator.geolocation. Rejects with
+// code 'denied' or 'unavailable'. Nothing here stores the coordinates.
+function deviceLocation({native=root.webkit?.messageHandlers?.kappa,geolocation=root.navigator?.geolocation,timeout=15000}={}){
+ const fail=code=>Object.assign(Error(code==='denied'?'Location permission denied':'Location unavailable'),{code});
+ const rounded=(lat,lon,accuracy,reduced)=>Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180?{latitude:Math.round(lat*1e6)/1e6,longitude:Math.round(lon*1e6)/1e6,
+  ...(Number.isFinite(accuracy)&&accuracy>=0?{accuracy:Math.round(accuracy*10)/10}:{}),...(reduced===true?{reduced:true}:{})}:null;
+ return new Promise((resolve,reject)=>{
+  let done=false;const finish=(value,error)=>{if(done)return;done=true;clearTimeout(timer);if(native&&root.KappaLocationNative===receive)delete root.KappaLocationNative;error?reject(error):resolve(value)};
+  const timer=setTimeout(()=>finish(null,fail('unavailable')),timeout);
+  const receive=event=>{const place=event?.type==='location'&&rounded(event.latitude,event.longitude,event.accuracy,event.reduced);place?finish(place):finish(null,fail(event?.code==='denied'?'denied':'unavailable'))};
+  if(native){root.KappaLocationNative=receive;try{native.postMessage({action:'location'})}catch{finish(null,fail('unavailable'))}return}
+  if(!geolocation?.getCurrentPosition)return finish(null,fail('unavailable'));
+  geolocation.getCurrentPosition(p=>{const place=rounded(p?.coords?.latitude,p?.coords?.longitude,p?.coords?.accuracy);place?finish(place):finish(null,fail('unavailable'))},e=>finish(null,fail(e?.code===1?'denied':'unavailable')),{enableHighAccuracy:true,maximumAge:0,timeout});
+ });
+}
+root.KappaCore={defaults,settings,aggregate,periodStart,mergeNotes,compareVersions,weatherQuestion,weatherLocationNeeded,locationQuestion,locationNeeded,deviceLocation};
 })(globalThis);
 
 // Interpret lifecycle metadata, not words quoted inside an audit's findings.

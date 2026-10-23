@@ -30,6 +30,7 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Choose images to share with KappaForge AI.
         INFOPLIST_KEY_NSCameraUsageDescription: Take a photo to share with KappaForge AI.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Talk to KappaForge. Your voice is sent to your own backend to be turned into text.
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Used only when you ask something that needs your location, like where you are or the weather nearby. It is sent with that one question and never stored.
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
         CODE_SIGN_STYLE: Automatic
     scheme:

@@ -6,7 +6,7 @@ let noteEdits={};try{noteEdits=JSON.parse(localStorage.getItem('kappaforge.memor
 let memoryCategories={};try{memoryCategories=JSON.parse(localStorage.getItem('kappaforge.memory.categories.v2')||'{}')}catch{}
 let settingsSection='',usagePeriod='month',usageEvents=[],usageDays={},capabilities=null,settingsNotice='',usageNotice='Not loaded. Refresh to retrieve authenticated backend records.',diagnostics=[],releaseInfo=null,releaseHistory=[],settingsBusy=false,lastSyncAt=0,projectReport=null,semanticMatches=null;
 // Settings home is a grouped list (id, title, search terms, group, icon); each row opens its own page.
-const settingSections=[['overview','Connection','Connection, model, usage, synchronization, app health, overview','Assistant','wifi'],['models','AI Models','Provider, automatic routing, fallback, reasoning, free providers','Assistant','cpu'],['personalization','Personalization','Response style, instructions, appearance, language, theme, voice, speech, dictation','Assistant','smile'],['memory','Memory','Browse, search, categories, delete, encrypted backups, sync, knowledge','Assistant','book'],['usage','Usage & Billing','Tokens, requests, latency, errors, budgets, historical trends','Account','chart'],['services','Connected Services','GitHub, Discord, integrations, plugins','Account','link'],['privacy','Privacy & Security','Authentication, credentials, biometric app lock, local data','App','lock'],['developer','Developer Tools','Connection tests, API diagnostics, errors, code search, project health','App','code'],['updates','Updates & About','Version, releases, changelog, IPA, SideStore','App','refresh']];
+const settingSections=[['overview','Connection','Connection, model, usage, synchronization, app health, overview','Assistant','wifi'],['models','AI Models','Provider, automatic routing, fallback, reasoning, free providers','Assistant','cpu'],['personalization','Personalization','Response style, instructions, appearance, language, theme, voice, speech, dictation','Assistant','smile'],['memory','Memory','Browse, search, categories, delete, encrypted backups, sync, knowledge','Assistant','book'],['usage','Usage & Billing','Tokens, requests, latency, errors, budgets, historical trends','Account','chart'],['tasks','Task diagnostics','Tasks, failed attempts, retries, logs, validation errors, recovery history','App','bolt'],['services','Connected Services','GitHub, Discord, integrations, plugins','Account','link'],['privacy','Privacy & Security','Authentication, credentials, biometric app lock, local data','App','lock'],['developer','Developer Tools','Connection tests, API diagnostics, errors, code search, project health','App','code'],['updates','Updates & About','Version, releases, changelog, IPA, SideStore','App','refresh']];
 const settingIcons={mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',wave:'<path d="M4 10v4M8 6.5v11M12 3.5v17M16 7.5v9M20 10v4"/>',cloud:'<path d="M7 18.5a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19.5 11 3.8 3.8 0 0 1 18 18.5z"/>',key:'<circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M16 7l3 3M14 9l2 2"/>',sync:'<path d="M19 8a7.5 7.5 0 0 0-13.5 1.5M5 16a7.5 7.5 0 0 0 13.5-1.5"/><path d="M19 4v4h-4M5 20v-4h4"/>',face:'<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M9.5 15.5a3.5 3.5 0 0 0 5 0"/>',pulse:'<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',search:'<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>',bolt:'<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',download:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',upload:'<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',trash:'<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>',chat:'<path d="M4 19.5l1.4-3.6A8 8 0 1 1 8.4 18.7z"/>',pr:'<circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/><path d="M6.5 8.2v7.6M17.5 15.8V10a3 3 0 0 0-3-3H11"/>',gauge:'<path d="M4.6 17.5a8.5 8.5 0 1 1 14.8 0M12 13.5l3.5-4"/>',globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',pin:'<path d="M12 21s6.5-6 6.5-11a6.5 6.5 0 0 0-13 0c0 5 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',wifi:'<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16.43a6 6 0 0 1 7 0M2 8.82a16 16 0 0 1 20 0M12 20h.01"/>',cpu:'<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',smile:'<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/>',book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',chart:'<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',code:'<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',refresh:'<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',chevron:'<path d="m9 6 6 6-6 6"/>',back:'<path d="m15 6-6 6 6 6"/>'};
 const settingIcon=name=>'<svg class="s-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+settingIcons[name]+'</svg>';
 function applyAppearance(){document.documentElement.dataset.appearance=preferences.appearance;const dark=preferences.appearance==='dark'||(preferences.appearance==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.querySelector('meta[name="theme-color"]')?.setAttribute('content',dark?'#000000':'#f8f8fa');}
@@ -334,11 +334,12 @@ function settingSummary(id){
  if(id==='personalization')return ({system:'System',light:'Light',dark:'Dark'})[preferences.appearance]||'';
  if(id==='memory')return String(savedMemories.length);
  if(id==='services')return capabilities?.github?'GitHub':'';
+ if(id==='tasks'){const jobs=typeof trackedJobs!=='undefined'?trackedJobs:[];const n=jobs.reduce((a,j)=>a+(j.failureHistory?.length||0),0);return n?n+' failure'+(n===1?'':'s'):jobs.length+' task'+(jobs.length===1?'':'s');}
  if(id==='updates')return APP_VERSION;
  return '';
 }
 // Settings home (Hub): search, a connection card, tiles for Models, Usage, Memory and Sync, then the other sections as rows.
-const S_TILES=['models','usage','memory'],S_ROWS=['personalization','privacy','services','developer','updates'];
+const S_TILES=['models','usage','memory'],S_ROWS=['personalization','privacy','tasks','services','developer','updates'];
 function settingsCompact(n){return n>=1e6?(n/1e6).toFixed(2).replace(/\.?0+$/,'')+'M':n>=1e4?Math.round(n/1e3)+'K':n.toLocaleString();}
 function settingTileSummary(id){
  if(id==='models'){const n=(capabilities?.providers||[]).filter(p=>providerStatus(p).kind==='available').length;return (preferences.model==='auto'?'Auto':settingSummary('models'))+(n?' · '+n+(n===1?' provider':' providers'):'');}
@@ -383,6 +384,101 @@ function connectionState(){
  const n=settingsIssues().length;
  return n?{tone:'bad',label:n+(n===1?' issue':' issues'),title:'Your assistant needs attention'}:verifyRun&&!lastVerify?{tone:'',label:'Checking…',title:'Checking your setup'}:capabilities?{tone:'ok',label:'Online · Verified',title:'Your assistant is connected'}:backend&&access?{tone:'warn',label:'Saved · not verified',title:'Verify your connection'}:{tone:'bad',label:'Not connected',title:'Connect your AI backend'};
 }
+function taskDiagnosticJobs(){
+ return (typeof trackedJobs!=='undefined'?trackedJobs:[]).filter(j=>Array.isArray(j.failureHistory)&&j.failureHistory.length)
+  .sort((a,b)=>(b.lastProgressAt||b.activeAt||0)-(a.lastProgressAt||a.activeAt||0));
+}
+async function refreshTaskDiagnostics(){
+ const jobs=(typeof trackedJobs!=='undefined'?trackedJobs:[]).filter(j=>Number.isSafeInteger(Number(j.number))).slice(0,30);
+ if(!jobs.length){settingsNotice='No tracked tasks are saved on this device.';render();return;}
+ let loaded=0;
+ for(const job of jobs){
+  const comments=await taskComments(job.number);
+  // Only the task runner's own ledger comments count; anyone who can comment on the issue could imitate one.
+  for(const comment of comments)if(comment?.user?.login==='github-actions[bot]'&&String(comment.body||'').startsWith('### KappaForge failure ledger\n')&&collectTaskFailureHistory(job,comment.body))loaded++;
+ }
+ if(typeof persistJobs==='function')persistJobs();
+ settingsNotice='Checked '+jobs.length+' saved task'+(jobs.length===1?'':'s')+'; refreshed '+loaded+' failure record'+(loaded===1?'':'s')+'.';
+ render();
+}
+// Recovery ledger kinds (engine/recovery.py diagnose) in plain words: what went wrong, and what it means.
+const TASK_FAILURE_KINDS={
+ edit_anchor:['Edit didn’t match the file','The model quoted code that isn’t in the current file, often because the file changed since it was read.'],
+ validation:['Failed a check','The change didn’t pass validation or the requirement check.'],
+ provider_outage:['AI provider unavailable','The gateway or provider didn’t answer; KappaForge switches providers or waits.'],
+ invalid_response:['Answer was cut off or malformed','The model’s answer wasn’t valid, usually because it hit its output limit.'],
+ request_size:['Request too large','The prompt was bigger than the model accepts; KappaForge sends less source next time.'],
+ missing_context:['Needed files it hadn’t read','The change depends on files that weren’t in context yet.'],
+ authorization:['Blocked by a safety rule','A safety rule stopped the change; this is not retried.'],
+ rate_limit:['Rate limited','The provider asked KappaForge to slow down.'],
+ model_deadline:['Model took too long','The model didn’t finish in time.']};
+const TASK_STRATEGIES={reread_source:'Re-read the file',smaller_stages:'Split into smaller stages',switch_or_defer:'Switch provider or wait',reduce_source_context:'Send less source',read_dependencies:'Read the needed files',stop:'Stop',compact:'Smaller retry'};
+function taskFailureKind(kind){return TASK_FAILURE_KINDS[kind]||[String(kind||'Failure').replace(/_/g,' '),''];}
+// Open task and attempt survive re-renders (task polling redraws Settings); only one task is open at a time.
+let openDiagnosticTask=null,openDiagnosticAttempts=new Set();
+const taskWhen=at=>{at=Number(at);return at?new Date(at<1e12?at*1000:at):null};
+function taskStopped(list){const last=list[list.length-1];return last.kind==='authorization'||/after 5 (?:distinct )?attempts|^Stopped/i.test(String(last.error)+' '+String(last.next));}
+function taskDiagnosticsHTML(){
+ const jobs=taskDiagnosticJobs();
+ const when=at=>taskWhen(at)?.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})||'Time unavailable';
+ const cards=jobs.map(job=>{
+  const list=job.failureHistory.slice(-10),last=list[list.length-1],stopped=taskStopped(list);
+  const [lastLabel]=taskFailureKind(last.kind);
+  const rows=list.map((d,i)=>{
+   const [label,meaning]=taskFailureKind(d.kind),hard=d.kind==='authorization'||(i===list.length-1&&stopped),key=job.number+':'+i;
+   const meta=[when(d.at),d.model?String(d.model).replace(/^[a-z-]+:/,''):'',d.strategy?'Next: '+(TASK_STRATEGIES[d.strategy]||String(d.strategy).replace(/_/g,' ')):''].filter(Boolean);
+   const files=d.files?.length?'<div class="tf-files">'+d.files.map(f=>'<span>'+esc(f)+'</span>').join('')+'</div>':'';
+   const logs=d.runUrl?'<a class="tf-link" href="'+esc(d.runUrl)+'" target="_blank" rel="noopener noreferrer">Run logs ↗</a>':'';
+   return '<li class="task-failure'+(hard?' hard':'')+'"><details class="tf-attempt" data-attempt="'+esc(key)+'"'+(openDiagnosticAttempts.has(key)?' open':'')+'><summary><span class="tf-head"><b>Attempt '+(i+1)+' · '+esc(label)+'</b><small class="tf-meta">'+esc(meta.join(' · '))+'</small></span>'+settingIcon('chevron')+'</summary>'+
+    (meaning?'<p class="tf-meaning">'+esc(meaning)+'</p>':'')+'<pre class="tf-error">'+esc(d.error)+'</pre>'+files+(d.next?'<p class="tf-next"><b>What happens next:</b> '+esc(d.next)+'</p>':'')+logs+'</details></li>';
+  }).join('');
+  const pr=String(job.prUrl||'').match(/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/)?.[0];
+  const summary='<div class="tf-summary'+(stopped?' hard':'')+'"><b>'+(stopped?'Why it stopped: ':'Latest problem: ')+esc(lastLabel)+'</b>'+(last.next?'<p>'+esc(last.next)+'</p>':'')+(pr?'<a class="tf-link" href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a>':'')+'</div>';
+  const report='<button type="button" class="k-btn tf-report" data-task-report="'+esc(job.number)+'">'+settingIcon('download')+'Download this task’s error log</button>';
+  return '<div class="k-grp tf-card"><details class="k-details task-diagnostics" data-task="'+esc(job.number)+'"'+(String(openDiagnosticTask)===String(job.number)?' open':'')+'><summary class="k-row"><span class="tf-dot'+(stopped?' hard':'')+'" aria-hidden="true"></span><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+esc(lastLabel)+' · '+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<p class="tf-hint">Tap an attempt to see its full error.</p><ol class="tf-timeline">'+rows+'</ol>'+report+'</div></details></div>';
+ }).join('');
+ return kBtns(kBtn('task-diagnostics-refresh','Refresh',true))+
+  '<p class="k-foot">Tap a task to see why it failed. To send one for investigation, open it and download its error log.</p>'+
+  (cards?'<div class="tf-cards">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
+}
+// A shareable plain-text report: readable on its own, with the raw ledger rows at the end for investigation. Holds only
+// what the recovery ledger already published on the task issue (the engine scrubs errors before saving them).
+function taskDiagnosticReport(jobs){
+ const iso=at=>taskWhen(at)?.toISOString()||'unknown';
+ const lines=['# KappaForge task error log','','Generated: '+new Date().toISOString(),'App version: '+(typeof APP_VERSION!=='undefined'?APP_VERSION:'unknown'),''];
+ for(const job of jobs){
+  const list=job.failureHistory.slice(-10),stopped=taskStopped(list),last=list[list.length-1];
+  lines.push('## Task #'+job.number+' · '+(job.title||'Saved task'),'','Status: '+(stopped?'stopped':'still recovering')+' · '+list.length+' failed attempt'+(list.length===1?'':'s'));
+  if(job.prUrl)lines.push('Draft PR: '+job.prUrl);
+  lines.push((stopped?'Why it stopped: ':'Latest problem: ')+taskFailureKind(last.kind)[0]+(last.next?' — '+last.next:''),'');
+  list.forEach((d,i)=>{
+   const [label,meaning]=taskFailureKind(d.kind);
+   lines.push('### Attempt '+(i+1)+' · '+label,'','- When: '+iso(d.at),'- Kind: '+(d.kind||'unknown')+(meaning?' ('+meaning+')':''),'- Model: '+(d.model||'unknown'),'- Strategy: '+(d.strategy||'none'));
+   if(d.files?.length)lines.push('- Files: '+d.files.join(', '));
+   if(d.next)lines.push('- What happens next: '+d.next);
+   if(d.runUrl)lines.push('- Run logs: '+d.runUrl);
+   const error=String(d.error||''),fence='`'.repeat(Math.max(3,...(error.match(/`+/g)||['']).map(x=>x.length+1)));
+   lines.push('',fence,error,fence,'');
+  });
+ }
+ lines.push('## Raw ledger rows','','```json',JSON.stringify(jobs.map(j=>({number:j.number,title:j.title||'',prUrl:j.prUrl||'',failureHistory:j.failureHistory.slice(-10)})),null,2),'```','');
+ return lines.join('\n');
+}
+function downloadTaskDiagnostics(number){
+ const jobs=taskDiagnosticJobs().filter(j=>String(j.number)===String(number));
+ if(!jobs.length)throw Error('No failure records to download for this task.');
+ const day=new Date().toISOString().slice(0,10);
+ exportFile('KappaForge-task-'+jobs[0].number+'-error-log-'+day+'.md',taskDiagnosticReport(jobs),'text/markdown');
+ settingsNotice='Report ready'+(window.webkit?.messageHandlers?.kappa?': choose where to send it.':' in your downloads.');
+}
+function bindTaskDiagnostics(){
+ document.querySelectorAll('details.task-diagnostics').forEach(el=>el.addEventListener('toggle',()=>{
+  if(el.open){openDiagnosticTask=el.dataset.task;document.querySelectorAll('details.task-diagnostics[open]').forEach(other=>{if(other!==el)other.open=false})}
+  else if(String(openDiagnosticTask)===el.dataset.task)openDiagnosticTask=null;
+ }));
+ document.querySelectorAll('details.tf-attempt').forEach(el=>el.addEventListener('toggle',()=>{el.open?openDiagnosticAttempts.add(el.dataset.attempt):openDiagnosticAttempts.delete(el.dataset.attempt)}));
+ document.querySelectorAll('[data-task-report]').forEach(b=>b.onclick=()=>{try{downloadTaskDiagnostics(b.dataset.taskReport)}catch(e){settingsNotice=e.message}render()});
+}
 function settingsSectionBody(){
  const native=!!window.webkit?.messageHandlers?.kappa,model=preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model.split(':').pop();
  if(settingsSection==='overview'){
@@ -411,7 +507,7 @@ function settingsSectionBody(){
  if(settingsSection==='personalization'){
   return kGroup('Response style',kChoices('data-style-set',personality,[['auto','Auto','Matches the question'],['friendly','Friendly','Warm and casual'],['professional','Professional','Clear and formal'],['developer','Developer','Code first, terse']],'k-choices k-styles'))+
   '<h3 class="k-gh">Appearance</h3><div class="k-swatches" role="group" aria-label="Appearance">'+[['system','System'],['light','Light'],['dark','OLED Black']].map(([v,t])=>'<button type="button" class="k-swatch '+v+'" data-pref-set="appearance" data-value="'+v+'" aria-pressed="'+(preferences.appearance===v)+'"><i aria-hidden="true"></i>'+t+'</button>').join('')+'</div>'+
-  kGroup('Language &amp; weather',kSelect('globe','language','Response language',[['auto','Automatic'],['English','English'],['Spanish','Spanish'],['French','French'],['German','German'],['Japanese','Japanese']])+kSelect('cloud','weatherUnits','Weather units',[['auto','Automatic'],['celsius','Celsius'],['fahrenheit','Fahrenheit']])+
+  kGroup('Language &amp; weather',kSelect('globe','language','Response language',[['auto','Automatic'],['English','English'],['Spanish','Spanish'],['French','French'],['German','German'],['Japanese','Japanese']])+kSelect('cloud','weatherUnits','Weather units',[['auto','Automatic'],['celsius','Celsius'],['fahrenheit','Fahrenheit']])+kSelect('pin','locationAccess','Use my location',[['ask','Ask the first time'],['allowed','Allowed'],['off','Off']])+
    '<label class="k-row k-input">'+kSq('pin')+'<span class="k-tx"><b>Default weather city</b></span><input data-pref="weatherCity" maxlength="120" value="'+esc(preferences.weatherCity)+'" placeholder="City" aria-label="Default weather city"></label>')+
   kGroup('Voice',kSelect('wave','voiceEngine','Read replies with',[['cloud','Groq Orpheus, then Workers AI, then phone'],['device','Phone voice only']])+kSelect('mic','voice','Voice',[['hannah','Hannah'],['autumn','Autumn'],['diana','Diana'],['austin','Austin'],['daniel','Daniel'],['troy','Troy']]))+
   '<p class="k-foot">Tap the mic to dictate, or the wave to talk. Speech becomes text with the speech models on your model list. Orpheus allows about 100 short clips a day; Workers AI and the phone voice take over after that.</p>'+
@@ -429,6 +525,7 @@ function settingsSectionBody(){
   '<input id="memory-import-file" type="file" accept=".json,application/json" hidden>'+
   '<details class="k-grp k-details"><summary class="k-row">'+kSq('trash')+'<span class="k-tx"><b>Recently deleted</b></span><span class="k-val">'+removedNotes.length+'</span>'+settingIcon('chevron')+'</summary>'+removedNotes.map((n,i)=>kRow({title:esc(n),value:'<button type="button" class="k-pill" data-restore-memory="'+i+'">Restore</button>'})).join('')+'</details>';
  }
+ if(settingsSection==='tasks')return taskDiagnosticsHTML();
  if(settingsSection==='services'){
   return kHero(capabilities?.github?'ok':'',capabilities?.github?'GitHub · Configured':'GitHub · Not verified','','GitHub','Uses your backend’s GitHub token.','<div class="k-chips"><span>Repositories</span><span>Task proposals</span><span>Pull requests</span><span>Build reports</span></div>')+
   kGroup('',kRow({icon:'chat',title:'Discord webhook',sub:'Task updates to a channel',value:'Manage',tag:'button',attrs:'id="discordmanage"',chev:true}))+
@@ -510,7 +607,7 @@ function bindSettings(){
  document.querySelectorAll('[data-usage-unit]').forEach(b=>b.onclick=e=>{e.stopPropagation();usageUnit=b.dataset.usageUnit;usageMenuOpen=false;try{localStorage.setItem('kappaforge.usageUnit',usageUnit)}catch{}render();});
  if(usageMenuOpen)setTimeout(()=>document.addEventListener('click',()=>{if(usageMenuOpen){usageMenuOpen=false;render();}},{once:true}));
  const on=(id,action)=>{const el=document.getElementById(id);if(el)el.onclick=async()=>{el.disabled=true;try{await action()}catch(e){settingsNotice=e.message;logDiagnostic(e.message);render()}finally{el.disabled=false}}};
- on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
+ on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);on('task-diagnostics-refresh',refreshTaskDiagnostics);bindTaskDiagnostics();
  document.getElementById('premium-mode')?.addEventListener('change',async e=>{
   const enabled=e.target.checked;
   if(enabled&&!confirm(premiumEnableMessage())){e.target.checked=false;return;}

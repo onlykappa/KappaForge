@@ -2,8 +2,8 @@ import json
 import os
 import unittest
 import urllib.error
-from unittest.mock import patch
-from engine import developer, native_build
+from unittest.mock import MagicMock, patch
+from engine import developer, native_build, recovery
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
@@ -47,7 +47,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("test-model", invalid)) as ai:
             with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
                 developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertEqual(ai.call_count, 10, "large and compact strategies are both tried")
+        self.assertEqual(ai.call_count, 5, "large and compact passes share five total attempts")
 
     def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
         """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
@@ -64,6 +64,39 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", empty)):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+
+    def test_config_and_guardrail_files_can_be_proposed_but_workflows_and_unsafe_paths_still_stop(self):
+        proposal = json.dumps({"files": [
+            {"path": "config/providers.json", "content": "{}\n"},
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+        ]})
+        with patch.object(developer, "run_model", return_value=("test-model", proposal)) as model:
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn("config/providers.json", changes)
+        self.assertIn("int(a)", changes["app/main.py"])
+        prompt = model.call_args.args[1]
+        self.assertIn("You may edit any file in the repository", prompt)
+        self.assertIn("except .github/", prompt)
+        self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
+        self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .github/x.yml")),
+                         ("authorization", "stop"))
+
+    def test_five_failed_attempts_use_distinct_repair_instructions(self):
+        bad = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "not present", "replace": "x"}]}]})
+        prompts = []
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+            prompts.append(prompt)
+            return "same-model", bad
+        with patch.object(developer, "run_model", side_effect=model), self.assertRaises(ValueError):
+            developer.generate_with("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, developer.SMALL)
+        self.assertEqual(len(prompts), 5)
+        approaches = ["Re-read the exact source", "Use a different implementation path",
+                      "Break the change into smaller edits", "Choose a substantially different solution"]
+        for index, text in enumerate(approaches, start=1):
+            self.assertIn(text, prompts[index])
+            self.assertIn("Previously rejected proposals", prompts[index])
+        self.assertNotEqual(prompts[1], prompts[2])
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
         no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
@@ -125,20 +158,23 @@ class DeveloperValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/other.py", "edits": [{"find": "a", "replace": "b"}]}]})
 
-    def test_guardrails_ci_secrets_and_unsafe_paths_are_protected(self):
-        for path in [".github/workflows/agent.yml", ".git/config",
-                     "chat-backend/wrangler.toml", "chat-backend/src/review.js", "chat-backend/src/github.js",
-                     "chat-backend/src/providers.js", "config/providers.json",
-                     "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
-                     "../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                check_path(path)
-        self.assertEqual(check_path("chat-backend/src/index.js"), "chat-backend/src/index.js")
-        for path in ["engine/task_scope.py", "engine/developer.py", "engine/runner.py",
-                     "engine/repair_loop.py", "engine/validate_change.py",
-                     "tests/test_developer.py", "tests/test_workflow_safety.py"]:
+    def test_in_repo_paths_are_editable_except_workflows_git_and_env_files(self):
+        editable = ["chat-backend/wrangler.toml", "scripts/preflight.py",
+                    "chat-backend/src/review.js", "chat-backend/src/github.js", "chat-backend/src/providers.js",
+                    "config/providers.json", "package-lock.json", "web/package-lock.json",
+                    "engine/developer.py", "engine/intent_guard.py", "tests/test_workflow_safety.py",
+                    "docs/github/notes.md", "app/environment.py"]
+        for path in editable:
             with self.subTest(editable=path):
                 self.assertEqual(check_path(path), path)
+        # Workflows on the agent's branch and PR run with repository secrets before the owner reviews anything.
+        for path in [".github/workflows/agent.yml", ".github/workflows/new.yml", ".github/dependabot.yml",
+                     ".git/config", ".env", "app/.env.local"]:
+            with self.subTest(protected=path), self.assertRaisesRegex(ValueError, "Protected path"):
+                check_path(path)
+        for path in ["../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
+            with self.subTest(unsafe=path), self.assertRaisesRegex(ValueError, "Unsafe path"):
+                check_path(path)
 
     def test_unchanged_duplicate_and_oversized_results_are_rejected(self):
         bad = [
@@ -340,12 +376,13 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", aimed_at_copy)), self.assertRaises(ValueError):
             developer.generate("key", "task", "onlykappa/OmniPC", sources, existing)
 
-    def test_gives_up_after_three_invalid_answers(self):
-        bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
-        with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
-            developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertGreaterEqual(ai.call_count, 1)
-        self.assertLessEqual(ai.call_count, 5)
+    def test_unsafe_and_protected_paths_remain_hard_stops(self):
+        for path in ["../x.yml", ".github/workflows/x.yml"]:
+            bad = json.dumps({"files": [{"path": path, "content": "x"}]})
+            with self.subTest(path=path), patch.object(developer, "run_model", return_value=("flash", bad)) as ai, \
+                    self.assertRaises(ValueError):
+                developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+            self.assertEqual(ai.call_count, 1, path)
 
 
 class DeveloperAuthorizationTests(unittest.TestCase):
@@ -404,7 +441,8 @@ class DeveloperAuthorizationTests(unittest.TestCase):
                 "repos/onlykappa/KappaForge/git/ref/heads/main": {"object": {"sha": "b" * 40}},
                 "repos/onlykappa/KappaForge/git/trees": {"sha": "t" * 40},
                 "repos/onlykappa/KappaForge/git/commits": {"sha": "c" * 40},
-                "repos/onlykappa/KappaForge/pulls": {"html_url": "https://github.com/onlykappa/KappaForge/pull/50"},
+                "repos/onlykappa/KappaForge/pulls": {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50},
+                "repos/onlykappa/KappaForge/pulls/50": {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50},
             }
             if path.startswith("repos/onlykappa/KappaForge/git/trees/"):
                 return {"tree": [{"path": "app/main.py", "type": "blob", "size": 60, "mode": "100755"}]}
@@ -444,9 +482,155 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             self.assertNotIn("tests are running", progress[-1])
         else:
             self.assertIn("tests are running", progress[-1])
-        pr = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls")
-        self.assertTrue(pr["draft"])
-        self.assertIn("## What this does\nChecked against the task: 1 of 1 requirements met.\n\nCast inputs", pr["body"])
+        # PR first: the draft opens with the goal and plan before any code is committed.
+        opened = next(n for n, (p, _) in enumerate(calls) if p == "repos/onlykappa/KappaForge/pulls")
+        first_code = next(n for n, (p, _) in enumerate(calls) if p == "repos/onlykappa/KappaForge/git/trees")
+        self.assertLess(opened, first_code)
+        plan = calls[opened][1]
+        self.assertTrue(plan["draft"])
+        self.assertTrue(plan["title"].startswith("Draft (incomplete):"))
+        self.assertIn("## Goal\n**Add feature**\n\nAdd a feature", plan["body"])
+        self.assertIn("## Plan\n1. ", plan["body"])
+        self.assertNotIn("Repository:", plan["body"].split("## Goal")[1], "task metadata is not part of the goal")
+        self.assertEqual(developer.requirements_open(plan), [developer.PLAN_STARTED])
+        plan_commit = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/commits")
+        self.assertEqual(plan_commit["tree"], "r" * 40, "the plan commit changes no files")
+        final = [payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls/50"][-1]
+        self.assertNotIn("draft", final, "the final update never marks the draft ready")
+        self.assertIn("## What this does\nChecked against the task: 1 of 1 requirements met.\n\nCast inputs", final["body"])
+        self.assertIn("## Goal", final["body"])
+        self.assertIn("- [x] Code written on this draft", final["body"])
+        self.assertIn("- [x] Work checked against the goal", final["body"])
+        self.assertEqual(developer.requirements_open(final), [])
+
+
+class PrFirstTests(unittest.TestCase):
+    """The draft opens with the goal and plan before any code; the code lands on it; it waits for the owner's review."""
+    ROOT_ = "repos/onlykappa/KappaForge"
+
+    def world(self, pr_status=201, branch_exists=False, pr_files=()):
+        calls = []
+        def fake_gh(path, token, payload=None, method=None):
+            calls.append((path, payload, method))
+            if path.endswith("/git/ref/heads/kappa/dev-9"):
+                if branch_exists:
+                    return {"object": {"sha": "p" * 40}}
+                raise urllib.error.HTTPError(path, 404, "missing", {}, None)
+            if path == self.ROOT_:
+                return {"default_branch": "main"}
+            if path == self.ROOT_ + "/git/ref/heads/main":
+                return {"object": {"sha": "b" * 40}}
+            if path.startswith(self.ROOT_ + "/git/trees/"):
+                return {"tree": [{"path": "app/main.py", "type": "blob", "size": 60}]}
+            if path.startswith(self.ROOT_ + "/git/commits/"):
+                return {"tree": {"sha": "r" * 40}}
+            if path.startswith(self.ROOT_ + "/contents/app/main.py"):
+                import base64
+                return {"encoding": "base64", "content": base64.b64encode(SOURCES["app/main.py"].encode()).decode()}
+            if path == self.ROOT_ + "/pulls" and payload is not None:
+                if pr_status != 201:
+                    raise urllib.error.HTTPError(path, pr_status, "refused", {}, None)
+                return {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50}
+            if path == self.ROOT_ + "/pulls/50/files":
+                return list(pr_files)
+            if path == self.ROOT_ + "/pulls/50":
+                return {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50}
+            if path.endswith("/git/commits") or path.endswith("/git/trees"):
+                return {"sha": ("t" if path.endswith("trees") else "c") * 40}
+            return {}
+        return calls, fake_gh
+
+    def answers(self):
+        return [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast both inputs to int"], "stage_files": [["app/main.py"]],
+                                      "design": "Convert at the boundary."})),
+                ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "edits": [
+                    {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})),
+                ("flash", json.dumps({"requirements": [{"text": "Cast inputs", "met": True,
+                                                        "evidence": {"path": "app/main.py", "quote": "return int(a) + int(b)"}}], "problems": []}))]
+
+    def issue(self):
+        return {"number": 9, "title": "Cast inputs", "user": {"login": "onlykappa"},
+                "body": "Repository: onlykappa/KappaForge\nMode: develop\n\nMake add() accept numeric strings."}
+
+    def test_the_plan_shows_the_goal_stages_files_and_approach(self):
+        layout = developer.plan_layout(self.issue(), [developer.Stage("Cast both inputs", ["app/main.py"], False)])
+        self.assertIn("## Goal\n**Cast inputs**\n\nMake add() accept numeric strings.", layout)
+        self.assertIn("## Plan\n1. Cast both inputs (files: `app/main.py`)", layout)
+        self.assertNotIn("Mode: develop", layout)
+        calls, fake_gh = self.world()
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
+            produce_development_pr(self.issue(), "key", "token")
+        opened, final = [body for p, body, m in calls if p == self.ROOT_ + "/pulls" and body], \
+            [body for p, body, m in calls if p == self.ROOT_ + "/pulls/50"][-1]
+        self.assertIn("## Design notes\nConvert at the boundary.", opened[0]["body"], "the planned approach shows on the draft")
+        self.assertEqual(final["body"].count("Convert at the boundary."), 1, "the design is shown once")
+
+    def test_the_goal_never_carries_authorization_chat_context_or_control_lines(self):
+        authorization = '<!-- kappa-authorization:{"nonce":"n-123","signature":"secret-sig","repo":"onlykappa/KappaForge"} -->'
+        body = ("Repository: onlykappa/KappaForge\nMode: develop\n\nMake add() accept numeric strings.\n"
+                "> Mode: quoted by the chat\nAllow flagged changes: yes\n<!-- private note -->\n\n"
+                "Conversation context (earlier chat, background only; the task above is what to do):\n> my private chat line\n\n"
+                "Approved from KappaForge Chat.\n" + authorization)
+        layout = developer.plan_layout({**self.issue(), "body": body}, [])
+        goal = layout.split("## Plan")[0]
+        self.assertIn("Make add() accept numeric strings.", goal)
+        self.assertIn("> Mode: quoted by the chat", goal, "the owner's own quoted text stays")
+        for leaked in ("kappa-authorization", "secret-sig", "n-123", "private chat line", "private note", "Conversation context",
+                       "Approved from KappaForge Chat", "Allow flagged changes", "Repository:"):
+            self.assertNotIn(leaked, layout)
+
+    def test_no_code_is_written_when_the_draft_cannot_be_opened(self):
+        calls, fake_gh = self.world(pr_status=422)
+        model = MagicMock(side_effect=self.answers())
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", model), \
+                self.assertRaisesRegex(RuntimeError, "Could not open the draft PR with the plan; no code was written"):
+            produce_development_pr(self.issue(), "key", "token")
+        self.assertEqual(model.call_count, 1, "only the plan was asked for")
+        self.assertFalse(any(p.endswith("/git/trees") for p, _, _ in calls), "no code was committed")
+        self.assertIn((self.ROOT_ + "/git/refs/heads/kappa/dev-9", None, "DELETE"), calls, "the half-made branch is removed for a clean retry")
+
+    def test_a_stopped_run_continues_on_its_plan_draft(self):
+        calls, fake_gh = self.world(branch_exists=True)
+        plan_draft = {"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "draft": True, "state": "open",
+                      "head": {"ref": "kappa/dev-9", "sha": "p" * 40}}
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
+            url = produce_development_pr(self.issue(), "key", "token", adopt=plan_draft)
+        self.assertEqual(url, plan_draft["html_url"])
+        self.assertFalse(any(p == self.ROOT_ + "/pulls" and body is not None for p, body, _ in calls), "no second draft")
+        code = next(body for p, body, _ in calls if p == self.ROOT_ + "/git/commits" and body and body["tree"] == "t" * 40)
+        self.assertEqual(code["parents"], ["p" * 40], "the code lands on top of the plan commit")
+        self.assertTrue(any(p == self.ROOT_ + "/git/refs/heads/kappa/dev-9" and m == "PATCH" for p, _, m in calls))
+
+    def test_a_staged_build_marks_the_draft_as_holding_code_once_the_first_stage_is_saved(self):
+        calls, fake_gh = self.world()
+        two_stages = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast a", "Cast b"],
+                                            "stage_files": [["app/main.py"], ["app/main.py"]]})),
+                      ("flash", json.dumps({"summary": "Cast a", "files": [{"path": "app/main.py", "edits": [
+                          {"find": "return a + b", "replace": "return int(a) + b"}]}]})),
+                      ("flash", json.dumps({"summary": "Cast b", "files": [{"path": "app/main.py", "edits": [
+                          {"find": "return int(a) + b", "replace": "return int(a) + int(b)"}]}]})),
+                      self.answers()[2]]
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=two_stages), \
+                patch.object(developer, "review_stage", return_value=(True, "")):
+            produce_development_pr(self.issue(), "key", "token")
+        first_code = next(n for n, (p, _, _) in enumerate(calls) if p.endswith("/git/trees"))
+        updates = [(n, body) for n, (p, body, m) in enumerate(calls) if p == self.ROOT_ + "/pulls/50" and m == "PATCH"]
+        marked = [n for n, body in updates if developer.requirements_open(body) == [developer.CHECKPOINT_SAVED]]
+        self.assertEqual(len(marked), 1, "updated once, when the first stage lands")
+        self.assertGreater(marked[0], first_code)
+        self.assertIn("- [x] Code written on this draft", updates[0][1]["body"])
+        self.assertEqual(developer.requirements_open(updates[-1][1]), [], "the final update records the finished check")
+
+    def test_only_a_plan_only_open_draft_of_this_task_can_be_continued(self):
+        base = {"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "draft": True, "state": "open",
+                "head": {"ref": "kappa/dev-9", "sha": "p" * 40}}
+        for name, pr, files in (("has code", base, [{"filename": "app/main.py"}]), ("not a draft", {**base, "draft": False}, []),
+                                ("other branch", {**base, "head": {"ref": "kappa/dev-8", "sha": "p" * 40}}, []),
+                                ("closed", {**base, "state": "closed"}, [])):
+            calls, fake_gh = self.world(branch_exists=True, pr_files=files)
+            with self.subTest(name), patch.object(developer, "gh", side_effect=fake_gh), \
+                    patch.object(developer, "run_model", side_effect=self.answers()), self.assertRaises(PermissionError):
+                produce_development_pr(self.issue(), "key", "token", adopt=pr)
 
 
 class OtherRepositoryTests(unittest.TestCase):
@@ -468,8 +652,8 @@ class OtherRepositoryTests(unittest.TestCase):
                 return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
             if path.startswith("repos/onlykappa/OmniPC/git/commits/"):
                 return {"tree": {"sha": "r" * 40}}
-            if path == "repos/onlykappa/OmniPC/pulls":
-                return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3"}
+            if path in ("repos/onlykappa/OmniPC/pulls", "repos/onlykappa/OmniPC/pulls/3"):
+                return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3", "number": 3}
             if path.startswith("repos/onlykappa/KappaForge/issues/9/comments?"):
                 return []
             return {"sha": "c" * 40}
@@ -521,7 +705,11 @@ class FlaggedChangeTests(unittest.TestCase):
             if "/contents/" in path:
                 import base64
                 return {"encoding": "base64", "content": base64.b64encode(SOURCES["app/main.py"].encode()).decode()}
-            return {}
+            if path.startswith("repos/onlykappa/OmniPC/git/commits/"):
+                return {"tree": {"sha": "r" * 40}}
+            if path == "repos/onlykappa/OmniPC/pulls":
+                return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3", "number": 3}
+            return {"sha": "c" * 40} if path.endswith("/git/commits") else {}
         answers = [("flash", json.dumps({"read": ["app/main.py"]})), ("flash", json.dumps({"summary": "x", "files": [
             {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return a + b  # os.environ['SECRET']"}]}]}))]
         answers.append(("flash", json.dumps({"requirements":[{"text":"Change adding","met":True,
@@ -530,7 +718,10 @@ class FlaggedChangeTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=answers):
             self.assertIsNone(developer.produce_development_pr(issue, "key", "token"))
-        self.assertFalse(any(p.endswith(("/git/commits", "/git/refs", "/pulls")) or "/dispatches" in p for p in calls))
+        # Only the plan reached the repository (a commit that changes no files, and its draft); the flagged code did not.
+        self.assertFalse(any(p.endswith("/git/trees") or "/dispatches" in p for p in calls))
+        self.assertEqual([p for p in calls if p.endswith(("/git/commits", "/git/refs", "/pulls"))],
+                         ["repos/onlykappa/OmniPC/git/commits", "repos/onlykappa/OmniPC/git/refs", "repos/onlykappa/OmniPC/pulls"])
         self.assertIn("repos/onlykappa/KappaForge/issues/9/comments", calls)
         self.assertFalse(developer.flags_allowed("Allow flagged changes: no"))
 
