@@ -157,7 +157,7 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  // Automatic still needs an initial route when Gemini is unavailable. Fallback
  // controls trying another route after selection, not eligibility for selection.
  const needsInitialRoute=automatic&&(withinContext(routes,options).length===0||!!registry.routing?.preferredModelFamily);
- if((!hasMedia||primary.capabilities?.media)&&(!hasTools||primary.capabilities?.tools)&&(!hasStructuredOutput||primary.capabilities?.structuredOutput)&&(prefs.fallback!==false||manual||needsInitialRoute)){
+ if((!hasMedia||primary.capabilities?.media)&&(!hasTools||primary.capabilities?.tools)&&(!hasStructuredOutput||primary.capabilities?.structuredOutput)&&(prefs.fallback!==false||manual?.includes(":")||needsInitialRoute)){
   for(const id of registry.order){
    const p=registry.providers[id];
    if(!providerAllowed(env,channel,id,{privateCode,requested})||disabled.has(id)&&!manual?.startsWith(id+":"))continue;

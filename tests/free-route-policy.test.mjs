@@ -153,6 +153,16 @@ test("an explicit bare Gemini model is used instead of the first Gemini model",a
  assert.deepEqual((await fallbackRoutes(env,models,{model:models[1],fallback:true},false,options)).map(r=>r.label),[models[1],models[0]],"the chosen model leads, the rest stay as fallbacks");
  assert.deepEqual((await fallbackRoutes(env,models,{model:models[1],fallback:false},false,{channel:"chat"})).map(r=>r.label),[models[1]]);
  assert.deepEqual(await fallbackRoutes({...env,KAPPA_CODE_PROVIDERS:"",KAPPA_PRIVATE_CODE_PROVIDERS:""},models,{model:models[1],fallback:false},false,options),[],"selection never grants a provider permission");
+ const original=globalThis.fetch;let listed=0;
+ globalThis.fetch=async()=>{listed++;return Response.json({data:[{id:"openai/gpt-oss-120b"}]})};
+ try{
+  const withGroq={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"gemini,groq",KAPPA_CHAT_PROVIDERS:"gemini,groq",GROQ_API_KEY:"bare-gemini-fixture"};
+  assert.deepEqual((await fallbackRoutes(withGroq,models,{model:models[1],fallback:false},false,{channel:"chat"})).map(r=>r.label),[models[1]]);
+  assert.equal(listed,0,"a single chosen Gemini model does not list other providers' models");
+  const fallback=(await fallbackRoutes(withGroq,models,{model:models[1],fallback:true},false,{channel:"chat"})).map(r=>r.label);
+  assert.equal(fallback[0],models[1]);
+  assert.ok(fallback.includes("groq:openai/gpt-oss-120b")&&listed>0,"with fallback on, other providers remain fallbacks");
+ }finally{globalThis.fetch=original}
 });
 
 test("chat route failure identifies a missing Worker chat allowlist without disclosing secrets",async()=>{
