@@ -68,20 +68,6 @@ function providerSwitches(){
  return '<div class="s-providers"><strong>Configured providers</strong><p class="muted">Server policy determines eligible free routes; your device choices can restrict them further. Some free tiers retain prompts or use them for training; disable any provider you do not want to receive your prompts. Discovery does not prove inference capacity. Keep provider keys in Worker secrets; coding uses the authenticated gateway.</p>'+list.map(p=>{const status=providerStatus(p);return '<label class="s-provider"><input type="checkbox" data-provider="'+esc(p.id)+'" '+(!p.configured||p.enabled===false?'disabled ':'')+(p.enabled!==false&&p.configured&&!preferences.disabledProviders.includes(p.id)?'checked':'')+'> <span><b>'+esc(p.name)+'</b> · '+esc(status.kind==='available'?p.models.join(', '):status.label)+'</span></label>'}).join('')+'</div>';
 }
 function sectionPanel(title,body,desc=''){return '<section class="panel"><h3>'+title+'</h3>'+(desc?'<p class="muted">'+desc+'</p>':'')+body+'</section>';}
-function providerSetupPanel(){
- const list=(capabilities?.providers||[]).filter(p=>p.setup);
- return '<details class="k-grp"><summary class="k-row">Add a provider</summary><div class="s-providers"><p>Choose a supported provider below. Add its credential in Cloudflare, then refresh available models here.</p>'+
-  '<p><a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Open Cloudflare</a> → Workers &amp; Pages → your chat Worker → Settings → Variables and Secrets.</p>'+
-  (list.length?list.map(p=>{const s=p.setup;return '<details><summary>'+esc(p.name)+' · '+esc(p.configured?'Credential available':'Setup needed')+'</summary>'+
-   (s.signup?'<p><a href="'+esc(s.signup)+'" target="_blank" rel="noopener noreferrer">Get a '+esc(p.name)+' key</a></p>':'')+
-   '<ol><li>'+(s.binding?'Check that the Worker has the <code>'+esc(s.binding)+'</code> Workers AI binding.':s.secretName?'Add a variable of type <b>Secret</b> named <code>'+esc(s.secretName)+'</code> and paste your provider key there.'+(s.keyOptional?' This provider also supports access without a key.':''):'No API key is required.')+'</li>'+
-   '<li>For each channel you want, append <code>'+esc(p.id)+'</code> to the existing comma-separated Text variable. Preserve its other providers.</li></ol>'+
-   '<ul>'+(s.permissions||[]).map(r=>'<li><code>'+esc(r.variable)+'</code> · '+esc(r.label)+' · '+(r.present?'already listed':'not listed')+'</li>').join('')+'</ul>'+
-   (!s.reviewed?'<p>No reviewed free model list is configured. This provider needs a model review before free routing can use it.</p>':'')+
-   '<p>Deploy the Cloudflare changes, then tap Refresh available models. Enable the provider on this device and use Automatic with Fallback for recovery. Model discovery alone does not verify a reply.</p></details>';}).join(''):'<p>Refresh available models to load provider setup instructions. If none appear, update the backend.</p>')+
-  '<p>Credentials stay in Cloudflare. Providers absent from this list need an adapter and model-policy update before they can be added. Full-catalog opt-in may include paid models.</p>'+
-  '<a href="https://developers.cloudflare.com/workers/configuration/secrets/" target="_blank" rel="noopener noreferrer">Cloudflare secret setup instructions</a></div></details>';
-}
 // Usage leaves out models removed after the model audit: their test attempts got no reply and they are never used again.
 // Exports keep the full history.
 // Models with no quota at all (0 requests allowed, so never routed) are left out the same way.
@@ -410,7 +396,7 @@ function settingsSectionBody(){
    kToggle('bolt','Start tasks from chat','Tasks are always draft PRs. Nothing merges until you tap Merge.','<input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'>'))+
   '<div class="k-legacy">'+premiumModeField()+'</div>'+
   '<h3 class="k-gh">Providers</h3><div class="k-grp k-providers">'+providerSwitches()+'</div><p class="k-foot">Cost routing prefers Lite models; live prices and provider quota are not available.</p>'+
-  providerSetupPanel()+kBtns(kBtn('s-refresh','Refresh available models'))+'<div class="k-legacy">'+probePanel()+'</div>';
+  kBtns(kBtn('s-refresh','Refresh available models'))+'<div class="k-legacy">'+probePanel()+'</div>';
  }
  if(settingsSection==='personalization'){
   return kGroup('Response style',kChoices('data-style-set',personality,[['auto','Auto','Matches the question'],['friendly','Friendly','Warm and casual'],['professional','Professional','Clear and formal'],['developer','Developer','Code first, terse']],'k-choices k-styles'))+

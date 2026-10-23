@@ -1,4 +1,4 @@
-# Provider setup and quota recovery audit
+# AI fallback and quota recovery audit
 
 Reviewed baseline: `9d210aeab64bdf6987cc47f95c7af52fbbc2beb3` (main).
 
@@ -6,17 +6,7 @@ Reviewed baseline: `9d210aeab64bdf6987cc47f95c7af52fbbc2beb3` (main).
 
 Quota fallback is coordinated across chat and coding through the owner's Durable Object. It skips unavailable routes, persists cooldowns, releases leases, and can resume saved development tasks. Four gaps were corrected in this PR. Recovery remains bounded by the owner's task authorization and recovery budget; daily exhaustion cannot always recover automatically within those bounds.
 
-This is a source audit with deterministic fault injection and local browser checks. No production credentials, provider quota, paid inference, deployments, or live task dispatches were used to validate it. Discovery is not proof of inference capacity.
-
-## Provider setup
-
-Settings → AI Models → Add a provider now offers a guide for every registered provider, including those excluded by server policy. It obtains public setup metadata from the authenticated `/capabilities` response: exact secret name, signup link, Workers AI binding where applicable, existing permission membership, and whether a reviewed free-model list exists. The guide preserves existing comma-separated permissions and explains the refresh and device-enable steps.
-
-Credential entry still happens in Cloudflare. The app currently has no authorized secret-management API. Using the existing chat token to administer Worker secrets would introduce a new privilege boundary. This change does not introduce that boundary or save provider keys in localStorage, vault sync, GitHub Actions, or source control.
-
-A provider absent from the registry requires an adapter/configuration and model-policy review. In particular, this PR does not claim arbitrary OpenAI-compatible endpoints can be pasted into Settings. Full-catalog opt-in can include paid models and is not enabled by this guide.
-
-Cloudflare's documented flow is Worker → Settings → Variables and Secrets → Add → Secret → Deploy. Reference: [Cloudflare secret configuration](https://developers.cloudflare.com/workers/configuration/secrets/).
+This is a source audit with deterministic fault injection and browser regression checks. No production credentials, provider quota, paid inference, deployments, or live task dispatches were used to validate it. Discovery is not proof of inference capacity.
 
 ## Corrected findings
 
@@ -38,7 +28,6 @@ Cloudflare's documented flow is Worker → Settings → Variables and Secrets �
 | Completion | Malformed/empty coding output and interrupted or truncated streams fail over; chat preserves already-delivered partial text and emits a controlled error instead of replaying it. | `fallback-recovery.test.mjs`, `provider-reliability.test.mjs` |
 | Concurrency and late results | Outcome writes are idempotent. Expired leases retain attribution. Older success and cancellation cannot erase newer account failures. | `routing-policy.test.mjs`, `recovery-wake.test.mjs` |
 | Task continuation | The journal saves candidate/work state and retry time. Trusted recovery checks scope, expiry, owner cancellation, continuation claims and budgets. Event wakeups have a scheduled five-minute fallback. | `test_recovery_journal.py`, `test_generation_recovery.py`, `recovery-wake.test.mjs` |
-| Setup UX | The guide is exercised in desktop Chromium and mobile WebKit, including expanding a provider and checking its exact credential/permission names. Older backends get an actionable refresh/update message. | `web-regression.cjs`, `fallback-recovery.test.mjs` |
 
 Tests in the table are under `tests/`.
 

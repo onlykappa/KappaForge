@@ -22,7 +22,6 @@ import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptT
 import {premiumStore} from "./premium-store.js";
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens,providerKeyRejected} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
-import {providerSetup} from "./provider-setup.js";
 import {retryDeadline} from "./retry-deadline.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
 import {ollamaPlan} from "./ollama-plan.js";
@@ -291,7 +290,7 @@ const workerImplementation = {
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
-        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.setup=providerSetup(env,p.id);p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
           // Each model's own per-request token limits where its catalog publishes them (OpenRouter has no daily token cap).
           p.modelLimits=Object.fromEntries((p.models||[]).map(m=>[m,catalogLimits(p.id,m)]).filter(([,l])=>l));}
         // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now

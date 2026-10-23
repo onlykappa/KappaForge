@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 import {inferenceRouter} from '../chat-backend/src/inference-router.js';
 import {routingStore} from '../chat-backend/src/router-state.js';
-import {providerSetup} from '../chat-backend/src/provider-setup.js';
 import {retryDeadline} from '../chat-backend/src/retry-deadline.js';
-import registry from '../config/providers.json' with {type:'json'};
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
 
 function fixture(providers='groq'){
@@ -19,44 +15,6 @@ function fixture(providers='groq'){
 }
 const answer=()=>Response.json({choices:[{message:{content:'complete answer'},finish_reason:'stop'}]});
 const catalog=()=>Response.json({data:[{id:'openai/gpt-oss-120b'},{id:'qwen/qwen3.8-27b'}]});
-
-test('setup covers every supported provider without exposing secret values or changing permissions',()=>{
- const env={GROQ_API_KEY:'private-secret',KAPPA_FREE_PROVIDERS:'groq, mistral',KAPPA_CHAT_PROVIDERS:'groq'};
- for(const id of ['gemini',...registry.order]){
-  const setup=providerSetup(env,id);assert.ok(setup);assert.equal(JSON.stringify(setup).includes('private-secret'),false);
- }
- const s=providerSetup(env,'groq');assert.equal(s.secretName,'GROQ_API_KEY');assert.equal(s.permissions[0].present,true);
- assert.equal(s.permissions[1].present,true);assert.equal(s.permissions[2].present,false);
- assert.equal(providerSetup(env,'workers-ai').binding,'AI');assert.equal(providerSetup(env,'unsupported'),null);
- assert.equal(env.KAPPA_CHAT_PROVIDERS,'groq');
-});
-
-test('settings renders a usable setup guide and gracefully handles an older backend',()=>{
- const source=readFileSync(new URL('../preview/settings.js',import.meta.url),'utf8');
- const start=source.indexOf('function providerSetupPanel()'),end=source.indexOf('// Usage leaves',start);
- const box={capabilities:{providers:[{id:'groq',name:'Groq',configured:false,setup:providerSetup({},'groq')}]},esc:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')};
- vm.runInNewContext(source.slice(start,end),box);
- let html=box.providerSetupPanel();assert.match(html,/Add a provider/);assert.match(html,/GROQ_API_KEY/);assert.match(html,/KAPPA_PRIVATE_CODE_PROVIDERS/);
- assert.match(html,/console.groq.com\/keys/);assert.match(html,/Preserve its other providers/);assert.doesNotMatch(html,/<input|<textarea/);
- box.capabilities={providers:[]};assert.match(box.providerSetupPanel(),/update the backend/);
-});
-
-test('authenticated capabilities deliver setup metadata including excluded providers',async()=>{
- const f=fixture(),original=globalThis.fetch;
- f.env.CHAT_ACCESS_TOKEN='capabilities-fixture';f.env.KAPPA_CHAT_PROVIDERS='groq';
- delete f.env.OPENROUTER_API_KEY;
- globalThis.fetch=async()=>catalog();
- try{
-  const request=token=>new Request('https://worker.example/capabilities',{method:'POST',headers:{Origin:'null',Authorization:'Bearer '+token},body:'{}'});
-  assert.equal((await worker.fetch(request('wrong'),f.env)).status,401);
-  const response=await worker.fetch(request(f.env.CHAT_ACCESS_TOKEN),f.env),data=await response.json();
-  assert.equal(response.status,200,JSON.stringify(data));
-  assert.equal(data.providers.find(p=>p.id==='groq').setup.secretName,'GROQ_API_KEY');
-  assert.equal(data.providers.find(p=>p.id==='openrouter').enabled,false);
-  assert.equal(data.providers.find(p=>p.id==='openrouter').setup.secretName,'OPENROUTER_API_KEY');
-  assert.equal(JSON.stringify(data).includes(f.env.GROQ_API_KEY),false);
- }finally{globalThis.fetch=original;}
-});
 
 test('earliest future retry survives missing or later route deadlines',()=>{
  assert.equal(retryDeadline(120,500,100),120);assert.equal(retryDeadline(120,null,100),120);
