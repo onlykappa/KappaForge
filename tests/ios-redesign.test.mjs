@@ -101,6 +101,43 @@ test('the + sheet offers attachments, Plan a task and the route; the task sheet 
  assert.match(task,/data-title="Task #9"[^]*data-task-tab="findings" aria-pressed="true"[^]*data-task-sheet-body[^]*pull\/199[^]*data-task-copy="3"/);
 });
 
+test('More switches the model route and shows tokens today, tasks that need you and the shortcuts, with no profile card',()=>{
+ const chats=[{id:'a',title:'A',at:1,messages:[{role:'assistant',text:'x',saved:true}]}];
+ const box=shell({view:'more',chats,trackedJobs:[{number:7,chatId:'a',message:'failed'}],preferences:{routing:'speed'},data:{repos:[1,2],issues:[1,2,3]},knownRepos:[],savedMemories:['m1','m2'],KappaConfig:{version:'2.2.26'},
+  KappaCore:{aggregate:()=>({requests:4,unknownTokens:0,total:408900}),periodStart:()=>0},shownEvents:()=>[],compact:n=>(n/1000).toFixed(1)+'K'});
+ const html=box.renderMorePage();
+ assert.match(html,/data-more-route="speed" aria-pressed="true">Speed[^]*data-more-route="cost" aria-pressed="false">Lite/);
+ assert.match(html,/408\.9K<\/b><small>Tokens today[^]*st-bad">1<\/b><small>Task needs you/);
+ for(const [attr,title,value] of [['data-page="projects"','Projects','2'],['data-page="tasks"','Tasks','3'],['data-page="saved"','Saved answers','1'],['data-more-section="memory"','Memory','2']])assert.match(html,new RegExp(attr+'[^]*'+title+'[^]*'+value));
+ assert.match(html,/data-more-section="updates"[^]*2\.2\.26[^]*data-page="help"/);
+ assert.doesNotMatch(html,/ios-avatar|data-page="profile"/,'no profile card');
+});
+
+test('holding a dashboard task offers Open, Retry, guidance, GitHub links, Copy link and a two-step Delete',()=>{
+ const src=read('app-dashboard.js'),start=src.indexOf('function taskMenuSheet('),end=src.indexOf('async function taskMenuAction(');
+ const box={esc,clip:(t,n)=>String(t).slice(0,n),iosRow:o=>'<row '+(o.attrs||'')+' tone="'+(o.tone||'')+'">'+o.title+'|'+(o.sub||'')+'</row>',iosSheet:(t,b)=>'<sheet title="'+t+'">'+b+'</sheet>',
+  trackedJobs:[{number:198,title:'Weather',message:'failed',url:'https://github.com/onlykappa/KappaForge/issues/198',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],taskMenu:198,taskMenuConfirm:false};
+ vm.createContext(box);vm.runInContext(src.slice(start,end),box);
+ const html=box.taskMenuSheet();
+ assert.match(html,/title="Task #198"[^]*data-task-act="open"[^]*data-task-act="retry"[^]*data-task-act="guide"/);
+ assert.match(html,/issues\/198[^]*pull\/199[^]*data-task-act="copy"[^]*data-task-act="delete" tone="bad">Delete task\|Removes it from this app/);
+ box.taskMenuConfirm=true;assert.match(box.taskMenuSheet(),/Tap again to delete/);
+ box.trackedJobs[0].finished=true;box.trackedJobs[0].message='done';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="(retry|guide)"/,'a finished task that did not fail has nothing to retry');
+});
+
+test('a deleted task leaves the list and is not adopted again from GitHub, until it is retried',()=>{
+ const src=read('app-tasks.js'),store={};
+ const box={localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v},removeItem:k=>{delete store[k]}},recentJob:{number:5},JSON,Number,Array,Date,
+  KappaProgress:{queued:n=>({number:n})},ensureTaskCard(){},checkJobResult(){},save(){},render(){},taskCheckpoint(){},persistMemories(){}};
+ vm.createContext(box);vm.runInContext(src.slice(0,src.indexOf('// What the app does with a sent chat message'))+src.slice(src.indexOf('function adoptRepositoryTasks('),src.indexOf('// A request already has a task'))+src.slice(src.indexOf('function resumeJob('),src.indexOf('// A task owns one card')),box);
+ vm.runInContext('trackedJobs.push({number:9,message:"failed"})',box);
+ box.removeTask(9);box.removeTask(5);
+ assert.deepEqual(JSON.parse(store['kappaforge.jobs.v2']).map(j=>j.number),[]);assert.equal(vm.runInContext('recentJob',box),null);
+ const issue={number:9,repo:'KappaForge',labels:[{name:'kappa-task'}],created_at:new Date().toISOString(),body:''};
+ box.adoptRepositoryTasks([issue]);assert.equal(vm.runInContext('trackedJobs.length',box),0,'not adopted again');
+ box.resumeJob(9,null);assert.equal(vm.runInContext('trackedJobs.length',box),1);assert.deepEqual(JSON.parse(store['kappaforge.jobs.removed']),[5],'retrying brings it back');
+});
+
 // ui.js: the task card's large ring.
 test('the task card ring reports steps done, and a dashed track while the total is unknown',()=>{
  const src=read('ui.js'),start=src.indexOf('function heroRing('),end=src.indexOf('\nconst sinceAttr');

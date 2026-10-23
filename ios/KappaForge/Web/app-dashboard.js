@@ -315,7 +315,7 @@ function controlCenter(){
 // Dashboard: repository picker, Today | Pull requests | Builds. Run details open in a sheet over it.
 let dashboardTab=(()=>{try{return sessionStorage.getItem("kappaforge.dashboardTab")||"today"}catch(e){return "today"}})();
 let dashboardRepo=(()=>{try{return localStorage.getItem("kappaforge.dashboardRepo")||"KappaForge"}catch(e){return "KappaForge"}})();
-let repoSheetOpen=false,sheetShown="";
+let repoSheetOpen=false,sheetShown="",taskMenu=0,taskMenuConfirm=false;
 const pullsData={};
 // Newest-first GitHub list pages until one reaches past the window (stamp is each item's sort date), so a busy
 // week is counted whole instead of stopping at one page. Ten pages of 100 at most.
@@ -404,7 +404,7 @@ function dashboardSummary(){
  const runOpen=dashboardState.mode!=="overview";
  const tabs=[["today","Today"],["pulls","Pull requests"],["builds","Builds"]];
  const body=dashboardTab==="pulls"?pullsView():dashboardTab==="builds"?buildsView():todayView();
- const sheet=runOpen?iosSheet(dashboardState.mode==="run"?"Workflow run":dashboardState.mode==="job"?"Job":"Step",runPage(),{detent:"large",closeAttr:"data-run-close",heading:false}):repoSheetOpen?repoSheet():"";
+ const sheet=runOpen?iosSheet(dashboardState.mode==="run"?"Workflow run":dashboardState.mode==="job"?"Job":"Step",runPage(),{detent:"large",closeAttr:"data-run-close",heading:false}):repoSheetOpen?repoSheet():taskMenu?taskMenuSheet():"";
  if(!sheet)sheetShown="";
  document.body.classList.toggle("sheet-open",!!sheet);
  return '<button type="button" class="repo-picker" data-repo-open aria-haspopup="dialog"><span class="ios-sq" aria-hidden="true">'+uiIcon("repo")+'</span><span><small>Repository</small><b>onlykappa/'+esc(dashboardRepo)+'</b></span>'+iosChev.replace('ios-chev"','ios-chev" style="transform:rotate(90deg)"')+'</button>'+
@@ -459,11 +459,44 @@ function agentTasksPanel(){
   const state=failed?"failed":job.finished?"done":model.current||checks.some(c=>c.state==="current")?"current":"done";
   const step=now?plain(now.title)+(now.detail?': '+clip(plain(now.detail),70):''):'';
   const label=failed?"Failed"+(step?": "+step:""):job.finished?(TASK_ENDED[job.message]||"Finished"):step||"Waiting for the first update";
-  return '<button type="button" class="agent-task '+state+'" data-open-task="'+esc(job.number)+'"><span class="agent-task-head"><strong>Task #'+esc(job.number)+(model.fix?' · fix '+model.fix.n+' of '+model.fix.of:'')+'</strong><small>'+esc(done+'/'+all.length)+'</small></span>'+
+  return '<button type="button" class="agent-task '+state+'" data-open-task="'+esc(job.number)+'">'+'<span class="agent-task-head"><strong>Task #'+esc(job.number)+(model.fix?' · fix '+model.fix.n+' of '+model.fix.of:'')+'</strong><small>'+esc(done+'/'+all.length)+'</small></span>'+
    '<span class="agent-task-step">'+esc(label)+'</span>'+
-   '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span></button>';
+   '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span><span class="sr-only">Hold for more actions</span></button>';
  }).filter(Boolean);
  return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
+}
+// Hold a task on the Dashboard (or right-click it) for its actions. Delete removes it from this app only.
+function taskMenuSheet(){
+ const job=trackedJobs.find(j=>j.number===taskMenu);if(!job){taskMenu=0;return ""}
+ const failed=["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed",open=!job.finished;
+ const row=(act,icon,title,sub="",tone="")=>iosRow({attrs:'data-task-act="'+act+'"',icon,tone,title,sub,chevron:false});
+ const link=(href,icon,title)=>iosRow({tag:"a",attrs:'href="'+esc(href)+'" target="_blank" rel="noopener noreferrer"',icon,title});
+ return iosSheet("Task #"+job.number,'<p class="task-menu-title">'+esc(clip(job.title||"Development task",120))+'</p>'+
+  '<div class="ios-group icons">'+row("open","chat","Open in chat")+(failed||open?row("retry","retry","Retry",failed?"Ask for recovery of the saved work":"Restart from the saved work"):"")+
+  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(job.authorization&&open?row("cancel","stop","Cancel task","","warn"):"")+'</div>'+
+  (job.url||job.prUrl?'<div class="ios-group icons">'+(job.url?link(job.url,"repo","View on GitHub"):"")+(job.prUrl?link(job.prUrl,"merge","Open draft PR"):"")+(job.url?row("copy","copy","Copy link"):"")+'</div>':'')+
+  '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task","Removes it from this app. The GitHub issue stays.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
+}
+async function taskMenuAction(act){
+ const n=taskMenu,job=trackedJobs.find(j=>j.number===n);if(!job)return;
+ if(act==="delete"&&!taskMenuConfirm){taskMenuConfirm=true;render();return}
+ taskMenu=0;taskMenuConfirm=false;render();
+ if(act==="open")openTaskInChat(n);
+ if(act==="retry")await taskRetry(n);
+ if(act==="guide")await taskGuide(n);
+ if(act==="cancel")await cancelAuthorizedJob(n);
+ if(act==="copy"){try{await copyInterfaceText(job.url);toast("Link copied")}catch(e){toast(e.message)}}
+ if(act==="delete"){removeTask(n);render();toast("Task #"+n+" deleted from this app")}
+}
+// A long press (or right-click) on a task row opens its menu instead of the chat.
+function bindTaskHold(row){
+ let timer=0,held=false,x=0,y=0;
+ const open=()=>{held=true;taskMenu=Number(row.dataset.openTask);taskMenuConfirm=false;render()};
+ row.addEventListener("pointerdown",e=>{held=false;x=e.clientX;y=e.clientY;clearTimeout(timer);timer=setTimeout(open,480)});
+ row.addEventListener("pointermove",e=>{if(Math.hypot(e.clientX-x,e.clientY-y)>10)clearTimeout(timer)});
+ for(const ev of ["pointerup","pointercancel","pointerleave"])row.addEventListener(ev,()=>clearTimeout(timer));
+ row.addEventListener("contextmenu",e=>{e.preventDefault();clearTimeout(timer);if(!held)open()});
+ row.addEventListener("click",e=>{if(held){e.preventDefault();e.stopImmediatePropagation();held=false}},true);
 }
 function openTaskInChat(number){
  const found=taskProgressMessage(number);
@@ -554,7 +587,9 @@ document.querySelectorAll("[data-task-review]").forEach(b=>b.addEventListener("c
 document.querySelectorAll("[data-task-retry]").forEach(b=>b.addEventListener("click",()=>taskRetry(Number(b.dataset.taskRetry))));
 document.querySelectorAll("[data-task-guide]").forEach(b=>b.addEventListener("click",()=>taskGuide(Number(b.dataset.taskGuide))));
 document.querySelectorAll("[data-task-copy]").forEach(b=>b.addEventListener("click",()=>taskCopy(Number(b.dataset.taskCopy))));
-document.querySelectorAll("[data-open-task]").forEach(b=>b.addEventListener("click",()=>openTaskInChat(Number(b.dataset.openTask))));
+document.querySelectorAll("[data-open-task]").forEach(b=>{bindTaskHold(b);b.addEventListener("click",()=>openTaskInChat(Number(b.dataset.openTask)))});
+document.querySelectorAll("[data-task-menu-close]").forEach(b=>b.addEventListener("click",()=>{taskMenu=0;taskMenuConfirm=false;render()}));
+document.querySelectorAll("[data-task-act]").forEach(b=>b.addEventListener("click",()=>taskMenuAction(b.dataset.taskAct)));
 // The owner's open or folded choice for each task card is kept on its message.
 document.querySelectorAll("details.task-card[data-task-card]").forEach(d=>d.addEventListener("toggle",()=>{const m=active()?.messages[Number(d.dataset.taskCard)];if(m&&m.collapsed!==!d.open){m.collapsed=!d.open;save()}}));
 document.querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",()=>openRun(b.dataset.run)));

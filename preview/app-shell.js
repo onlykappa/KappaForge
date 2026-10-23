@@ -126,14 +126,22 @@ function fillTaskSheet(){
 function openChatSheet(next){chatSheet=next;if(!next)sheetShown="";render();}
 // Header subtitle in a chat: the chat's task state; network status only when offline.
 function chatSubtitle(){const s=active()?chatTaskState(active()):null;return navigator.onLine?(s?.label||""):"Offline";}
+// More (personal app, no profile card): switch the model route, today's tokens and tasks that need you, then shortcuts.
+const MORE_ROUTES=[["balanced","Balanced"],["speed","Speed"],["quality","Quality"],["cost","Lite"]];
+function moreTokensToday(){
+ if(typeof KappaCore==="undefined"||typeof shownEvents!=="function")return "–";
+ const u=KappaCore.aggregate(shownEvents(),{since:KappaCore.periodStart("day")});
+ return u.requests&&u.unknownTokens<u.requests?(typeof compact==="function"?compact(u.total):u.total.toLocaleString()):"–";
+}
 function renderMorePage(){
- const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0);
- const appearance={system:"Follow system",light:"Light",dark:"OLED Black"}[preferences.appearance]||"";
- const initials=(localProfile.name||"K").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
- return '<div class="ios-group ios-profile">'+iosRow({attrs:'data-page="profile"',title:esc(localProfile.name),sub:esc(backend&&access?"Backend connected":"Backend not connected")}).replace('<span class="ios-row-text">','<span class="ios-avatar" aria-hidden="true">'+esc(initials)+'</span><span class="ios-row-text">')+'</div>'+
-  '<h2 class="ios-gh">Workspace</h2><div class="ios-group icons">'+iosRow({attrs:'data-page="projects"',icon:"projects",title:"Projects",value:esc((data.repos||[]).length||knownRepos.length)})+iosRow({attrs:'data-page="saved"',icon:"saved",title:"Saved items",value:esc(saved)})+iosRow({attrs:'data-page="tasks"',icon:"tasks",title:"Tasks",value:esc((data.issues||[]).length)})+'</div>'+
-  '<h2 class="ios-gh">App</h2><div class="ios-group icons">'+iosRow({attrs:'data-page="settings"',icon:"settings",title:"Settings",value:esc(appearance)})+iosRow({attrs:'data-page="help"',icon:"help",title:"Help &amp; about"})+'</div>'+
-  '<p class="ios-gf" style="text-align:center;padding-top:16px">KappaForge '+esc(KappaConfig.version)+'</p>';
+ const saved=chats.reduce((n,c)=>n+c.messages.filter(m=>m.saved).length,0),needs=chats.filter(c=>chatTaskState(c).tone==="bad").length;
+ const memories=typeof savedMemories!=="undefined"?savedMemories.length:0;
+ return '<div class="ios-group more-model"><h2 class="more-label">Model</h2><div class="more-routes" role="group" aria-label="Model route">'+MORE_ROUTES.map(([v,t])=>'<button type="button" data-more-route="'+v+'" aria-pressed="'+(preferences.routing===v)+'">'+t+'</button>').join("")+'</div></div>'+
+  '<div class="more-glance"><button type="button" class="home-glance" data-more-section="usage"><b class="tnum">'+esc(moreTokensToday())+'</b><small>Tokens today</small></button><button type="button" class="home-glance" data-page="chats"><b class="tnum'+(needs?' st-bad':'')+'">'+needs+'</b><small>'+(needs===1?"Task needs you":"Tasks need you")+'</small></button></div>'+
+  '<div class="ios-group icons">'+iosRow({attrs:'data-page="projects"',icon:"projects",title:"Projects",value:esc((data.repos||[]).length||knownRepos.length)})+iosRow({attrs:'data-page="tasks"',icon:"tasks",title:"Tasks",value:esc((data.issues||[]).length)})+
+   iosRow({attrs:'data-page="saved"',icon:"saved",title:"Saved answers",value:esc(saved)})+iosRow({attrs:'data-more-section="memory"',icon:"spark",title:"Memory",value:esc(memories)})+'</div>'+
+  '<div class="ios-group icons more-app">'+iosRow({attrs:'data-page="settings"',icon:"settings",title:"Settings"})+iosRow({attrs:'data-more-section="updates"',icon:"retry",title:"Updates",value:esc(KappaConfig.version)})+'</div>'+
+  '<p class="ios-gf more-foot"><button type="button" class="text-button" data-page="help">Help &amp; shortcuts</button></p>';
 }
 function renderTabBar(){
  const tab=shellTab(view);
@@ -163,6 +171,8 @@ function bindShell(){
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
  document.getElementById("chatsearchbtn")?.addEventListener("click",()=>{chatSearchOpen=!(chatSearchOpen||conversationSearch);if(!chatSearchOpen)conversationSearch="";render();document.getElementById("chatsearch")?.focus()});
  document.getElementById("chatnew")?.addEventListener("click",fresh);
+ document.querySelectorAll("#content [data-more-route]").forEach(b=>b.addEventListener("click",()=>{preferences.routing=b.dataset.moreRoute;savePreferences();const sel=document.getElementById("composermodel");if(sel)sel.value=preferences.routing;render();toast("Model route: "+b.textContent)}));
+ document.querySelectorAll("#content [data-more-section]").forEach(b=>b.addEventListener("click",()=>{navigate("settings");settingsSection=b.dataset.moreSection;render()}));
  document.querySelectorAll("#content [data-chat-sheet-close]").forEach(b=>b.addEventListener("click",()=>openChatSheet(null)));
  document.querySelectorAll("#content [data-task-more]").forEach(b=>b.addEventListener("click",()=>openChatSheet({kind:"task",id:b.dataset.taskMore,tab:"progress",copy:b.dataset.copyIndex})));
  document.querySelectorAll("#content [data-task-tab]").forEach(b=>b.addEventListener("click",()=>{chatSheet.tab=b.dataset.taskTab;render()}));

@@ -1,7 +1,18 @@
 /* KappaForge app: Task tracking, the task sheet and the activity panel. Classic script: shares globals with the other app-*.js files and loads in order. */
 let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.jobs.v2")||"[]");if(Array.isArray(stored))trackedJobs=stored.filter(j=>Number.isInteger(j.number)&&j.number>0)}catch{}
-if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
+// Tasks deleted from this app stay deleted: adoption from GitHub and the saved latest task skip them.
+let removedJobs=[];try{const r=JSON.parse(localStorage.getItem("kappaforge.jobs.removed")||"[]");if(Array.isArray(r))removedJobs=r.filter(Number.isInteger)}catch{}
+if(recentJob?.number&&!removedJobs.includes(recentJob.number)&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0,planningTask=false;
+// Delete removes the task from this app only; its GitHub issue and any draft PR are untouched.
+function removeTask(number){
+ trackedJobs=trackedJobs.filter(j=>j.number!==number);
+ if(!removedJobs.includes(number))removedJobs.push(number);
+ try{localStorage.setItem("kappaforge.jobs.removed",JSON.stringify(removedJobs.slice(-500)))}catch{}
+ if(recentJob?.number===number){recentJob=null;localStorage.removeItem("kappaforge.latest.job")}
+ persistJobs();
+}
+function forgetRemoval(number){if(!removedJobs.includes(number))return;removedJobs=removedJobs.filter(n=>n!==number);try{localStorage.setItem("kappaforge.jobs.removed",JSON.stringify(removedJobs))}catch{}}
 function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
@@ -12,7 +23,7 @@ function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(
 function adoptRepositoryTasks(issues){
  let added=false;
  for(const i of issues||[]){
-  if(i.repo!=="KappaForge"||i.pull_request||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||"")))continue;
+  if(i.repo!=="KappaForge"||i.pull_request||(typeof removedJobs!=="undefined"&&removedJobs.includes(i.number))||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||"")))continue;
   // Its mode decides when it is finished: a develop task keeps going while its PR is open (fixes, test results).
   const mode=(String(i.body||"").match(/^Mode:\s*([\w-]+)\s*$/mi)||[])[1]||"develop",known=trackedJobs.find(j=>j.number===i.number);
   // Adopted before the mode was read (2.2.5): read its reports again, so a later failure isn't hidden behind "Finished".
@@ -80,6 +91,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 }
 // Guidance or a retry restarted the task: follow it again, ignoring reports from before now.
 function resumeJob(number,chatId){
+ if(typeof forgetRemoval==="function")forgetRemoval(number);
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
  Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;

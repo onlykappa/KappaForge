@@ -12,6 +12,8 @@ async function go(page,target){
  for(let i=0;i<3&&await page.evaluate(()=>document.body.classList.contains('pushed'));i++)await page.locator('#menubtn').click();
  if(target==='chat'){await page.evaluate(()=>navigate('chat'));return}
  if(['chats','home'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
+ // The account page opens from the avatar on Home; More has no profile card.
+ if(target==='profile'){await page.locator('.mobile-nav [data-page=start]').click();await page.locator('#content [data-page=profile]').click();return}
  if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
  await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
 }
