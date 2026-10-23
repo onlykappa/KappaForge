@@ -329,6 +329,56 @@ def review_sources(read, changes, paths, requested=(), limit=220000, complete=No
     return ''.join(blocks), seen
 
 
+# Asks that KappaForge itself performs outside the source: it opens and updates the task's draft PR and reports
+# progress. Repository code cannot prove them, so source review must not turn them into code work (task #205 wrote
+# scripts and a workflow to "open a PR" that already existed). Anything that also names code work stays a code ask.
+LIFECYCLE_ASK_RE = re.compile(r"^\W*(?:please\s+)?(?:open|create|make|start|raise|submit|keep|leave|mark|notify|tell|ping|"
+                              r"let|alert|message|report)\b", re.I)
+LIFECYCLE_OBJECT_RE = re.compile(r"\b(?:pull request|PR|draft|notify|notification|(?:tell|ping|message) me when|let me know|ready for "
+                                 r"review|review[- ]ready|when (?:it is |it's )?(?:done|ready|finished))\b", re.I)
+CODE_WORK_RE = re.compile(r"\b(?:fix|add|implement|audit|test|tests|refactor|remove|delete|update|change|build|write|"
+                          r"button|screen|ui|page|view|tab|card|endpoint|route|api|function|feature|setting|script|"
+                          r"workflow|automation|hook|command|bug|bugs|code)\b", re.I)
+
+
+def lifecycle_requirement(text):
+    """A requirement only KappaForge's own orchestration can satisfy, such as "Open a fresh draft PR"."""
+    text = str(text or "")
+    return bool(LIFECYCLE_ASK_RE.search(text) and LIFECYCLE_OBJECT_RE.search(text) and not CODE_WORK_RE.search(text))
+
+
+def pr_receipt(pr, repo, branch):
+    """GitHub's own record of this task's PR, bound to its repository and branch; anything else is no receipt."""
+    if not isinstance(pr, dict) or not pr.get("html_url"):
+        return None
+    head = pr.get("head") or {}
+    if head.get("ref") != branch or (head.get("repo") or {}).get("full_name", repo) != repo:
+        return None
+    if not str(pr["html_url"]).startswith(f"https://github.com/{repo}/pull/"):
+        return None
+    return {"url": pr["html_url"], "open": pr.get("state", "open") == "open", "draft": pr.get("draft") is True}
+
+
+def resolve_lifecycle(reqs, receipt):
+    """Mark lifecycle requirements and decide them from the trusted PR receipt, never from source quotes."""
+    for requirement in reqs:
+        if not lifecycle_requirement(requirement.get("text")):
+            continue
+        requirement["kind"] = "lifecycle"
+        asks_pr = re.search(r"\b(?:pull request|PR|draft)\b", requirement["text"], re.I)
+        wants_draft = re.search(r"\bdraft\b", requirement["text"], re.I)
+        confirmed = bool(asks_pr and receipt and receipt["open"] and (receipt["draft"] or not wants_draft))
+        requirement["met"] = confirmed
+        requirement["evidence"] = ({"receipt": receipt["url"]} if confirmed else
+                                   {"handled_by": "KappaForge opens the draft PR and reports progress itself"})
+    return reqs
+
+
+def lifecycle_problem(problem):
+    """A stored "Requirement not met: ..." entry for a lifecycle ask, which no code repair can satisfy."""
+    return problem.startswith("Requirement not met: ") and lifecycle_requirement(problem[len("Requirement not met: "):].split(" ({")[0])
+
+
 def review_prompt(task, diff, paths, context=''):
     return (
         "You are reviewing a change another engineer wrote for this task. Be strict: the owner will test it on a phone. "
@@ -346,6 +396,9 @@ def review_prompt(task, diff, paths, context=''):
         "is undefined. Existing native bridges can support browser dialogs. Cite a file and literal source fragment for "
         "each concrete defect. Do not label style preferences or architecture conventions as runtime bugs. "
         "A truncated diff or absent context is a request for more evidence, never proof of a defect. "
+        "KappaForge itself opens and updates this task's draft pull request and reports progress to the owner; those "
+        "asks are checked against GitHub, not source. List them as requirements, but never report their absence from "
+        "the code as a defect or ask for scripts, workflows or hooks that open PRs or send notifications. "
         "If evidence is missing, return files_to_inspect with exact repository paths; do not invent the missing code. "
         "Return ONLY strict JSON:\n"
         '{"requirements":[{"text":"short requirement","met":true,"evidence":{"path":"existing/source.js",'
@@ -442,7 +495,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             reqs, problems, files = result
             for requirement in reqs:
                 original_requirements.setdefault(requirement['text'], dict(requirement))
-                if requirement['met']:
+                if requirement['met'] and not lifecycle_requirement(requirement['text']):
                     evidence = requirement['evidence']
                     path = evidence['path']
                     source = changes[path] if path in changes else read(path) if path in known else ''
@@ -454,7 +507,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             for text, original in original_requirements.items():
                 if text not in present:
                     reqs.append({**original, 'met': False})
-                    problems.append('A previously reviewed requirement disappeared from the follow-up: ' + text)
+                    if not lifecycle_requirement(text):
+                        problems.append('A previously reviewed requirement disappeared from the follow-up: ' + text)
             wire = re.sub(r'^```(?:json)?\s*|\s*```$', '', output.strip())
             raw = json.loads(wire[wire.find('{'):wire.rfind('}') + 1])
             needed = raw.get('files_to_inspect', [])
@@ -491,6 +545,8 @@ def report(reqs, problems):
 
     With anything still open the headline says Not finished, so a review that ticked every requirement can't read as
     done while a problem remains (PR #121 said "2 of 2 requirements met" above a route nothing called)."""
+    lifecycle = [r for r in reqs if r.get("kind") == "lifecycle"]
+    reqs = [r for r in reqs if r.get("kind") != "lifecycle"]
     met = [r for r in reqs if r.get("met") is True]
     open_count = len(reqs) - len(met) + len(problems)
     lines = []
@@ -504,6 +560,9 @@ def report(reqs, problems):
             lines.append("- Not done: " + r["text"][:200])
     for p in problems:
         lines.append("- Problem: " + p[:300])
+    for r in lifecycle:
+        lines.append(("- Done by KappaForge: " if r.get("met") is True else "- Handled by KappaForge, not code: ") + r["text"][:200]
+                     + (f" ({r['evidence']['receipt']})" if r.get("met") is True else ""))
     return "\n".join(lines)
 
 
