@@ -84,6 +84,15 @@ jobs:
         cache: npm
     - run: npm ci
     - run: npm test
+    - name: Use the Ubuntu archive for browser dependencies
+      # The runner's Azure mirror repeatedly exhausted this job's timeout downloading fonts/codecs.
+      # Keep the same signed Ubuntu packages and the full Chromium/WebKit dependency installation.
+      run: |
+        for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list.d/ubuntu.sources; do
+          if [ -f "$source" ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          fi
+        done
     - run: npx playwright install --with-deps chromium webkit
     - run: npm run test:web
     - uses: actions/upload-artifact@v4

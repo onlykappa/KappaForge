@@ -93,7 +93,9 @@ final class LaunchTests: XCTestCase {
                 keyboardImage.lifetime = .keepAlways
                 add(keyboardImage)
             }
-            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+            // The card's centre contains live workflow links. Dismiss from its empty left gutter
+            // so this keyboard exercise cannot open a sheet that intentionally hides the composer.
+            web.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.2)).tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
             // Return to the beginning of the card after keyboard-driven scrolling.
             web.swipeDown()
