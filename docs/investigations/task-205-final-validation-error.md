@@ -38,3 +38,20 @@ The saved PR #206 diff also shows the run did not produce a complete audit: `scr
 - Do not label an audit complete unless the report contains findings and the relevant checks pass; preserve the raw failing sandbox log for diagnosis.
 
 This PR records the evidence and diagnosis only. It does not modify the failed run or claim to repair its unrelated audit and test issues.
+
+
+## Post-merge replay: PR #213 did not prevent this run
+
+A later GitHub Actions rerun shows the same failure after PR #213 had merged:
+
+- PR #213 merged at `2026-10-23T18:29:37Z`.
+- Workflow run [40018896708](https://github.com/onlykappa/KappaForge/actions/runs/40018896708) started at `2026-10-23T20:23:54Z`, about 1 hour 54 minutes later.
+- Its job checked out `main` at `158e37ec807fd927f63f61f71f14ffd965af7979`, the commit containing #213.
+- The task issue #205 remained open and the run was explicitly dispatched with `INPUT_ACTION=fix`.
+- The log records two zero-match edit failures followed by the protected-workflow-path failure, then the same final `GenerationFailure`.
+
+This rules out “the rerun used pre-#213 main” as the explanation. The merged fix and its unit/replay tests did not cover this exact persisted-task path: a full audit task with prior incomplete PR/review state, resumed through the Actions `fix` dispatch. The remaining likely defect is that stale lifecycle requirements or repair context survived into that path and still instructed the model to create PR automation. The logs prove the behavior, though they do not reveal which serialized field reintroduced the stale requirement.
+
+## Revised conclusion
+
+PR #213 was intended to prevent this loop, but the post-merge run proves it did not eliminate it in production. The issue is not resolved “for good” yet. The next fix should reproduce the actual Actions `fix` flow against the existing issue #205 / PR #206 state, assert that PR creation and protected workflow edits never enter the generated repair prompt, then verify a rerun on current `main`. Also improve recovery so an exact-text miss forces a fresh file read and a different patch strategy rather than retrying the same absent target.
