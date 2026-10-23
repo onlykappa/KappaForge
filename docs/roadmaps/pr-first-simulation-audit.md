@@ -23,7 +23,8 @@ Roadmap item 5 from #207. Owner decision: *a draft PR opens with the goal and pl
 4. **Repair claimed failed tests that never failed** (commit and PR note); now states the real trigger.
 5. **Gateway 503s were unexplainable** (also unresolved in #207): bodies were discarded. Evidence is now recorded (see above).
 6. **Harness false green (run 2).** Every scenario failed before any inference (the journal's task re-check needed `GITHUB_TOKEN`) yet the workflow passed. Fixed; a scenario that fails before any model request now fails the run, and a test drives the real gateway client path with only HTTP faked.
-7. **Open, not fixed here: gateway reliability.** Live runs met repeated HTTP 503s with no provider attempt. The Worker reads, parses and rewrites its whole routing state (seven days of request, outcome and lease rows in one Durable Object value) on every request; as it grows, requests can exceed platform limits. Run 5 names the exact error; the proposed fix is to split that state into per-day/per-request keys (or SQLite rows) so a request touches only what it needs. Chat uses the same counter.
+7. **Open, not fixed here: gateway reliability under load.** Runs 1, 3 and 4 met 25 HTTP 503s with no provider attempt; run 5 (late evening) met none. Their bodies were JSON without the Worker's `error` field and came with a Retry-After, which matches Cloudflare's own problem-details errors rather than any Worker branch. The Worker reads, parses and rewrites its whole routing state (seven days of request, outcome and lease rows in one Durable Object value) on every request, so CPU per request grows with traffic; a platform resource limit under load fits all observations. The engine now records the Cloudflare error code, so the next occurrence names it. Proposed fix (separate PR): split that state into per-day/per-request keys or SQLite rows so a request touches only what it needs. Chat uses the same counter.
+8. **Open, not fixed here: the self-review under-claims finished work.** In run 5 the medium and complex drafts were titled *incomplete* although every hidden test passed: the reviewer's evidence quotes elide lines with `...` or span several lines, so the exact-quote check rejects them (`Requirement evidence does not match executable current source`). This is the safe direction (never over-claims), but it marks correct work unfinished and would send it to repair. Proposed fix: ask the reviewer for one contiguous source line per requirement and accept a quote whose non-elided lines all appear in order in the file; keep the executable-token check.
 
 ## Live simulations
 
@@ -46,14 +47,19 @@ Scenarios:
 | 4 | `357eab0` | easy | **draft PR** | 41,118 | Py 11/11 | **Py 4/4** | 8/8 |
 | | | medium | code on draft, then gateway 503 after 3 resumes | 98,857 | JS 16/17 | JS 8/9 (SAVE10 rounding: 895 vs 896) | 8/8 |
 | | | complex | 6 files on draft, then gateway 503 after 3 resumes | 68,400 | Py 12/12, JS 5/5 | Py 7/8 (`remove(1.5)` not rejected), JS 5/5 | 8/8 |
-| 5 | `a945896` | RUN5_PLACEHOLDER | | | | | |
+| 5 | `a945896` | easy | **draft PR** | 7,677 | Py pass | **Py pass** | 8/8 |
+| | | medium | **draft PR** | 58,927 | JS pass | **JS pass** | 8/8 |
+| | | complex | **draft PR, 6 files, 3 providers** | 147,774 | Py pass, JS pass | **Py + JS all pass** | 8/8 |
 
-**Gateway-measured tokens, runs 1–4: 336,938** (prompt + output, as reported by the providers through the gateway).
+**Gateway-measured tokens across all live runs: 551,316** (runs 1–4: 336,938; run 5: 214,378, with 31 of 31 requests answered). Counts are prompt + output as reported by the providers through the gateway.
+
+**Run 5 verdict: 3/3 scenarios passed every hidden acceptance test, every PR rule held, no gateway failure.**
 
 What the runs establish:
 - **Every PR rule held in every scenario that reached GitHub**: the draft opened before any code with no file changes and showed the goal and plan; it stayed a draft; nothing was merged; `main` never moved; no real GitHub request was made.
 - KappaForge processed large loads across four providers (Ollama, Mistral, Groq, Gemini), switched models on invalid answers, resumed after gateway failures on the same draft, and repaired interrupted work.
 - The hidden tests caught real model mistakes the models' own tests missed (rounding, fractional quantity). The engine's review flagged unfinished requirements honestly (some reviews under-claimed work that the hidden tests then accepted).
-- The dominant failure is the gateway (finding 7), not the engine or the models.
+- The PR asks in the complex task (open a draft first, keep it a draft, notify me) never became code work (#213) in any run.
+- The dominant failure is the gateway under load (finding 7), not the engine or the models; the main quality gap is the reviewer's evidence format (finding 8).
 
 Reproduce: push to the `lifecycle-simulation` branch or run the *Lifecycle simulation* workflow by hand. The full JSON report is the run's artifact.
