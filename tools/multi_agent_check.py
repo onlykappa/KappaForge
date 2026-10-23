@@ -4,10 +4,11 @@ Builds two independent stages at the same time and prints, as JSON, which model 
 whether they overlapped, what the reviewer said and the resulting files. Nothing is written to any repository."""
 import json
 import os
+from pathlib import PurePosixPath
 import subprocess
-import tempfile
 import threading
 import time
+import uuid
 
 from engine import developer
 from engine.developer import Stage
@@ -61,19 +62,60 @@ COMPLEX_TASK = (
     "web/cart.test.mjs.")
 
 
+# Writes the project into a Docker volume from a fixed script; the generated code itself never runs on the runner.
+BOOTSTRAP = """import json, pathlib, sys
+for name, text in json.load(sys.stdin).items():
+    p = pathlib.PurePosixPath(name)
+    if p.is_absolute() or '..' in p.parts or '\\\\' in name:
+        raise ValueError('unsafe sandbox path')
+    target = pathlib.Path('/work') / p
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    target.chmod(0o644)
+"""
+SANDBOX_LIMITS = ["--network", "none", "--read-only", "--memory", "256m", "--cpus", "1", "--pids-limit", "64",
+                  "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m"]
+
+
+def safe_path(name):
+    """A relative project path that cannot leave the project folder."""
+    return (isinstance(name, str) and bool(name) and "\\" not in name and not PurePosixPath(name).is_absolute()
+            and all(part not in ("", ".", "..") for part in name.split("/")))
+
+
+def run_in_sandbox(files, image, args, timeout=120):
+    """Run a command on the project in a container with no network, no runner environment and a read-only copy."""
+    if not all(safe_path(name) and isinstance(text, str) for name, text in files.items()):
+        raise ValueError("Unsafe sandbox input")
+    name = "multi-agent-check-" + uuid.uuid4().hex
+    volume = name + "-data"
+    try:
+        subprocess.run(["docker", "volume", "create", volume], capture_output=True, text=True, timeout=30, check=True)
+        subprocess.run(["docker", "run", "--rm", "-i", *SANDBOX_LIMITS, "--mount", f"type=volume,src={volume},dst=/work",
+                        "python:3.13-slim", "python", "-c", BOOTSTRAP],
+                       input=json.dumps(files), capture_output=True, text=True, timeout=180, check=True)
+        return subprocess.run(["docker", "run", "--name", name, "--rm", *SANDBOX_LIMITS, "--user", "65534:65534",
+                               "--mount", f"type=volume,src={volume},dst=/work,readonly", "-w", "/work", image, *args],
+                              capture_output=True, text=True, timeout=timeout)
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+        subprocess.run(["docker", "volume", "rm", "-f", volume], capture_output=True, timeout=15)
+
+
 def run_tests(files):
-    """Write the project to a temporary folder and run its Python and JavaScript tests."""
-    with tempfile.TemporaryDirectory() as root:
-        for path, text in files.items():
-            full = os.path.join(root, path)
-            os.makedirs(os.path.dirname(full), exist_ok=True)
-            with open(full, "w") as handle:
-                handle.write(text)
-        py = subprocess.run(["python", "-m", "unittest", "discover", "-s", "tests", "-t", "."], cwd=root, capture_output=True, text=True, timeout=120)
-        js_files = [p for p in files if p.endswith(".test.mjs")]
-        js = subprocess.run(["node", "--test", *js_files], cwd=root, capture_output=True, text=True, timeout=120) if js_files else None
-        return {"python": {"passed": py.returncode == 0, "output": (py.stdout + py.stderr)[-1500:]},
-                "javascript": {"passed": js.returncode == 0, "output": (js.stdout + js.stderr)[-1500:]} if js else None}
+    """Run the generated project's Python and JavaScript tests, only inside sandbox containers."""
+    py = run_in_sandbox(files, "python:3.13-slim", ["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", "."])
+    js_files = [p for p in files if p.endswith(".test.mjs")]
+    js = run_in_sandbox(files, "node:22-slim", ["node", "--test", "--", *js_files]) if js_files else None
+    return {"python": {"passed": py.returncode == 0, "output": (py.stdout + py.stderr)[-1500:]},
+            "javascript": {"passed": js.returncode == 0, "output": (js.stdout + js.stderr)[-1500:]} if js else None}
+
+
+def exit_code(result):
+    """Nonzero unless the build finished, nothing is left unfinished and every test run passed."""
+    if result.get("ok") is not True or result.get("unfinished"):
+        return 1
+    return int(any(check is not None and check.get("passed") is not True for check in result.get("tests", {}).values()))
 
 
 def main():
@@ -127,7 +169,8 @@ def main():
     overlap = any(a["start"] < b["end"] and b["start"] < a["end"] for n, a in enumerate(spans) for b in spans[n + 1:])
     print("MULTI_AGENT_CHECK " + json.dumps({**result, "workers": log, "ran_at_same_time": overlap, "reviews": reviews,
                                             "checkpoints": saves, "seconds": round(time.time() - started, 1)}, indent=1))
+    return exit_code(result)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
