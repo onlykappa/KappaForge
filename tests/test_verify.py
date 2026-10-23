@@ -396,5 +396,34 @@ class RemovedCode(unittest.TestCase):
         self.assertIn("function b was removed", found[0])
 
 
+class PythonTestImports(unittest.TestCase):
+    """A Python test counts as testing real code when it imports any repository module, not only engine/tools/scripts."""
+
+    def accepted(self, statement, paths, test="tests/test_feature.py"):
+        source = statement + "\n\n\ndef test_real():\n    assert True\n"
+        return not verify.tests_without_real_code({test: source}, paths)
+
+    def test_any_package_and_import_form_counts(self):
+        for statement in ("from app.calc import add", "import app.calc", "import app.calc as calc", "from app import calc"):
+            self.assertTrue(self.accepted(statement, ["app/calc.py"]), statement)
+        self.assertTrue(self.accepted("from widgets import Item", ["widgets/__init__.py"]))
+        self.assertTrue(self.accepted("from widgets.calc import add", ["src/widgets/calc.py"]), "src layout")
+        self.assertTrue(self.accepted("import widgets", ["src/widgets/__init__.py"]))
+        self.assertTrue(self.accepted("from engine import verify", ["engine/verify.py"]))
+
+    def test_relative_imports_resolve_from_the_test_folder(self):
+        self.assertTrue(self.accepted("from .calc import add", ["app/calc.py"], "app/test_feature.py"))
+        self.assertTrue(self.accepted("from ..calc import add", ["app/calc.py"], "app/tests/test_feature.py"))
+        self.assertTrue(self.accepted("from . import calc", ["app/calc.py"], "app/test_feature.py"))
+        self.assertFalse(self.accepted("from ...app.calc import add", ["app/calc.py"]), "cannot climb above the repository")
+
+    def test_imports_that_do_not_reach_real_code_are_still_fake(self):
+        for source in ("# from app.calc import add", 'text = "from app.calc import add"', "import unittest",
+                       "from engine.fake import add", "from app.missing import add", "from app import missing",
+                       "import app", "from app.calc import ("):
+            self.assertFalse(self.accepted(source, ["app/calc.py"]), source)
+        self.assertFalse(self.accepted("from tests.fake_calc import add", ["tests/fake_calc.py"]), "another test file is not real code")
+
+
 if __name__ == "__main__":
     unittest.main()
