@@ -50,8 +50,12 @@ A later GitHub Actions rerun shows the same failure after PR #213 had merged:
 - The task issue #205 remained open and the run was explicitly dispatched with `INPUT_ACTION=fix`.
 - The log records two zero-match edit failures followed by the protected-workflow-path failure, then the same final `GenerationFailure`.
 
-This rules out “the rerun used pre-#213 main” as the explanation. The merged fix and its unit/replay tests did not cover this exact persisted-task path: a full audit task with prior incomplete PR/review state, resumed through the Actions `fix` dispatch. The remaining likely defect is that stale lifecycle requirements or repair context survived into that path and still instructed the model to create PR automation. The logs prove the behavior, though they do not reveal which serialized field reintroduced the stale requirement.
+This rules out “the rerun used pre-#213 main” as the explanation. The merged fix did not cover this exact Actions `fix` path. Source inspection identified the gap: `fix_pull_request()` filtered lifecycle requirements from the pending checklist, but `revise_branch()` still built its first `generate()` prompt from the full original issue title and body. The existing PR receipt was passed only to the later `check_the_work()` review, which the run never reached because generation failed validation first. The original task wording therefore reintroduced “open a fresh PR” as apparent code work.
 
-## Revised conclusion
+## PR #216 update
 
-PR #213 was intended to prevent this loop, but the post-merge run proves it did not eliminate it in production. The issue is not resolved “for good” yet. The next fix should reproduce the actual Actions `fix` flow against the existing issue #205 / PR #206 state, assert that PR creation and protected workflow edits never enter the generated repair prompt, then verify a rerun on current `main`. Also improve recovery so an exact-text miss forces a fresh file read and a different patch strategy rather than retrying the same absent target.
+PR #216 now changes `revise_branch()` to add the verified open draft PR receipt and an explicit “already satisfied” boundary to the first generation prompt when the saved review contains an unmet PR/draft lifecycle item. Pending code requirements remain in the repair prompt. A regression test exercises `revise_branch()` with the task #205 shape: existing draft PR, stale lifecycle finding, and unfinished code work.
+
+The full GitHub Actions test run [40022826798](https://github.com/onlykappa/KappaForge/actions/runs/40022826798) passed on commit `46654ababdb3243695da178d6b7a33387eafdf21`: unit, web, Worker, and structural checks all succeeded.
+
+This PR tests the actual repair-prompt builder with task #205's persisted-state shape; it does not dispatch another live repair against issue #205.
