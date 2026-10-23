@@ -48,8 +48,9 @@ def http_error(path, code):
 class SimGitHub:
     """One repository plus the task's issue on KappaForge, in memory. Unknown calls are refused, never sent."""
 
-    def __init__(self, repo, number, title, files):
+    def __init__(self, repo, number, title, files, issue=None):
         self.repo, self.number, self.title = repo, number, title
+        self.issue = issue or {"number": number, "title": title, "state": "open", "user": {"login": OWNER}, "body": ""}
         self.counter = 0
         self.trees = {}
         self.commits = {}
@@ -219,7 +220,7 @@ class SimGitHub:
             self.comments[int(m.group(1))] = payload["body"]
             return {"id": int(m.group(1))}
         if route == issue and method == "GET":
-            return {"number": self.number, "title": self.title, "state": "open", "user": {"login": OWNER}}
+            return dict(self.issue)  # The journal re-checks before each model call that the task is unchanged and open.
         m = re.fullmatch(rf"repos/{re.escape(ROOT)}/actions/workflows/([\w.-]+)/(dispatches|runs)", route)
         if m:
             if m.group(2) == "runs":
@@ -677,10 +678,10 @@ def journal_for(sim, issue):
 
 def run_scenario(scenario, records, docker, minutes):
     repo = f"{OWNER}/kappaforge-sim-{scenario['key']}"
-    sim = SimGitHub(repo, scenario["number"], scenario["title"], scenario["files"])
     issue = {"number": scenario["number"], "title": scenario["title"], "state": "open", "user": {"login": OWNER},
              "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
              "body": f"Repository: {repo}\nMode: develop\n\n{scenario['task']}"}
+    sim = SimGitHub(repo, scenario["number"], scenario["title"], scenario["files"], issue)
     real_registered = projects.registered
 
     def registered(name):
@@ -696,8 +697,11 @@ def run_scenario(scenario, records, docker, minutes):
     patches = [(developer, "gh", sim.gh), (repo_maps, "download_sources", sim.download), (projects, "registered", registered),
                (urllib.request, "urlopen", guarded_urlopen), (runner, "request", lambda *a, **k: (_ for _ in ()).throw(
                    RealGitHubBlocked("Simulation refused runner.request"))),
-               (runner, "github", lambda *a, **k: (_ for _ in ()).throw(RealGitHubBlocked("Simulation refused runner.github")))]
+               (runner, "github", lambda path, token=None, payload=None: sim.gh(path, token, payload))]
     saved = [(module, name, getattr(module, name)) for module, name, _ in patches]
+    # The engine reads GITHUB_TOKEN for its task checks; every GitHub call here goes to the simulation, never GitHub.
+    real_token = os.environ.get("GITHUB_TOKEN")
+    os.environ["GITHUB_TOKEN"] = "simulated-token"
     try:
         for module, name, value in patches:
             setattr(module, name, value)
@@ -735,6 +739,10 @@ def run_scenario(scenario, records, docker, minutes):
             setattr(module, name, value)
         intent_guard.ACTIVE.set(None)
         runner.TASK_DEADLINE = None
+        if real_token is None:
+            os.environ.pop("GITHUB_TOKEN", None)
+        else:
+            os.environ["GITHUB_TOKEN"] = real_token
     outcome["seconds"] = round(time.time() - began, 1)
     branch = f"kappa/dev-{scenario['number']}"
     head = sim.refs.get(branch)
@@ -842,6 +850,9 @@ def main(argv=None):
             handle.write(summary + "\n")
     broken = [f"{s['key']}: {rule}" for s in report["scenarios"] for rule, ok in s["lifecycle"].items()
               if not ok and (s["result"] != "task_failed" or rule in ("stays_draft", "never_merged", "main_never_moved", "no_real_github_calls"))]
+    # A scenario that failed before a single gateway request tested nothing: never report that run as a success.
+    broken += [f"{s['key']}: failed before any model request ({s.get('error', '')[:160]})" for s in report["scenarios"]
+               if s["result"] == "task_failed" and not s["usage"]["requests"]]
     delivered = sum(1 for s in report["scenarios"] if all(r.get("passed") for n, r in s["tests"].items() if n.startswith("acceptance")
                                                            and isinstance(r, dict)) and any(n.startswith("acceptance") for n in s["tests"]))
     print(f"\nSIMULATION VERDICT: {delivered}/{len(report['scenarios'])} scenarios passed every hidden acceptance test; "

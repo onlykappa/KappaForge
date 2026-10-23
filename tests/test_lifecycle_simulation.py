@@ -217,6 +217,15 @@ class ReportTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_ROUTER_REQUIRED": ""}), self.assertRaises(SystemExit):
             sim.main(["--only", "easy"])
 
+    def test_a_scenario_that_never_reached_the_model_fails_the_process(self):
+        idle = {"key": "easy", "title": "t", "result": "task_failed", "error": "KeyError: 'GITHUB_TOKEN'", "seconds": 0,
+                "usage": sim.usage_summary([]), "changed_files": [], "open_problems": None, "timeline": [],
+                "lifecycle": {"stays_draft": True}, "tests": {"skipped": "x"}}
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"KAPPA_ROUTER_REQUIRED": "true", "GITHUB_STEP_SUMMARY": ""}), \
+                patch.object(sim, "run_scenario", return_value=idle), patch.object(sim, "docker_available", return_value=False), \
+                patch("builtins.print"):
+            self.assertEqual(sim.main(["--only", "easy", "--out", os.path.join(folder, "r.json")]), 1)
+
     def test_a_broken_lifecycle_rule_fails_the_process(self):
         broken = {"key": "easy", "title": "t", "result": "draft_pr", "seconds": 0, "usage": sim.usage_summary([]), "changed_files": [],
                   "open_problems": [], "timeline": [], "lifecycle": {"stays_draft": False}, "tests": {"skipped": "x"}}
@@ -297,6 +306,37 @@ class ScriptedScenarioTests(unittest.TestCase):
         self.assertIsNone(sim.continuation_wait(terminal))
         self.assertIsNone(sim.continuation_wait(sim.RealGitHubBlocked("x")))
         self.assertEqual(sim.continuation_wait(gateway.error(503, None)), 60)
+
+    def test_the_real_gateway_client_path_works_inside_the_simulation(self):
+        """Run #2 failed before any inference (the journal's task re-check needed GITHUB_TOKEN): only HTTP is faked here."""
+        from unittest.mock import MagicMock
+        sent = []
+
+        def gateway_http(req, timeout=None):
+            body = json.loads(req.data)
+            sent.append(body)
+            _, text = self.answer("", body["messages"][0]["content"])
+            reply = MagicMock()
+            reply.__enter__.return_value = reply
+            reply.status = 200
+            reply.read.return_value = json.dumps({"route": "fixture:model", "text": text, "usage": {
+                "promptTokenCount": 100, "candidatesTokenCount": 20, "totalTokenCount": 120}}).encode()
+            return reply
+
+        records, real_record = [], gateway.record
+        easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
+        env = {"KAPPA_ROUTER_REQUIRED": "true", "KAPPA_ROUTER_URL": "https://fixture.example", "KAPPA_ROUTER_TOKEN": "x" * 40}
+        with patch.dict(os.environ, env), patch.object(sim, "REAL_URLOPEN", side_effect=gateway_http), \
+                patch.object(gateway, "record", side_effect=lambda journal, evidence: records.append(evidence)), \
+                patch.object(developer, "review_stage", return_value=(True, "")):
+            os.environ.pop("GITHUB_TOKEN", None)
+            outcome = sim.run_scenario(easy, records, docker=False, minutes=5)
+            self.assertNotIn("GITHUB_TOKEN", os.environ, "the placeholder token does not outlive the scenario")
+        self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
+        self.assertTrue(sent and all(b["repo"] == "onlykappa/kappaforge-sim-easy" for b in sent))
+        self.assertEqual(outcome["usage"]["answered"], len(sent))
+        self.assertEqual(outcome["usage"]["tokens"]["total"], 120 * len(sent))
+        self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
 
     def test_easy_scenario_runs_the_real_engine_and_keeps_every_lifecycle_rule(self):
         easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
