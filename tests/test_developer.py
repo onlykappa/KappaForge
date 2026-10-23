@@ -47,7 +47,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("test-model", invalid)) as ai:
             with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
                 developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertEqual(ai.call_count, 10, "large and compact strategies are both tried")
+        self.assertEqual(ai.call_count, 5, "large and compact passes share five total attempts")
 
     def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
         """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
