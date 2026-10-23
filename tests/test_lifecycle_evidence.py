@@ -122,7 +122,10 @@ class Task205ReplayTests(unittest.TestCase):
         self.assertIn("TASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB", prompt[0])
         self.assertIn(PR["html_url"], prompt[0])
         self.assertIn("- Requirement not met: Fix the audit bug", prompt[0])
-        self.assertNotIn("- Requirement not met: Open a fresh draft PR", prompt[0])
+        lifecycle = prompt[0].split("TASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB:", 1)
+        self.assertEqual(len(lifecycle), 2)
+        self.assertNotIn("- Requirement not met: Open a fresh draft PR", lifecycle[0])
+        self.assertIn("- Requirement not met: Open a fresh draft PR", lifecycle[1])
 
     def test_repairs_target_real_code_work_and_forbid_pr_automation(self):
         reviews = iter([
