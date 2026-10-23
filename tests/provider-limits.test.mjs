@@ -77,7 +77,9 @@ test('capabilities send the configured limits to the app',async()=>{
  try{
   const r=await worker.fetch(new Request('https://worker.test/capabilities',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:'{}'}),
    {CHAT_ACCESS_TOKEN:'owner-token',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}});
-  assert.equal(r.status,200);assert.deepEqual((await r.json()).limits,limits);
+  const data=await r.json();assert.equal(r.status,200);assert.deepEqual(data.limits,limits);
+  assert.equal(data.premium.provider,'openrouter');assert.equal(data.premium.selection.policy,'reviewed-quality-first-v1');
+  assert.equal(data.premium.selection.preferredModel,'deepseek/deepseek-v4.1-flash-1017');
  }finally{globalThis.fetch=original}
 });
 
@@ -122,13 +124,14 @@ test('the model check sends one message per routable model in batches and record
    GEMINI_API_KEY:'probe-gemini',GROQ_API_KEY:'probe-groq',OPENROUTER_API_KEY:'probe-or',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
   const call=async body=>{const r=await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify(body)}),env);assert.equal(r.status,200);return r.json();};
   const first=await call({offset:0,limit:3}),second=await call({offset:first.next,limit:3});
-  assert.equal(first.total,5,'gemini-2.5-pro has no quota on this account and is not tested');
+  assert.equal(first.total,4,'zero-quota Gemini and paid OpenRouter models are not probed');
   assert.equal(second.next,null);
   const rows=Object.fromEntries([...first.results,...second.results].map(r=>[r.label,[r.outcome,r.tokens]]));
-  assert.deepEqual(rows,{'gemini-3.1-flash-lite':['answered',8],'gemini-3.8-flash':['rate_limited',null],'groq:openai/gpt-oss-120b':['answered',13],'groq:qwen/qwen3.8-27b':['answered',13],'openrouter:openai/gpt-5':['needs_credits',null]});
-  assert.equal(sent.length,5,'exactly one message per model');
+  assert.deepEqual(rows,{'gemini-3.1-flash-lite':['answered',8],'gemini-3.8-flash':['rate_limited',null],'groq:openai/gpt-oss-120b':['answered',13],'groq:qwen/qwen3.8-27b':['answered',13]});
+  assert.equal(sent.length,4,'exactly one message per eligible free model; no paid OpenRouter probe');
+  assert.ok(!sent.includes('openai/gpt-5'));
   const events=(await(await vault.fetch(new Request('https://memory.internal/usage'))).json()).events;
-  assert.equal(events.length,5);assert.ok(events.every(e=>e.kind==='probe'));
+  assert.equal(events.length,4);assert.ok(events.every(e=>e.kind==='probe'));
   assert.equal(events.filter(e=>e.ok).reduce((n,e)=>n+e.total,0),34);
   assert.equal((await worker.fetch(new Request('https://worker.test/providers/probe',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer wrong'},body:'{}'}),env)).status,401);
  }finally{globalThis.fetch=original}

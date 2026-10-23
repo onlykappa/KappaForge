@@ -127,7 +127,7 @@ test("coding gateway uses only explicitly approved free private-code routes",asy
  const previous=globalThis.fetch;let upstreamCalls=0,submitted=[];
  globalThis.fetch=async(url,init)=>{
   upstreamCalls++;if(init.body)submitted.push(JSON.parse(init.body));
-  if(String(url).endsWith("/models"))return Response.json({data:[{id:"fixture-paid-model"},{id:"fixture-model:free"}]});
+  if(String(url).endsWith("/models"))return Response.json({data:[{id:"fixture-paid-model"},{id:"fixture-model:free",pricing:{prompt:"0",completion:"0"}}]});
   return Response.json({choices:[{message:{content:"fixture answer"}}],usage:{prompt_tokens:4,completion_tokens:2,total_tokens:6}});
  };
  try{

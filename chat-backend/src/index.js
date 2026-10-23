@@ -19,7 +19,8 @@ import {agentWork,sendGuidance,retryTask,taskBody,STATUS_QUESTION} from "./agent
 import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,providerSummary,validateProviderResponse,providerModels,providerDiscoveryDiagnostic,configured,REGISTRY,catalogLimits} from "./providers.js";
 import {routingStore} from "./router-state.js";
 import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptTokensUpper} from "./premium.js";
-import {premiumStore} from "./premium-store.js";
+import {premiumStore,PREMIUM_KEY} from "./premium-store.js";
+import {premiumBillingAlarm} from './premium-billing.js';
 import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
@@ -27,13 +28,20 @@ import {ollamaPlan} from "./ollama-plan.js";
 import {openrouterAccount} from "./openrouter-account.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
-import {recoveryWakeStore,recoveryAlarm,scheduleRecovery} from "./recovery-wake.js";
+import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./recovery-wake.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
 export class KappaMemory {
   constructor(state,env) { this.state = state; this.env=env; }
-  async alarm(){await recoveryAlarm(this.state,this.env);}
+  // Billing reconciliation and task recovery share this object's one alarm slot. Run each handler whose state exists
+  // (premium lives in owner-v1, recovery in recovery-v1 today, but neither may depend on that), isolating failures.
+  async alarm(){
+   const failures=[];
+   if(await this.state.storage.get(PREMIUM_KEY))await premiumBillingAlarm(this.state,this.env).catch(e=>failures.push(e));
+   if(await this.state.storage.get(RECOVERY_KEY))await recoveryAlarm(this.state,this.env).catch(e=>failures.push(e));
+   if(failures.length)throw failures[0];
+  }
   async fetch(request) {
     const url = new URL(request.url);
     if(url.pathname==="/recovery/schedule")return recoveryWakeStore(this.state,this.env,request);
@@ -309,11 +317,12 @@ const workerImplementation = {
         const premiumCfg=premiumConfig();let premium=null;
         if(premiumCfg&&env.MEMORY){
           try{
-            const s=await premiumStatus(env),models=env.OPENROUTER_API_KEY?await premiumCatalog():null;
-            const example=models?pickPremium(models,{promptTokens:promptTokensUpper(40000),maxTokens:premiumCfg.maxTokensPerCall,budgetUsd:premiumCfg.taskCapUsd}):null;
-            premium={...s,configured:!!env.OPENROUTER_API_KEY,taskCapUsd:premiumCfg.taskCapUsd,monthCapUsd:premiumCfg.monthCapUsd,
-              monthLeftUsd:Math.max(0,Math.round((premiumCfg.monthCapUsd-s.monthUsd)*1e6)/1e6),resetsAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()+1,1),
-              example:example?{model:example.model,maxUsd:example.maxUsd}:null};
+            const s=await premiumStatus(env),models=env.OPENROUTER_API_KEY?await premiumCatalog():null,account=openrouter||(env.OPENROUTER_API_KEY?await openrouterAccount(env):null);
+            const example=models&&Number.isFinite(account?.availableUsd)?pickPremium(models,{promptTokens:promptTokensUpper(40000),maxTokens:premiumCfg.maxTokensPerCall,budgetUsd:Math.max(0,Math.min(s.taskCapUsd,s.dailyLeftUsd,s.monthCapUsd-s.monthUsd,account.availableUsd-s.outstandingUsd)),health:snapshot.routes}):null;
+            premium={...s,configured:!!env.OPENROUTER_API_KEY,account,
+              monthLeftUsd:Math.max(0,Math.round((s.monthCapUsd-s.monthUsd)*1e6)/1e6),resetsAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()+1,1),
+              provider:"openrouter",selection:{policy:premiumCfg.selectionPolicy,reviewedAt:premiumCfg.reviewedAt,preferredModel:premiumCfg.models?.[0]?.id,preferredName:premiumCfg.models?.[0]?.name},
+              example:example?{model:example.model,name:example.name,selectionPolicy:example.selectionPolicy,maxUsd:example.maxUsd}:null};
           }catch{premium={error:"Premium status unavailable",enabled:false};}
         }
         return json({operationRouting:operationContract(env),tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
@@ -328,9 +337,10 @@ const workerImplementation = {
       const body=await request.json().catch(()=>({}));
       try{
         if(body.action==="set")return json(await premiumOp(env,{op:"settings",enabled:body.enabled}),200,cors);
+        if(body.action==='limits')return json(await premiumOp(env,{op:'limits',limits:body.limits}),200,cors);
         if(body.action==="approve"||body.action==="dismiss")return json(await premiumOp(env,{op:body.action,task:body.task,step:body.step}),200,cors);
         return json({error:"Unknown premium action"},400,cors);
-      }catch(error){return json({error:"Premium setting could not be saved"},400,cors)}
+      }catch(error){return json({error:error.message||"Premium setting could not be saved"},400,cors)}
     }
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/models-list"){
