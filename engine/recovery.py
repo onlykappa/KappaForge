@@ -89,13 +89,9 @@ def diagnose(error):
             return 'authorization', 'stop'
         return ('provider_outage', 'switch_or_defer') if error.provider_routes else ('validation', 'smaller_stages')
     text = str(error).lower()
-    # A proposal that names a protected workflow is invalid, but the proposal can be regenerated
-    # without that path. The protected-path check remains in apply_changes on every attempt.
-    if text.startswith('protected path cannot be changed by the agent:'):
-        return 'protected_path', 'exclude_protected_path'
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'
-    if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'protected path', 'unsafe path', 'forbidden path', 'blocked path')):
+    if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'unsafe path', 'forbidden path', 'blocked path')):
         return 'authorization', 'stop'
     if isinstance(error, json.JSONDecodeError):
         truncated = error.pos >= len(error.doc.rstrip()) - 2 or 'unterminated' in text
