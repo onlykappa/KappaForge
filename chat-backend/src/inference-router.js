@@ -2,9 +2,11 @@ import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import "../../preview/stream.js";
 import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,chunkNormalizer} from "./providers.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens,providerKeyRejected} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 import {premiumRescue,premiumAvailable,recordFreeAnswer,validRescue} from "./premium.js";
+import {retryDeadline} from "./retry-deadline.js";
+import {OutputLimitError} from "./output-limit.js";
 
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
 // Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
@@ -24,9 +26,13 @@ async function collect(response,route,{onChunk}){
   text+=(candidate?.content?.parts||[]).filter(p=>!p.thought&&typeof p.text==="string").map(p=>p.text).join("");
   if(candidate?.finishReason)finish=candidate.finishReason;
  }
+ // Match chat's completion contract: EOF and output-limit truncation are not a complete coding answer.
+ if(finish==="MAX_TOKENS")throw new OutputLimitError(usage);
+ if(finish!=="STOP"&&!(route.provider==="workers-ai"&&!finish&&text.trim()))throw Error("Provider stream ended before completion");
  return {candidates:[{content:{parts:[{text}]},finishReason:finish||"STOP"}],usageMetadata:usage};
 }
 const safeError=(message,status=400)=>Response.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
+const completeResult=result=>{const finish=result?.candidates?.[0]?.finishReason;if(finish==="MAX_TOKENS")throw new OutputLimitError(result.usageMetadata);if(finish&&finish!=="STOP")throw Error("Provider output is incomplete");return result;};
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
 
 function validate(input){
@@ -119,7 +125,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
   }catch{}
  };
  // A free answer on a task is the evidence a premium rescue needs later (several answers, more than one free model).
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=result.retryAt||null;await recordUsage(outcome);
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=retryDeadline(lastRetryAt,result.retryAt);await recordUsage(outcome);
   if(outcome.status===200&&input.task)await recordFreeAnswer(env,input.task,outcome.route.provider+":"+outcome.route.model);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
@@ -151,7 +157,7 @@ export async function inferenceRouter(env,input,callerSignal=null){
    // The whole account is cooling down or busy: skip its other models now (NVIDIA alone lists dozens), and do not
    // count the refusal as a try, so the request reaches providers that can answer.
    if(reserved.scope==="pool")rejectedProviders.add(route.provider);
-   refused++;lastStatus=429;lastRetryAt=reserved.retryAt||lastRetryAt;setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
+   refused++;lastStatus=429;lastRetryAt=retryDeadline(lastRetryAt,reserved.retryAt);setFailure({source:"coordination",category:reserved.reason,upstreamStatus:reserved.upstreamStatus||null});continue;}
   const controller=new AbortController();let timedOut=false;
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
@@ -163,6 +169,11 @@ export async function inferenceRouter(env,input,callerSignal=null){
    ?fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(route.model)+(stream?":streamGenerateContent?alt=sse":":generateContent"),{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},body:JSON.stringify(geminiPayload(input,maxTokens)),signal:controller.signal})
    :callProvider(env,route,{system,messages,maxTokens,temperature:input.temperature??0.2,reasoningEffort:input.reasoningEffort,hasMedia:false,hasTools:false,responseFormat:jsonFormat},stream,controller.signal);
   let streamed=true;
+  const invalidOutput=async error=>{
+   const category=error instanceof OutputLimitError?"output_limit":"malformed_response";
+   lastStatus=category==="output_limit"?206:502;setFailure({source:"normalization",category,upstreamStatus:response.status});
+   await reportOutcome({requestId:reservationId,route,status:lastStatus,category,headers:response.headers,usage:error.usage||null});
+  };
   try{
    attempt.attempted=true;attemptStarted=Date.now();
    response=await send(true);
@@ -177,13 +188,13 @@ export async function inferenceRouter(env,input,callerSignal=null){
    if(!response.ok){
     const body=response.status===429?(await response.text().catch(()=>"")).slice(0,20000):(await response.body?.cancel(),null);
     const category=response.status===429?"rate_limit":response.status===401?"authentication":response.status===402?"billing_blocked":response.status>=500?"provider_outage":"provider_rejection";
-    if(response.status===401)rejectedProviders.add(route.provider);
+    if(providerKeyRejected(env,route.provider,response.status))rejectedProviders.add(route.provider);
     await reportOutcome({requestId:reservationId,route,status:response.status,category,headers:response.headers,body});
     setFailure({source:"upstream",category,upstreamStatus:response.status});
     continue;
    }
    if(streamed){
-    let collected;try{collected=await collect(response,route,{onChunk:heard});}catch(error){if(controller.signal.aborted)throw error;lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    let collected;try{collected=await collect(response,route,{onChunk:heard});}catch(error){if(controller.signal.aborted)throw error;await invalidOutput(error);continue;}
     clearTimeout(quiet);
     const text=collected.candidates[0].content.parts[0].text;usage=collected.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
@@ -192,14 +203,14 @@ export async function inferenceRouter(env,input,callerSignal=null){
    }
    try{data=await response.json()}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_json",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
-    try{validateProviderResponse(data,{gemini:true});}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+    try{completeResult(validateProviderResponse(data,{gemini:true}));}catch(error){await invalidOutput(error);continue;}
     const candidate=data.candidates?.[0]||{},text=(candidate.content?.parts||[]).filter(p=>typeof p.text==="string").map(p=>p.text).join("\n");
     usage=data.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
     return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
-   let normalized;try{normalized=normalizeResult(route,data);}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_response",headers:response.headers});continue;}
+   let normalized;try{normalized=completeResult(normalizeResult(route,data));}catch(error){await invalidOutput(error);continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});

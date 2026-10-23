@@ -62,7 +62,7 @@ def error(status, data=None, headers=None, pinned=False):
                    if key == 'upstreamStatus' and type(value) is int and 100 <= value <= 599
                    or key == 'source' and value in ('upstream', 'coordination', 'normalization', 'transport', 'gateway_guard')
                    or key == 'category' and value in ('rate_limit', 'authentication', 'provider_outage', 'provider_rejection',
-                       'context_limit', 'concurrency', 'cooldown', 'billing_blocked', 'provider_denied', 'model_unavailable', 'malformed_json', 'malformed_response', 'empty_response', 'timeout', 'network_failure')}
+                       'context_limit', 'concurrency', 'cooldown', 'billing_blocked', 'provider_denied', 'model_unavailable', 'malformed_json', 'malformed_response', 'empty_response', 'output_limit', 'timeout', 'network_failure')}
     for key in ('provider', 'model'):
         value = failure.get(key)
         if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,180}', value):
@@ -80,10 +80,15 @@ def error(status, data=None, headers=None, pinned=False):
                 label += f'; historical upstream HTTP {upstream}'
         elif source in ('normalization', 'transport', 'gateway_guard'):
             label = f'{source} failure ({category})'
+    attempts = safe_attempts(data.get('attempts'))
+    permanent = ('authentication', 'billing_blocked', 'provider_denied', 'model_unavailable')
+    # The final route is not the whole pool. A quota deadline or another transient
+    # attempt means the saved task can recover, even when the last model rejected it.
+    exhausted = details.get('category') in permanent and retry_at <= time.time() and (
+        not attempts or all(row.get('category') in permanent for row in attempts))
     exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
                              + label + '; fallback stays within the approved gateway',
-                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422) or details.get('category') in ('authentication', 'billing_blocked', 'provider_denied', 'model_unavailable'))
-    attempts = safe_attempts(data.get('attempts'))
+                             retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422) or exhausted)
     exc.attempts = attempts
     exc.status, exc.code, exc.details = status, code, details
     return exc

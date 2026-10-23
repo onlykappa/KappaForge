@@ -21,8 +21,9 @@ import {routingStore} from "./router-state.js";
 import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptTokensUpper} from "./premium.js";
 import {premiumStore,PREMIUM_KEY} from "./premium-store.js";
 import {premiumBillingAlarm} from './premium-billing.js';
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens,providerKeyRejected} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
+import {retryDeadline} from "./retry-deadline.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
 import {ollamaPlan} from "./ollama-plan.js";
 import {openrouterAccount} from "./openrouter-account.js";
@@ -954,15 +955,15 @@ const workerImplementation = {
         if(!routeReservation.allowed){
           // An account that is cooling down or busy is skipped as a whole, and the refusal does not count as a try.
           if(routeReservation.scope==="pool")rejectedProviders.add(route.provider);
-          attempt--;lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+          attempt--;lastStatus=429;lastRetryAt=retryDeadline(lastRetryAt,routeReservation.retryAt);lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
-        const record=async(result,ok)=>{
-          const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
+        const record=async(result,ok,{category=""}={})=>{
+          const status=ok?200:request.signal.aborted?499:category==="output_limit"?206:outcomeStatus>=400?outcomeStatus:502;
           const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing,status);
-          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
-          lastRetryAt=outcome.retryAt||lastRetryAt;
-          if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
+          const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":category||outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
+          lastRetryAt=retryDeadline(lastRetryAt,outcome.retryAt);
+          if(!ok)lastFailure={source:category==="output_limit"?"normalization":outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:category||outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
         const controller = new AbortController();
@@ -985,7 +986,7 @@ const workerImplementation = {
           // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
           if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
           note(label(route)+(({402:" needs a paid plan",429:" is busy",503:" is unavailable"})[response.status]||" did not answer")+" · trying the next AI");
-          if(response.status===401)rejectedProviders.add(route.provider);
+          if(providerKeyRejected(env,route.provider,response.status))rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;
@@ -998,6 +999,7 @@ const workerImplementation = {
         }
         let result;try{result=await response.json()}catch{outcomeStatus=502;outcomeCategory="malformed_json";await record(null,false);continue}finally{clearTimeout(timeout)}
         try{if(!gemini)result=normalizeResult(route,result);else validateProviderResponse(result,{gemini:true})}catch{outcomeStatus=502;outcomeCategory="malformed_response";await record(null,false);continue;}
+        if(result?.candidates?.[0]?.finishReason==="MAX_TOKENS"){await record(result,false,{category:"output_limit"});continue;}
         const parts=result?.candidates?.[0]?.content?.parts;
         const answer=Array.isArray(parts)?parts.filter(p=>p&&!p.thought&&typeof p.text==="string").map(p=>p.text).join("\n").trim():"";
         if (answer) {

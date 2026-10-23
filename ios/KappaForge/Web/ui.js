@@ -148,7 +148,7 @@ function renderExecutionActivity(m,job,i=-1){
   (!job.finished?'<button type="button" data-task-guide="'+id+'">'+uiIcon('chat')+'Send guidance</button>':'')+
   // More opens the task sheet: full progress, findings, the draft PR and Copy summary.
   '<button type="button" class="task-more" data-task-more="'+id+'"'+(i>=0?' data-copy-index="'+esc(i)+'"':'')+' aria-label="More for task #'+id+'">'+uiIcon('dots')+'</button></div>';
- const recoveryInfo=p.recovery?'<p class="activity-summary">'+esc([p.recovery.last?.model?'Model: '+p.recovery.last.model:'',p.recovery.last?.error?'Last error: '+p.recovery.last.error:'',expired?'Next: Retry to renew task authorization':status==='waiting'?'Next: scheduled recovery; Retry for an explicit continuation':p.recovery.last?.next?'Next: '+p.recovery.last.next:'',p.recovery.candidate?'Saved commit: '+p.recovery.candidate.slice(0,7):'',p.recovery.nextAt&&!expired?'Eligible after '+new Date(p.recovery.nextAt).toLocaleTimeString()+'; '+(p.recovery.scanIntervalSeconds?'checks scheduled every '+p.recovery.scanIntervalSeconds/60+' minutes; GitHub may delay':'scheduled checks may be delayed by GitHub'):''].filter(Boolean).join(' · '))+'</p>':'';
+ const recoveryInfo=p.recovery?'<p class="activity-summary">'+esc([p.recovery.last?.model?'Model: '+p.recovery.last.model:'',p.recovery.last?.error?'Last error: '+p.recovery.last.error.replace(/^Edits target a file that was not read: /,'Required file missing from current model context: ').replace(/^Refusing to overwrite a file that was not read: /,'Cannot overwrite a file missing from current model context: '):'',expired?'Next: Retry to renew task authorization':status==='waiting'?'Next: scheduled recovery; Retry for an explicit continuation':p.recovery.last?.next?'Next: '+(p.recovery.last.next==='read_dependencies'?'Reload required source files':p.recovery.last.next):'',p.recovery.candidate?'Saved commit: '+p.recovery.candidate.slice(0,7):'',p.recovery.nextAt&&!expired?'Eligible after '+new Date(p.recovery.nextAt).toLocaleTimeString()+'; '+(p.recovery.scanIntervalSeconds?'checks scheduled every '+p.recovery.scanIntervalSeconds/60+' minutes; GitHub may delay':'scheduled checks may be delayed by GitHub'):''].filter(Boolean).join(' · '))+'</p>':'';
  const fresh=recoveryInfo+(reminder?'<p class="task-stalled" role="alert">No continuation is confirmed. Scheduled checks can run late. Retry requests recovery of this task; provider cooldowns still apply.</p>':'')+'<p class="task-freshness" data-recovery-reminder="'+reminder+'" data-task-freshness="'+id+'" data-updated-at="'+p.updatedAt+'" data-terminal="'+ended+'">'+esc(unavailable?'Updates unavailable. Reconnecting automatically.':stale?'No recent execution update. Last update '+new Date(p.updatedAt).toLocaleTimeString()+'.': 'Last update '+new Date(p.updatedAt).toLocaleTimeString())+'</p>';
  const reports=String(m.text||'').replace(/<!--[^]*?-->/g,'');
  const findings=job.findings?.length?job.findings:p.findings?.length?p.findings:KappaJobs.findings(reports);
@@ -306,6 +306,14 @@ function updateKeyboard(){
   appliedInset=Math.max(0,previous+document.getElementById('composer').getBoundingClientRect().bottom-(window.KappaNativeKeyboardTop-4));
  }
  document.documentElement.style.setProperty('--keyboard-inset',open?appliedInset+'px':'0px');
+ // The iOS app's keyboard covers the page without resizing it, and the chat only gains bottom padding, so the newest
+ // messages would stay behind the keyboard. Scroll the chat up by however much more the keyboard now covers.
+ // (Safari moves the page itself.)
+ const shift=open?appliedInset:0;
+ // Small corrections while the inset settles are ignored, so they cannot creep the chat upward.
+ const was=updateKeyboard.shift||0;
+ if(window.KappaNativeComposer&&typeof view!=='undefined'&&view==='chat'&&shift-was>24){const by=shift-was;requestAnimationFrame(()=>scrollBy(0,by))}
+ if(Math.abs(shift-was)>24||!shift)updateKeyboard.shift=shift;
  syncNativeComposer();
  // Fixed composer must not be scrolled into the document when keyboard geometry changes.
 }

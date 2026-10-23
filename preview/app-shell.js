@@ -189,6 +189,8 @@ function bindShell(){
   openChatSheet(null);
   if(kind==="folder")return document.getElementById("folderbtn").click();
   if(kind!=="files"){input.setAttribute("accept","image/png,image/jpeg,image/webp");if(kind==="camera")input.setAttribute("capture","environment")}
+  // The iOS app opens its own photo library or camera for these tiles; it would otherwise show Files for every input.
+  window.webkit?.messageHandlers?.kappa?.postMessage({action:"pickerKind",kind});
   input.click();setTimeout(()=>{input.setAttribute("accept",accept);input.removeAttribute("capture")},0);
  }));
  // Home's ask box sends its text as the first message of a new chat.

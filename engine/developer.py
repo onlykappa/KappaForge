@@ -557,7 +557,9 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
         note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
         print("Retrying with compact generation: " + reason)
-        small = dict(list(sources.items())[:budget.read_files])
+        ordered = list(dict.fromkeys(source_priorities(sources, existing, task, journal) + list(sources)))
+        small = {p: sources[p] for p in ordered if p in sources}
+        small = dict(list(small.items())[:budget.read_files])
         recovery_task = ("RECOVERY: The larger proposal failed. Use small exact edits, avoid full-file rewrites, "
                          "and complete the original task with its tests. Earlier diagnostics: " + reason +
                          "\n\nORIGINAL TASK:\n" + task)
@@ -709,18 +711,42 @@ GENERATION_ROUNDS = itertools.count(1)
 MODEL_FAILURES_BEFORE_SWITCH = 2
 
 
+def source_priorities(sources, existing, task, journal=None):
+    """Carry repair targets across prompt compaction and review rounds, not source contents."""
+    state = getattr(journal, 'state', {})
+    saved = state.get('sourcePriority', []) + [p for p in state.get('files', []) if p in sources]
+    named = sorted((p for p in existing if re.search(r'(?<![\w/.-])' + re.escape(p) + r'(?![\w/.-])', task)),
+                   key=lambda p: (-task.rfind(p), p))
+    return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
+
+
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
     working_sources = dict(sources)
-    priority = []
+    journal = recovery.CURRENT.get()
+    priority = source_priorities(working_sources, existing, task, journal)
+    for path in priority:
+        if path not in working_sources and getattr(journal, 'loader', None):
+            # Membership in the candidate tree scopes this read. Edit protection
+            # is enforced separately by apply_changes; protected files can be dependencies.
+            loaded = journal.loader(path)
+            if isinstance(loaded, str) and len(loaded) <= MAX_LARGE_FILE_CHARS:
+                working_sources[path] = loaded
+    priority = [p for p in priority if p in working_sources]
     def source_context():
         blocks, shown, partial, used = [], {}, set(), 0
         order = list(dict.fromkeys(priority + list(working_sources)))
-        share = min(budget.file_chars, max(1000, budget.context_chars // max(1, len(priority)) - 500))
         for path in order:
             if repo == ROOT and path.startswith(IOS_WEB):
                 continue
             text = working_sources[path]
-            cap = share if path in priority else budget.file_chars
+            cap = budget.file_chars
+            if path in priority:
+                # Divide the remaining space, including headers, among required files.
+                # Never silently evict a repair target when retry diagnostics grow.
+                remaining = len([p for p in priority if p not in shown])
+                cap = min(cap, (budget.context_chars - used) // remaining - len(path) - 160)
+                if cap < min(256, len(text)):
+                    raise GenerationFailure('Required source excerpts do not fit; split the repair into smaller stages', compact=True)
             if len(text) > cap:
                 block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
                          f"copying find text from the lines shown) =====\n{excerpt(text, task, cap)[:cap]}\n")
@@ -942,8 +968,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     loaded = journal.loader(path)
                     if isinstance(loaded, str) and len(loaded) <= MAX_LARGE_FILE_CHARS:
                         working_sources[path] = loaded
-                        if path not in priority:
-                            priority.append(path)
+                        priority = [path] + [p for p in priority if p != path]
+                        journal.state['sourcePriority'] = priority[:20]
+                        journal.persist()
                         context, shown_sources, partial_sources = source_context()
                         evidence += "\nReread immutable candidate source: " + path
             if isinstance(exc, json.JSONDecodeError):
@@ -1567,7 +1594,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                      else f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
         # The fix sees every file the problems name, the change so far, and the files it already touched.
         named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
-        current = {path: read(path) for path in (set(sources) | named)}
+        # Changed files and explicitly requested dependencies precede unrelated context.
+        current = {path: read(path) for path in dict.fromkeys(list(changes) + sorted(named) + list(sources))}
         current.update(changes)
         sizes = dict(existing)
         sizes.update({path: len(text) for path, text in changes.items()})

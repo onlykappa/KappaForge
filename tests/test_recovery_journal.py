@@ -544,6 +544,90 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertIn('===== FILE value.py =====\nvalue = 1', model.call_args.args[1])
         self.assertNotIn('===== FILE other.py', model.call_args.args[1])
 
+    def test_required_source_survives_compact_round_and_checkpoint_reload(self):
+        self.journal.loader = lambda path: 'value = 1\n'
+        proposal = json.dumps({'files':[{'path':'value.py','edits':[{'find':'value = 1','replace':'value = 2'}]}]})
+        with patch.object(developer, 'run_model', side_effect=[('first',proposal),('second',proposal)]):
+            developer.generate_with('key','Change the number',recovery.ROOT,{}, {'value.py':10},'',None,developer.COMPACT)
+        restored = self.world.journal()
+        self.assertEqual(restored.state['sourcePriority'], ['value.py'])
+        restored.checkpoint('c'*40)
+        restored.loader = lambda path: 'value = 3\n'  # New candidate, never the earlier content.
+        handle = recovery.CURRENT.set(restored)
+        try:
+            proposal = json.dumps({'files':[{'path':'value.py','edits':[{'find':'value = 3','replace':'value = 4'}]}]})
+            with patch.object(developer,'run_model',return_value=('next',proposal)) as model:
+                result = developer.generate_with('key','Continue the repair',recovery.ROOT,{'other.py':'#'+'x'*1010},
+                    {'value.py':10,'other.py':1011},'',None,developer.COMPACT._replace(context_chars=1060))
+            self.assertEqual(result[2]['value.py'],'value = 4\n')
+            self.assertEqual(model.call_count,1,'the target is present before wasting another model call')
+            self.assertIn('===== FILE value.py =====\nvalue = 3',model.call_args.args[1])
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_saved_changed_file_is_visible_without_overwriting_current_stage_content(self):
+        self.journal.state['files']=['value.py']
+        self.journal.loader = MagicMock(return_value='value = 1\n')
+        proposal=json.dumps({'files':[{'path':'value.py','edits':[{'find':'value = 3','replace':'value = 4'}]}]})
+        with patch.object(developer,'run_model',return_value=('writer',proposal)) as model:
+            result=developer.generate_with('key','Finish the current stage',recovery.ROOT,
+                {'other.py':'#'+'x'*1010,'value.py':'value = 3\n'}, {'other.py':1011,'value.py':10},'',None,
+                developer.COMPACT._replace(context_chars=1060))
+        self.assertEqual(model.call_count,1)
+        self.assertEqual(result[2]['value.py'],'value = 4\n')
+        self.journal.loader.assert_not_called()
+
+    def test_protected_dependency_can_be_read_but_not_edited(self):
+        source='{"routing":"public configuration"}'
+        self.journal.loader=MagicMock(return_value=source)
+        proposal=json.dumps({'files':[{'path':'value.py','edits':[{'find':'value = 1','replace':'value = 2'}]}]})
+        with patch.object(developer,'run_model',return_value=('writer',proposal)) as model:
+            result=developer.generate_with('key','Read config/providers.json and update value.py',recovery.ROOT,
+                {'value.py':'value = 1\n'}, {'value.py':10,'config/providers.json':len(source)},'',None,developer.COMPACT)
+        self.assertEqual(result[2],{'value.py':'value = 2\n'})
+        self.journal.loader.assert_called_once_with('config/providers.json')
+        self.assertIn(source,model.call_args.args[1])
+        with self.assertRaisesRegex(ValueError,'Protected path'):
+            developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
+                {'files':[{'path':'config/providers.json','content':'{}'}]})
+
+    def test_multiple_repair_targets_survive_retry_prompt_compaction(self):
+        self.journal.state['sourcePriority']=['one.py','two.py']
+        sources={p:'value = 1\n'+'# filler\n'*220 for p in ['one.py','two.py']}
+        sources['other.py']='# unrelated\n'*100
+        existing={p:len(text) for p,text in sources.items()}
+        good=json.dumps({'files':[{'path':p,'edits':[{'find':'value = 1','replace':'value = 2'}]} for p in ['one.py','two.py']]})
+        bad=json.dumps({'files':[{'path':'one.py','edits':[{'find':'missing anchor','replace':'value = 2'}]}]})
+        prompts=[]
+        def model(*args,**kwargs):
+            prompts.append(args[1])
+            if len(prompts)==1:
+                runner.PROVIDERS['routing']['defaults']['maxPromptChars']=len(args[1])+200
+                return 'first',bad
+            return 'second',good
+        with patch.dict(os.environ,{'KAPPA_ROUTER_REQUIRED':'true'}), \
+                patch.dict(runner.PROVIDERS['routing']['defaults'],{'maxPromptChars':15000}), \
+                patch.object(developer,'run_model',side_effect=model):
+            result=developer.generate_with('key','Change both numbers. Do not merge.',recovery.ROOT,sources,existing,'',None,
+                developer.COMPACT._replace(context_chars=8000))
+            from engine import gateway
+            self.assertTrue(all(gateway.prompt_fits(p) for p in prompts))
+            for prompt in prompts:
+                self.assertIn('===== FILE one.py',prompt)
+                self.assertIn('===== FILE two.py',prompt)
+                self.assertIn('Do not merge.',prompt)
+            self.assertEqual(len(result[2]),2)
+            self.assertLess(len(prompts[1]),len(prompts[0])+200)
+
+    def test_required_files_that_cannot_fit_are_split_instead_of_silently_dropped(self):
+        self.journal.state['sourcePriority']=['one.py','two.py']
+        sources={p:'value = 1\n'+'# filler\n'*100 for p in ['one.py','two.py']}
+        with patch.object(developer,'run_model') as model:
+            with self.assertRaisesRegex(developer.GenerationFailure,'split the repair'):
+                developer.generate_with('key','Repair both files',recovery.ROOT,sources,
+                    {p:len(t) for p,t in sources.items()},'',None,developer.COMPACT._replace(context_chars=300))
+        model.assert_not_called()
+
     def test_minified_missing_file_is_visible_within_compact_context(self):
         source = 'const value = 1;/*' + 'x' * 100000 + '*/'
         self.journal.loader = lambda path: source

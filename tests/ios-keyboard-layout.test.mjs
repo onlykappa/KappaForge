@@ -46,3 +46,27 @@ test('native keyboard: the composer is lifted to sit just above the UIKit keyboa
  assert.deepEqual(keyboard({native,composerBottom:850}),{open:true,inset:'254px'});
  assert.deepEqual(keyboard({native:{...native,KappaNativeComposerFocused:false}}),{open:false,inset:'0px'});
 });
+test('native keyboard: the chat scrolls up by what the keyboard newly covers, once',()=>{
+ // Like the real page, the composer rises by the inset that has been applied.
+ const vars={},scrolls=[],composer={getBoundingClientRect:()=>({bottom:850-(parseFloat(vars['--keyboard-inset'])||0)})};
+ const box={window:{innerHeight:900,KappaNativeComposer:true,KappaNativeComposerFocused:true,KappaNativeKeyboardInset:300,KappaNativeKeyboardTop:600},
+  view:'chat',document:{activeElement:null,getElementById:()=>composer,body:{classList:{toggle(){}}},documentElement:{style:{setProperty:(k,v)=>vars[k]=v}}},
+  getComputedStyle:()=>({getPropertyValue:k=>vars[k]||''}),syncNativeComposer(){},requestAnimationFrame:f=>f(),scrollBy:(x,y)=>scrolls.push(y)};
+ const start=ui.indexOf('function updateKeyboard(');
+ vm.runInNewContext(ui.slice(start,ui.indexOf('\nfunction ',start+1))+';this.update=updateKeyboard',box);
+ box.update();assert.deepEqual(scrolls,[254],'opening lifts the newest messages above the keyboard');
+ box.update();assert.deepEqual(scrolls,[254],'a settled inset does not scroll again');
+ box.window.KappaNativeComposerFocused=false;box.update();box.window.KappaNativeComposerFocused=true;box.update();
+ assert.equal(scrolls.length,2,'reopening the keyboard lifts the chat again');
+ box.view='settings';box.window.KappaNativeComposerFocused=false;box.update();box.window.KappaNativeComposerFocused=true;box.update();
+ assert.equal(scrolls.length,2,'other pages are left alone');
+});
+test('the + sheet tiles open the iOS photo library and camera, not Files',()=>{
+ const shell=readFileSync(new URL('../preview/app-shell.js',import.meta.url),'utf8'),picker=readFileSync(new URL('../ios/KappaForge/MediaPicker.swift',import.meta.url),'utf8');
+ const project=readFileSync(new URL('../ios/project.yml',import.meta.url),'utf8');
+ assert.match(shell,/postMessage\(\{action:"pickerKind",kind\}\)[\s\S]*?input\.click\(\)/,'the tile is named before the file panel opens');
+ assert.match(native,/body\["action"\] == "pickerKind"/);
+ assert.match(native,/kind == "photos" \|\| kind == "camera"[\s\S]*?media\.present/);
+ assert.match(picker,/PHPickerViewController/);assert.match(picker,/sourceType = \.camera/);
+ assert.match(project,/NSCameraUsageDescription/);
+});

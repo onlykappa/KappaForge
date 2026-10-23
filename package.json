@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/ios-ui-pr94.test.mjs tests/actions.test.mjs tests/actions-ui.test.mjs tests/task-panel.test.mjs tests/ios-redesign.test.mjs tests/intent-guard.test.mjs tests/task-autostart.test.mjs tests/task-management.test.mjs tests/capability-registry.test.mjs tests/request-routing.test.mjs tests/operation-protocol.test.mjs tests/chat-delete.test.mjs tests/provider-reliability.test.mjs tests/routing-policy.test.mjs tests/all-model-opt-in.test.mjs tests/provider-limits.test.mjs tests/neurons.test.mjs tests/google-usage.test.mjs tests/reply-hygiene.test.mjs tests/chat-tiers.test.mjs tests/recovery-wake.test.mjs tests/free-providers.test.mjs tests/model-list.test.mjs tests/premium.test.mjs tests/voice.test.mjs",
+    "test": "node --test tests/intelligence.test.mjs chat-backend/vector-index.test.mjs tests/ios-ui-pr94.test.mjs tests/actions.test.mjs tests/actions-ui.test.mjs tests/task-panel.test.mjs tests/ios-redesign.test.mjs tests/intent-guard.test.mjs tests/task-autostart.test.mjs tests/task-management.test.mjs tests/capability-registry.test.mjs tests/request-routing.test.mjs tests/operation-protocol.test.mjs tests/chat-delete.test.mjs tests/provider-reliability.test.mjs tests/routing-policy.test.mjs tests/all-model-opt-in.test.mjs tests/provider-limits.test.mjs tests/neurons.test.mjs tests/google-usage.test.mjs tests/reply-hygiene.test.mjs tests/chat-tiers.test.mjs tests/recovery-wake.test.mjs tests/free-providers.test.mjs tests/model-list.test.mjs tests/premium.test.mjs tests/voice.test.mjs tests/fallback-recovery.test.mjs",
     "test:web": "node tests/web-regression.cjs"
   },
   "devDependencies": {
