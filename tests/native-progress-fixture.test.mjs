@@ -4,7 +4,21 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import '../preview/task-progress.js';
 import '../preview/intent-guard.js';
+import '../preview/core.js';
+import '../preview/actions-core.js';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+
+test('native ready fixture satisfies production candidate verification without weakening the UI assertion',()=>{
+ const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','ready');
+ const box={KappaProgress:globalThis.KappaProgress,KappaActions:globalThis.KappaActions,KappaJobs:globalThis.KappaJobs,Date,trackedJobs:[],chats:[],backend:'',access:'',checkJobResult(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},document:{activeElement:null},fetch(){throw Error('No live fixture network calls')}};
+ vm.createContext(box);const tasks=read('preview/app-tasks.js');
+ vm.runInContext(tasks.slice(tasks.indexOf('function taskValidation('),tasks.indexOf('// The chat keeps live Actions updates')),box);
+ vm.runInContext(source,box);const job=box.trackedJobs[0];
+ assert.equal(globalThis.KappaJobs.verifiedTask(job),true);assert.equal(job.verification.sha,job.candidate.sha);
+ assert.equal(box.taskValidation(job).filter(r=>r.state==='done').length,2);
+ job.candidate.sha='b'.repeat(40);assert.equal(globalThis.KappaJobs.verifiedTask(job),false);
+ assert.match(read('ios/KappaForgeUITests/LaunchTests.swift'),/\("ready", "READY FOR REVIEW"\)/);
+});
 test('native progress screenshot fixture is restricted to Debug simulator builds',()=>{
  const fixture=read('ios/KappaForge/ProgressFixture.swift');
  assert.match(fixture,/^#if DEBUG && targetEnvironment\(simulator\)/m);
