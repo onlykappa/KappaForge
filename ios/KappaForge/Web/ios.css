@@ -338,3 +338,37 @@ body.sheet-open{overflow:hidden}
 .task-sheet-body li{display:flex;gap:8px;align-items:baseline;font-size:var(--t-sub)}
 @media(prefers-reduced-motion:reduce){.ios-switch,.ios-switch::after{transition:none}}
 @media(max-width:840px){body[data-view=chat] .content{padding-top:16px}}
+/* Talk to chat: the mic dictates into the message; with nothing typed, the wave opens voice mode in place of Send. */
+.voice-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:38px;height:38px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer}
+.voice-btn svg{width:21px;height:21px}
+.voice-mode-btn{background:var(--accent-fill);color:var(--on-accent)}
+#form.empty .send-button,#form:not(.empty) .voice-mode-btn{display:none!important}
+.voice-btn.recording{color:#fff;background:var(--bad,#ff453a);animation:voice-rec 1.2s ease-in-out infinite}
+@keyframes voice-rec{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--bad,#ff453a) 25%,transparent)}}
+@media(max-width:840px){
+ #form{padding-right:88px}
+ #form .voice-btn{position:absolute;bottom:4px;right:44px}
+ #form .voice-mode-btn{right:4px}
+}
+.voice-overlay{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:calc(20px + var(--kappa-safe-top,env(safe-area-inset-top,0px))) 24px calc(28px + env(safe-area-inset-bottom,0px));background:var(--bg);color:var(--text);text-align:center}
+.voice-overlay[hidden]{display:none}
+.voice-top{position:absolute;top:calc(12px + var(--kappa-safe-top,env(safe-area-inset-top,0px)));left:16px;right:16px;display:flex;align-items:center;justify-content:space-between}
+.voice-badge{padding:5px 12px;border-radius:999px;background:var(--cell);font-size:13px;font-weight:700}
+.voice-close{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:50%;background:var(--cell);color:var(--text)}
+.voice-close svg{width:20px;height:20px}
+.voice-orb{--size:min(56vw,220px);position:relative;width:var(--size);height:var(--size);margin:0 0 44px;padding:0;border:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c9b6ff,#7b5cf0 45%,#3a2a8c 80%);box-shadow:0 18px 60px rgba(123,92,240,.35);transform:scale(calc(1 + var(--level,0) * .22));transition:transform .12s ease-out;cursor:pointer}
+.voice-orb i{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(201,182,255,.35);opacity:0}
+.voice-overlay[data-phase=hearing] .voice-orb i,.voice-overlay[data-phase=speaking] .voice-orb i{animation:voice-ring 1.8s ease-out infinite}
+.voice-orb i:nth-child(3){animation-delay:.6s!important}.voice-orb i:nth-child(4){animation-delay:1.2s!important}
+@keyframes voice-ring{from{opacity:.8;transform:scale(1)}to{opacity:0;transform:scale(1.45)}}
+.voice-overlay[data-phase=thinking] .voice-orb{animation:voice-think 1.4s ease-in-out infinite}
+@keyframes voice-think{50%{transform:scale(.9);filter:brightness(1.15)}}
+.voice-overlay[data-phase=speaking] .voice-orb{animation:voice-speak 2.4s ease-in-out infinite}
+@keyframes voice-speak{50%{transform:scale(1.06)}}
+.voice-overlay[data-phase=idle] .voice-orb{filter:saturate(.4);opacity:.75}
+.voice-phase{margin:0;font-size:22px;font-weight:700}
+.voice-hint{margin:0;min-height:1.3em;font-size:14px;color:color-mix(in srgb,var(--text) 60%,transparent)}
+.voice-heard,.voice-reply{max-width:520px;margin:6px 0 0;font-size:15px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.voice-heard{font-weight:600}.voice-heard:not(:empty)::before{content:"You: ";color:color-mix(in srgb,var(--text) 55%,transparent);font-weight:500}
+.voice-reply{color:color-mix(in srgb,var(--text) 78%,transparent)}
+@media(prefers-reduced-motion:reduce){.voice-orb,.voice-orb i,.voice-btn.recording{animation:none!important;transition:none}}
