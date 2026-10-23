@@ -128,14 +128,11 @@ class RepairLedgerTests(unittest.TestCase):
         self.assertTrue(any('Handle permission denial' in p for p in problems))
         self.assertIn('Handle permission denial', review.call_args.args[2])
 
-    def test_protected_path_proposal_gets_bounded_error_informed_retries(self):
-        proposal = json.dumps({'files': [{'path': '.github/workflows/unsafe.yml', 'content': 'x'}]})
-        with patch.object(developer, 'run_model', return_value=('model', proposal)) as model:
-            with self.assertRaisesRegex(ValueError, 'Protected path'):
-                developer.generate_with('key', 'task', 'onlykappa/KappaForge', {}, {}, '', None, developer.SMALL)
-        self.assertEqual(model.call_count, 5)
-        self.assertIn('Protected path cannot be changed by the agent', model.call_args_list[1].args[1])
-        self.assertIn('Remove it from the proposal', model.call_args_list[1].args[1])
+    def test_workflow_paths_can_be_included_in_task_proposals(self):
+        proposal = json.dumps({'files': [{'path': '.github/workflows/unsafe.yml', 'content': 'name: owner-review'}]})
+        with patch.object(developer, 'run_model', return_value=('model', proposal)):
+            result = developer.generate_with('key', 'task', 'onlykappa/KappaForge', {}, {}, '', None, developer.SMALL)
+        self.assertEqual(result[2]['.github/workflows/unsafe.yml'], 'name: owner-review')
 
 
 if __name__ == '__main__':
