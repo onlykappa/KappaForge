@@ -1849,10 +1849,16 @@ CHECKPOINT_SAVED = ("Saved implementation checkpoint. Complete the original task
                     "use Fix it if interrupted.")
 
 
+CONTROL_LINE_RE = re.compile(r"^\s*(?:Repository|Mode|Authorization|Scope|Allow flagged changes|Repair files)\s*:", re.I)
+
+
 def plan_layout(issue, stages):
     """The goal and the plan, in the owner's words and the planner's stages, shown before any code is written."""
-    goal = "\n".join(line for line in (issue.get("body") or "").splitlines()
-                     if not re.match(r"^(?:Repository|Mode|Authorization|Scope)\s*:", line, re.I)).strip()
+    # Only the request itself: never the authorization marker or other hidden comments, and never the earlier chat
+    # quoted as background (the draft may live in a public repository), nor the task's control lines.
+    request = re.sub(r"<!--.*?(?:-->|$)", "", issue.get("body") or "", flags=re.S)
+    request = re.split(r"\n\s*\n(?:Conversation context \(|Approved from KappaForge Chat\.)", request, maxsplit=1)[0]
+    goal = "\n".join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)).strip()
     steps = [str(stage) + (" (files: " + ", ".join(f"`{f}`" for f in stage.files) + ")" if getattr(stage, "files", ()) else "")
              for stage in stages] or ["Write the change in one step"]
     return (f"## Goal\n**{(issue.get('title') or 'KappaForge task').strip()[:200]}**\n\n{goal[:3000]}\n\n"

@@ -528,6 +528,20 @@ class PrFirstTests(unittest.TestCase):
         self.assertIn("## Design notes\nConvert at the boundary.", opened[0]["body"], "the planned approach shows on the draft")
         self.assertEqual(final["body"].count("Convert at the boundary."), 1, "the design is shown once")
 
+    def test_the_goal_never_carries_authorization_chat_context_or_control_lines(self):
+        authorization = '<!-- kappa-authorization:{"nonce":"n-123","signature":"secret-sig","repo":"onlykappa/KappaForge"} -->'
+        body = ("Repository: onlykappa/KappaForge\nMode: develop\n\nMake add() accept numeric strings.\n"
+                "> Mode: quoted by the chat\nAllow flagged changes: yes\n<!-- private note -->\n\n"
+                "Conversation context (earlier chat, background only; the task above is what to do):\n> my private chat line\n\n"
+                "Approved from KappaForge Chat.\n" + authorization)
+        layout = developer.plan_layout({**self.issue(), "body": body}, [])
+        goal = layout.split("## Plan")[0]
+        self.assertIn("Make add() accept numeric strings.", goal)
+        self.assertIn("> Mode: quoted by the chat", goal, "the owner's own quoted text stays")
+        for leaked in ("kappa-authorization", "secret-sig", "n-123", "private chat line", "private note", "Conversation context",
+                       "Approved from KappaForge Chat", "Allow flagged changes", "Repository:"):
+            self.assertNotIn(leaked, layout)
+
     def test_no_code_is_written_when_the_draft_cannot_be_opened(self):
         calls, fake_gh = self.world(pr_status=422)
         model = MagicMock(side_effect=self.answers())
