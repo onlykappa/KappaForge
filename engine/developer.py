@@ -537,7 +537,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                       COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE)
     try:
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
-                                                             require_test, allow_empty)
+                                                             require_test, allow_empty, max_attempts=3)
     except (RuntimeError, GenerationFailure) as exc:
         from engine.reliability import RecoveryBudgetExceeded
         if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):
@@ -545,9 +545,13 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
+        attempts_used = min(5, max(0, getattr(exc, 'attempts', 0)))
+        remaining_attempts = 5 - attempts_used
         budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
-        note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
+        if not remaining_attempts:
+            raise GenerationFailure("No validated proposal after 5 distinct attempts. " + reason, attempts=attempts_used) from exc
+        note("fix", "Large proposal could not be validated; reducing context and output for the remaining distinct attempts")
         print("Retrying with compact generation: " + reason)
         ordered = list(dict.fromkeys(source_priorities(sources, existing, task, journal) + list(sources)))
         small = {p: sources[p] for p in ordered if p in sources}
@@ -557,11 +561,16 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                          "\n\nORIGINAL TASK:\n" + task)
         try:
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
-                                                                 guide, allowed, budget, design, require_test, allow_empty)
+                                                                 guide, allowed, budget, design, require_test, allow_empty,
+                                                                 max_attempts=remaining_attempts, attempt_offset=attempts_used)
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
                 raise
+            attempts_used += min(remaining_attempts, max(0, getattr(last, 'attempts', 0)))
+            if attempts_used >= 5:
+                raise GenerationFailure("No validated proposal after 5 distinct attempts. " + str(last)[:1800],
+                                        attempts=attempts_used, blocked=getattr(last, 'blocked', False)) from last
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -712,7 +721,7 @@ def source_priorities(sources, existing, task, journal=None):
     return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
 
 
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0):
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
     priority = source_priorities(working_sources, existing, task, journal)
@@ -845,14 +854,14 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     route_error = None
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        repair_methods = ("", "Re-read the exact source and use a shorter unique anchor.",
+    repair_methods = ("", "Re-read the exact source and use a shorter unique anchor.",
                           "Use a different implementation path while preserving the requirements.",
                           "Break the change into smaller edits and address the first failing validation.",
                           "Choose a substantially different solution and verify each edit against current source.")
-        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt + 1) + "/" + str(max_attempts) +
-                 "\nRequired distinct repair approach: " + repair_methods[attempt] +
+    for attempt in range(max_attempts):
+        attempt_number = attempt + attempt_offset
+        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt_number + 1) + "/5" +
+                 "\nRequired distinct repair approach: " + repair_methods[attempt_number] +
                  ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
                   "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
@@ -986,7 +995,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 
-            print(f"Validation attempt {attempt + 1}/{max_attempts} from {model} failed: {error[:180]}")
+            print(f"Validation attempt {attempt_number + 1}/5 from {model} failed: {error[:180]}")
             note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             failures[model] += 1
             if failures[model] >= MODEL_FAILURES_BEFORE_SWITCH and model not in avoid:
@@ -1002,7 +1011,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
     raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
-                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
+                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False),
+                            attempts=attempt_offset + len(errors))
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
