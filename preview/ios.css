@@ -192,7 +192,7 @@ body.sheet-open{overflow:hidden}
  #menubtn svg{width:22px;height:22px;stroke-width:2.2}
  body:not(.pushed) #menubtn{visibility:hidden}
  .top .header-new{display:inline-flex!important;margin-left:auto}
- body:not([data-view=chat]):not([data-view=chats]) .top .header-new{visibility:hidden}
+ body:not([data-view=chat]) .top .header-new{visibility:hidden}
  /* The chat is a pushed view: the composer replaces the tab bar. */
  .content{padding-top:4px}
  .large-title{margin-top:0}
@@ -235,3 +235,106 @@ body.sheet-open{overflow:hidden}
 .agent-activity.finished.stopped .task-hero-ring .fill,.agent-activity.finished.stopped .task-card>summary>.task-ring .fill{stroke:var(--label-2)}
 .agent-activity.finished.stopped .task-card .activity-tag{color:var(--label-2)!important;background:var(--fill)}
 .agent-activity.finished.stopped .task-clock,.agent-activity.finished.stopped .activity-tag{color:var(--label-2)}
+/* Chats (Studio): date eyebrow, heavy title with Search and New, a "Needs you" rail of task cards, then rounded-glyph rows. */
+.chats-head{display:flex;flex-direction:column;gap:0;margin:2px 0 14px}
+.chats-date{font-size:var(--t-foot);font-weight:600;color:var(--label-2);text-transform:uppercase;letter-spacing:.06em}
+.chats-title{display:flex;align-items:center;gap:8px}
+.chats-title .large-title{flex:1;margin:0;font-size:2.12rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.chats-icon,.chats-new{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:44px;border:0;border-radius:22px;font:inherit;font-size:var(--t-sub);font-weight:600}
+.chats-icon{background:var(--cell);color:var(--text)}
+.chats-new{padding:0 16px;background:var(--accent-fill);color:var(--on-accent)}
+.chats-icon svg,.chats-new svg{width:18px;height:18px}
+.chats-sec{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:6px 0 10px;font-size:var(--t-title2);font-weight:700;letter-spacing:-.02em}
+.chats-sec small{font-size:var(--t-sub);font-weight:500;color:var(--label-2);letter-spacing:0}
+.chats-sec .text-button{min-height:44px;margin:-12px 0;padding:0 4px;border:0;background:transparent;color:var(--text);font-size:var(--t-sub);font-weight:600}
+.chats-day{margin:14px 0 2px;font-size:var(--t-foot);font-weight:600;color:var(--label-3);text-transform:uppercase;letter-spacing:.04em}
+.chat-rail{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;margin:0 -16px 22px;padding:0 16px 2px;scrollbar-width:none;overscroll-behavior-x:contain}
+.chat-rail::-webkit-scrollbar{display:none}
+.chat-card{flex:none;width:min(16.5rem,78vw);scroll-snap-align:start;display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:20px;background:var(--cell);box-shadow:inset 0 0 0 1px var(--fill-3)}
+.chat-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.chat-card time{font-size:var(--t-foot);color:var(--label-2)}
+.chat-tag{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:var(--t-foot);font-weight:700}
+.chat-tag.bad{color:var(--bad-text);background:color-mix(in srgb,var(--bad) 16%,transparent)}
+.chat-tag i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.chat-card h3{margin:0;font-size:var(--t-body);font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.chat-card p{margin:0;font-size:var(--t-foot);color:var(--label-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.chat-card-actions{display:flex;gap:6px;margin-top:auto}
+.chat-card-btn{min-height:36px;padding:0 14px;border:0;border-radius:18px;background:var(--fill);color:var(--text);font:inherit;font-size:var(--t-sub);font-weight:600}
+.chat-card-btn.primary{background:var(--accent-fill);color:var(--on-accent)}
+.chat-list{display:flex;flex-direction:column;margin:0 -8px}
+.chat-li{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 8px;border:0;border-radius:14px;background:transparent;color:var(--text);text-align:left;font:inherit}
+.chat-li:active{background:var(--fill-3)}
+.chat-glyph{position:relative;flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--cell);color:var(--text)}
+.chat-glyph svg{width:20px;height:20px}
+.chat-glyph.ok{color:var(--ok)}.chat-glyph.warn{color:var(--warn)}.chat-glyph.bad{color:var(--bad)}
+.chat-glyph i{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--bad);border:2.5px solid var(--bg)}
+.chat-li-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.chat-li-text b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-li-text small{font-size:var(--t-sub);color:var(--label-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-li time{align-self:flex-start;padding-top:3px;font-size:var(--t-foot);color:var(--label-3);white-space:nowrap}
+.chat-edit-row .chat-li{flex:1;min-width:0}
+.chat-edit-row .chat-delete{border-radius:12px;align-self:center;min-height:44px;margin-left:4px}
+.chat-list .chat-edit-row+.chat-edit-row .chat-li::before{content:none}
+@media(prefers-reduced-motion:reduce){.chat-rail{scroll-behavior:auto}}
+/* Home (Ask): greeting header, ask box, suggestion chips and today's numbers. Shares the Chats header and rail. */
+.home-avatar{flex:none;width:44px;height:44px;border:0;border-radius:50%;background:linear-gradient(150deg,#d1d1d6,#636366);color:#111;font:inherit;font-size:var(--t-foot);font-weight:800}
+.home-ask{margin:0 0 12px;padding:16px;border-radius:24px;background:var(--cell);box-shadow:inset 0 0 0 1px var(--fill-3)}
+.home-ask textarea{display:block;width:100%;min-height:3.2em;resize:none;border:0;outline:none;background:transparent;color:var(--text);font:inherit;font-size:var(--t-title2);font-weight:600;letter-spacing:-.02em;line-height:1.25;padding:0}
+.home-ask textarea::placeholder{color:var(--label-3)}
+.home-ask:focus-within{box-shadow:inset 0 0 0 1.5px var(--label-2)}
+.home-ask-bar{display:flex;align-items:center;gap:8px;margin-top:10px}
+.home-model{min-height:36px;padding:0 13px;border:0;border-radius:18px;background:var(--fill);color:var(--text);font:inherit;font-size:var(--t-foot);font-weight:600;max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-send{margin-left:auto;width:44px;height:44px;border:0;border-radius:50%;display:grid;place-items:center;background:var(--accent-fill);color:var(--on-accent)}
+.home-send svg{width:20px;height:20px}
+.home-sugg{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 22px;padding:0 16px;scrollbar-width:none}
+.home-sugg::-webkit-scrollbar{display:none}
+.home-chip{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;max-width:80vw;padding:0 14px;border:0;border-radius:20px;background:var(--cell);color:var(--text);font:inherit;font-size:var(--t-sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-chip svg{flex:none;width:16px;height:16px}
+.home-glances{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.home-glance{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:76px;padding:12px;border:0;border-radius:18px;background:var(--cell);box-shadow:inset 0 0 0 1px var(--fill-3);color:var(--text);font:inherit;text-align:left;min-width:0}
+.home-glance b{font-size:1.6rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.home-glance b span{font-size:1.06rem;color:var(--label-3)}
+.home-glance small{font-size:var(--t-cap);color:var(--label-2);font-weight:500}
+.home-glance:active,.home-chip:active{opacity:.7}
+/* Inside a chat on phones: a flat header (round Back, title with the task state, round New chat), a + button beside a
+   message pill with Send inside it, and the + and task sheets. */
+@media(max-width:840px){
+ body[data-view=chat] .top{gap:10px;padding-left:max(12px,env(safe-area-inset-left,0px))!important;padding-right:max(12px,env(safe-area-inset-right,0px))!important;padding-bottom:8px!important;background:linear-gradient(var(--bg) 60%,transparent)!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+ body[data-view=chat] #menubtn{flex:none;width:44px;min-width:44px;height:44px;padding:0;justify-content:center;border-radius:50%;background:var(--cell)}
+ body[data-view=chat] #menubtn span{display:none}
+ body[data-view=chat] .top-title{position:static;transform:none;flex:1;min-width:0;max-width:none;text-align:left!important;opacity:1!important}
+ body[data-view=chat] .top-title strong{font-size:17px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ body[data-view=chat] .top-title .header-presence{display:none!important}
+ .chat-sub{display:block;font-size:12px;color:color-mix(in srgb,var(--text) 70%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .chat-sub.bad{color:var(--bad-text)}
+ body[data-view=chat] .top .header-new{flex:none;width:44px;height:44px;border-radius:50%;background:var(--cell)}
+ .compose-inner{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+ #form{position:relative;margin-left:56px;padding:5px 48px 5px 14px;min-height:46px;border-radius:23px;background:var(--ios-glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:0 0 0 .5px var(--sep),var(--glass-shadow)}
+ .rt #form{background:var(--ios-glass-solid);-webkit-backdrop-filter:none;backdrop-filter:none}
+ #form textarea{padding:7px 0 5px!important;min-height:36px!important}
+ #form .controls{margin:0!important;gap:0!important}
+ #form .composer-model,#form .composer-task,.composer .mini{display:none!important}
+ #form .attachment-menu{position:absolute;left:-56px;bottom:0}
+ #form .attachment-menu>summary{width:46px!important;height:46px!important;min-height:46px!important;border-radius:50%;background:var(--ios-glass);color:var(--text);box-shadow:0 0 0 .5px var(--sep)}
+ #form .attachment-menu>summary svg{width:22px;height:22px}
+ #form .send-button{position:absolute;right:4px;bottom:4px;width:38px!important;height:38px!important}
+ body.plan-mode #form{box-shadow:0 0 0 1.5px var(--text),var(--glass-shadow)}
+ body.plan-mode #form::before{content:"Plan task";position:absolute;left:10px;top:-30px;padding:4px 10px;border-radius:999px;background:var(--accent-fill);color:var(--on-accent);font-size:12px;font-weight:700}
+ .task-actions .task-more{width:36px;margin-left:auto;padding:0!important;justify-content:center}
+}
+.task-actions .task-more svg{width:18px;height:18px}
+.plus-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.plus-tile{display:flex;flex-direction:column;align-items:center;gap:6px;min-height:76px;padding:12px 4px;border:0;border-radius:18px;background:var(--cell);color:var(--text);font:inherit;font-size:var(--t-foot);font-weight:600}
+.plus-tile svg{width:24px;height:24px}.plus-tile:active{opacity:.7}
+.ios-sheet .plus-tile{background:var(--cell-2)}
+.plan-row{cursor:pointer}
+.ios-switch{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:51px;height:31px;margin:0;border-radius:16px;background:var(--fill);cursor:pointer;transition:background .2s}
+.ios-switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.25);transition:transform .2s var(--spring)}
+.ios-switch:checked{background:var(--ok)}.ios-switch:checked::after{transform:translateX(20px)}
+.ios-switch:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.route-check{color:var(--ok)}.route-check svg{width:18px;height:18px;stroke-width:2.6}
+.task-sheet-body{margin:0 0 12px;padding:6px 14px;border-radius:14px;background:var(--cell-2)}
+.task-sheet-body ul{list-style:none;margin:0;padding:6px 0;display:flex;flex-direction:column;gap:10px}
+.task-sheet-body li{display:flex;gap:8px;align-items:baseline;font-size:var(--t-sub)}
+@media(prefers-reduced-motion:reduce){.ios-switch,.ios-switch::after{transition:none}}
+@media(max-width:840px){body[data-view=chat] .content{padding-top:16px}}
