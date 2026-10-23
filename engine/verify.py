@@ -334,8 +334,9 @@ def review_sources(read, changes, paths, requested=(), limit=220000, complete=No
 # scripts and a workflow to "open a PR" that already existed). Anything that also names code work stays a code ask.
 LIFECYCLE_ASK_RE = re.compile(r"^\W*(?:please\s+)?(?:open|create|make|start|raise|submit|keep|leave|mark|notify|tell|ping|"
                               r"let|alert|message|report)\b", re.I)
-LIFECYCLE_OBJECT_RE = re.compile(r"\b(?:pull request|PR|draft|notify|notification|(?:tell|ping|message) me when|let me know|ready for "
-                                 r"review|review[- ]ready|when (?:it is |it's )?(?:done|ready|finished))\b", re.I)
+# The object must be the task's PR or the owner: "keep the draft banner" and "notify users" are app features.
+LIFECYCLE_OBJECT_RE = re.compile(r"\b(?:pull request|PR)\b|\b(?:as|in|a) draft\b|\b(?:notify|ping|message|alert|email) me\b|\btell me when\b|"
+                                 r"\blet me know\b|\breport back\b", re.I)
 CODE_WORK_RE = re.compile(r"\b(?:fix|add|implement|audit|test|tests|refactor|remove|delete|update|change|build|write|"
                           r"button|screen|ui|page|view|tab|card|endpoint|route|api|function|feature|setting|script|"
                           r"workflow|automation|hook|command|bug|bugs|code)\b", re.I)

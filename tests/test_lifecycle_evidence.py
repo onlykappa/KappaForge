@@ -17,10 +17,13 @@ class Progress:
 class ClassifierTests(unittest.TestCase):
     def test_only_pure_orchestration_asks_are_lifecycle(self):
         for text in ("Open a fresh draft PR", "Keep it as a draft", "Notify me when it is ready for review",
-                     "Let me know when done", "Keep the PR in draft"):
+                     "Let me know when done", "Keep the PR in draft", "Create a pull request", "Keep it a draft until I review",
+                     "Ping me when done", "Report back when ready"):
             self.assertTrue(verify.lifecycle_requirement(text), text)
         for text in ("Open a PR that fixes all bugs", "Add a button to open a PR", "Do a full bug audit",
-                     "Create a workflow that opens a PR", "Open the settings page", "Tell me the weather", "Fix every bug"):
+                     "Create a workflow that opens a PR", "Open the settings page", "Tell me the weather", "Fix every bug",
+                     "Notify users when a message arrives", "Keep the draft banner visible", "Open the draft editor screen",
+                     "Report all bugs you find", "Tell me which bugs you found", "Make the PR button work"):
             self.assertFalse(verify.lifecycle_requirement(text), text)
 
     def test_only_this_tasks_open_pr_is_a_receipt(self):
