@@ -59,7 +59,7 @@ const KappaVoice=(()=>{
   const rec=(native()?nativeRecorder:webRecorder)(level=>{
    onLevel?.(level);const now=Date.now();
    if(level>=SPEECH){if(++loudFrames>=2){heardSpeech=true;lastLoud=now}}else loudFrames=0;
-   if(heardSpeech&&now-lastLoud>silenceMs)resolveEnd('pause');
+   if(heardSpeech&&!state.holding&&now-lastLoud>silenceMs)resolveEnd('pause');
   });
   state.recorder={rec,end:resolveEnd};
   await rec.start();
@@ -177,7 +177,8 @@ const KappaVoice=(()=>{
   o.dataset.phase=state.phase;
   if(level!==undefined)o.style.setProperty('--level',String(level));
   el('voicephase').textContent=PHASE_TEXT[state.phase]||'';
-  el('voicehint').textContent=state.phase==='listening'||state.phase==='hearing'?'Tap the circle to send now':state.phase==='speaking'?'Tap the circle to interrupt':state.phase==='thinking'?'':'Tap the circle to talk';
+  o.dataset.holding=String(!!state.holding);
+  el('voicehint').textContent=state.holding?'Let go to send':state.phase==='listening'||state.phase==='hearing'?'Tap to send now · hold to keep talking':state.phase==='speaking'?'Tap the circle to interrupt':state.phase==='thinking'?'':'Tap the circle to talk';
   el('voiceheard').textContent=state.heard;el('voicereply').textContent=state.reply?speakable(state.reply).slice(0,280):'';
  }
  function setPhase(p){state.phase=p;paint(p==='listening'||p==='hearing'?undefined:0)}
@@ -226,21 +227,43 @@ const KappaVoice=(()=>{
  }
  function close(){
   if(state.mode!=='talk')return;
-  state.mode=null;stopListening('cancel');stopSpeaking();
+  state.mode=null;state.holding=false;stopListening('cancel');stopSpeaking();
   if(state.awaitReply){state.awaitReply('');state.awaitReply=null}
   const o=el('voiceoverlay');if(o)o.hidden=true;document.body.classList.remove('voice-open');syncNativeComposer();
   el('voicemode')?.focus({preventScroll:true});
  }
- function tapOrb(){
+ // Tap: send now (listening), interrupt (speaking) or resume (paused). Hold: keep listening through pauses, as long as
+ // the circle is held, and send on release; holding while it speaks interrupts it and listens straight away.
+ let press=null;
+ function tapOrb(phase=state.phase){
   if(state.mode!=='talk')return;
-  if(state.phase==='listening'||state.phase==='hearing')stopListening('tap');
-  else if(state.phase==='speaking')stopSpeaking();
-  else if(state.phase==='idle')loop();
+  if(phase==='listening'||phase==='hearing')stopListening('tap');
+  else if(phase==='speaking')stopSpeaking();
+  else if(phase==='idle')loop();
+ }
+ function pressOrb(e){
+  if(state.mode!=='talk'||e.button>0)return;
+  const phase=state.phase;press={phase,timer:setTimeout(()=>{
+   if(!press)return;press.held=true;state.holding=true;
+   if(phase==='speaking')stopSpeaking();else if(phase==='idle')loop();
+   paint();
+  },260)};
+  el('voiceorb').setPointerCapture?.(e.pointerId);
+ }
+ function releaseOrb(cancelled){
+  if(!press)return;const p=press;press=null;clearTimeout(p.timer);
+  if(p.held){state.holding=false;paint();if(!cancelled&&(state.phase==='listening'||state.phase==='hearing'))stopListening('tap');return}
+  if(!cancelled)tapOrb(p.phase);
  }
  function init(){
   el('dictate')?.addEventListener('click',()=>{unlockAudio();dictate()});
   el('voicemode')?.addEventListener('click',open);
-  el('voiceorb')?.addEventListener('click',tapOrb);
+  const orb=el('voiceorb');
+  orb?.addEventListener('pointerdown',pressOrb);
+  orb?.addEventListener('pointerup',()=>releaseOrb(false));
+  orb?.addEventListener('pointercancel',()=>releaseOrb(true));
+  orb?.addEventListener('contextmenu',e=>e.preventDefault());
+  orb?.addEventListener('click',e=>{if(e.detail===0)tapOrb()});
   el('voiceclose')?.addEventListener('click',close);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.mode==='talk')close()});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){close();if(state.mode==='dictate')stopListening('cancel')}});
