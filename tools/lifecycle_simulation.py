@@ -58,6 +58,7 @@ class SimGitHub:
         self.refs = {"main": self.base}
         self.prs, self.comments, self.events, self.dispatches, self.refused = {}, {}, [], [], []
         self.opened_body = None
+        self.pr_comments = {}
 
     # ---- storage --------------------------------------------------------------------------------------------
     def _sha(self, kind):
@@ -199,6 +200,13 @@ class SimGitHub:
                 pr.update({k: v for k, v in payload.items() if k in ("title", "body", "draft", "state")})
                 self.event("pr_updated", number=pr["number"], fields=sorted(payload), record=developer.requirements_open(pr))
             return self._pr(pr)
+        m = re.fullmatch(re.escape(repo) + r"/issues/(\d+)/comments", route)
+        if m and int(m.group(1)) in self.prs:
+            if method == "GET":
+                return [{"id": cid, "body": body} for cid, body in self.pr_comments.get(int(m.group(1)), [])]
+            self.pr_comments.setdefault(int(m.group(1)), []).append((7000 + len(self.pr_comments), payload["body"]))
+            self.event("pr_comment", number=int(m.group(1)), first_line=payload["body"].splitlines()[0][:120])
+            return {"id": 7000 + len(self.pr_comments)}
         if route == issue + "/comments" and method == "GET":
             return [{"id": cid, "body": body, "user": {"login": "github-actions[bot]"}} for cid, body in self.comments.items()]
         if route == issue + "/comments" and method == "POST":
@@ -628,6 +636,45 @@ def judge(files, hidden, docker):
     return result
 
 
+MAX_CONTINUATIONS = 3
+
+
+def continuation_wait(exc):
+    """Seconds to wait before resuming, or None when production would stop rather than defer (see runner.main)."""
+    from engine import recovery
+    kind, _ = recovery.diagnose(exc)
+    recoverable = isinstance(exc, (developer.GenerationFailure, runner.TaskTimeExpired, RuntimeError, TimeoutError, urllib.error.URLError))
+    if not recoverable or kind in ("authorization", "access") or getattr(exc, "terminal", False) or isinstance(exc, RealGitHubBlocked):
+        return None
+    retry_at = getattr(exc, "retry_at", 0) or 0
+    return int(min(240, max(60, retry_at - time.time())))
+
+
+def continue_task(sim, issue, continuations, journal):
+    """The engine call production's runner.main makes for this run: start, continue a plan-only draft, or repair.
+
+    The decision mirrors runner.main's resume branch and uses the recovery journal saved by the earlier run."""
+    if not continuations:
+        return developer.produce_development_pr(issue, "", "simulated-token")
+    branch = f"kappa/dev-{issue['number']}"
+    pulls = sim.gh(f"repos/{sim.repo}/pulls?state=open&head={OWNER}:{branch}", "simulated-token")
+    if len(pulls) > 1:
+        raise PermissionError("Ambiguous candidate PR; owner review required")
+    adopt = pulls[0] if pulls and not journal.state["files"] and journal.state["pr"] == pulls[0].get("html_url") else None
+    if not pulls and journal.state["pr"]:
+        raise PermissionError("Saved PR is closed; automatic continuation will not reopen it")
+    if pulls and adopt is None:
+        return developer.fix_pull_request(issue, "", "simulated-token")
+    return developer.produce_development_pr(issue, "", "simulated-token", **({"adopt": adopt} if adopt else {}))
+
+
+def journal_for(sim, issue):
+    """The production recovery journal, persisted in the task issue's comments on the simulated GitHub."""
+    from engine import recovery
+    return recovery.Journal(issue, lambda path: sim.gh(path, "simulated-token"),
+                            lambda path, payload, method: sim.gh(path, "simulated-token", payload, method or "POST"))
+
+
 def run_scenario(scenario, records, docker, minutes):
     repo = f"{OWNER}/kappaforge-sim-{scenario['key']}"
     sim = SimGitHub(repo, scenario["number"], scenario["title"], scenario["files"])
@@ -643,11 +690,7 @@ def run_scenario(scenario, records, docker, minutes):
         return real_registered(name)
 
     start = len(records)
-    for cache in (runner._lists, runner.EXHAUSTED, runner.COOLDOWN):
-        cache.clear()
-    developer.UNFINISHED.clear()
     developer.Progress.latest = None
-    runner.TASK_DEADLINE = time.monotonic() + minutes * 60
     began = time.time()
     outcome = {"key": scenario["key"], "title": scenario["title"], "repository": repo}
     patches = [(developer, "gh", sim.gh), (repo_maps, "download_sources", sim.download), (projects, "registered", registered),
@@ -658,14 +701,35 @@ def run_scenario(scenario, records, docker, minutes):
     try:
         for module, name, value in patches:
             setattr(module, name, value)
-        intent_guard.activate(issue)
-        url = developer.produce_development_pr(issue, "", "simulated-token")
-        outcome["result"] = "draft_pr" if url else "stopped_before_push"
-        outcome["pr_url"] = url
-    except Exception as exc:
-        outcome["result"] = "task_failed"
-        outcome["error"] = f"{type(exc).__name__}: {str(exc)[:600]}"
-        outcome["traceback_tail"] = traceback.format_exc()[-1500:]
+        outcome["continuations"] = []
+        while True:
+            # Each continuation is a fresh run, as in production: new caches, scope and time budget.
+            for cache in (runner._lists, runner.EXHAUSTED, runner.COOLDOWN):
+                cache.clear()
+            developer.UNFINISHED.clear()
+            runner.TASK_DEADLINE = time.monotonic() + minutes * 60
+            intent_guard.activate(issue)
+            from engine import recovery
+            journal = journal_for(sim, issue)
+            handle = recovery.CURRENT.set(journal)
+            try:
+                url = continue_task(sim, issue, outcome["continuations"], journal)
+                outcome["result"] = "draft_pr" if url else "stopped_before_push"
+                outcome["pr_url"] = url
+                break
+            except Exception as exc:
+                outcome["error"] = f"{type(exc).__name__}: {str(exc)[:600]}"
+                outcome["traceback_tail"] = traceback.format_exc()[-1500:]
+                wait = continuation_wait(exc)
+                if wait is None or len(outcome["continuations"]) >= MAX_CONTINUATIONS:
+                    outcome["result"] = "task_failed"
+                    break
+                outcome["continuations"].append({"after": outcome.pop("error"), "waited_seconds": wait})
+                outcome.pop("traceback_tail")
+                print(f"Recoverable failure; production would defer and resume. Resuming in {wait}s.", flush=True)
+                time.sleep(wait)
+            finally:
+                recovery.CURRENT.reset(handle)
     finally:
         for module, name, value in saved:
             setattr(module, name, value)
@@ -715,6 +779,8 @@ def markdown(report):
     for s in report["scenarios"]:
         lines += [f"## {s['key']}: {s['title']}", "", f"- Result: **{s['result']}**" + (f" ({s.get('error')})" if s.get("error") else ""),
                   f"- Changed files: {', '.join(s['changed_files']) or 'none'}",
+                  f"- Continuations after recoverable failures: {len(s.get('continuations', []))}"
+                  + "".join(f"\n  - waited {c['waited_seconds']}s after {c['after'][:200]}" for c in s.get("continuations", [])),
                   f"- Open problems on the draft: {s['open_problems']}",
                   f"- Routes: {s['usage']['routes']}; failures: {s['usage']['failures'] or 'none'}",
                   "- Lifecycle: " + ", ".join(f"{k} {'✅' if v else '❌'}" for k, v in s["lifecycle"].items()),
@@ -740,6 +806,7 @@ def main(argv=None):
     parser.add_argument("--only", default="easy,medium,complex")
     parser.add_argument("--out", default="lifecycle-simulation.json")
     parser.add_argument("--minutes", type=int, default=40, help="engine time budget per scenario")
+    parser.add_argument("--pause", type=int, default=60, help="seconds between scenarios, as between separate real tasks")
     args = parser.parse_args(argv)
     if os.getenv("KAPPA_ROUTER_REQUIRED", "").lower() != "true":
         raise SystemExit("Set KAPPA_ROUTER_REQUIRED=true with KAPPA_ROUTER_URL and KAPPA_ROUTER_TOKEN: the simulation uses the real gateway")
@@ -755,7 +822,9 @@ def main(argv=None):
     docker = docker_available()
     report = {"started_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()), "docker": docker, "scenarios": []}
     try:
-        for scenario in [s for s in SCENARIOS if s["key"] in wanted]:
+        for n, scenario in enumerate(s for s in SCENARIOS if s["key"] in wanted):
+            if n:
+                time.sleep(args.pause)
             print(f"\n=== Scenario {scenario['key']}: {scenario['title']} ===", flush=True)
             outcome = run_scenario(scenario, records, docker, args.minutes)
             report["scenarios"].append(outcome)

@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from unittest.mock import patch
 
-from engine import developer
+from engine import developer, gateway
 from tools import lifecycle_simulation as sim
 
 # Reference solutions, written by hand, prove the hidden acceptance tests are fair before any model is judged by them.
@@ -247,6 +247,56 @@ class ScriptedScenarioTests(unittest.TestCase):
                 "find": "from units.convert import celsius_to_fahrenheit",
                 "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
         return "scripted", "{}"
+
+    def flaky(self, fail_on):
+        """The scripted model, with one real gateway 503 on the first prompt containing `fail_on`."""
+        state = {"failed": False}
+
+        def answer(key, prompt, *args, **kwargs):
+            if fail_on in prompt and not state["failed"]:
+                state["failed"] = True
+                raise gateway.error(503, None)
+            if "independent checks FAILED" in prompt or "Complete this unfinished change" in prompt:
+                return "scripted", json.dumps({"summary": "Finish", "files": [{"path": "tests/test_convert.py", "edits": [{
+                    "find": "from units.convert import celsius_to_fahrenheit",
+                    "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
+            return self.answer(key, prompt, *args, **kwargs)
+        return answer
+
+    def run_flaky(self, fail_on):
+        easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
+        with patch.object(developer, "run_model", side_effect=self.flaky(fail_on)), \
+                patch.object(developer, "review_stage", return_value=(True, "")), patch.object(sim.time, "sleep") as sleep:
+            outcome = sim.run_scenario(easy, [], docker=False, minutes=5)
+        return outcome, sleep
+
+    def test_a_gateway_failure_before_any_code_resumes_on_the_same_plan_draft(self):
+        outcome, sleep = self.run_flaky("THIS IS STAGE 1")
+        self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
+        self.assertEqual(len(outcome["continuations"]), 1)
+        self.assertIn("GatewayUnavailable", outcome["continuations"][0]["after"])
+        self.assertGreaterEqual(sleep.call_args.args[0], 60, "production waits before resuming")
+        self.assertEqual([e["kind"] for e in outcome["timeline"]].count("pr_opened"), 1, "no second draft")
+        self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
+        self.assertEqual(outcome["changed_files"], ["tests/test_convert.py", "units/convert.py"])
+
+    def test_a_gateway_failure_after_code_was_saved_is_repaired_on_the_same_draft(self):
+        outcome, _ = self.run_flaky("THIS IS STAGE 2")
+        self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
+        self.assertEqual(len(outcome["continuations"]), 1)
+        kinds = [e["kind"] for e in outcome["timeline"]]
+        self.assertEqual(kinds.count("pr_opened"), 1)
+        self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
+        self.assertIn("tests/test_convert.py", outcome["changed_files"])
+        repair = [e for e in outcome["timeline"] if e["kind"] in ("commit", "pr_comment")][-2:]
+        self.assertTrue(repair[0]["message"].startswith("fix: finish the unfinished requirements"), "no test failed, so none is claimed")
+        self.assertTrue(repair[1]["first_line"].startswith("### Unfinished work continued"))
+
+    def test_terminal_failures_are_not_resumed(self):
+        terminal = gateway.error(401, None)
+        self.assertIsNone(sim.continuation_wait(terminal))
+        self.assertIsNone(sim.continuation_wait(sim.RealGitHubBlocked("x")))
+        self.assertEqual(sim.continuation_wait(gateway.error(503, None)), 60)
 
     def test_easy_scenario_runs_the_real_engine_and_keeps_every_lifecycle_rule(self):
         easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")

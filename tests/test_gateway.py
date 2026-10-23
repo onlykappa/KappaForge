@@ -23,6 +23,28 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertFalse(gateway.error(503, data).terminal, 'transient history still permits bounded recovery')
         self.assertTrue(gateway.error(503, data, pinned=True).terminal, 'pinned execution keeps its explicit bounds')
 
+    def test_a_non_json_refusal_records_what_answered_without_its_text(self):
+        import urllib.error
+        from email.message import Message
+        headers = Message()
+        headers['Content-Type'] = 'text/html; charset=UTF-8'
+        headers['CF-Ray'] = '8f1c2d3e4a5b6c7d-ORD'
+        headers['Server'] = 'cloudflare'
+        page = (b'<html><head><title>Worker exceeded resource limits | kappaforge-chat</title></head>'
+                b'<body>secret-looking body text token=abc123</body></html>')
+        error = urllib.error.HTTPError('https://fixture.example/router/infer', 503, 'unavailable', headers, io.BytesIO(page))
+        output = io.StringIO()
+        with patch.dict(os.environ, {'KAPPA_ROUTER_URL': 'https://fixture.example', 'KAPPA_ROUTER_TOKEN': 'x' * 40}), \
+                patch.object(runner.urllib.request, 'urlopen', side_effect=error), contextlib.redirect_stdout(output), \
+                self.assertRaises(gateway.GatewayUnavailable):
+            runner.run_integrated_router('brief', 100, ['groq'])
+        evidence = json.loads(output.getvalue().split('KAPPA_ROUTER_RESULT ', 1)[1].splitlines()[0])
+        self.assertEqual(evidence['unparsedResponse'], {'contentType': 'text/html; charset=UTF-8', 'bytes': len(page),
+                                                        'cfRay': '8f1c2d3e4a5b6c7d-ORD', 'server': 'cloudflare',
+                                                        'title': 'Worker exceeded resource limits | kappaforge-chat'})
+        self.assertNotIn('abc123', output.getvalue())
+        self.assertNotIn('secret-looking', output.getvalue())
+
     def test_transport_and_invalid_gateway_responses_preserve_sanitized_evidence(self):
         import urllib.error
         for cause, category in [(TimeoutError('secret fixture'), 'timeout'),

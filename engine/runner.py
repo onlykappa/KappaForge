@@ -724,8 +724,9 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             raise PermissionError("Integrated provider gateway rejected its runner credential") from None
+        raw = exc.read(8192)
         try:
-            body = json.loads(exc.read(8192).decode('utf-8'))
+            body = json.loads(raw.decode('utf-8'))
         except (ValueError, UnicodeError):
             body = None
         premium_used(body.get('premium') if isinstance(body, dict) else None)
@@ -733,6 +734,10 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
                     'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
+        if not isinstance(body, dict):
+            # A refusal that is not the Worker's own JSON came from in front of it (Cloudflare). Keep only what names
+            # the cause: never the body text itself.
+            evidence['unparsedResponse'] = gateway.response_provenance(raw, exc.headers)
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

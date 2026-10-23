@@ -39,6 +39,16 @@ class GatewayUnavailable(ProviderRoutesUnavailable):
     gateway_failure = True
 
 
+def response_provenance(raw, headers):
+    """What a non-JSON gateway response was, without its text: type, size, Cloudflare ray ID and HTML title."""
+    headers = headers or {}
+    title = re.search(rb"<title>([^<]{1,160})</title>", raw or b"", re.I)
+    clean = lambda value, limit: re.sub(r"[^A-Za-z0-9 _.:;/|()=-]", "", str(value or ""))[:limit] or None
+    return {'contentType': clean(headers.get('Content-Type'), 80), 'bytes': len(raw or b""),
+            'cfRay': clean(headers.get('CF-Ray'), 40), 'server': clean(headers.get('Server'), 40),
+            'title': clean(title.group(1).decode('utf-8', 'replace'), 120) if title else None}
+
+
 def error(status, data=None, headers=None, pinned=False):
     data = data if isinstance(data, dict) else {}
     code = data.get('code')

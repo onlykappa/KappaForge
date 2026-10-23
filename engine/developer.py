@@ -2202,7 +2202,9 @@ def fix_pull_request(issue, api_key, token):
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)
     remaining = {p: text for p, text in final.items() if text != saved['changes'].get(p)}
-    commit = (commit_changes(repo, saved['sha'], remaining, modes, f"fix: make sandbox tests pass for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
+    # Say what triggered the repair: failed checks, or only work the original task still needs (#205).
+    purpose = "make sandbox tests pass" if failures else "finish the unfinished requirements"
+    commit = (commit_changes(repo, saved['sha'], remaining, modes, f"fix: {purpose} for {ROOT}#{number}\n\n{summary[:1000]}", repo_token)
               if remaining else {'sha': saved['sha']})
     # Fast-forward only: refuses if the branch moved since the failed run.
     gh(f"repos/{repo}/git/refs/heads/{branch}", repo_token, {"sha": commit["sha"], "force": False}, method="PATCH")
@@ -2228,7 +2230,8 @@ def fix_pull_request(issue, api_key, token):
     if not pending:
         gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {"body": previous + "\n\n## Latest fix\n" + (explanation or summary)}, method="PATCH")
     gh(f"repos/{repo}/issues/{pr['number']}/comments", repo_token,
-       {"body": f"### Fix applied after failed run {run['id']} ({model})\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
+       {"body": (f"### Fix applied after failed run {run['id']} ({model})" if failures else
+                 f"### Unfinished work continued ({model})") + f"\n\n{note}\n\n{FIX_MARKER}{commit['sha']} -->"})
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": f"### KappaForge fix ready\n\n{note}\n\n{pr['html_url']}"})
     notify(f"🔧 KappaForge pushed a fix to {repo}; tests are running again.\n{explanation or summary}"[:1500] + f"\n{pr['html_url']}")
     return pr["html_url"]
