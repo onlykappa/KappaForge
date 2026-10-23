@@ -4,7 +4,7 @@ const UI_ICONS={
  stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',menu:'<path d="M4 7h16M4 12h16M4 17h10"/>',new:'<path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15l-1 5Z"/>',
  chat:'<path d="M20 11a8 8 0 0 1-8 8H5l-3 3v-7a8 8 0 1 1 18-4Z"/>',home:'<path d="m3 10 9-7 9 7v10H3V10Z"/><path d="M9 20v-7h6v7"/>',projects:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M8 5V3h8v2M3 11h18"/>',tasks:'<rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 11 2 2 6-6M8 17h8"/>',reviews:'<path d="M6 3v12a4 4 0 0 0 4 4h5M18 21V9a4 4 0 0 0-4-4h-3"/><circle cx="6" cy="3" r="2"/><circle cx="18" cy="21" r="2"/>',
  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',saved:'<path d="M6 3h12v18l-6-4-6 4V3Z"/>',profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',settings:'<path d="m9 3-1 3-3 1-2 4 2 3 1 4 4 1 3 2 4-2 1-4 3-3-2-4-3-1-2-3H9Z"/><circle cx="12" cy="12" r="3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 8a2.5 2.5 0 1 1 4.5 1.5L12 12v1M12 17h.01"/>',
- plus:'<path d="M12 5v14M5 12h14"/>',send:'<path d="M12 20V4m-6 6 6-6 6 6"/>',list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',file:'<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3V7Z"/>',chevron:'<path d="m9 5 7 7-7 7"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',retry:'<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',wave:'<path d="M4 10v4M8 6.5v11M12 3.5v17M16 7.5v9M20 10v4"/>',send:'<path d="M12 20V4m-6 6 6-6 6 6"/>',list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',file:'<path d="M6 3h8l4 4v14H6V3Zm8 0v5h4"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3V7Z"/>',chevron:'<path d="m9 5 7 7-7 7"/>',copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',retry:'<path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>',
  back:'<path d="m15 4.5-7.5 7.5 7.5 7.5"/>',gauge:'<path d="M4.2 17.5a9 9 0 1 1 15.6 0"/><path d="m12 13 4-4.5"/><circle cx="12" cy="13.5" r="1.2"/>','more-circle':'<circle cx="12" cy="12" r="9"/><circle cx="7.8" cy="12" r=".6"/><circle cx="12" cy="12" r=".6"/><circle cx="16.2" cy="12" r=".6"/>',
  bolt:'<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8Z"/>',check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',warn:'<path d="M10.3 4.2a2 2 0 0 1 3.4 0l7.4 13.1a2 2 0 0 1-1.7 3H4.6a2 2 0 0 1-1.7-3l7.4-13.1Z"/><path d="M12 9.5v4.3M12 16.9h.01"/>',
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',flask:'<path d="M9 3.5h6M10 3.5v5.2L4.8 17.8A1.8 1.8 0 0 0 6.4 20.5h11.2a1.8 1.8 0 0 0 1.6-2.7L14 8.7V3.5M7.3 14h9.4"/>',
@@ -17,6 +17,9 @@ let conversationSearch='',uiLastChat=null,uiLastCount=0,uiLastView='',uiInitiali
 let localProfile={name:'Personal workspace'};try{const p=JSON.parse(localStorage.getItem('kappaforge.profile.v21')||'{}');if(typeof p.name==='string'&&p.name.trim())localProfile.name=p.name.slice(0,50)}catch{}
 function setSidebar(open,restoreFocus=false){
  const sidebar=document.getElementById('sidebar'),mobile=matchMedia('(max-width:840px)').matches;
+ // Phones use the tab bar and never show the sidebar (ios.css hides it). Opening it there would leave the page and
+ // the tab bar inert behind an invisible panel, which looks like a frozen app, so it always stays closed.
+ if(mobile)open=false;
  if(!mobile){sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('role');document.body.classList.toggle('sidebar-collapsed',!open);sidebar.inert=!open;sidebar.classList.remove('open');document.body.classList.remove('sidebar-open');}
  else{sidebar.classList.toggle('open',open);document.body.classList.toggle('sidebar-open',open);sidebar.inert=!open;if(open){sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('role','dialog');}else{sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('role');}}
  document.querySelector('.main').inert=mobile&&open;document.querySelector('.mobile-nav').inert=mobile&&open;if(mobile&&open)document.getElementById('close-sidebar').focus({preventScroll:true});
@@ -24,6 +27,8 @@ function setSidebar(open,restoreFocus=false){
  syncNativeComposer();
  if(restoreFocus)document.getElementById('menubtn').focus();
 }
+// Phones search on the Chats page (the sidebar never opens there); wider screens use the sidebar's search.
+function openConversationSearch(){if(matchMedia('(max-width:840px)').matches&&typeof chatSearchOpen!=='undefined'){chatSearchOpen=true;navigate('chats');document.getElementById('chatsearch')?.focus();return}setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})}
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
 // Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
@@ -271,7 +276,24 @@ const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.do
  document.querySelectorAll('[data-cancel-task]').forEach(button=>button.onclick=()=>cancelAuthorizedJob(Number(button.dataset.cancelTask)));
  resizeComposer();
 }
-function resizeComposer(){const el=document.getElementById('message');el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';document.documentElement.style.setProperty('--composer-height',document.getElementById('composer').getBoundingClientRect().height+'px');syncNativeComposer();}
+// An empty composer offers the mic and voice mode; once there is something to send (or a reply to stop), Send.
+function updateComposerMode(){const el=document.getElementById('message'),form=document.getElementById('form');if(!el||!form)return;form.classList.toggle('empty',!el.value.trim()&&!(typeof queuedAttachments!=='undefined'&&queuedAttachments.length)&&!(typeof sending!=='undefined'&&sending))}
+// Measuring the composer forces a layout of the whole page, which takes seconds in a long chat. Measure only when the
+// text, its width or the view changed, and touch the root --composer-height only when the height really changed
+// (changing it restyles the page).
+let composerMeasured={key:'',height:''};
+function resizeComposer(){
+ updateComposerMode();
+ const el=document.getElementById('message'),composer=document.getElementById('composer');
+ const key=[el.value,innerWidth,view,document.getElementById('attachlist')?.childElementCount,document.getElementById('activitystatus')?.hidden,composer.className,document.body.classList.contains('keyboard-open')].join('\u0001');
+ if(key!==composerMeasured.key||!composerMeasured.height){
+  el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';
+  const height=composer.getBoundingClientRect().height+'px';
+  if(height!==composerMeasured.height)document.documentElement.style.setProperty('--composer-height',height);
+  composerMeasured={key,height};
+ }
+ syncNativeComposer();
+}
 function updateKeyboard(){
  const vv=window.visualViewport;
  const typing=window.KappaNativeComposer?!!window.KappaNativeComposerFocused:document.activeElement===document.getElementById('message');
@@ -291,7 +313,7 @@ function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
  if(uiInitialized)return;uiInitialized=true;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
- document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
+ document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=openConversationSearch;document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
  const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',()=>{if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'});input.blur()}updateKeyboard()});input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
@@ -301,13 +323,14 @@ function initInterface(){
  document.getElementById('attachbtn').addEventListener('click',()=>document.getElementById('attachment-menu').open=false);document.getElementById('folderbtn').addEventListener('click',()=>document.getElementById('attachment-menu').open=false);
  document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){if(document.getElementById('sidebar').classList.contains('open'))setSidebar(false,true);document.querySelectorAll('details[open]').forEach(d=>d.open=false)}
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setSidebar(true);document.getElementById('conversation-search').focus()}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openConversationSearch()}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='o'){e.preventDefault();fresh()}
   if(e.key==='Tab'&&document.body.classList.contains('sidebar-open')){const items=[...document.getElementById('sidebar').querySelectorAll('button,input,a')].filter(el=>!el.disabled&&el.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
  });
  let gesture=null;
  document.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch'||!matchMedia('(max-width:840px)').matches)return;const open=document.body.classList.contains('sidebar-open');if(e.target.closest('input,textarea,select,pre,table,button,a,summary'))return;if((!open&&e.clientX<30)||(open&&e.target.closest('#sidebar')))gesture={x:e.clientX,y:e.clientY,open};},{passive:true});
- document.addEventListener('pointermove',e=>{if(!gesture)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx)){gesture=null;return;}if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){if((gesture.open&&dx<0)||(!gesture.open&&dx>0)){if(e.cancelable)e.preventDefault();setSidebar(!gesture.open);}gesture=null;}},{passive:false});
+ document.addEventListener('pointermove',e=>{if(!gesture)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dy)>40&&Math.abs(dy)>Math.abs(dx)){gesture=null;return;}if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5){// On phones a swipe in from the left edge goes Back, as in other iPhone apps.
+if(!gesture.open&&dx>0&&document.body.classList.contains('pushed')&&typeof shellBack==='function'){if(e.cancelable)e.preventDefault();shellBack();}gesture=null;}},{passive:false});
  document.addEventListener('pointerup',()=>gesture=null,{passive:true});document.addEventListener('pointercancel',()=>gesture=null,{passive:true});
 }
 
@@ -364,7 +387,7 @@ function syncNativeComposer(){
  if(!editor||!composer)return;
  editor.readOnly=true;editor.disabled=true;editor.style.opacity='1';editor.tabIndex=-1;editor.style.pointerEvents='none';editor.setAttribute('aria-hidden','true');editor.style.color='transparent';editor.style.caretColor='transparent';
  const rect=editor.getBoundingClientRect();
- window.webkit.messageHandlers.kappa.postMessage({action:'composer',appearance:document.documentElement.dataset.appearance||'dark',dark:String(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()==='#000'),color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')||document.querySelector('.main')?.inert||document.querySelector('.layout')?.inert),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
+ window.webkit.messageHandlers.kappa.postMessage({action:'composer',appearance:document.documentElement.dataset.appearance||'dark',dark:String(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()==='#000'),color:getComputedStyle(document.documentElement).getPropertyValue('--text').trim(),fontSize:String(parseFloat(getComputedStyle(editor).fontSize)),text:editor.value,revision:String(nativeComposerRevision),hidden:String(composer.classList.contains('hide')||document.body?.classList.contains('voice-open')||document.querySelector('.main')?.inert||document.querySelector('.layout')?.inert),frame:JSON.stringify({x:rect.x,y:rect.y,width:rect.width,height:rect.height})});
 }
 window.receiveNativeComposer=packet=>{
  if(!packet||typeof packet.text!=='string'||!Number.isSafeInteger(packet.revision))return;

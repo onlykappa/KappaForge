@@ -1,13 +1,13 @@
 /* Shared, dependency-free business rules. No credentials or chat text in telemetry. */
 (function(root){
 'use strict';
-const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto'};
+const defaults={routing:'balanced',model:'auto',fallback:true,reasoning:'concise',instructions:'',appearance:'dark',language:'auto',tokenBudget:0,requestBudget:0,alertPercent:80,disabledProviders:[],autoStart:true,weatherCity:'',weatherUnits:'auto',voice:'hannah',voiceEngine:'cloud'};
 function settings(value={}){
  const s={...defaults};
  if(typeof value.weatherCity==='string')s.weatherCity=value.weatherCity.trim().slice(0,120);
  if(['auto','celsius','fahrenheit'].includes(value.weatherUnits))s.weatherUnits=value.weatherUnits;
  for(const k of ['instructions','language'])if(typeof value[k]==='string')s[k]=value[k].slice(0,k==='instructions'?2000:40);
- for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark']}))if(values.includes(value[k]))s[k]=value[k];
+ for(const [k,values] of Object.entries({routing:['balanced','speed','quality','cost'],reasoning:['concise','standard','thorough'],appearance:['system','light','dark'],voice:['hannah','autumn','diana','austin','daniel','troy'],voiceEngine:['cloud','device']}))if(values.includes(value[k]))s[k]=value[k];
  // Gemini model IDs, or provider:model for the free fallback providers (e.g. groq:llama-3.3-70b-versatile).
  if(typeof value.model==='string'&&/^(auto|gemini-[a-z0-9.-]+|[a-z-]{2,20}:[A-Za-z0-9@/._:-]{1,120})$/.test(value.model))s.model=value.model;
  if(Array.isArray(value.disabledProviders))s.disabledProviders=[...new Set(value.disabledProviders.filter(p=>typeof p==='string'&&/^[a-z-]{2,20}$/.test(p)))].slice(0,20);
@@ -146,6 +146,11 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
  return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body,validation};
 },
 verifiedTask(job){return !job?.historyOnly&&job?.verification?.verified===true&&job.verification.sha===job.candidate?.sha&&job.verification.at>=job.candidate.at&&job.candidate.incomplete===false&&!job.pollError&&!['failed','tests-failed','native-failed','tests-incomplete','closed','cancelled'].includes(job.message)},
+needsAttention(job,now=Date.now()){
+ if(!job||job.historyOnly||['merged','closed','cancelled'].includes(job.message))return false;
+ const p=job.progress,v=job.verification,current=v?.sha===job.candidate?.sha;
+ return ['failed','tests-failed','native-failed','tests-incomplete'].includes(job.message)||['failed','blocked'].includes(p?.status)||!!(current&&(v?.failed||v?.incomplete))||(['waiting','recovering'].includes(p?.status)&&Number.isFinite(p.recovery?.expiresAt)&&p.recovery.expiresAt<=now);
+},
 // Act only on reports newer than the last one handled (comment ids only grow). A job tracked before ids were recorded
 // falls back to ignoring reports written before a retry or guidance resumed it.
 isNew(job,comment){const id=Number(comment?.id)||0,last=Number(job?.lastReportId)||0;if(last)return id>last;const at=Date.parse(comment?.created_at||'');return !(job?.resumedAt&&at&&at<job.resumedAt)},

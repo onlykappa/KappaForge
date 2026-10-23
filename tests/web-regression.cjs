@@ -12,8 +12,10 @@ async function go(page,target){
  for(let i=0;i<3&&await page.evaluate(()=>document.body.classList.contains('pushed'));i++)await page.locator('#menubtn').click();
  if(target==='chat'){await page.evaluate(()=>navigate('chat'));return}
  if(['chats','home'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
+ // The account page opens from the avatar on Home; More has no profile card.
+ if(target==='profile'){await page.locator('.mobile-nav [data-page=start]').click();await page.locator('#content [data-page=profile]').click();return}
  if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
- await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
+ await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content '+(target==='tasks'?'.ios-row':'')+'[data-page='+target+']').click();
 }
 async function openSettings(page){if(await isPhone(page)){await go(page,'settings');return}await openNavigation(page);await page.locator('#settingsbtn').click();}
 // Settings opens on a grouped list; each row opens its own page with a back button.
@@ -26,7 +28,7 @@ const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
-let lastChatPreferences,issuedJob=22;let taskReports={};
+let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={};
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -35,7 +37,9 @@ const apiServer=createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
  if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
- else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
+ else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2,premium:{enabled:premiumEnabled,configured:true,...premiumLimits,dailyLeftUsd:premiumLimits.dailyCapUsd,monthLeftUsd:premiumLimits.monthCapUsd,account:{balanceUsd:9,availableUsd:4},selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'DeepSeek V4.1 Flash 1017'}}};
+ else if(req.url==='/premium'&&data.action==='set'){premiumEnabled=data.enabled===true;result={enabled:premiumEnabled};}
+ else if(req.url==='/premium'&&data.action==='limits'){premiumLimits=data.limits;result={saved:true,...premiumLimits};}
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;
   const prompt=data.messages.at(-1).text;
@@ -81,11 +85,31 @@ const apiServer=createServer(async(req,res)=>{
   assert.equal(await page.locator('.mobile-nav button').count(),4);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
   await page.locator('.mobile-nav [data-page=home]').click();assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'home');
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--kappa-safe-top');navigate('chat')});assert.equal(await page.locator('.mobile-nav').isVisible(),false,'A chat hides the tab bar');
+  // Swiping in from the left edge goes Back; it never opens the hidden sidebar and leaves the page inert (a freeze).
+  await page.evaluate(()=>{const fire=(t,x)=>document.querySelector('.content').dispatchEvent(new PointerEvent(t,{pointerType:'touch',clientX:x,clientY:400,bubbles:true,cancelable:true}));fire('pointerdown',8);fire('pointermove',60);fire('pointermove',140);fire('pointerup',140)});
+  assert.deepEqual(await page.evaluate(()=>[view,document.querySelector('.main').inert,document.querySelector('.mobile-nav').inert,document.body.classList.contains('sidebar-open')]),['chats',false,false,false],'edge swipe returns to Chats without freezing the page');
+  await page.evaluate(()=>{setSidebar(true);navigate('chat')});assert.equal(await page.evaluate(()=>document.querySelector('.main').inert),false,'the sidebar never opens on phones');
  }await openSettings(page);console.log(name+': opened settings');
  // The setup check runs on its own; a healthy setup leaves no card on the Settings home.
  await page.locator('[data-section=overview] .s-row-value',{hasText:'Verified'}).waitFor();assert.equal(await page.locator('.s-issues, .s-checking').count(),0,'healthy setup hides the check card');
  await openSection(page,'overview');await page.locator('#s-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>{const saved=[lastVerify,capabilities];lastVerify={at:Date.now(),error:{status:401,message:'Unauthorized'},usageError:''};const rejected=settingsIssues()[0].title;capabilities={models:[],github:false,providers:[{name:'Groq',configured:true,hasKey:true,models:[],signup:'https://console.groq.com/keys'}]};lastVerify={at:Date.now(),error:null,usageError:''};const titles=settingsIssues().map(i=>i.level+':'+i.title);[lastVerify,capabilities]=saved;return [rejected,...titles].join('|')}),'Your access token was rejected|warn:Gemini model discovery unavailable|warn:Groq: No eligible models reported|warn:GitHub isn’t connected to your backend');
- console.log(name+': diagnostics passed');await openSection(page,'models');await page.locator('[data-pref=model]').selectOption('gemini-2.5-flash');await page.locator('[data-pref=fallback]').uncheck();
+ console.log(name+': diagnostics passed');await openSection(page,'models');
+ assert.equal(await page.locator('#premium-mode').isVisible(),true,name+' Premium control is visible');
+ assert.equal(await page.getByText('Automatic open-model selection',{exact:true}).isVisible(),true);
+ assert.match(await page.locator('#content').innerText(),/DeepSeek V4\.1 Flash 1017/);
+ assert.match(await page.locator('#content').innerText(),/Spendable under account and key limits: \$4\.00/);
+ await page.locator('#premium-limit-task').fill('2');await page.locator('#premium-limit-daily').fill('3');await page.locator('#premium-limit-month').fill('9');await page.locator('#premium-limits-save').click();
+ await page.waitForFunction(()=>capabilities.premium.monthCapUsd===9);assert.equal(await page.locator('#premium-mode').isChecked(),false,'saving limits does not enable Premium');
+ await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-limit-month').inputValue(),'9');assert.equal(await page.locator('#premium-limit-daily').inputValue(),'3');
+ await page.route(backendURL+'/premium',route=>route.fulfill({status:503,json:{error:'Limits could not be saved'}}),{times:1});
+ await page.locator('#premium-limit-month').fill('12');await page.locator('#premium-limits-save').click();await page.waitForFunction(()=>document.getElementById('premium-limit-month')?.value==='9');assert.equal(premiumLimits.monthCapUsd,9,'failed save preserves actual limits');
+ await page.locator('#premium-mode').check();await page.waitForFunction(()=>capabilities.premium.enabled===true);
+ await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-mode').isChecked(),true,name+' Premium reads persisted backend state');
+ await page.locator('#premium-mode').uncheck();await page.waitForFunction(()=>capabilities.premium.enabled===false);
+ await page.route(backendURL+'/premium',route=>route.fulfill({status:503,json:{error:'Premium state unavailable'}}),{times:1});
+ // One tap, not check(): the failed save re-renders the switch, and check() would tap the new one again.
+ await page.locator('#premium-mode').click();await page.getByText('Premium Mode not changed: Premium state unavailable',{exact:false}).waitFor();assert.equal(await page.locator('#premium-mode').isChecked(),false,name+' failed save reverts the Premium toggle');
+ await page.locator('[data-pref=model]').selectOption('gemini-2.5-flash');await page.locator('[data-pref=fallback]').uncheck();
  await openSection(page,'personalization');await page.locator('[data-pref=instructions]').fill('Keep answers precise');await page.locator('[data-pref=instructions]').blur();await page.locator('[data-pref-set=appearance][data-value=dark]').click();await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('[data-pref=model]').inputValue(),'gemini-2.5-flash');assert.equal(await page.locator('[data-pref=fallback]').isChecked(),false);
  console.log(name+': persistence passed');await openSection(page,'usage');await page.locator('#usage-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();assert.equal(await page.locator('#usage-export, .usage-chart').count(),0,'history and export are gone from Usage');await openSection(page,'overview');assert.match(await page.locator('.usage-stats').innerText(),/35/);
  console.log(name+': usage passed');await openSection(page,'memory');const countBefore=await page.locator('#memory-list .memory-item').count();assert.ok(countBefore>=2);assert.equal(await page.evaluate(()=>savedMemories.some(note=>note.includes('Owner preference: Keep replies concise'))),true,'Owner preferences seeded into saved memory');await page.locator('[data-delete-memory="0"]').click();assert.equal(await page.locator('#memory-list .memory-item').count(),countBefore-1);await page.reload();await openSettings(page);await openSection(page,'memory');assert.equal(await page.locator('#memory-list .memory-item').count(),countBefore-1);assert.equal(await page.evaluate(()=>preferences.autoStart),true);
@@ -221,6 +245,12 @@ const apiServer=createServer(async(req,res)=>{
   return {writes,paused,units:preferences.weatherUnits,comparisons};
  });
  assert.equal(protocol.writes,1,name+' duplicate receipt prevents a second persisted mutation');assert.match(protocol.paused,/paused/);assert.equal(protocol.units,'celsius');assert.ok(protocol.comparisons>0);
+ await page.evaluate(()=>{const job={number:799,title:'Clear from Dashboard',chatId:current,message:'failed',activeAt:Date.now()};trackedJobs.unshift(job);ensureTaskCard(job);persistJobs();view='home';render()});
+ await page.locator('.agent-task[data-open-task="799"]').click({button:'right'});
+ await page.locator('[data-task-act="delete"]').click();await page.locator('[data-task-act="delete"]').click();
+ await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===799));
+ assert.equal(await page.evaluate(()=>chats.some(c=>c.messages.some(m=>m.progressKey==='progress:799:live'))),false,name+' Dashboard deletion clears the chat card too');
+ assert.equal(await page.evaluate(()=>taskHistoryRecords[799]?.state==='cleared'),true,name+' Dashboard uses canonical history');
  await page.evaluate(()=>{trackedJobs=[];persistJobs();view='chat';render()});
  console.log(name+': registered capabilities, wording variations, restrictions, shared UI controls and active-task preservation passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');

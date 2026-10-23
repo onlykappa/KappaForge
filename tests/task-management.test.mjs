@@ -36,6 +36,35 @@ function harness({jobs=[],latest=null,chats,store=new Map()}={}){
  return {box,store,chats:c,state};
 }
 
+test('Dashboard deletion uses the durable history operation, removes cards and survives restart',async()=>{
+ const h=harness({jobs:[{number:198,message:'failed'},{number:199,progress:{status:'running'},authorization:{id:'keep'}}]});
+ assert.match(await h.box.deleteTaskHistory(198),/Cleared 1 inactive task/);
+ assert.deepEqual(h.state().trackedJobs.map(j=>j.number),[199]);
+ assert.equal(h.chats[0].messages.some(m=>m.progressKey||m.jobReport),false);
+ const restarted=harness({store:h.store,jobs:[{number:198,message:'failed'},...h.state().trackedJobs]});
+ restarted.box.mergeTaskHistory();assert.deepEqual(restarted.state().trackedJobs.map(j=>j.number),[199]);
+ assert.equal(h.store.has('kappaforge.jobs.removed'),false,'one shared history protocol');
+});
+
+test('Dashboard deletion refuses active, uncertain and unconfirmed cancellation work',async()=>{
+ for(const job of [{number:198,progress:{status:'running'}},{number:198},{number:198,message:'failed',cancellation:{requestedAt:1}}]){
+  const h=harness({jobs:[job]});await assert.rejects(h.box.deleteTaskHistory(198),/stays tracked/);
+  assert.equal(h.state().trackedJobs.length,1);assert.equal(h.chats[0].messages.some(m=>m.progressKey),true);
+ }
+});
+
+test('Dashboard deletion reports failed saves instead of success and preserves tracking',async()=>{
+ const h=harness({jobs:[{number:198,message:'failed'}]});
+ const dashboard=read('app-dashboard.js'),notices=[];
+ Object.assign(h.box,{taskMenu:198,taskMenuConfirm:true,toast:t=>notices.push(t)});
+ vm.runInContext(slice(dashboard,'async function taskMenuAction(','function bindTaskHold('),h.box);
+ const set=h.box.localStorage.setItem;
+ h.box.localStorage.setItem=(k,v)=>{if(k==='kappaforge.operations.v1')throw Error('Storage full');return set(k,v)};
+ await h.box.taskMenuAction('delete');
+ assert.match(notices.at(-1),/not cleared/i);assert.doesNotMatch(notices.at(-1),/Cleared 1/);
+ assert.equal(h.state().trackedJobs.length,1);assert.equal(h.chats[0].messages.some(m=>m.progressKey),true);
+});
+
 test('the exact failed request clears inactive history, preserves active work and starts no job',async()=>{
  const jobs=[{number:198,message:'failed',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'},
   {number:180,finished:true},{number:169,progress:{status:'blocked'}},

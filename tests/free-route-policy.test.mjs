@@ -75,12 +75,24 @@ test("dynamic providers expose only individually reviewed free models",async()=>
  };
  try{
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",GROQ_API_KEY:"test"},"groq"),[
-   "openai/gpt-oss-120b","qwen/qwen3.8-27b"
-  ]);
+   "openai/gpt-oss-120b","qwen/qwen3.8-27b","openai/gpt-oss-20b"
+  ],"gpt-oss-20b is reviewed (answered the live audit); Groq's TTS, STT and guard models are not chat models");
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",NVIDIA_API_KEY:"test"},"nvidia"),[]);
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",MISTRAL_API_KEY:"test"},"mistral"),[],"unrelated catalog IDs cannot enable Mistral models");
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:"v1",OLLAMA_API_KEY:"test"},"ollama"),[]);
   assert.equal(requests.length,3,"only providers with reviewed models may contact model discovery");
+ }finally{globalThis.fetch=original}
+});
+
+test("each provider routes up to ten of its free models, never a paid one",async()=>{
+ const original=globalThis.fetch,free=Array.from({length:12},(_,i)=>"vendor/model-"+String(i).padStart(2,"0")+":free");
+ globalThis.fetch=async()=>Response.json({data:[{id:"vendor/paid-model"},...free.map(id=>({id}))]});
+ try{
+  const models=await providerModels({ROUTING_POLICY_VERSION:"v1",KILO_API_KEY:"cap-test"},"kilo");
+  assert.equal(models.length,10,"the per-provider cap is ten");
+  assert.equal(models.includes("vendor/paid-model"),false);
+  assert.ok(models.every(m=>m.endsWith(":free")));
+  assert.equal((await providerModels({KILO_API_KEY:"cap-test"},"kilo")).includes("vendor/paid-model"),false,"older policy mode keeps free-only pools free");
  }finally{globalThis.fetch=original}
 });
 
@@ -112,7 +124,7 @@ test("automatic coding fallback cannot include model IDs outside approved free l
  try{
   const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"groq,nvidia,ollama",KAPPA_CODE_PROVIDERS:"groq,nvidia,ollama",KAPPA_PRIVATE_CODE_PROVIDERS:"groq,nvidia,ollama",GROQ_API_KEY:"test",NVIDIA_API_KEY:"test",OLLAMA_API_KEY:"test"};
   const routes=await fallbackRoutes(env,["gemini-3.1-flash-lite"],{},false,{channel:"coding",privateCode:true});
-  assert.deepEqual(routes.map(route=>route.label),["groq:openai/gpt-oss-120b","groq:qwen/qwen3.8-27b"]);
+  assert.deepEqual(routes.map(route=>route.label),["groq:openai/gpt-oss-120b","groq:qwen/qwen3.8-27b","groq:openai/gpt-oss-20b"]);
  }finally{globalThis.fetch=original}
 });
 
@@ -185,7 +197,7 @@ test('DeepSeek leads coding (Gemini leads chat) without overriding manual select
  const original=globalThis.fetch;
  const deepseek='deepseek-ai/deepseek-v4.1-flash',nemotron='nvidia/nemotron-3-ultra-550b-a55b';
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CHAT_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_PRIVATE_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',NVIDIA_API_KEY:'deepseek-order-fixture',GROQ_API_KEY:'deepseek-groq-fixture',OPENROUTER_API_KEY:'deepseek-openrouter-fixture'};
- globalThis.fetch=async url=>Response.json({data:(String(url).includes('nvidia.com')?[nemotron,deepseek,'paid-unreviewed']:String(url).includes('openrouter.ai')?['deepseek/fixture:free','deepseek/paid','nemotron/fixture:free']:['openai/gpt-oss-120b']).map(id=>({id}))});
+ globalThis.fetch=async url=>Response.json({data:(String(url).includes('nvidia.com')?[nemotron,deepseek,'paid-unreviewed']:String(url).includes('openrouter.ai')?['deepseek/fixture:free','deepseek/paid','nemotron/fixture:free']:['openai/gpt-oss-120b']).map(id=>({id,...(id.endsWith(':free')?{pricing:{prompt:'0',completion:'0'}}:{})}))});
  try{
   for(const channel of ['chat','coding']){
    const options={channel,privateCode:channel==='coding'};

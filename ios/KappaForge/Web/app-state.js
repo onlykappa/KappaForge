@@ -152,7 +152,18 @@ async function syncVault(){
 }
 // A save during a running sync is queued, not dropped, so the latest message always reaches the cloud.
 function scheduleVaultSync(){if(!vaultPassphrase)return;if(syncBusy){syncPending=true;return}syncVault()}
+// render() redraws every message, so each message's markdown is cached by its text instead of being parsed again.
 function renderChatText(message){
+ const chatTextCache=renderChatText.cache||(renderChatText.cache=new Map());
+ const key=String(message??""),hit=chatTextCache.get(key);
+ if(hit!==undefined){chatTextCache.delete(key);chatTextCache.set(key,hit);return hit}
+ const html=renderChatTextUncached(key);
+ // Bounded by entries and by characters, so the partial texts of a long streamed reply cannot pile up.
+ chatTextCache.set(key,html);renderChatText.chars=(renderChatText.chars||0)+key.length+html.length;
+ while(chatTextCache.size>300||renderChatText.chars>4e6){const [k,v]=chatTextCache.entries().next().value;chatTextCache.delete(k);renderChatText.chars-=k.length+v.length}
+ return html;
+}
+function renderChatTextUncached(message){
  const text=KappaIntent.stripActions(message);const regex=/\x60\x60\x60(kappa-widget|json)\s*\n([\s\S]*?)\n\x60\x60\x60/g;
  let html="",pos=0,hit;
  while((hit=regex.exec(text))){

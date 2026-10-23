@@ -42,7 +42,7 @@ test('a later rejected key cannot erase the earlier route cooldown',async()=>{
  const f=fixture('groq,openrouter'),original=globalThis.fetch,now=Date.now();
  globalThis.fetch=async url=>{
   const open=String(url).includes('openrouter');
-  if(String(url).endsWith('/models'))return open?Response.json({data:[{id:'fixture-recovery:free'}]}):Response.json({data:[{id:'openai/gpt-oss-120b'}]});
+  if(String(url).endsWith('/models'))return open?Response.json({data:[{id:'fixture-recovery:free',pricing:{prompt:'0',completion:'0'}}]}):Response.json({data:[{id:'openai/gpt-oss-120b'}]});
   return Response.json({error:'fixture'},{status:open?401:429,headers:open?{}:{'Retry-After':'60'}});
  };
  try{const response=await f.run(),data=await response.json();assert.equal(response.status,503);assert.equal(data.failure.category,'authentication');assert.ok(data.retryAt>=now+60000&&data.retryAt<Date.now()+62000);}
