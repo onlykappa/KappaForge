@@ -100,12 +100,112 @@ function clearTaskHistory(status,filters={},state='cleared'){
  const active=trackedJobs.filter(j=>!inactiveTask(j)).length,verb=state==='archived'?'Archived':state==='hidden'?'Hidden':'Cleared';
  return verb+' '+selected.length+' inactive task'+(selected.length===1?'':'s')+' from app history.'+(active?' Kept '+active+' active task'+(active===1?'':'s')+'.':'')+' GitHub issues and PRs remain available. Undo restores history for 30 days without restarting execution.';
 }
+// Routing evidence contains capability IDs, bounded identifiers and outcomes, never briefs or setting values.
+let routeJournal=[];try{const stored=JSON.parse(localStorage.getItem('kappaforge.routing.v1')||'[]');if(Array.isArray(stored))routeJournal=stored.slice(-100)}catch{}
+function recordRoute(decision,operation,outcome,requestId,index=0){
+ const event={at:Date.now(),requestId,index,...KappaIntent.decisionEvidence(decision,operation,outcome)};
+ routeJournal.push(event);routeJournal=routeJournal.slice(-100);try{localStorage.setItem('kappaforge.routing.v1',JSON.stringify(routeJournal))}catch{}return event;
+}
+function routingDiagnostics(){
+ const latest=new Map();for(const event of routeJournal)latest.set(event.requestId+':'+event.index,event);
+ const distinct=predicate=>new Set(routeJournal.filter(predicate).map(e=>e.requestId+':'+e.index)).size;
+ return {counts:{actions:latest.size,operationalDevelopment:distinct(e=>e.actionType==='operation'&&e.workflow==='development'),unnecessaryClarifications:distinct(e=>e.outcome==='needs-clarification'&&e.reason==='authorized-action'),unsupportedFallbacks:distinct(e=>e.reason==='unsupported-capability'),clarifications:distinct(e=>e.outcome==='needs-clarification')},recent:routeJournal.slice(-20)};
+}
+function operationContext(chat){
+ const same=trackedJobs.filter(j=>j.chatId===chat?.id),candidates=same.length?same:trackedJobs;
+ return {chatId:chat?.id,taskIds:candidates.map(j=>j.number)};
+}
+function observeJobRoute(job){
+ const tracking=job.cancellationRoute||job.routeTracking;if(!tracking)return false;
+ let outcome=null;
+ if(job.cancellationRoute){if(job.cancellation?.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length)outcome='verified';}
+ else{
+  const p=job.progress,freshProgress=p?.updatedAt>=tracking.requestedAt,freshReport=job.lastReportAt>=tracking.requestedAt;
+  if((freshReport&&job.message==='tests-passed')||job.routeVerifiedAt>=tracking.requestedAt||(freshReport&&tracking.decision.workflow.kind==='read-only'&&job.finished))outcome='verified';
+  else if((freshProgress&&p.status==='failed')||(freshReport&&['failed','tests-failed'].includes(job.message)))outcome='failed';
+  else if(freshProgress&&p.startedAt&&['running','recovering','testing','completed','ready'].includes(p.status))outcome='acknowledged';
+ }
+ if(!outcome||tracking.outcome===outcome)return false;
+ recordRoute(tracking.decision,tracking.operation,outcome,tracking.requestId,tracking.index);tracking.outcome=outcome;
+ if(typeof ensureTaskCard==='function')ensureTaskCard(job);return true;
+}
+function routeReply(chat,text,events){chat.messages.push({role:'assistant',text,routeEvidence:events});save();render();}
+function revalidateActionState(state,chat){
+ const ownerIndex=chat.messages.findIndex(m=>m.role==='user'&&m.requestId===state.requestId&&(m.text===state.request||m.text.startsWith(state.request+'\nFile ')||m.text.startsWith(state.request+'\n[Attached:')));
+ if(ownerIndex<0)return false;
+ const rebuilt=KappaIntent.planRequest(state.request,state.taskContext||operationContext(chat));
+ if(!Array.isArray(state.steps)||state.steps.length!==rebuilt.steps.length)return false;
+ const steps=[];
+ for(const original of rebuilt.steps){
+  const saved=state.steps[original.index];let scoped=original;
+  if(saved?.answerMessageId){
+   const answerIndex=chat.messages.findIndex(m=>m.role==='user'&&m.requestId===saved.answerMessageId);
+   if(answerIndex<=ownerIndex)return false;
+   scoped=KappaIntent.clarifyOperation(original,chat.messages[answerIndex].text,state.taskContext||operationContext(chat));if(!scoped)return false;
+  }
+  if(saved?.text!==scoped.text||saved.kind!==scoped.kind||JSON.stringify(saved.dependsOn)!==JSON.stringify(scoped.dependsOn))return false;
+  let status=saved.status;
+  if(['verified','dispatched','acknowledged','requested'].includes(status)){const evidence=[...routeJournal].reverse().find(e=>e.requestId===state.requestId&&e.index===original.index);if(!evidence)return false;status=evidence.outcome;}
+  steps.push({...scoped,status,awaitingApproval:saved.awaitingApproval,result:saved.result,answerMessageId:saved.answerMessageId,effectVerified:scoped.operation?.id==='tasks.retry'&&status==='dispatched'});
+ }
+ state.steps=steps;state.taskContext=state.taskContext||operationContext(chat);return true;
+}
+const continuingActionPlans=new Set();
+async function continuePendingPlans(){
+ if(document.hidden||(typeof sending!=='undefined'&&sending)||(typeof pendingJob!=='undefined'&&pendingJob))return;
+ for(const chat of chats){
+  const state=chat.pendingActions;
+  if(!state||state.expiresAt<=Date.now()||!state.expiresAt||state.waitingIndex!==null||continuingActionPlans.has(state.requestId))continue;
+  if(!revalidateActionState(state,chat))continue;
+  const ready=state.steps.some(step=>step.status==='blocked'&&step.decision.authorization.allowed&&(step.kind==='task'||step.operation?.kind==='operation')&&step.dependsOn.length&&step.dependsOn.every(index=>state.steps[index].status==='verified'||state.steps[index].effectVerified));
+  if(!ready)continue;
+  continuingActionPlans.add(state.requestId);
+  try{await runActionPlan(state,chat,null)}catch{}finally{continuingActionPlans.delete(state.requestId)}
+ }
+}
+async function runActionPlan(state,chat,message){
+ state.expiresAt=state.expiresAt||Date.now()+86400000;
+ if(!revalidateActionState(state,chat)){chat.pendingActions=null;routeReply(chat,'The saved action scope could not be verified. Please restate the request; no remaining action was executed.',[]);return state;}
+ const context=operationContext(chat),events=[],lines=[];let question=null;
+ for(const step of state.steps){const evidence=[...routeJournal].reverse().find(e=>(e.requestId===state.requestId&&e.index===step.index)||(step.kind==='task'&&e.requestId===state.requestId+'-'+step.index));if(evidence&&['verified','failed','acknowledged','dispatched'].includes(evidence.outcome)&&['requested','dispatched','acknowledged'].includes(step.status))step.status=evidence.outcome;}
+ for(const step of state.steps){
+  if(step.kind==='task'&&step.status==='requested'&&step.awaitingApproval&&!(typeof pendingJob!=='undefined'&&pendingJob)&&!trackedJobs.some(j=>j.requestId===state.requestId+'-'+step.index))step.status='ready';
+  if(['verified','dispatched','acknowledged','requested'].includes(step.status))continue;
+  // Do not silently retry failed effects or overwrite another outstanding task approval.
+  if(step.status==='failed')continue;
+  if(step.dependsOn.some(index=>state.steps[index].status!=='verified'&&!state.steps[index].effectVerified)){step.status='blocked';step.result='Waiting for its prerequisite to be verified. No dependent action ran. Once verified, remaining actions continue while this request is active. You can also say continue actions.';}
+  else if(step.kind==='operation'){
+   if(step.operation?.kind!=='operation'){
+    step.status=step.operation?.clarification?'needs-clarification':'blocked';step.result=step.operation?.clarification?'A target or value is needed.':step.operation?.message||'No supported action was resolved.';
+    if(question===null&&step.operation?.clarification)question=step.index;
+   }else try{
+    recordRoute(step.decision,step.operation,'requested',state.requestId,step.index);
+    const receipt={};step.result=await executeAppCapability(step.operation,{receipt,actionIndex:step.index,routeRequestId:state.requestId,source:'user-request',userText:step.text,chatId:chat.id,requestId:state.requestId+'-'+step.index,resolvedContext:context});
+    step.status=receipt.outcome||'verified';step.effectVerified=step.operation.id==='tasks.retry'&&step.status==='dispatched';
+   }catch(e){step.status='failed';step.result=e.message;}
+  }else if(step.kind==='task'){
+   if(!step.decision.authorization.allowed){step.status='blocked';step.result=step.decision.authorization.reason;}
+   else if(typeof pendingJob!=='undefined'&&pendingJob){step.status='blocked';step.result='A task is awaiting approval. Approve or deny it, then say continue actions.';}
+   else try{
+    const receipt={};const started=await proposeTaskAutomatically(step.text,false,KappaJobs.conversationContext(chat.messages),state.requestId+'-'+step.index,chat.id,{ownerRequest:state.request,actionIndex:step.index,routeRequestId:state.requestId,receipt});
+    step.status=started?(receipt.status||'requested'):'failed';step.awaitingApproval=!!receipt.awaitingApproval;step.result=started?(step.status==='dispatched'?'Development dispatch confirmed; execution and checks are not complete.':'Development request prepared; runner dispatch is not confirmed.'):(typeof planError==='string'?planError:'Development could not start.');
+   }catch(e){step.status='failed';step.result=e.message;}
+  }else{step.status='blocked';step.result='No executable action was requested.';}
+  events.push(recordRoute(step.decision,step.operation,step.status,state.requestId,step.index));
+  lines.push((step.index+1)+'. '+(KappaIntent.capabilities.definitions[step.operation?.id]?.target||(step.decision.action.kind==='investigation'?'Investigation':step.kind==='task'?'Software change':'App action'))+': '+step.result);
+  save();
+ }
+ state.waitingIndex=question;chat.pendingActions=state.steps.some(s=>['needs-clarification','blocked'].includes(s.status))?state:null;
+ if(question!==null)lines.push('Please answer: '+state.steps[question].operation.message);
+ if(!lines.length)lines.push('No pending action was executed. Failed actions require a new explicit request.');
+ routeReply(chat,lines.join('\n\n'),events);return state;
+}
 // Shared adapters for typed requests and explicit UI controls. Model proposals must match
 // the immutable user turn; registry validation runs again immediately before each handler.
 async function executeAppCapability(proposal,context={}){
- const registry=KappaIntent.capabilities;
+ const registry=KappaIntent.capabilities;context.receipt=context.receipt||{};
  if(context.source!=='user-request'&&context.source!=='user-control')throw Error('A direct user request or selected control is required');
- const scoped=context.source==='user-request'?registry.validateProposal(proposal,context.userText,{chatId:context.chatId}):{...proposal,params:registry.validate(proposal.id,proposal.params)};
+ const scoped=context.source==='user-request'?registry.validateProposal(proposal,context.userText,context.resolvedContext||{...operationContext(chats.find(c=>c.id===context.chatId)),chatId:context.chatId}):{...proposal,params:registry.validate(proposal.id,proposal.params)};
  const handlers={
   'tasks.clear-history':params=>clearTaskHistory(params.status,params),
   'tasks.archive-history':params=>clearTaskHistory(params.status,params,'archived'),
@@ -114,9 +214,10 @@ async function executeAppCapability(proposal,context={}){
   'tasks.undo-history':()=>restoreTaskHistory(),
   'tasks.retry':async params=>{
    if(!backend||!access)throw Error('Connect AI before retrying a task.');
-   const response=await userAuthorizedFetch('/retry',{task:params.task},context.userText||'Confirmed retry of task #'+params.task,context.source,context.requestId,context.chatId||current||'controls');
+   const response=await userAuthorizedFetch('/retry',{task:params.task},scoped.resolvedText?scoped.resolvedText+(KappaIntent.requestLimits(context.userText).restrictions.noMerge?'; do not merge':''):context.userText||'Confirmed retry of task #'+params.task,context.source,context.requestId||requestId,context.chatId||current||'controls');
    const result=await response.json();if(!response.ok)throw Error(result.error||'Retry request failed');
-   acceptTaskRetry(params.task,result,context.chatId);return result.message||'Recovery requested for task #'+params.task+'.';
+   if(context.receipt)context.receipt.outcome=['dispatch_requested','fix_started'].includes(result.status)?'dispatched':'requested';
+   acceptTaskRetry(params.task,result,context.chatId);const job=trackedJobs.find(j=>j.number===params.task);if(job)job.routeTracking={requestId,index,requestedAt:Date.now(),outcome:context.receipt?.outcome||'requested',operation:scoped,decision:KappaIntent.executionDecision(context.userText||'retry task #'+params.task,context.resolvedContext||{})};if(job&&typeof ensureTaskCard==='function')ensureTaskCard(job);persistJobs();return result.message||'Recovery requested for task #'+params.task+'.';
   },
   'tasks.cancel':async params=>{
    const job=trackedJobs.find(j=>j.number===params.task);if(!job?.authorization)throw Error('This device has no cancellation authorization for task #'+params.task+'. Manage its issue on GitHub.');
@@ -124,6 +225,8 @@ async function executeAppCapability(proposal,context={}){
    const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
    const result=await response.json();if(!response.ok)throw Error(result.error||'Cancellation request failed');
    job.cancellation=result.cancellation||{authorizationRevokedAt:Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};job.finished=false;job.message='cancellation-requested';persistJobs();
+   if(context.receipt)context.receipt.outcome=job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length?'verified':'partially-completed';
+   job.cancellationRoute={requestId,index,decision,operation:scoped,outcome:context.receipt.outcome};persistJobs();
    return 'Cancellation authorization revoked for task #'+params.task+'. '+(job.cancellation.terminatedAt?'Observed task runners have stopped.':'Runner termination has not been confirmed; already running work may still be stopping.')+(job.cancellation.errors?.length?' '+job.cancellation.errors.join('. '):'');
   },
   'chats.rename':params=>{
@@ -134,12 +237,24 @@ async function executeAppCapability(proposal,context={}){
   },
   'settings.update':params=>{preferences[params.key]=params.value;savePreferences();const persisted=JSON.parse(localStorage.getItem('kappaforge.settings.v2')||'{}');if(persisted[params.key]!==params.value)throw Error('Preference could not be saved.');return 'Saved '+params.key+': '+params.value+'.';}
  };
- return registry.execute(scoped,handlers);
+ const requestId=context.routeRequestId||context.requestId||crypto.randomUUID(),index=context.actionIndex||0;
+ const decision={action:{kind:'operation',id:scoped.id},authorization:{allowed:true,restrictions:scoped.restrictions||KappaIntent.requestLimits('').restrictions},workflow:{kind:'direct'},verification:{kind:scoped.id==='tasks.retry'?'dispatch-receipt':scoped.id==='tasks.cancel'?'cancellation-stages':'effect-readback'}};
+ recordRoute(decision,scoped,'requested',requestId,index);
+ try{const result=await registry.execute(scoped,handlers);recordRoute(decision,scoped,context.receipt?.outcome||(scoped.id==='tasks.retry'?'requested':scoped.id==='tasks.cancel'?'partially-completed':'verified'),requestId,index);return result;}catch(error){recordRoute(decision,scoped,'failed',requestId,index);throw error;}
 }
 async function runAppOperation(text,chat,message){
- const operation=KappaIntent.capabilities.resolve(text,{chatId:chat.id});
- if(operation?.kind!=='operation')return operation?.message||'Please specify the operation and its target. No development task was started.';
- return executeAppCapability(operation,{source:'user-request',userText:text,chatId:chat.id,requestId:message.requestId});
+ const context=operationContext(chat),operation=KappaIntent.capabilities.resolve(text,context),decision=KappaIntent.executionDecision(text,context);
+ if(operation?.kind==='multi-operation'){
+  const plan=KappaIntent.planRequest(text,context);await runActionPlan({...plan,request:text,requestId:message.requestId},chat,message);return null;
+ }
+ if(operation?.kind!=='operation'){
+  const event=recordRoute(decision,operation,operation?.clarification?'needs-clarification':'blocked',message.requestId);
+  if(operation?.clarification){const plan=KappaIntent.planRequest(text,context);chat.pendingActions={...plan,request:text,requestId:message.requestId,taskContext:context,waitingIndex:0};}
+  message.routeEvidence=[event];return operation?.message||'Please specify the operation and its target. No development task was started.';
+ }
+ recordRoute(decision,operation,'requested',message.requestId);
+ try{const receipt={};const result=await executeAppCapability(operation,{receipt,source:'user-request',userText:text,chatId:chat.id,requestId:message.requestId,resolvedContext:context});message.routeEvidence=[recordRoute(decision,operation,receipt.outcome||'verified',message.requestId)];return result;}
+ catch(error){message.routeEvidence=[recordRoute(decision,operation,'failed',message.requestId)];throw error;}
 }
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
@@ -164,6 +279,16 @@ function adoptRepositoryTasks(issues){
 // A request already has a task when it started one, or when a task card follows it in its chat.
 function requestHasTask(chat,message){return !!message.taskStarted||chat.messages.slice(chat.messages.indexOf(message)+1).some(x=>x.progressKey)}
 function chatTaskPlan(typed,chat){
+ const context=typeof operationContext==='function'?operationContext(chat):{chatId:chat?.id},pending=chat?.pendingActions;
+ if(pending&&/^(?:never mind|cancel (?:the )?(?:question|remaining actions)|forget it)$/i.test(typed.trim()))return {kind:'cancel-actions'};
+ if(pending&&/^continue actions[.!]?$/i.test(typed.trim()))return {kind:'actions',state:pending};
+ if(pending&&pending.waitingIndex!==null&&pending.waitingIndex!==undefined){
+  const step=pending.steps[pending.waitingIndex],resolved=KappaIntent.clarifyOperation(step,typed,context);
+  if(resolved){const state=JSON.parse(JSON.stringify(pending));state.steps[pending.waitingIndex]=resolved;return {kind:'actions',state,answeringIndex:pending.waitingIndex};}
+  if(KappaIntent.classify(typed)==='conversation')return {kind:'clarification',text:step.operation.message};
+ }
+ const plan=KappaIntent.planRequest(typed,context);if(plan.kind==='multi')return {kind:'actions',state:{...plan,request:typed,requestId:null}};
+
  if(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?\d+\s*[.!]?$/i.test(typed))return {kind:"retry"};
  if(KappaIntent.isOperation(typed))return {kind:'operation',text:typed};
  const intent=KappaIntent.classify(typed);
@@ -176,7 +301,7 @@ function chatTaskPlan(typed,chat){
  if(KappaIntent.suggestsTask(typed))return {kind:"approval",text:typed};
  return {kind:"none"};
 }
-const TASK_INTENT={start:"starting",retry:"starting",approval:"approval",operation:"none",none:"none"};
+const TASK_INTENT={start:"starting",retry:"starting",approval:"approval",operation:"none",actions:"none",clarification:"none",["cancel-actions"]:"none",none:"none"};
 // Starts with the chat request, not after its reply: a failed reply or switching chats never drops the task.
 // Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(plan,typed,chat){
@@ -184,11 +309,13 @@ async function runChatAction(plan,typed,chat){
  const message=[...chat.messages].reverse().find(m=>m.role==='user');
  if(!message||message.executionHandled)return;
  message.executionHandled=true;message.requestId=message.requestId||crypto.randomUUID();save();
- if(plan.kind==='operation'){
-  const result=await runAppOperation(typed,chat,message);chat.messages.push({role:'assistant',text:result});save();render();return;
- }
- if(plan.kind==="retry"){
-  const result=await runAppOperation(typed,chat,message);chat.messages.push({role:'assistant',text:result});save();render();return;
+ if(plan.kind==='cancel-actions'){if(typeof pendingJob!=='undefined'&&pendingJob?.routeRequestId===chat.pendingActions?.requestId)pendingJob=null;chat.pendingActions=null;routeReply(chat,'Remaining actions cancelled. Completed effects remain saved.',[]);return;}
+ if(plan.kind==='clarification'){routeReply(chat,plan.text,[]);return;}
+ if(plan.kind==='actions'){plan.state.expiresAt=Date.now()+86400000;plan.state.requestId=plan.state.requestId||message.requestId;if(Number.isInteger(plan.answeringIndex))plan.state.steps[plan.answeringIndex].answerMessageId=message.requestId;await runActionPlan(plan.state,chat,message);return;}
+ chat.pendingActions=null;
+ if(plan.kind==='operation'||plan.kind==='retry'){
+  let result;try{result=await runAppOperation(typed,chat,message)}catch(error){result='Operation failed: '+error.message+' No development or automatic retry was started.';}
+  if(result!==null)chat.messages.push({role:'assistant',text:result,routeEvidence:message.routeEvidence});save();render();return;
  }
  if(plan.source){plan.source.executionHandled=true;plan.source.offerTask=false}
  const planned=await proposeTaskAutomatically(plan.text,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id,{explicit:!!plan.explicit,approval:plan.kind==="approval"});
@@ -229,6 +356,7 @@ function ensureTaskCard(job){
  const target=chats.find(c=>c.id===job.chatId);if(!target)return null;
  let message=target.messages.find(m=>String(m.progressKey||'').startsWith('progress:'+job.number+':'));
  if(!message){message={role:'assistant',text:'',progressKey:'progress:'+job.number+':live'};target.messages.push(message)}
+ if(job.routeTracking)message.routeEvidence=[KappaIntent.decisionEvidence(job.routeTracking.decision,job.routeTracking.operation,job.routeTracking.outcome||'requested')];
  // Older attempts can have multiple progress comments. Keep their reports in details, one visible card.
  target.messages=target.messages.filter(m=>m===message||!String(m.progressKey||'').startsWith('progress:'+job.number+':'));
  return message;
@@ -375,7 +503,7 @@ async function checkJobResult(){
    if(job.cancellation){
     const response=await fetch(backend+'/cancel/status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
     const receipt=await response.json();if(!response.ok)throw Error(receipt.error||'Cancellation status unavailable');
-    job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!job.cancellation.terminatedAt;job.pollAfter=Date.now()+15000;changed=true;continue;
+    job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!job.cancellation.terminatedAt;job.pollAfter=Date.now()+15000;observeJobRoute(job);changed=true;continue;
    }
    const [comments,issue]=await Promise.all([taskComments(job.number),taskRead("KappaForge/issues/"+job.number)]);
    if(dismissedTaskIds.has(job.number))continue;
@@ -404,16 +532,17 @@ async function checkJobResult(){
    }
    const prPath=job.prUrl&&!job.finished?job.prUrl.match(/github\.com\/onlykappa\/([A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/):null;
    if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);if(dismissedTaskIds.has(job.number))continue;
-    if(pr.merged_at){changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
+    if(pr.merged_at){job.routeVerifiedAt=Date.now();changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
     else if(pr.state==="closed"){changed=jobChatUpdate(job,"pr-closed","The pull request was closed without merging. ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="closed";}}
    if(issue.state==="closed"&&!job.finished&&!job.cancellation){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
+   if(observeJobRoute(job))changed=true;
    if(job.pollError)changed=true;job.pollError="";job.pollAfter=0;job.lastCheckedAt=Date.now();
    if(KappaJobs.stalled(job)){changed=jobChatUpdate(job,"stuck:"+job.activeAt,"⏳ Task #"+job.number+" has had no new update for over 15 minutes, so it may be stuck. Ask me to **retry task #"+job.number+"** or [check it on GitHub](https://github.com/onlykappa/KappaForge/issues/"+job.number+").",true)||changed;job.stuckNote=job.activeAt;}
    }catch(e){if(dismissedTaskIds.has(job.number))continue;job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}
   }
  }finally{
   for(const job of jobs){if(job.finished&&!job.finishedAt)job.finishedAt=Date.now()}
-  recentJob=trackedJobs.find(j=>j.number===recentJob?.number)||recentJob;persistJobs();jobTrackingBusy=false;if(changed)render();
+  recentJob=trackedJobs.find(j=>j.number===recentJob?.number)||recentJob;persistJobs();jobTrackingBusy=false;if(changed)render();continuePendingPlans();
  }
 }
 async function launchJob(){
@@ -423,20 +552,20 @@ async function launchJob(){
  const decision=KappaIntent.executionDecision(job.instructions,{mode:job.mode});
  const conflict=KappaIntent.taskConflict(job.instructions,job.mode)||(decision.action.kind==='investigation'&&!decision.authorization.allowed?decision.authorization.reason:'');if(conflict){const target=chats.find(c=>c.id===jobChatId);if(target)target.messages.push({role:'assistant',text:conflict});save();render();return;}
  try{
- const {requestId,conversationId,authorizationSource,...payload}=job;
- const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
+ const {requestId,conversationId,authorizationSource,routeRequestId,routeActionIndex,...payload}=job;
+ const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.requestScope?.ownerRequest||job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
  const data=await response.json();
  if(!response.ok)throw Object.assign(new Error(data.error||"Request failed"),{url:data.issueUrl});
  // The Worker hands back a task this request already started (status "existing"): follow that one, never a second card.
+ const outcome=data.status==="dispatched"?"dispatched":"requested";
  const known=trackedJobs.find(j=>j.number===data.issueNumber);
- if(known){recentJob=known;toast("Already running as task #"+known.number);render();return}
- recentJob={message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,authorization:{id:job.requestId,conversationId:job.conversationId||jobChatId},chatId:jobChatId,activeAt:Date.now(),queuedAt:Date.now(),title:job.title,progress:KappaProgress.queued(data.issueNumber)};
+ if(known){recentJob=known;recordRoute(decision,null,"requested",job.routeRequestId||job.requestId,job.routeActionIndex||0);toast("Already running as task #"+known.number);render();return {status:"requested",task:known.number}}
+ recentJob={routeTracking:{requestId:job.routeRequestId||job.requestId,index:job.routeActionIndex||0,requestedAt:Date.now(),outcome,decision,operation:null},requestId:job.requestId,message:"waiting",url:data.issueUrl,number:data.issueNumber,mode:job.mode,authorization:{id:job.requestId,conversationId:job.conversationId||jobChatId},chatId:jobChatId,activeAt:Date.now(),queuedAt:Date.now(),title:job.title,progress:KappaProgress.queued(data.issueNumber)};
  ensureTaskCard(recentJob);save();
  if(!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push(recentJob);persistJobs();taskCheckpoint(recentJob,"waiting","launch");jobPollAfter=0;
  localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));
- checkJobResult();
- }catch(e){if(!e.url)pendingJob=job;recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}}
- render();
+ recordRoute(decision,null,outcome,job.routeRequestId||job.requestId,job.routeActionIndex||0);checkJobResult();render();return {status:outcome,task:data.issueNumber};
+ }catch(e){if(!e.url)pendingJob=job;recentJob={message:"Could not launch: "+e.message,url:e.url};const target=chats.find(c=>c.id===jobChatId);if(target){target.messages.push({role:"assistant",text:"I couldn’t start that task: "+e.message+"\n\nNext: Check the connection or permissions and retry."});save()}render();return {status:"failed",error:e.message};}
 }
 let taskDraft="",taskFocus=null;
 function prepareJob(message,mode="audit"){
@@ -508,7 +637,7 @@ async function refreshActivity(force=false){
 
 function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge development task").slice(0,110),body="Repository: onlykappa/KappaForge\nMode: audit\n\n"+text+"\n\nReview before creating. This browser preview cannot authorize a coding run.";const url="https://github.com/onlykappa/KappaForge/issues/new?"+new URLSearchParams({title,body});window.open(url,"_blank","noopener")}
 // While a task is busy (started or updated in the last 20 minutes), look for progress every 10 seconds instead of every 90.
-setInterval(()=>{if(!document.hidden&&trackedJobs.some(j=>!j.finished&&Date.now()-(j.activeAt||0)<1200000)){checkJobResult()}},10000);
+setInterval(()=>{continuePendingPlans();if(!document.hidden&&trackedJobs.some(j=>!j.finished&&Date.now()-(j.activeAt||0)<1200000)){checkJobResult()}},10000);
 
 async function cancelAuthorizedJob(number){
  try{const result=await executeAppCapability({id:'tasks.cancel',params:{task:number}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}

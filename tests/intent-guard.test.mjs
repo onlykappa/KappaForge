@@ -171,7 +171,7 @@ test('long-running watch and continuous tasks stay authorized for a week, others
 
 test('chat offers Start as task only under request-like messages that did not start work',()=>{
  const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
- const fn=source.slice(source.indexOf('function renderMessage('),source.indexOf('function renderSavedItems('));
+ const fn=source.slice(source.indexOf('function renderRouteEvidence('),source.indexOf('function renderSavedItems('));
  const box={KappaIntent:globalThis.KappaIntent,uiIcon:()=>'',esc:s=>s,renderChatText:s=>s,renderTaskActivity:()=>'',renderTrail:()=>''};
  vm.runInNewContext(fn+';this.renderMessage=renderMessage',box);
  const offered=m=>box.renderMessage(m,0).includes('task-offer');

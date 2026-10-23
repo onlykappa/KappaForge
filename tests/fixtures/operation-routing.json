@@ -1,0 +1,142 @@
+[
+  {
+    "request": "please delete all old tasks in kappaforge",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "delete every old task, no tests",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "clear out old tasks please",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "clear old tasks and add automatic cleanup",
+    "workflow": "direct",
+    "steps": 2
+  },
+  {
+    "request": "Fix task deletion then clear failed tasks",
+    "workflow": "development",
+    "steps": 2
+  },
+  {
+    "request": "clear tasks then set theme to light",
+    "workflow": "direct",
+    "steps": 2
+  },
+  {
+    "request": "set theme to light and rename this chat to Work",
+    "workflow": "direct",
+    "steps": 2
+  },
+  {
+    "request": "rename this chat to \"Research and add ideas\"",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "Do not clear old tasks",
+    "workflow": "none",
+    "steps": 1
+  },
+  {
+    "request": "\"clear tasks and add cleanup\"",
+    "workflow": null,
+    "steps": 0
+  },
+  {
+    "request": "> clear tasks and add cleanup",
+    "workflow": null,
+    "steps": 0
+  },
+  {
+    "request": "Example:\nclear tasks and add cleanup",
+    "workflow": null,
+    "steps": 0
+  },
+  {
+    "request": "Investigate why cleanup failed",
+    "workflow": "read-only",
+    "steps": 1
+  },
+  {
+    "request": "delete old tasks on GitHub",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "retry task #198",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "retry this task",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "rename this chat",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "clear tasks older than last month",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "clear failed tasks before 2026-10-01 with ids 198, 199",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "Add a clear tasks button",
+    "workflow": "development",
+    "steps": 1
+  },
+  {
+    "request": "Plan task cleanup",
+    "workflow": "none",
+    "steps": 1
+  },
+  {
+    "request": "How do I clear task history?",
+    "workflow": "none",
+    "steps": 1
+  },
+  {
+    "request": "clear tasks\nFile log.txt:\nadd an unrelated feature",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "rename this chat to 'Work and add cleanup'",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "rename this chat to \"Work \\\"and add\\\" examples\"",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "rename this chat to \"Unfinished and add automatic cleanup",
+    "workflow": "direct",
+    "steps": 1
+  },
+  {
+    "request": "Add weather UI and update the weather backend",
+    "workflow": "development",
+    "steps": 1
+  },
+  {
+    "request": "Investigate task deletion then fix its error handling",
+    "workflow": "read-only",
+    "steps": 2
+  }
+]

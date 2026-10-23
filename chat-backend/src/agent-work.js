@@ -30,9 +30,13 @@ export async function agentWork(env){
 
 // Earlier chat turns go into the issue as background. Every line is quoted so nothing in it can read as one of the
 // issue's control lines (Mode:, Repository:, Allow flagged changes:, Repair files:, Step 1:), which the agent matches at line start.
-export function taskBody(repo,mode,instructions,context,authorization){
+export function taskBody(repo,mode,instructions,context,authorization,requestScope){
  const restrictions=requestLimits(instructions).restrictions;
- const quoted=typeof context==="string"&&context.trim()?context.trim().slice(0,2000).split("\n").map(l=>"> "+l).join("\n"):"";
+ let parentReference=requestScope?.ownerRequest||'';
+ if(requestScope&&parentReference.length+instructions.length>60000){const child=globalThis.KappaIntent.planRequest(parentReference).steps[requestScope.actionIndex];if(child?.sourceText)parentReference=parentReference.replaceAll(child.sourceText,'[Scoped action text reproduced verbatim above, before inherited restrictions]');}
+ const ownerReference=requestScope?'Owner mixed request (reference only; execute only the scoped task above):\n'+parentReference+'\n\n':'';
+ const background=ownerReference+(typeof context==='string'?context.slice(0,2000):'');
+ const quoted=typeof background==="string"&&background.trim()?background.trim().split("\n").map(l=>"> "+l).join("\n"):"";
  return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions.split("\n").map(line=>/^(?:Repository:|Mode:|<!-- kappa-authorization:)/i.test(line)?"> "+line:line).join("\n")+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat."+(authorization?"\n<!-- kappa-authorization:"+JSON.stringify({...authorization,repo,mode,restrictions,allowMerge:/\b(?:and|then)\s+merge(?:\s+it|\s+the\s+(?:pr|pull request|changes))?\b/i.test(instructions.split(/\n(?:```|>)/)[0])&&!restrictions.noMerge,expiresAt:authorization.issuedAt+(/^(?:continuous|continuous-code|watch)$/.test(mode)?7:1)*24*60*60*1000})+" -->":"");
 }
 const CONTINUOUS=/^Mode:\s*(?:continuous|continuous-code|watch)\s*$/mi;

@@ -211,6 +211,10 @@ function renderTrail(m){
  const summary=working?esc(last.text)+'…':(parts?esc(parts.text.replace(/, answered.*$/,''))+' · ':'')+(asked>1?'Asked '+asked+' AIs':asked===1?esc(steps.filter(x=>/^Answering with /.test(x.text)).pop()?.text||'Asked 1 AI'):'Worked')+' · '+secs+'s';
  return '<details class="activity-trail'+(working?' live':'')+'"><summary>'+uiIcon('list')+'<span>'+summary+'</span></summary><ol>'+steps.map(x=>'<li>'+esc(x.text)+'</li>').join('')+'</ol></details>';
 }
+function renderRouteEvidence(events){
+ if(!Array.isArray(events)||!events.length)return '';
+ return '<details class="route-evidence"><summary>Why this route</summary>'+events.map(e=>'<p>'+esc(['blocked','needs-clarification'].includes(e.outcome)?'No action ran for this step because its target, authorization or prerequisite is unresolved.':e.outcome==='failed'?'The requested action failed; no broader recovery was authorized.':KappaIntent.routeExplanation({workflow:{kind:e.workflow}}))+' '+esc((e.capability||e.workflow)+' · '+e.outcome+' · '+e.verification)+'</p>').join('')+'</details>';
+}
 function renderMessage(m,i){
  const user=m.role==='user',progress=!!m.progressKey;
  // Task reports carry audit findings; they become an Issues found card under the report.
@@ -225,7 +229,7 @@ function renderMessage(m,i){
  // A request-like message that did not start work by itself gets a visible, explicit way to start it.
  const offer=user&&!m.streaming&&!m.executionHandled&&(m.offerTask||KappaIntent.suggestsTask(m.text))?'<button type="button" class="text-button task-offer" data-start-task="'+i+'">'+uiIcon('spark')+'Start as task</button>':'';
  return '<article class="chat-message '+(user?'from-user':'from-assistant')+(progress?' is-progress':'')+'" data-message-index="'+i+'">'+
- '<div class="message-stack">'+(!user&&!progress?renderTrail(m):'')+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+actions+offer+'</div>'+userMenu+'</article>';
+ '<div class="message-stack">'+(!user&&!progress?renderTrail(m):'')+(progress?renderTaskActivity(m,i):'<div class="bubble '+(user?'user':'assistant markdown')+(m.streaming?' streaming':'')+'" '+(m.streaming?'aria-busy="true"':'')+'>'+(user||m.streaming?esc(m.text):renderChatText(issues.length?m.text.split('\n').filter(l=>!KappaJobs.findings(l).length).join('\n'):m.text))+'</div>'+(issues.length&&!hasTaskCard?findingsCard(issues):''))+(!user?renderRouteEvidence(m.routeEvidence):'')+actions+offer+'</div>'+userMenu+'</article>';
 }
 
 function renderSavedItems(){const items=chats.flatMap(c=>c.messages.map((m,i)=>({c,m,i})).filter(x=>x.m.saved));return '<div class="page-heading"><span class="eyebrow">YOUR COLLECTION</span><h1>Saved items</h1><p class="muted">Useful answers, kept within your existing conversations.</p></div>'+(items.length?items.map(({c,m,i})=>'<article class="panel saved-card"><div class="control-head"><span class="eyebrow">'+esc(c.title)+'</span><button class="text-button" data-open-saved="'+esc(c.id)+'" data-message="'+i+'">Open conversation '+uiIcon('chevron')+'</button></div><div class="markdown">'+renderChatText(m.text)+'</div><button class="text-button" data-unsave-chat="'+esc(c.id)+'" data-message="'+i+'">Remove from saved items</button></article>').join(''):'<div class="empty-state">'+uiIcon('saved')+'<h2>Keep the useful parts</h2><p>Open a message’s action menu and choose Save message. Saved items stay with your chats and encrypted backups.</p></div>');}

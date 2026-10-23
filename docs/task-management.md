@@ -71,3 +71,85 @@ with observed terminal runners supplies acknowledgement/termination evidence for
 stopped. Empty, truncated or unavailable inventories retain an unconfirmed state.
 Issue closure alone never supplies runner-termination evidence. The app keeps
 pending cancellation visible and preserves it during history cleanup.
+
+
+## Mixed requests and focused clarification (sections 5–6)
+
+Direct chat requests can contain separately scoped actions: `clear old tasks and
+add automatic cleanup` clears history through the local capability and sends only
+`add automatic cleanup` to development. Explicit owner restrictions are inherited
+by every child action. The original parent request, action index and exact child
+instructions are bound into authorization; the Worker recomputes that scope.
+The parent request is retained as quoted reference in the coding issue. Very large
+references point to the verbatim scoped action above rather than duplicate that
+text beyond GitHub’s issue-body limit. Oversized bodies stop before creating an
+issue; neither the child brief nor its restrictions are silently truncated.
+It cannot become additional execution instructions.
+
+Within a mixed request, unquoted `and` separates independent actions. Multiple
+software implementation requirements stay together as one development task and PR;
+read-only and write authority are separated when both are explicitly requested. `then`, `and then`, `after that`
+and `if that succeeds` establish a dependency on the preceding action. Quoted
+names/values are preserved. Questions, examples, quoted instructions, attachments
+and negations cannot authorize a sequence. Unrecognized phrasing remains held or
+conversational; it does not grant a general natural-language automation capability.
+
+Each action reports its own result. A failure leaves independent actions free to
+run but stops dependent actions. Software dispatch and an outstanding approval do not count
+as completed source changes. A confirmed retry dispatch satisfies only its
+dispatch operation; it does not prove that the retried software work completed. There is only one task approval at a time; later task
+requests are held instead of replacing it. Once a prerequisite has verified, the remaining dependent actions continue
+automatically while the app is active and the original request is within its
+24-hour continuation window. Each continuation rebuilds the scope from the original
+owner turn and its clarification replies, and requires local result evidence.
+`continue actions` explicitly renews that window and resumes only remaining actions;
+expired or unverifiable saved plans cannot start effects automatically. Failed effects are not automatically retried. No continuation is authorized
+merely by dispatching a development task; the prerequisite must satisfy its declared
+verification. This uses the app’s existing polling lifecycle, not an external job. `cancel remaining actions` dismisses the
+pending sequence; cancelling an already running task uses its own Cancel operation.
+
+`retry this task`, `cancel it`, and similar supported references resolve from a
+single task in the current conversation, or from a sole tracked task when that
+conversation has none. Multiple candidates prompt for one task number. A target-only
+reply cannot select outside the offered candidates. Missing conversation names,
+allowlisted preference values and exact date cutoffs prompt for only that value.
+Only one clarification is asked at a time. Completed independent steps are retained
+across a clarification and restart rather than repeated. Current active/unknown
+state is checked again by the operation handler before changing history.
+
+## Routing evidence and recovery
+
+Replies provide a **Why this route** disclosure with the workflow, verification
+method and recorded outcome. Evidence distinguishes requested, dispatched,
+acknowledged, verified, partially completed, failed and blocked actions. HTTP
+success for scheduled recovery is still only requested; a trusted runner progress
+snapshot is needed for acknowledgement. Software completion requires independent
+check evidence; a source commit or generated PR does not establish verified success.
+
+Settings → Developer Tools shows routing counts and the latest decisions on this
+device. The local journal keeps the last 100 transitions and displays the last 20;
+counts cover distinct actions represented in that window, not account-wide lifetime
+metrics. It tracks blocked operational development attempts, clarifications,
+unnecessary clarifications and unsupported capability results. Entries contain
+capability IDs, bounded task/chat/filter identifiers, restrictions, reason codes,
+workflow, verification and outcomes. Raw requests, names, preference values, source
+context and credentials are not copied into this journal. It is separate from the
+existing encrypted conversation history and is not uploaded as telemetry.
+
+Operational failure has no coding fallback and no automatic widening of target or
+authority. An explicit retry keeps its exact saved task and restrictions. For real
+development, each generation/repair attempt checks the assembled gateway prompt,
+including retry evidence. Source excerpts shrink to fit while the full owner brief,
+project rules and restrictions stay verbatim. Excess advisory history can be omitted.
+An oversized JSON-repair envelope regenerates from bounded source instead of sending
+an oversized request. A request-size guard can reduce source within the existing
+bounded attempt budget; authentication and other terminal failures retain their
+existing stop behavior. If the owner brief alone exceeds the limit, inference stops
+with a request-size explanation; the brief is never silently truncated.
+
+The regression corpus is `tests/fixtures/operation-routing.json`; behavioral tests
+exercise the real shared planner, handlers, outgoing scope/authorization parameters,
+Worker validation, local persistence, outages and backend receipts. Browser tests
+exercise the real composer, clarification, mixed restrictions, controls and route
+disclosures on desktop Chromium and mobile WebKit. Gateway regressions inspect the
+actual model prompts and validated edits on initial, retry and JSON-repair paths.

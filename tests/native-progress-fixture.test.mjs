@@ -45,7 +45,7 @@ test('native fixture exercises the production Retry control and exact authorizat
  const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','recovery');
  const proofs=[],saved=new Map(),box={KappaIntent:globalThis.KappaIntent,KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,crypto:globalThis.crypto,
   localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},backend:'',access:'',trackedJobs:[],chats:[],current:'',view:'',jobPollAfter:0,
-  checkJobResult(){throw Error('No live issue polling')},writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
+  checkJobResult(){throw Error('No live issue polling')},recordRoute(){},operationContext:()=>({}),writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
   document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>proofs.push(b)}}};
  vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');

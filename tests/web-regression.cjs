@@ -189,6 +189,13 @@ const apiServer=createServer(async(req,res)=>{
  assert.match(await operation('hide failed tasks with ids 700'),/Hidden 1/);
  assert.match(await operation('undo clear'),/Restored 1/);
  await operation('clear failed tasks');
+ assert.match(await operation('rename this chat'),/What name/);
+ assert.match(await operation('Routing test'),/renamed/);assert.equal(await page.evaluate(()=>active().title),'Routing test');
+ await page.evaluate(()=>trackedJobs.push({number:703,message:'failed',chatId:null}));
+ const mixed=await operation('clear old tasks then add automatic cleanup, no PR');
+ assert.match(mixed,/Cleared 1/);assert.match(mixed,/restrictions prevent/);
+ assert.ok(await page.locator('.route-evidence summary').count()>0,'why this route is available on operational replies');
+ const stats=await page.evaluate(()=>routingDiagnostics().counts);assert.equal(stats.operationalDevelopment,0);assert.equal(stats.unnecessaryClarifications,0);
  assert.match(await operation('rename this chat to Registry test'),/renamed/);assert.equal(await page.evaluate(()=>active().title),'Registry test');
  assert.match(await operation('Set weather units to Fahrenheit'),/Saved weatherUnits: fahrenheit/);
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.settings.v2')).weatherUnits),'fahrenheit');

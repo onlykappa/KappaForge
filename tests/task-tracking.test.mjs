@@ -65,3 +65,31 @@ test('hung progress requests abort so subsequent tasks can still refresh',async(
  c.githubFetch=async(path,signal)=>{if(signal.aborted)throw new DOMException('Timeout','AbortError');return {ok:true,json:async()=>[]}};
  await assert.rejects(run("taskRead('KappaForge/issues/9')"),{name:'AbortError'});
 });
+
+
+test('routing acknowledgement comes from runner snapshots and completion needs independent check evidence',async()=>{
+ const {c,run,chats}=setup(),now=Date.now(),decision=globalThis.KappaIntent.executionDecision('Fix task routing');
+ run('trackedJobs.push('+JSON.stringify({number:9,mode:'develop',chatId:'chat',message:'waiting',queuedAt:now,progress:globalThis.KappaProgress.queued(9,now),routeTracking:{requestId:'route-proof',index:0,requestedAt:now,outcome:'dispatched',operation:null,decision}})+')');
+ let snapshot={...globalThis.KappaProgress.queued(9,now+1),attemptId:'runner',revision:1,status:'running',startedAt:now+1,updatedAt:now+2},report=false;
+ c.toast=()=>{};
+ c.githubFetch=async path=>({ok:true,json:async()=>path.includes('/comments')?[
+  {id:1,user:{login:'github-actions[bot]'},created_at:new Date(now+1).toISOString(),updated_at:new Date(snapshot.updatedAt).toISOString(),body:'### KappaForge is working on it\n<!-- KAPPA_PROGRESS_V1 '+JSON.stringify(snapshot)+' -->'},
+  ...(report?[{id:2,user:{login:'github-actions[bot]'},created_at:new Date(now+20).toISOString(),updated_at:new Date(now+20).toISOString(),body:'### Tests passed\nIndependent validation passed.'}]:[])
+ ]:{state:'open'}});
+ await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'acknowledged');
+ snapshot={...snapshot,revision:2,status:'completed',updatedAt:now+10,finishedAt:now+10};
+ await run('checkJobResult()');assert.equal(run('trackedJobs[0].routeTracking.outcome'),'acknowledged','finishing code does not prove required checks passed');
+ report=true;await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'verified');
+ assert.equal(chats[0].messages.find(m=>m.progressKey).routeEvidence[0].outcome,'verified');
+});
+
+
+test('mixed task launch transports original parent authority and exact child instructions to the Worker',async()=>{
+ const {c,run}=setup(),ownerRequest='clear old tasks and add cleanup; do not merge',step=globalThis.KappaIntent.planRequest(ownerRequest).steps[1],requests=[];
+ c.pendingJob={title:'Add cleanup',instructions:step.text,mode:'develop',repo:'onlykappa/KappaForge',conversationId:'chat',requestScope:{ownerRequest,actionIndex:1},routeRequestId:'parent-request',routeActionIndex:1};
+ c.fetch=async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return Response.json(url.endsWith('/authorize')?{state:'authorized'}:{issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9',status:'dispatched'})};
+ const receipt=await run('launchJob()');assert.equal(receipt.status,'dispatched');assert.equal(requests.length,2);
+ assert.equal(requests[0].body.userText,ownerRequest);assert.equal(requests[0].body.payload.instructions,step.text);
+ assert.deepEqual(requests[1].body.requestScope,{ownerRequest,actionIndex:1});assert.equal(requests[1].body.routeRequestId,undefined,'diagnostic correlation is not sent as execution parameters');
+ assert.equal(run('trackedJobs[0].routeTracking.requestId'),'parent-request');assert.equal(run('trackedJobs[0].routeTracking.index'),1);
+});

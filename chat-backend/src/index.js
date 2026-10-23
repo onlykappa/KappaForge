@@ -528,7 +528,8 @@ export default {
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "KappaForge-Chat-Worker" };
       const endpoint = "https://api.github.com/repos/onlykappa/KappaForge";
-      const issueBody = taskBody(repo, mode, instructions, input.context, executionAuthorization);
+      const issueBody = taskBody(repo, mode, instructions, input.context, executionAuthorization, input.requestScope);
+      if(issueBody.length>65536)return json({error:"The full task and its scope exceed GitHub’s issue-body limit. No issue was created. Submit this software action separately; its brief was not truncated.",code:"issue_body_too_large"},413,cors);
       try {
         // Before a write, check the token identity and its access without mutating GitHub.
         const identityResponse = await fetch("https://api.github.com/user", { headers });

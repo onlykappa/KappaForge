@@ -9,12 +9,13 @@
  const LEADER=/^(?:here(?:'s| is)\s+(?:your|a|the|my)\s+(?:[a-z]+\s+){0,3}(?:task|request|job|assignment)|(?:(?:new|next|your|first)\s+)?(?:task|request|job|assignment))\s*[:.!\-\u2013\u2014]\s*/i;
  function core(text){let t=text.trim(),prev;do{prev=t;t=t.replace(OPENER,'').trim()}while(t!==prev);return t}
  const evidenceOnly=value=>/^(?:(?:here(?:'s| is)\s+)?(?:an?\s+)?(?:example|sample|log|quoted text|attachment)\s*:|File [^\n]+:|Conversation context|Earlier conversation)/i.test(String(value||'').trim());
+ const maskQuoted=value=>String(value).replace(/"(?:\\.|[^"\\])*(?:"|$)|(?<!\w)'(?:\\.|[^'\\])*(?:'|$)|`(?:\\.|[^`\\])*(?:`|$)/g,m=>' '.repeat(m.length));
  const directText=value=>{const raw=String(value||'').trim();return evidenceOnly(raw)||/^(?:```|>|["'{\[])/.test(raw)?'':raw.split(/\n(?:```|>|File |Conversation context|Earlier conversation)/)[0].trim().replace(LEADER,'').trim()};
  // Restrictions are owner-authored limits, not planner suggestions. Ignore quoted examples.
  function requestLimits(request){
   const limits={noPR:false,noTests:false,noCode:false,noMerge:false};
   let text=directText(request);
-  const source=text.replace(/"[^"\n]*"|`[^`\n]*`/g,m=>' '.repeat(m.length));
+  const source=maskQuoted(text);
   const pattern=/(?:^|[,;]\s*|\.\s+|\n\s*|\s+(?:(?:but|and)\s+)?)(?:(?:do not|don't|dont|never|no need to)\s+(?:(?:create|open|make)\s+(?:(?:a|any|new|another)\s+)?(prs?|pull requests?)|(?:run|write|add)\s+(?:any\s+)?(tests?)|(?:change|edit|modify|write)\s+(?:(?:the|any)\s+)?(code|source(?: code)?)|(merge)(?:\s+it)?)|no\s+(prs?|pull requests?|tests?|code changes|merg(?:e|ing)))\b(?:\s+(?:until I (?:say so|approve)|without my approval|yet))?/gi;
   const without=/\s+without\s+(?:(?:creating|opening|making)\s+(?:(?:a|any)\s+)?(prs?|pull requests?)|(?:running|writing|adding)\s+(?:any\s+)?(tests?)|(?:changing|editing|modifying|writing)\s+(?:(?:the|any)\s+)?(code|source(?: code)?)|(merging))/gi;
   const spans=[];for(const match of [...source.matchAll(pattern),...source.matchAll(without)]){
@@ -57,8 +58,9 @@
   if(params.before&&params.after&&params.after>=params.before)throw Error('Invalid date range');
   return Object.fromEntries(Object.keys(spec.schema).filter(k=>Object.hasOwn(params,k)).map(key=>[key,params[key]]));
  }
+ const unquote=value=>{if(value.startsWith('"')&&value.endsWith('"')){try{const parsed=JSON.parse(value);if(typeof parsed==='string')return parsed}catch{}}if(value.startsWith("'")&&value.endsWith("'"))return value.slice(1,-1).replaceAll("\\'","'");return value};
  const operationResult=(kind,restrictions,details={})=>({kind,restrictions,...details});
- function resolveCapability(request,context={}){
+ function resolveSingleCapability(request,context={}){
   const raw=directText(request);if(!raw)return null;
   const {text,restrictions}=requestLimits(raw);
   const t=core(text).replace(/(?:[,;]?\s+please|\s+thanks)[.!?]*$/i,'').replace(/[.!?]+$/,'').trim();
@@ -67,6 +69,18 @@
   if(/^rename\s+(?:the\s+)?(?:settings|dashboard|toolbar|composer|button|header)(?:\s+(?:label|page|screen))?\s+to\s+\S/i.test(t))return null;
   const resolved=(id,params)=>{try{return operationResult('operation',restrictions,{id,params:validateCapability(id,params)})}catch{return operationResult('unresolved-operation',restrictions,{message:'That value is not supported for this operation. Please use a supported value.'})}};
   if(/^(?:undo (?:clear|cleanup|history clearing)|restore (?:cleared|last cleared) tasks)$/i.test(t))return resolved('tasks.undo-history',{});
+  const reference=t.match(/^(retry|cancel|stop|clear|hide|archive|restore)\s+(?:(?:this|that|the current)\s+task|it|the task)$/i),missingTask=t.match(/^(retry|cancel|stop|restore)(?:\s+task)?$/i);
+  if(reference||missingTask){
+   const verb=(reference||missingTask)[1],ids=[...new Set((context.taskIds||[]).filter(n=>Number.isSafeInteger(n)&&n>0))];
+   if(ids.length===1){const op=resolveSingleCapability(verb+' task #'+ids[0],context);return {...op,resolvedText:verb+' task #'+ids[0]};}
+   return operationResult('unresolved-operation',restrictions,{message:ids.length?'Which task: '+ids.map(n=>'#'+n).join(', ')+'?':'Which task number should I '+verb.toLowerCase()+'?',clarification:{field:'task',verb,candidates:ids}});
+  }
+  if(/^rename\s+(?:this|the current)\s+(?:chat|conversation)$/i.test(t))return operationResult('unresolved-operation',restrictions,{message:'What name should this conversation have?',clarification:{field:'title'}});
+  if(/^(?:set|change|switch)\s+(?:(?:my|the)\s+)?(?:settings|preferences)$/i.test(t))return operationResult('unresolved-operation',restrictions,{message:'Please specify a supported operation: which ordinary preference and value should I set (for example, theme to light)?',clarification:{field:'setting'}});
+  const missingValue=t.match(/^(?:set|change|switch)\s+(?:the\s+)?(theme|appearance|language|response language|weather units|weather city)(?:\s+to)?$/i);
+  if(missingValue)return operationResult('unresolved-operation',restrictions,{message:'What value should I use for '+missingValue[1]+'?',clarification:{field:'value',setting:missingValue[1]}});
+  const relativeDate=t.match(/^(.*\b(?:tasks?|task history))\s+(?:older than|before|after)\s+(?!\d{4}-\d{2}-\d{2}\b)(.+)$/i);
+  if(relativeDate)return operationResult('unresolved-operation',restrictions,{message:'What exact cutoff date (YYYY-MM-DD, UTC) should I use?',clarification:{field:'date',prefix:relativeDate[1],direction:/\safter\s/i.test(t)?'after':'before'}});
   const restore=t.match(/^restore (?:task\s*)?#?(\d+)(?: history)?$/i);if(restore)return resolved('tasks.restore-history',{task:Number(restore[1])});
   let historyText=t,filters={};
   historyText=historyText.replace(/\s+(before|after) (\d{4}-\d{2}-\d{2})(?=\s|$)/gi,(_,key,value)=>{filters[key.toLowerCase()]=value;return ''});
@@ -78,19 +92,77 @@
   const task=t.match(/^(retry|try again(?: on)?|cancel|stop)\s+(?:task\s*)?#?(\d+)$/i);
   if(task)return resolved(/^(retry|try)/i.test(task[1])?'tasks.retry':'tasks.cancel',{task:Number(task[2])});
   const rename=t.match(/^rename\s+(?:this|the current)\s+(?:chat|conversation)\s+(?:to|as)\s+(.+)$/i);
-  if(rename){if(!context.chatId)return operationResult('unresolved-operation',restrictions,{message:'Which conversation should I rename?'});return resolved('chats.rename',{chat:context.chatId,title:rename[1].replace(/^"(.*)"$/,'$1')})}
+  if(rename){if(!context.chatId)return operationResult('unresolved-operation',restrictions,{message:'Which conversation should I rename?'});return resolved('chats.rename',{chat:context.chatId,title:unquote(rename[1])})}
   const setting=t.match(/^(?:set|change|switch)\s+(?:(?:my|the)\s+)?(appearance|theme|response language|language|weather units|default weather city|weather city)\s+(?:to|=)\s+(.+)$/i);
   if(setting){const names={'theme':'appearance','response language':'language','weather units':'weatherUnits','default weather city':'weatherCity','weather city':'weatherCity'},key=names[setting[1].toLowerCase()]||setting[1].toLowerCase();
-   let value=setting[2].replace(/^"(.*)"$/,'$1');if(key!=='weatherCity'){value=value.replace(/ mode$/i,'');const choices=settingValues[key]||[];value=choices.find(v=>v.toLowerCase()===value.toLowerCase())||value;}
+   let value=unquote(setting[2]);if(key!=='weatherCity'){value=value.replace(/ mode$/i,'');const choices=settingValues[key]||[];value=choices.find(v=>v.toLowerCase()===value.toLowerCase())||value;}
    return resolved('settings.update',{key,value});
   }
-  // Ambiguous or unavailable app operations stay outside development, including mixed requests.
+  if(/^(?:undo|restore)\b/i.test(t))return operationResult('unresolved-operation',restrictions,{message:'Specify the task number to restore, or say undo clear.'});
+  // Ambiguous or unavailable app operations stay outside development.
   if(/^(?:clear(?: out)?|delete|remove|archive|hide|restore|undo|clean\s*up|retry|try again|cancel|stop|close|rename|set|change|switch|enable|disable)\b/i.test(t)&&/\b(?:tasks?|task history|chat|conversation|settings?|preferences?|appearance|theme|language|weather units|weather city|authentication|credentials?|permissions?)\b/i.test(t)){
    if(/\b(?:source(?: code)?|code|api|function|component|module|button|feature|implementation|behavior|handler|ui|\.js|\.py)\b/i.test(t))return null;
    const remote=/\b(?:github|server|all devices)\b/i.test(t);
    return operationResult(remote?'unsupported-operation':'unresolved-operation',restrictions,{message:remote?'This remote operation is not available in chat. Manage the issue on GitHub.':'Please specify a supported operation and its target, such as clear failed tasks, retry task #198, or rename this chat to Work. Use the task’s Cancel control for bulk cancellation.'});
   }
   return null;
+ }
+ // Split only direct, unquoted action clauses. An explicit "then" establishes a
+ // dependency; "and" leaves independently authorized effects independent.
+ const restrictionText=r=>Object.entries({noPR:'do not create a PR',noTests:'do not run tests',noCode:'do not change code',noMerge:'do not merge'}).filter(([key])=>r[key]).map(([,value])=>value).join('; ');
+ function actionClauses(request){
+  const raw=directText(request);if(!raw)return [];
+  const {text}=requestLimits(raw),masked=maskQuoted(text);
+  const separators=/\s+(and then|then|after that|if that succeeds|and)\s+(?=(?:please\s+)?(?:clear|delete|remove|archive|hide|restore|undo|retry|cancel|stop|rename|set|change|switch|add|fix|implement|build|create|update|repair|refactor|investigate|inspect|review|audit)\b)|;\s*(?=(?:clear|delete|remove|archive|hide|restore|undo|retry|cancel|rename|set|change|add|fix|implement|build|update|investigate|review)\b)/gi;
+  const result=[];let at=0,dependent=false;
+  for(const m of masked.matchAll(separators)){result.push({text:text.slice(at,m.index).trim(),dependent});at=m.index+m[0].length;dependent=!!m[1]&&m[1].toLowerCase()!=='and';}
+  result.push({text:text.slice(at).trim(),dependent});
+  if(result.length>1){
+   const first=core(result[0].text);if(!resolveSingleCapability(first)&&!['execution','investigation'].includes(classifyClause(first)))return [{text,dependent:false}];
+   const intents=result.map(clause=>classifyClause(core(clause.text)));
+   // Multiple implementation requirements remain one development task/PR.
+   // Split distinct app operations or mixed read-only/software authority.
+   if(!result.some(clause=>resolveSingleCapability(clause.text))&&!(intents.includes('investigation')&&intents.includes('execution')))return [{text,dependent:false}];
+  }
+  return result;
+ }
+ function resolveCapability(request,context={}){
+  const clauses=actionClauses(request);
+  if(clauses.length>1)return operationResult('multi-operation',requestLimits(request).restrictions,{message:'This request contains separately scoped actions.'});
+  return resolveSingleCapability(request,context);
+ }
+ function planRequest(request,context={}){
+  const restrictions=requestLimits(request).restrictions,suffix=restrictionText(restrictions),clauses=actionClauses(request);
+  const steps=clauses.map((clause,index)=>{
+   const text=clause.text+(suffix?'; '+suffix:''),operation=resolveSingleCapability(text,context),intent=operation?'operation':classify(text);
+   return {index,text,sourceText:clause.text,dependsOn:clause.dependent?[index-1]:[],kind:operation?'operation':['execution','investigation'].includes(intent)?'task':'conversation',operation,decision:executionDecision(text,context)};
+  });
+  return {kind:steps.length>1?'multi':'single',restrictions,steps};
+ }
+ function clarifyOperation(pending,answer,context={}){
+  const question=pending?.operation?.clarification;if(!question)return null;
+  const value=unquote(String(answer||'').trim());let text='';
+  if(question.field==='task'){
+   const match=value.match(/^(?:task\s*)?#?(\d+)[.!]?$/i);if(!match)return null;const number=Number(match[1]);
+   if(question.candidates.length&&!question.candidates.includes(number))return null;
+   text=question.verb+' task #'+number;
+  }else if(question.field==='title')text='rename this chat to '+JSON.stringify(value);
+  else if(question.field==='setting'){const match=value.match(/^(?:set\s+)?(theme|appearance|language|response language|weather units|weather city)\s+to\s+(.+)$/i);if(!match)return null;text='set '+match[1]+' to '+JSON.stringify(match[2]);}
+  else if(question.field==='value')text='set '+question.setting+' to '+JSON.stringify(value);
+  else if(question.field==='date'){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;text=question.prefix+' '+question.direction+' '+value;}
+  const suffix=restrictionText(pending.decision.authorization.restrictions);if(suffix)text+='; '+suffix;
+  const operation=resolveSingleCapability(text,context);if(operation?.kind!=='operation')return null;
+  return {...pending,text,operation,decision:executionDecision(text,context),status:'ready'};
+ }
+ function scopeTaskRequest(ownerRequest,index,instructions){
+  if(typeof ownerRequest!=='string'||!Number.isSafeInteger(index)||index<0)return false;
+  const plan=planRequest(ownerRequest),step=plan.steps[index];
+  return plan.kind==='multi'&&step?.kind==='task'&&step.text===instructions&&step.decision.authorization.allowed;
+ }
+ const routeExplanation=decision=>decision.workflow.kind==='direct'?'This uses an existing app action and verifies its effect without development CI.':decision.workflow.kind==='read-only'?'This retrieves evidence without changing source.':decision.workflow.kind==='development'?'This changes software, so the development workflow and required checks apply.':'No executable action was resolved.';
+ function decisionEvidence(decision,operation,outcome='requested'){
+  const params=operation?.params||{},target={};for(const key of ['task','tasks','status','before','after','chat','key'])if(Object.hasOwn(params,key))target[key]=params[key];
+  return {actionType:decision.action.kind,capability:operation?.id||null,target,restrictions:decision.authorization.restrictions,workflow:decision.workflow.kind,verification:decision.verification.kind,outcome,reason:operation?.kind==='unsupported-operation'?'unsupported-capability':operation?.kind==='unresolved-operation'?'missing-target-or-value':decision.authorization.allowed?'authorized-action':'authorization-conflict'};
  }
  function validateProposal(proposal,request,context={}){
   const resolved=resolveCapability(request,context);
@@ -175,5 +247,5 @@
  }
  // The request itself, without a "Here is your task:" leader: what a task's title should say.
  const requestText=text=>String(text||'').trim().replace(LEADER,'').trim();
- root.KappaIntent={classify,permits,executionDecision,stripActions,suggestsTask,requestText,goAhead,taskOperation,requestLimits,taskConflict,isOperation:request=>!!resolveCapability(request),capabilities:root.KappaCapabilities};
+ root.KappaIntent={classify,permits,executionDecision,planRequest,clarifyOperation,scopeTaskRequest,routeExplanation,decisionEvidence,stripActions,suggestsTask,requestText,goAhead,taskOperation,requestLimits,taskConflict,isOperation:request=>!!resolveCapability(request),capabilities:root.KappaCapabilities};
 })(globalThis);

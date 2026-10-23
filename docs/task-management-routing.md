@@ -81,8 +81,9 @@ older task's execution scope; it reports that conflict before dispatch.
 Sections 3–4 add Undo, versioned restoration/retry records, history filters and
 explicit workflow/authorization/verification decisions. See [Task history and
 recovery](task-management.md) for retention, exact action semantics and cancellation
-evidence limits. Multi-action execution, general routing telemetry and rollout
-negotiation remain later roadmap items.
+evidence limits. Sections 5–6 implement scoped multi-action requests, focused clarification and local
+routing evidence, plus bounded coding-context recovery. Rollout negotiation and
+the separate recommendations 7–9 remain outside this change.
 
 Regression coverage: `node --test tests/capability-registry.test.mjs
 tests/task-management.test.mjs tests/task-autostart.test.mjs

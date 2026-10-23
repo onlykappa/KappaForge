@@ -602,7 +602,7 @@ document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.get
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
-document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
+document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){const step=c.pendingActions?.requestId===pendingJob?.routeRequestId?c.pendingActions.steps[pendingJob.routeActionIndex]:null;if(step){step.status="failed";step.awaitingApproval=false;step.result="The owner declined this task.";recordRoute(step.decision,null,"failed",c.pendingActions.requestId,step.index);}c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});
 }
 
 
@@ -610,12 +610,13 @@ document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pending
 let planError="";
 // explicit: the owner asked for a task (Plan task, "start a task"), so any text is planned and a planner miss falls back to a
 // develop task, launched as the owner's own control. approval: an uncertain request is planned into an Approve/Deny card only.
-async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false}={}){
+async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false,ownerRequest=null,actionIndex=null,routeRequestId=null,receipt=null}={}){
  const intent=KappaIntent.classify(text);
- if(KappaIntent.isOperation(text)){planError='Send this app operation in chat; it cannot start development.';return false;}
+ if(KappaIntent.isOperation(text)){if(typeof recordRoute==='function'){const denied=KappaIntent.executionDecision(text);recordRoute({...denied,workflow:{...denied.workflow,kind:'development'}},KappaIntent.capabilities.resolve(text),'blocked',requestId);}planError='Send this app operation in chat; it cannot start development.';return false;}
  const decision=KappaIntent.executionDecision(text);
  const conflict=KappaIntent.taskConflict(text,decision.workflow.mode);if(conflict){planError=conflict;return false;}
  if(!explicit&&!approval&&!["execution","investigation"].includes(intent))return false;
+ if(typeof recordRoute==='function')recordRoute(decision,null,'requested',routeRequestId||requestId,actionIndex||0);
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}
  try{
@@ -630,14 +631,15 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
   else if(!data.isTask){if(intent!=="execution"&&!explicit){planError="the planner read it as a question rather than work to do";if(notify)alert("This looks like a conversation, not a development task. Describe what to build or investigate.");return false}p=fallback("")}
   const planned=String(p.title||"").trim();
   pendingJob={title:planned.length>=5&&planned.length<=105?planned:title.length>=5?title:"KappaForge task",instructions:String(text).trim(),repo:p.repo,mode:intent==="investigation"?"audit":p.mode,context,requestId,conversationId,
+   ...(ownerRequest?{requestScope:{ownerRequest,actionIndex},routeRequestId,routeActionIndex:actionIndex}:{}),
    ...(explicit?{authorizationSource:"user-control",confirmed:true}:{})};
   // Owner explicitly requested hands-off development. Only safe task modes start
   // automatically; uncertain requests and potentially destructive or long-running modes wait for Approve (shown in the chat).
   if(!approval&&preferences.autoStart&&KappaJobs.autoLaunchAllowed(pendingJob)){
-   await launchJob();
-  }else{view="chat";if(conversationId&&chats.some(c=>c.id===conversationId))current=conversationId;render()}
+   const result=await launchJob();if(receipt)Object.assign(receipt,result||{status:"requested"});if(result?.status==="failed")throw Error(result.error);
+  }else{if(receipt)Object.assign(receipt,{status:"requested",awaitingApproval:true});view="chat";if(conversationId&&chats.some(c=>c.id===conversationId))current=conversationId;render()}
   return true;
- }catch(e){planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
+ }catch(e){if(typeof recordRoute==='function')recordRoute(decision,null,'failed',routeRequestId||requestId,actionIndex||0);planError=String(e.message||e).replace(/\.$/,"");if(notify)alert("Automatic planning unavailable: "+e.message+". You can use manual task setup.");return false}
 }
 function jobApproval(){
  const brief=pendingJob.instructions.length>400?pendingJob.instructions.slice(0,399)+"…":pendingJob.instructions;
