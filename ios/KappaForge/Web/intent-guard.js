@@ -8,6 +8,18 @@
  // "Here is your first official task:" / "New task:" only introduces the request that follows it.
  const LEADER=/^(?:here(?:'s| is)\s+(?:your|a|the|my)\s+(?:[a-z]+\s+){0,3}(?:task|request|job|assignment)|(?:(?:new|next|your|first)\s+)?(?:task|request|job|assignment))\s*[:.!\-\u2013\u2014]\s*/i;
  function core(text){let t=text.trim(),prev;do{prev=t;t=t.replace(OPENER,'').trim()}while(t!==prev);return t}
+ // Existing app data is managed by app handlers, never by the coding planner. Match the entire
+ // request so "delete the old tasks API" and "add a clear tasks button" remain software changes.
+ function taskOperation(request){
+  const raw=String(request||'').trim().replace(LEADER,'').trim();
+  if(!raw||/^(?:```|>|["'{\[])/.test(raw))return null;
+  const t=core(raw);
+  const clear=t.match(/^(?:clear|delete|remove|archive)\s+(?:(?:all|my|the)\s+)*(?:(old|completed|finished|failed|closed|cancelled)\s+)?(?:tasks?|task history)(?:\s+(?:in|from|on)\s+(?:kappaforge|this (?:app|device)))?[.!?]*$/i);
+  if(clear){const status=(clear[1]||'old').toLowerCase();return {action:'clear-history',status:status==='old'?'inactive':status==='finished'?'completed':status};}
+  if(/^(?:cancel|stop|close|clear|delete|remove|archive)\s+(?:(?:all|my|the|old|completed|finished|failed|running|active)\s+)*(?:tasks?|task history)(?:\s*#?\d+)?(?:\s+(?:in|from|on)\s+(?:github|the server|all devices|kappaforge))?[.!?]*$/i.test(t))
+   return {action:'unsupported'};
+  return null;
+ }
  function classifyClause(t){
   if(/^(?:do not|don't|never|stop|cancel)\b/i.test(t))return 'conversation';
   if(/^(?:show|demonstrate|give me (?:an? )?(?:example|screenshot|preview))\b/i.test(t))return 'demonstration';
@@ -19,6 +31,7 @@
  }
  function classify(request){
   const raw=String(request||'').trim();
+  if(taskOperation(raw))return 'operation';
   // Only the direct request counts. Examples, quotes, logs and attachments do not.
   const text=raw.split(/\n(?:```|>|File |Conversation context|Earlier conversation)/)[0].trim().replace(LEADER,'').trim();
   if(!text||/^(?:```|>|["'{\[])/.test(text))return 'conversation';
@@ -60,5 +73,5 @@
  }
  // The request itself, without a "Here is your task:" leader: what a task's title should say.
  const requestText=text=>String(text||'').trim().replace(LEADER,'').trim();
- root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText,goAhead};
+ root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText,goAhead,taskOperation};
 })(globalThis);

@@ -1,5 +1,5 @@
 import '../../preview/intent-guard.js';
-export const {classify,permits,requestText}=globalThis.KappaIntent;
+export const {classify,permits,requestText,taskOperation}=globalThis.KappaIntent;
 const writePaths=new Set(['/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
 export const needsAuthorization=path=>writePaths.has(path);
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).filter(k=>k!=='authorization').sort().map(k=>[k,canonical(value[k])])):value;
@@ -9,6 +9,7 @@ export function validateRequest(path,payload,userText,source){
  if(!needsAuthorization(path))throw Error('Unsupported execution endpoint');
  if(source!=='user-request'&&source!=='user-control')throw Error('Only a direct user request or control may authorize work');
  if(path==='/jobs'){
+  if(classify(userText)==='operation')throw Error('Manage task history in the app; this operation cannot start development');
   const explicitControl=source==='user-control'&&payload.confirmed===true&&payload.approved===true;
   if(payload.instructions!==userText||(!explicitControl&&!permits(userText,payload.mode)))throw Error('The user request does not authorize this task mode');
   if(classify(userText)==='release')throw Error('Use the verified release controls for release actions');

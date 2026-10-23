@@ -1,7 +1,7 @@
 import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
-import {authorizationStore,authorize,validateRequest,needsAuthorization,classify} from "./intent-guard.js";
+import {authorizationStore,authorize,validateRequest,needsAuthorization,classify,taskOperation} from "./intent-guard.js";
 import {weatherTools,weatherRequest,weatherArguments,invokeWeatherTool,formatWeather} from "./weather.js";
 import {streamReply} from "./streaming.js";
 import {getTimeContext} from "./time.js";
@@ -404,6 +404,9 @@ export default {
       return json(cancelled,result.status,cors);
     }
     let executionAuthorization;
+    // Also reject old clients and previously issued task authorizations before any GitHub write.
+    if(executionPath==='/jobs'&&classify(input.instructions)==='operation')
+      return json({error:'Manage task history in the app; this operation cannot start development.',code:'app_operation'},400,cors);
     if(needsAuthorization(executionPath)&&!(executionPath==="/undo"&&input.confirmed!==true)){
       try{executionAuthorization=await authorize(env,executionPath,input,true)}
       catch(e){return json({error:e.message},403,cors)}
@@ -583,6 +586,7 @@ export default {
       } catch { return json({ error: "GitHub job request failed." }, 502, cors); }
     }
     const planning = new URL(request.url).pathname === "/plan";
+    if(planning&&classify(input.request)==='operation')return json({isTask:false,intent:'operation',operation:taskOperation(input.request)},200,cors);
     if (planning && (typeof input.request !== "string" || input.request.trim().length < 10 || input.request.length > TASK_LIMIT))
       return json({ error: typeof input.request === "string" && input.request.length > TASK_LIMIT ? "The task is too long (" + input.request.length + " characters; the limit is " + TASK_LIMIT + "). Shorten it and try again." : "Describe the task with at least ten characters." }, 400, cors);
     if (!planning && (!Array.isArray(input.messages) || input.messages.length === 0 || input.messages.length > 20))

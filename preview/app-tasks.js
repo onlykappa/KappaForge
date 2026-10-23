@@ -2,7 +2,48 @@
 let trackedJobs=[];try{const stored=JSON.parse(localStorage.getItem("kappaforge.jobs.v2")||"[]");if(Array.isArray(stored))trackedJobs=stored.filter(j=>Number.isInteger(j.number)&&j.number>0)}catch{}
 if(recentJob?.number&&!trackedJobs.some(j=>j.number===recentJob.number))trackedJobs.push({...recentJob});
 let jobPollAfter=0,planningTask=false;
-function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob))}
+function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(trackedJobs));if(recentJob)localStorage.setItem("kappaforge.latest.job",JSON.stringify(recentJob));else localStorage.removeItem("kappaforge.latest.job")}
+// Archive task history without cancelling execution or changing GitHub issues/PRs. Tombstones
+// prevent repository refresh, old latest-job records and vault sync from restoring cleared cards.
+let dismissedTaskIds=new Set();try{const ids=JSON.parse(localStorage.getItem('kappaforge.dismissedTasks.v1')||'[]');if(Array.isArray(ids))dismissedTaskIds=new Set(ids.filter(n=>Number.isSafeInteger(n)&&n>0))}catch{}
+function applyTaskHistoryDismissals(){
+ trackedJobs=trackedJobs.filter(j=>!dismissedTaskIds.has(j.number));
+ if(dismissedTaskIds.has(recentJob?.number))recentJob=null;
+ for(const c of chats)c.messages=c.messages.filter(m=>{
+  const id=String(m.progressKey||m.jobReport||'').match(/^(?:progress|job):(\d+):/);
+  return !id||!dismissedTaskIds.has(Number(id[1]));
+ });
+ persistJobs();
+}
+function mergeTaskHistory(ids=[]){
+ const active=new Set(trackedJobs.filter(taskHasActiveExecution).map(j=>j.number));
+ for(const n of active)dismissedTaskIds.delete(n);
+ for(const n of Array.isArray(ids)?ids:[])if(Number.isSafeInteger(n)&&n>0&&!active.has(n))dismissedTaskIds.add(n);
+ localStorage.setItem('kappaforge.dismissedTasks.v1',JSON.stringify([...dismissedTaskIds]));
+ applyTaskHistoryDismissals();
+}
+function taskHasActiveExecution(job){
+ return ['queued','running','recovering','waiting','testing'].includes(job.progress?.status)||(!job.progress&&!job.finished&&['waiting','progress'].includes(job.message));
+}
+function inactiveTask(job){
+ if(taskHasActiveExecution(job))return false;
+ return job.finished||['completed','failed','cancelled','closed','ready','blocked'].includes(job.progress?.status)||['failed','tests-failed','closed','merged','cancelled'].includes(job.message);
+}
+function taskHistoryMatches(job,status){
+ if(!inactiveTask(job))return false;
+ if(status==='inactive')return true;
+ if(status==='failed')return ['failed','tests-failed'].includes(job.message)||job.progress?.status==='failed';
+ if(status==='closed'||status==='cancelled')return job.message===status||job.progress?.status===status;
+ return ['complete','merged','tests-passed'].includes(job.message)||['completed','ready'].includes(job.progress?.status);
+}
+function manageTaskHistory(text){
+ const operation=KappaIntent.taskOperation(text);
+ if(operation?.action!=='clear-history')return 'This task operation is not available in chat. Use the task’s Cancel control to stop running work, or manage its issue on GitHub. No development task was started.';
+ const selected=trackedJobs.filter(j=>taskHistoryMatches(j,operation.status));
+ mergeTaskHistory(selected.map(j=>j.number));save();
+ const active=trackedJobs.filter(j=>!inactiveTask(j)).length;
+ return 'Cleared '+selected.length+' inactive task'+(selected.length===1?'':'s')+' from app history.'+(active?' Kept '+active+' active task'+(active===1?'':'s')+'.':'')+' GitHub issues and PRs remain available.';
+}
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
 // request gets an Approve or Deny card. Everything else is conversation.
@@ -12,7 +53,7 @@ function persistJobs(){localStorage.setItem("kappaforge.jobs.v2",JSON.stringify(
 function adoptRepositoryTasks(issues){
  let added=false;
  for(const i of issues||[]){
-  if(i.repo!=="KappaForge"||i.pull_request||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||"")))continue;
+  if(i.repo!=="KappaForge"||i.pull_request||dismissedTaskIds.has(i.number)||!(i.labels||[]).some(l=>/^kappa-task$/i.test(l.name||"")))continue;
   // Its mode decides when it is finished: a develop task keeps going while its PR is open (fixes, test results).
   const mode=(String(i.body||"").match(/^Mode:\s*([\w-]+)\s*$/mi)||[])[1]||"develop",known=trackedJobs.find(j=>j.number===i.number);
   // Adopted before the mode was read (2.2.5): read its reports again, so a later failure isn't hidden behind "Finished".
@@ -26,6 +67,7 @@ function adoptRepositoryTasks(issues){
 // A request already has a task when it started one, or when a task card follows it in its chat.
 function requestHasTask(chat,message){return !!message.taskStarted||chat.messages.slice(chat.messages.indexOf(message)+1).some(x=>x.progressKey)}
 function chatTaskPlan(typed,chat){
+ if(KappaIntent.classify(typed)==='operation')return {kind:'operation',text:typed};
  if(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?\d+\s*[.!]?$/i.test(typed))return {kind:"retry"};
  const intent=KappaIntent.classify(typed);
  if(intent==="execution"||intent==="investigation")return {kind:"start",text:typed};
@@ -37,7 +79,7 @@ function chatTaskPlan(typed,chat){
  if(KappaIntent.suggestsTask(typed))return {kind:"approval",text:typed};
  return {kind:"none"};
 }
-const TASK_INTENT={start:"starting",retry:"starting",approval:"approval",none:"none"};
+const TASK_INTENT={start:"starting",retry:"starting",approval:"approval",operation:"none",none:"none"};
 // Starts with the chat request, not after its reply: a failed reply or switching chats never drops the task.
 // Assistant responses are display-only. Route ONLY the immutable user turn.
 async function runChatAction(plan,typed,chat){
@@ -45,6 +87,9 @@ async function runChatAction(plan,typed,chat){
  const message=[...chat.messages].reverse().find(m=>m.role==='user');
  if(!message||message.executionHandled)return;
  message.executionHandled=true;message.requestId=message.requestId||crypto.randomUUID();save();
+ if(plan.kind==='operation'){
+  const result=manageTaskHistory(typed);chat.messages.push({role:'assistant',text:result});save();render();return;
+ }
  if(plan.kind==="retry"){
   const body={task:Number(typed.match(/\d+/)[0])};
   const response=await userAuthorizedFetch('/retry',body,typed,'user-request',message.requestId,chat.id);
@@ -82,7 +127,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
+ Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});mergeTaskHistory();ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 // A task owns one card across comments and retries. Never infer launch from assistant prose.
 function ensureTaskCard(job){
@@ -231,6 +276,7 @@ async function checkJobResult(){
   for(const job of jobs){
    try{
    const [comments,issue]=await Promise.all([taskComments(job.number),taskRead("KappaForge/issues/"+job.number)]);
+   if(dismissedTaskIds.has(job.number))continue;
    if(!Array.isArray(comments)||!issue||typeof issue!=="object"||Array.isArray(issue))throw Error("Task status response is unavailable or invalid");
    for(const comment of comments){
     const report=KappaJobs.report(comment);if(!report)continue;
@@ -255,13 +301,13 @@ async function checkJobResult(){
     if(run){job.dispatchObservation={state:run.status,runId:run.id,at:Date.now()};changed=true;}
    }
    const prPath=job.prUrl&&!job.finished?job.prUrl.match(/github\.com\/onlykappa\/([A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/):null;
-   if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);
+   if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);if(dismissedTaskIds.has(job.number))continue;
     if(pr.merged_at){changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
     else if(pr.state==="closed"){changed=jobChatUpdate(job,"pr-closed","The pull request was closed without merging. ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="closed";}}
    if(issue.state==="closed"&&!job.finished){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
    if(job.pollError)changed=true;job.pollError="";job.pollAfter=0;job.lastCheckedAt=Date.now();
    if(KappaJobs.stalled(job)){changed=jobChatUpdate(job,"stuck:"+job.activeAt,"⏳ Task #"+job.number+" has had no new update for over 15 minutes, so it may be stuck. Ask me to **retry task #"+job.number+"** or [check it on GitHub](https://github.com/onlykappa/KappaForge/issues/"+job.number+").",true)||changed;job.stuckNote=job.activeAt;}
-   }catch(e){job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}
+   }catch(e){if(dismissedTaskIds.has(job.number))continue;job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}
   }
  }finally{
   for(const job of jobs){if(job.finished&&!job.finishedAt)job.finishedAt=Date.now()}
@@ -271,6 +317,7 @@ async function checkJobResult(){
 async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
  const job=pendingJob,jobChatId=job.conversationId||current;job.requestId=job.requestId||crypto.randomUUID();job.conversationId=job.conversationId||jobChatId;pendingJob=null;render();
+ if(KappaIntent.classify(job.instructions)==='operation'){const target=chats.find(c=>c.id===jobChatId);if(target){const result=manageTaskHistory(job.instructions);target.messages.push({role:'assistant',text:result});}save();render();return;}
  try{
  const {requestId,conversationId,authorizationSource,...payload}=job;
  const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
@@ -370,6 +417,7 @@ function taskCheckpoint(job,status,source='backend'){
 }
 
 
+if(dismissedTaskIds.size)mergeTaskHistory();
 for(const job of trackedJobs){if(!job.queuedAt)job.queuedAt=job.activeAt||Date.now();if(!job.finished)ensureTaskCard(job)}
 
 // Update freshness locally; rerender only when a recovery reminder changes, never on each timer tick.

@@ -530,7 +530,7 @@ if(view==="chat"&&pendingJob&&(!pendingJob.conversationId||pendingJob.conversati
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
-if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+(data.issues.map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
+if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
@@ -606,6 +606,7 @@ let planError="";
 // develop task, launched as the owner's own control. approval: an uncertain request is planned into an Approve/Deny card only.
 async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false}={}){
  const intent=KappaIntent.classify(text);
+ if(intent==='operation'){planError='Manage task history by sending the request in chat.';return false;}
  if(!explicit&&!approval&&!["execution","investigation"].includes(intent))return false;
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}

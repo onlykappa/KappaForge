@@ -182,7 +182,7 @@ test('assistant claims of running work are recognized with the task numbers they
 test('open repository tasks started elsewhere are followed and shown without a chat card',()=>{
  const tasks=read('app-tasks.js'),dash=read('app-dashboard.js');
  const checked=[];
- const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
+ const box={dismissedTaskIds:new Set(),esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
   taskValidation:()=>[],chats:[],trackedJobs:[{number:98,finished:true}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
  vm.createContext(box);
  vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
@@ -202,7 +202,7 @@ test('open repository tasks started elsewhere are followed and shown without a c
 // 2.2.5 adopted #119 without its mode, so its "draft PR" report marked it Finished and hid the failure after it.
 test('adopted tasks keep their mode, and ones adopted without it are read again',()=>{
  const tasks=read('app-tasks.js'),checked=[];
- const box={JSON,Date,String,Number,trackedJobs:[{number:119,adopted:true,finished:true,message:'complete',lastReportId:9}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
+ const box={dismissedTaskIds:new Set(),JSON,Date,String,Number,trackedJobs:[{number:119,adopted:true,finished:true,message:'complete',lastReportId:9}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
  vm.createContext(box);vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
  const now=new Date().toISOString(),label=[{name:'kappa-task'}];
  box.adoptRepositoryTasks([{repo:'KappaForge',number:119,labels:label,created_at:now,body:'Repository: onlykappa/KappaForge\nMode: develop\n\nAdd weather'},

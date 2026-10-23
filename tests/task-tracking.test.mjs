@@ -5,9 +5,10 @@ import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import '../preview/task-progress.js';
 import '../preview/core.js';
+import '../preview/intent-guard.js';
 function setup(){
  const chats=[{id:'chat',messages:[]}],storage=new Map(),element={addEventListener(){}};
- const c={Date,console,AbortController,setTimeout,clearTimeout,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
+ const c={KappaIntent:globalThis.KappaIntent,Date,console,AbortController,setTimeout,clearTimeout,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
  vm.createContext(c);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),c);return {c,chats,run:code=>vm.runInContext(code,c)};
 }
 test('confirmed launch immediately adds one queued card to its original chat',async()=>{
@@ -46,7 +47,7 @@ test('saved snapshots survive app restart with their original timestamps',()=>{
  const {c,run}=setup();const original=globalThis.KappaProgress.queued(9,1234);const saved=JSON.stringify([{number:9,chatId:'chat',queuedAt:1234,progress:original}]);
  const restored=setup();restored.c.localStorage.getItem=()=>saved;
  // Reload the task script in a new global scope, as WKWebView does after process termination.
- const context={...c,localStorage:{getItem:()=>saved,setItem(){}},chats:[{id:'chat',messages:[]}]};vm.createContext(context);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),context);
+ const context={...c,localStorage:{getItem:()=>saved,setItem(){},removeItem(){}},chats:[{id:'chat',messages:[]}]};vm.createContext(context);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),context);
  assert.equal(vm.runInContext('trackedJobs[0].progress.attemptAt',context),1234);
  assert.equal(context.chats[0].messages.length,1);
 });

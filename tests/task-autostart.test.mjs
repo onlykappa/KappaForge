@@ -53,6 +53,13 @@ test('normal conversation is not converted into work',async()=>{
  assert.equal(x.ok,false);
  assert.equal(x.launched,0);
 });
+
+test('task operations never use the coding planner or its development fallback, even from explicit controls',async()=>{
+ for(const options of [undefined,{explicit:true},{approval:true}]){
+  const x=await attempt({text:'please delete all old tasks in kappaforge',options,fetchError:'Load failed'});
+  assert.equal(x.ok,false);assert.equal(x.launched,0);assert.equal(x.pending,null);assert.equal(x.sent,null);
+ }
+});
 // The owner's direct request decides; the planner AI only picks repository and mode and cannot drop the request.
 test('a direct request still starts when the planner declines, fails or is unreachable',async()=>{
  for(const opt of [{isTask:false},{status:502},{fetchError:'Load failed'}]){
