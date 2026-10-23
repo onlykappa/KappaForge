@@ -20,8 +20,10 @@ import {fallbackRoutes,toChat,callProvider,normalizeResult,chunkNormalizer,provi
 import {routingStore} from "./router-state.js";
 import {premiumConfig,premiumStatus,premiumOp,premiumCatalog,pickPremium,promptTokensUpper} from "./premium.js";
 import {premiumStore} from "./premium-store.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens} from "./router-coordination.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routingSnapshot,routerCaps,accountPoolFor,estimateTokens,providerKeyRejected} from "./router-coordination.js";
 import {inferenceRouter} from "./inference-router.js";
+import {providerSetup} from "./provider-setup.js";
+import {retryDeadline} from "./retry-deadline.js";
 import {probeModels,auditModels,modelCatalog} from "./model-probe.js";
 import {ollamaPlan} from "./ollama-plan.js";
 import {openrouterAccount} from "./openrouter-account.js";
@@ -289,7 +291,7 @@ const workerImplementation = {
         const providers=[{id:"gemini",name:"Google Gemini",configured:!!env.GEMINI_API_KEY,hasKey:!!env.GEMINI_API_KEY,keyless:false,enabled:geminiAllowed,eligibility:providerPolicyStatus(env,"chat","gemini"),models:geminiAllowed?await discover(env).catch(()=>[]):[],
           capabilities:primary.capabilities,contextTokens:primary.contextTokens||null,requestContextCeiling:REGISTRY.routing.defaults.maxContextTokens,maxOutputTokens:primary.maxOutputTokens||REGISTRY.routing.defaults.maxOutputTokens,health:health.gemini,quota:{remaining:null,source:"unknown"}},...await providerSummary(env,health)];
         // Models removed after the model audit and the specialist tools, so Usage leaves the removed ones out and labels tools.
-        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
+        for(const p of providers){const c=p.id==="gemini"?primary:REGISTRY.providers[p.id]||{};p.setup=providerSetup(env,p.id);p.removed=c.removedModels||[];p.tools=(c.toolModels||[]).map(t=>t.model);
           // Each model's own per-request token limits where its catalog publishes them (OpenRouter has no daily token cap).
           p.modelLimits=Object.fromEntries((p.models||[]).map(m=>[m,catalogLimits(p.id,m)]).filter(([,l])=>l));}
         // Each model's own counters from the provider's rate-limit headers, and the models resting at a limit right now
@@ -938,14 +940,14 @@ const workerImplementation = {
         if(!routeReservation.allowed){
           // An account that is cooling down or busy is skipped as a whole, and the refusal does not count as a try.
           if(routeReservation.scope==="pool")rejectedProviders.add(route.provider);
-          attempt--;lastStatus=429;lastRetryAt=routeReservation.retryAt||lastRetryAt;lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
+          attempt--;lastStatus=429;lastRetryAt=retryDeadline(lastRetryAt,routeReservation.retryAt);lastFailure={source:"coordination",category:routeReservation.reason,upstreamStatus:routeReservation.upstreamStatus||null};continue;}
         sends++;
         let outcomeStatus=0,outcomeHeaders=null,outcomeCategory="",outcomeBody=null;
         const record=async(result,ok)=>{
           const status=ok?200:request.signal.aborted?499:outcomeStatus>=400?outcomeStatus:502;
           const event=telemetry(result,model,Date.now()-started,ok,attempt>1,planning?"plan":"chat",pricing,status);
           const outcome=await reportProviderOutcome(env,{requestId:routeRequestId,route,status,category:request.signal.aborted?"cancelled":outcomeCategory||(!ok&&status>=500?"provider_error":""),headers:outcomeHeaders,usage:result?.usageMetadata,body:outcomeBody});
-          lastRetryAt=outcome.retryAt||lastRetryAt;
+          lastRetryAt=retryDeadline(lastRetryAt,outcome.retryAt);
           if(!ok)lastFailure={source:outcomeCategory==="network_failure"?"transport":outcomeCategory.startsWith("malformed_")?"normalization":"upstream",category:outcomeCategory||"provider_error",upstreamStatus:response?.status??null};
           await usageStub.fetch("https://memory.internal/usage",{method:"POST",body:JSON.stringify(event)});return event;
         };
@@ -969,7 +971,7 @@ const workerImplementation = {
           // A refusal that comes back at once (needs payment, busy, rate limited) never started a reply: it does not use up a send.
           if(Date.now()-started<QUICK_REFUSAL_MS)sends--;
           note(label(route)+(({402:" needs a paid plan",429:" is busy",503:" is unavailable"})[response.status]||" did not answer")+" · trying the next AI");
-          if(response.status===401)rejectedProviders.add(route.provider);
+          if(providerKeyRejected(env,route.provider,response.status))rejectedProviders.add(route.provider);
           if(gemini)rest(route.model,response.status);
           // Other providers' errors (quota, retired model, unsupported option) all mean: try the next route.
           continue;

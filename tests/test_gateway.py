@@ -9,6 +9,20 @@ from engine import gateway, developer, recovery, runner, intent_guard
 
 
 class GatewayEvidenceTests(unittest.TestCase):
+    def test_mixed_route_failures_preserve_recoverable_quota_wait(self):
+        import time
+        for category in ('authentication', 'billing_blocked', 'provider_denied', 'model_unavailable'):
+            data = {'code':'free_route_unavailable', 'retryAt':(time.time()+60)*1000,
+                    'failure':{'source':'upstream', 'category':category},
+                    'attempts':[{'category':'rate_limit', 'status':429}, {'category':category, 'status':401}]}
+            error = gateway.error(503, data)
+            self.assertFalse(error.terminal)
+            self.assertGreater(error.retry_at, time.time())
+            self.assertEqual(recovery.diagnose(error)[1], 'switch_or_defer')
+        data.pop('retryAt')
+        self.assertFalse(gateway.error(503, data).terminal, 'transient history still permits bounded recovery')
+        self.assertTrue(gateway.error(503, data, pinned=True).terminal, 'pinned execution keeps its explicit bounds')
+
     def test_transport_and_invalid_gateway_responses_preserve_sanitized_evidence(self):
         import urllib.error
         for cause, category in [(TimeoutError('secret fixture'), 'timeout'),

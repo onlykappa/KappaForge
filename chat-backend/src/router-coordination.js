@@ -74,6 +74,7 @@ export async function reserveProvider(env,route,requestId,{tokens=0,fresh=false,
 // account), and any server error from a free-model gateway, where each model runs on a different upstream, so even
 // several failing is no outage. Elsewhere hangs and server errors rest only the model too (router-state.js).
 const anonymous=(env,provider)=>{const p=provider==="gemini"?null:registry.providers[provider];return !!p&&(!p.key||!!p.keyOptional)&&!env[p.key];};
+export const providerKeyRejected=(env,provider,status)=>status===401&&!anonymous(env,provider);
 const modelScoped=(env,provider,status)=>status===401&&anonymous(env,provider)||(status===0||status>=500)&&registry.providers[provider]?.freeOnly===true;
 
 // Google's 429 names the exhausted quota: a per-day quota rests the model until its quota day ends, a
