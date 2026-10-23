@@ -401,20 +401,39 @@ async function refreshTaskDiagnostics(){
  settingsNotice='Checked '+jobs.length+' saved task'+(jobs.length===1?'':'s')+'; refreshed '+loaded+' failure record'+(loaded===1?'':'s')+'.';
  render();
 }
+// Recovery ledger kinds (engine/recovery.py diagnose) in plain words: what went wrong, and what it means.
+const TASK_FAILURE_KINDS={
+ edit_anchor:['Edit didn’t match the file','The model quoted code that isn’t in the current file, often because the file changed since it was read.'],
+ validation:['Failed a check','The change didn’t pass validation or the requirement check.'],
+ provider_outage:['AI provider unavailable','The gateway or provider didn’t answer; KappaForge switches providers or waits.'],
+ invalid_response:['Answer was cut off or malformed','The model’s answer wasn’t valid, usually because it hit its output limit.'],
+ request_size:['Request too large','The prompt was bigger than the model accepts; KappaForge sends less source next time.'],
+ missing_context:['Needed files it hadn’t read','The change depends on files that weren’t in context yet.'],
+ authorization:['Blocked by a safety rule','A safety rule stopped the change; this is not retried.'],
+ rate_limit:['Rate limited','The provider asked KappaForge to slow down.'],
+ model_deadline:['Model took too long','The model didn’t finish in time.']};
+const TASK_STRATEGIES={reread_source:'Re-read the file',smaller_stages:'Split into smaller stages',switch_or_defer:'Switch provider or wait',reduce_source_context:'Send less source',read_dependencies:'Read the needed files',stop:'Stop',compact:'Smaller retry'};
+function taskFailureKind(kind){return TASK_FAILURE_KINDS[kind]||[String(kind||'Failure').replace(/_/g,' '),''];}
 function taskDiagnosticsHTML(){
  const jobs=taskDiagnosticJobs();
+ const when=at=>{at=Number(at);return at?new Date(at<1e12?at*1000:at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Time unavailable'};
  const cards=jobs.map(job=>{
-  const rows=job.failureHistory.slice(-10).map((d,i)=>{
-   const at=Number(d.at),when=at?new Date(at<1e12?at*1000:at).toLocaleString():'Time unavailable';
-   const files=d.files?.length?'<p><b>Proposed paths:</b> '+esc(d.files.join(', '))+'</p>':'';
-   const logs=d.runUrl?'<a href="'+esc(d.runUrl)+'" target="_blank" rel="noopener noreferrer">Open Actions run logs ↗</a>':'';
-   return '<article class="task-failure"><h4>Failure '+(i+1)+' · '+esc(d.kind||'validation')+'</h4><p class="k-foot">'+esc([when,d.model?'Model '+d.model:'',d.strategy?'Strategy '+d.strategy:''].filter(Boolean).join(' · '))+'</p><pre>'+esc(d.error)+'</pre>'+files+(d.next?'<p><b>Next recovery step:</b> '+esc(d.next)+'</p>':'')+(logs?'<p>'+logs+'</p>':'')+'</article>';
+  const list=job.failureHistory.slice(-10),last=list[list.length-1],stopped=last.kind==='authorization'||/after 5 (?:distinct )?attempts|^Stopped/i.test(String(last.error)+' '+String(last.next));
+  const [lastLabel]=taskFailureKind(last.kind);
+  const rows=list.map((d,i)=>{
+   const [label,meaning]=taskFailureKind(d.kind),hard=d.kind==='authorization'||(i===list.length-1&&stopped);
+   const meta=[when(d.at),d.model?String(d.model).replace(/^[a-z-]+:/,''):'',d.strategy?'Next: '+(TASK_STRATEGIES[d.strategy]||String(d.strategy).replace(/_/g,' ')):''].filter(Boolean);
+   const files=d.files?.length?'<div class="tf-files">'+d.files.map(f=>'<span>'+esc(f)+'</span>').join('')+'</div>':'';
+   const logs=d.runUrl?'<a class="tf-link" href="'+esc(d.runUrl)+'" target="_blank" rel="noopener noreferrer">Run logs ↗</a>':'';
+   return '<li class="task-failure'+(hard?' hard':'')+'"><div class="tf-head"><b>Attempt '+(i+1)+' · '+esc(label)+'</b></div><p class="tf-meta">'+esc(meta.join(' · '))+'</p>'+(meaning?'<p class="tf-meaning">'+esc(meaning)+'</p>':'')+
+    '<pre class="tf-error">'+esc(d.error)+'</pre>'+files+(d.next?'<p class="tf-next"><b>What happens next:</b> '+esc(d.next)+'</p>':'')+logs+'</li>';
   }).join('');
   const pr=String(job.prUrl||'').match(/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+$/)?.[0];
-  return '<details class="k-details task-diagnostics"><summary class="k-row"><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+job.failureHistory.length+' recent failed proposal'+(job.failureHistory.length===1?'':'s')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+rows+(pr?'<p><a href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a></p>':'')+'</div></details>';
+  const summary='<div class="tf-summary'+(stopped?' hard':'')+'"><b>'+(stopped?'Why it stopped: ':'Latest problem: ')+esc(lastLabel)+'</b>'+(last.next?'<p>'+esc(last.next)+'</p>':'')+(pr?'<a class="tf-link" href="'+esc(pr)+'" target="_blank" rel="noopener noreferrer">Open draft PR ↗</a>':'')+'</div>';
+  return '<details class="k-details task-diagnostics"'+(job===jobs[0]?' open':'')+'><summary class="k-row"><span class="k-tx"><b>Task #'+esc(job.number)+' · '+esc(job.title||'Saved task')+'</b><small>'+list.length+' failed attempt'+(list.length===1?'':'s')+(stopped?' · stopped':'')+'</small></span>'+settingIcon('chevron')+'</summary><div class="task-failure-list">'+summary+'<ol class="tf-timeline">'+rows+'</ol></div></details>';
  }).join('');
  return kBtns(kBtn('task-diagnostics-refresh','Refresh task diagnostics',true))+
-  '<p class="k-foot">Shows the latest ten rejected proposal attempts per task, with the validator error, model, recovery strategy and Actions log link when available. Records are read from the task’s GitHub recovery ledger and cached on this device.</p>'+
+  '<p class="k-foot">The last ten failed attempts per task: what went wrong in plain words, the exact error, the files involved and what KappaForge does next. Read from each task’s GitHub recovery ledger and cached on this device.</p>'+
   (cards?'<div class="k-grp">'+cards+'</div>':'<p class="k-foot">No failure records are cached. Refresh to read the recovery ledgers for saved tasks.</p>');
 }
 function settingsSectionBody(){
