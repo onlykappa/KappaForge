@@ -918,7 +918,7 @@ const workerImplementation = {
       if(!reservation.ok)return json({error:"Server monthly request limit reached. Requests resume next UTC month."},429,cors);
       const routerRequestId=crypto.randomUUID();
       let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,routerRequestId,routerCaps(env).daily,routerCaps(env).minute)}
-      catch{return json({error:"Shared routing limits unavailable; inference was not sent."},503,cors)}
+      catch(error){console.error("chat request reservation failed",error?.name||"Error",String(error?.message||"").slice(0,200));return json({error:"Shared routing limits unavailable; inference was not sent.",code:"routing_state_unavailable"},503,cors)}
       if(!dailyReservation.allowed)return json({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached. Retry after the current minute window.":"Shared daily inference limit reached. Requests resume next UTC day.",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000},429,cors);
       let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
       // A complex question is split into parts answered by different providers at once; the main model then writes

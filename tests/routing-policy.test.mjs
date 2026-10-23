@@ -387,3 +387,18 @@ for(const exhausted of [false,true])test('timed-out routes share one bounded bud
   assert.ok(waits.includes(20000),'each attempt waits at most 20 seconds for the first word');
  }finally{globalThis.fetch=fetch;globalThis.setTimeout=timer;globalThis.clearTimeout=clear;Date.now=clock}
 });
+
+test("a failed shared request counter is named, not reported as an unclassified outage",async()=>{
+ const broken={idFromName:()=>"owner-v1",get:()=>({fetch:async()=>new Response("Durable Object storage failed",{status:500})})};
+ const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"openrouter",KAPPA_CODE_PROVIDERS:"openrouter",KAPPA_PRIVATE_CODE_PROVIDERS:"openrouter",MEMORY:broken};
+ const previous=globalThis.fetch,errors=console.error;let upstreamCalls=0;const logged=[];
+ globalThis.fetch=async()=>{upstreamCalls++;return Response.json({})};console.error=(...args)=>logged.push(args.join(" "));
+ try{
+  const response=await inferenceRouter(env,{version:1,channel:"coding",privateCode:true,repo:"onlykappa/KappaForge",requestId:"9e0f5d42-8d25-4f70-bdc4-d4c6b160b6aa",
+   providers:["openrouter"],messages:[{role:"user",content:"prompt"}],maxTokens:40});
+  const body=await response.json();
+  assert.equal(response.status,503);assert.equal(body.code,"routing_state_unavailable");
+  assert.equal(upstreamCalls,0,"no provider is contacted");
+  assert.ok(logged.some(line=>line.includes("router request reservation failed")&&line.includes("HTTP 500")),logged.join("\n"));
+ }finally{globalThis.fetch=previous;console.error=errors;}
+});

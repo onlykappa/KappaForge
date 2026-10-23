@@ -49,6 +49,12 @@ def response_provenance(raw, headers):
             'title': clean(title.group(1).decode('utf-8', 'replace'), 120) if title else None}
 
 
+def safe_message(value):
+    """A short gateway message in plain characters, or None: never arbitrary provider text."""
+    text = re.sub(r"[^A-Za-z0-9 _.,:;()/'-]", "", value)[:160].strip() if isinstance(value, str) else ""
+    return text or None
+
+
 def error(status, data=None, headers=None, pinned=False):
     data = data if isinstance(data, dict) else {}
     code = data.get('code')

@@ -738,6 +738,10 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             # A refusal that is not the Worker's own JSON came from in front of it (Cloudflare). Keep only what names
             # the cause: never the body text itself.
             evidence['unparsedResponse'] = gateway.response_provenance(raw, exc.headers)
+        elif failure.code == 'unreported':
+            # The Worker's uncoded refusals carry one of its own fixed messages ("Shared routing limits unavailable;
+            # inference was not sent"): keep it, sanitized, so the failing branch is named.
+            evidence['gatewayMessage'] = gateway.safe_message(body.get('error'))
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

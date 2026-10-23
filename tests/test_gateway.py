@@ -45,6 +45,21 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertNotIn('abc123', output.getvalue())
         self.assertNotIn('secret-looking', output.getvalue())
 
+    def test_an_uncoded_worker_refusal_names_its_message(self):
+        import urllib.error
+        body = json.dumps({'error': 'Shared routing limits unavailable; inference was not sent <script>'}).encode()
+        error = urllib.error.HTTPError('https://fixture.example/router/infer', 503, 'unavailable', {}, io.BytesIO(body))
+        output = io.StringIO()
+        with patch.dict(os.environ, {'KAPPA_ROUTER_URL': 'https://fixture.example', 'KAPPA_ROUTER_TOKEN': 'x' * 40}), \
+                patch.object(runner.urllib.request, 'urlopen', side_effect=error), contextlib.redirect_stdout(output), \
+                self.assertRaises(gateway.GatewayUnavailable):
+            runner.run_integrated_router('brief', 100, ['groq'])
+        evidence = json.loads(output.getvalue().split('KAPPA_ROUTER_RESULT ', 1)[1].splitlines()[0])
+        self.assertEqual(evidence['code'], 'unreported')
+        self.assertEqual(evidence['gatewayMessage'], 'Shared routing limits unavailable; inference was not sent script')
+        self.assertNotIn('unparsedResponse', evidence)
+        self.assertIsNone(gateway.safe_message(None))
+
     def test_transport_and_invalid_gateway_responses_preserve_sanitized_evidence(self):
         import urllib.error
         for cause, category in [(TimeoutError('secret fixture'), 'timeout'),

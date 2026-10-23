@@ -82,7 +82,11 @@ export async function inferenceRouter(env,input,callerSignal=null){
   return premiumResponse(premium);
  }
  let dailyReservation;try{dailyReservation=await reserveRouterRequest(env,baseId,routerCaps(env).daily,routerCaps(env).minute)}
- catch{return safeError("Shared routing limits unavailable; inference was not sent",503)}
+ catch(error){
+  // The shared request counter (one Durable Object value) failed: name it, so runners and logs can tell it from a provider outage.
+  console.error("router request reservation failed",error?.name||"Error",String(error?.message||"").slice(0,200));
+  return new Response(JSON.stringify({error:"Shared routing limits unavailable; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+ }
  if(dailyReservation.duplicate)return new Response(JSON.stringify({error:"Request id was already used",code:"request_replayed"}),{status:409,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  if(!dailyReservation.allowed)return new Response(JSON.stringify({error:dailyReservation.reason==="minute_limit"?"Shared per-minute inference limit reached":"Shared daily inference limit reached",code:dailyReservation.reason==="minute_limit"?"minute_limit":"daily_limit",retryAt:dailyReservation.retryAt||Date.parse(dailyReservation.day+"T00:00:00Z")+86400000}),{status:429,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  const started=Date.now(),deadline=started+registry.routing.defaults.requestTimeoutMs;
