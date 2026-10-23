@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import '../preview/core.js';
 const read=path=>readFileSync(new URL('../preview/'+path,import.meta.url),'utf8');
 const plainOf=x=>JSON.parse(JSON.stringify(x));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -26,7 +27,7 @@ test('pull request activity counts the last 7 days from GitHub records only',()=
 // app-shell.js: phone navigation.
 function shell(extra={}){
  const box={esc,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener(){},uiIcon:n=>'<svg data-i="'+n+'"></svg>',plain:t=>String(t||''),
-  KappaJobs:{isSubmission:()=>false},data:{prs:[{draft:true,head:{ref:'kappa/dev-1'}},{draft:false,head:{ref:'kappa/dev-2'}},{draft:false,head:{ref:'main'}}]},
+  KappaJobs:{...globalThis.KappaJobs,isSubmission:()=>false},data:{prs:[{draft:true,head:{ref:'kappa/dev-1'}},{draft:false,head:{ref:'kappa/dev-2'}},{draft:false,head:{ref:'main'}}]},
   isDevPR:p=>/^kappa\/dev-/.test(p.head?.ref||''),conversationSearch:'',chats:[],trackedJobs:[],Date,...extra};
  vm.createContext(box);vm.runInContext(read('app-shell.js'),box);
  // Top-level const helpers are bindings of the script, not properties of the context.
@@ -99,6 +100,42 @@ test('the + sheet offers attachments, Plan a task and the route; the task sheet 
  vm.runInContext("chatSheet={kind:'task',id:'9',tab:'findings',copy:'3'}",box);
  const task=box.chatSheetHTML();
  assert.match(task,/data-title="Task #9"[^]*data-task-tab="findings" aria-pressed="true"[^]*data-task-sheet-body[^]*pull\/199[^]*data-task-copy="3"/);
+});
+
+test('More switches the model route and shows tokens today, tasks that need you and the shortcuts, with no profile card',()=>{
+ const chats=[{id:'a',title:'A',at:1,messages:[{role:'assistant',text:'x',saved:true}]}];
+ const box=shell({view:'more',chats,trackedJobs:[{number:7,chatId:'a',message:'failed'}],preferences:{routing:'speed'},data:{repos:[1,2],issues:[1,2,3]},knownRepos:[],savedMemories:['m1','m2'],KappaConfig:{version:'2.2.26'},
+  KappaCore:{aggregate:()=>({requests:4,unknownTokens:0,total:408900}),periodStart:()=>0},shownEvents:()=>[],compact:n=>(n/1000).toFixed(1)+'K'});
+ const html=box.renderMorePage();
+ assert.match(html,/data-more-route="speed" aria-pressed="true">Speed[^]*data-more-route="cost" aria-pressed="false">Lite/);
+ assert.match(html,/408\.9K<\/b><small>Tokens today[^]*st-bad">1<\/b><small>Task needs you/);
+ for(const [attr,title,value] of [['data-page="projects"','Projects','2'],['data-page="tasks"','Tasks','3'],['data-page="saved"','Saved answers','1'],['data-more-section="memory"','Memory','2']])assert.match(html,new RegExp(attr+'[^]*'+title+'[^]*'+value));
+ assert.match(html,/data-more-section="updates"[^]*2\.2\.26[^]*data-page="help"/);
+ assert.doesNotMatch(html,/ios-avatar|data-page="profile"/,'no profile card');
+});
+
+test('holding a dashboard task offers Open, Retry, guidance, GitHub links, Copy link and a two-step Delete',()=>{
+ const src=read('app-dashboard.js'),start=src.indexOf('function taskMenuSheet('),end=src.indexOf('async function taskMenuAction(');
+ const box={esc,clip:(t,n)=>String(t).slice(0,n),iosRow:o=>'<row '+(o.attrs||'')+' tone="'+(o.tone||'')+'">'+o.title+'|'+(o.sub||'')+'</row>',iosSheet:(t,b)=>'<sheet title="'+t+'">'+b+'</sheet>',
+  trackedJobs:[{number:198,title:'Weather',message:'failed',url:'https://github.com/onlykappa/KappaForge/issues/198',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],taskMenu:198,taskMenuConfirm:false};
+ box.KappaJobs=globalThis.KappaJobs;box.KappaProgress={stale:j=>!!j.stale};
+ const tasks=read('app-tasks.js');
+ vm.createContext(box);vm.runInContext(tasks.slice(tasks.indexOf('function taskHasActiveExecution('),tasks.indexOf('async function deleteTaskHistory('))+src.slice(start,end),box);
+ const html=box.taskMenuSheet();
+ assert.match(html,/title="Task #198"[^]*data-task-act="open"[^]*data-task-act="retry"[^]*data-task-act="guide"/);
+ assert.match(html,/issues\/198[^]*pull\/199[^]*data-task-act="copy"[^]*data-task-act="delete" tone="bad">Delete task\|Clears inactive history/);
+ box.taskMenuConfirm=true;assert.match(box.taskMenuSheet(),/Tap again to delete/);
+ box.trackedJobs[0].finished=true;box.trackedJobs[0].message='done';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="(retry|guide)"/,'a finished task that did not fail has nothing to retry');
+ box.trackedJobs[0].progress={status:'running'};
+ assert.match(box.taskMenuSheet(),/data-task-act="delete" disabled aria-disabled="true"/);
+ box.trackedJobs[0].finished=false;box.trackedJobs[0].message='progress';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="retry"/,'a healthy running task has nothing to retry');
+ box.trackedJobs[0].stale=true;assert.match(box.taskMenuSheet(),/data-task-act="retry"[^]*No recent update/,'a task that stopped updating offers Retry');
+});
+
+test('older failed tasks remain visible beneath newer running work and More counts tasks individually',()=>{
+ const box=shell({trackedJobs:[{number:1,chatId:'a',at:1,message:'failed'},{number:2,chatId:'a',at:2,message:'tests-failed'},{number:3,chatId:'a',at:3,progress:{status:'running'}},{number:4,message:'failed'},{number:5,message:'failed',historyOnly:true},{number:6,message:'closed'}]});
+ assert.equal(box.chatTaskState({id:'a'}).tone,'bad');
+ assert.equal(box.trackedJobs.filter(j=>box.KappaJobs.needsAttention(j)).length,3);
 });
 
 // ui.js: the task card's large ring.

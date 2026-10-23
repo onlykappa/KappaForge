@@ -12,8 +12,10 @@ async function go(page,target){
  for(let i=0;i<3&&await page.evaluate(()=>document.body.classList.contains('pushed'));i++)await page.locator('#menubtn').click();
  if(target==='chat'){await page.evaluate(()=>navigate('chat'));return}
  if(['chats','home'].includes(target)){await page.locator('.mobile-nav [data-page='+target+']').click();return}
+ // The account page opens from the avatar on Home; More has no profile card.
+ if(target==='profile'){await page.locator('.mobile-nav [data-page=start]').click();await page.locator('#content [data-page=profile]').click();return}
  if(target==='reviews'){await go(page,'home');await page.locator('#content [data-page=reviews]').click();return}
- await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content [data-page='+target+']').click();
+ await page.locator('.mobile-nav [data-page=more]').click();await page.locator('#content '+(target==='tasks'?'.ios-row':'')+'[data-page='+target+']').click();
 }
 async function openSettings(page){if(await isPhone(page)){await go(page,'settings');return}await openNavigation(page);await page.locator('#settingsbtn').click();}
 // Settings opens on a grouped list; each row opens its own page with a back button.
@@ -81,6 +83,10 @@ const apiServer=createServer(async(req,res)=>{
   assert.equal(await page.locator('.mobile-nav button').count(),4);assert.equal(await page.locator('.mobile-nav [data-page=tasks],.mobile-nav [data-page=reviews]').count(),0);const tabs=await page.locator('.mobile-nav').boundingBox();assert.ok(tabs.y+tabs.height<=844,'Tab bar stays on screen');
   await page.locator('.mobile-nav [data-page=home]').click();assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'home');
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--kappa-safe-top');navigate('chat')});assert.equal(await page.locator('.mobile-nav').isVisible(),false,'A chat hides the tab bar');
+  // Swiping in from the left edge goes Back; it never opens the hidden sidebar and leaves the page inert (a freeze).
+  await page.evaluate(()=>{const fire=(t,x)=>document.querySelector('.content').dispatchEvent(new PointerEvent(t,{pointerType:'touch',clientX:x,clientY:400,bubbles:true,cancelable:true}));fire('pointerdown',8);fire('pointermove',60);fire('pointermove',140);fire('pointerup',140)});
+  assert.deepEqual(await page.evaluate(()=>[view,document.querySelector('.main').inert,document.querySelector('.mobile-nav').inert,document.body.classList.contains('sidebar-open')]),['chats',false,false,false],'edge swipe returns to Chats without freezing the page');
+  await page.evaluate(()=>{setSidebar(true);navigate('chat')});assert.equal(await page.evaluate(()=>document.querySelector('.main').inert),false,'the sidebar never opens on phones');
  }await openSettings(page);console.log(name+': opened settings');
  // The setup check runs on its own; a healthy setup leaves no card on the Settings home.
  await page.locator('[data-section=overview] .s-row-value',{hasText:'Verified'}).waitFor();assert.equal(await page.locator('.s-issues, .s-checking').count(),0,'healthy setup hides the check card');
@@ -221,6 +227,12 @@ const apiServer=createServer(async(req,res)=>{
   return {writes,paused,units:preferences.weatherUnits,comparisons};
  });
  assert.equal(protocol.writes,1,name+' duplicate receipt prevents a second persisted mutation');assert.match(protocol.paused,/paused/);assert.equal(protocol.units,'celsius');assert.ok(protocol.comparisons>0);
+ await page.evaluate(()=>{const job={number:799,title:'Clear from Dashboard',chatId:current,message:'failed',activeAt:Date.now()};trackedJobs.unshift(job);ensureTaskCard(job);persistJobs();view='home';render()});
+ await page.locator('.agent-task[data-open-task="799"]').click({button:'right'});
+ await page.locator('[data-task-act="delete"]').click();await page.locator('[data-task-act="delete"]').click();
+ await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===799));
+ assert.equal(await page.evaluate(()=>chats.some(c=>c.messages.some(m=>m.progressKey==='progress:799:live'))),false,name+' Dashboard deletion clears the chat card too');
+ assert.equal(await page.evaluate(()=>taskHistoryRecords[799]?.state==='cleared'),true,name+' Dashboard uses canonical history');
  await page.evaluate(()=>{trackedJobs=[];persistJobs();view='chat';render()});
  console.log(name+': registered capabilities, wording variations, restrictions, shared UI controls and active-task preservation passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
