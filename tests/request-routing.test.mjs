@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import '../preview/intent-guard.js';
+import '../preview/core.js';
 import {validateRequest,authorizationStore} from '../chat-backend/src/intent-guard.js';
 import {taskBody} from '../chat-backend/src/agent-work.js';
 import worker from '../chat-backend/src/index.js';
@@ -20,7 +21,7 @@ function app(jobs=[],savedStore){
  const box={KappaIntent:I,TextEncoder,crypto:webcrypto,recentJob:null,chats:[chat],key,preferences:{appearance:'dark'},current:'chat',pendingJob:null,planError:'Planner offline',backend:'https://worker.test',access:'owner',
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   save(){store.set(key,JSON.stringify(box.chats))},render(){},persistJobs(){},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},
-  acceptTaskRetry(){},KappaJobs:{conversationContext:()=>''},userAuthorizedFetch:async(path,payload,text)=>{calls.push({path,payload:JSON.parse(JSON.stringify(payload)),text});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
+  acceptTaskRetry(){},KappaJobs:{...globalThis.KappaJobs,conversationContext:()=>''},userAuthorizedFetch:async(path,payload,text)=>{calls.push({path,payload:JSON.parse(JSON.stringify(payload)),text});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
   proposeTaskAutomatically:async(text,_notify,_context,id,_chat,options)=>{calls.push({text,id,options:JSON.parse(JSON.stringify(options))});Object.assign(options.receipt,{status:'dispatched'});return true;},
   fetch:async()=>{throw Error('No arbitrary network or model calls')}};
  vm.createContext(box);const source=read('preview/app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
@@ -90,6 +91,10 @@ test('a paused Worker policy is cached for subsequent offline actions',async()=>
  await assert.rejects(h.box.refreshOperationContract(),/Paused/);
  await assert.rejects(h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'No'}},{source:'user-control'}),/paused/);assert.equal(h.chat.title,'Original');
 });
+function confirmSource(h,state){
+ const sha='a'.repeat(40),at=Date.now();
+ vm.runInContext('trackedJobs.push('+JSON.stringify({number:999,chatId:'chat',message:'tests-passed',candidate:{sha,at,incomplete:false},verification:{sha,at,verified:true},lastCheckedAt:at,routeTracking:{requestId:state.requestId,index:0,requestedAt:at,decision:state.steps[0].decision}})+')',h.box);
+}
 test('mixed cleanup and development have separate scope, restrictions, receipts and reports',async()=>{
  const h=app([{number:198,message:'failed'}]);const request='clear old tasks and add automatic cleanup; do not merge';
  const reply=await h.send(request);assert.equal(h.jobs().length,0);assert.equal(h.calls.length,1);
@@ -166,8 +171,8 @@ test('a verified prerequisite resumes only its dependent action on explicit cont
  const h=app([{number:198,message:'failed'}]);await h.send('add cleanup then clear old tasks');
  assert.equal(h.calls.length,1);assert.equal(h.jobs().length,1,'dispatch is not completed software');
  const pending=h.chat.pendingActions,source=pending.steps[0];
- h.box.recordRoute(source.decision,null,'verified',pending.requestId,source.index);
- await h.send('continue actions');assert.equal(h.calls.length,1,'source is not dispatched twice');assert.equal(h.jobs().length,0);
+ h.box.recordRoute(source.decision,null,'verified',pending.requestId,source.index);confirmSource(h,pending);
+ await h.send('continue actions');assert.equal(h.calls.length,1,'source is not dispatched twice');assert.deepEqual(h.jobs().map(j=>j.number),[999]);
 });
 
 
@@ -237,8 +242,8 @@ test('an outstanding prepared approval can be rebuilt after restart without repe
 test('verified dependencies continue autonomously within the original active scope, never after expiry',async()=>{
  const h=app([{number:198,message:'failed'}]);h.box.document={hidden:false};h.box.sending=false;
  await h.send('add cleanup then clear old tasks');const state=h.chat.pendingActions;
- h.box.recordRoute(state.steps[0].decision,null,'verified',state.requestId,0);
- await h.box.continuePendingPlans();assert.equal(h.jobs().length,0);assert.equal(h.calls.length,1);assert.equal(h.chat.pendingActions,null);
+ h.box.recordRoute(state.steps[0].decision,null,'verified',state.requestId,0);confirmSource(h,state);
+ await h.box.continuePendingPlans();assert.deepEqual(h.jobs().map(j=>j.number),[999]);assert.equal(h.calls.length,1);assert.equal(h.chat.pendingActions,null);
  const expired=app([{number:198,message:'failed'}]);expired.box.document={hidden:false};expired.box.sending=false;
  await expired.send('add cleanup then clear old tasks');const old=expired.chat.pendingActions;old.expiresAt=1;
  expired.box.recordRoute(old.steps[0].decision,null,'verified',old.requestId,0);
@@ -250,4 +255,18 @@ test('automatic continuation never retries an unsupported action just because it
  const h=app();h.box.document={hidden:false};h.box.sending=false;
  await h.send('clear old tasks then delete old tasks on GitHub');const messages=h.chat.messages.length;
  await h.box.continuePendingPlans();assert.equal(h.chat.messages.length,messages);assert.equal(h.calls.length,0);
+});
+
+
+test('a historical verified routing event cannot release dependencies without fresh current-candidate evidence',async()=>{
+ for(const reason of ['missing','offline','changed-head','stale','history-only']){
+  const h=app([{number:198,message:'failed'}]);h.box.document={hidden:false};h.box.sending=false;
+  await h.send('add cleanup then clear old tasks');const state=h.chat.pendingActions;
+  h.box.recordRoute(state.steps[0].decision,null,'verified',state.requestId,0);
+  if(reason!=='missing'){
+   confirmSource(h,state);
+   vm.runInContext(reason==='offline'?"trackedJobs.at(-1).pollError='Offline'":reason==='changed-head'?"trackedJobs.at(-1).candidate.sha='b'.repeat(40)":reason==='history-only'?"trackedJobs.at(-1).historyOnly=true":"trackedJobs.at(-1).lastCheckedAt=1",h.box);
+  }
+  await h.box.continuePendingPlans();assert.ok(h.jobs().some(j=>j.number===198),reason+' proof must keep cleanup blocked');assert.equal(h.calls.length,1,'the source request is not dispatched again');
+ }
 });

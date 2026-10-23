@@ -42,10 +42,10 @@ function renderTaskActivity(m,i=-1){
  if(job?.progress||job?.queuedAt)return renderExecutionActivity(m,job,i);
  const finished=model.finished;
  const lifecycle=job?.message||'';
- const validationFailed=['failed','tests-failed'].includes(lifecycle);
- const testing=finished&&(job&&!job.finished&&!['tests-passed','merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
+ const verified=KappaJobs.verifiedTask(job),validationFailed=!!job?.verification?.incomplete||!!job?.verification?.failed||['failed','tests-failed','native-failed','tests-incomplete'].includes(lifecycle);
+ const testing=finished&&(job&&!job.finished&&!verified&&!['merged','closed','cancelled'].includes(lifecycle)||!job&&/tests are running|tests are running again/i.test(report));
  const tag=job?.finished&&lifecycle==='cancelled'?'CANCELLED':job?.finished&&lifecycle==='closed'?'CLOSED':
-  fail||validationFailed?'NEEDS ATTENTION':lifecycle==='tests-passed'?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
+  fail||validationFailed?'NEEDS ATTENTION':verified?'READY FOR REVIEW':testing?'TESTING':finished?'DONE':'IN PROGRESS';
  // After the draft PR: the task's own test and iOS runs, live from the Workflow Monitor (app-tasks.js).
  const checks=job&&typeof taskValidation==='function'?taskValidation(job):[];
  const shown=[...rows,...checks];
@@ -100,14 +100,14 @@ function renderExecutionActivity(m,job,i=-1){
   steps:legacy.map((r,i)=>({id:String(i),title:r.title,detail:r.detail,status:({done:'completed',current:'running',failed:'failed',upcoming:'queued'})[r.state],startedAt:Date.parse(r.since)||0,displayTime:r.time})),
   units:null,findings:[]
  };
- const life=job.message,failed=p.status==='failed'||['failed','tests-failed'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||['tests-passed','tests-failed','failed'].includes(life);
+ const life=job.message,verified=KappaJobs.verifiedTask(job),failed=!!job.verification?.incomplete||p.status==='failed'||!!job.verification?.failed||['failed','tests-failed','native-failed','tests-incomplete'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||verified||failed;
  const expired=KappaProgress.expired?.(p,now)&&['waiting','recovering'].includes(p.status);
- const status=expired?'blocked':life==='tests-passed'?'ready':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
+ const status=expired?'blocked':verified?'ready':failed?'failed':life==='tests-passed'||life==='native-passed'?'testing':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
  const labels={queued:'QUEUED',running:'IN PROGRESS',recovering:'RECOVERING',waiting:'WAITING TO RESUME',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
  const active=p.steps.find(r=>['running','recovering','waiting'].includes(r.status)),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
  const reminder=!ended&&!expired&&KappaProgress.retryReminder(job,now),stale=KappaProgress.stale(job,now),unavailable=!!job.pollError;
  const recoveryDisplay=!ended&&!expired?KappaProgress.recoveryDisplay(job,now):null;
- const headline=job.cancellation&&!job.cancellation.terminatedAt?'Authorization revoked; cancellation requested. Runner termination has not been confirmed.':expired?'Task authorization expired. Retry explicitly to resume saved work.':recoveryDisplay?recoveryDisplay.text:status==='waiting'?'Waiting for recovery.':status==='recovering'?'Diagnosing the error and trying a different recovery strategy':status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?(job.cancellation?'Observed task runners stopped; authorization remains revoked.':'Task cancelled'):status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
+ const headline=job.verification?.incomplete?'Checks do not establish completion; the draft still has unfinished requirements.':job.cancellation&&!job.cancellation.terminatedAt?'Authorization revoked; cancellation requested. Runner termination has not been confirmed.':expired?'Task authorization expired. Retry explicitly to resume saved work.':recoveryDisplay?recoveryDisplay.text:status==='waiting'?'Waiting for recovery.':status==='recovering'?'Diagnosing the error and trying a different recovery strategy':status==='queued'?'Waiting for the agent to start':status==='testing'?'Waiting for independent test results':status==='ready'?'Tests passed. Draft ready for review':status==='cancelled'?(job.cancellation?'Observed task runners stopped; authorization remains revoked.':'Task cancelled'):status==='closed'?'Task closed':status==='completed'?'Task completed. Results are saved below':failed&&!last?'Task needs attention. See the failure report below':(active||last)?.title||'Waiting for an execution update';
  const times=KappaProgress.timing({...p,finishedAt:p.finishedAt||job.finishedAt},job.queuedAt,now),duration=ms=>KappaActions.formatDuration(Math.round(ms/1000));
  const id=String(job.number),unit=p.units,percent=unit?Math.round(unit.done/unit.total*100):0;
  const timing='<div class="task-timing"><span>Queued <time'+(!p.startedAt&&!ended?' data-since="'+new Date(job.queuedAt||now).toISOString()+'"':'')+'>'+duration(times.queuedMs)+'</time></span><span>'+(status==='waiting'?'Waiting':'Working')+' <time'+(p.startedAt&&!ended?' data-since="'+new Date(p.startedAt).toISOString()+'"':'')+'>'+duration(times.activeMs)+'</time></span></div>';

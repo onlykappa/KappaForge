@@ -124,6 +124,8 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
   &&job.instructions.length<=3500;
 },report(comment){
  if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string')return null;
+ const marker=comment.body.match(/<!-- KAPPA_VALIDATION_V1 (\{[^]*?\}) -->/);let validation=null;
+ if(marker)try{const v=JSON.parse(marker[1]);if(v.version===1&&Number.isSafeInteger(v.task)&&/^[a-f0-9]{40}$/.test(v.sha)&&['sandbox','native'].includes(v.kind)&&['success','failure'].includes(v.conclusion)&&Number.isSafeInteger(v.runId)&&v.runId>0)validation={version:1,task:v.task,sha:v.sha,kind:v.kind,conclusion:v.conclusion,runId:v.runId,workComplete:v.workComplete===true}}catch{}
  const body=comment.body.replace(/<!--[\s\S]*?-->/g,'').replace(/\\`/g,'`').trim();
  const heading=body.split('\n')[0];let status;
  if(/^### (?:KappaForge task failed|Self-repair watch: failed)/i.test(heading))status='failed';
@@ -132,11 +134,18 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
  else if(/^### KappaForge is working on it/i.test(heading))status='progress';
  else if(/^### Continuous coding milestone/i.test(heading)||/^### KappaForge (?:fix ready|needs your help)/i.test(heading))status='partial';
  // Posted by the sandbox test run on a development PR's task: a result, never the end of the task.
+ else if(/^### Tests passed\b.*\bwork is not finished\b/i.test(heading))status='tests-incomplete';
  else if(/^### Tests passed\b/i.test(heading))status='tests-passed';
  else if(/^### Tests failed\b/i.test(heading))status='tests-failed';
+ else if(/^### iOS build passed\b/i.test(heading))status='native-passed';
+ else if(/^### iOS build failed\b/i.test(heading))status='native-failed';
  else return null;
- return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body};
+ if(validation&&((validation.kind==='sandbox'&&!/^tests-/.test(status))||(validation.kind==='native'&&!/^native-/.test(status))))validation=null;
+ if(validation&&validation.conclusion!==(status.endsWith('failed')?'failure':'success'))validation=null;
+ if(validation&&status==='tests-incomplete')validation.workComplete=false;
+ return {id:String(comment.id)+':'+String(comment.updated_at||''),status,body,validation};
 },
+verifiedTask(job){return !job?.historyOnly&&job?.verification?.verified===true&&job.verification.sha===job.candidate?.sha&&job.verification.at>=job.candidate.at&&job.candidate.incomplete===false&&!job.pollError&&!['failed','tests-failed','native-failed','tests-incomplete','closed','cancelled'].includes(job.message)},
 // Act only on reports newer than the last one handled (comment ids only grow). A job tracked before ids were recorded
 // falls back to ignoring reports written before a retry or guidance resumed it.
 isNew(job,comment){const id=Number(comment?.id)||0,last=Number(job?.lastReportId)||0;if(last)return id>last;const at=Date.parse(comment?.created_at||'');return !(job?.resumedAt&&at&&at<job.resumedAt)},

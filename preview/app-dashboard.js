@@ -357,7 +357,7 @@ function todayView(){
  const attention=[
   ...failing.map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',icon:"cross",tone:"bad",title:esc(r.name)+" failed",sub:esc([r.branch,r.sha.slice(0,7),r.duration?KappaActions.formatDuration(r.duration):""].filter(Boolean).join(" · ")),value:esc(runAgo(r.updatedAt,now))})),
   ...trackedJobs.filter(j=>!j.finished&&(["failed","tests-failed"].includes(j.message)||j.progress?.status==="failed")).map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"warn",tone:"bad",title:"Task #"+esc(j.number)+" needs attention",sub:esc(clip(j.title||"",80))})),
-  ...trackedJobs.filter(j=>!j.finished&&j.message==="tests-passed").map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"reviews",tone:"ok",title:"Task #"+esc(j.number)+" is ready for review",sub:"Tests passed"}))
+  ...trackedJobs.filter(j=>!j.finished&&KappaJobs.verifiedTask(j)).map(j=>iosRow({attrs:'data-open-task="'+esc(j.number)+'"',icon:"reviews",tone:"ok",title:"Task #"+esc(j.number)+" is ready for review",sub:"Tests passed"}))
  ].join("");
  const builds=latest.slice(0,6).map(r=>iosRow({attrs:'data-run="'+esc(r.id)+'"',title:esc(r.name),sub:esc([r.branch,r.sha.slice(0,7)].filter(Boolean).join(" · ")),value:esc(r.duration?KappaActions.formatDuration(r.duration):runAgo(r.updatedAt,now))}).replace('<span class="ios-row-text">',runBadge(r.state)+'<span class="ios-row-text">')).join("");
  return widgets+agentTasksPanel()+(attention?'<h2 class="ios-gh">Needs attention</h2><div class="ios-group icons">'+attention+'</div>':'')+
@@ -436,7 +436,9 @@ function taskStatusText(issue){
  const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
  if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
- if(job.message==="tests-passed")return "Tests passed · ready for review";
+ if(KappaJobs.verifiedTask(job))return "Current commit verified · ready for review";
+ if(job.message==="tests-passed"||job.message==="native-passed")return "Checks reported · verifying current commit";
+ if(job.message==="tests-incomplete")return "Checks passed · work remains incomplete";
  if(job.finished)return TASK_ENDED[job.message]||"Finished";
  if(KappaProgress.expired?.(job.progress)&&["waiting","recovering"].includes(job.progress?.status))return "Authorization expired · retry to resume";if(job.progress?.status==="waiting")return "Waiting for automatic continuation";if(job.progress?.status==="recovering")return "Recovering from an error";return KappaProgress.stale(job)?"No update for a while · may be stuck":job.message==="waiting"?"Queued":"Running";
 }

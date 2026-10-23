@@ -34,7 +34,7 @@ const apiServer=createServer(async(req,res)=>{
  if(req.headers.authorization!=='Bearer fixture-private-token'){res.writeHead(401).end(JSON.stringify({error:'Unauthorized fixture request'}));return;}
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
- if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:2,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
+ if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
  else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;

@@ -116,15 +116,21 @@ function operationContext(chat){
  const same=trackedJobs.filter(j=>j.chatId===chat?.id),candidates=same.length?same:trackedJobs;
  return {chatId:chat?.id,taskIds:candidates.map(j=>j.number)};
 }
+function taskDependencyVerified(job){
+ if(!job||job.historyOnly||job.pollError)return false;
+ if(job.routeTracking?.decision.workflow.kind==='read-only')return job.finished&&job.message==='complete'&&job.lastReportAt>=job.routeTracking.requestedAt;
+ return KappaJobs.verifiedTask(job)&&(job.finished&&job.message==='merged'||Date.now()-(job.lastCheckedAt||job.candidate?.at||0)<=30000);
+}
 function observeJobRoute(job){
  const tracking=job.cancellationRoute||job.routeTracking;if(!tracking)return false;
  let outcome=null;
  if(job.cancellationRoute){if(job.cancellation?.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length)outcome='verified';}
  else{
   const p=job.progress,freshProgress=p?.updatedAt>=tracking.requestedAt,freshReport=job.lastReportAt>=tracking.requestedAt;
-  if((freshReport&&job.message==='tests-passed')||job.routeVerifiedAt>=tracking.requestedAt||(freshReport&&tracking.decision.workflow.kind==='read-only'&&job.finished))outcome='verified';
-  else if((freshProgress&&p.status==='failed')||(freshReport&&['failed','tests-failed'].includes(job.message)))outcome='failed';
+  if((freshProgress&&p.status==='failed')||(freshReport&&['failed','tests-failed','native-failed'].includes(job.message)))outcome='failed';
+  else if((KappaJobs.verifiedTask(job)&&job.candidate.at>=tracking.requestedAt)||(freshReport&&tracking.decision.workflow.kind==='read-only'&&job.finished&&job.message==='complete'))outcome='verified';
   else if(freshProgress&&p.startedAt&&['running','recovering','testing','completed','ready'].includes(p.status))outcome='acknowledged';
+  else if(tracking.outcome==='verified')outcome='acknowledged';
  }
  if(!outcome||tracking.outcome===outcome)return false;
  recordRoute(tracking.decision,tracking.operation,outcome,tracking.requestId,tracking.index);tracking.outcome=outcome;
@@ -147,6 +153,10 @@ function revalidateActionState(state,chat){
   if(saved?.text!==scoped.text||saved.kind!==scoped.kind||JSON.stringify(saved.dependsOn)!==JSON.stringify(scoped.dependsOn))return false;
   let status=saved.status;
   if(['verified','dispatched','acknowledged','requested'].includes(status)){const evidence=[...routeJournal].reverse().find(e=>e.requestId===state.requestId&&e.index===original.index);if(!evidence)return false;status=evidence.outcome;}
+  if(status==='verified'&&scoped.kind==='task'){
+   const job=trackedJobs.find(j=>j.routeTracking?.requestId===state.requestId&&j.routeTracking.index===original.index);
+   if(!taskDependencyVerified(job))status='acknowledged';
+  }
   steps.push({...scoped,status,awaitingApproval:saved.awaitingApproval,result:saved.result,answerMessageId:saved.answerMessageId,effectVerified:scoped.operation?.id==='tasks.retry'&&status==='dispatched'});
  }
  state.steps=steps;state.taskContext=state.taskContext||operationContext(chat);return true;
@@ -168,7 +178,6 @@ async function runActionPlan(state,chat,message){
  state.expiresAt=state.expiresAt||Date.now()+86400000;
  if(!revalidateActionState(state,chat)){chat.pendingActions=null;routeReply(chat,'The saved action scope could not be verified. Please restate the request; no remaining action was executed.',[]);return state;}
  const context=operationContext(chat),events=[],lines=[];let question=null;
- for(const step of state.steps){const evidence=[...routeJournal].reverse().find(e=>(e.requestId===state.requestId&&e.index===step.index)||(step.kind==='task'&&e.requestId===state.requestId+'-'+step.index));if(evidence&&['verified','failed','acknowledged','dispatched'].includes(evidence.outcome)&&['requested','dispatched','acknowledged'].includes(step.status))step.status=evidence.outcome;}
  for(const step of state.steps){
   if(step.kind==='task'&&step.status==='requested'&&step.awaitingApproval&&!(typeof pendingJob!=='undefined'&&pendingJob)&&!trackedJobs.some(j=>j.requestId===state.requestId+'-'+step.index))step.status='ready';
   if(['verified','dispatched','acknowledged','requested'].includes(step.status))continue;
@@ -480,23 +489,27 @@ function announceTask(text){
 // A task's own validation after its draft PR: the sandbox tests and the iOS build of kappa/dev-<task>, live from
 // the Workflow Monitor. Without Actions data the tests row follows the task's own test reports.
 function taskValidation(job){
- if(!job?.prUrl&&!["tests-passed","tests-failed"].includes(job?.message))return [];
- const branch="kappa/dev-"+job.number,runs=typeof workflowMonitor==="undefined"?[]:workflowMonitor.runs;
- const newest=prefix=>runs.filter(r=>String(r.title||"").startsWith(prefix+" "+branch+" @ ")).sort((a,b)=>b.id-a.id)[0];
+ if(!job?.prUrl&&!['tests-passed','tests-failed','tests-incomplete','native-passed','native-failed'].includes(job?.message))return [];
+ const branch='kappa/dev-'+job.number,runs=Array.isArray(job.validationRuns)?job.validationRuns:typeof workflowMonitor==='undefined'?[]:workflowMonitor.runs;
+ const sha=job.candidate?.sha,known=/^[a-f0-9]{40}$/.test(sha||'');
+ const newest=(prefix,path)=>known?runs.filter(r=>r.path===path&&r.title===prefix+' '+branch+' @ '+sha).sort((a,b)=>b.id-a.id||b.attempt-a.attempt)[0]:null;
  const rows=[];
- for(const [prefix,title] of [["Sandbox validation","Sandbox tests"],["iOS build","iOS build"]]){
-  const run=newest(prefix);
+ for(const [prefix,title,kind,path] of [['Sandbox validation','Sandbox tests','sandbox','.github/workflows/sandbox-tests.yml'],['iOS build','iOS build','native','.github/workflows/ios-build.yml']]){
+  const run=newest(prefix,path),report=known&&job.validationReports?.[kind]?.sha===sha?job.validationReports[kind]:null;
   if(run){
-   const active=KappaActions.isActive(run),progress=workflowMonitor.details[run.id]?.data?.progress;
-   rows.push({title,runId:run.id,state:active?"current":["failure","timed_out","cancelled","action_required"].includes(run.state)?"failed":"done",
+   const active=KappaActions.isActive(run),progress=typeof workflowMonitor==='undefined'?null:workflowMonitor.details[run.id]?.data?.progress;
+   rows.push({title,runId:run.id,state:active?'current':run.state==='success'?'done':['failure','timed_out','cancelled','action_required','stale'].includes(run.state)?'failed':'upcoming',
     detail:active?progress?.label||RUN_STATE_LABEL[run.state]:KappaActions.progress(run,[]).label,
-    since:run.state==="running"?run.startedAt:"",time:run.duration?KappaActions.formatDuration(run.duration):"",progress:active?progress?.percent||0:undefined});
-  }else if(title==="Sandbox tests"){
-   const m=job.message,passed=m==="tests-passed"||job.finished&&m!=="tests-failed";
-   rows.push({title,state:passed?"done":m==="tests-failed"?"failed":"current",detail:passed?"Tests passed":m==="tests-failed"?"Tests failed":"Waiting for the test run",since:"",time:""});
-  }
+    since:run.state==='running'?run.startedAt:'',time:run.duration?KappaActions.formatDuration(run.duration):'',progress:active?progress?.percent||0:undefined});
+  }else if(report){
+   rows.push({title,runId:report.runId,state:report.conclusion==='success'?'done':'failed',detail:report.conclusion==='success'?'Passed for current commit':'Failed for current commit',since:'',time:''});
+  }else rows.push({title,state:'upcoming',detail:known?'No verified result for current commit':'Current PR commit has not been verified',since:'',time:''});
  }
  return rows;
+}
+function updateTaskVerification(job){
+ const checks=taskValidation(job),complete=job.candidate?.incomplete===false&&job.validationReports?.sandbox?.sha===job.candidate?.sha&&job.validationReports.sandbox.workComplete===true;
+ job.verification={sha:job.candidate?.sha||'',at:Date.now(),incomplete:job.candidate?.incomplete===true,failed:checks.some(r=>r.state==='failed'),verified:!!complete&&checks.length===2&&checks.every(r=>r.state==='done')&&Date.now()-(job.validationObservedAt||0)<=30000};
 }
 // The chat keeps live Actions updates while one of its tasks is being validated.
 const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c=>c.id===j.chatId));
@@ -605,6 +618,7 @@ async function checkJobResult(){
     if(report.status==="progress"){if(showProgress(job,comment.id,comment.body,comment)){taskCheckpoint(job,"progress","issue-comment:"+comment.id);changed=true;if((Date.parse(comment.updated_at||comment.created_at)||0)>=(job.lastReportAt||0)||job.message==="waiting"){job.message="progress";if(!KappaProgress.terminal.has(job.progress?.status))job.finishedAt=0}}continue;}
     // Every poll re-reads all comments: only reports newer than the last handled one (and not from before a retry) change the job.
     if(!KappaJobs.isNew(job,comment))continue;
+    if(report.validation?.task===job.number){job.validationReports=job.validationReports||{};job.validationReports[report.validation.kind]=report.validation;}
     const pr=report.body.match(/https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/);if(pr)job.prUrl=pr[0];
     const source="https://github.com/onlykappa/KappaForge/issues/"+job.number+"#issuecomment-"+comment.id;
     updateTaskFindings(job,KappaJobs.findings(report.body));
@@ -623,10 +637,16 @@ async function checkJobResult(){
    }
    const prPath=job.prUrl&&!job.finished?job.prUrl.match(/github\.com\/onlykappa\/([A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/):null;
    if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);if(dismissedTaskIds.has(job.number))continue;
-    if(pr.merged_at){job.routeVerifiedAt=Date.now();changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
+    if(/^[a-f0-9]{40}$/.test(pr.head?.sha||''))job.candidate={sha:pr.head.sha,at:Date.now(),incomplete:/^Draft \(incomplete\)/i.test(pr.title||'')};else job.candidate=null;
+    if(job.candidate){
+     const checks=await taskRead('KappaForge/actions/runs?event=workflow_dispatch&per_page=100');
+     if(!Array.isArray(checks.workflow_runs))throw Error('Current candidate validation is unavailable');
+     job.validationRuns=checks.workflow_runs.map(KappaActions.normalizeRun).filter(Boolean);job.validationObservedAt=Date.now();
+    }
+    if(pr.merged_at){changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
     else if(pr.state==="closed"){changed=jobChatUpdate(job,"pr-closed","The pull request was closed without merging. ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="closed";}}
    if(issue.state==="closed"&&!job.finished&&!job.cancellation){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
-   if(observeJobRoute(job))changed=true;
+   updateTaskVerification(job);if(observeJobRoute(job))changed=true;
    if(job.pollError)changed=true;job.pollError="";job.pollAfter=0;job.lastCheckedAt=Date.now();
    if(KappaJobs.stalled(job)){changed=jobChatUpdate(job,"stuck:"+job.activeAt,"⏳ Task #"+job.number+" has had no new update for over 15 minutes, so it may be stuck. Ask me to **retry task #"+job.number+"** or [check it on GitHub](https://github.com/onlykappa/KappaForge/issues/"+job.number+").",true)||changed;job.stuckNote=job.activeAt;}
    }catch(e){if(dismissedTaskIds.has(job.number))continue;job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}

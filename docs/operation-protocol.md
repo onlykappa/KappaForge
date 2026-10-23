@@ -59,7 +59,7 @@ external write can leave an unknown result requiring reconciliation.
 
 ## Contract and compatibility
 
-`KappaCapabilities.contract` defines semantic contract **1**, router revision **2**
+`KappaCapabilities.contract` defines semantic contract **1**, router revision **3**
 and the nine supported capability IDs. The web app, generated iOS bundle and
 Worker import the same registry. App release versions are independent.
 

@@ -5,10 +5,11 @@ import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import '../preview/task-progress.js';
 import '../preview/core.js';
+import '../preview/actions-core.js';
 import '../preview/intent-guard.js';
 function setup(){
  const chats=[{id:'chat',messages:[]}],storage=new Map(),element={addEventListener(){}};
- const c={KappaIntent:globalThis.KappaIntent,Date,console,AbortController,setTimeout,clearTimeout,TextEncoder,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async url=>url.endsWith('/operation-capabilities')?Response.json({contract:globalThis.KappaCapabilities.contract,rollout:{mode:'active',percent:100}}):({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
+ const c={KappaIntent:globalThis.KappaIntent,KappaActions:globalThis.KappaActions,Date,console,AbortController,setTimeout,clearTimeout,TextEncoder,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async url=>url.endsWith('/operation-capabilities')?Response.json({contract:globalThis.KappaCapabilities.contract,rollout:{mode:'active',percent:100}}):({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
  vm.createContext(c);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),c);return {c,chats,run:code=>vm.runInContext(code,c)};
 }
 test('confirmed launch immediately adds one queued card to its original chat',async()=>{
@@ -79,7 +80,10 @@ test('routing acknowledgement comes from runner snapshots and completion needs i
  await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'acknowledged');
  snapshot={...snapshot,revision:2,status:'completed',updatedAt:now+10,finishedAt:now+10};
  await run('checkJobResult()');assert.equal(run('trackedJobs[0].routeTracking.outcome'),'acknowledged','finishing code does not prove required checks passed');
- report=true;await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'verified');
+ report=true;await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'acknowledged','an unbound passing comment is not verification');
+ const sha='a'.repeat(40);run('Object.assign(trackedJobs[0],'+JSON.stringify({prUrl:'https://github.com/onlykappa/KappaForge/pull/10',validationReports:{sandbox:{sha,conclusion:'success',workComplete:true,runId:1},native:{sha,conclusion:'success',runId:2}}})+')');
+ const fetch=c.githubFetch;c.githubFetch=async path=>path.includes('/pulls/')?Response.json({head:{sha},title:'Draft: Complete fix',state:'open'}):path.includes('/actions/runs')?Response.json({workflow_runs:validationRuns(9,sha)}):fetch(path);
+ await run('checkJobResult()');assert.equal(run('routingDiagnostics().recent.at(-1).outcome'),'verified');
  assert.equal(chats[0].messages.find(m=>m.progressKey).routeEvidence[0].outcome,'verified');
 });
 
@@ -92,4 +96,66 @@ test('mixed task launch transports original parent authority and exact child ins
  assert.equal(requests[0].body.userText,ownerRequest);assert.equal(requests[0].body.payload.instructions,step.text);
  assert.deepEqual(requests[1].body.requestScope,{ownerRequest,actionIndex:1});assert.equal(requests[1].body.routeRequestId,undefined,'diagnostic correlation is not sent as execution parameters');
  assert.equal(run('trackedJobs[0].routeTracking.requestId'),'parent-request');assert.equal(run('trackedJobs[0].routeTracking.index'),1);
+});
+
+function validationRuns(number,sha,conclusion='success'){
+ return [['Sandbox validation','sandbox-tests.yml'],['iOS build','ios-build.yml']].map(([prefix,file],index)=>({id:index+10,path:'.github/workflows/'+file,display_title:prefix+' kappa/dev-'+number+' @ '+sha,status:'completed',conclusion}));
+}
+function validationComment(kind,sha,{complete=true,conclusion='success',task=9}={}){
+ const heading=kind==='native'?'### iOS build '+(conclusion==='success'?'passed':'failed'):'### Tests '+(conclusion==='success'?'passed':'failed')+(complete?'':' — but the work is not finished');
+ return {id:kind==='native'?101:100,user:{login:'github-actions[bot]'},body:heading+'\n<!-- KAPPA_VALIDATION_V1 '+JSON.stringify({version:1,task,sha,kind,conclusion,workComplete:complete,runId:kind==='native'?11:10})+' -->'};
+}
+
+test('incomplete test reports retain failed requirement status and cannot become task verification',()=>{
+ const report=globalThis.KappaJobs.report(validationComment('sandbox','a'.repeat(40),{complete:false}));
+ assert.equal(report.status,'tests-incomplete');assert.equal(report.validation.workComplete,false);
+ const {run}=setup();run('trackedJobs.push('+JSON.stringify({number:9,prUrl:'x',message:'tests-incomplete',candidate:{sha:'a'.repeat(40),at:Date.now(),incomplete:false},validationReports:{sandbox:report.validation,native:{sha:'a'.repeat(40),conclusion:'success',runId:11}},validationObservedAt:Date.now()})+')');
+ run('updateTaskVerification(trackedJobs[0])');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);
+});
+
+test('failed read-only work never verifies; a successful final report may verify',()=>{
+ const {run}=setup(),at=Date.now();const job={number:9,finished:true,message:'failed',lastReportAt:at,routeTracking:{requestId:'audit-proof',index:0,requestedAt:at-1,outcome:'dispatched',decision:globalThis.KappaIntent.executionDecision('Investigate task routing')}};
+ run('trackedJobs.push('+JSON.stringify(job)+')');run('observeJobRoute(trackedJobs[0])');assert.equal(run('trackedJobs[0].routeTracking.outcome'),'failed');
+ run("trackedJobs[0].message='complete';observeJobRoute(trackedJobs[0])");assert.equal(run('trackedJobs[0].routeTracking.outcome'),'verified');
+});
+
+for(const conclusion of ['skipped','neutral','cancelled','failure'])test('validation conclusion '+conclusion+' cannot count as passed',()=>{
+ const {run}=setup(),sha='b'.repeat(40);
+ run('trackedJobs.push('+JSON.stringify({number:9,prUrl:'x',candidate:{sha},validationRuns:validationRuns(9,sha,conclusion).map(globalThis.KappaActions.normalizeRun)})+')');
+ assert.equal(run("taskValidation(trackedJobs[0]).some(r=>r.state==='done')"),false);
+});
+
+for(const message of ['closed','cancelled','merged'])test('finished '+message+' work cannot invent passing tests',()=>{
+ const {run}=setup();run('trackedJobs.push('+JSON.stringify({number:9,prUrl:'x',finished:true,message})+')');assert.equal(run("taskValidation(trackedJobs[0]).some(r=>r.state==='done')"),false);
+});
+
+test('old candidate and wrong workflow evidence cannot verify current work',()=>{
+ const {run}=setup(),sha='b'.repeat(40),old='a'.repeat(40),at=Date.now();
+ const job={number:9,prUrl:'x',candidate:{sha,at,incomplete:false},validationRuns:validationRuns(9,old).map(globalThis.KappaActions.normalizeRun),validationReports:{sandbox:{sha:old,workComplete:true,conclusion:'success'},native:{sha:old,conclusion:'success'}},validationObservedAt:at};
+ run('trackedJobs.push('+JSON.stringify(job)+')');run('updateTaskVerification(trackedJobs[0])');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);
+ run('trackedJobs[0].validationRuns='+JSON.stringify(validationRuns(9,sha).map(r=>({...globalThis.KappaActions.normalizeRun(r),path:'.github/workflows/unrelated.yml'}))));assert.equal(run("taskValidation(trackedJobs[0]).some(r=>r.state==='done')"),false);
+});
+
+test('newer current-candidate failure wins over an older successful report',()=>{
+ const {run}=setup(),sha='a'.repeat(40),at=Date.now();
+ const job={number:9,prUrl:'x',candidate:{sha,at,incomplete:false},validationRuns:validationRuns(9,sha,'failure').map(globalThis.KappaActions.normalizeRun),validationReports:{sandbox:{sha,workComplete:true,conclusion:'success'},native:{sha,conclusion:'success'}},validationObservedAt:at};
+ run('trackedJobs.push('+JSON.stringify(job)+')');run('updateTaskVerification(trackedJobs[0])');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);
+});
+
+test('trusted validation markers reject mismatched headings and do not accept arbitrary authors',()=>{
+ const comment=validationComment('sandbox','a'.repeat(40));assert.equal(globalThis.KappaJobs.report({...comment,user:{login:'someone'}}),null);
+ assert.equal(globalThis.KappaJobs.report({...comment,body:comment.body.replace('Tests passed','Tests failed')}).validation,null);
+ assert.equal(globalThis.KappaJobs.report({...comment,body:comment.body.replace('Tests passed','iOS build passed')}).validation,null);
+});
+
+
+test('polling verifies only a complete current candidate after both required checks, and revokes proof when the head changes',async()=>{
+ const {c,run}=setup(),at=Date.now(),sha='a'.repeat(40);let complete=false,currentSha=sha,phase=0;
+ const decision=globalThis.KappaIntent.executionDecision('Fix routing');
+ run('trackedJobs.push('+JSON.stringify({number:9,mode:'develop',chatId:'chat',message:'progress',prUrl:'https://github.com/onlykappa/KappaForge/pull/10',routeTracking:{requestId:'candidate-check',index:0,requestedAt:at,outcome:'dispatched',decision}})+')');
+ c.toast=()=>{};
+ c.githubFetch=async path=>Response.json(path.includes('/comments')?['sandbox','native'].map((kind,index)=>({...validationComment(kind,sha,{complete}),id:100+phase*10+index,created_at:new Date(at+phase+10).toISOString()})):path.includes('/pulls/')?{head:{sha:currentSha},title:complete?'Draft: Fixed':'Draft (incomplete): Still needs work',state:'open'}:path.includes('/actions/runs')?{workflow_runs:validationRuns(9,sha)}:{state:'open'});
+ await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);assert.notEqual(run('trackedJobs[0].routeTracking.outcome'),'verified');
+ complete=true;phase++;await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),true);assert.equal(run('trackedJobs[0].routeTracking.outcome'),'verified');
+ currentSha='b'.repeat(40);await run('checkJobResult()');assert.equal(run('KappaJobs.verifiedTask(trackedJobs[0])'),false);assert.equal(run('trackedJobs[0].routeTracking.outcome'),'acknowledged');
 });

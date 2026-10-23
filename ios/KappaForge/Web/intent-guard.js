@@ -178,7 +178,7 @@
   return handlers[proposal.id](params);
  }
  // Protocol revisions describe semantics, independently of the app release number.
- const contract=Object.freeze({version:1,routerRevision:2,capabilities:Object.freeze(Object.keys(definitions))});
+ const contract=Object.freeze({version:1,routerRevision:3,capabilities:Object.freeze(Object.keys(definitions))});
  function negotiate(peer){
   return !!peer&&peer.version===contract.version&&peer.routerRevision===contract.routerRevision&&Array.isArray(peer.capabilities)&&contract.capabilities.every(id=>peer.capabilities.includes(id));
  }
