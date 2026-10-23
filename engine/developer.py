@@ -841,7 +841,6 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     fit_instruction()
     errors = list(prior_errors)
     rejected_proposals = list(prior_proposals)
-    prior_error_count = len(errors)
     attempts_made = 0
     evidence = ""
     rejected_signatures = set()
@@ -950,7 +949,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 raise ValueError("Repeated rejected proposal: no source changes since previous validation")
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
-            if scope is not None and attempt:
+            if scope is not None and attempt_number:
                 scope.recover(signature, round_id=round_id)
             if isinstance(proposal, dict) and isinstance(proposal.get('files'), list) and any(
                     isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
