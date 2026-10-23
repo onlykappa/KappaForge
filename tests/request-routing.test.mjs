@@ -15,9 +15,9 @@ for(const row of corpus)test('routing corpus: '+row.request,()=>{
  if(row.workflow)assert.equal(plan.steps[0].decision.workflow.kind,row.workflow);
  if(row.steps>1)assert.equal(I.permits(row.request,'develop'),false,'the unsplit request cannot become a coding task');
 });
-function app(jobs=[]){
- const store=new Map([['kappaforge.jobs.v2',JSON.stringify(jobs)]]),calls=[],chat={id:'chat',title:'Original',messages:[]},key='chats';
- const box={KappaIntent:I,crypto:webcrypto,recentJob:null,chats:[chat],key,preferences:{appearance:'dark'},current:'chat',pendingJob:null,planError:'Planner offline',backend:'https://worker.test',access:'owner',
+function app(jobs=[],savedStore){
+ const store=savedStore||new Map([['kappaforge.jobs.v2',JSON.stringify(jobs)]]),calls=[],chat=JSON.parse(store.get('chats')||'null')?.[0]||{id:'chat',title:'Original',messages:[]},key='chats';
+ const box={KappaIntent:I,TextEncoder,crypto:webcrypto,recentJob:null,chats:[chat],key,preferences:{appearance:'dark'},current:'chat',pendingJob:null,planError:'Planner offline',backend:'https://worker.test',access:'owner',
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   save(){store.set(key,JSON.stringify(box.chats))},render(){},persistJobs(){},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},
   acceptTaskRetry(){},KappaJobs:{conversationContext:()=>''},userAuthorizedFetch:async(path,payload,text)=>{calls.push({path,payload:JSON.parse(JSON.stringify(payload)),text});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
@@ -28,6 +28,68 @@ function app(jobs=[]){
  const send=async text=>{chat.messages.push({role:'user',text});const plan=box.chatTaskPlan(text,chat);await box.runChatAction(plan,text,chat);return chat.messages.at(-1);};
  return {box,chat,store,calls,send,jobs:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box))};
 }
+
+test('durable action receipts collapse concurrent delivery and survive restart without reapplying a rename',async()=>{
+ const h=app(),proposal={id:'chats.rename',params:{chat:'chat',title:'Work'}},context={source:'user-control',requestId:'durable-rename',chatId:'chat'};let writes=0;
+ const save=h.box.save;h.box.save=()=>{writes++;save()};
+ const results=await Promise.all([h.box.executeAppCapability(proposal,{...context}),h.box.executeAppCapability(proposal,{...context})]);
+ assert.equal(writes,1);assert.equal(results[0],results[1]);
+ const restarted=app([],h.store);restarted.box.save=()=>{throw Error('A receipt must not repeat the handler')};
+ assert.equal(await restarted.box.executeAppCapability(proposal,{...context}),results[0]);assert.equal(restarted.chat.title,'Work');
+ await assert.rejects(restarted.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'Changed'}},{...context}),/identity already/);
+});
+
+test('receipt storage failure stops the mutation before any handler or remote request',async()=>{
+ const h=app();h.box.localStorage.setItem=(key,value)=>{if(key==='kappaforge.operations.v1')throw Error('Storage full');h.store.set(key,value)};
+ await assert.rejects(h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'Lost'}},{source:'user-control',requestId:'storage-denied'}),/Storage full/);
+ assert.equal(h.chat.title,'Original');assert.equal(h.calls.length,0);
+});
+
+test('a failure halfway through history persistence compensates every affected local store',async()=>{
+ const h=app([{number:198,message:'failed'}]);const write=h.box.localStorage.setItem;let failed=false;
+ h.box.localStorage.setItem=(key,value)=>{if(key==='kappaforge.dismissedTasks.v1'&&value.includes('198')&&!failed){failed=true;throw Error('Interrupted history persistence')}write(key,value)};
+ await assert.rejects(h.box.executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control',requestId:'partial-history'}),/Local changes were restored/);
+ assert.equal(h.jobs()[0].number,198);const restored=JSON.parse(h.store.get('kappaforge.taskHistory.v2'))[198];assert.equal(restored.state,'restored');assert.ok(restored.version.counter>1);assert.equal(h.store.has('kappaforge.historyUndo.v1'),false);
+ const receipt=JSON.parse(h.store.get('kappaforge.operations.v1'))['partial-history'];assert.equal(receipt.compensated,true);assert.equal(receipt.state,'failed');
+ const replica=app([{number:198,message:'failed'}]),published={...restored,state:'cleared',version:{...restored.version,counter:restored.version.counter-1}};
+ replica.box.mergeTaskHistory([],[published]);assert.equal(replica.jobs().length,0);
+ replica.box.mergeTaskHistory([],[restored]);assert.equal(replica.jobs()[0].number,198,'newer compensation wins a partially published tombstone on another device');
+ await assert.rejects(h.box.executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control',requestId:'partial-history'}),/not repeated/);
+ assert.equal(h.jobs().length,1);
+});
+
+test('a crash after the write-ahead receipt cannot automatically repeat the mutation',async()=>{
+ const h=app(),proposal={id:'chats.rename',params:{chat:'chat',title:'Work'}},context={source:'user-control',requestId:'interrupted'};
+ await h.box.executeAppCapability(proposal,{...context});
+ const receipts=JSON.parse(h.store.get('kappaforge.operations.v1'));receipts.interrupted.state='started';delete receipts.interrupted.result;delete receipts.interrupted.receipt;h.store.set('kappaforge.operations.v1',JSON.stringify(receipts));
+ const restarted=app([],h.store);restarted.box.save=()=>{throw Error('Must not execute again')};
+ await assert.rejects(restarted.box.executeAppCapability(proposal,{...context}),/unconfirmed/);
+ assert.equal(restarted.box.routingDiagnostics().operations.unconfirmed,1);
+});
+
+test('uncertain retry recovers its saved Worker receipt with a read and no second dispatch',async()=>{
+ const h=app([{number:198,message:'failed'}]),proposal={id:'tasks.retry',params:{task:198}},context={source:'user-control',requestId:'uncertain-retry',chatId:'chat'};
+ h.box.userAuthorizedFetch=async()=>{throw Error('Response lost after dispatch')};
+ await assert.rejects(h.box.executeAppCapability(proposal,{...context}),/may be partial/);
+ const reads=[];h.box.fetch=async url=>{reads.push(url);return Response.json({receipt:{status:202,body:JSON.stringify({status:'dispatch_requested',message:'Original dispatch.'})}})};
+ const receipt={};assert.equal(await h.box.executeAppCapability(proposal,{...context,receipt}),'Original dispatch.');assert.equal(receipt.outcome,'dispatched');
+ assert.deepEqual(reads,['https://worker.test/operation-status']);assert.equal(h.calls.length,0);
+});
+
+test('rollout hold stops local effects and compare mode records decisions while executing once',async()=>{
+ const h=app(),proposal={id:'settings.update',params:{key:'appearance',value:'light'}};
+ const policy=mode=>h.store.set('kappaforge.operationContract.v1',JSON.stringify({backend:h.box.backend,contract:C.contract,rollout:{mode,percent:100}}));
+ policy('hold');await assert.rejects(h.box.executeAppCapability(proposal,{source:'user-control'}),/paused/);assert.equal(h.box.preferences.appearance,'dark');
+ policy('compare');let count=0;const save=h.box.savePreferences;h.box.savePreferences=()=>{count++;save()};
+ await h.box.executeAppCapability(proposal,{source:'user-control',requestId:'compare-once'});assert.equal(count,1);assert.equal(h.box.preferences.appearance,'light');
+ assert.equal(h.box.routingDiagnostics().operations.comparisons.length,1);assert.equal(h.calls.length,0);
+});
+
+test('a paused Worker policy is cached for subsequent offline actions',async()=>{
+ const h=app();h.box.fetch=async()=>Response.json({contract:C.contract,rollout:{mode:'hold',percent:100},error:'Paused by rollout'},{status:409});
+ await assert.rejects(h.box.refreshOperationContract(),/Paused/);
+ await assert.rejects(h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'No'}},{source:'user-control'}),/paused/);assert.equal(h.chat.title,'Original');
+});
 test('mixed cleanup and development have separate scope, restrictions, receipts and reports',async()=>{
  const h=app([{number:198,message:'failed'}]);const request='clear old tasks and add automatic cleanup; do not merge';
  const reply=await h.send(request);assert.equal(h.jobs().length,0);assert.equal(h.calls.length,1);
@@ -123,7 +185,7 @@ test('Worker authorization binds exact mixed scope and rejects tampering before 
  const send=(path,value)=>worker.fetch(new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'null',Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify(value)}),env);
  const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('No external mutations')};
  try{
-  const ownerRequest='clear old tasks and add cleanup; do not merge',step=I.planRequest(ownerRequest).steps[1],payload={instructions:step.text,mode:'develop',requestScope:{ownerRequest,actionIndex:1},authorization:{id:'scoped-request-200',conversationId:'chat'}};
+  const ownerRequest='clear old tasks and add cleanup; do not merge',step=I.planRequest(ownerRequest).steps[1],payload={instructions:step.text,mode:'develop',requestScope:{ownerRequest,actionIndex:1},contract:C.contract,authorization:{id:'scoped-request-200',conversationId:'chat'}};
   const response=await send('/authorize',{path:'/jobs',payload,userText:ownerRequest,source:'user-request'});assert.equal(response.status,200);assert.equal(records.size,1);
   assert.equal((await send('/jobs',{...payload,instructions:'add an unrelated feature'})).status,403);
   assert.equal((await send('/jobs',{...payload,instructions:ownerRequest,requestScope:undefined})).status,400);

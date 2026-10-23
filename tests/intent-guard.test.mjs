@@ -146,7 +146,7 @@ test('authorized Worker execution creates exactly the user task and dispatches o
   assert.match(issue.body.body,/Fix the keyboard problem and test it/);
   assert.match(issue.body.body,/kappa-authorization/);
   assert.match(issue.body.body,/conversationId/);
-  assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403);
+  const replay=await worker.fetch(req('/jobs',f.payload),f.env);assert.equal(replay.status,202);assert.equal(replay.headers.get('X-Operation-Replayed'),'true');
   assert.equal(writes.filter(w=>w.path.endsWith('/dispatches')).length,1);
  }finally{globalThis.fetch=old}
 });

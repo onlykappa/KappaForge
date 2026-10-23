@@ -3,6 +3,7 @@ import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
 import {authorizationStore,authorize,validateRequest,needsAuthorization,classify,isOperation,taskConflict,capabilityRegistry} from "./intent-guard.js";
+import {operationContract,checkOperationContract} from './operation-contract.js';
 import {weatherTools,weatherRequest,weatherArguments,invokeWeatherTool,formatWeather} from "./weather.js";
 import {streamReply} from "./streaming.js";
 import {getTimeContext} from "./time.js";
@@ -137,8 +138,8 @@ function safeEqual(a, b) {
 const CHAT_FIRST_BYTE_MS=20000,QUICK_REFUSAL_MS=5000;
 // A model as the owner reads it in activity lines: "gemini-3.8-flash", "Mistral codestral-latest".
 const label=route=>route.provider==="gemini"?route.model:String(REGISTRY.providers[route.provider]?.name||route.provider).replace(/\s*\(.*\)\s*$/,"")+" "+String(route.model).split("/").pop();
-export default {
-  async fetch(request, env, context) {
+const workerImplementation = {
+  async fetch(request, env, context, execution) {
     // Public liveness probe for the deploy workflow's automatic rollback. Reveals no configuration values.
     if (request.method === "GET" && new URL(request.url).pathname === "/health") {
       const ready = !!env.MEMORY && !!env.CHAT_ACCESS_TOKEN && typeof globalThis.KappaStream?.sse === "function" && REGISTRY.order.length > 0;
@@ -214,13 +215,27 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if(pathname==='/operation-capabilities'){
+      const input=await request.json().catch(()=>null);if(!input)return json({error:'Invalid contract request'},400,cors);
+      const mismatch=checkOperationContract(env,input,{required:true});
+      return json(mismatch||operationContract(env),mismatch?.status||200,cors);
+    }
+    if(pathname==='/operation-status'){
+      const input=await request.json().catch(()=>null);
+      if(!input||typeof input.id!=='string'||typeof input.conversationId!=='string')return json({error:'Operation identity is required'},400,cors);
+      if(!env.MEMORY)return json({error:'Persistent operation storage is unavailable'},503,cors);
+      const stub=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
+      const response=await stub.fetch('https://memory.internal/authorization/status',{method:'POST',body:JSON.stringify(input)});
+      const record=await response.json();if(!response.ok)return json({error:record.error},response.status,cors);
+      return json({state:record.state,issueNumber:record.issueNumber||null,receipt:record.receipt||null},200,cors);
+    }
     if(new URL(request.url).pathname==="/projects/health"){
       const body=await request.json().catch(()=>({}));
       try{const report=await projectHealth(env,body.repo);return json(report,report.status||200,cors)}catch{return json({error:"GitHub diagnostics timed out or failed. Existing repository data is unchanged."},502,cors)}
@@ -301,7 +316,7 @@ export default {
               example:example?{model:example.model,maxUsd:example.maxUsd}:null};
           }catch{premium={error:"Premium status unavailable",enabled:false};}
         }
-        return json({tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        return json({operationRouting:operationContract(env),tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);
@@ -382,6 +397,11 @@ export default {
     } catch { return json({ error: "Invalid JSON" }, 400, cors); }
     if(!input||typeof input!=="object"||Array.isArray(input))return json({error:"Expected a JSON object"},new URL(request.url).pathname==="/authorize"?403:400,cors);
     const executionPath=new URL(request.url).pathname;
+    if(['/authorize','/jobs','/retry','/cancel'].includes(executionPath)){
+      const checked=executionPath==='/authorize'?input.payload||{}:input;
+      const mismatch=checkOperationContract(env,checked,{required:!!checked.requestScope});
+      if(mismatch)return json(mismatch,mismatch.status,cors);
+    }
     if(executionPath==="/authorize"){
       try{
         if(!input.payload||typeof input.userText!=="string"||
@@ -403,8 +423,9 @@ export default {
       if(statusOnly&&cancelled.state!=='cancelled')return json({error:'Cancellation has not been requested'},409,cors);
       if(cancelled.issueNumber){
         try{capabilityRegistry.validate('tasks.cancel',{task:cancelled.issueNumber})}catch{return json({error:'Invalid cancellation target'},400,cors)}
-        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly})}
+        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly&&!cancelled.replayed})}
         catch(e){cancelled.cancellation={...cancelled.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,errors:[e.message]}}
+        await stub.fetch('https://memory.internal/authorization/cancellation-evidence',{method:'POST',body:JSON.stringify({id:cancelled.id,conversationId:cancelled.conversationId,cancellation:cancelled.cancellation})});
       }
       return json(cancelled,200,cors);
     }
@@ -416,6 +437,11 @@ export default {
     if(needsAuthorization(executionPath)&&!(executionPath==="/undo"&&input.confirmed!==true)){
       try{executionAuthorization=await authorize(env,executionPath,input,true)}
       catch(e){return json({error:e.message},403,cors)}
+      if(executionAuthorization.replayed){
+        const receipt=executionAuthorization.receipt;
+        return receipt?new Response(receipt.body,{status:receipt.status,headers:{...cors,'Content-Type':'application/json','X-Operation-Replayed':'true'}}):json({error:'This operation was already claimed. Its outcome is unconfirmed; inspect the existing task before issuing another request.',code:'operation_outcome_unknown',issueNumber:executionAuthorization.issueNumber||null},409,cors);
+      }
+      execution.record=executionAuthorization;
     }
     if(executionPath==="/actions/control"){
       try{const result=await actionsControl(env,input);return json(result.error?{error:result.error}:result.data,result.status,cors)}
@@ -1019,4 +1045,18 @@ export default {
       return json({ error: "AI request timed out or failed" }, 502, cors);
     }
   }
+};
+export default {
+ async fetch(request,env,context){
+  const execution={};const response=await workerImplementation.fetch(request,env,context,execution);
+  if(execution.record){
+   const record=execution.record;
+   try{
+    const stub=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
+    const saved=await stub.fetch('https://memory.internal/authorization/complete',{method:'POST',body:JSON.stringify({id:record.id,conversationId:record.conversationId,path:record.path,digest:record.digest,receipt:{status:response.status,body:await response.clone().text()}})});
+    if(!saved.ok)console.warn('Operation receipt unavailable; repeated claims remain blocked.');
+   }catch{console.warn('Operation receipt unavailable; repeated claims remain blocked.');}
+  }
+  return response;
+ }
 };

@@ -59,13 +59,13 @@ test('model proposals must match owner intent, target and restrictions',async()=
 
 function app(){
  const store=new Map(),calls=[],chat={id:'chat',title:'Original',messages:[]},key='kappaforge.preview.chats.v1';
- const box={KappaIntent:I,KappaCore:globalThis.KappaCore,crypto:webcrypto,chats:[chat],recentJob:null,key,preferences:{appearance:'dark'},preferencesAt:0,
+ const box={KappaIntent:I,KappaCore:globalThis.KappaCore,TextEncoder,crypto:webcrypto,chats:[chat],recentJob:null,key,preferences:{appearance:'dark'},preferencesAt:0,
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   save(){store.set(key,JSON.stringify(box.chats))},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},render(){},backend:'https://worker.test',access:'owner',
   acceptTaskRetry:(task,result,id)=>calls.push({task,result,id}),userAuthorizedFetch:async(path,payload,text,source)=>{calls.push({path,payload,text,source});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
-  fetch:async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return Response.json({state:'cancelled'})}};
+  fetch:async(url,init)=>{if(url.endsWith('/operation-capabilities'))return Response.json({contract:C.contract,rollout:{mode:'active',percent:100}});calls.push({url,body:JSON.parse(init.body)});return Response.json({state:'cancelled'})}};
  vm.createContext(box);const source=read('app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
- const run=async text=>{chat.messages.push({role:'user',text});const result=await box.runAppOperation(text,chat,{requestId:'request-198'});chat.messages.push({role:'assistant',text:result});return result;};
+ const run=async text=>{chat.messages.push({role:'user',text});const result=await box.runAppOperation(text,chat,{requestId:crypto.randomUUID()});chat.messages.push({role:'assistant',text:result});return result;};
  return {box,store,calls,chat,run,state:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box)),seed:jobs=>vm.runInContext('trackedJobs='+JSON.stringify(jobs),box)};
 }
 
@@ -86,7 +86,7 @@ test('chat and controls share rename, ordinary settings and cleanup handlers',as
 test('retry and cancellation use existing backend boundaries and cannot change task IDs',async()=>{
  const h=app();h.seed([{number:198,authorization:{id:'original-auth',conversationId:'chat'},message:'failed'}]);
  assert.match(await h.run('retry task #198 please'),/Dispatch requested/);assert.equal(h.calls[0].path,'/retry');assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0].payload)),{task:198});
- await h.box.executeAppCapability({id:'tasks.retry',params:{task:198}},{source:'user-control',chatId:'chat'});assert.equal(h.calls[2].path,'/retry');
+ await h.box.executeAppCapability({id:'tasks.retry',params:{task:198}},{source:'user-control',chatId:'chat'});assert.equal(h.calls.filter(c=>c.path==='/retry').length,1,'a repeated control returns the receipt without redispatch');
  await assert.rejects(h.run('retry task #198, no tests'),/existing task scope/);
  await h.run('cancel task #198');assert.ok(h.calls.at(-1).url.endsWith('/cancel'));assert.equal(h.calls.at(-1).body.id,'original-auth');assert.equal(h.state()[0].message,'cancellation-requested');
  await assert.rejects(h.run('cancel task #999'),/no cancellation authorization/);

@@ -42,12 +42,26 @@ export async function authorizationStore(state,request){
   }
   const record=await storage.get(key);
   if(!record||record.conversationId!==input.conversationId)return {error:'Authorization is missing or belongs to another conversation'};
+  if(url.pathname==='/authorization/replay'){
+   if(record.digest!==input.digest||record.path!==input.path||record.state==='authorized'||record.state==='cancelled')return {error:'Operation replay is outside scope'};
+   return {...record,replayed:true};
+  }
+  if(url.pathname==='/authorization/complete'){
+   if(record.digest!==input.digest||record.path!==input.path||record.state==='authorized'||record.state==='cancelled'||record.receipt)return {error:'Operation completion is outside scope'};
+   if(!Number.isInteger(input.receipt?.status)||input.receipt.status<200||input.receipt.status>599||typeof input.receipt.body!=='string'||input.receipt.body.length>65536)return {error:'Invalid operation receipt'};
+   record.receipt=input.receipt;await storage.put(key,record);return {saved:true};
+  }
   if(url.pathname==='/authorization/bind'){
    if(record.state==='cancelled')return {error:'Task cancelled before dispatch'};
    record.issueNumber=input.issueNumber;record.state='queued';await storage.put(key,record);return record;
   }
   if(url.pathname==='/authorization/status')return record;
+  if(url.pathname==='/authorization/cancellation-evidence'){
+   if(record.state!=='cancelled'||!input.cancellation)return {error:'Cancellation has not been requested'};
+   record.cancellation={...record.cancellation,...input.cancellation};await storage.put(key,record);return record;
+  }
   if(url.pathname==='/authorization/cancel'){
+   if(record.state==='cancelled')return {...record,replayed:true};
    record.state='cancelled';record.cancellation={authorizationRevokedAt:record.cancellation?.authorizationRevokedAt||Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};await storage.put(key,record);return record;
   }
   if(record.state!=='authorized'||record.expiresAt<=Date.now()||record.digest!==input.digest||record.path!==input.path)return {error:'Authorization is expired, cancelled, consumed or outside scope'};
@@ -70,5 +84,10 @@ export async function authorize(env,path,input,claim=false){
  if(!scope||typeof scope.id!=='string'||typeof scope.conversationId!=='string')throw Error('User authorization is required');
  const digest=await fingerprint(input);
  const response=await stub.fetch('https://memory.internal/authorization/'+(claim?'claim':'issue'),{method:'POST',body:JSON.stringify({id:scope.id,conversationId:scope.conversationId,requestId:scope.requestId,path,digest,reason:'Direct user request or confirmed user control',intent:classify(input.instructions||''),restrictions:requestLimits(input.instructions||'').restrictions})});
- const record=await response.json();if(!response.ok||record.error)throw Error(record.error||'Authorization denied');return record;
+ const record=await response.json();
+ if(!response.ok||record.error){
+  if(claim){const replay=await stub.fetch('https://memory.internal/authorization/replay',{method:'POST',body:JSON.stringify({id:scope.id,conversationId:scope.conversationId,path,digest})});if(replay.ok)return replay.json();}
+  throw Error(record.error||'Authorization denied');
+ }
+ return record;
 }

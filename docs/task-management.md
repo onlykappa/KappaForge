@@ -153,3 +153,6 @@ Worker validation, local persistence, outages and backend receipts. Browser test
 exercise the real composer, clarification, mixed restrictions, controls and route
 disclosures on desktop Chromium and mobile WebKit. Gateway regressions inspect the
 actual model prompts and validated edits on initial, retry and JSON-repair paths.
+
+
+Durable duplicate protection, partial-write compensation and capability rollout are documented in [Operation protocol](operation-protocol.md).

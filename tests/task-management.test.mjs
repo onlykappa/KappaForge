@@ -25,7 +25,7 @@ function harness({jobs=[],latest=null,chats,store=new Map()}={}){
  store.set('kappaforge.jobs.v2',JSON.stringify(jobs));
  if(latest)store.set('kappaforge.latest.job',JSON.stringify(latest));
  const c=chats||[{id:'chat',messages:[{role:'user',text:request},{role:'assistant',text:'failed card',progressKey:'progress:198:live'},{role:'assistant',text:'failure report',jobReport:'job:198:failed'},{role:'assistant',text:'Weather reply'}]}];
- const box={KappaIntent:intent,recentJob:latest,chats:c,crypto:webcrypto,
+ const box={KappaIntent:intent,key:'chats',preferences:{},recentJob:latest,chats:c,TextEncoder,crypto:webcrypto,
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   save(){store.set('chats',JSON.stringify(c))},render(){},checkJobResult(){},
   proposeTaskAutomatically(){throw Error('operation must not reach the planner')},KappaJobs:{conversationContext:()=>''}};

@@ -177,7 +177,23 @@
   if(proposal.id==='tasks.retry'&&Object.values(proposal.restrictions||{}).some(Boolean))throw Error('Retry retains the existing task scope and may run development checks. New restrictions cannot be applied by retrying it.');
   return handlers[proposal.id](params);
  }
- root.KappaCapabilities=Object.freeze({definitions,settingValues,resolve:resolveCapability,validate:validateCapability,validateProposal,execute:executeCapability});
+ // Protocol revisions describe semantics, independently of the app release number.
+ const contract=Object.freeze({version:1,routerRevision:2,capabilities:Object.freeze(Object.keys(definitions))});
+ function negotiate(peer){
+  return !!peer&&peer.version===contract.version&&peer.routerRevision===contract.routerRevision&&Array.isArray(peer.capabilities)&&contract.capabilities.every(id=>peer.capabilities.includes(id));
+ }
+ function rollout(policy={},device=''){
+  const mode=policy.mode||'active',percent=policy.percent===undefined?100:policy.percent;
+  if(!['active','hold','compare'].includes(mode)||!Number.isInteger(percent)||percent<0||percent>100)return {allowed:false,reason:'Invalid operation rollout policy'};
+  let bucket=0;for(const ch of String(device))bucket=(Math.imul(bucket,31)+ch.charCodeAt(0))>>>0;
+  return {allowed:mode!=='hold'&&bucket%100<percent,mode,reason:mode==='hold'?'App actions are temporarily paused.':bucket%100>=percent?'This device is outside the operation rollout.':''};
+ }
+ // Comparison is pure: both results come from this same authority and no handler is called.
+ function compare(request,context={}){
+  const plan=planRequest(request,context),decision=executionDecision(request,context);
+  return {legacy:decision.workflow.kind,scoped:plan.steps.map(s=>s.decision.workflow.kind),differs:plan.steps.length>1};
+ }
+ root.KappaCapabilities=Object.freeze({contract,negotiate,rollout,compare,definitions,settingValues,resolve:resolveCapability,validate:validateCapability,validateProposal,execute:executeCapability});
  // Compatibility for history handlers; other operations are dispatched through the registry.
  function taskOperation(request){if(/\n(?:```|>|File |Conversation context|Earlier conversation)/.test(String(request||'')))return null;const op=resolveCapability(request);return ['tasks.clear-history','tasks.archive-history','tasks.hide-history'].includes(op?.id)?{action:'clear-history',status:op.params.status}:op?{action:'unsupported'}:null}
  function classifyClause(t){

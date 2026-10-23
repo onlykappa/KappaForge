@@ -21,7 +21,7 @@ test('the native recovery fixture saves eligibility across relaunch without cred
  function launch(saved=[]){
   const buttons=[],box={KappaProgress:globalThis.KappaProgress,Date,Number,
    backend:'fixture.invalid',access:'fixture-only',trackedJobs:saved,chats:saved.length?[{id:saved[0].chatId,messages:[]}]:[],
-   URL,Response,crypto:globalThis.crypto,localStorage:{getItem(){return null},setItem(){}},confirm:()=>true,toast(){},alert(message){throw Error(message)},
+   URL,Response,TextEncoder,taskHistoryDevice:'fixture-device',crypto:globalThis.crypto,localStorage:{getItem(){return null},setItem(){}},confirm:()=>true,toast(){},alert(message){throw Error(message)},
    current:'',view:'',jobPollAfter:0,checkJobResult(){throw Error('Live polling is forbidden')},
    ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},
    document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>buttons.push(b)}},
@@ -43,13 +43,13 @@ test('the native recovery fixture saves eligibility across relaunch without cred
 
 test('native fixture exercises the production Retry control and exact authorization/transport boundary',async()=>{
  const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','recovery');
- const proofs=[],saved=new Map(),box={KappaIntent:globalThis.KappaIntent,KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,crypto:globalThis.crypto,
+ const proofs=[],saved=new Map(),box={KappaIntent:globalThis.KappaIntent,KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,TextEncoder,taskHistoryDevice:'fixture-device',crypto:globalThis.crypto,
   localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},backend:'',access:'',trackedJobs:[],chats:[],current:'',view:'',jobPollAfter:0,
   checkJobResult(){throw Error('No live issue polling')},recordRoute(){},operationContext:()=>({}),writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
   document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>proofs.push(b)}}};
  vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');
- vm.runInContext(app.slice(app.indexOf('async function executeAppCapability('),app.indexOf('// What the app does')),box);
+ vm.runInContext(app.slice(app.indexOf('const operationQueue='),app.indexOf('// What the app does')),box);
  vm.runInContext(app.slice(app.indexOf('async function userAuthorizedFetch('),app.indexOf('// Guidance or a retry')),box);
  vm.runInContext(app.slice(app.indexOf('const taskRetryPending='),app.indexOf('async function taskGuide(')),box);
  const candidate=box.trackedJobs[0].progress.recovery.candidate;

@@ -34,7 +34,8 @@ const apiServer=createServer(async(req,res)=>{
  if(req.headers.authorization!=='Bearer fixture-private-token'){res.writeHead(401).end(JSON.stringify({error:'Unauthorized fixture request'}));return;}
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
- if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
+ if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:2,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
+ else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;
   const prompt=data.messages.at(-1).text;
@@ -206,6 +207,20 @@ const apiServer=createServer(async(req,res)=>{
  await page.evaluate(()=>{view='tasks';trackedJobs.push({number:702,message:'failed',chatId:null});render()});await page.locator('#clear-task-history').click();await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===702));
  await page.locator('#undo-task-history').click();await page.waitForFunction(()=>trackedJobs.some(j=>j.number===702&&j.historyOnly&&j.finished));
  assert.deepEqual(forbidden,[],name+' operational requests never invoke coding or model APIs');page.off('request',watch);
+ const protocol=await page.evaluate(async()=>{
+  const proposal={id:'settings.update',params:{key:'weatherUnits',value:'celsius'}},identity='browser-operation-'+current;
+  let writes=0;const original=savePreferences;savePreferences=()=>{writes++;return original()};
+  try{await Promise.all([executeAppCapability(proposal,{source:'user-control',requestId:identity}),executeAppCapability(proposal,{source:'user-control',requestId:identity})])}finally{savePreferences=original}
+  const key='kappaforge.operationContract.v1',old=localStorage.getItem(key);
+  localStorage.setItem(key,JSON.stringify({backend,contract:KappaIntent.capabilities.contract,rollout:{mode:'hold',percent:100}}));
+  let paused='';try{await executeAppCapability({id:'settings.update',params:{key:'weatherUnits',value:'fahrenheit'}},{source:'user-control'})}catch(e){paused=e.message}
+  localStorage.setItem(key,JSON.stringify({backend,contract:KappaIntent.capabilities.contract,rollout:{mode:'compare',percent:100}}));
+  await executeAppCapability({id:'settings.update',params:{key:'weatherUnits',value:'celsius'}},{source:'user-control'});
+  const comparisons=routingDiagnostics().operations.comparisons.length;
+  if(old===null)localStorage.removeItem(key);else localStorage.setItem(key,old);
+  return {writes,paused,units:preferences.weatherUnits,comparisons};
+ });
+ assert.equal(protocol.writes,1,name+' duplicate receipt prevents a second persisted mutation');assert.match(protocol.paused,/paused/);assert.equal(protocol.units,'celsius');assert.ok(protocol.comparisons>0);
  await page.evaluate(()=>{trackedJobs=[];persistJobs();view='chat';render()});
  console.log(name+': registered capabilities, wording variations, restrictions, shared UI controls and active-task preservation passed');
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');

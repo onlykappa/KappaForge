@@ -24,6 +24,7 @@ enum ProgressFixture {
             globalThis.fetch=async(url,options)=>{
               if(!String(url).startsWith('https://fixture.invalid/'))throw Error('Live network forbidden in simulator fixture');
               const body=JSON.parse(options.body),path=new URL(url).pathname;
+              if(path==='/operation-capabilities')return Response.json({contract:KappaIntent.capabilities.contract,rollout:{mode:'active',percent:100}});
               if(path==='/authorize'&&body.path==='/retry'&&body.payload.task===103)return Response.json({authorized:true});
               if(path==='/retry'&&body.task===103&&body.authorization?.id){
                 const count=Number(localStorage.getItem('simulator.retry.count')||0)+1;

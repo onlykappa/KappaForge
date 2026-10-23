@@ -60,7 +60,7 @@ turn source changes into data operations.
 Cleanup recognizes “delete every old task”, “delete old tasks please”, “clear out
 old tasks” and “clean up old tasks”. An incomplete request such as “change
 settings” receives an `unresolved-operation` result, rather than a coding fallback.
-Mixed requests are held unresolved; splitting them is roadmap item 5.
+Mixed app/data and software requests are split into immutable scoped actions; source-only requirements remain one software task.
 
 “Retry task #198” uses the existing authorization and recovery transport.
 “Cancel task #198” requires this device's existing cancellation authorization;
@@ -82,8 +82,7 @@ Sections 3–4 add Undo, versioned restoration/retry records, history filters an
 explicit workflow/authorization/verification decisions. See [Task history and
 recovery](task-management.md) for retention, exact action semantics and cancellation
 evidence limits. Sections 5–6 implement scoped multi-action requests, focused clarification and local
-routing evidence, plus bounded coding-context recovery. Rollout negotiation and
-the separate recommendations 7–9 remain outside this change.
+routing evidence, plus bounded coding-context recovery. Items 7–8 add durable operation receipts, compensation, semantic capability negotiation and rollout controls; see [Operation protocol](operation-protocol.md). Recommendation 9 remains deferred.
 
 Regression coverage: `node --test tests/capability-registry.test.mjs
 tests/task-management.test.mjs tests/task-autostart.test.mjs

@@ -109,7 +109,8 @@ function recordRoute(decision,operation,outcome,requestId,index=0){
 function routingDiagnostics(){
  const latest=new Map();for(const event of routeJournal)latest.set(event.requestId+':'+event.index,event);
  const distinct=predicate=>new Set(routeJournal.filter(predicate).map(e=>e.requestId+':'+e.index)).size;
- return {counts:{actions:latest.size,operationalDevelopment:distinct(e=>e.actionType==='operation'&&e.workflow==='development'),unnecessaryClarifications:distinct(e=>e.outcome==='needs-clarification'&&e.reason==='authorized-action'),unsupportedFallbacks:distinct(e=>e.reason==='unsupported-capability'),clarifications:distinct(e=>e.outcome==='needs-clarification')},recent:routeJournal.slice(-20)};
+ let operations;try{const records=Object.values(operationReceipts());operations={contract:KappaIntent.capabilities.contract.version,routerRevision:KappaIntent.capabilities.contract.routerRevision,rollout:operationPolicy(),saved:records.length,unconfirmed:records.filter(r=>['started','uncertain'].includes(r.state)).length,compensated:records.filter(r=>r.compensated).length,comparisons:records.filter(r=>r.receipt?.comparison).map(r=>r.receipt.comparison).slice(-20)}}catch{operations={error:'Operation receipts or policy are unavailable'}}
+ return {operations,counts:{actions:latest.size,operationalDevelopment:distinct(e=>e.actionType==='operation'&&e.workflow==='development'),unnecessaryClarifications:distinct(e=>e.outcome==='needs-clarification'&&e.reason==='authorized-action'),unsupportedFallbacks:distinct(e=>e.reason==='unsupported-capability'),clarifications:distinct(e=>e.outcome==='needs-clarification')},recent:routeJournal.slice(-20)};
 }
 function operationContext(chat){
  const same=trackedJobs.filter(j=>j.chatId===chat?.id),candidates=same.length?same:trackedJobs;
@@ -182,7 +183,7 @@ async function runActionPlan(state,chat,message){
     recordRoute(step.decision,step.operation,'requested',state.requestId,step.index);
     const receipt={};step.result=await executeAppCapability(step.operation,{receipt,actionIndex:step.index,routeRequestId:state.requestId,source:'user-request',userText:step.text,chatId:chat.id,requestId:state.requestId+'-'+step.index,resolvedContext:context});
     step.status=receipt.outcome||'verified';step.effectVerified=step.operation.id==='tasks.retry'&&step.status==='dispatched';
-   }catch(e){step.status='failed';step.result=e.message;}
+   }catch(e){step.status=e.outcome||'failed';step.result=e.message;}
   }else if(step.kind==='task'){
    if(!step.decision.authorization.allowed){step.status='blocked';step.result=step.decision.authorization.reason;}
    else if(typeof pendingJob!=='undefined'&&pendingJob){step.status='blocked';step.result='A task is awaiting approval. Approve or deny it, then say continue actions.';}
@@ -202,10 +203,42 @@ async function runActionPlan(state,chat,message){
 }
 // Shared adapters for typed requests and explicit UI controls. Model proposals must match
 // the immutable user turn; registry validation runs again immediately before each handler.
+const operationQueue={tail:Promise.resolve()};
+function operationReceipts(){const saved=JSON.parse(localStorage.getItem('kappaforge.operations.v1')||'{}');if(!saved||typeof saved!=='object'||Array.isArray(saved))throw Error('Operation receipts are unavailable');return saved;}
+function persistOperationReceipt(id,record){
+ const records=operationReceipts();if(!records[id]&&Object.keys(records).length>=4096)throw Error('Operation receipt storage is full. Export or review saved receipts before continuing.');
+ records[id]=record;localStorage.setItem('kappaforge.operations.v1',JSON.stringify(records));
+ if(JSON.stringify(operationReceipts()[id])!==JSON.stringify(record))throw Error('Operation receipt could not be saved');
+}
+function operationPolicy(){
+ const cached=JSON.parse(localStorage.getItem('kappaforge.operationContract.v1')||'null');
+ if(!cached||cached.backend!==(typeof backend==='undefined'?'':backend))return {mode:'active',percent:100};
+ if(!KappaIntent.capabilities.negotiate(cached.contract))throw Error('Update the app and Worker to matching operation capabilities.');
+ if(!cached.rollout||typeof cached.rollout.mode!=='string'||!Number.isInteger(cached.rollout.percent))throw Error('Operation rollout policy is unavailable.');
+ return cached.rollout;
+}
+async function refreshOperationContract(){
+ if(!backend||!access)throw Error('Connect AI before using remote actions.');
+ const response=await fetch(backend+'/operation-capabilities',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({contract:KappaIntent.capabilities.contract,device:taskHistoryDevice})});
+ const data=await response.json();
+ localStorage.setItem('kappaforge.operationContract.v1',JSON.stringify({backend,contract:data.contract,rollout:data.rollout}));
+ if(!KappaIntent.capabilities.negotiate(data.contract))throw Error(data.error||'Update the app and Worker to matching operation capabilities.');
+ if(!response.ok)throw Error(data.error||'App actions are temporarily unavailable.');
+ const rollout=KappaIntent.capabilities.rollout(operationPolicy(),taskHistoryDevice);if(!rollout.allowed)throw Error(rollout.reason);
+ return data;
+}
 async function executeAppCapability(proposal,context={}){
+ // One origin-wide lock covers the write-ahead receipt and every local store it protects.
+ const run=()=>executeRecordedCapability(proposal,context);
+ if(typeof navigator!=='undefined'&&navigator.locks?.request)return navigator.locks.request('kappaforge-operations',run);
+ const pending=operationQueue.tail.then(run);operationQueue.tail=pending.catch(()=>{});return pending;
+}
+async function executeRecordedCapability(proposal,context={}){
  const registry=KappaIntent.capabilities;context.receipt=context.receipt||{};
  if(context.source!=='user-request'&&context.source!=='user-control')throw Error('A direct user request or selected control is required');
  const scoped=context.source==='user-request'?registry.validateProposal(proposal,context.userText,context.resolvedContext||{...operationContext(chats.find(c=>c.id===context.chatId)),chatId:context.chatId}):{...proposal,params:registry.validate(proposal.id,proposal.params)};
+ const rollout=registry.rollout(operationPolicy(),taskHistoryDevice);if(!rollout.allowed)throw Error(rollout.reason+' No development fallback was started.');
+ if(rollout.mode==='compare')context.receipt.comparison=registry.compare(context.userText||'',context.resolvedContext||{});
  const handlers={
   'tasks.clear-history':params=>clearTaskHistory(params.status,params),
   'tasks.archive-history':params=>clearTaskHistory(params.status,params,'archived'),
@@ -222,7 +255,8 @@ async function executeAppCapability(proposal,context={}){
   'tasks.cancel':async params=>{
    const job=trackedJobs.find(j=>j.number===params.task);if(!job?.authorization)throw Error('This device has no cancellation authorization for task #'+params.task+'. Manage its issue on GitHub.');
    if(!backend||!access)throw Error('Connect AI before cancelling a task.');
-   const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
+   await refreshOperationContract();
+   const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({...job.authorization,contract:registry.contract,device:taskHistoryDevice})});
    const result=await response.json();if(!response.ok)throw Error(result.error||'Cancellation request failed');
    job.cancellation=result.cancellation||{authorizationRevokedAt:Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};job.finished=false;job.message='cancellation-requested';persistJobs();
    if(context.receipt)context.receipt.outcome=job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length?'verified':'partially-completed';
@@ -239,8 +273,64 @@ async function executeAppCapability(proposal,context={}){
  };
  const requestId=context.routeRequestId||context.requestId||crypto.randomUUID(),index=context.actionIndex||0;
  const decision={action:{kind:'operation',id:scoped.id},authorization:{allowed:true,restrictions:scoped.restrictions||KappaIntent.requestLimits('').restrictions},workflow:{kind:'direct'},verification:{kind:scoped.id==='tasks.retry'?'dispatch-receipt':scoped.id==='tasks.cancel'?'cancellation-stages':'effect-readback'}};
+ const canonical=value=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])])):Array.isArray(value)?value.map(canonical):value;
+ const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(canonical({id:scoped.id,params:scoped.params,restrictions:scoped.restrictions||KappaIntent.requestLimits('').restrictions,chat:context.chatId||null}))));
+ const digest=Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join(''),id=context.requestId||requestId;
+ const records=operationReceipts(),duplicate=!records[id]&&['tasks.retry','tasks.cancel'].includes(scoped.id)?Object.entries(records).find(([,r])=>r.digest===digest&&Date.now()-r.at<5000):null;
+ const existing=records[id]||duplicate?.[1],originalId=existing?.originalId||duplicate?.[0]||id;
+ if(existing){
+  if(existing.digest!==digest)throw Error('Operation identity already belongs to another action.');
+  if(duplicate)persistOperationReceipt(id,{...existing,originalId});
+  if(existing.state!=='complete'&&scoped.id==='tasks.retry'&&backend&&access){
+   // Read the original durable receipt; never resend a mutation to resolve an uncertain outcome.
+   const response=await fetch(backend+'/operation-status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({id:originalId,conversationId:context.chatId||current||'controls'})});
+   const status=await response.json();
+   if(response.ok&&status.receipt&&status.receipt.status<400){
+    const result=JSON.parse(status.receipt.body);context.receipt.outcome=['dispatch_requested','fix_started'].includes(result.status)?'dispatched':'requested';
+    acceptTaskRetry(scoped.params.task,result,context.chatId);
+    const message=result.message||'Recovery requested for task #'+scoped.params.task+'.';
+    persistOperationReceipt(id,{digest,at:existing.at,state:'complete',capability:scoped.id,result:message,receipt:context.receipt,originalId});
+    recordRoute(decision,scoped,context.receipt.outcome,requestId,index);return message;
+   }
+  }
+  if(existing.state!=='complete')throw Error('This operation has an unconfirmed or failed effect. Review its saved state before a new explicit request; it was not repeated.');
+  Object.assign(context.receipt,existing.receipt);recordRoute(decision,scoped,existing.receipt.outcome,requestId,index);return existing.result;
+ }
+ // Preserve only the stores touched by local operations for compensation on a failed write.
+ const remote=['tasks.retry','tasks.cancel'].includes(scoped.id),keys=remote?[]:scoped.id==='settings.update'?['kappaforge.settings.v2','kappaforge.settings.updated']:scoped.id==='chats.rename'?[key]:['kappaforge.taskHistory.v2','kappaforge.dismissedTasks.v1','kappaforge.historyUndo.v1','kappaforge.jobs.v2','kappaforge.latest.job',key];
+ const before=Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]));
+ const memory=remote?null:JSON.stringify({chats,preferences,preferencesAt:typeof preferencesAt==='undefined'?0:preferencesAt,trackedJobs,recentJob,taskHistoryRecords,lastHistoryBatch,dismissedTaskIds:[...dismissedTaskIds]});
+ persistOperationReceipt(id,{digest,at:Date.now(),state:'started',capability:scoped.id});
  recordRoute(decision,scoped,'requested',requestId,index);
- try{const result=await registry.execute(scoped,handlers);recordRoute(decision,scoped,context.receipt?.outcome||(scoped.id==='tasks.retry'?'requested':scoped.id==='tasks.cancel'?'partially-completed':'verified'),requestId,index);return result;}catch(error){recordRoute(decision,scoped,'failed',requestId,index);throw error;}
+ try{
+  const result=await registry.execute(scoped,handlers);context.receipt.outcome=context.receipt.outcome||(scoped.id==='tasks.retry'?'requested':scoped.id==='tasks.cancel'?'partially-completed':'verified');
+  persistOperationReceipt(id,{digest,at:Date.now(),state:'complete',capability:scoped.id,result,receipt:context.receipt});
+  recordRoute(decision,scoped,context.receipt.outcome,requestId,index);return result;
+ }catch(error){
+  let compensated=false;
+  if(!remote)try{
+   let historyCompensation=null;
+   if(keys.includes('kappaforge.taskHistory.v2')){
+    const previous=JSON.parse(before['kappaforge.taskHistory.v2']||'{}');historyCompensation={...previous};
+    let counter=Math.max(0,...Object.values(taskHistoryRecords).filter(validHistoryRecord).map(r=>r.version.counter),...Object.values(previous).filter(validHistoryRecord).map(r=>r.version.counter));
+    // A rollback is a newer intentional state, so other tabs and vault merges cannot
+    // keep a higher-version tombstone published by the interrupted write.
+    for(const record of Object.values(taskHistoryRecords).filter(validHistoryRecord)){
+     const old=previous[record.number];if(JSON.stringify(old)===JSON.stringify(record))continue;
+     historyCompensation[record.number]={...(old||record),state:old?.state||'restored',snapshot:old?.snapshot||record.snapshot,version:{counter:++counter,device:taskHistoryDevice,nonce:crypto.randomUUID()}};
+    }
+    before['kappaforge.taskHistory.v2']=JSON.stringify(historyCompensation);
+   }
+   for(const [k,v] of Object.entries(before)){if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}
+   if(keys.some(k=>localStorage.getItem(k)!==before[k]))throw Error('Compensation readback failed');
+   const saved=JSON.parse(memory);for(let i=0;i<chats.length;i++){const original=saved.chats.find(c=>c.id===chats[i].id);if(original){for(const field of Object.keys(chats[i]))delete chats[i][field];Object.assign(chats[i],original);}}
+   preferences=saved.preferences;if(typeof preferencesAt!=='undefined')preferencesAt=saved.preferencesAt;if(typeof applyAppearance==='function')applyAppearance();trackedJobs=saved.trackedJobs;recentJob=saved.recentJob;taskHistoryRecords=historyCompensation||saved.taskHistoryRecords;lastHistoryBatch=saved.lastHistoryBatch;dismissedTaskIds=new Set(saved.dismissedTaskIds);compensated=true;
+  }catch{}
+  context.receipt.outcome=compensated?'failed':'partially-completed';
+  try{persistOperationReceipt(id,{digest,at:Date.now(),state:compensated?'failed':'uncertain',capability:scoped.id,compensated})}catch{}
+  recordRoute(decision,scoped,context.receipt.outcome,requestId,index);
+  const failure=Error(error.message+(compensated?' Local changes were restored.':' The effect may be partial; it will not be repeated automatically. Review task/history/settings state.'));failure.outcome=context.receipt.outcome;throw failure;
+ }
 }
 async function runAppOperation(text,chat,message){
  const context=operationContext(chat),operation=KappaIntent.capabilities.resolve(text,context),decision=KappaIntent.executionDecision(text,context);
@@ -254,7 +344,7 @@ async function runAppOperation(text,chat,message){
  }
  recordRoute(decision,operation,'requested',message.requestId);
  try{const receipt={};const result=await executeAppCapability(operation,{receipt,source:'user-request',userText:text,chatId:chat.id,requestId:message.requestId,resolvedContext:context});message.routeEvidence=[recordRoute(decision,operation,receipt.outcome||'verified',message.requestId)];return result;}
- catch(error){message.routeEvidence=[recordRoute(decision,operation,'failed',message.requestId)];throw error;}
+ catch(error){message.routeEvidence=[recordRoute(decision,operation,error.outcome||'failed',message.requestId)];throw error;}
 }
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
@@ -337,8 +427,9 @@ function checkWorkClaims(reply,chat,launchedBefore){
  save();render();
 }
 async function userAuthorizedFetch(path,payload,userText,source='user-control',requestId=crypto.randomUUID(),conversationId=current||'controls'){
+ await refreshOperationContract();
  const authorization={id:requestId,requestId,conversationId};
- const body={...payload,authorization};
+ const body={...payload,authorization,contract:KappaIntent.capabilities.contract,device:taskHistoryDevice};
  const options=value=>({method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(value)});
  const issued=await fetch(backend+'/authorize',options({path,payload:body,userText,source}));
  if(!issued.ok)return issued;

@@ -175,4 +175,5 @@ if(!localStorage.getItem("kappaforge.ownerprefs.v1")){
  }
  localStorage.setItem("kappaforge.ownerprefs.v1","1");
 }
-initInterface();updateConnection();view=launchView();render();activateSavedSync();refreshRepos();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
+refreshOperationContract().catch(()=>{});
+initInterface();updateConnection();view=launchView();render();activateSavedSync();refreshRepos();load();refreshActivity(true);checkAppUpdate(false);checkJobResult();let pollTick=0;setInterval(()=>{if(document.hidden||(!(backend&&access)&&pollTick++%4))return;refreshActivity();if(view==="home")load();checkJobResult()},90000);document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshOperationContract().catch(()=>{});refreshActivity();checkAppUpdate(false);checkJobResult();scheduleVaultSync()}});
