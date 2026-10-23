@@ -358,4 +358,4 @@ body.sheet-open{overflow:hidden}
 .ios-sheet .ios-row-text small{white-space:normal}
 /* Long chats: messages off screen skip layout and paint until they scroll near, so redraws stay fast. */
 .chat-message{content-visibility:auto;contain-intrinsic-size:auto 160px}
-.chat-message:nth-last-child(-n+6){content-visibility:visible}
+.chat-message:nth-last-child(-n+6),.chat-message:has(details[open]){content-visibility:visible}

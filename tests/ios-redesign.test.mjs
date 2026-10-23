@@ -118,7 +118,7 @@ test('holding a dashboard task offers Open, Retry, guidance, GitHub links, Copy 
  const src=read('app-dashboard.js'),start=src.indexOf('function taskMenuSheet('),end=src.indexOf('async function taskMenuAction(');
  const box={esc,clip:(t,n)=>String(t).slice(0,n),iosRow:o=>'<row '+(o.attrs||'')+' tone="'+(o.tone||'')+'">'+o.title+'|'+(o.sub||'')+'</row>',iosSheet:(t,b)=>'<sheet title="'+t+'">'+b+'</sheet>',
   trackedJobs:[{number:198,title:'Weather',message:'failed',url:'https://github.com/onlykappa/KappaForge/issues/198',prUrl:'https://github.com/onlykappa/KappaForge/pull/199'}],taskMenu:198,taskMenuConfirm:false};
- box.KappaJobs=globalThis.KappaJobs;
+ box.KappaJobs=globalThis.KappaJobs;box.KappaProgress={stale:j=>!!j.stale};
  const tasks=read('app-tasks.js');
  vm.createContext(box);vm.runInContext(tasks.slice(tasks.indexOf('function taskHasActiveExecution('),tasks.indexOf('async function deleteTaskHistory('))+src.slice(start,end),box);
  const html=box.taskMenuSheet();
@@ -128,6 +128,8 @@ test('holding a dashboard task offers Open, Retry, guidance, GitHub links, Copy 
  box.trackedJobs[0].finished=true;box.trackedJobs[0].message='done';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="(retry|guide)"/,'a finished task that did not fail has nothing to retry');
  box.trackedJobs[0].progress={status:'running'};
  assert.match(box.taskMenuSheet(),/data-task-act="delete" disabled aria-disabled="true"/);
+ box.trackedJobs[0].finished=false;box.trackedJobs[0].message='progress';assert.doesNotMatch(box.taskMenuSheet(),/data-task-act="retry"/,'a healthy running task has nothing to retry');
+ box.trackedJobs[0].stale=true;assert.match(box.taskMenuSheet(),/data-task-act="retry"[^]*No recent update/,'a task that stopped updating offers Retry');
 });
 
 test('older failed tasks remain visible beneath newer running work and More counts tasks individually',()=>{

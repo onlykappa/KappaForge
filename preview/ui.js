@@ -27,6 +27,8 @@ function setSidebar(open,restoreFocus=false){
  syncNativeComposer();
  if(restoreFocus)document.getElementById('menubtn').focus();
 }
+// Phones search on the Chats page (the sidebar never opens there); wider screens use the sidebar's search.
+function openConversationSearch(){if(matchMedia('(max-width:840px)').matches&&typeof chatSearchOpen!=='undefined'){chatSearchOpen=true;navigate('chats');document.getElementById('chatsearch')?.focus();return}setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})}
 function toggleSidebar(){setSidebar(matchMedia('(max-width:840px)').matches?!document.getElementById('sidebar').classList.contains('open'):document.body.classList.contains('sidebar-collapsed'));}
 function closeNavigation(){if(matchMedia('(max-width:840px)').matches)setSidebar(false);}
 // Live task progress in chat, drawn from the agent's checklist (KappaJobs.progressSteps): a step timeline with
@@ -280,7 +282,7 @@ const chatObserver=new MutationObserver(()=>{if(scrollY+innerHeight>=document.do
 let composerMeasured={key:'',height:''};
 function resizeComposer(){
  const el=document.getElementById('message'),composer=document.getElementById('composer');
- const key=[el.value,innerWidth,view,document.getElementById('attachlist')?.childElementCount,document.getElementById('activitystatus')?.hidden,composer.className].join('\u0001');
+ const key=[el.value,innerWidth,view,document.getElementById('attachlist')?.childElementCount,document.getElementById('activitystatus')?.hidden,composer.className,document.body.classList.contains('keyboard-open')].join('\u0001');
  if(key!==composerMeasured.key||!composerMeasured.height){
   el.style.height='auto';el.style.height=Math.min(168,Math.max(26,el.scrollHeight))+'px';
   const height=composer.getBoundingClientRect().height+'px';
@@ -308,7 +310,7 @@ function initInterface(){
  document.querySelectorAll('.welcome-hints button').forEach(b=>b.onclick=()=>{document.getElementById('message').value=b.dataset.hint;document.getElementById('form').requestSubmit()});
  if(uiInitialized)return;uiInitialized=true;
  document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=uiIcon(el.dataset.icon));
- document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=()=>{setSidebar(true,true);document.getElementById('conversation-search').focus({preventScroll:true})};document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
+ document.getElementById('headernew').onclick=fresh;document.getElementById('headersearch').onclick=openConversationSearch;document.getElementById('headermore').onclick=()=>navigate('settings');document.getElementById('close-sidebar').onclick=()=>setSidebar(false,true);document.getElementById('sidebarbackdrop').onclick=()=>setSidebar(false,true);
  document.getElementById('conversation-search').addEventListener('input',e=>{conversationSearch=e.target.value;history()});
  document.getElementById('composermodel').onchange=e=>{preferences.routing=e.target.value;savePreferences();toast('Routing preference saved')};
  const input=document.getElementById('message');input.addEventListener('input',resizeComposer);input.addEventListener('focus',()=>{if(window.KappaNativeComposer){syncNativeComposer();window.webkit.messageHandlers.kappa.postMessage({action:'focusComposer'});input.blur()}updateKeyboard()});input.addEventListener('blur',()=>setTimeout(updateKeyboard,100));
@@ -318,7 +320,7 @@ function initInterface(){
  document.getElementById('attachbtn').addEventListener('click',()=>document.getElementById('attachment-menu').open=false);document.getElementById('folderbtn').addEventListener('click',()=>document.getElementById('attachment-menu').open=false);
  document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){if(document.getElementById('sidebar').classList.contains('open'))setSidebar(false,true);document.querySelectorAll('details[open]').forEach(d=>d.open=false)}
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setSidebar(true);document.getElementById('conversation-search').focus()}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openConversationSearch()}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='o'){e.preventDefault();fresh()}
   if(e.key==='Tab'&&document.body.classList.contains('sidebar-open')){const items=[...document.getElementById('sidebar').querySelectorAll('button,input,a')].filter(el=>!el.disabled&&el.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
  });

@@ -29,6 +29,7 @@ function chatTaskState(c){
 function chatJobState(job){
  if(KappaJobs.needsAttention(job))return {icon:"warn",tone:"bad",label:"Task #"+job.number+" needs attention"};
  if(KappaJobs.verifiedTask(job))return {icon:"check",tone:"ok",label:"Task #"+job.number+" is ready for review"};
+ if(job.message==="tests-passed"||job.message==="native-passed")return {icon:"flask",tone:"warn",label:"Task #"+job.number+" checks reported · verifying"};
  if(job.finished)return {icon:"check",tone:"",label:"Task #"+job.number+" finished"};
  if(job.prUrl)return {icon:"flask",tone:"warn",label:"Task #"+job.number+" tests running"};
  if(!job.progress?.startedAt&&job.message==="waiting")return {icon:"clock",tone:"",label:"Task #"+job.number+" is queued"};
@@ -173,7 +174,9 @@ function bindShell(){
  document.getElementById("chatsearchbtn")?.addEventListener("click",()=>{chatSearchOpen=!(chatSearchOpen||conversationSearch);if(!chatSearchOpen)conversationSearch="";render();document.getElementById("chatsearch")?.focus()});
  document.getElementById("chatnew")?.addEventListener("click",fresh);
  document.querySelectorAll("#content [data-more-route]").forEach(b=>b.addEventListener("click",()=>{preferences.routing=b.dataset.moreRoute;savePreferences();const sel=document.getElementById("composermodel");if(sel)sel.value=preferences.routing;render();toast("Model route: "+b.textContent)}));
- document.querySelectorAll("#content [data-more-section]").forEach(b=>b.addEventListener("click",()=>{navigate("settings");settingsSection=b.dataset.moreSection;render()}));
+ document.querySelectorAll("#content [data-more-section]").forEach(b=>b.addEventListener("click",()=>{navigate("settings");settingsSection=b.dataset.moreSection;usageView={provider:null,model:null};settingsNotice="";render();scrollTo(0,0)}));
+ // Tokens today needs the usage history, which otherwise loads only from Settings.
+ if(view==="more"&&typeof autoVerify==="function")autoVerify();
  document.querySelectorAll("#content [data-chat-sheet-close]").forEach(b=>b.addEventListener("click",()=>openChatSheet(null)));
  document.querySelectorAll("#content [data-task-more]").forEach(b=>b.addEventListener("click",()=>openChatSheet({kind:"task",id:b.dataset.taskMore,tab:"progress",copy:b.dataset.copyIndex})));
  document.querySelectorAll("#content [data-task-tab]").forEach(b=>b.addEventListener("click",()=>{chatSheet.tab=b.dataset.taskTab;render()}));
