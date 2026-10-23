@@ -88,11 +88,11 @@ test("each provider routes up to ten of its free models, never a paid one",async
  const original=globalThis.fetch,free=Array.from({length:12},(_,i)=>"vendor/model-"+String(i).padStart(2,"0")+":free");
  globalThis.fetch=async()=>Response.json({data:[{id:"vendor/paid-model"},...free.map(id=>({id}))]});
  try{
-  const models=await providerModels({ROUTING_POLICY_VERSION:"v1"},"kilo");
+  const models=await providerModels({ROUTING_POLICY_VERSION:"v1",KILO_API_KEY:"cap-test"},"kilo");
   assert.equal(models.length,10,"the per-provider cap is ten");
   assert.equal(models.includes("vendor/paid-model"),false);
   assert.ok(models.every(m=>m.endsWith(":free")));
-  assert.equal((await providerModels({},"kilo")).includes("vendor/paid-model"),false,"older policy mode keeps free-only pools free");
+  assert.equal((await providerModels({KILO_API_KEY:"cap-test"},"kilo")).includes("vendor/paid-model"),false,"older policy mode keeps free-only pools free");
  }finally{globalThis.fetch=original}
 });
 
