@@ -33,8 +33,9 @@ function discoveryKey(env,id){
 function freeModels(env,id,models){
  const p=registry.providers[id];
  if(id==="openrouter")return models.filter(m=>FREE.test(m));
+ // A free-only pool never routes a paid model unless the owner opted into its full catalog, in any policy mode.
+ if(p.freeOnly&&catalogMode(env,id)!=="all")return models.filter(m=>FREE.test(m));
  if(catalogMode(env,id)!=="free-v1")return models;
- if(p.freeOnly)return models.filter(m=>FREE.test(m));
  return Array.isArray(p.freeModels)?models.filter(m=>p.freeModels.includes(m)):null;
 }
 const sha256=async text=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))].map(b=>b.toString(16).padStart(2,"0")).join("");

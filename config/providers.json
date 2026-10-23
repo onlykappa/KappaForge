@@ -16,7 +16,7 @@
     "llm7",
     "ovh"
   ],
-  "maxModelsPerProvider": 2,
+  "maxModelsPerProvider": 10,
   "exclude": "embed|whisper|tts|guard|rerank|moderation|ocr|transcri|speech|audio|image|imagen|dall-e|flux|stable-diffusion|sdxl|veo|lyria|computer-use|safety|prompt-guard|antigravity|deep-research|nano-banana|robotics|omni|orpheus",
   "providers": {
     "workers-ai": {
@@ -103,7 +103,6 @@
         "qwen/qwen3.8-27b",
         "openai/gpt-oss-20b"
       ],
-      "maxModels": 3,
       "context": 131072,
       "maxOutput": 8192,
       "accountPool": "groq",
