@@ -77,7 +77,8 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("config/providers.json", changes)
         prompt = model.call_args.args[1]
         self.assertIn("GitHub workflows and actions under .github/, .env files", prompt)
-        self.assertIn("waits for the owner's confirmation", prompt)
+        self.assertIn("highlighted on the PR for the owner's review", prompt)
+        self.assertNotIn("waits for the owner's confirmation", prompt)
         self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
         self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .git/config")),
                          ("authorization", "stop"))
@@ -728,8 +729,9 @@ class FlaggedChangeTests(unittest.TestCase):
 
 
 class WorkflowAccessTests(unittest.TestCase):
-    """The task agent edits workflows like any file; edits that could reach secrets or raise permissions wait for the
-    owner's `Allow flagged changes: yes`, and workflow commits use a token GitHub lets change workflows."""
+    """The task agent edits workflows like any file and never pauses for them (the owner reviews the draft PR and
+    merges by hand); edits that could reach secrets or raise permissions are called out at the top of the PR, and
+    workflow commits use a token GitHub lets change workflows."""
     SECRET_WF = "name: deploy\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n    - run: deploy\n      env:\n        T: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n"
     PLAIN_WF = "name: lint\non: pull_request\npermissions:\n  contents: read\njobs:\n  l:\n    runs-on: ubuntu-latest\n    steps:\n    - run: npm run lint\n"
 
@@ -749,9 +751,15 @@ class WorkflowAccessTests(unittest.TestCase):
         self.assertIn("changes a GitHub workflow that can use your repository secrets",
                       developer.workflow_flags({}, {".github/actions/a/action.yml": "env: ${{ toJSON(secrets) }}"}))
         self.assertEqual(developer.workflow_flags({}, {".github/dependabot.yml": "x: ${{ secrets.A }}", "app.py": "secrets.A"}), {})
-        self.assertEqual(developer.change_flags(developer.ROOT, {}, {path: self.SECRET_WF}, "Allow flagged changes: yes"), {})
-        self.assertEqual(developer.change_flags(developer.ROOT, {}, {"a.py": "os.environ['X']"}, ""), {},
-                         "KappaForge's own code keeps its usual freedom; only workflows are checked")
+        self.assertEqual(developer.change_flags(developer.ROOT, {}, {path: self.SECRET_WF}, ""), {},
+                         "KappaForge's own changes, secret workflows included, never pause")
+        self.assertEqual(developer.change_flags(developer.ROOT, {}, {"a.py": "os.environ['X']"}, ""), {})
+        self.assertIn("reads secrets or environment variables",
+                      developer.change_flags("onlykappa/OmniPC", {}, {"a.py": "os.environ['X']"}, ""), "other repositories keep their check")
+        self.assertEqual(developer.workflow_notice({}, {path: self.PLAIN_WF}), "")
+        notice = developer.workflow_notice({}, {path: self.SECRET_WF})
+        self.assertTrue(notice.startswith("## ⚠️ Workflow changes to review first"))
+        self.assertIn("can use your repository secrets: `.github/workflows/x.yml`", notice)
 
     def test_workflow_commits_use_the_workflow_capable_token(self):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}):
@@ -803,15 +811,19 @@ class WorkflowAccessTests(unittest.TestCase):
         plan = [t for p, t, m in tokens if p.endswith("/git/refs")]
         self.assertEqual(plan, ["token"], "the plan-only branch is still created with the usual token")
 
-    def test_a_secret_workflow_change_waits_for_the_owner_then_goes_through(self):
+    def test_a_secret_workflow_change_is_written_to_the_draft_and_called_out_for_review(self):
         result, calls, tokens = self.run_task(self.SECRET_WF)
-        self.assertIsNone(result)
-        self.assertFalse(any(c[0].endswith("/git/trees") for c in calls), "nothing with the workflow was pushed")
-        comment = [c[1]["body"] for c in calls if c[0].endswith("/issues/9/comments") and "Stopped before changing" in str(c[1])]
-        self.assertTrue(comment and "can use your repository secrets" in comment[0] and "Allow flagged changes: yes" in comment[0])
-        result, calls, tokens = self.run_task(self.SECRET_WF, "\nAllow flagged changes: yes\n")
-        self.assertTrue(result)
+        self.assertTrue(result, "the task finishes its code instead of pausing")
         self.assertTrue(any(c[0].endswith("/git/trees") for c in calls))
+        self.assertFalse(any("Stopped before changing" in str(c[1]) for c in calls), "no stop comment")
+        final = [c[1] for c in calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        self.assertTrue(final["body"].startswith("## ⚠️ Workflow changes to review first"))
+        self.assertIn("`.github/workflows/ci.yml`", final["body"].split("\n\n## ", 1)[0] + final["body"][:400])
+        self.assertTrue(final["title"].startswith("Draft"), "it stays a draft for the owner")
+        self.assertFalse(any(c[0].endswith("/merge") for c in calls), "never merged")
+        _, plain_calls, _ = self.run_task(self.PLAIN_WF)
+        plain = [c[1] for c in plain_calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        self.assertNotIn("Workflow changes to review first", plain["body"])
 
 
 class ProgressTests(unittest.TestCase):

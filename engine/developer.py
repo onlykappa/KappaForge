@@ -52,8 +52,9 @@ LARGE = Budget(30, 20, 200000, 600000, 65536)
 PINNED = Budget(1, 1, 3500, 4000, 768)
 SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml|ya?ml|swift|cs|java|kt|go|rs|c|h|cpp|hpp|sh|sql)$")
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
-# Any repository path may be proposed, workflows and .env files included; .git is Git's own data, not a repository
-# file. Workflow edits that could reach secrets or raise GitHub permissions pause for the owner (workflow_flags).
+# Any repository path may be proposed, workflows and .env files included (the owner's choice: the same access as
+# Claude Code, with the owner's review of the draft PR and manual merge as the safeguard); .git is Git's own data, not
+# a repository file. Workflow edits that could reach secrets or raise permissions are called out on the PR.
 PROTECTED_RE = re.compile(r"^\.git/")
 
 
@@ -787,8 +788,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         f"At most {budget.changed_files} files per proposal. You may edit any file in the repository, including "
         "GitHub workflows and actions under .github/, .env files, deployment configuration, dependency manifests, security "
         "rules, and agent guardrails (not .git/). Give every new workflow an explicit least-privilege permissions: block; "
-        "never write secret values into any file. A workflow change that uses repository secrets or grants write "
-        "permissions waits for the owner's confirmation before it is pushed. "
+        "never write secret values into any file. Workflow changes that use repository secrets or grant write "
+        "permissions are highlighted on the PR for the owner's review. "
         "All changes remain on the draft PR branch for CI and owner review; never merge. Preserve the task's "
         "requested behavior and do not add secrets or credentials. "
         "Before writing, think it through: where each part of your change runs and what information is available "
@@ -1062,8 +1063,8 @@ WRITE_GRANT = re.compile(r"(?:^|[\s{,])(?:[a-z][a-z-]*\s*:\s*['\"]?write\b|write
 
 
 def workflow_flags(sources, changes):
-    """Workflow edits that need the owner: pushed with a workflow-capable token, workflows on the task branch and its
-    pull request run before review, so anything that can reach secrets or raise GitHub permissions waits for consent."""
+    """Workflow edits the owner should look at first: workflows on the task branch and its pull request run as soon as
+    they are saved there, before the merge, so anything that can reach secrets or raise permissions is called out."""
     found = {}
     for path, text in changes.items():
         old = sources.get(path, "")
@@ -1079,16 +1080,22 @@ def workflow_flags(sources, changes):
     return found
 
 
+def workflow_notice(sources, changes):
+    """A PR section listing workflow edits to review before anything else; empty when there are none."""
+    flags = workflow_flags(sources, changes)
+    if not flags:
+        return ""
+    lines = "\n".join(f"- It {label}: " + ", ".join(f"`{p}`" for p in paths) for label, paths in flags.items())
+    return ("## ⚠️ Workflow changes to review first\n\n" + lines + "\n\nGitHub runs workflows on this branch as soon as "
+            "they are saved here, before you merge. Check these files before anything else.\n\n")
+
+
 def change_flags(repo, sources, changes, body):
-    """What must wait for `Allow flagged changes: yes`: risky workflow edits anywhere, and for other repositories
-    (whose own CI runs the pushed branch with their secrets) also secret, network and process access."""
-    if flags_allowed(body):
+    """What must wait for `Allow flagged changes: yes`: only changes to other repositories, whose own CI runs the pushed
+    branch with their secrets. KappaForge's own changes, workflows included, go to the draft PR for the owner's review."""
+    if repo == ROOT or flags_allowed(body):
         return {}
-    found = workflow_flags(sources, changes)
-    if repo != ROOT:
-        for label, paths in flagged_changes(sources, changes).items():
-            found.setdefault(label, []).extend(p for p in paths if p not in found.get(label, []))
-    return found
+    return flagged_changes(sources, changes)
 
 
 def push_token(repo, token, paths):
@@ -1901,7 +1908,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     move_branch(repo, writer, branch, commit["sha"], create=not saved["pr"])
     payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
-        "body": review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
+        "body": workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
     if saved["pr"]:
         pr = gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, payload, method="PATCH")
     else:
@@ -2265,9 +2272,8 @@ def fix_pull_request(issue, api_key, token):
     journal = recovery.CURRENT.get()
     saved = {'sha': head, 'changes': {}}
     def checkpoint_revision(changes, modes):
-        # No unreviewed external-repository network/auth changes or risky workflow edits are checkpointed; the final
-        # check below decides whether they may be pushed.
-        if not flags_allowed(issue.get('body')) and (repo != ROOT or any(WORKFLOW_PATH.match(p) for p in changes)):
+        # No unreviewed external-repository network/auth changes are checkpointed.
+        if repo != ROOT and not flags_allowed(issue.get('body')):
             return
         target = dict(changes)
         for path in set(saved['changes']) - set(changes):
@@ -2293,9 +2299,8 @@ def fix_pull_request(issue, api_key, token):
                       next_action='Read failed assertions and preserve original requirements')
     model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
                                                                 native_history, **({'checkpoint': checkpoint_revision} if journal else {}))
-    flags = {}
-    if not flags_allowed(issue.get("body")) and (repo != ROOT or any(WORKFLOW_PATH.match(p) for p in changes)):
-        before = {}
+    flags, before = {}, {}
+    if (repo != ROOT and not flags_allowed(issue.get("body"))) or any(WORKFLOW_PATH.match(p) for p in changes):
         for path in changes:
             try:
                 before[path] = read_source(repo, path, head, repo_token)
@@ -2332,7 +2337,7 @@ def fix_pull_request(issue, api_key, token):
             "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
     progress.ok(f"Pushed fix {cycle} of {cycle_limit}: {short_list(changes)}; tests are running again", phase=True, status="testing")
-    note = (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
+    note = workflow_notice(before, changes) + (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]
     if not pending:
