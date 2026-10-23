@@ -29,6 +29,7 @@ import {openrouterAccount} from "./openrouter-account.js";
 import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferences} from "./routing-policy.js";
 import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./recovery-wake.js";
+import {transcribe,speak} from "./voice.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -105,8 +106,8 @@ function corsHeaders(request) {
   return (origin === ORIGIN || origin === "null") ? {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action",
-    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-reset",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Memory-Method, X-Integration-Action, X-Voice-Language",
+    "Access-Control-Expose-Headers": "x-ratelimit-remaining, x-ratelimit-reset, X-Voice-Model, X-Voice-Notice",
     "Vary": "Origin"
   } : null;
 }
@@ -223,7 +224,7 @@ const workerImplementation = {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium", "/voice/transcribe", "/voice/speak"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -341,6 +342,11 @@ const workerImplementation = {
         if(body.action==="approve"||body.action==="dismiss")return json(await premiumOp(env,{op:body.action,task:body.task,step:body.step}),200,cors);
         return json({error:"Unknown premium action"},400,cors);
       }catch(error){return json({error:error.message||"Premium setting could not be saved"},400,cors)}
+    }
+    if(pathname==="/voice/transcribe"){const r=await transcribe(env,request);return json(r.body,r.status,cors)}
+    if(pathname==="/voice/speak"){
+      const r=await speak(env,await request.json().catch(()=>null));
+      return r.audio?new Response(r.audio,{status:200,headers:{"Content-Type":r.type,"Cache-Control":"no-store","X-Voice-Model":r.model,...(r.notice?{"X-Voice-Notice":r.notice}:{}),...cors}}):json(r.body,r.status,cors);
     }
     if(new URL(request.url).pathname==="/usage/google")return json(await googleUsage(env).catch(()=>({configured:true,error:"Google usage unavailable"})),200,cors);
     if(new URL(request.url).pathname==="/providers/models-list"){

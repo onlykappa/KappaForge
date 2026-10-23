@@ -98,6 +98,9 @@ struct KappaWebView: UIViewRepresentable {
         }
         #endif
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        // Spoken replies start after a network wait, not inside the tap that asked for them.
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
         let view = KappaChatWebView(frame: .zero, configuration: config)
         view.configureComposer()
         view.observeReduceTransparency()
@@ -127,7 +130,7 @@ struct KappaWebView: UIViewRepresentable {
     }
 
     static func credentialScript() -> WKUserScript {
-        var boot = "window.KappaNativeComposer = true; window.KappaNativeVersion = \"\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")\";"
+        var boot = "window.KappaNativeComposer = true; window.KappaNativeVoice = true; window.KappaNativeVersion = \"\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")\";"
         if let credentials = CredentialVault.load(), let data = try? JSONSerialization.data(withJSONObject: credentials), let value = String(data: data, encoding: .utf8) {
             boot += "try { const c = \(value); sessionStorage.setItem('kappaforge.backend', c.backend || ''); sessionStorage.setItem('kappaforge.access', c.access || ''); } catch (_) {}"
         }
@@ -142,6 +145,7 @@ struct KappaWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate, WKScriptMessageHandler {
         let showSecurity: () -> Void
         let showUpdates: () -> Void
+        let voice = VoiceRecorder()
         init(showSecurity: @escaping () -> Void, showUpdates: @escaping () -> Void) {
             self.showSecurity = showSecurity
             self.showUpdates = showUpdates
@@ -151,6 +155,9 @@ struct KappaWebView: UIViewRepresentable {
             if body["action"] == "composer" { (message.webView as? KappaChatWebView)?.updateComposer(body) }
             if body["action"] == "focusComposer" { (message.webView as? KappaChatWebView)?.composerEditor.becomeFirstResponder() }
             if body["action"] == "blurComposer" { (message.webView as? KappaChatWebView)?.composerEditor.resignFirstResponder() }
+            if body["action"] == "voiceStart", let webView = message.webView { voice.start(in: webView) }
+            if body["action"] == "voiceStop" { voice.stop() }
+            if body["action"] == "voiceCancel" { voice.cancel() }
             if body["action"] == "security" { showSecurity() }
             if body["action"] == "updates" { showUpdates() }
             if body["action"] == "export", let name = body["name"], let content = body["content"], content.utf8.count < 1_000_000 {
