@@ -562,7 +562,9 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         try:
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
                                                                  guide, allowed, budget, design, require_test, allow_empty,
-                                                                 max_attempts=remaining_attempts, attempt_offset=attempts_used)
+                                                                 max_attempts=remaining_attempts, attempt_offset=attempts_used,
+                                                                 prior_errors=getattr(exc, 'errors', ()),
+                                                                 prior_proposals=getattr(exc, 'rejected_proposals', ()))
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
@@ -721,7 +723,7 @@ def source_priorities(sources, existing, task, journal=None):
     return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
 
 
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
     priority = source_priorities(working_sources, existing, task, journal)
@@ -837,8 +839,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             context, shown_sources, partial_sources = source_context()
         return instruction_head + context + history + suffix
     fit_instruction()
-    errors = []
-    rejected_proposals = []
+    errors = list(prior_errors)
+    rejected_proposals = list(prior_proposals)
+    prior_error_count = len(errors)
+    attempts_made = 0
     evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
@@ -865,7 +869,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
                   "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
-                 "\nRoot-cause guidance: " + diagnose_generation_failure(errors[-1], sources) +
+                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], sources) if errors else
+                  "The previous pass failed before producing a validated proposal. Use its error evidence above.") +
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
@@ -899,6 +904,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         try:
             model, output = run_model(api_key, prompt, max_output_tokens=budget.output_tokens, allowed=allowed,
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
+            attempts_made += 1
         except RuntimeError as exc:
             if router_required and isinstance(exc, gateway.GatewayRequestTooLarge) and context:
                 # A stricter transport envelope can reject a locally fitting prompt.
@@ -1012,7 +1018,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
     raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
                             retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False),
-                            attempts=attempt_offset + len(errors))
+                            attempts=attempt_offset + attempts_made, errors=errors,
+                            rejected_proposals=rejected_proposals)
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
