@@ -577,6 +577,20 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(result[2]['value.py'],'value = 4\n')
         self.journal.loader.assert_not_called()
 
+    def test_protected_dependency_can_be_read_but_not_edited(self):
+        source='{"routing":"public configuration"}'
+        self.journal.loader=MagicMock(return_value=source)
+        proposal=json.dumps({'files':[{'path':'value.py','edits':[{'find':'value = 1','replace':'value = 2'}]}]})
+        with patch.object(developer,'run_model',return_value=('writer',proposal)) as model:
+            result=developer.generate_with('key','Read config/providers.json and update value.py',recovery.ROOT,
+                {'value.py':'value = 1\n'}, {'value.py':10,'config/providers.json':len(source)},'',None,developer.COMPACT)
+        self.assertEqual(result[2],{'value.py':'value = 2\n'})
+        self.journal.loader.assert_called_once_with('config/providers.json')
+        self.assertIn(source,model.call_args.args[1])
+        with self.assertRaisesRegex(ValueError,'Protected path'):
+            developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
+                {'files':[{'path':'config/providers.json','content':'{}'}]})
+
     def test_multiple_repair_targets_survive_retry_prompt_compaction(self):
         self.journal.state['sourcePriority']=['one.py','two.py']
         sources={p:'value = 1\n'+'# filler\n'*220 for p in ['one.py','two.py']}

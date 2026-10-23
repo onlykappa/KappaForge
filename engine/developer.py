@@ -726,7 +726,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     priority = source_priorities(working_sources, existing, task, journal)
     for path in priority:
         if path not in working_sources and getattr(journal, 'loader', None):
-            check_path(path)
+            # Membership in the candidate tree scopes this read. Edit protection
+            # is enforced separately by apply_changes; protected files can be dependencies.
             loaded = journal.loader(path)
             if isinstance(loaded, str) and len(loaded) <= MAX_LARGE_FILE_CHARS:
                 working_sources[path] = loaded
