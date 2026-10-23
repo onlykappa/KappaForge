@@ -1740,10 +1740,10 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     layout = plan_layout(issue, stages)
     if adopt is not None:
         saved.update(sha=adopt["head"]["sha"], pr=adopt)
-        progress.act("git", f"Continuing on draft PR #{adopt['number']}, which holds the plan")
+        progress.act("git", f"Continuing on draft PR {adopt['html_url']}, which holds the plan")
     else:
         saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
-        progress.act("git", f"Opened draft PR #{saved['pr']['number']} with the goal and plan; writing the code next")
+        progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
     progress.saved_pr = saved["pr"]["html_url"]
     if journal:
         journal.checkpoint(saved["sha"], base=base, pr=saved["pr"]["html_url"])
