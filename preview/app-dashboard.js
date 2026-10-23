@@ -530,7 +530,7 @@ if(view==="chat"&&pendingJob&&(!pendingJob.conversationId||pendingJob.conversati
 
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
-if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
+if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button><button class="btn secondary" id="clear-task-history">Clear inactive history</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
 if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
@@ -592,6 +592,7 @@ document.querySelectorAll("[data-plugin-request]").forEach(b=>b.addEventListener
  current=current||null;navigate("chat");document.getElementById("message").value=draft;focusMessageInput();
 }));
 bindSettings();bindShell();bindDashboard();bindInterface(scrollState);
+document.getElementById('clear-task-history')?.addEventListener('click',async()=>{try{const result=await executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}});
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
@@ -606,7 +607,8 @@ let planError="";
 // develop task, launched as the owner's own control. approval: an uncertain request is planned into an Approve/Deny card only.
 async function proposeTaskAutomatically(text,notify=true,context="",requestId=crypto.randomUUID(),conversationId=current,{explicit=false,approval=false}={}){
  const intent=KappaIntent.classify(text);
- if(intent==='operation'){planError='Manage task history by sending the request in chat.';return false;}
+ if(KappaIntent.isOperation(text)){planError='Send this app operation in chat; it cannot start development.';return false;}
+ const conflict=KappaIntent.taskConflict(text,intent==='investigation'?'audit':'develop');if(conflict){planError=conflict;return false;}
  if(!explicit&&!approval&&!["execution","investigation"].includes(intent))return false;
  planError="";
  if(!backend||!access){planError="the AI connection isn't set up (Settings → AI connection)";if(notify)alert("Connect AI first.");return false}

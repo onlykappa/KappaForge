@@ -1,4 +1,5 @@
 import copy
+import json
 import unittest
 from engine.intent_guard import ExecutionScope, ACTIVE, activate, guard_request
 from engine.reliability import RecoveryBudgetExceeded
@@ -12,6 +13,31 @@ def issue(mode='develop'):
 class IntentGuardTests(unittest.TestCase):
     def tearDown(self):
         ACTIVE.set(None)
+
+    def test_saved_owner_restrictions_block_incompatible_development_and_survive_reload(self):
+        def saved(restrictions, mode='develop'):
+            task = issue(mode)
+            record = {'id': 'scope', 'requestId': 'request', 'conversationId': 'chat',
+                      'repo': 'onlykappa/KappaForge', 'mode': mode, 'expiresAt': 4102444800000,
+                      'restrictions': restrictions}
+            task['body'] += '\nApproved from KappaForge Chat.\n<!-- kappa-authorization:' + json.dumps(record) + ' -->'
+            return task
+        for key in ('noPR', 'noTests', 'noCode'):
+            with self.assertRaisesRegex(PermissionError, 'Owner restrictions'):
+                ExecutionScope(saved({key: True}))
+        scope = ExecutionScope(saved({'noMerge': True}))
+        reloaded = ExecutionScope(copy.deepcopy(saved({'noMerge': True})))
+        self.assertEqual(scope.restrictions, reloaded.restrictions)
+        reloaded.state = 'verifying'
+        reloaded.release_pr = 99
+        reloaded.release_sha = 'a' * 40
+        with self.assertRaisesRegex(PermissionError, 'prohibited merging'):
+            reloaded.permit('https://api.github.com/repos/onlykappa/KappaForge/pulls/99/merge',
+                            {'sha': 'a' * 40, 'merge_method': 'squash'}, 'PUT')
+        self.assertEqual(ExecutionScope(saved({'noCode': True}, 'audit')).restrictions, {'noCode': True})
+        for invalid in ({'noPR': 'false'}, {'allowCode': True}, []):
+            with self.assertRaisesRegex(PermissionError, 'Invalid owner restrictions'):
+                ExecutionScope(saved(invalid))
 
     def test_no_authority_from_model_or_repository(self):
         with self.assertRaises(PermissionError):

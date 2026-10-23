@@ -39,10 +39,50 @@ function taskHistoryMatches(job,status){
 function manageTaskHistory(text){
  const operation=KappaIntent.taskOperation(text);
  if(operation?.action!=='clear-history')return 'This task operation is not available in chat. Use the task’s Cancel control to stop running work, or manage its issue on GitHub. No development task was started.';
- const selected=trackedJobs.filter(j=>taskHistoryMatches(j,operation.status));
+ return clearTaskHistory(operation.status);
+}
+function clearTaskHistory(status){
+ const selected=trackedJobs.filter(j=>taskHistoryMatches(j,status));
  mergeTaskHistory(selected.map(j=>j.number));save();
  const active=trackedJobs.filter(j=>!inactiveTask(j)).length;
  return 'Cleared '+selected.length+' inactive task'+(selected.length===1?'':'s')+' from app history.'+(active?' Kept '+active+' active task'+(active===1?'':'s')+'.':'')+' GitHub issues and PRs remain available.';
+}
+// Shared adapters for typed requests and explicit UI controls. Model proposals must match
+// the immutable user turn; registry validation runs again immediately before each handler.
+async function executeAppCapability(proposal,context={}){
+ const registry=KappaIntent.capabilities;
+ if(context.source!=='user-request'&&context.source!=='user-control')throw Error('A direct user request or selected control is required');
+ const scoped=context.source==='user-request'?registry.validateProposal(proposal,context.userText,{chatId:context.chatId}):{...proposal,params:registry.validate(proposal.id,proposal.params)};
+ const handlers={
+  'tasks.clear-history':params=>clearTaskHistory(params.status),
+  'tasks.retry':async params=>{
+   if(!backend||!access)throw Error('Connect AI before retrying a task.');
+   const response=await userAuthorizedFetch('/retry',{task:params.task},context.userText||'Confirmed retry of task #'+params.task,context.source,context.requestId,context.chatId||current||'controls');
+   const result=await response.json();if(!response.ok)throw Error(result.error||'Retry request failed');
+   acceptTaskRetry(params.task,result,context.chatId);return result.message||'Recovery requested for task #'+params.task+'.';
+  },
+  'tasks.cancel':async params=>{
+   const job=trackedJobs.find(j=>j.number===params.task);if(!job?.authorization)throw Error('This device has no cancellation authorization for task #'+params.task+'. Manage its issue on GitHub.');
+   if(!backend||!access)throw Error('Connect AI before cancelling a task.');
+   const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
+   const result=await response.json();if(!response.ok)throw Error(result.error||'Cancellation request failed');
+   job.finished=true;job.finishedAt=Date.now();job.message='cancelled';persistJobs();
+   return 'Cancellation authorization revoked for task #'+params.task+'. Already running work may still be stopping.';
+  },
+  'chats.rename':params=>{
+   const chat=chats.find(c=>c.id===params.chat);if(!chat)throw Error('Conversation is no longer available.');
+   chat.title=params.title;chat.at=Date.now();save();
+   const persisted=JSON.parse(localStorage.getItem(key)||'[]').find(c=>c.id===params.chat);if(persisted?.title!==params.title)throw Error('Conversation name could not be saved.');
+   return 'Conversation renamed to “'+params.title+'”.';
+  },
+  'settings.update':params=>{preferences[params.key]=params.value;savePreferences();const persisted=JSON.parse(localStorage.getItem('kappaforge.settings.v2')||'{}');if(persisted[params.key]!==params.value)throw Error('Preference could not be saved.');return 'Saved '+params.key+': '+params.value+'.';}
+ };
+ return registry.execute(scoped,handlers);
+}
+async function runAppOperation(text,chat,message){
+ const operation=KappaIntent.capabilities.resolve(text,{chatId:chat.id});
+ if(operation?.kind!=='operation')return operation?.message||'Please specify the operation and its target. No development task was started.';
+ return executeAppCapability(operation,{source:'user-request',userText:text,chatId:chat.id,requestId:message.requestId});
 }
 // What the app does with a sent chat message, decided before the reply streams so the reply can say so (/chat taskIntent):
 // a clear request starts a task; "start a task" / "do it" starts the change described just before; an uncertain
@@ -67,8 +107,8 @@ function adoptRepositoryTasks(issues){
 // A request already has a task when it started one, or when a task card follows it in its chat.
 function requestHasTask(chat,message){return !!message.taskStarted||chat.messages.slice(chat.messages.indexOf(message)+1).some(x=>x.progressKey)}
 function chatTaskPlan(typed,chat){
- if(KappaIntent.classify(typed)==='operation')return {kind:'operation',text:typed};
  if(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?\d+\s*[.!]?$/i.test(typed))return {kind:"retry"};
+ if(KappaIntent.isOperation(typed))return {kind:'operation',text:typed};
  const intent=KappaIntent.classify(typed);
  if(intent==="execution"||intent==="investigation")return {kind:"start",text:typed};
  if(KappaIntent.goAhead(typed)){
@@ -88,13 +128,10 @@ async function runChatAction(plan,typed,chat){
  if(!message||message.executionHandled)return;
  message.executionHandled=true;message.requestId=message.requestId||crypto.randomUUID();save();
  if(plan.kind==='operation'){
-  const result=manageTaskHistory(typed);chat.messages.push({role:'assistant',text:result});save();render();return;
+  const result=await runAppOperation(typed,chat,message);chat.messages.push({role:'assistant',text:result});save();render();return;
  }
  if(plan.kind==="retry"){
-  const body={task:Number(typed.match(/\d+/)[0])};
-  const response=await userAuthorizedFetch('/retry',body,typed,'user-request',message.requestId,chat.id);
-  const result=await response.json();if(!response.ok)throw Error(result.error);
-  chat.messages.push({role:'assistant',text:result.message});acceptTaskRetry(body.task,result,chat.id);save();render();return;
+  const result=await runAppOperation(typed,chat,message);chat.messages.push({role:'assistant',text:result});save();render();return;
  }
  if(plan.source){plan.source.executionHandled=true;plan.source.offerTask=false}
  const planned=await proposeTaskAutomatically(plan.text,false,KappaJobs.conversationContext(chat.messages),message.requestId,chat.id,{explicit:!!plan.explicit,approval:plan.kind==="approval"});
@@ -199,8 +236,8 @@ async function taskRetry(number){
  if(!backend||!access){alert("Connect AI first.");return}
  if(!confirm("Retry task #"+number+"? Request recovery of the same saved task? Provider cooldowns still apply."))return;
  taskRetryPending.add(number);
- try{const response=await userAuthorizedFetch("/retry",{task:number},"Confirmed retry of task #"+number);const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);
-  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result.message||"Retry started for task #"+number+"."});acceptTaskRetry(number,result,job.chatId);save();render();toast("Recovery requested for task #"+number)}
+ try{const result=await executeAppCapability({id:'tasks.retry',params:{task:number}},{source:'user-control',chatId:job.chatId});
+  const chat=chats.find(c=>c.id===job.chatId);if(chat)chat.messages.push({role:"assistant",text:result});save();render();toast("Recovery requested for task #"+number)}
  catch(e){alert("Retry not started: "+e.message)}finally{taskRetryPending.delete(number)}
 }
 async function taskGuide(number){
@@ -317,7 +354,8 @@ async function checkJobResult(){
 async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
  const job=pendingJob,jobChatId=job.conversationId||current;job.requestId=job.requestId||crypto.randomUUID();job.conversationId=job.conversationId||jobChatId;pendingJob=null;render();
- if(KappaIntent.classify(job.instructions)==='operation'){const target=chats.find(c=>c.id===jobChatId);if(target){const result=manageTaskHistory(job.instructions);target.messages.push({role:'assistant',text:result});}save();render();return;}
+ if(KappaIntent.isOperation(job.instructions)){const target=chats.find(c=>c.id===jobChatId);if(target){const result=await runAppOperation(job.instructions,target,job);target.messages.push({role:'assistant',text:result});}save();render();return;}
+ const conflict=KappaIntent.taskConflict(job.instructions,job.mode);if(conflict){const target=chats.find(c=>c.id===jobChatId);if(target)target.messages.push({role:'assistant',text:conflict});save();render();return;}
  try{
  const {requestId,conversationId,authorizationSource,...payload}=job;
  const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
@@ -407,10 +445,7 @@ function openTask(text){const title=(text.trim().split("\n")[0]||"KappaForge dev
 setInterval(()=>{if(!document.hidden&&trackedJobs.some(j=>!j.finished&&Date.now()-(j.activeAt||0)<1200000)){checkJobResult()}},10000);
 
 async function cancelAuthorizedJob(number){
- const job=trackedJobs.find(j=>j.number===number);if(!job?.authorization)return;
- const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
- const result=await response.json();if(!response.ok){toast(result.error);return;}
- job.finished=true;job.finishedAt=Date.now();job.message='cancelled';persistJobs();render();toast('Task cancelled');
+ try{const result=await executeAppCapability({id:'tasks.cancel',params:{task:number}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}
 }
 function taskCheckpoint(job,status,source='backend'){
  job.lifecycle={status,source,at:Date.now()};if(["tests-passed","failed","tests-failed","merged","cancelled","closed"].includes(status))job.finishedAt=Date.now();persistJobs();

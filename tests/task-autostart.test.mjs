@@ -60,6 +60,16 @@ test('task operations never use the coding planner or its development fallback, 
   assert.equal(x.ok,false);assert.equal(x.launched,0);assert.equal(x.pending,null);assert.equal(x.sent,null);
  }
 });
+
+test('unresolved operations and owner restrictions block automatic and explicit development fallbacks',async()=>{
+ for(const text of ['delete every old task','delete old tasks please','clean up old tasks','clear out old tasks','change settings','rename this chat to Work',
+  'Fix navigation, do not create a PR','Fix navigation, do not run tests','Fix navigation, do not change code']){
+  for(const options of [undefined,{explicit:true},{approval:true}]){
+   const x=await attempt({text,options,fetchError:'Planner outage'});
+   assert.equal(x.ok,false,text);assert.equal(x.launched,0,text);assert.equal(x.pending,null,text);assert.equal(x.sent,null,text);
+  }
+ }
+});
 // The owner's direct request decides; the planner AI only picks repository and mode and cannot drop the request.
 test('a direct request still starts when the planner declines, fails or is unreachable',async()=>{
  for(const opt of [{isTask:false},{status:502},{fetchError:'Load failed'}]){

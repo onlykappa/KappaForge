@@ -47,7 +47,7 @@ function renderChatList(){
  const today=new Date().toDateString(),groups=[["Today",list.filter(c=>new Date(c.at||0).toDateString()===today)],["Earlier",list.filter(c=>new Date(c.at||0).toDateString()!==today)]];
  const rows=c=>{const s=chatTaskState(c),row=iosRow({attrs:'data-id="'+esc(c.id)+'"',icon:s.icon,tone:s.tone,title:esc(c.title),sub:esc(s.label||chatPreview(c)),value:esc(shellTime(c.at)),chevron:!chatEditing});
   // Edit mode: each row gets a Delete button, as in Mail or Messages.
-  return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row};
+  return chatEditing?'<div class="chat-edit-row">'+row+'<button type="button" class="text-button" data-rename-chat="'+esc(c.id)+'" aria-label="Rename conversation '+esc(c.title)+'">Rename</button><button type="button" class="chat-delete" data-delete-chat="'+esc(c.id)+'" aria-label="Delete conversation '+esc(c.title)+'">Delete</button></div>':row};
  return (chats.length?'<div class="chat-list-tools"><button type="button" class="text-button" id="chatedit" aria-pressed="'+chatEditing+'">'+(chatEditing?"Done":"Edit")+'</button></div>':'')+'<label class="ios-search">'+uiIcon("search")+'<span class="sr-only">Search conversations</span><input id="chatsearch" type="search" placeholder="Search" autocomplete="off" value="'+esc(conversationSearch)+'"></label>'+
   (list.length?groups.filter(g=>g[1].length).map(([name,items])=>'<h2 class="ios-gh">'+name+'</h2><div class="ios-group icons">'+items.map(rows).join("")+'</div>').join(""):
   '<p class="ios-empty">'+(q?"No matching conversations":"Your conversations will appear here.")+'</p>');
@@ -88,6 +88,7 @@ function bindShell(){
  document.getElementById("chatsearch")?.addEventListener("input",e=>{conversationSearch=e.target.value;const pos=e.target.selectionStart;render();const f=document.getElementById("chatsearch");f.focus();f.setSelectionRange(pos,pos)});
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
  document.getElementById("chatedit")?.addEventListener("click",()=>{chatEditing=!chatEditing;render()});
+ document.querySelectorAll('#content [data-rename-chat]').forEach(b=>b.addEventListener('click',async()=>{const chat=chats.find(c=>c.id===b.dataset.renameChat);if(!chat)return;const title=prompt('Conversation name',chat.title);if(title===null)return;try{await executeAppCapability({id:'chats.rename',params:{chat:chat.id,title:title.trim()}},{source:'user-control'});render()}catch(e){toast(e.message)}}));
  document.querySelectorAll("#content [data-delete-chat]").forEach(b=>b.addEventListener("click",()=>{if(deleteChat(b.dataset.deleteChat))render()}));
  document.querySelectorAll("#content [data-page]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
 }

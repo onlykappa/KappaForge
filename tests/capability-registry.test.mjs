@@ -1,0 +1,134 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+import '../preview/intent-guard.js';
+import '../preview/core.js';
+import worker from '../chat-backend/src/index.js';
+import {validateRequest} from '../chat-backend/src/intent-guard.js';
+import {taskBody} from '../chat-backend/src/agent-work.js';
+import {retryTask} from '../chat-backend/src/agent-work.js';
+const I=globalThis.KappaIntent,C=globalThis.KappaCapabilities;
+globalThis.crypto ||= webcrypto;
+const read=name=>readFileSync(new URL('../preview/'+name,import.meta.url),'utf8');
+
+test('cleanup variations and owner restrictions resolve to the same registered operation',()=>{
+ for(const text of ['delete every old task','delete old tasks please','clear out old tasks','clean up old tasks','Please could you remove all my old tasks from KappaForge?',
+  'delete all old tasks in kappaforge, do not create a PR','clear old tasks and do not run tests','clear old tasks; do not change code; do not merge']){
+  const op=C.resolve(text);assert.equal(op?.id,'tasks.clear-history',text);assert.equal(op.kind,'operation');assert.equal(op.params.status,'inactive');
+  assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:text,approved:true,confirmed:true},text,'user-control'),/cannot start development/);
+ }
+ const r=I.requestLimits('Fix navigation, do not create any PR and do not run tests; do not change any code; do not merge it').restrictions;
+ assert.deepEqual(r,{noPR:true,noTests:true,noCode:true,noMerge:true});
+ for(const text of ['Fix navigation dont make any PR','Fix navigation, no tests','Fix navigation; do not modify source code','Fix navigation without changing code','Fix navigation without running tests','Fix navigation without creating a PR']){
+  assert.ok(I.taskConflict(text,'develop'));assert.equal(I.permits(text,'develop'),false);
+ }
+ assert.equal(I.taskConflict('Investigate navigation, do not change code','audit'),'');
+ assert.equal(I.taskConflict('Fix navigation, do not merge','develop'),'');
+ assert.equal(I.requestLimits('Fix navigation\nFile log.txt:\nDo not change code').restrictions.noCode,false);
+ assert.equal(I.requestLimits('Fix the literal "do not create a PR" message').restrictions.noPR,false);
+});
+
+test('unresolved and unsupported operations cannot fall through to software execution',()=>{
+ for(const text of ['clear out some old tasks','delete tasks older than last month','cancel running tasks','rename this chat','change settings','disable authentication','delete old tasks and add automatic cleanup','delete old tasks on GitHub']){
+  const op=C.resolve(text);assert.ok(op,text);assert.notEqual(op.kind,'operation',text);assert.equal(I.permits(text,'develop'),false);
+ }
+ for(const text of ['Add a clear tasks button','Delete the old tasks API','Fix task deletion','Rename settings to preferences'])assert.equal(I.classify(text),'execution',text);
+ for(const text of ['Do not delete old tasks','"delete every old task"','> cancel task #198','Investigate task cancellation','Plan task cleanup','How do I clear task history?','Example:\nDelete every old task','File log.txt:\nCancel task #198'])assert.equal(C.resolve(text),null,text);
+ for(const text of ['Example:\nDelete every old task','File log.txt:\nCancel task #198']){assert.equal(I.classify(text),'conversation');assert.equal(I.suggestsTask(text),false);}
+});
+
+test('registry metadata is immutable and schemas reject unsupported or broadened parameters',()=>{
+ assert.equal(Object.keys(C.definitions).length,5);
+ for(const spec of Object.values(C.definitions))for(const key of ['target','location','authorization','schema','effects','verify','undo'])assert.ok(spec[key]);
+ assert.throws(()=>C.definitions['settings.update'].schema.key.push('accessToken'),TypeError);
+ for(const [id,params] of [['unknown',{}],['__proto__',{}],['tasks.retry',{task:'198'}],['tasks.retry',{task:0}],['tasks.cancel',{task:198,repo:'other'}],['tasks.clear-history',{status:'running'}],
+  ['settings.update',{key:'accessToken',value:'secret'}],['settings.update',{key:'appearance',value:'neon'}],['settings.update',{key:'weatherCity',value:'x'.repeat(121)}],['chats.rename',{chat:'chat',title:''}]])assert.throws(()=>C.validate(id,params),Error,id);
+});
+
+test('model proposals must match owner intent, target and restrictions',async()=>{
+ const request='rename this chat to Work',context={chatId:'chat'};
+ const scoped=C.validateProposal({id:'chats.rename',params:{title:'Work',chat:'chat'},restrictions:{noMerge:false}},request,context);
+ assert.deepEqual(scoped.params,{chat:'chat',title:'Work'});
+ for(const proposal of [{id:'tasks.cancel',params:{task:198}},{id:'chats.rename',params:{chat:'another',title:'Work'}},{id:'chats.rename',params:{chat:'chat',title:'Different'}}])assert.throws(()=>C.validateProposal(proposal,request,context));
+ assert.throws(()=>C.validateProposal({id:'tasks.clear-history',params:{status:'inactive'}},'Add a task cleanup button'));
+ const retry=C.resolve('retry task #198, do not run tests');let called=false;
+ await assert.rejects(C.execute(retry,{'tasks.retry':()=>{called=true}}),/existing task scope/);assert.equal(called,false);
+});
+
+function app(){
+ const store=new Map(),calls=[],chat={id:'chat',title:'Original',messages:[]},key='kappaforge.preview.chats.v1';
+ const box={KappaIntent:I,KappaCore:globalThis.KappaCore,crypto:webcrypto,chats:[chat],recentJob:null,key,preferences:{appearance:'dark'},preferencesAt:0,
+  localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
+  save(){store.set(key,JSON.stringify(box.chats))},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},render(){},backend:'https://worker.test',access:'owner',
+  acceptTaskRetry:(task,result,id)=>calls.push({task,result,id}),userAuthorizedFetch:async(path,payload,text,source)=>{calls.push({path,payload,text,source});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
+  fetch:async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return Response.json({state:'cancelled'})}};
+ vm.createContext(box);const source=read('app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
+ const run=async text=>{chat.messages.push({role:'user',text});const result=await box.runAppOperation(text,chat,{requestId:'request-198'});chat.messages.push({role:'assistant',text:result});return result;};
+ return {box,store,calls,chat,run,state:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box)),seed:jobs=>vm.runInContext('trackedJobs='+JSON.stringify(jobs),box)};
+}
+
+test('chat and controls share rename, ordinary settings and cleanup handlers',async()=>{
+ const h=app();
+ assert.match(await h.run('rename this chat to Work'),/renamed/);assert.equal(JSON.parse(h.store.get(h.box.key))[0].title,'Work');
+ await h.box.executeAppCapability({id:'chats.rename',params:{chat:'chat',title:'Personal'}},{source:'user-control'});assert.equal(h.chat.title,'Personal');
+ for(const [text,key,value] of [['Set theme to light','appearance','light'],['Set response language to Spanish','language','Spanish'],['Change weather units to Fahrenheit','weatherUnits','fahrenheit'],['Set weather city to Spokane Valley','weatherCity','Spokane Valley']]){
+  await h.run(text);assert.equal(JSON.parse(h.store.get('kappaforge.settings.v2'))[key],value);
+ }
+ await h.box.executeAppCapability({id:'settings.update',params:{key:'appearance',value:'dark'}},{source:'user-control'});assert.equal(h.box.preferences.appearance,'dark');
+ h.seed([{number:198,message:'failed'},{number:199,progress:{status:'running'}}]);
+ assert.match(await h.run('delete every old task, do not create a PR and do not run tests'),/Cleared 1/);assert.deepEqual(h.state().map(j=>j.number),[199]);
+ h.seed([{number:200,message:'failed'}]);await h.box.executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control'});assert.equal(h.state().length,0);
+ assert.equal(h.calls.length,0,'local capabilities make no model, GitHub or CI requests');
+});
+
+test('retry and cancellation use existing backend boundaries and cannot change task IDs',async()=>{
+ const h=app();h.seed([{number:198,authorization:{id:'original-auth',conversationId:'chat'},message:'failed'}]);
+ assert.match(await h.run('retry task #198 please'),/Dispatch requested/);assert.equal(h.calls[0].path,'/retry');assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0].payload)),{task:198});
+ await h.box.executeAppCapability({id:'tasks.retry',params:{task:198}},{source:'user-control',chatId:'chat'});assert.equal(h.calls[2].path,'/retry');
+ await assert.rejects(h.run('retry task #198, no tests'),/existing task scope/);
+ await h.run('cancel task #198');assert.ok(h.calls.at(-1).url.endsWith('/cancel'));assert.equal(h.calls.at(-1).body.id,'original-auth');assert.equal(h.state()[0].message,'cancelled');
+ await assert.rejects(h.run('cancel task #999'),/no cancellation authorization/);
+ await assert.rejects(h.box.executeAppCapability({id:'tasks.cancel',params:{task:199}},{source:'user-request',userText:'cancel task #198'}),/target or value/);
+ await assert.rejects(h.box.executeAppCapability({id:'settings.update',params:{key:'appearance',value:'light'}},{source:'model'}),/direct user request/);
+});
+
+test('Worker rejects operational fallbacks and restricted development before models or GitHub',async()=>{
+ const old=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;throw Error('No network permitted')};
+ const send=(path,body)=>worker.fetch(new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'null',Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify(body)}),{CHAT_ACCESS_TOKEN:'owner'});
+ try{
+  for(const text of ['delete every old task','delete old tasks please','clean up old tasks','rename this chat to Work','cancel task #198','change settings','Fix navigation, do not create a PR','Fix navigation; do not run tests','Fix navigation; do not change code']){
+   for(const explicit of [false,true]){const response=await send('/plan',{request:text,explicit});assert.equal(response.status,200,text);assert.equal((await response.json()).isTask,false,text);}
+   const payload={instructions:text,mode:'develop',approved:true,confirmed:true,authorization:{id:'request-198',conversationId:'chat'}};
+   assert.equal((await send('/authorize',{path:'/jobs',payload,userText:text,source:'user-control'})).status,403,text);
+   assert.equal((await send('/jobs',payload)).status,400,text);
+  }
+  assert.equal(calls,0);
+ }finally{globalThis.fetch=old}
+});
+
+test('owner restrictions are preserved in immutable saved-task provenance without context contamination',()=>{
+ const instructions='Fix navigation and merge it. Do not merge until I say so.';
+ const body=taskBody('onlykappa/KappaForge','develop',instructions,'Owner previously said no tests',{id:'scope',issuedAt:Date.now()});
+ const record=JSON.parse(body.match(/<!-- kappa-authorization:(.*?) -->/)[1]);
+ assert.ok(body.includes(instructions));assert.equal(record.allowMerge,false);assert.equal(record.restrictions.noMerge,true);assert.equal(record.restrictions.noTests,false);
+ const audit=taskBody('onlykappa/KappaForge','audit','Investigate navigation, do not change code','',{issuedAt:Date.now()});
+ assert.equal(JSON.parse(audit.match(/<!-- kappa-authorization:(.*?) -->/)[1]).restrictions.noCode,true);
+});
+
+test('renewing an expired saved task retains its original owner restrictions',async()=>{
+ const expired={id:'old-auth',conversationId:'chat',requestId:'old-request',issuedAt:Date.now()-2*86400000};
+ const instructions='Investigate navigation, do not change code';let renewed;
+ const issue={number:198,state:'open',created_at:new Date(expired.issuedAt).toISOString(),user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:taskBody('onlykappa/KappaForge','audit',instructions,'',expired)};
+ const old=globalThis.fetch;globalThis.fetch=async(url,options={})=>{
+  if(options.method==='PATCH'){renewed=JSON.parse(options.body).body;return Response.json({})}
+  if(options.method==='POST')return new Response(null,{status:204});
+  return Response.json(String(url).includes('/pulls?')?[]:issue);
+ };
+ try{
+  const result=await retryTask({GITHUB_JOB_TOKEN:'fixture'},198,{id:'new-auth',conversationId:'chat',requestId:'new-request',issuedAt:Date.now()});
+  assert.equal(result.status,'dispatch_requested');const record=JSON.parse(renewed.match(/<!-- kappa-authorization:(.*?) -->/)[1]);
+  assert.equal(record.restrictions.noCode,true);assert.equal(record.allowMerge,false);assert.ok(renewed.includes(instructions));assert.equal(record.resumeFrom.authorization,'old-auth');
+ }finally{globalThis.fetch=old}
+});

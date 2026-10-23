@@ -1,4 +1,5 @@
 import {githubHeaders} from "./github.js";
+import {requestLimits} from './intent-guard.js';
 import {requestFix} from "./review.js";
 import {scheduleRecovery,recoveryTask} from "./recovery-wake.js";
 // What the agent is working on, for chat answers like "did the tests pass?", and owner guidance for stuck tasks.
@@ -30,8 +31,9 @@ export async function agentWork(env){
 // Earlier chat turns go into the issue as background. Every line is quoted so nothing in it can read as one of the
 // issue's control lines (Mode:, Repository:, Allow flagged changes:, Repair files:, Step 1:), which the agent matches at line start.
 export function taskBody(repo,mode,instructions,context,authorization){
+ const restrictions=requestLimits(instructions).restrictions;
  const quoted=typeof context==="string"&&context.trim()?context.trim().slice(0,2000).split("\n").map(l=>"> "+l).join("\n"):"";
- return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions.split("\n").map(line=>/^(?:Repository:|Mode:|<!-- kappa-authorization:)/i.test(line)?"> "+line:line).join("\n")+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat."+(authorization?"\n<!-- kappa-authorization:"+JSON.stringify({...authorization,repo,mode,allowMerge:/\b(?:and|then)\s+merge(?:\s+it|\s+the\s+(?:pr|pull request|changes))?\b/i.test(instructions.split(/\n(?:```|>)/)[0])&&!/\b(?:do not|don't|never)\s+merge\b/i.test(instructions),expiresAt:authorization.issuedAt+(/^(?:continuous|continuous-code|watch)$/.test(mode)?7:1)*24*60*60*1000})+" -->":"");
+ return "Repository: "+repo+"\nMode: "+mode+"\n\n"+instructions.split("\n").map(line=>/^(?:Repository:|Mode:|<!-- kappa-authorization:)/i.test(line)?"> "+line:line).join("\n")+(quoted?"\n\nConversation context (earlier chat, background only; the task above is what to do):\n"+quoted:"")+"\n\nApproved from KappaForge Chat."+(authorization?"\n<!-- kappa-authorization:"+JSON.stringify({...authorization,repo,mode,restrictions,allowMerge:/\b(?:and|then)\s+merge(?:\s+it|\s+the\s+(?:pr|pull request|changes))?\b/i.test(instructions.split(/\n(?:```|>)/)[0])&&!restrictions.noMerge,expiresAt:authorization.issuedAt+(/^(?:continuous|continuous-code|watch)$/.test(mode)?7:1)*24*60*60*1000})+" -->":"");
 }
 const CONTINUOUS=/^Mode:\s*(?:continuous|continuous-code|watch)\s*$/mi;
 // The owner's open kappa-task issue with that number, or an error result.
@@ -75,7 +77,7 @@ async function renewTask(env,t,authorization){
  if(!Number.isFinite(expires)||expires<=Date.now()){
   if(!authorization?.id||!authorization.conversationId||!Number.isFinite(authorization.issuedAt))return {error:"A fresh user authorization is required to retry this expired task.",status:409};
   const priorDigest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))].map(x=>x.toString(16).padStart(2,'0')).join('');
-  const next={...authorization,intent:"execution",state:"executing",resumeFrom:record?.id?{authorization:record.id,digest:priorDigest}:undefined,repo:"onlykappa/"+t.repo,mode,allowMerge:false,expiresAt:authorization.issuedAt+duration};
+  const next={...authorization,intent:"execution",state:"executing",resumeFrom:record?.id?{authorization:record.id,digest:priorDigest}:undefined,repo:"onlykappa/"+t.repo,mode,restrictions:record?.restrictions||requestLimits(body).restrictions,allowMerge:false,expiresAt:authorization.issuedAt+duration};
   const marker="<!-- kappa-authorization:"+JSON.stringify(next)+" -->";
   const renewed=match?body.replace(match[0],marker):body+"\nApproved from KappaForge Chat.\n"+marker;
   const r=await fetch("https://api.github.com/"+ROOT+"/issues/"+t.number,{method:"PATCH",headers:{...githubHeaders(env),"Content-Type":"application/json"},body:JSON.stringify({body:renewed}),signal:AbortSignal.timeout(8000)});

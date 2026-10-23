@@ -1,5 +1,6 @@
 import '../../preview/intent-guard.js';
-export const {classify,permits,requestText,taskOperation}=globalThis.KappaIntent;
+export const {classify,permits,requestText,taskOperation,requestLimits,taskConflict,isOperation}=globalThis.KappaIntent;
+export const capabilityRegistry=globalThis.KappaCapabilities;
 const writePaths=new Set(['/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
 export const needsAuthorization=path=>writePaths.has(path);
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).filter(k=>k!=='authorization').sort().map(k=>[k,canonical(value[k])])):value;
@@ -9,14 +10,15 @@ export function validateRequest(path,payload,userText,source){
  if(!needsAuthorization(path))throw Error('Unsupported execution endpoint');
  if(source!=='user-request'&&source!=='user-control')throw Error('Only a direct user request or control may authorize work');
  if(path==='/jobs'){
-  if(classify(userText)==='operation')throw Error('Manage task history in the app; this operation cannot start development');
+  if(isOperation(userText))throw Error('Use the registered app operation; it cannot start development');
+  const conflict=taskConflict(userText,payload.mode);if(conflict)throw Error(conflict);
   const explicitControl=source==='user-control'&&payload.confirmed===true&&payload.approved===true;
   if(payload.instructions!==userText||(!explicitControl&&!permits(userText,payload.mode)))throw Error('The user request does not authorize this task mode');
   if(classify(userText)==='release')throw Error('Use the verified release controls for release actions');
   if(payload.context&&typeof payload.context!=='string')throw Error('Invalid context');
  }else if(source==='user-request'){
-  const task=String(userText).match(/^(?:please\s+)?(?:retry|try again(?:\s+on)?)\s+(?:task\s*)?#?(\d+)\s*[.!]?$/i);
-  if(path!=='/retry'||!task||Number(task[1])!==payload.task)throw Error('A specific user control is required for this action');
+  const operation=capabilityRegistry.resolve(userText);
+  if(path!=='/retry'||operation?.id!=='tasks.retry'||operation.params.task!==payload.task||Object.values(operation.restrictions).some(Boolean))throw Error('A specific user control is required for this action');
  }else if(payload.confirmed!==true&&path!=='/retry'&&path!=='/guidance')throw Error('Confirm the selected action');
 }
 // Account-scoped Durable Object transaction serializes claims and cancellation.
@@ -50,11 +52,16 @@ export async function authorizationStore(state,request){
  return result.error?fail(result.error):new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json'}});
 }
 export async function authorize(env,path,input,claim=false){
+ if(path==='/retry')capabilityRegistry.validate('tasks.retry',{task:input.task});
+ if(path==='/jobs'){
+  if(isOperation(input.instructions))throw Error('App operations cannot start development');
+  const conflict=taskConflict(input.instructions,input.mode);if(conflict)throw Error(conflict);
+ }
  if(!env.MEMORY)throw Error('Persistent authorization storage is required');
  const stub=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
  const scope=input.authorization;
  if(!scope||typeof scope.id!=='string'||typeof scope.conversationId!=='string')throw Error('User authorization is required');
  const digest=await fingerprint(input);
- const response=await stub.fetch('https://memory.internal/authorization/'+(claim?'claim':'issue'),{method:'POST',body:JSON.stringify({id:scope.id,conversationId:scope.conversationId,requestId:scope.requestId,path,digest,reason:'Direct user request or confirmed user control',intent:classify(input.instructions||'')})});
+ const response=await stub.fetch('https://memory.internal/authorization/'+(claim?'claim':'issue'),{method:'POST',body:JSON.stringify({id:scope.id,conversationId:scope.conversationId,requestId:scope.requestId,path,digest,reason:'Direct user request or confirmed user control',intent:classify(input.instructions||''),restrictions:requestLimits(input.instructions||'').restrictions})});
  const record=await response.json();if(!response.ok||record.error)throw Error(record.error||'Authorization denied');return record;
 }
