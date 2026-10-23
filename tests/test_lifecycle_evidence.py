@@ -89,6 +89,39 @@ class Task205ReplayTests(unittest.TestCase):
         self.assertEqual(prompts, [], "no code is written to open a PR that already exists")
         self.assertIn("Done by KappaForge: Keep it as a draft", verdict)
 
+
+    def test_fix_replay_prompt_marks_existing_draft_pr_as_orchestration(self):
+        prompt = []
+        files = [{"filename": "src/app.py", "status": "modified", "patch": "@@ -1 +1 @@\\n-old\\n+new"}]
+        draft = {**PR, "number": 206}
+
+        def generate(_key, task, *_a, **_k):
+            prompt.append(task)
+            return "m", "s", {"src/app.py": "new\\n"}, "summary"
+
+        with patch.object(developer, "gh", side_effect=lambda path, *_a, **_k: files if path.endswith("/pulls/206/files?per_page=100") else []), \\
+                patch.object(developer, "list_tree", return_value=({"src/app.py": 10}, {"src/app.py": "100644"})), \\
+                patch.object(developer, "project_guide", return_value=""), \\
+                patch.object(developer, "read_source", return_value="old\\n"), \\
+                patch.object(developer, "requirements_open", return_value=[
+                    "Requirement not met: Open a fresh draft PR",
+                    "Requirement not met: Fix the audit bug"]), \\
+                patch.object(developer, "is_private", return_value=True), \\
+                patch.object(developer, "code_providers", return_value=["groq"]), \\
+                patch.object(developer, "generate", side_effect=generate), \\
+                patch.object(developer, "check_the_work", return_value=({"src/app.py": "new\\n"}, "checked", [])), \\
+                patch.object(developer, "has_tests", return_value=True):
+            developer.revise_branch({"title": "Full audit and bug fix draft",
+                                     "body": "Open a fresh PR, audit and fix bugs"},
+                                    draft, BRANCH, "a" * 40, [], "token", "key",
+                                    repo=REPO, repo_token="token")
+
+        self.assertEqual(len(prompt), 1)
+        self.assertIn("TASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB", prompt[0])
+        self.assertIn(PR["html_url"], prompt[0])
+        self.assertIn("- Requirement not met: Fix the audit bug", prompt[0])
+        self.assertNotIn("- Requirement not met: Open a fresh draft PR", prompt[0])
+
     def test_repairs_target_real_code_work_and_forbid_pr_automation(self):
         reviews = iter([
             ([{"text": "Open a fresh draft PR", "met": False}, {"text": "Fix the chat bug", "met": False}], [], []),
