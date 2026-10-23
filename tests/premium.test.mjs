@@ -2,10 +2,12 @@
 // request from any other path. Billing is mocked: nothing here reaches OpenRouter.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
 import '../preview/limits-core.js';
 import {routingStore} from '../chat-backend/src/router-state.js';
 import {premiumStore,EVIDENCE} from '../chat-backend/src/premium-store.js';
-import {pickPremium,maxCharge,premiumConfig,resetPremiumCatalog,promptTokensUpper} from '../chat-backend/src/premium.js';
+import {pickPremium,maxCharge,premiumConfig,resetPremiumCatalog,promptTokensUpper,premiumAvailable} from '../chat-backend/src/premium.js';
 import {inferenceRouter} from '../chat-backend/src/inference-router.js';
 import {providerModels} from '../chat-backend/src/providers.js';
 
@@ -109,6 +111,7 @@ test('billing: confirmed at the reported cost, unresolved kept at the maximum an
 });
 
 const catalog=[
+ ...[['deepseek/deepseek-v4.1-flash-1017','0.0000003','0.0000012'],['deepseek/deepseek-v4.1-flash','0.00000015','0.0000006'],['z-ai/glm-5.3-flash','0.0000001','0.0000004']].map(([id,prompt,completion])=>({id,pricing:{prompt,completion},context_length:131072,supported_parameters:['max_tokens','temperature'],architecture:{output_modalities:['text']}})),
  {id:'deepseek/deepseek-v4:free',pricing:{prompt:'0',completion:'0'},context_length:131072},
  {id:'vendor/sneaky:free',pricing:{prompt:'0.000001',completion:'0.000002'},context_length:131072},
  {id:'openrouter/free',pricing:{prompt:'-1',completion:'-1'},context_length:131072},
@@ -118,9 +121,9 @@ const catalog=[
  {id:'moonshotai/kimi-k2',pricing:{prompt:'0.0000005',completion:'-1'},context_length:131072},
  {id:'unreviewed/cheap-coder',pricing:{prompt:'0.00000001',completion:'0.00000002'},context_length:131072}];
 
-test('model selection: the lowest maximum charge among reviewed models with verified prices that fit',()=>{
+test('model selection prefers reviewed coding quality over the cheapest eligible model',()=>{
  const pick=pickPremium(catalog,{promptTokens:10000,maxTokens:8000,budgetUsd:1});
- assert.equal(pick.model,'qwen/qwen3-coder','cheapest reviewed fit; unreviewed, free, router, over-ceiling and unpriced models are never picked');
+ assert.equal(pick.model,'deepseek/deepseek-v4.1-flash-1017','preferred reviewed snapshot wins even when Qwen and GLM cost less');
  assert.equal(pickPremium(catalog,{promptTokens:10000,maxTokens:8000,budgetUsd:0.001}),null,'nothing fits a tiny budget');
  assert.equal(pickPremium(catalog,{promptTokens:300000,maxTokens:8000,budgetUsd:1})?.model,undefined,'a prompt that does not fit the context is refused');
  const p={prompt:0.0000003,completion:0.0000012,request:0.001,reasoning:0.000002};
@@ -129,18 +132,46 @@ test('model selection: the lowest maximum charge among reviewed models with veri
  assert.equal(premiumConfig().taskCapUsd,1);assert.equal(premiumConfig().monthCapUsd,5);
 });
 
+test('automatic selection falls back before dispatch when availability, price, context or budget prevents the preferred model',()=>{
+ const options={promptTokens:10000,maxTokens:8000,budgetUsd:1};
+ assert.equal(pickPremium(catalog.filter(m=>!m.id.endsWith('-1017')),options).model,'deepseek/deepseek-v4.1-flash');
+ assert.equal(pickPremium(catalog,{...options,budgetUsd:0.012}).model,'z-ai/glm-5.3-flash','preserves caps instead of forcing DeepSeek');
+ assert.equal(pickPremium(catalog,{...options,promptTokens:200000}).model,'qwen/qwen3-coder','eligible context overrides quality preference');
+ const changed=catalog.map(m=>m.id.endsWith('-1017')?{...m,pricing:{prompt:'0.01',completion:'0.01'}}:m);
+ assert.equal(pickPremium(changed,options).model,'deepseek/deepseek-v4.1-flash');
+ assert.equal(pickPremium([...catalog].reverse(),options).model,pickPremium(catalog,options).model,'catalog order is not quality');
+});
+
+test('exact open-weight IDs and verified pricing prevent paid lookalikes and unknown-price selection',()=>{
+ const model=catalog[0],options={promptTokens:10000,maxTokens:8000,budgetUsd:1};
+ for(const id of ['evil/deepseek-v4.1-flash-1017','deepseek/deepseek-v4.1-flash-9999','openai/gpt-5','openrouter/auto','deepseek/deepseek-v4.1-flash-1017:free'])assert.equal(pickPremium([{...model,id}],options),null,id);
+ for(const prompt of [undefined,null,'',false,'unknown',-1])assert.equal(pickPremium([{...model,pricing:{prompt,completion:'0.0000012'}}],options),null,String(prompt));
+ assert.equal(pickPremium([{...model,supported_parameters:undefined}],options),null);
+ assert.equal(pickPremium([model],options,{...premiumConfig(),provider:'groq'}),null,'Premium cannot be reconfigured to bill another service');
+ for(const key of ['promptTokens','maxTokens','budgetUsd'])assert.equal(pickPremium([model],{...options,[key]:NaN}),null);
+ assert.equal(premiumAvailable({GROQ_API_KEY:'fixture',MEMORY:{}}),false,'a key for another service cannot enable Premium');
+});
+
+test('reservations cover multilingual input and the highest published scheduled price',()=>{
+ for(const text of ['const x = 1;'.repeat(100),'漢字'.repeat(100),'👩🏽‍💻'.repeat(100)])assert.ok(promptTokensUpper(text.length)>=Buffer.byteLength(text,'utf8')+1024);
+ const m=catalog[0],options={promptTokens:10000,maxTokens:8000,budgetUsd:1};
+ const priced={...m,pricing:{prompt:'0.00000015',completion:'0.0000006',overrides:[{prompt:'0.0000003',completion:'0.0000012'}]}};
+ assert.equal(pickPremium([priced],options).maxUsd,pickPremium([m],options).maxUsd,'off-peak prices do not under-reserve a request crossing peak hours');
+ assert.equal(pickPremium([{...priced,pricing:{...priced.pricing,overrides:[{completion:'unknown'}]}}],options),null);
+});
+
 const env=binding=>({ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'openrouter',KAPPA_CODE_PROVIDERS:'openrouter',KAPPA_PRIVATE_CODE_PROVIDERS:'openrouter',OPENROUTER_API_KEY:'fixture',MEMORY:binding});
 const request=extra=>({version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['openrouter'],messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,requestId:crypto.randomUUID(),...extra});
 const rescue=(task,extra={})=>request({task,premium:{task,step:'check',reason:'check_rounds_exhausted',...extra}});
 function upstream({paid='answer',catalogUp=true}={}){
- const calls={paid:[],free:[]};
+ const calls={paid:[],free:[],paidTargets:[]};
  const fetch=async(url,options={})=>{
   url=String(url);
   if(url.endsWith('/models'))return catalogUp?Response.json({data:catalog}):new Response('down',{status:503});
   if(url.includes('/generation'))return Response.json({data:{total_cost:0.0042}});
   const body=JSON.parse(options.body||'{}');
   if(/[:/]free$/.test(body.model)){calls.free.push(body.model);return Response.json({choices:[{message:{content:'free answer'}}],usage:{prompt_tokens:5,completion_tokens:2,total_tokens:7}});}
-  calls.paid.push(body);
+  calls.paid.push(body);calls.paidTargets.push(new URL(url).hostname);
   if(paid==='timeout')throw new DOMException('timed out','TimeoutError');
   if(paid==='nocost')return Response.json({id:'gen-1',choices:[{message:{content:'premium answer'}}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}});
   return Response.json({id:'gen-1',choices:[{message:{content:'premium answer'}}],usage:{prompt_tokens:900,completion_tokens:300,total_tokens:1200,cost:0.00063}});
@@ -157,6 +188,30 @@ test('free discovery trusts the catalog prices, not the name: a priced ":free" i
   assert.ok(!models.includes('vendor/sneaky:free'));assert.ok(!models.includes('openrouter/free'));
   assert.ok(models.every(m=>/[:/]free$/.test(m)),'no paid model is ever a free route');
  });
+});
+
+test('naming OpenRouter in full-catalog settings cannot admit paid routes, including legacy deployments',async()=>{
+ const {fetch}=upstream();
+ await withFetch(fetch,async()=>{
+  for(const version of ['v1',undefined]){
+   const models=await providerModels({...env(memory().binding),ROUTING_POLICY_VERSION:version,KAPPA_ALL_MODEL_PROVIDERS:'*,openrouter'},'openrouter');
+   assert.deepEqual(models,['deepseek/deepseek-v4:free']);
+  }
+ });
+});
+
+test('Premium settings visibly explain automatic selection, OpenRouter billing and caps',()=>{
+ const src=readFileSync(new URL('../preview/settings.js',import.meta.url),'utf8');
+ const box={capabilities:{premium:{enabled:true,configured:true,taskCapUsd:1,monthCapUsd:5,selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'GLM 5.3 Flash'}}},esc:t=>String(t??'').replace(/</g,'&lt;'),settingIcon:()=>''};
+ vm.createContext(box);
+ vm.runInContext(src.slice(src.indexOf('const kSq='),src.indexOf('function kSelect('))+src.slice(src.indexOf('const usd='),src.indexOf('function premiumCard(')),box);
+ const html=box.premiumModeField();
+ assert.match(html,/Premium · OpenRouter/);assert.match(html,/id="premium-mode"[^>]*checked/);assert.doesNotMatch(html,/disabled|k-legacy/);
+ assert.match(html,/DeepSeek V4.1 Flash 1017/);assert.match(html,/GLM 5.3 Flash/);assert.match(html,/\$1\.00 a task and \$5\.00 a month/);
+ box.capabilities.premium.configured=false;assert.match(box.premiumModeField(),/disabled/);
+ box.capabilities.premium.configured=true;delete box.capabilities.premium.selection;assert.match(box.premiumModeField(),/disabled/);
+ box.capabilities.premium={error:'Unavailable'};assert.match(box.premiumModeField(),/Premium Mode unavailable/);
+ assert.doesNotMatch(src,/<div class="k-legacy">'\+premiumModeField/,'the actual models page exposes the control');
 });
 
 test('with Premium Mode off a rescue request sends nothing paid and leaves one recommendation',async()=>{
@@ -189,6 +244,10 @@ test('with Premium Mode on: free evidence first, one capped rescue, its cost rec
   const data=await response.json();
   assert.equal(response.status,200);assert.equal(data.text,'premium answer');assert.equal(data.premium.billing,'confirmed');assert.equal(data.premium.usd,0.00063);
   assert.equal(calls.paid.length,1);
+  assert.deepEqual(calls.paidTargets,['openrouter.ai'],'only OpenRouter receives Premium inference');
+  assert.equal(calls.paid[0].model,'deepseek/deepseek-v4.1-flash-1017');
+  assert.equal(calls.paid[0].provider.require_parameters,true,'provider must enforce the token limit');
+  assert.equal(data.premium.provider,'openrouter');assert.equal(data.premium.selectionPolicy,'reviewed-quality-first-v1');
   assert.ok(calls.paid[0].provider.max_price.completion<=3,'OpenRouter is told the price ceiling the maximum was computed from');
   assert.ok(calls.paid[0].max_tokens<=8000);
   assert.equal(usage.find(e=>e.kind==='premium').cost,0.00063);
@@ -244,7 +303,7 @@ test('the model audit never asks an unlisted model that could charge',async()=>{
  const {auditModels}=await import('../chat-backend/src/model-probe.js');
  const {binding}=memory(),{calls,fetch}=upstream();
  await withFetch(fetch,async()=>{
-  const {results}=await auditModels(env(binding),['openrouter:deepseek/deepseek-v4']);
-  assert.equal(results[0].outcome,'not_asked');assert.equal(calls.paid.length,0);
+  const {results}=await auditModels(env(binding),['openrouter:deepseek/deepseek-v4','openrouter:vendor/sneaky:free','openrouter:missing/model:free']);
+  assert.ok(results.every(r=>r.outcome==='not_asked'));assert.equal(calls.paid.length,0);assert.equal(calls.free.length,0,'unverified suffixes cannot bypass pricing checks');
  });
 });

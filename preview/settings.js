@@ -165,10 +165,14 @@ const PREMIUM_STEPS={check:'fixing what the check found',proposal:'writing a cha
 const PREMIUM_REASONS={check_rounds_exhausted:'free fix rounds used up with problems still open',no_validated_proposal:'no free model produced a change that passes validation'};
 const usd=v=>Number.isFinite(v)?'$'+(v>0&&v<0.1?v.toFixed(4):v.toFixed(2)):'—';
 function premiumModeField(){
- const m=capabilities?.premium;if(!m||m.error)return m?.error?sf('Premium Mode','<span class="muted">Unavailable</span>',esc(m.error)):'';
- return sf('Premium Mode','<label><input type="checkbox" id="premium-mode"'+(m.enabled?' checked':'')+(m.configured?'':' disabled')+'> '+(m.enabled?'On':'Off')+'</label>',
-  'Allow OpenRouter credits only when free routes cannot complete a task. Free models are always tried first. At most '+usd(m.taskCapUsd)+' a task and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests never use it.'+
-  ' Turning it off stops every rescue not yet sent; a request already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
+ const m=capabilities?.premium;
+ if(!m||m.error)return kGroup('Premium · OpenRouter',kRow({icon:'bolt',title:'Premium Mode unavailable',sub:esc(m?.error||'Refresh your backend connection to check availability.')}));
+ const preferred=m.selection?.preferredName||m.selection?.preferredModel,ready=m.configured&&m.selection?.policy==='reviewed-quality-first-v1';
+ return kGroup('Premium · OpenRouter',kToggle('bolt','Premium Mode','Use OpenRouter credits when free models cannot finish a coding task.','<input type="checkbox" id="premium-mode" aria-label="Premium Mode"'+(m.enabled?' checked':'')+(ready?'':' disabled')+'>')+
+  kRow({icon:'cpu',title:'Automatic open-model selection',sub:preferred?'Prefers '+esc(preferred)+'. Chooses the highest-priority reviewed model that fits the request and budget.':'Model policy unavailable. Refresh your backend before using Premium.'})+
+  kRow({title:'OpenRouter only',sub:'Other services never receive a Premium request.'}),
+  'Free models are tried first. At most '+usd(m.taskCapUsd)+' a task and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests stay free. '+
+  (m.example?'Example eligible model: '+esc(m.example.name||m.example.model)+'. ':'')+'The actual model and cost appear in Usage. Turning Premium off stops unsent rescues; requests already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
 }
 function premiumCard(){
  const m=capabilities?.premium;if(!m||m.error||!Number.isFinite(m.monthCapUsd))return '';
@@ -394,7 +398,7 @@ function settingsSectionBody(){
   kGroup('Response detail',kChoices('data-pref-set="reasoning" data-value',preferences.reasoning,[['concise','Concise'],['standard','Standard'],['thorough','Thorough']],'k-seg'))+
   kGroup('',kToggle('refresh','Fallback','Try other models when one is busy or out of quota. Files and images always use Gemini.','<input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'>')+
    kToggle('bolt','Start tasks from chat','Tasks are always draft PRs. Nothing merges until you tap Merge.','<input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'>'))+
-  '<div class="k-legacy">'+premiumModeField()+'</div>'+
+  premiumModeField()+
   '<h3 class="k-gh">Providers</h3><div class="k-grp k-providers">'+providerSwitches()+'</div><p class="k-foot">Cost routing prefers Lite models; live prices and provider quota are not available.</p>'+
   kBtns(kBtn('s-refresh','Refresh available models'))+'<div class="k-legacy">'+probePanel()+'</div>';
  }

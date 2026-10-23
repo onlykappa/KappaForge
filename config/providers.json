@@ -810,13 +810,14 @@
     },
     "premium": {
       "provider": "openrouter",
-      "reviewed": "Owner-reviewed coding families. A family is a candidate, not proof of quality: the catalog must also show verified prices under the ceilings, room for the request and a token limit.",
-      "families": [
-        "deepseek",
-        "qwen3.8-coder",
-        "qwen3-coder",
-        "kimi",
-        "glm-5"
+      "reviewed": "Coding rescue preference reviewed 2026-10-22. Exact open-weight models in preference order, subject to live price, context and budget checks. A preference is not a universal benchmark ranking.",
+      "selectionPolicy": "reviewed-quality-first-v1",
+      "reviewedAt": "2026-10-22",
+      "models": [
+        {"id":"deepseek/deepseek-v4.1-flash-1017","name":"DeepSeek V4.1 Flash 1017","license":"MIT","weights":"https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017"},
+        {"id":"deepseek/deepseek-v4.1-flash","name":"DeepSeek V4.1 Flash","license":"MIT","weights":"https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash"},
+        {"id":"z-ai/glm-5.3-flash","name":"GLM 5.3 Flash","license":"MIT","weights":"https://huggingface.co/zai-org/GLM-5.3-Flash"},
+        {"id":"qwen/qwen3-coder","name":"Qwen3 Coder 480B A35B","license":"Apache-2.0","weights":"https://huggingface.co/Qwen/Qwen3-Coder-480B-A35B-Instruct"}
       ],
       "maxInputPricePerMillion": 1.5,
       "maxOutputPricePerMillion": 3,

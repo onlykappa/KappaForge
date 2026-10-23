@@ -159,6 +159,10 @@ back to free.
   exactly 5.
 
 ### Model selection (`pickPremium`)
+
+Updated by [Premium model selection](../premium-model-selection.md): exact reviewed open-weight IDs now use
+quality preference before price, with DeepSeek V4.1 Flash 1017 first. Live eligibility and hard spending caps still
+apply. The notes below describe the original implementation and are superseded by that policy.
 - Candidates: owner-reviewed families (`routing.premium.families`), never a `:free` or `openrouter/` router model.
 - Catalog requirements:
   - Prompt, completion, request and reasoning prices all verified (missing, malformed or "-1" excludes the model).

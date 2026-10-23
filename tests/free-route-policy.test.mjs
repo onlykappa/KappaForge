@@ -185,7 +185,7 @@ test('DeepSeek leads coding (Gemini leads chat) without overriding manual select
  const original=globalThis.fetch;
  const deepseek='deepseek-ai/deepseek-v4.1-flash',nemotron='nvidia/nemotron-3-ultra-550b-a55b';
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CHAT_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',KAPPA_PRIVATE_CODE_PROVIDERS:'groq,nvidia,openrouter,gemini',NVIDIA_API_KEY:'deepseek-order-fixture',GROQ_API_KEY:'deepseek-groq-fixture',OPENROUTER_API_KEY:'deepseek-openrouter-fixture'};
- globalThis.fetch=async url=>Response.json({data:(String(url).includes('nvidia.com')?[nemotron,deepseek,'paid-unreviewed']:String(url).includes('openrouter.ai')?['deepseek/fixture:free','deepseek/paid','nemotron/fixture:free']:['openai/gpt-oss-120b']).map(id=>({id}))});
+ globalThis.fetch=async url=>Response.json({data:(String(url).includes('nvidia.com')?[nemotron,deepseek,'paid-unreviewed']:String(url).includes('openrouter.ai')?['deepseek/fixture:free','deepseek/paid','nemotron/fixture:free']:['openai/gpt-oss-120b']).map(id=>({id,...(id.endsWith(':free')?{pricing:{prompt:'0',completion:'0'}}:{})}))});
  try{
   for(const channel of ['chat','coding']){
    const options={channel,privateCode:channel==='coding'};

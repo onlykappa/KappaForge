@@ -18,16 +18,25 @@ const REFUSED_UNBILLED=new Set([400,401,402,403,404,413,422,429]);
 let catalog=null;
 
 export const premiumConfig=()=>registry.routing?.premium||null;
-// Prices are USD per token in the catalog (strings). A missing, malformed or negative price means "unknown".
-const price=v=>{if(v===undefined||v===null||v==="")return 0;const n=Number(v);return Number.isFinite(n)&&n>=0?n:NaN;};
-// Conservative token count: code tokenizes at worse than 4 characters a token, so count 2.
-export const promptTokensUpper=chars=>Math.ceil(chars/2)+64;
+// Prices are USD per token. Omitted optional fees default to zero; null, empty, malformed or negative prices are unknown.
+const price=v=>{if(v===undefined)return 0;if(v===null||v===""||!['string','number'].includes(typeof v)||typeof v==='string'&&!v.trim())return NaN;const n=Number(v);return Number.isFinite(n)&&n>=0?n:NaN;};
+// UTF-8 uses at most three bytes per JavaScript UTF-16 code unit. Reserve a byte-token bound plus framing room for
+// the gateway's maximum 64 messages; characters/2 underestimates code and multilingual prompts.
+export const promptTokensUpper=chars=>Math.ceil(chars*3)+2048;
 
 // Every catalog price that can apply to a text request, verified. null when any is unknown.
 function verifiedPricing(m){
  const p=m?.pricing;if(!p||typeof p!=="object")return null;
- const prompt=price(p.prompt),completion=price(p.completion),request=price(p.request),reasoning=price(p.internal_reasoning);
+ if(p.prompt===undefined||p.prompt===null||p.prompt===""||typeof p.prompt==="boolean")return null;
+ let prompt=price(p.prompt),completion=price(p.completion),request=price(p.request),reasoning=price(p.internal_reasoning);
  if(![prompt,completion,request,reasoning].every(Number.isFinite)||completion<=0)return null;
+ if(p.overrides!==undefined&&!Array.isArray(p.overrides))return null;
+ for(const row of p.overrides||[]){
+  if(!row||typeof row!=='object')return null;
+  const values=[row.prompt===undefined?prompt:price(row.prompt),row.completion===undefined?completion:price(row.completion),row.request===undefined?request:price(row.request),row.internal_reasoning===undefined?reasoning:price(row.internal_reasoning)];
+  if(!values.every(Number.isFinite)||values[1]<=0)return null;
+  [prompt,completion,request,reasoning]=[prompt,completion,request,reasoning].map((v,i)=>Math.max(v,values[i]));
+ }
  return {prompt,completion,request,reasoning};
 }
 // The most a request can be charged: the whole prompt at the conservative count, and output twice the token limit (room
@@ -36,29 +45,27 @@ export function maxCharge(pricing,promptTokens,maxTokens,margin=premiumConfig()?
  return Math.ceil(margin*(promptTokens*pricing.prompt+2*maxTokens*Math.max(pricing.completion,pricing.reasoning)+pricing.request)*1e6)/1e6;
 }
 
-// The reviewed policy: models from the owner-reviewed families (config routing.premium.families), never a free or router
-// model, with verified prices under the ceilings, text output, room for the prompt and answer, and a token limit the
-// provider honours. Of those, the one with the lowest maximum charge that fits the budget left.
+// Exact reviewed open-weight coding models, in quality preference order. Live eligibility and budget checks always
+// apply before preference. A new model or a lookalike vendor name cannot enter through a broad family prefix.
 export function pickPremium(models,{promptTokens,maxTokens,budgetUsd},config=premiumConfig()){
- if(!config||!Array.isArray(models))return null;
- const families=(config.families||[]).map(f=>String(f).toLowerCase());
+ if(config?.provider!=="openrouter"||config.selectionPolicy!=="reviewed-quality-first-v1"||!Array.isArray(models)||![promptTokens,maxTokens,budgetUsd].every(Number.isFinite)||promptTokens<0||maxTokens<1024||budgetUsd<=0)return null;
+ const reviewed=new Map((config.models||[]).filter(m=>m?.id&&m.license&&m.weights).map((m,i)=>[m.id,{...m,rank:i}]));
  const candidates=[];
  for(const m of models){
   if(typeof m?.id!=="string"||/[:/]free$/.test(m.id)||/^openrouter\//.test(m.id)||m.id.startsWith("~"))continue;
-  const name=m.id.toLowerCase().split("/").pop();
-  if(!families.some(f=>name.startsWith(f)))continue;
+  const review=reviewed.get(m.id);if(!review)continue;
   const pricing=verifiedPricing(m);if(!pricing)continue;
   if(pricing.completion*1e6>config.maxOutputPricePerMillion||pricing.prompt*1e6>config.maxInputPricePerMillion)continue;
   if(m.architecture?.output_modalities&&!m.architecture.output_modalities.includes("text"))continue;
-  if(Array.isArray(m.supported_parameters)&&!m.supported_parameters.includes("max_tokens"))continue;
+  if(!Array.isArray(m.supported_parameters)||!m.supported_parameters.includes("max_tokens"))continue;
   const context=Number(m.context_length)||0,limit=Number(m.top_provider?.max_completion_tokens)||Infinity;
   const tokens=Math.min(maxTokens,limit);
-  if(tokens<1024||promptTokens+2*tokens>context)continue;
+  if(!Number.isFinite(context)||tokens<1024||promptTokens+2*tokens>context)continue;
   const maxUsd=maxCharge(pricing,promptTokens,tokens,config.safetyMargin);
   if(!(maxUsd<=budgetUsd))continue;
-  candidates.push({model:m.id,maxUsd,maxTokens:tokens,pricing});
+  candidates.push({model:m.id,name:review.name,rank:review.rank,selectionPolicy:config.selectionPolicy,maxUsd,maxTokens:tokens,pricing});
  }
- return candidates.sort((a,b)=>a.maxUsd-b.maxUsd||a.model.localeCompare(b.model))[0]||null;
+ return candidates.sort((a,b)=>a.rank-b.rank||a.maxUsd-b.maxUsd||a.model.localeCompare(b.model))[0]||null;
 }
 
 export async function premiumCatalog(now=Date.now(),fetcher=fetch){
@@ -87,11 +94,12 @@ export const recordFreeAnswer=(env,task,model)=>premiumOp(env,{op:"evidence",tas
 // for private code (the same policy every free route passes).
 export function premiumAvailable(env,requested){
  const c=premiumConfig();
- return !!(c&&env.OPENROUTER_API_KEY&&env.MEMORY&&providerAllowed(env,"coding",c.provider,{privateCode:true,requested}));
+ return !!(c?.provider==="openrouter"&&c.selectionPolicy==="reviewed-quality-first-v1"&&env.OPENROUTER_API_KEY&&env.MEMORY&&providerAllowed(env,"coding","openrouter",{privateCode:true,requested}));
 }
 
 // Quote (no dispatch) or rescue (one dispatch) for a blocked task step. Returns the premium summary for the response.
 export async function premiumRescue(env,{task,step,reason,quote,requestId,system,messages,promptChars,maxTokens,temperature,signal,deadline,freeMayRecover}){
+ if(!premiumAvailable(env))return {task,step,refused:"premium_unavailable"};
  const config=premiumConfig(),caps={taskCapUsd:config.taskCapUsd,monthCapUsd:config.monthCapUsd};
  const base={task,step,reason,quote:!!quote,taskCapUsd:config.taskCapUsd,monthCapUsd:config.monthCapUsd};
  const spent=await premiumOp(env,{op:"status",task});
@@ -100,12 +108,12 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
  if(!models)return {...base,refused:"pricing_unverified"};
  const budgetUsd=Math.max(0,Math.min(config.taskCapUsd-(spent.taskUsd||0),config.monthCapUsd-(spent.monthUsd||0)));
  const pick=pickPremium(models,{promptTokens,maxTokens:Math.min(maxTokens,config.maxTokensPerCall),budgetUsd});
- // No reviewed model fits: quote what the cheapest would cost against the full caps, so the owner sees why.
+ // No reviewed model fits the remaining budget: show the preferred eligible model against the full task cap.
  const shown=pick||pickPremium(models,{promptTokens,maxTokens:Math.min(maxTokens,config.maxTokensPerCall),budgetUsd:config.taskCapUsd});
  const ask={task,step,reason,model:shown?.model,estimateUsd:shown?.maxUsd,freeMayRecover,...caps};
  if(!shown)return {...base,refused:"no_model_fits",...await premiumOp(env,{op:"quote",...ask}).then(d=>({taskLeftUsd:d.taskLeftUsd,monthLeftUsd:d.monthLeftUsd}))};
  const decision=await premiumOp(env,{op:"quote",...ask});
- const summary={...base,model:shown.model,maxUsd:shown.maxUsd,taskLeftUsd:decision.taskLeftUsd,monthLeftUsd:decision.monthLeftUsd,source:decision.source||null};
+ const summary={...base,provider:"openrouter",model:shown.model,selectionPolicy:shown.selectionPolicy,selectionReason:shown.rank===0?"preferred_reviewed_model":"preferred_models_ineligible",maxUsd:shown.maxUsd,taskLeftUsd:decision.taskLeftUsd,monthLeftUsd:decision.monthLeftUsd,source:decision.source||null};
  if(!decision.eligible)return {...summary,refused:decision.reason,offer:decision.offer?{step:decision.offer.step,at:decision.offer.at}:undefined};
  if(!pick)return {...summary,refused:(decision.taskLeftUsd??0)<=(decision.monthLeftUsd??0)?"task_cap":"month_cap"};
  if(quote)return {...summary,eligible:true};
@@ -119,7 +127,7 @@ export async function premiumRescue(env,{task,step,reason,quote,requestId,system
    headers:{Authorization:"Bearer "+env.OPENROUTER_API_KEY,"Content-Type":"application/json","X-Title":"KappaForge"},
    body:JSON.stringify({model:pick.model,messages:[...(system?[{role:"system",content:system}]:[]),...messages],max_tokens:pick.maxTokens,temperature,
     // OpenRouter refuses rather than routes to a provider dearer than the prices the maximum charge was computed from.
-    provider:{max_price:{prompt:pick.pricing.prompt*1e6,completion:pick.pricing.completion*1e6,request:pick.pricing.request}},usage:{include:true}}),
+    provider:{require_parameters:true,max_price:{prompt:pick.pricing.prompt*1e6,completion:pick.pricing.completion*1e6,request:pick.pricing.request}},usage:{include:true}}),
    signal:AbortSignal.any([AbortSignal.timeout(Math.max(1000,Math.min(150000,deadline-Date.now()))),...(signal?[signal]:[])])});
   httpStatus=r.status;
   if(r.ok){

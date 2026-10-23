@@ -130,6 +130,7 @@ export async function auditModels(env,labels){
   if(results.some(r=>r.label===label))continue;
   const i=label.indexOf(":"),provider=i>0?label.slice(0,i):"",model=label.slice(i+1),p=registry.providers[provider];
   if(!p||provider==="gemini"||!/^[A-Za-z0-9@._:/-]{1,180}$/.test(model)||!(env[p.key]||p.keyOptional||!p.key)){results.push({label,tries:[],outcome:"not_listed",detail:"The provider no longer lists this model"});continue;}
+  if(provider==="openrouter"){results.push({label,tries:[],outcome:"not_asked",detail:"OpenRouter audits require a listed free model with verified zero pricing"});continue;}
   // Never ask a model that could charge: an unlisted name on a free-model gateway must be a free variant, and a metered
   // provider needs the owner's paid opt-in, as in routing.
   if(p.freeOnly&&!freeModelId(model)||p.metered&&!fullCatalog(env,provider)){results.push({label,tries:[],outcome:"not_asked",detail:"Not a free model: an audit never sends a request that could be charged"});continue;}

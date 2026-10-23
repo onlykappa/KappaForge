@@ -313,7 +313,8 @@ const workerImplementation = {
             const example=models?pickPremium(models,{promptTokens:promptTokensUpper(40000),maxTokens:premiumCfg.maxTokensPerCall,budgetUsd:premiumCfg.taskCapUsd}):null;
             premium={...s,configured:!!env.OPENROUTER_API_KEY,taskCapUsd:premiumCfg.taskCapUsd,monthCapUsd:premiumCfg.monthCapUsd,
               monthLeftUsd:Math.max(0,Math.round((premiumCfg.monthCapUsd-s.monthUsd)*1e6)/1e6),resetsAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()+1,1),
-              example:example?{model:example.model,maxUsd:example.maxUsd}:null};
+              provider:"openrouter",selection:{policy:premiumCfg.selectionPolicy,reviewedAt:premiumCfg.reviewedAt,preferredModel:premiumCfg.models?.[0]?.id,preferredName:premiumCfg.models?.[0]?.name},
+              example:example?{model:example.model,name:example.name,selectionPolicy:example.selectionPolicy,maxUsd:example.maxUsd}:null};
           }catch{premium={error:"Premium status unavailable",enabled:false};}
         }
         return json({operationRouting:operationContract(env),tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),

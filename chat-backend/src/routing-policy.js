@@ -18,8 +18,10 @@ const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.
 // ones. Without it a provider keeps its reviewed free models and per-provider cap. "*" covers every provider except
 // free-model gateways (freeOnly) and metered providers: their paid catalogs require a named opt-in.
 // "*" still lifts the per-provider cap on a free-model gateway: every free route it lists is used.
-export function everyFreeModel(env,id){return list(env.KAPPA_ALL_MODEL_PROVIDERS).has("*")&&registry.providers[id]?.freeOnly===true;}
-export function fullCatalog(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has(id)||all.has("*")&&registry.providers[id]?.freeOnly!==true&&registry.providers[id]?.metered!==true;}
+export function everyFreeModel(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return (all.has("*")||all.has(id))&&registry.providers[id]?.freeOnly===true;}
+// OpenRouter credit is spendable only through the capped Premium path. An old full-catalog environment setting cannot
+// make chat, free coding, probes or audits select a paid OpenRouter model.
+export function fullCatalog(env,id){if(id==="openrouter")return false;const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has(id)||all.has("*")&&registry.providers[id]?.freeOnly!==true&&registry.providers[id]?.metered!==true;}
 
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
