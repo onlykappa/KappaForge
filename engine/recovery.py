@@ -89,6 +89,10 @@ def diagnose(error):
             return 'authorization', 'stop'
         return ('provider_outage', 'switch_or_defer') if error.provider_routes else ('validation', 'smaller_stages')
     text = str(error).lower()
+    # A proposal that names a protected workflow is invalid, but the proposal can be regenerated
+    # without that path. The protected-path check remains in apply_changes on every attempt.
+    if text.startswith('protected path cannot be changed by the agent:'):
+        return 'protected_path', 'exclude_protected_path'
     if not isinstance(error, PermissionError) and getattr(error, 'provider_routes', False):
         return 'provider_outage', 'switch_or_defer'
     if isinstance(error, PermissionError) or any(x in text for x in ('authorization', 'unauthorized', 'protected path', 'unsafe path', 'forbidden path', 'blocked path')):
@@ -325,14 +329,22 @@ class Journal:
             raise
 
     def remember(self, item, key):
+        prior = self.ledger.get(key, {})
+        run_id = os.environ.get('GITHUB_RUN_ID', '')
+        repository = os.environ.get('GITHUB_REPOSITORY', ROOT)
+        run_url = (os.environ.get('GITHUB_SERVER_URL', 'https://github.com').rstrip('/') + '/' + repository +
+                   '/actions/runs/' + run_id) if run_id.isdigit() and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository) else ''
+        diagnostic = {name: item.get(name) for name in ('at', 'candidate', 'kind', 'error', 'model', 'strategy', 'outcome', 'next', 'files') if item.get(name) is not None}
+        if run_url:
+            diagnostic['runUrl'] = run_url
+        history = (prior.get('history', []) + [diagnostic])[-10:]
         record = dict(item, task=self.scope.number, repo=self.scope.repo,
                       branch=f'kappa/dev-{self.scope.number}', operation=item.get('operation', 'edit' if key else 'model'),
                       files=item.get('files', list(self.state['files'])), fingerprint=key,
                       provider=item.get('model', '').split(':', 1)[0], cause=item.get('error', ''),
-                      rejectedStrategies=[item.get('strategy', '')], attempts=1,
+                      rejectedStrategies=list(dict.fromkeys(prior.get('rejectedStrategies', []) + [item.get('strategy', '')]))[-10:],
+                      attempts=prior.get('attempts', 0) + 1, history=history, runUrl=run_url,
                       expiresAt=self.clock() + 300 if item.get('kind') in ('provider_outage', 'rate_limit', 'model_deadline') else self.scope.expires)
-        if key in self.ledger:
-            record['attempts'] = self.ledger[key].get('attempts', 1) + 1
         shard = copy.deepcopy(self.ledger_rows[-1][1]) if self.ledger_rows else dict(
             task=self.scope.number, repo=self.scope.repo, digest=self.scope.digest, records={})
         row = self.ledger_rows[-1][0] if self.ledger_rows else None
