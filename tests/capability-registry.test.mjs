@@ -40,7 +40,7 @@ test('unresolved and unsupported operations cannot fall through to software exec
 });
 
 test('registry metadata is immutable and schemas reject unsupported or broadened parameters',()=>{
- assert.equal(Object.keys(C.definitions).length,5);
+ assert.equal(Object.keys(C.definitions).length,9);
  for(const spec of Object.values(C.definitions))for(const key of ['target','location','authorization','schema','effects','verify','undo'])assert.ok(spec[key]);
  assert.throws(()=>C.definitions['settings.update'].schema.key.push('accessToken'),TypeError);
  for(const [id,params] of [['unknown',{}],['__proto__',{}],['tasks.retry',{task:'198'}],['tasks.retry',{task:0}],['tasks.cancel',{task:198,repo:'other'}],['tasks.clear-history',{status:'running'}],
@@ -88,7 +88,7 @@ test('retry and cancellation use existing backend boundaries and cannot change t
  assert.match(await h.run('retry task #198 please'),/Dispatch requested/);assert.equal(h.calls[0].path,'/retry');assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0].payload)),{task:198});
  await h.box.executeAppCapability({id:'tasks.retry',params:{task:198}},{source:'user-control',chatId:'chat'});assert.equal(h.calls[2].path,'/retry');
  await assert.rejects(h.run('retry task #198, no tests'),/existing task scope/);
- await h.run('cancel task #198');assert.ok(h.calls.at(-1).url.endsWith('/cancel'));assert.equal(h.calls.at(-1).body.id,'original-auth');assert.equal(h.state()[0].message,'cancelled');
+ await h.run('cancel task #198');assert.ok(h.calls.at(-1).url.endsWith('/cancel'));assert.equal(h.calls.at(-1).body.id,'original-auth');assert.equal(h.state()[0].message,'cancellation-requested');
  await assert.rejects(h.run('cancel task #999'),/no cancellation authorization/);
  await assert.rejects(h.box.executeAppCapability({id:'tasks.cancel',params:{task:199}},{source:'user-request',userText:'cancel task #198'}),/target or value/);
  await assert.rejects(h.box.executeAppCapability({id:'settings.update',params:{key:'appearance',value:'light'}},{source:'model'}),/direct user request/);
@@ -131,4 +131,28 @@ test('renewing an expired saved task retains its original owner restrictions',as
   assert.equal(result.status,'dispatch_requested');const record=JSON.parse(renewed.match(/<!-- kappa-authorization:(.*?) -->/)[1]);
   assert.equal(record.restrictions.noCode,true);assert.equal(record.allowMerge,false);assert.ok(renewed.includes(instructions));assert.equal(record.resumeFrom.authorization,'old-auth');
  }finally{globalThis.fetch=old}
+});
+
+
+test('workflow, authorization and verification are independent enforceable decisions',()=>{
+ const clear=I.executionDecision('clear old tasks, no tests');assert.equal(clear.workflow.kind,'direct');assert.equal(clear.workflow.requiresPR,false);assert.equal(clear.verification.developmentCI,false);assert.equal(clear.authorization.allowed,true);
+ const settings=I.executionDecision('set theme to light');assert.deepEqual(settings.verification.requirements,['read persisted preference']);
+ const retry=I.executionDecision('retry task #198');assert.equal(retry.verification.kind,'dispatch-receipt');assert.equal(retry.workflow.requiresPR,false);
+ const fix=I.executionDecision('Fix one typo');assert.equal(fix.workflow.requiresPR,true);assert.equal(fix.verification.developmentCI,true);
+ const read=I.executionDecision('Investigate task deletion',{mode:'audit'});assert.equal(read.workflow.kind,'read-only');assert.equal(read.authorization.allowed,true);
+ assert.equal(I.executionDecision('Investigate task deletion',{mode:'develop'}).authorization.allowed,false);
+ const text='Investigate task deletion';assert.throws(()=>validateRequest('/jobs',{mode:'develop',instructions:text,approved:true,confirmed:true},text,'user-control'),/read-only/);
+ assert.equal(I.executionDecision('Fix one typo, no tests').authorization.allowed,false);
+});
+
+test('cancellation distinguishes stop request from trusted terminal runner evidence',async()=>{
+ const {cancellationEvidence}=await import('../chat-backend/src/task-cancellation.js');
+ const original=globalThis.fetch,calls=[],record={issueNumber:198,issuedAt:1000,cancellation:{authorizationRevokedAt:2000,requestedAt:2001}};
+ let completed=false;
+ globalThis.fetch=async(url,options={})=>{calls.push({url,options});if(url.includes('/actions/runs?'))return Response.json({workflow_runs:[{id:10,display_title:'Agent task #198 develop',created_at:new Date(1000).toISOString(),status:completed?'completed':'in_progress',conclusion:completed?'cancelled':null},{id:11,display_title:'Agent task #1980 develop',created_at:new Date(1000).toISOString(),status:'in_progress'},{id:12,display_title:'Scheduled agent',created_at:new Date(1000).toISOString(),status:'in_progress'}]});return new Response(null,{status:202});};
+ try{
+  const pending=await cancellationEvidence({},record,{requestStop:true});assert.equal(pending.terminatedAt,null);assert.equal(pending.runnerAcknowledgedAt,null);assert.ok(pending.runs[0].cancelRequestedAt);assert.equal(pending.runs.length,1);assert.ok(calls.some(c=>c.url.endsWith('/10/cancel')));assert.ok(!calls.some(c=>c.url.endsWith('/11/cancel')));
+  completed=true;calls.length=0;const terminal=await cancellationEvidence({},record);assert.ok(terminal.runnerAcknowledgedAt);assert.ok(terminal.terminatedAt);assert.equal(terminal.terminationScope,'observed runners only');assert.ok(calls.every(c=>!c.options.method),'status read performs no writes');
+  globalThis.fetch=async()=>new Response('',{status:503});const unknown=await cancellationEvidence({},record);assert.equal(unknown.terminatedAt,null);assert.ok(unknown.errors.length);
+ }finally{globalThis.fetch=original}
 });

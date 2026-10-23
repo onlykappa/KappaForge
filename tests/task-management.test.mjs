@@ -46,7 +46,7 @@ test('the exact failed request clears inactive history, preserves active work an
  await h.box.runChatAction(plan,request,h.chats[0]);
  assert.deepEqual(h.state().trackedJobs.map(j=>j.number),[201,202,203,204]);
  assert.equal(h.state().recentJob,null);assert.equal(h.store.has('kappaforge.latest.job'),false);
- assert.deepEqual(h.state().dismissed,[198,180,169]);
+ assert.deepEqual(h.state().dismissed.sort((a,b)=>a-b),[169,180,198]);
  assert.equal(h.chats[0].messages.some(m=>m.progressKey||m.jobReport),false);
  assert.ok(h.chats[0].messages.some(m=>m.text==='Weather reply'));
  assert.match(h.chats[0].messages.at(-1).text,/Cleared 3 inactive tasks.*Kept 4 active tasks/);
@@ -65,7 +65,7 @@ test('refresh, restart, old latest-job records and synced chat cards cannot rest
  const relaunched=harness({store:h.store,jobs:[{number:198,message:'failed'}],latest:{number:198}});
  relaunched.box.mergeTaskHistory();assert.equal(relaunched.state().trackedJobs.length,0);assert.equal(relaunched.state().recentJob,null);
  const settings=read('settings.js');assert.match(slice(settings,'function vaultSnapshot(','async function encryptedBackup('),/dismissedTasks:\[\.\.\.dismissedTaskIds\]/);
- assert.match(slice(settings,'function mergeVaultExtras(','async function encryptedBackup('),/mergeTaskHistory\(restored.dismissedTasks\)/);
+ assert.match(slice(settings,'function mergeVaultExtras(','async function encryptedBackup('),/mergeTaskHistory\(restored.dismissedTasks,restored.taskHistory\)/);
 });
 
 test('failed-only cleanup respects its filter; unsupported operations explain without running code',()=>{
@@ -132,4 +132,53 @@ test('Worker blocks task operations in planning and authorization, including exp
   }
   assert.equal(calls,0);
  }finally{globalThis.fetch=old}
+});
+
+
+test('clear and Undo persist recoverable cards without restoring authority or execution',()=>{
+ const h=harness({jobs:[{number:198,message:'failed',authorization:{id:'secret'},activeAt:Date.parse('2026-01-05')}]});
+ h.box.clearTaskHistory('inactive');
+ const cleared=JSON.parse(h.store.get('kappaforge.taskHistory.v2'))[198];
+ assert.equal(cleared.state,'cleared');assert.equal(cleared.snapshot.job.authorization,undefined);
+ assert.match(h.box.restoreTaskHistory(),/Restored 1/);
+ const restored=h.state().trackedJobs[0];assert.equal(restored.historyOnly,true);assert.equal(restored.finished,true);assert.equal(restored.authorization,undefined);
+ assert.equal(h.chats[0].messages.filter(m=>m.progressKey).length,1);
+ const old=JSON.parse(JSON.stringify(cleared));h.box.mergeTaskHistory([198],[old]);
+ assert.deepEqual(h.state().dismissed,[],'stale modern and legacy dismissals cannot undo restore');
+ const restart=harness({store:h.store,jobs:[],chats:[{id:'chat',messages:[]}]});restart.box.mergeTaskHistory();
+ assert.equal(restart.state().trackedJobs[0].historyOnly,true);assert.equal(restart.chats[0].messages.filter(m=>m.progressKey).length,1);
+});
+
+test('cross-device restore wins stale refresh and deterministic versions converge',()=>{
+ const a=harness({jobs:[{number:198,message:'failed'}]}),b=harness({jobs:[]});
+ a.box.clearTaskHistory('inactive');const cleared=Object.values(JSON.parse(a.store.get('kappaforge.taskHistory.v2')));
+ b.box.mergeTaskHistory([],cleared);b.box.restoreTaskHistory([198]);const restored=Object.values(JSON.parse(b.store.get('kappaforge.taskHistory.v2')));
+ a.box.mergeTaskHistory([198],restored);a.box.mergeTaskHistory([198],cleared);
+ assert.deepEqual(a.state().dismissed,[]);assert.equal(a.state().trackedJobs[0].historyOnly,true);
+ const x={...cleared[0],state:'hidden',version:{counter:20,device:'a'}},y={...cleared[0],state:'restored',version:{counter:20,device:'z'}};
+ a.box.mergeTaskHistory([],[x,y]);b.box.mergeTaskHistory([],[y,x]);
+ assert.deepEqual(a.state().dismissed,b.state().dismissed);
+});
+
+test('history filters require explicit dates and IDs and retain active or unknown execution',async()=>{
+ const h=harness({jobs:[{number:198,message:'failed',finishedAt:Date.parse('2026-01-05')},{number:199,message:'failed',finishedAt:Date.parse('2026-02-05')},{number:200,progress:{status:'running'},finishedAt:Date.parse('2026-01-05')},{number:201,message:'failed'},{number:202,message:'unknown'}]});
+ const op=intent.capabilities.resolve('archive failed tasks before 2026-02-01 with ids 198, 200, 201');
+ assert.equal(op.id,'tasks.archive-history');assert.deepEqual(op.params.tasks,[198,200,201]);
+ await h.box.executeAppCapability(op,{source:'user-request',userText:'archive failed tasks before 2026-02-01 with ids 198, 200, 201'});
+ assert.deepEqual(h.state().dismissed,[198]);assert.equal(JSON.parse(h.store.get('kappaforge.taskHistory.v2'))[198].state,'archived');
+ assert.equal(intent.capabilities.resolve('clear tasks older than last month').kind,'unresolved-operation');
+ assert.notEqual(intent.capabilities.resolve('clear tasks before 2026-02-30').kind,'operation');
+ assert.match(intent.capabilities.resolve('close issue #198').message,/separate/);
+});
+
+test('expired snapshots cannot restore but their ordering markers remain durable',()=>{
+ const h=harness({jobs:[{number:198,message:'failed'}]});h.box.clearTaskHistory('inactive');
+ const records=JSON.parse(h.store.get('kappaforge.taskHistory.v2'));records[198].expiresAt=1;records[198].version.counter++;
+ h.box.mergeTaskHistory([],Object.values(records));assert.match(h.box.restoreTaskHistory(),/No restorable/);
+ assert.equal(JSON.parse(h.store.get('kappaforge.taskHistory.v2'))[198].snapshot,undefined);
+});
+
+test('cancellation pending retains tracking even when the old report was failed',()=>{
+ const h=harness({jobs:[{number:198,message:'failed',finished:true,cancellation:{authorizationRevokedAt:1,requestedAt:2,terminatedAt:null}}]});
+ h.box.clearTaskHistory('inactive');assert.deepEqual(h.state().dismissed,[]);assert.equal(h.state().trackedJobs.length,1);
 });

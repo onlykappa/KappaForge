@@ -1,5 +1,5 @@
 import '../../preview/intent-guard.js';
-export const {classify,permits,requestText,taskOperation,requestLimits,taskConflict,isOperation}=globalThis.KappaIntent;
+export const {classify,permits,executionDecision,requestText,taskOperation,requestLimits,taskConflict,isOperation}=globalThis.KappaIntent;
 export const capabilityRegistry=globalThis.KappaCapabilities;
 const writePaths=new Set(['/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
 export const needsAuthorization=path=>writePaths.has(path);
@@ -11,6 +11,7 @@ export function validateRequest(path,payload,userText,source){
  if(source!=='user-request'&&source!=='user-control')throw Error('Only a direct user request or control may authorize work');
  if(path==='/jobs'){
   if(isOperation(userText))throw Error('Use the registered app operation; it cannot start development');
+  if(classify(userText)==='investigation'&&!executionDecision(userText,{mode:payload.mode}).authorization.allowed)throw Error('Investigations must remain read-only');
   const conflict=taskConflict(userText,payload.mode);if(conflict)throw Error(conflict);
   const explicitControl=source==='user-control'&&payload.confirmed===true&&payload.approved===true;
   if(payload.instructions!==userText||(!explicitControl&&!permits(userText,payload.mode)))throw Error('The user request does not authorize this task mode');
@@ -43,7 +44,7 @@ export async function authorizationStore(state,request){
   }
   if(url.pathname==='/authorization/status')return record;
   if(url.pathname==='/authorization/cancel'){
-   record.state='cancelled';await storage.put(key,record);return record;
+   record.state='cancelled';record.cancellation={authorizationRevokedAt:record.cancellation?.authorizationRevokedAt||Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};await storage.put(key,record);return record;
   }
   if(record.state!=='authorized'||record.expiresAt<=Date.now()||record.digest!==input.digest||record.path!==input.path)return {error:'Authorization is expired, cancelled, consumed or outside scope'};
   record.state='executing';await storage.put(key,record);return record;
@@ -55,6 +56,7 @@ export async function authorize(env,path,input,claim=false){
  if(path==='/retry')capabilityRegistry.validate('tasks.retry',{task:input.task});
  if(path==='/jobs'){
   if(isOperation(input.instructions))throw Error('App operations cannot start development');
+  if(classify(input.instructions)==='investigation'&&!executionDecision(input.instructions,{mode:input.mode}).authorization.allowed)throw Error('Investigations must remain read-only');
   const conflict=taskConflict(input.instructions,input.mode);if(conflict)throw Error(conflict);
  }
  if(!env.MEMORY)throw Error('Persistent authorization storage is required');

@@ -178,6 +178,11 @@ const apiServer=createServer(async(req,res)=>{
  const operation=async text=>{await page.locator('#message').fill(text);await page.locator('#form').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>!sending);return page.evaluate(()=>active().messages.at(-1).text)};
  assert.match(await operation('delete every old task, do not create a PR and do not run tests'),/Cleared 1 inactive task/);
  assert.deepEqual(await page.evaluate(()=>trackedJobs.map(j=>j.number)),[701]);
+ assert.match(await operation('restore task #700'),/Restored 1/);
+ assert.equal(await page.evaluate(()=>trackedJobs.find(j=>j.number===700).historyOnly),true);
+ assert.match(await operation('hide failed tasks with ids 700'),/Hidden 1/);
+ assert.match(await operation('undo clear'),/Restored 1/);
+ await operation('clear failed tasks');
  assert.match(await operation('rename this chat to Registry test'),/renamed/);assert.equal(await page.evaluate(()=>active().title),'Registry test');
  assert.match(await operation('Set weather units to Fahrenheit'),/Saved weatherUnits: fahrenheit/);
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kappaforge.settings.v2')).weatherUnits),'fahrenheit');
@@ -186,6 +191,7 @@ const apiServer=createServer(async(req,res)=>{
  const renamedId=await page.evaluate(()=>current);await page.evaluate(()=>{view='chats';render()});await page.locator('#chatedit').click();
  await page.locator('[data-rename-chat="'+renamedId+'"]').click();await page.waitForFunction(()=>chats.some(c=>c.title==='Renamed from control'));
  await page.evaluate(()=>{view='tasks';trackedJobs.push({number:702,message:'failed',chatId:null});render()});await page.locator('#clear-task-history').click();await page.waitForFunction(()=>!trackedJobs.some(j=>j.number===702));
+ await page.locator('#undo-task-history').click();await page.waitForFunction(()=>trackedJobs.some(j=>j.number===702&&j.historyOnly&&j.finished));
  assert.deepEqual(forbidden,[],name+' operational requests never invoke coding or model APIs');page.off('request',watch);
  await page.evaluate(()=>{trackedJobs=[];persistJobs();view='chat';render()});
  console.log(name+': registered capabilities, wording variations, restrictions, shared UI controls and active-task preservation passed');

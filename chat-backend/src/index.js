@@ -1,3 +1,4 @@
+import {cancellationEvidence} from './task-cancellation.js';
 import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
@@ -213,7 +214,7 @@ export default {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/authorize", "/cancel", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
@@ -392,17 +393,20 @@ export default {
         return json({authorization:{id:record.id,conversationId:record.conversationId,expiresAt:record.expiresAt},state:record.state},200,cors);
       }catch(e){return json({error:e.message},403,cors)}
     }
-    if(executionPath==="/cancel"){
+    if(executionPath==="/cancel"||executionPath==="/cancel/status"){
       if(!env.MEMORY)return json({error:"Persistent authorization storage is required"},503,cors);
       const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
-      const result=await stub.fetch("https://memory.internal/authorization/cancel",{method:"POST",body:JSON.stringify(input)});
+      const statusOnly=executionPath==='/cancel/status';
+      const result=await stub.fetch('https://memory.internal/authorization/'+(statusOnly?'status':'cancel'),{method:'POST',body:JSON.stringify(input)});
       const cancelled=await result.json();
-      if(result.ok&&cancelled.issueNumber){
+      if(!result.ok)return json(cancelled,result.status,cors);
+      if(statusOnly&&cancelled.state!=='cancelled')return json({error:'Cancellation has not been requested'},409,cors);
+      if(cancelled.issueNumber){
         try{capabilityRegistry.validate('tasks.cancel',{task:cancelled.issueNumber})}catch{return json({error:'Invalid cancellation target'},400,cors)}
-        const stopped=await fetch("https://api.github.com/repos/onlykappa/KappaForge/issues/"+cancelled.issueNumber,{method:"PATCH",headers:githubHeaders(env,"KappaForge-cancel"),body:JSON.stringify({state:"closed"})});
-        if(!stopped.ok)return json({error:"Authorization revoked, but closing the running GitHub task failed. Close task #"+cancelled.issueNumber+" on GitHub to stop an already running agent."},502,cors);
+        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly})}
+        catch(e){cancelled.cancellation={...cancelled.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,errors:[e.message]}}
       }
-      return json(cancelled,result.status,cors);
+      return json(cancelled,200,cors);
     }
     let executionAuthorization;
     // Also reject old clients and previously issued task authorizations before any GitHub write.

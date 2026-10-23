@@ -15,14 +15,50 @@ function applyTaskHistoryDismissals(){
  });
  persistJobs();
 }
-function mergeTaskHistory(ids=[]){
- const active=new Set(trackedJobs.filter(taskHasActiveExecution).map(j=>j.number));
- for(const n of active)dismissedTaskIds.delete(n);
- for(const n of Array.isArray(ids)?ids:[])if(Number.isSafeInteger(n)&&n>0&&!active.has(n))dismissedTaskIds.add(n);
+// Versioned history records retain restore markers indefinitely; snapshots expire after 30 days.
+let taskHistoryRecords={};try{taskHistoryRecords=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}')||{}}catch{}
+let taskHistoryDevice=localStorage.getItem('kappaforge.historyDevice.v1');if(!taskHistoryDevice){taskHistoryDevice=crypto.randomUUID();localStorage.setItem('kappaforge.historyDevice.v1',taskHistoryDevice)}
+let lastHistoryBatch=[];try{lastHistoryBatch=JSON.parse(localStorage.getItem('kappaforge.historyUndo.v1')||'[]')}catch{}
+function validHistoryRecord(r){return r&&Number.isSafeInteger(r.number)&&r.number>0&&['cleared','archived','hidden','restored'].includes(r.state)&&Number.isSafeInteger(r.version?.counter)&&r.version.counter>=0&&typeof r.version.device==='string'}
+function historyVersionCompare(a,b){return a.counter-b.counter||a.device.localeCompare(b.device)||String(a.nonce||'').localeCompare(String(b.nonce||''))}
+function writeHistoryRecord(number,state,snapshot){
+ let disk={};try{disk=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}')}catch{}
+ for(const r of Object.values(disk).filter(validHistoryRecord)){const old=taskHistoryRecords[r.number];if(!validHistoryRecord(old)||historyVersionCompare(r.version,old.version)>0)taskHistoryRecords[r.number]=JSON.parse(JSON.stringify(r));}
+ const counter=Math.max(0,...Object.values(taskHistoryRecords).filter(validHistoryRecord).map(r=>r.version.counter))+1;
+ taskHistoryRecords[number]={number,state,version:{counter,device:taskHistoryDevice,nonce:crypto.randomUUID()},snapshot,expiresAt:Date.now()+30*86400000};
+}
+function mergeTaskHistory(ids=[],records=[]){
+ for(const r of Array.isArray(records)?records:[])if(validHistoryRecord(r)){
+  const old=taskHistoryRecords[r.number];if(!validHistoryRecord(old)||historyVersionCompare(r.version,old.version)>0)taskHistoryRecords[r.number]=JSON.parse(JSON.stringify(r));
+ }
+ // Legacy tombstones have the lowest version and never override a restoration or retry.
+ for(const n of [...dismissedTaskIds,...(Array.isArray(ids)?ids:[])])if(Number.isSafeInteger(n)&&n>0&&!taskHistoryRecords[n])taskHistoryRecords[n]={number:n,state:'cleared',version:{counter:0,device:'legacy'},expiresAt:0};
+ for(const j of trackedJobs.filter(taskHasActiveExecution))if(taskHistoryRecords[j.number]&&taskHistoryRecords[j.number].state!=='restored')writeHistoryRecord(j.number,'restored');
+ dismissedTaskIds=new Set();
+ for(const r of Object.values(taskHistoryRecords).filter(validHistoryRecord)){
+  if(r.snapshot?.job)delete r.snapshot.job.authorization;
+  if(!Number.isFinite(r.expiresAt)||r.expiresAt<=Date.now())delete r.snapshot;
+  if(r.state!=='restored')dismissedTaskIds.add(r.number);
+  else if(r.snapshot&&!trackedJobs.some(j=>j.number===r.number)){
+   // Restoring a card never restores execution authority, polling or dispatch.
+   const job={...r.snapshot.job,number:r.number,finished:true,historyOnly:true};delete job.authorization;trackedJobs.push(job);
+   for(const c of chats)for(const m of (Array.isArray(r.snapshot.cards?.[c.id])?r.snapshot.cards[c.id]:[]))if(!c.messages.some(x=>(m.progressKey&&x.progressKey===m.progressKey)||(m.jobReport&&x.jobReport===m.jobReport)))c.messages.push(m);
+  }
+ }
+ localStorage.setItem('kappaforge.taskHistory.v2',JSON.stringify(taskHistoryRecords));
  localStorage.setItem('kappaforge.dismissedTasks.v1',JSON.stringify([...dismissedTaskIds]));
  applyTaskHistoryDismissals();
 }
+function restoreTaskHistory(numbers=lastHistoryBatch){
+ mergeTaskHistory();let count=0;
+ for(const number of numbers){const r=taskHistoryRecords[number];if(!r||r.state==='restored'||!r.snapshot||r.expiresAt<=Date.now())continue;writeHistoryRecord(number,'restored',r.snapshot);taskHistoryRecords[number].expiresAt=r.expiresAt;count++}
+ mergeTaskHistory();save();
+ const saved=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}');
+ if(numbers.some(n=>taskHistoryRecords[n]?.state==='restored'&&saved[n]?.state!=='restored'))throw Error('History restoration could not be saved');
+ return count?'Restored '+count+' task history entries. Execution was not restarted.':'No restorable history remains. Saved history can be restored for 30 days; legacy cleared entries have no saved snapshot.';
+}
 function taskHasActiveExecution(job){
+ if(job.cancellation&&!job.cancellation.terminatedAt)return true;
  return ['queued','running','recovering','waiting','testing'].includes(job.progress?.status)||(!job.progress&&!job.finished&&['waiting','progress'].includes(job.message));
 }
 function inactiveTask(job){
@@ -41,11 +77,24 @@ function manageTaskHistory(text){
  if(operation?.action!=='clear-history')return 'This task operation is not available in chat. Use the task’s Cancel control to stop running work, or manage its issue on GitHub. No development task was started.';
  return clearTaskHistory(operation.status);
 }
-function clearTaskHistory(status){
- const selected=trackedJobs.filter(j=>taskHistoryMatches(j,status));
- mergeTaskHistory(selected.map(j=>j.number));save();
- const active=trackedJobs.filter(j=>!inactiveTask(j)).length;
- return 'Cleared '+selected.length+' inactive task'+(selected.length===1?'':'s')+' from app history.'+(active?' Kept '+active+' active task'+(active===1?'':'s')+'.':'')+' GitHub issues and PRs remain available.';
+function clearTaskHistory(status,filters={},state='cleared'){
+ mergeTaskHistory();
+ const selected=trackedJobs.filter(j=>{
+  if(!taskHistoryMatches(j,status)||filters.tasks&&!filters.tasks.includes(j.number))return false;
+  const at=j.finishedAt||j.activeAt||j.queuedAt||Date.parse(j.created_at||'');
+  if((filters.before||filters.after)&&!Number.isFinite(at))return false;
+  return (!filters.before||at<Date.parse(filters.before+'T00:00:00Z'))&&(!filters.after||at>=Date.parse(filters.after+'T00:00:00Z')+86400000);
+ });
+ for(const job of selected){
+  const safe=JSON.parse(JSON.stringify(job));delete safe.authorization;
+  const cards={};for(const c of chats)cards[c.id]=c.messages.filter(m=>String(m.progressKey||m.jobReport||'').match(/^(?:progress|job):(\d+):/)?.[1]===String(job.number));
+  writeHistoryRecord(job.number,state,{job:safe,cards});
+ }
+ if(selected.length){lastHistoryBatch=selected.map(j=>j.number);localStorage.setItem('kappaforge.historyUndo.v1',JSON.stringify(lastHistoryBatch));}
+ mergeTaskHistory();save();
+ const saved=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}');if(selected.some(j=>saved[j.number]?.state!==state))throw Error('History update could not be saved');
+ const active=trackedJobs.filter(j=>!inactiveTask(j)).length,verb=state==='archived'?'Archived':state==='hidden'?'Hidden':'Cleared';
+ return verb+' '+selected.length+' inactive task'+(selected.length===1?'':'s')+' from app history.'+(active?' Kept '+active+' active task'+(active===1?'':'s')+'.':'')+' GitHub issues and PRs remain available. Undo restores history for 30 days without restarting execution.';
 }
 // Shared adapters for typed requests and explicit UI controls. Model proposals must match
 // the immutable user turn; registry validation runs again immediately before each handler.
@@ -54,7 +103,11 @@ async function executeAppCapability(proposal,context={}){
  if(context.source!=='user-request'&&context.source!=='user-control')throw Error('A direct user request or selected control is required');
  const scoped=context.source==='user-request'?registry.validateProposal(proposal,context.userText,{chatId:context.chatId}):{...proposal,params:registry.validate(proposal.id,proposal.params)};
  const handlers={
-  'tasks.clear-history':params=>clearTaskHistory(params.status),
+  'tasks.clear-history':params=>clearTaskHistory(params.status,params),
+  'tasks.archive-history':params=>clearTaskHistory(params.status,params,'archived'),
+  'tasks.hide-history':params=>clearTaskHistory(params.status,params,'hidden'),
+  'tasks.restore-history':params=>restoreTaskHistory([params.task]),
+  'tasks.undo-history':()=>restoreTaskHistory(),
   'tasks.retry':async params=>{
    if(!backend||!access)throw Error('Connect AI before retrying a task.');
    const response=await userAuthorizedFetch('/retry',{task:params.task},context.userText||'Confirmed retry of task #'+params.task,context.source,context.requestId,context.chatId||current||'controls');
@@ -66,8 +119,8 @@ async function executeAppCapability(proposal,context={}){
    if(!backend||!access)throw Error('Connect AI before cancelling a task.');
    const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
    const result=await response.json();if(!response.ok)throw Error(result.error||'Cancellation request failed');
-   job.finished=true;job.finishedAt=Date.now();job.message='cancelled';persistJobs();
-   return 'Cancellation authorization revoked for task #'+params.task+'. Already running work may still be stopping.';
+   job.cancellation=result.cancellation||{authorizationRevokedAt:Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};job.finished=false;job.message='cancellation-requested';persistJobs();
+   return 'Cancellation authorization revoked for task #'+params.task+'. '+(job.cancellation.terminatedAt?'Observed task runners have stopped.':'Runner termination has not been confirmed; already running work may still be stopping.')+(job.cancellation.errors?.length?' '+job.cancellation.errors.join('. '):'');
   },
   'chats.rename':params=>{
    const chat=chats.find(c=>c.id===params.chat);if(!chat)throw Error('Conversation is no longer available.');
@@ -164,6 +217,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
+ delete job.historyOnly;delete job.cancellation;
  Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});mergeTaskHistory();ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 // A task owns one card across comments and retries. Never infer launch from assistant prose.
@@ -307,11 +361,16 @@ function jobChatUpdate(job,signature,body,quiet=false){
 async function checkJobResult(){
  if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
  // Tracked even when its chat was deleted or replaced by a sync, so Running never counts a task nobody follows.
- const jobs=trackedJobs.filter(j=>!j.finished&&Date.now()>=(j.pollAfter||0));if(!jobs.length)return;
+ const jobs=trackedJobs.filter(j=>!j.historyOnly&&!j.finished&&Date.now()>=(j.pollAfter||0));if(!jobs.length)return;
  jobTrackingBusy=true;let changed=false;
  try{
   for(const job of jobs){
    try{
+   if(job.cancellation){
+    const response=await fetch(backend+'/cancel/status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
+    const receipt=await response.json();if(!response.ok)throw Error(receipt.error||'Cancellation status unavailable');
+    job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!job.cancellation.terminatedAt;job.pollAfter=Date.now()+15000;changed=true;continue;
+   }
    const [comments,issue]=await Promise.all([taskComments(job.number),taskRead("KappaForge/issues/"+job.number)]);
    if(dismissedTaskIds.has(job.number))continue;
    if(!Array.isArray(comments)||!issue||typeof issue!=="object"||Array.isArray(issue))throw Error("Task status response is unavailable or invalid");
@@ -341,7 +400,7 @@ async function checkJobResult(){
    if(prPath){const pr=await taskRead(prPath[1]+"/pulls/"+prPath[2]);if(dismissedTaskIds.has(job.number))continue;
     if(pr.merged_at){changed=jobChatUpdate(job,"merged","✅ Merged: "+(pr.title||"the change")+". ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="merged";}
     else if(pr.state==="closed"){changed=jobChatUpdate(job,"pr-closed","The pull request was closed without merging. ["+prPath[1]+" #"+prPath[2]+"]("+job.prUrl+")")||changed;job.finished=true;job.message="closed";}}
-   if(issue.state==="closed"&&!job.finished){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
+   if(issue.state==="closed"&&!job.finished&&!job.cancellation){changed=jobChatUpdate(job,"closed:"+issue.updated_at,"This task closed without a final report. [Review task details](https://github.com/onlykappa/KappaForge/issues/"+job.number+").")||changed;job.finished=true;job.message="closed";}
    if(job.pollError)changed=true;job.pollError="";job.pollAfter=0;job.lastCheckedAt=Date.now();
    if(KappaJobs.stalled(job)){changed=jobChatUpdate(job,"stuck:"+job.activeAt,"⏳ Task #"+job.number+" has had no new update for over 15 minutes, so it may be stuck. Ask me to **retry task #"+job.number+"** or [check it on GitHub](https://github.com/onlykappa/KappaForge/issues/"+job.number+").",true)||changed;job.stuckNote=job.activeAt;}
    }catch(e){if(dismissedTaskIds.has(job.number))continue;job.pollError=e.message;job.pollAfter=Date.now()+15000;ensureTaskCard(job);changed=true;}
@@ -355,7 +414,8 @@ async function launchJob(){
  if(!pendingJob||!backend||!access){alert("Connect AI before launching a job.");return}
  const job=pendingJob,jobChatId=job.conversationId||current;job.requestId=job.requestId||crypto.randomUUID();job.conversationId=job.conversationId||jobChatId;pendingJob=null;render();
  if(KappaIntent.isOperation(job.instructions)){const target=chats.find(c=>c.id===jobChatId);if(target){const result=await runAppOperation(job.instructions,target,job);target.messages.push({role:'assistant',text:result});}save();render();return;}
- const conflict=KappaIntent.taskConflict(job.instructions,job.mode);if(conflict){const target=chats.find(c=>c.id===jobChatId);if(target)target.messages.push({role:'assistant',text:conflict});save();render();return;}
+ const decision=KappaIntent.executionDecision(job.instructions,{mode:job.mode});
+ const conflict=KappaIntent.taskConflict(job.instructions,job.mode)||(decision.action.kind==='investigation'&&!decision.authorization.allowed?decision.authorization.reason:'');if(conflict){const target=chats.find(c=>c.id===jobChatId);if(target)target.messages.push({role:'assistant',text:conflict});save();render();return;}
  try{
  const {requestId,conversationId,authorizationSource,...payload}=job;
  const response=await userAuthorizedFetch("/jobs",{...payload,approved:true},job.instructions,authorizationSource||"user-request",requestId,conversationId||jobChatId);
@@ -452,7 +512,7 @@ function taskCheckpoint(job,status,source='backend'){
 }
 
 
-if(dismissedTaskIds.size)mergeTaskHistory();
+mergeTaskHistory();
 for(const job of trackedJobs){if(!job.queuedAt)job.queuedAt=job.activeAt||Date.now();if(!job.finished)ensureTaskCard(job)}
 
 // Update freshness locally; rerender only when a recovery reminder changes, never on each timer tick.
@@ -470,3 +530,6 @@ function refreshTaskFreshness(){
  if(changed)render(); // Only the eligibility boundary, never every clock tick or a network retry.
 }
 setInterval(refreshTaskFreshness,1000);
+
+// Concurrent tabs reconcile the same versioned records; a restore never dispatches work.
+globalThis.addEventListener?.('storage',event=>{if(event.key==='kappaforge.taskHistory.v2'){let records;try{records=Object.values(JSON.parse(event.newValue||'{}'))}catch{return}mergeTaskHistory([],records);save();render();}});

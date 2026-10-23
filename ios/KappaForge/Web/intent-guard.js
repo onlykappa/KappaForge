@@ -35,7 +35,11 @@
  const settingValues=Object.freeze(Object.fromEntries(Object.entries({appearance:['system','light','dark'],language:['auto','English','Spanish','French','German','Japanese'],weatherUnits:['auto','celsius','fahrenheit']}).map(([key,values])=>[key,Object.freeze(values)])));
  const entry=(target,location,authorization,schema,effects,verify,undo)=>Object.freeze({target,location,authorization,schema:Object.freeze(Object.fromEntries(Object.entries(schema).map(([key,value])=>[key,Array.isArray(value)?Object.freeze(value):value]))),effects:Object.freeze(effects),verify,undo});
  const definitions=Object.freeze({
-  'tasks.clear-history':entry('inactive task history','device','direct-user-request',{status:['inactive','failed','completed','closed','cancelled']},['dismiss task history','sync dismissals'],'read persisted history','not supported'),
+  'tasks.clear-history':entry('inactive task history','device','direct-user-request',{status:['inactive','failed','completed','closed','cancelled'],tasks:'positive-integers?',before:'date?',after:'date?'},['dismiss task history','sync dismissals'],'read persisted history','restore within 30 days'),
+  'tasks.archive-history':entry('inactive task history','device','direct-user-request',{status:['inactive','failed','completed','closed','cancelled'],tasks:'positive-integers?',before:'date?',after:'date?'},['archive task history','sync history'],'read persisted history','restore within 30 days'),
+  'tasks.hide-history':entry('inactive task history','device','direct-user-request',{status:['inactive','failed','completed','closed','cancelled'],tasks:'positive-integers?',before:'date?',after:'date?'},['hide task history','sync history'],'read persisted history','restore within 30 days'),
+  'tasks.restore-history':entry('saved task history','device','direct-user-request',{task:'positive-integer'},['restore history only','sync restoration'],'read persisted history','clear again'),
+  'tasks.undo-history':entry('last local history batch','device','direct-user-request',{},['restore history only','sync restoration'],'read persisted history','clear again'),
   'tasks.retry':entry('existing owner task','backend','bound-user-authorization',{task:'positive-integer'},['request existing task recovery'],'backend dispatch receipt','not supported'),
   'tasks.cancel':entry('existing authorized task','backend','existing-task-authorization',{task:'positive-integer'},['revoke task authorization','close task issue'],'backend cancellation receipt','not supported'),
   'chats.rename':entry('selected conversation','device','direct-user-request',{chat:'identifier',title:'title'},['save conversation title','sync conversation'],'read persisted title','rename again'),
@@ -43,14 +47,15 @@
  });
  function validateCapability(id,params){
   const spec=Object.hasOwn(definitions,id)?definitions[id]:null;
-  if(!spec||!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).length!==Object.keys(spec.schema).length||Object.keys(params).some(k=>!Object.hasOwn(spec.schema,k)))throw Error('Unsupported capability or parameters');
+  if(!spec||!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).some(k=>!Object.hasOwn(spec.schema,k)))throw Error('Unsupported capability or parameters');
   for(const [key,type] of Object.entries(spec.schema)){
-   const v=params[key];
+   const v=params[key];if(typeof type==='string'&&type.endsWith('?')){if(v===undefined)continue;if(type==='positive-integers?'?Array.isArray(v)&&v.length>0&&v.every(n=>Number.isSafeInteger(n)&&n>0):typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v)continue;throw Error('Invalid capability parameter: '+key);}
    const ok=Array.isArray(type)?type.includes(v):type==='positive-integer'?Number.isSafeInteger(v)&&v>0:type==='identifier'?typeof v==='string'&&/^[\w-]{1,100}$/.test(v):type==='title'?typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=120&&!/[\x00-\x1f]/.test(v):
     params.key==='weatherCity'?typeof v==='string'&&v.trim()===v&&v.length<=120&&!/[\x00-\x1f]/.test(v):settingValues[params.key]?.includes(v);
    if(!ok)throw Error('Invalid capability parameter: '+key);
   }
-  return Object.fromEntries(Object.keys(spec.schema).map(key=>[key,params[key]]));
+  if(params.before&&params.after&&params.after>=params.before)throw Error('Invalid date range');
+  return Object.fromEntries(Object.keys(spec.schema).filter(k=>Object.hasOwn(params,k)).map(key=>[key,params[key]]));
  }
  const operationResult=(kind,restrictions,details={})=>({kind,restrictions,...details});
  function resolveCapability(request,context={}){
@@ -61,8 +66,15 @@
   // Renaming a built-in UI element changes software, unlike renaming a conversation record.
   if(/^rename\s+(?:the\s+)?(?:settings|dashboard|toolbar|composer|button|header)(?:\s+(?:label|page|screen))?\s+to\s+\S/i.test(t))return null;
   const resolved=(id,params)=>{try{return operationResult('operation',restrictions,{id,params:validateCapability(id,params)})}catch{return operationResult('unresolved-operation',restrictions,{message:'That value is not supported for this operation. Please use a supported value.'})}};
-  const clear=t.match(/^(?:clear(?: out)?|delete|remove|archive|clean\s*up)\s+(?:(?:all|every|my|the)\s+)*(?:(old|completed|finished|failed|closed|cancelled)\s+)?(?:tasks?|task history)(?:\s+(?:in|from|on)\s+(?:kappaforge|this (?:app|device)))?$/i);
-  if(clear){const s=(clear[1]||'old').toLowerCase();return resolved('tasks.clear-history',{status:s==='old'?'inactive':s==='finished'?'completed':s})}
+  if(/^(?:undo (?:clear|cleanup|history clearing)|restore (?:cleared|last cleared) tasks)$/i.test(t))return resolved('tasks.undo-history',{});
+  const restore=t.match(/^restore (?:task\s*)?#?(\d+)(?: history)?$/i);if(restore)return resolved('tasks.restore-history',{task:Number(restore[1])});
+  let historyText=t,filters={};
+  historyText=historyText.replace(/\s+(before|after) (\d{4}-\d{2}-\d{2})(?=\s|$)/gi,(_,key,value)=>{filters[key.toLowerCase()]=value;return ''});
+  historyText=historyText.replace(/\s+(?:with ids?|task ids?) ((?:#?\d+)(?:\s*,\s*#?\d+)*)$/i,(_,ids)=>{filters.tasks=ids.split(',').map(n=>Number(n.trim().replace('#','')));return ''});
+  const byId=historyText.match(/^(clear|delete|remove|archive|hide) (?:task\s*)?#(\d+)$/i);if(byId){filters.tasks=[Number(byId[2])];historyText=byId[1]+' old tasks'}
+  const clear=historyText.match(/^(?:clear(?: out)?|delete|remove|archive|hide|clean\s*up)\s+(?:(?:all|every|my|the)\s+)*(?:(old|completed|finished|failed|closed|cancelled)\s+)?(?:tasks?|task history)(?:\s+(?:in|from|on)\s+(?:kappaforge|this (?:app|device)))?$/i);
+  if(clear){const s=(clear[1]||'old').toLowerCase();return resolved(/^archive\b/i.test(historyText)?'tasks.archive-history':/^hide\b/i.test(historyText)?'tasks.hide-history':'tasks.clear-history',{status:s==='old'?'inactive':s==='finished'?'completed':s,...filters})}
+  if(/^close (?:github )?(?:task|issue)\s*#?\d+$/i.test(t))return operationResult('unsupported-operation',restrictions,{message:'Closing a GitHub issue is separate from clearing history and cancelling execution. Open the issue on GitHub to close it; no history was cleared and runner termination is not confirmed.'});
   const task=t.match(/^(retry|try again(?: on)?|cancel|stop)\s+(?:task\s*)?#?(\d+)$/i);
   if(task)return resolved(/^(retry|try)/i.test(task[1])?'tasks.retry':'tasks.cancel',{task:Number(task[2])});
   const rename=t.match(/^rename\s+(?:this|the current)\s+(?:chat|conversation)\s+(?:to|as)\s+(.+)$/i);
@@ -73,7 +85,7 @@
    return resolved('settings.update',{key,value});
   }
   // Ambiguous or unavailable app operations stay outside development, including mixed requests.
-  if(/^(?:clear(?: out)?|delete|remove|archive|clean\s*up|retry|try again|cancel|stop|close|rename|set|change|switch|enable|disable)\b/i.test(t)&&/\b(?:tasks?|task history|chat|conversation|settings?|preferences?|appearance|theme|language|weather units|weather city|authentication|credentials?|permissions?)\b/i.test(t)){
+  if(/^(?:clear(?: out)?|delete|remove|archive|hide|restore|undo|clean\s*up|retry|try again|cancel|stop|close|rename|set|change|switch|enable|disable)\b/i.test(t)&&/\b(?:tasks?|task history|chat|conversation|settings?|preferences?|appearance|theme|language|weather units|weather city|authentication|credentials?|permissions?)\b/i.test(t)){
    if(/\b(?:source(?: code)?|code|api|function|component|module|button|feature|implementation|behavior|handler|ui|\.js|\.py)\b/i.test(t))return null;
    const remote=/\b(?:github|server|all devices)\b/i.test(t);
    return operationResult(remote?'unsupported-operation':'unresolved-operation',restrictions,{message:remote?'This remote operation is not available in chat. Manage the issue on GitHub.':'Please specify a supported operation and its target, such as clear failed tasks, retry task #198, or rename this chat to Work. Use the task’s Cancel control for bulk cancellation.'});
@@ -95,7 +107,7 @@
  }
  root.KappaCapabilities=Object.freeze({definitions,settingValues,resolve:resolveCapability,validate:validateCapability,validateProposal,execute:executeCapability});
  // Compatibility for history handlers; other operations are dispatched through the registry.
- function taskOperation(request){if(/\n(?:```|>|File |Conversation context|Earlier conversation)/.test(String(request||'')))return null;const op=resolveCapability(request);return op?.id==='tasks.clear-history'?{action:'clear-history',status:op.params.status}:op?{action:'unsupported'}:null}
+ function taskOperation(request){if(/\n(?:```|>|File |Conversation context|Earlier conversation)/.test(String(request||'')))return null;const op=resolveCapability(request);return ['tasks.clear-history','tasks.archive-history','tasks.hide-history'].includes(op?.id)?{action:'clear-history',status:op.params.status}:op?{action:'unsupported'}:null}
  function classifyClause(t){
   if(/^(?:do not|don't|never|stop|cancel)\b/i.test(t))return 'conversation';
   if(/^(?:show|demonstrate|give me (?:an? )?(?:example|screenshot|preview))\b/i.test(t))return 'demonstration';
@@ -141,6 +153,16 @@
   return classify(text)==='conversation'&&clauses(text.replace(LEADER,'').trim()).some(c=>!NEGATION.test(c)&&/\b(?:fix|implement|build|add|change|improve|update|remove|refactor|repair|redesign|rename|delete|move|feature)\b/i.test(c));
  }
  function permits(request,mode){const intent=classify(request);if(taskConflict(request,mode))return false;return intent==='execution'||intent==='release'?true:intent==='investigation'&&READ.has(mode)}
+ // These decisions are recomputed from the owner request, never accepted from model output.
+ function executionDecision(request,context={}){
+  const operation=resolveCapability(request,context),intent=classify(request),mode=context.mode||(intent==='investigation'?'audit':'develop');
+  const spec=operation?.kind==='operation'?definitions[operation.id]:null,software=!operation&&['execution','release'].includes(intent),readOnly=!operation&&intent==='investigation';
+  const conflict=operation?'':taskConflict(request,mode),allowed=operation?operation.kind==='operation'&&!((operation.id==='tasks.retry')&&Object.values(operation.restrictions).some(Boolean)):!conflict&&(software||readOnly&&READ.has(mode));
+  return {action:{kind:operation?'operation':readOnly?'investigation':software?'software-change':'conversation',id:operation?.id||null},
+   workflow:{kind:operation?'direct':readOnly?'read-only':software?'development':'none',mode:operation?null:mode,requiresPR:software},
+   authorization:{allowed,restrictions:requestLimits(request).restrictions,effects:spec?[...spec.effects]:readOnly?['retrieve evidence']:software?['modify source','create PR','run required checks']:[],reason:conflict||(!allowed?'The request does not authorize this workflow':'')},
+   verification:{kind:spec?(operation.id==='tasks.retry'?'dispatch-receipt':operation.id==='tasks.cancel'?'cancellation-stages':'effect-readback'):readOnly?'retrieved-evidence':software?'behavior-and-impact-checks':'none',requirements:spec?[spec.verify]:software?['required independent checks','behavior regression coverage','native validation when changed paths require it']:readOnly?['report evidence without source modifications']:[],developmentCI:software}};
+ }
  function stripActions(text){
   return String(text||'').replace(/```kappa-action\b[\s\S]*?(?:```|$)/gi,'').replace(/\bkappa-action\b[\s\S]*$/gi,'').replace(/(?:`{1,3})?kappa(?:-a(?:c(?:t(?:i(?:o(?:n)?)?)?)?)?)?$/i,'').trimEnd();
  }
@@ -153,5 +175,5 @@
  }
  // The request itself, without a "Here is your task:" leader: what a task's title should say.
  const requestText=text=>String(text||'').trim().replace(LEADER,'').trim();
- root.KappaIntent={classify,permits,stripActions,suggestsTask,requestText,goAhead,taskOperation,requestLimits,taskConflict,isOperation:request=>!!resolveCapability(request),capabilities:root.KappaCapabilities};
+ root.KappaIntent={classify,permits,executionDecision,stripActions,suggestsTask,requestText,goAhead,taskOperation,requestLimits,taskConflict,isOperation:request=>!!resolveCapability(request),capabilities:root.KappaCapabilities};
 })(globalThis);
