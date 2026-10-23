@@ -17,7 +17,7 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
    const response=await fetch(base+'/actions/runs?per_page=100&page='+page,{headers,signal:AbortSignal.timeout(10000)});
    if(!response.ok)throw Error('Runner status unavailable: '+response.status);
    const result=await response.json();if(!Array.isArray(result.workflow_runs))throw Error('Invalid runner status');
-   for(const run of result.workflow_runs.filter(r=>title.test(r.display_title||'')&&Date.parse(r.created_at)>=record.issuedAt-120000)){
+   for(const run of result.workflow_runs.filter(r=>['.github/workflows/agent.yml','.github/workflows/recovery.yml'].includes(r.path)&&title.test(r.display_title||'')&&Date.parse(r.created_at)>=record.issuedAt-120000)){
     if(!Number.isSafeInteger(run.id))continue;
     const evidence={id:run.id,status:run.status,conclusion:run.conclusion||null,observedAt:Date.now()};
     if(requestStop&&run.status!=='completed'){

@@ -45,7 +45,7 @@ test('native fixture exercises the production Retry control and exact authorizat
  const swift=read('ios/KappaForge/ProgressFixture.swift'),source=swift.split('let source = #"""')[1].split('"""#')[0].replaceAll('\\#(scenario)','recovery');
  const proofs=[],saved=new Map(),box={KappaIntent:globalThis.KappaIntent,KappaProgress:globalThis.KappaProgress,Date,Number,URL,Response,crypto:globalThis.crypto,
   localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},backend:'',access:'',trackedJobs:[],chats:[],current:'',view:'',jobPollAfter:0,
-  checkJobResult(){throw Error('No live issue polling')},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
+  checkJobResult(){throw Error('No live issue polling')},writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
   document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>proofs.push(b)}}};
  vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');
@@ -58,5 +58,6 @@ test('native fixture exercises the production Retry control and exact authorizat
  assert.equal(box.trackedJobs[0].number,103);assert.equal(box.trackedJobs[0].progress.recovery.candidate,candidate);
  assert.equal(box.trackedJobs[0].recoveryRequest.status,'recovery_requested');
  assert.ok(proofs.some(p=>p.textContent==='Fixture retry transport 1'));
+ assert.ok(proofs.some(p=>p.history?.number===103&&p.history.state==='restored'));
  await assert.rejects(box.fetch('https://production.invalid/jobs',{}),/Live network forbidden/);
 });

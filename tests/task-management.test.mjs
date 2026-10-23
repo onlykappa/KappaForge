@@ -143,6 +143,7 @@ test('clear and Undo persist recoverable cards without restoring authority or ex
  assert.match(h.box.restoreTaskHistory(),/Restored 1/);
  const restored=h.state().trackedJobs[0];assert.equal(restored.historyOnly,true);assert.equal(restored.finished,true);assert.equal(restored.authorization,undefined);
  assert.equal(h.chats[0].messages.filter(m=>m.progressKey).length,1);
+ h.chats[0].messages=[];h.box.mergeTaskHistory();assert.equal(h.chats[0].messages.filter(m=>m.progressKey).length,1,'a stale chat refresh cannot drop restored history');
  const old=JSON.parse(JSON.stringify(cleared));h.box.mergeTaskHistory([198],[old]);
  assert.deepEqual(h.state().dismissed,[],'stale modern and legacy dismissals cannot undo restore');
  const restart=harness({store:h.store,jobs:[],chats:[{id:'chat',messages:[]}]});restart.box.mergeTaskHistory();
@@ -181,4 +182,17 @@ test('expired snapshots cannot restore but their ordering markers remain durable
 test('cancellation pending retains tracking even when the old report was failed',()=>{
  const h=harness({jobs:[{number:198,message:'failed',finished:true,cancellation:{authorizationRevokedAt:1,requestedAt:2,terminatedAt:null}}]});
  h.box.clearTaskHistory('inactive');assert.deepEqual(h.state().dismissed,[]);assert.equal(h.state().trackedJobs.length,1);
+});
+
+
+test('an explicit retry reactivates restored history but a blocked retry never resumes',()=>{
+ const h=harness({jobs:[{number:198,message:'failed'}]});h.box.clearTaskHistory('inactive');h.box.restoreTaskHistory([198]);
+ Object.assign(h.box,{ensureTaskCard(){},taskCheckpoint(){}});
+ vm.runInContext(read('task-progress.js'),h.box);
+ vm.runInContext(slice(tasks,'function resumeJob(','function ensureTaskCard('),h.box);
+ vm.runInContext(slice(tasks,'function acceptTaskRetry(','async function taskRetry('),h.box);
+ h.box.acceptTaskRetry(198,{status:'dispatch_requested'},'chat');
+ assert.equal(h.state().trackedJobs[0].historyOnly,undefined);assert.equal(h.state().trackedJobs[0].finished,false);
+ h.box.clearTaskHistory('inactive');assert.equal(h.state().trackedJobs.length,1,'pending dispatch is retained even with a previous failed snapshot');
+ assert.throws(()=>h.box.acceptTaskRetry(999,{status:'blocked'},'chat'),/requires review/);assert.equal(h.state().trackedJobs.some(j=>j.number===999),false);
 });

@@ -17,13 +17,15 @@ function applyTaskHistoryDismissals(){
 }
 // Versioned history records retain restore markers indefinitely; snapshots expire after 30 days.
 let taskHistoryRecords={};try{taskHistoryRecords=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}')||{}}catch{}
+if(typeof taskHistoryRecords!=='object'||Array.isArray(taskHistoryRecords))taskHistoryRecords={};
 let taskHistoryDevice=localStorage.getItem('kappaforge.historyDevice.v1');if(!taskHistoryDevice){taskHistoryDevice=crypto.randomUUID();localStorage.setItem('kappaforge.historyDevice.v1',taskHistoryDevice)}
 let lastHistoryBatch=[];try{lastHistoryBatch=JSON.parse(localStorage.getItem('kappaforge.historyUndo.v1')||'[]')}catch{}
+if(!Array.isArray(lastHistoryBatch))lastHistoryBatch=[];
 function validHistoryRecord(r){return r&&Number.isSafeInteger(r.number)&&r.number>0&&['cleared','archived','hidden','restored'].includes(r.state)&&Number.isSafeInteger(r.version?.counter)&&r.version.counter>=0&&typeof r.version.device==='string'}
 function historyVersionCompare(a,b){return a.counter-b.counter||a.device.localeCompare(b.device)||String(a.nonce||'').localeCompare(String(b.nonce||''))}
 function writeHistoryRecord(number,state,snapshot){
  let disk={};try{disk=JSON.parse(localStorage.getItem('kappaforge.taskHistory.v2')||'{}')}catch{}
- for(const r of Object.values(disk).filter(validHistoryRecord)){const old=taskHistoryRecords[r.number];if(!validHistoryRecord(old)||historyVersionCompare(r.version,old.version)>0)taskHistoryRecords[r.number]=JSON.parse(JSON.stringify(r));}
+ for(const r of Object.values(disk||{}).filter(validHistoryRecord)){const old=taskHistoryRecords[r.number];if(!validHistoryRecord(old)||historyVersionCompare(r.version,old.version)>0)taskHistoryRecords[r.number]=JSON.parse(JSON.stringify(r));}
  const counter=Math.max(0,...Object.values(taskHistoryRecords).filter(validHistoryRecord).map(r=>r.version.counter))+1;
  taskHistoryRecords[number]={number,state,version:{counter,device:taskHistoryDevice,nonce:crypto.randomUUID()},snapshot,expiresAt:Date.now()+30*86400000};
 }
@@ -39,10 +41,11 @@ function mergeTaskHistory(ids=[],records=[]){
   if(r.snapshot?.job)delete r.snapshot.job.authorization;
   if(!Number.isFinite(r.expiresAt)||r.expiresAt<=Date.now())delete r.snapshot;
   if(r.state!=='restored')dismissedTaskIds.add(r.number);
-  else if(r.snapshot&&!trackedJobs.some(j=>j.number===r.number)){
+  else if(r.snapshot){
    // Restoring a card never restores execution authority, polling or dispatch.
-   const job={...r.snapshot.job,number:r.number,finished:true,historyOnly:true};delete job.authorization;trackedJobs.push(job);
-   for(const c of chats)for(const m of (Array.isArray(r.snapshot.cards?.[c.id])?r.snapshot.cards[c.id]:[]))if(!c.messages.some(x=>(m.progressKey&&x.progressKey===m.progressKey)||(m.jobReport&&x.jobReport===m.jobReport)))c.messages.push(m);
+   let job=trackedJobs.find(j=>j.number===r.number);
+   if(!job){job={...r.snapshot.job,number:r.number,finished:true,historyOnly:true};delete job.authorization;trackedJobs.push(job);}
+   if(job.historyOnly)for(const c of chats)for(const m of (Array.isArray(r.snapshot.cards?.[c.id])?r.snapshot.cards[c.id]:[]))if(!c.messages.some(x=>(m.progressKey&&x.progressKey===m.progressKey)||(m.jobReport&&x.jobReport===m.jobReport)))c.messages.push(m);
   }
  }
  localStorage.setItem('kappaforge.taskHistory.v2',JSON.stringify(taskHistoryRecords));
@@ -59,6 +62,7 @@ function restoreTaskHistory(numbers=lastHistoryBatch){
 }
 function taskHasActiveExecution(job){
  if(job.cancellation&&!job.cancellation.terminatedAt)return true;
+ if(!job.finished&&job.recoveryRequest&&job.recoveryRequest.attemptId===(job.progress?.attemptId||'')&&job.recoveryRequest.revision===(job.progress?.revision??-1))return true;
  return ['queued','running','recovering','waiting','testing'].includes(job.progress?.status)||(!job.progress&&!job.finished&&['waiting','progress'].includes(job.message));
 }
 function inactiveTask(job){
@@ -73,9 +77,9 @@ function taskHistoryMatches(job,status){
  return ['complete','merged','tests-passed'].includes(job.message)||['completed','ready'].includes(job.progress?.status);
 }
 function manageTaskHistory(text){
- const operation=KappaIntent.taskOperation(text);
- if(operation?.action!=='clear-history')return 'This task operation is not available in chat. Use the task’s Cancel control to stop running work, or manage its issue on GitHub. No development task was started.';
- return clearTaskHistory(operation.status);
+ const operation=KappaIntent.capabilities.resolve(text);
+ if(!['tasks.clear-history','tasks.archive-history','tasks.hide-history'].includes(operation?.id))return 'This task operation is not available in chat. Use the task’s Cancel control to stop running work, or manage its issue on GitHub. No development task was started.';
+ return clearTaskHistory(operation.params.status,operation.params,operation.id==='tasks.archive-history'?'archived':operation.id==='tasks.hide-history'?'hidden':'cleared');
 }
 function clearTaskHistory(status,filters={},state='cleared'){
  mergeTaskHistory();
@@ -280,10 +284,12 @@ const tasksValidating=()=>trackedJobs.some(j=>!j.finished&&j.prUrl&&chats.some(c
 // Card actions. Retry and guidance are confirmed and go through the owner-authorization path, like typing them.
 const taskRetryPending=new Set();
 function acceptTaskRetry(number,result,chatId){
+ if(result.status==='blocked')throw Error(result.message||'Saved task requires review');
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){resumeJob(number,chatId);job=trackedJobs.find(j=>j.number===number)}
- if(result.status==='blocked')throw Error(result.message||'Saved task requires review');
- KappaProgress.recoveryReceipt(job,result);ensureTaskCard(job);persistJobs();jobPollAfter=0;
+ delete job.historyOnly;delete job.cancellation;
+ writeHistoryRecord(number,'restored');
+ KappaProgress.recoveryReceipt(job,result);mergeTaskHistory();ensureTaskCard(job);persistJobs();jobPollAfter=0;
 }
 async function taskRetry(number){
  const job=trackedJobs.find(j=>j.number===number);if(!job||taskRetryPending.has(number))return;

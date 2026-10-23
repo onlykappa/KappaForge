@@ -8,7 +8,7 @@ request, not its length or apparent difficulty.
 
 For example, `please delete all old tasks in kappaforge` clears inactive task
 history immediately, including failed or blocked attempts. `Clear failed tasks`
-only clears failures; `Archive completed tasks` only clears successful history.
+only clears failures; `Archive completed tasks` only archives successful history.
 Queued, running, recovering, waiting and testing tasks are preserved. The reply
 reports the number cleared and any active tasks kept. An empty history is a
 successful no-op. This works without an AI connection.
@@ -78,9 +78,11 @@ provenance, retained during renewal and checked again by the Python execution
 scope on reload/recovery. A retry cannot silently add new restrictions to an
 older task's execution scope; it reports that conflict before dispatch.
 
-The schema describes undo availability; this change does not implement history
-Undo, conflict-versioned sync, multi-action execution, general routing telemetry,
-or rollout negotiation (later roadmap items).
+Sections 3–4 add Undo, versioned restoration/retry records, history filters and
+explicit workflow/authorization/verification decisions. See [Task history and
+recovery](task-management.md) for retention, exact action semantics and cancellation
+evidence limits. Multi-action execution, general routing telemetry and rollout
+negotiation remain later roadmap items.
 
 Regression coverage: `node --test tests/capability-registry.test.mjs
 tests/task-management.test.mjs tests/task-autostart.test.mjs
