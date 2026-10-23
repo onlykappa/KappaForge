@@ -424,6 +424,33 @@ class PythonTestImports(unittest.TestCase):
             self.assertFalse(self.accepted(source, ["app/calc.py"]), source)
         self.assertFalse(self.accepted("from tests.fake_calc import add", ["tests/fake_calc.py"]), "another test file is not real code")
 
+    def test_importlib_and_runpy_loads_of_repository_files_count(self):
+        script = ["scripts/dependency-map.py"]
+        self.assertTrue(self.accepted('import importlib.util\nfrom pathlib import Path\n'
+                                      'spec = importlib.util.spec_from_file_location("m", Path(__file__).parents[1] / "scripts/dependency-map.py")', script))
+        self.assertTrue(self.accepted('import runpy\nns = runpy.run_path("./scripts/dependency-map.py")', script))
+        self.assertTrue(self.accepted('import importlib\ncalc = importlib.import_module("app.calc")', ["app/calc.py"]))
+        for source in ('import importlib\nx = importlib.import_module("app.missing")',
+                       'import runpy\nrunpy.run_path("scripts/map.py")', 'import runpy\nrunpy.run_path("tests/fake.py")'):
+            self.assertFalse(self.accepted(source, script + ["app/calc.py"]), source)
+
+    def test_reading_a_repository_file_counts_but_documentation_and_docstrings_do_not(self):
+        files = [".github/workflows/sandbox-tests.yml", "README.md", "app/calc.py"]
+        self.assertTrue(self.accepted("from pathlib import Path\nsource = (Path(__file__).parents[1] / '.github/workflows/sandbox-tests.yml').read_text()", files))
+        self.assertFalse(self.accepted("text = open('README.md').read()", files), "documentation is not code under test")
+        self.assertFalse(self.accepted('"""Checks app/calc.py."""', files), "a docstring mention loads nothing")
+        self.assertFalse(self.accepted("# app/calc.py", files))
+
+    def test_this_repositorys_own_tests_count_as_real(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        paths = [p.relative_to(root).as_posix() for folder in ("engine", "tools", "scripts") for p in (root / folder).glob("*.py")]
+        paths += [".github/workflows/sandbox-tests.yml"]
+        # test_test_discovery checks test file names only; it has no repository code to load.
+        for test in sorted(t for t in (root / "tests").glob("test_*.py") if t.name != "test_test_discovery.py"):
+            name = "tests/" + test.name
+            self.assertEqual(verify.tests_without_real_code({name: test.read_text(encoding="utf-8")}, paths), [], name)
+
 
 if __name__ == "__main__":
     unittest.main()
