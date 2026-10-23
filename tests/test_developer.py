@@ -3,7 +3,7 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import patch
-from engine import developer, native_build
+from engine import developer, native_build, recovery
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
@@ -64,6 +64,29 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", empty)):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+
+    def test_protected_path_proposal_is_rejected_then_replanned_with_diagnostic(self):
+        bad = json.dumps({"files": [
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return a - b"}]},
+            {"path": ".github/workflows/open-draft-pr.yml", "content": "name: unsafe"},
+        ]})
+        good = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        prompts = []
+
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+            prompts.append(prompt)
+            return ("test-model", bad if len(prompts) == 1 else good)
+
+        with patch.object(developer, "run_model", side_effect=model):
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("Protected path cannot be changed by the agent: .github/workflows/open-draft-pr.yml", prompts[1])
+        self.assertIn("Remove it from the proposal", prompts[1])
+        self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .github/workflows/open-draft-pr.yml")),
+                         ("protected_path", "exclude_protected_path"))
+        self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
         no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
