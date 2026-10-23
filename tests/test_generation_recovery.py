@@ -23,9 +23,9 @@ class GenerationRecoveryTests(unittest.TestCase):
         self.assertNotIn('SOURCE FILES', prompt)
 
     def test_json_repair_does_not_bypass_scope_checks_or_retry_forbidden_paths(self):
-        unsafe = json.dumps({'files': [{'path': '.github/evil.py', 'content': 'value = 2'}]})
+        unsafe = json.dumps({'files': [{'path': '../evil.py', 'content': 'value = 2'}]})
         with patch.object(developer, 'run_model', side_effect=[('writer', BAD), ('formatter', unsafe)]) as model:
-            with self.assertRaisesRegex(ValueError, 'Protected path'):
+            with self.assertRaisesRegex(ValueError, 'Unsafe path'):
                 developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
         self.assertEqual(model.call_count, 2)
 
@@ -42,24 +42,24 @@ class GenerationRecoveryTests(unittest.TestCase):
         self.assertIn('value = 1', compact.args[1])
 
     def test_exhausted_json_answers_get_compact_recovery_before_stopping(self):
-        with patch.object(developer, 'run_model', side_effect=[('writer', BAD)] * 5 + [('other', GOOD)]) as model:
+        with patch.object(developer, 'run_model', side_effect=[('writer', BAD)] * 3 + [('other', GOOD)]) as model:
             _, _, changes, _ = developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
         self.assertEqual(changes['app.py'], 'value = 2\n')
-        self.assertEqual(model.call_count, 6)
+        self.assertEqual(model.call_count, 4)
 
     def test_exhausted_edit_answers_try_compact_strategy_then_succeed(self):
         bad_edit = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'missing', 'replace': 'x'}]}]})
-        with patch.object(developer, 'run_model', side_effect=[('writer', bad_edit)] * 5 + [('other', GOOD)]) as model:
+        with patch.object(developer, 'run_model', side_effect=[('writer', bad_edit)] * 3 + [('other', GOOD)]) as model:
             _, _, changes, _ = developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
         self.assertEqual(changes['app.py'], 'value = 2\n')
-        self.assertEqual(model.call_count, 6)
+        self.assertEqual(model.call_count, 4)
         self.assertEqual(model.call_args.kwargs['max_output_tokens'], 8192)
 
     def test_recovery_stops_with_evidence_after_both_bounded_strategies(self):
         with patch.object(developer, 'run_model', return_value=('writer', BAD)) as model:
-            with self.assertRaisesRegex(ValueError, 'large and compact recovery'):
+            with self.assertRaisesRegex(ValueError, '5 distinct attempts'):
                 developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
-        self.assertEqual(model.call_count, 10)
+        self.assertEqual(model.call_count, 5)
 
     def test_final_failure_preserves_transport_reason_and_both_strategies(self):
         with patch.object(developer, 'run_model', side_effect=[('writer', BAD),

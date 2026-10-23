@@ -52,22 +52,13 @@ LARGE = Budget(30, 20, 200000, 600000, 65536)
 PINNED = Budget(1, 1, 3500, 4000, 768)
 SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml|ya?ml|swift|cs|java|kt|go|rs|c|h|cpp|hpp|sh|sql)$")
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
-# Engine code and its regression tests are editable, including this file and runner.py.
-# Keep CI workflows, deployment credentials, provider policy, and secrets protected.
-# Engine changes still go through a draft PR and independently dispatched sandbox tests.
-PROTECTED_RE = re.compile(
-    r"^(?:\.github/|\.git/|chat-backend/wrangler\.toml$|scripts/preflight\.py$|config/providers\.json$|"
-    r"chat-backend/src/(?:review|github|providers)\.js$)"
-    r"|(?:^|/)(?:\.env[^/]*|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock)$")
-
-
+# All repository paths may be proposed for editing. Keep canonical in-repository path
+# validation here; PR review and CI validate changes before the owner chooses to merge.
 def check_path(path):
     if (not isinstance(path, str) or ".." in path or "\\" in path or "//" in path
             or path.startswith("/") or path.endswith("/")
             or not re.fullmatch(r"[A-Za-z0-9_./ -]+", path)):
         raise ValueError("Unsafe path: " + str(path)[:120])
-    if PROTECTED_RE.search(path):
-        raise ValueError("Protected path cannot be changed by the agent: " + path)
     return path
 
 
@@ -546,7 +537,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                       COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE)
     try:
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
-                                                             require_test, allow_empty)
+                                                             require_test, allow_empty, max_attempts=3)
     except (RuntimeError, GenerationFailure) as exc:
         from engine.reliability import RecoveryBudgetExceeded
         if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):
@@ -554,9 +545,13 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         if isinstance(exc, GenerationFailure) and not exc.compact:
             raise
         reason = str(exc)[:1800]
+        attempts_used = min(5, max(0, getattr(exc, 'attempts', 0)))
+        remaining_attempts = 5 - attempts_used
         budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
-        note("fix", "Large proposal could not be validated; reducing context and output and trying approved models again")
+        if not remaining_attempts:
+            raise GenerationFailure("No validated proposal after 5 distinct attempts. " + reason, attempts=attempts_used) from exc
+        note("fix", "Large proposal could not be validated; reducing context and output for the remaining distinct attempts")
         print("Retrying with compact generation: " + reason)
         ordered = list(dict.fromkeys(source_priorities(sources, existing, task, journal) + list(sources)))
         small = {p: sources[p] for p in ordered if p in sources}
@@ -566,11 +561,18 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                          "\n\nORIGINAL TASK:\n" + task)
         try:
             model, summary, changes, explanation = generate_with(api_key, recovery_task, repo, small, existing,
-                                                                 guide, allowed, budget, design, require_test, allow_empty)
+                                                                 guide, allowed, budget, design, require_test, allow_empty,
+                                                                 max_attempts=remaining_attempts, attempt_offset=attempts_used,
+                                                                 prior_errors=getattr(exc, 'errors', ()),
+                                                                 prior_proposals=getattr(exc, 'rejected_proposals', ()))
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
                 raise
+            attempts_used += min(remaining_attempts, max(0, getattr(last, 'attempts', 0)))
+            if attempts_used >= 5:
+                raise GenerationFailure("No validated proposal after 5 distinct attempts. " + str(last)[:1800],
+                                        attempts=attempts_used, blocked=getattr(last, 'blocked', False)) from last
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -721,7 +723,7 @@ def source_priorities(sources, existing, task, journal=None):
     return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
 
 
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
     priority = source_priorities(working_sources, existing, task, journal)
@@ -777,8 +779,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         "short but unique, preferably under 300 characters; split long minified handlers into small edits. "
         "Use content only for new files or a full rewrite of a file shown below. "
         + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
-        f"At most {budget.changed_files} files. Never edit .github/, deployment config, lockfiles, secrets "
-        "or the agent's own guardrail files. Never weaken authentication or authorization. "
+        f"At most {budget.changed_files} files per proposal. You may edit any file in the repository, including "
+        "workflows, deployment configuration, dependency manifests, security rules, and agent guardrails. "
+        "All changes remain on the draft PR branch for CI and owner review; never merge. Preserve the task's "
+        "requested behavior and do not add secrets or credentials. "
         "Before writing, think it through: where each part of your change runs and what information is available "
         "there, and every case it must handle (every request, not just the first; limits; missing data). "
         "Trace every new value from producer through transport to its final consumer. Adding a field to a request "
@@ -835,7 +839,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             context, shown_sources, partial_sources = source_context()
         return instruction_head + context + history + suffix
     fit_instruction()
-    errors = []
+    errors = list(prior_errors)
+    rejected_proposals = list(prior_proposals)
+    attempts_made = 0
     evidence = ""
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
@@ -851,16 +857,24 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     route_error = None
     # Recoverable source/format errors get additional autonomous diagnostic attempts.
     # Security/scope failures remain limited; never execute or push invalid proposals.
-    max_attempts = 5
+    repair_methods = ("", "Re-read the exact source and use a shorter unique anchor.",
+                          "Use a different implementation path while preserving the requirements.",
+                          "Break the change into smaller edits and address the first failing validation.",
+                          "Choose a substantially different solution and verify each edit against current source.")
     for attempt in range(max_attempts):
-        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt + 1) + "/" + str(max_attempts) +
+        attempt_number = attempt + attempt_offset
+        retry = ("\n\nAUTONOMOUS REPAIR, ATTEMPT " + str(attempt_number + 1) + "/5" +
+                 "\nRequired distinct repair approach: " + repair_methods[attempt_number] +
+                 ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
+                  "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
-                 "\nRoot-cause guidance: " + diagnose_generation_failure(errors[-1], sources) +
+                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], sources) if errors else
+                  "The previous pass failed before producing a validated proposal. Use its error evidence above.") +
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
-                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        if not attempt:  # A retry is already announced by its "rejected …; trying again" line.
+                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt_number else ""
+        if not attempt_number:  # A retry is already announced by its "rejected …; trying again" line.
             note("code", "Writing code")
         prompt = fit_instruction(retry)
         if malformed is not None and not format_repair_used and len(malformed) <= 32000:
@@ -889,6 +903,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         try:
             model, output = run_model(api_key, prompt, max_output_tokens=budget.output_tokens, allowed=allowed,
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
+            attempts_made += 1
         except RuntimeError as exc:
             if router_required and isinstance(exc, gateway.GatewayRequestTooLarge) and context:
                 # A stricter transport envelope can reject a locally fitting prompt.
@@ -934,7 +949,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 raise ValueError("Repeated rejected proposal: no source changes since previous validation")
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
-            if scope is not None and attempt:
+            if scope is not None and attempt_number:
                 scope.recover(signature, round_id=round_id)
             if isinstance(proposal, dict) and isinstance(proposal.get('files'), list) and any(
                     isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
@@ -978,11 +993,14 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 malformed = output
             if signature:
                 rejected_signatures.add(signature)
+            if proposal is not None:
+                rejected_files = proposal.get("files", []) if isinstance(proposal, dict) else proposal
+                rejected_proposals.append(json.dumps(rejected_files, ensure_ascii=False)[:1600])
             error = recovery.clean(exc, 300) or type(exc).__name__
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 
-            print(f"Validation attempt {attempt + 1}/{max_attempts} from {model} failed: {error[:180]}")
+            print(f"Validation attempt {attempt_number + 1}/5 from {model} failed: {error[:180]}")
             note("fix", f"The answer from {model} was rejected ({error[:100]}); trying again")
             failures[model] += 1
             if failures[model] >= MODEL_FAILURES_BEFORE_SWITCH and model not in avoid:
@@ -998,7 +1016,9 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     if route_failure:
         detail = "Model routing: " + route_failure[:1200] + " | " + detail
     raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
-                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False))
+                            retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False),
+                            attempts=attempt_offset + attempts_made, errors=errors,
+                            rejected_proposals=rejected_proposals)
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could
@@ -2012,7 +2032,20 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
-    pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
+    all_open_problems = requirements_open(pr)
+    pending = [p for p in all_open_problems if not verify.lifecycle_problem(p)]
+    # A failed-check repair still receives the original owner prompt below. When that prompt also
+    # asks KappaForge to open this draft PR, repeat the trusted receipt in the generation prompt:
+    # otherwise the model may treat the orchestration request as unfinished code work.
+    receipt = verify.pr_receipt(pr, repo, branch)
+    pr_lifecycle = [p for p in all_open_problems
+                    if verify.lifecycle_problem(p) and re.search(r"\b(?:pull request|PR|draft)\b", p, re.I)]
+    if receipt and receipt["open"] and receipt["draft"] and pr_lifecycle:
+        task += ("\n\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\n"
+                 + "\n".join("- " + p for p in pr_lifecycle) + "\n"
+                 + "KappaForge has already opened this task's draft PR. Do not create or change repository code, "
+                 + "scripts, workflows, hooks, or commands to open, update, or notify about this PR. Continue only "
+                 + "with the unfinished code requirements and failed checks listed above.\n")
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task

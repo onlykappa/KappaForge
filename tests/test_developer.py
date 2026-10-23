@@ -3,7 +3,7 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
-from engine import developer, native_build
+from engine import developer, native_build, recovery
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
@@ -47,7 +47,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("test-model", invalid)) as ai:
             with self.assertRaisesRegex(ValueError, "Repeated rejected proposal"):
                 developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertEqual(ai.call_count, 10, "large and compact strategies are both tried")
+        self.assertEqual(ai.call_count, 5, "large and compact passes share five total attempts")
 
     def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
         """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
@@ -64,6 +64,35 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", empty)):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
+
+    def test_any_repository_file_can_be_proposed_but_unsafe_paths_still_stop(self):
+        proposal = json.dumps({"files": [
+            {"path": ".github/workflows/open-draft-pr.yml", "content": "name: owner-reviewed"},
+            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+        ]})
+        with patch.object(developer, "run_model", return_value=("test-model", proposal)) as model:
+            _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn(".github/workflows/open-draft-pr.yml", changes)
+        self.assertIn("int(a)", changes["app/main.py"])
+        self.assertIn("You may edit any file in the repository", model.call_args.args[1])
+        self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
+
+    def test_five_failed_attempts_use_distinct_repair_instructions(self):
+        bad = json.dumps({"files": [{"path": "app/main.py", "edits": [
+            {"find": "not present", "replace": "x"}]}]})
+        prompts = []
+        def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
+            prompts.append(prompt)
+            return "same-model", bad
+        with patch.object(developer, "run_model", side_effect=model), self.assertRaises(ValueError):
+            developer.generate_with("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, developer.SMALL)
+        self.assertEqual(len(prompts), 5)
+        approaches = ["Re-read the exact source", "Use a different implementation path",
+                      "Break the change into smaller edits", "Choose a substantially different solution"]
+        for index, text in enumerate(approaches, start=1):
+            self.assertIn(text, prompts[index])
+            self.assertIn("Previously rejected proposals", prompts[index])
+        self.assertNotEqual(prompts[1], prompts[2])
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
         no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
@@ -125,20 +154,17 @@ class DeveloperValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/other.py", "edits": [{"find": "a", "replace": "b"}]}]})
 
-    def test_guardrails_ci_secrets_and_unsafe_paths_are_protected(self):
-        for path in [".github/workflows/agent.yml", ".git/config",
-                     "chat-backend/wrangler.toml", "chat-backend/src/review.js", "chat-backend/src/github.js",
-                     "chat-backend/src/providers.js", "config/providers.json",
-                     "package-lock.json", "web/package-lock.json", ".env", "app/.env.local",
-                     "../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                check_path(path)
-        self.assertEqual(check_path("chat-backend/src/index.js"), "chat-backend/src/index.js")
-        for path in ["engine/task_scope.py", "engine/developer.py", "engine/runner.py",
-                     "engine/repair_loop.py", "engine/validate_change.py",
-                     "tests/test_developer.py", "tests/test_workflow_safety.py"]:
+    def test_any_in_repo_path_is_editable_but_path_traversal_is_rejected(self):
+        editable = [".github/workflows/agent.yml", ".git/config", "chat-backend/wrangler.toml",
+                    "chat-backend/src/review.js", "chat-backend/src/github.js", "chat-backend/src/providers.js",
+                    "config/providers.json", "package-lock.json", "web/package-lock.json", ".env",
+                    "app/.env.local", "engine/developer.py", "tests/test_workflow_safety.py"]
+        for path in editable:
             with self.subTest(editable=path):
                 self.assertEqual(check_path(path), path)
+        for path in ["../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
+            with self.subTest(unsafe=path), self.assertRaisesRegex(ValueError, "Unsafe path"):
+                check_path(path)
 
     def test_unchanged_duplicate_and_oversized_results_are_rejected(self):
         bad = [
@@ -340,12 +366,11 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", aimed_at_copy)), self.assertRaises(ValueError):
             developer.generate("key", "task", "onlykappa/OmniPC", sources, existing)
 
-    def test_gives_up_after_three_invalid_answers(self):
-        bad = json.dumps({"files": [{"path": ".github/workflows/x.yml", "content": "x"}]})
+    def test_unsafe_paths_remain_hard_stops(self):
+        bad = json.dumps({"files": [{"path": "../x.yml", "content": "x"}]})
         with patch.object(developer, "run_model", return_value=("flash", bad)) as ai, self.assertRaises(ValueError):
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
-        self.assertGreaterEqual(ai.call_count, 1)
-        self.assertLessEqual(ai.call_count, 5)
+        self.assertEqual(ai.call_count, 1)
 
 
 class DeveloperAuthorizationTests(unittest.TestCase):

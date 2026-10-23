@@ -31,7 +31,7 @@ class IntentGuardTests(unittest.TestCase):
         reloaded.state = 'verifying'
         reloaded.release_pr = 99
         reloaded.release_sha = 'a' * 40
-        with self.assertRaisesRegex(PermissionError, 'prohibited merging'):
+        with self.assertRaisesRegex(PermissionError, 'owner to use the Merge button'):
             reloaded.permit('https://api.github.com/repos/onlykappa/KappaForge/pulls/99/merge',
                             {'sha': 'a' * 40, 'merge_method': 'squash'}, 'PUT')
         self.assertEqual(ExecutionScope(saved({'noCode': True}, 'audit')).restrictions, {'noCode': True})
@@ -54,8 +54,13 @@ class IntentGuardTests(unittest.TestCase):
         scope=ExecutionScope(issue())
         scope.permit('https://api.github.com/repos/onlykappa/KappaForge/git/blobs',{},'POST')
         scope.permit('https://api.github.com/repos/onlykappa/KappaForge/pulls',{'draft':True,'head':'kappa/dev-98'},'POST')
+        scope.state='verifying'; scope.release_pr=98; scope.release_sha='a'*40
+        with self.assertRaisesRegex(PermissionError, 'owner to use the Merge button'):
+            scope.permit('https://api.github.com/repos/onlykappa/KappaForge/pulls/98/merge',
+                         {'sha':'a'*40,'merge_method':'squash'},'PUT')
         for path,payload in [('issues',{'body':'Fix unrelated error'}),('git/refs/heads/main',{'sha':'x'}),('pulls/4/merge',{}),('pulls',{'draft':True,'head':'kappa/dev-99'})]:
-            with self.assertRaises(PermissionError):scope.permit('https://api.github.com/repos/onlykappa/KappaForge/'+path,payload,'POST')
+            method = 'PUT' if path.endswith('/merge') else 'POST'
+            with self.assertRaises(PermissionError):scope.permit('https://api.github.com/repos/onlykappa/KappaForge/'+path,payload,method)
 
     def test_pinned_inference_route_is_an_exact_owner_task_restriction(self):
         task=issue();task['body']+='\nInference route: groq:openai/gpt-oss-120b'

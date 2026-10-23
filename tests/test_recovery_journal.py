@@ -587,9 +587,9 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(result[2],{'value.py':'value = 2\n'})
         self.journal.loader.assert_called_once_with('config/providers.json')
         self.assertIn(source,model.call_args.args[1])
-        with self.assertRaisesRegex(ValueError,'Protected path'):
-            developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
-                {'files':[{'path':'config/providers.json','content':'{}'}]})
+        changes=developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
+                {'files':[{'path':'config/providers.json','content':'{"routing":"private"}'}]})
+        self.assertEqual(changes,{'config/providers.json':'{"routing":"private"}'})
 
     def test_multiple_repair_targets_survive_retry_prompt_compaction(self):
         self.journal.state['sourcePriority']=['one.py','two.py']
@@ -735,21 +735,17 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(produce.call_args.kwargs['adopt']['html_url'], self.world.prs[0]['html_url'])
         self.assertEqual(len(self.world.prs), 1)
 
-    def test_exhausted_proposals_replan_into_smaller_validated_stages(self):
+    def test_five_failed_proposals_stop_before_any_extra_recovery_attempt(self):
         bad = '{"files":[ BAD ]}'
-        plan = json.dumps({'read': ['value.py'], 'stages': ['Change value and add its test', 'Add the remaining helper']})
-        first = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]},
-                                    {'path': 'test_value.py', 'content': 'from value import value\nassert value == 2\n'}]})
-        second = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 2', 'replace': 'value = 2\nready = True'}]}]})
         saved = []
         self.journal.stage_checkpoint = lambda model, summary, changes, explanation: saved.append(dict(changes))
-        with patch.object(developer, 'run_model', side_effect=[('writer', bad)] * 10 + [('planner', plan), ('other', first), ('other', second)]):
-            _, _, changes, _ = developer.generate('key', 'Change value and add a ready helper', recovery.ROOT,
-                                                  {'value.py': 'value = 1\n'}, {'value.py': 10}, require_test=True)
-        self.assertEqual(changes['value.py'], 'value = 2\nready = True\n')
-        self.assertIn('test_value.py', changes)
-        self.assertEqual(len(saved), 2)
-        self.assertTrue(any(e['strategy'] == 'split_stages' for e in self.journal.state['events']))
+        with patch.object(developer, 'run_model', side_effect=[('writer', bad)] * 10) as model:
+            with self.assertRaisesRegex(ValueError, '5 distinct attempts'):
+                developer.generate('key', 'Change value and add a ready helper', recovery.ROOT,
+                                   {'value.py': 'value = 1\n'}, {'value.py': 10}, require_test=True)
+        self.assertEqual(model.call_count, 5)
+        self.assertEqual(saved, [])
+        self.assertFalse(any(e['strategy'] == 'split_stages' for e in self.journal.state['events']))
 
     def test_restored_requirements_cannot_disappear_in_a_later_review(self):
         from engine import verify

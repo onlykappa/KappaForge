@@ -17,9 +17,12 @@ class SourceNotRead(ValueError):
 
 class GenerationFailure(ValueError):
     """Rejected proposals are recoverable without treating scope failures as transport errors."""
-    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False, blocked=False):
+    def __init__(self, message, compact=False, provider_routes=False, retry_at=0, terminal=False, blocked=False, attempts=0, errors=(), rejected_proposals=()):
         super().__init__(message)
         self.compact = compact
         self.blocked = blocked
         self.provider_routes = provider_routes
         self.retry_at, self.terminal = retry_at, terminal
+        self.attempts = attempts
+        self.errors = tuple(errors)
+        self.rejected_proposals = tuple(rejected_proposals)
