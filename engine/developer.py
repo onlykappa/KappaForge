@@ -869,8 +869,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
-                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt else ""
-        if not attempt:  # A retry is already announced by its "rejected …; trying again" line.
+                 "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt_number else ""
+        if not attempt_number:  # A retry is already announced by its "rejected …; trying again" line.
             note("code", "Writing code")
         prompt = fit_instruction(retry)
         if malformed is not None and not format_repair_used and len(malformed) <= 32000:
