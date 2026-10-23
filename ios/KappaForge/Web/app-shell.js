@@ -2,7 +2,7 @@
    Classic script: shares globals with the other app-*.js files. Wider screens keep the sidebar layout. */
 const SHELL_TABS=[["start","Home","home"],["chats","Chats","chat"],["home","Dashboard","gauge"],["more","More","more-circle"]];
 // Each view belongs to one tab; a view that is not its tab's root is a pushed view with a back button.
-const SHELL_TAB_OF={start:"start",chat:"chats",chats:"chats",home:"home",tasks:"home",reviews:"home",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
+const SHELL_TAB_OF={start:"start",chat:"chats",chats:"chats",home:"home",tasks:"more",reviews:"home",more:"more",projects:"more",saved:"more",settings:"more",profile:"more",help:"more"};
 const SHELL_TITLES={start:"Home",chats:"Chats",home:"Dashboard",tasks:"Tasks",reviews:"Reviews",more:"More",projects:"Projects",saved:"Saved items",settings:"Settings",profile:"Account",help:"Help"};
 const isPhone=()=>matchMedia("(max-width:840px)").matches;
 const shellTab=v=>SHELL_TAB_OF[v]||"chats";
@@ -116,7 +116,7 @@ function chatSheetHTML(){
  }
  return "";
 }
-// The task sheet shows the live card's own step list and findings, so both stay in step with the card behind it.
+// The task sheet copies the card's own step list and findings each time the chat renders.
 function fillTaskSheet(){
  const box=document.querySelector("[data-task-sheet-body]");if(!box||chatSheet?.kind!=="task")return;
  const card=document.querySelector('[data-progress-detail="'+chatSheet.id+':steps"]')?.closest(".agent-activity");
@@ -131,7 +131,7 @@ function renderMorePage(){
  const appearance={system:"Follow system",light:"Light",dark:"OLED Black"}[preferences.appearance]||"";
  const initials=(localProfile.name||"K").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
  return '<div class="ios-group ios-profile">'+iosRow({attrs:'data-page="profile"',title:esc(localProfile.name),sub:esc(backend&&access?"Backend connected":"Backend not connected")}).replace('<span class="ios-row-text">','<span class="ios-avatar" aria-hidden="true">'+esc(initials)+'</span><span class="ios-row-text">')+'</div>'+
-  '<h2 class="ios-gh">Workspace</h2><div class="ios-group icons">'+iosRow({attrs:'data-page="projects"',icon:"projects",title:"Projects",value:esc((data.repos||[]).length||knownRepos.length)})+iosRow({attrs:'data-page="saved"',icon:"saved",title:"Saved items",value:esc(saved)})+'</div>'+
+  '<h2 class="ios-gh">Workspace</h2><div class="ios-group icons">'+iosRow({attrs:'data-page="projects"',icon:"projects",title:"Projects",value:esc((data.repos||[]).length||knownRepos.length)})+iosRow({attrs:'data-page="saved"',icon:"saved",title:"Saved items",value:esc(saved)})+iosRow({attrs:'data-page="tasks"',icon:"tasks",title:"Tasks",value:esc((data.issues||[]).length)})+'</div>'+
   '<h2 class="ios-gh">App</h2><div class="ios-group icons">'+iosRow({attrs:'data-page="settings"',icon:"settings",title:"Settings",value:esc(appearance)})+iosRow({attrs:'data-page="help"',icon:"help",title:"Help &amp; about"})+'</div>'+
   '<p class="ios-gf" style="text-align:center;padding-top:16px">KappaForge '+esc(KappaConfig.version)+'</p>';
 }
@@ -159,7 +159,7 @@ function updateTitleCollapse(){
 }
 addEventListener("scroll",()=>{if(isPhone())updateTitleCollapse()},{passive:true});
 function bindShell(){
- document.getElementById("chatsearch")?.addEventListener("input",e=>{conversationSearch=e.target.value;const pos=e.target.selectionStart;render();const f=document.getElementById("chatsearch");f.focus();f.setSelectionRange(pos,pos)});
+ document.getElementById("chatsearch")?.addEventListener("input",e=>{conversationSearch=e.target.value;const pos=e.target.selectionStart;render();const f=document.getElementById("chatsearch");f?.focus();f?.setSelectionRange(pos,pos)});
  document.querySelectorAll("#content [data-id]").forEach(b=>b.addEventListener("click",()=>{current=b.dataset.id;navigate("chat")}));
  document.getElementById("chatsearchbtn")?.addEventListener("click",()=>{chatSearchOpen=!(chatSearchOpen||conversationSearch);if(!chatSearchOpen)conversationSearch="";render();document.getElementById("chatsearch")?.focus()});
  document.getElementById("chatnew")?.addEventListener("click",fresh);
@@ -174,7 +174,7 @@ function bindShell(){
   const input=document.getElementById("attachinput"),kind=b.dataset.plus,accept=input.getAttribute("accept");
   openChatSheet(null);
   if(kind==="folder")return document.getElementById("folderbtn").click();
-  if(kind!=="files"){input.setAttribute("accept","image/*");if(kind==="camera")input.setAttribute("capture","environment")}
+  if(kind!=="files"){input.setAttribute("accept","image/png,image/jpeg,image/webp");if(kind==="camera")input.setAttribute("capture","environment")}
   input.click();setTimeout(()=>{input.setAttribute("accept",accept);input.removeAttribute("capture")},0);
  }));
  // Home's ask box sends its text as the first message of a new chat.
@@ -190,5 +190,5 @@ matchMedia("(max-width:840px)").addEventListener("change",()=>{if(!isPhone()&&["
 // Phones: + opens the add sheet instead of the small popover; with Plan a task on, Send plans the message as a task.
 if(typeof document!=="undefined"){
 document.querySelector("#attachment-menu summary")?.addEventListener("click",e=>{if(!isPhone())return;e.preventDefault();openChatSheet({kind:"plus"})});
-document.getElementById("form")?.addEventListener("submit",e=>{if(!planMode)return;e.preventDefault();e.stopImmediatePropagation();planMode=false;document.body.classList.remove("plan-mode");document.getElementById("task").click()},true);
+document.getElementById("form")?.addEventListener("submit",e=>{if(!planMode)return;e.preventDefault();e.stopImmediatePropagation();if(sending||planningTask)return;planMode=false;document.body.classList.remove("plan-mode");document.getElementById("task").click()},true);
 }

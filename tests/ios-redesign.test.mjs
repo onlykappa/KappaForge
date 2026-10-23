@@ -34,7 +34,7 @@ function shell(extra={}){
 }
 test('every view belongs to one tab; non-root views are pushed with a back button',()=>{
  const box=shell();
- for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','home'],['reviews','home'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
+ for(const [v,tab] of [['chat','chats'],['chats','chats'],['home','home'],['tasks','more'],['reviews','home'],['more','more'],['projects','more'],['saved','more'],['profile','more'],['help','more'],['settings','more']])assert.equal(box.shellTab(v),tab,v);
  for(const v of ['chats','home','more'])assert.equal(box.shellPushed(v),false,v+' is a tab root');
  for(const v of ['chat','tasks','reviews','projects','saved','profile','help','settings'])assert.equal(box.shellPushed(v),true,v+' is pushed');
 });
@@ -44,15 +44,14 @@ test('the phone tab bar contains Home, Chats, Dashboard and More',()=>{
  assert.match(html,/data-page="chats" aria-current="page"/,'a chat sits under the Chats tab');
  assert.doesNotMatch(html,/tab-badge/,'no badge remains for the removed Reviews tab');
 });
-test('Tasks and Reviews return to Dashboard with Back',()=>{
- for(const page of ['tasks','reviews']){
+test('Reviews returns to Dashboard and Tasks to More with Back',()=>{
+ for(const [page,tab,label] of [['reviews','home','Dashboard'],['tasks','more','More']]){
   const box=shell({view:page,navigate:target=>{box.view=target}});
-  assert.equal(box.shellBackLabel(),'Dashboard');
-  assert.match(box.renderTabBar(),/data-page="home" aria-current="page"/);
-  box.shellBack();assert.equal(box.view,'home');
+  assert.equal(box.shellBackLabel(),label);
+  assert.match(box.renderTabBar(),new RegExp('data-page="'+tab+'" aria-current="page"'));
+  box.shellBack();assert.equal(box.view,tab);
  }
 });
-
 test('the Chats list puts chats that need you in a card rail, then Recent and Earlier, and searches',()=>{
  const now=Date.now(),old=now-3*86400000;
  const chats=[{id:'a',title:'Live task card',at:now,messages:[{role:'user',text:'Fold the card'}]},{id:'c',title:'Weather today',at:now-1000,messages:[{role:'assistant',text:'<think>Okay, so I am trying</think>Sunny and 18°C'}]},{id:'b',title:'Release notes',at:old,messages:[{role:'assistant',text:'Draft **ready**'}]}];
