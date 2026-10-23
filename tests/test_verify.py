@@ -153,7 +153,7 @@ class CheckTheWork(unittest.TestCase):
         developer.UNFINISHED.clear()
         with patch.object(verify, 'wiring_problems', side_effect=lambda *a: []), \
                 patch.object(verify, 'model_review', return_value=([{'text': 'x', 'met': False}], [], [])), \
-                patch.object(developer, 'generate', side_effect=ValueError('Protected path cannot be changed')) as generate:
+                patch.object(developer, 'generate', side_effect=ValueError('Unsafe path: ../escape')) as generate:
             _, _, problems = developer.check_the_work('k', 'task', ROOT, 'sha', 'token', {}, {}, {},
                                                       '', None, '', False, self.Progress())
         generate.assert_called_once()
