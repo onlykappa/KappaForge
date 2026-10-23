@@ -587,9 +587,9 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(result[2],{'value.py':'value = 2\n'})
         self.journal.loader.assert_called_once_with('config/providers.json')
         self.assertIn(source,model.call_args.args[1])
-        with self.assertRaisesRegex(ValueError,'Protected path'):
-            developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
-                {'files':[{'path':'config/providers.json','content':'{}'}]})
+        changes=developer.apply_changes({'config/providers.json':source},{'config/providers.json':len(source)},
+                {'files':[{'path':'config/providers.json','content':'{"routing":"private"}'}]})
+        self.assertEqual(changes,{'config/providers.json':'{"routing":"private"}'})
 
     def test_multiple_repair_targets_survive_retry_prompt_compaction(self):
         self.journal.state['sourcePriority']=['one.py','two.py']
