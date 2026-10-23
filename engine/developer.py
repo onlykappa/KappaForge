@@ -54,9 +54,6 @@ SOURCE_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|tsx|jsx|json|html|css|md|txt|toml
 SKIP_RE = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|build|\.git)/")
 # All repository paths may be proposed for editing. Keep canonical in-repository path
 # validation here; PR review and CI validate changes before the owner chooses to merge.
-PROTECTED_RE = re.compile(r"(?!)")
-
-
 def check_path(path):
     if (not isinstance(path, str) or ".." in path or "\\" in path or "//" in path
             or path.startswith("/") or path.endswith("/")
@@ -631,10 +628,6 @@ def closest_text(message, sources, context=3):
 
 def diagnose_generation_failure(message, sources):
     """Provide targeted, source-grounded repair guidance, never a bypass."""
-    if "Protected path cannot be changed by the agent:" in message:
-        return ("This file is protected by the repository safety policy. Remove it from the proposal and solve the task "
-                "through allowed source files. Do not copy, rewrite, rename, or weaken the protected workflow; if the task "
-                "cannot be completed without it, stop and explain that boundary.")
     if "matched 0 times" in message:
         paths = list(sources)
         return ("The previous find string does not occur in the actual source. "
