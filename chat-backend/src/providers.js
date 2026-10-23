@@ -24,7 +24,7 @@ export function configured(env,id){
  const p=registry.providers[id];
  return !!p&&(p.kind==="workers-ai"?!!env.AI:keyless(p)||!!env[p.key]);
 }
-function catalogMode(env,id){return fullCatalog(env,id)?"all":env.ROUTING_POLICY_VERSION==="v1"?"free-v1":"legacy";}
+function catalogMode(env,id){if(id==="openrouter")return everyFreeModel(env,id)?"all-free":"bounded-free";return fullCatalog(env,id)?"all":env.ROUTING_POLICY_VERSION==="v1"?"free-v1":"legacy";}
 function discoveryKey(env,id){
  const p=registry.providers[id];
  return id+":"+(p?.key&&env[p.key]?"key-present":"key-absent")+":"+catalogMode(env,id)+(id==="workers-ai"?":"+String(env.CLOUDFLARE_ACCOUNT_ID||"no-account")+":"+(env.CLOUDFLARE_API_TOKEN?"token-present":"token-absent"):"");
@@ -32,8 +32,10 @@ function discoveryKey(env,id){
 // Without the owner's full-catalog opt-in, v1 keeps only reviewed free models; null means unreviewed.
 function freeModels(env,id,models){
  const p=registry.providers[id];
+ if(id==="openrouter")return models.filter(m=>FREE.test(m));
+ // A free-only pool never routes a paid model unless the owner opted into its full catalog, in any policy mode.
+ if(p.freeOnly&&catalogMode(env,id)!=="all")return models.filter(m=>FREE.test(m));
  if(catalogMode(env,id)!=="free-v1")return models;
- if(p.freeOnly)return models.filter(m=>FREE.test(m));
  return Array.isArray(p.freeModels)?models.filter(m=>p.freeModels.includes(m)):null;
 }
 const sha256=async text=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))].map(b=>b.toString(16).padStart(2,"0")).join("");
@@ -109,7 +111,7 @@ async function listedModels(env,id){
   const discoveredCount=body.data.length;
   // A free-model gateway's catalog publishes prices: a model is free only if every published price is zero, whatever its
   // name says. Unpublished, malformed or variable ("-1") prices are not free. (Without the owner's paid opt-in.)
-  const priced=p.freeOnly&&!fullCatalog(env,id)?body.data.filter(m=>!m?.pricing||chargesNothing(m.pricing)):body.data;
+  const priced=id==="openrouter"?body.data.filter(m=>chargesNothing(m?.pricing)&&m.pricing.prompt!==undefined&&m.pricing.completion!==undefined):p.freeOnly&&!fullCatalog(env,id)?body.data.filter(m=>!m?.pricing||chargesNothing(m.pricing)):body.data;
   const ids=freeModels(env,id,priced.map(m=>m?.id).filter(m=>typeof m==="string"&&ROUTABLE.test(m)&&!EXCLUDE.test(m)));
   // Each model's own limits where the catalog publishes them (OpenRouter: context_length and the top provider's
   // max_completion_tokens), so a request is never sent to a model that cannot take it.
@@ -117,7 +119,8 @@ async function listedModels(env,id){
    if(typeof m?.id==="string"&&(context>0||maxOutput>0))modelLimits.set(id+":"+m.id,{context:context>0?context:null,maxOutput:maxOutput>0?maxOutput:null});}
   const rank=m=>{const i=(p.prefer||[]).findIndex(f=>m.toLowerCase().includes(f));return i<0?99:i};
   const sorted=ids.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
-  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.maxModelsPerProvider);
+  // A provider whose quota is per model may route more reviewed models than the global cap (maxModels).
+  const models=fullCatalog(env,id)||everyFreeModel(env,id)?sorted:sorted.slice(0,registry.providers[id]?.maxModels||registry.maxModelsPerProvider);
   cache.set(key,{at:Date.now(),models});
   setStatus({state:models.length?"available":"no_approved_models",httpStatus:r.status,discoveredCount,approvedCount:models.length});
   return models;

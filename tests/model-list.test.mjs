@@ -65,3 +65,16 @@ test('the OpenRouter account says whether bought credits raised free models to 1
   assert.equal((await openrouterAccount({OPENROUTER_API_KEY:'k'},Date.UTC(2026,9,23))).dailyFreeLimit,50,'no credits bought: 50 a day');
  }finally{globalThis.fetch=original}
 });
+
+test('the existing OpenRouter account reader distinguishes balance, key limits and provider budgets',async()=>{
+ const {openrouterAccount,resetOpenrouterAccount}=await import('../chat-backend/src/openrouter-account.js');
+ const previous=globalThis.fetch;let key={limit:5,limit_remaining:4,budgets:[{remaining_usd:2}]},reads=0;
+ globalThis.fetch=async url=>{reads++;return String(url).endsWith('/key')?Response.json({data:key}):Response.json({data:{total_credits:10,total_usage:1}})};
+ try{resetOpenrouterAccount();const env={OPENROUTER_API_KEY:'balance-fixture'};
+  let row=await openrouterAccount(env);assert.equal(row.balanceUsd,9);assert.equal(row.availableUsd,2);assert.equal(row.limitingFactor,'provider_budget');
+  await openrouterAccount(env);assert.equal(reads,2,'status uses the existing cache');
+  key={limit:5,limit_remaining:1};row=await openrouterAccount(env,Date.now(),{fresh:true});assert.equal(row.availableUsd,1);assert.equal(row.limitingFactor,'key_limit');
+  key={limit:null,limit_remaining:null};row=await openrouterAccount({OPENROUTER_API_KEY:'another-key'});assert.equal(row.availableUsd,9,'cache never crosses keys');
+  key={limit:null,budgets:[{remaining_usd:'unknown'}]};row=await openrouterAccount(env,Date.now(),{fresh:true});assert.equal(row.availableUsd,null);
+ }finally{globalThis.fetch=previous;resetOpenrouterAccount()}
+});

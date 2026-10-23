@@ -28,7 +28,7 @@ const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
-let lastChatPreferences,issuedJob=22;let taskReports={};
+let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={};
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -37,7 +37,9 @@ const apiServer=createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
  let result;
  if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
- else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2};
+ else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2,premium:{enabled:premiumEnabled,configured:true,...premiumLimits,dailyLeftUsd:premiumLimits.dailyCapUsd,monthLeftUsd:premiumLimits.monthCapUsd,account:{balanceUsd:9,availableUsd:4},selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'DeepSeek V4.1 Flash 1017'}}};
+ else if(req.url==='/premium'&&data.action==='set'){premiumEnabled=data.enabled===true;result={enabled:premiumEnabled};}
+ else if(req.url==='/premium'&&data.action==='limits'){premiumLimits=data.limits;result={saved:true,...premiumLimits};}
  else if(req.url==='/usage')result={events:[{id:'1',at:Date.now(),model:'gemini-2.5-flash-lite',input:20,output:10,total:35,cost:null,latency:200,ok:true}],cursor:null,retentionDays:90};
  else if(req.url==='/chat'){lastChatPreferences=data.preferences;
   const prompt=data.messages.at(-1).text;
@@ -91,7 +93,23 @@ const apiServer=createServer(async(req,res)=>{
  // The setup check runs on its own; a healthy setup leaves no card on the Settings home.
  await page.locator('[data-section=overview] .s-row-value',{hasText:'Verified'}).waitFor();assert.equal(await page.locator('.s-issues, .s-checking').count(),0,'healthy setup hides the check card');
  await openSection(page,'overview');await page.locator('#s-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>{const saved=[lastVerify,capabilities];lastVerify={at:Date.now(),error:{status:401,message:'Unauthorized'},usageError:''};const rejected=settingsIssues()[0].title;capabilities={models:[],github:false,providers:[{name:'Groq',configured:true,hasKey:true,models:[],signup:'https://console.groq.com/keys'}]};lastVerify={at:Date.now(),error:null,usageError:''};const titles=settingsIssues().map(i=>i.level+':'+i.title);[lastVerify,capabilities]=saved;return [rejected,...titles].join('|')}),'Your access token was rejected|warn:Gemini model discovery unavailable|warn:Groq: No eligible models reported|warn:GitHub isn’t connected to your backend');
- console.log(name+': diagnostics passed');await openSection(page,'models');await page.locator('[data-pref=model]').selectOption('gemini-2.5-flash');await page.locator('[data-pref=fallback]').uncheck();
+ console.log(name+': diagnostics passed');await openSection(page,'models');
+ assert.equal(await page.locator('#premium-mode').isVisible(),true,name+' Premium control is visible');
+ assert.equal(await page.getByText('Automatic open-model selection',{exact:true}).isVisible(),true);
+ assert.match(await page.locator('#content').innerText(),/DeepSeek V4\.1 Flash 1017/);
+ assert.match(await page.locator('#content').innerText(),/Spendable under account and key limits: \$4\.00/);
+ await page.locator('#premium-limit-task').fill('2');await page.locator('#premium-limit-daily').fill('3');await page.locator('#premium-limit-month').fill('9');await page.locator('#premium-limits-save').click();
+ await page.waitForFunction(()=>capabilities.premium.monthCapUsd===9);assert.equal(await page.locator('#premium-mode').isChecked(),false,'saving limits does not enable Premium');
+ await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-limit-month').inputValue(),'9');assert.equal(await page.locator('#premium-limit-daily').inputValue(),'3');
+ await page.route(backendURL+'/premium',route=>route.fulfill({status:503,json:{error:'Limits could not be saved'}}),{times:1});
+ await page.locator('#premium-limit-month').fill('12');await page.locator('#premium-limits-save').click();await page.waitForFunction(()=>document.getElementById('premium-limit-month')?.value==='9');assert.equal(premiumLimits.monthCapUsd,9,'failed save preserves actual limits');
+ await page.locator('#premium-mode').check();await page.waitForFunction(()=>capabilities.premium.enabled===true);
+ await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('#premium-mode').isChecked(),true,name+' Premium reads persisted backend state');
+ await page.locator('#premium-mode').uncheck();await page.waitForFunction(()=>capabilities.premium.enabled===false);
+ await page.route(backendURL+'/premium',route=>route.fulfill({status:503,json:{error:'Premium state unavailable'}}),{times:1});
+ // One tap, not check(): the failed save re-renders the switch, and check() would tap the new one again.
+ await page.locator('#premium-mode').click();await page.getByText('Premium Mode not changed: Premium state unavailable',{exact:false}).waitFor();assert.equal(await page.locator('#premium-mode').isChecked(),false,name+' failed save reverts the Premium toggle');
+ await page.locator('[data-pref=model]').selectOption('gemini-2.5-flash');await page.locator('[data-pref=fallback]').uncheck();
  await openSection(page,'personalization');await page.locator('[data-pref=instructions]').fill('Keep answers precise');await page.locator('[data-pref=instructions]').blur();await page.locator('[data-pref-set=appearance][data-value=dark]').click();await page.reload();await openSettings(page);await openSection(page,'models');assert.equal(await page.locator('[data-pref=model]').inputValue(),'gemini-2.5-flash');assert.equal(await page.locator('[data-pref=fallback]').isChecked(),false);
  console.log(name+': persistence passed');await openSection(page,'usage');await page.locator('#usage-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();assert.equal(await page.locator('#usage-export, .usage-chart').count(),0,'history and export are gone from Usage');await openSection(page,'overview');assert.match(await page.locator('.usage-stats').innerText(),/35/);
  console.log(name+': usage passed');await openSection(page,'memory');const countBefore=await page.locator('#memory-list .memory-item').count();assert.ok(countBefore>=2);assert.equal(await page.evaluate(()=>savedMemories.some(note=>note.includes('Owner preference: Keep replies concise'))),true,'Owner preferences seeded into saved memory');await page.locator('[data-delete-memory="0"]').click();assert.equal(await page.locator('#memory-list .memory-item').count(),countBefore-1);await page.reload();await openSettings(page);await openSection(page,'memory');assert.equal(await page.locator('#memory-list .memory-item').count(),countBefore-1);assert.equal(await page.evaluate(()=>preferences.autoStart),true);

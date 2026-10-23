@@ -216,12 +216,12 @@ test('free providers take over when Gemini is rate limited, with live model disc
   if(u.includes('generativelanguage')&&u.includes('/models?'))return Response.json({models:[{name:'models/'+MODELS[0],supportedGenerationMethods:['generateContent']}]});
   if(u.includes('generativelanguage'))return new Response('{}',{status:429});
   if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'},{id:'openai/gpt-oss-20b'},{id:'qwen/qwen3.8-27b'},{id:'llama-3.3-70b-versatile'},{id:'moonshotai/kimi-k2-instruct'}]});
-  if(u==='https://openrouter.ai/api/v1/models')return Response.json({data:[{id:'qwen/qwen3-coder'},{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-4o'}]});
+  if(u==='https://openrouter.ai/api/v1/models')return Response.json({data:[{id:'qwen/qwen3-coder'},{id:'qwen/qwen3-coder:free',pricing:{prompt:'0',completion:'0'}},{id:'openai/gpt-4o'}]});
   if(u==='https://api.groq.com/openai/v1/chat/completions'){const body=JSON.parse(init.body);assert.equal(body.messages[0].role,'system');assert.equal(init.headers.Authorization,'Bearer groq-key');
    return Response.json({choices:[{message:{content:'Answer from Groq'},finish_reason:'stop'}],usage:{prompt_tokens:9,completion_tokens:3,total_tokens:12}})}
   return new Response('{}',{status:404})};
  try{
-  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b']);
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','openai/gpt-oss-20b']);
   assert.deepEqual(await providerModels(env,'openrouter'),['qwen/qwen3-coder:free']);
   assert.deepEqual(await providerModels(env,'cerebras'),[]);
   const r=await worker.fetch(req('/chat',{messages:[{role:'user',text:'hello'}]}),env);const d=await r.json();

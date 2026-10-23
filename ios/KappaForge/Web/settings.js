@@ -165,21 +165,30 @@ const PREMIUM_STEPS={check:'fixing what the check found',proposal:'writing a cha
 const PREMIUM_REASONS={check_rounds_exhausted:'free fix rounds used up with problems still open',no_validated_proposal:'no free model produced a change that passes validation'};
 const usd=v=>Number.isFinite(v)?'$'+(v>0&&v<0.1?v.toFixed(4):v.toFixed(2)):'—';
 function premiumModeField(){
- const m=capabilities?.premium;if(!m||m.error)return m?.error?sf('Premium Mode','<span class="muted">Unavailable</span>',esc(m.error)):'';
- return sf('Premium Mode','<label><input type="checkbox" id="premium-mode"'+(m.enabled?' checked':'')+(m.configured?'':' disabled')+'> '+(m.enabled?'On':'Off')+'</label>',
-  'Allow OpenRouter credits only when free routes cannot complete a task. Free models are always tried first. At most '+usd(m.taskCapUsd)+' a task and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests never use it.'+
-  ' Turning it off stops every rescue not yet sent; a request already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
+ const m=capabilities?.premium;
+ if(!m||m.error)return kGroup('Premium · OpenRouter',kRow({icon:'bolt',title:'Premium Mode unavailable',sub:esc(m?.error||'Refresh your backend connection to check availability.')}));
+ const preferred=m.selection?.preferredName||m.selection?.preferredModel,ready=m.configured&&m.selection?.policy==='reviewed-quality-first-v1';
+ return kGroup('Premium · OpenRouter',kToggle('bolt','Premium Mode','Use OpenRouter credits when free models cannot finish a coding task.','<input type="checkbox" id="premium-mode" aria-label="Premium Mode"'+(m.enabled?' checked':'')+(ready?'':' disabled')+'>')+
+  kRow({icon:'cpu',title:'Automatic open-model selection',sub:preferred?'Prefers '+esc(preferred)+'. Chooses the highest-priority reviewed model that fits the request and budget.':'Model policy unavailable. Refresh your backend before using Premium.'})+
+  kRow({title:'OpenRouter only',sub:'Other services never receive a Premium request.'})+
+  kRow({title:'OpenRouter balance',value:usd(m.account?.balanceUsd),sub:Number.isFinite(m.account?.availableUsd)?'Spendable under account and key limits: '+usd(m.account.availableUsd)+'. A fresh check runs before payment.':'Balance or key restrictions could not be verified. Premium will not dispatch until they can be checked.'})+
+  kRow({title:'KappaForge allowance',sub:usd(m.dailyLeftUsd)+' left today; '+usd(m.monthLeftUsd)+' left this month. Pending charges count toward your limits.'})+
+  ['task','daily','month'].map((part,i)=>'<label class="k-row k-input"><span class="k-tx"><b>'+['Per task ($)','Per day ($, UTC)','Per month ($, UTC)'][i]+'</b></span><input type="number" id="premium-limit-'+part+'" aria-label="'+['Premium per-task limit','Premium daily limit','Premium monthly limit'][i]+'" inputmode="decimal" min="0" max="100" step="any" required value="'+esc(m[part==='task'?'taskCapUsd':part==='daily'?'dailyCapUsd':'monthCapUsd']??(part==='daily'?m.monthCapUsd:0))+'"></label>').join('')+
+  kRow({title:'Save spending limits',tag:'button',attrs:'id="premium-limits-save"',sub:'Each limit is $0–$100. Zero pauses spending under that limit. Saving does not turn Premium on.'}),
+  'Free models are tried first. At most '+usd(m.taskCapUsd)+' a task, '+usd(m.dailyCapUsd??m.monthCapUsd)+' a day and '+usd(m.monthCapUsd)+' a month; chat, audits and model tests stay free. '+
+  (m.example?'Example eligible model: '+esc(m.example.name||m.example.model)+'. ':'')+'The actual model and cost appear in Usage. Turning Premium off stops unsent rescues; requests already sent may still be charged.'+(m.configured?'':' Needs an OpenRouter key on the backend.'));
 }
 function premiumCard(){
  const m=capabilities?.premium;if(!m||m.error||!Number.isFinite(m.monthCapUsd))return '';
  const p=Math.min(100,Math.round((m.monthUsd||0)/m.monthCapUsd*1000)/10);
  const offers=(m.offers||[]).map(o=>'<div class="u-offer"><p><strong>Premium rescue recommended · task #'+o.task+'</strong><br>Blocked at '+esc(PREMIUM_STEPS[o.step]||o.step)+': '+esc(PREMIUM_REASONS[o.reason]||'the free models could not finish it')+'. '+
-  (o.model?esc(o.model)+' would cost at most '+usd(o.maxUsd)+'. ':'')+'Budget left: '+usd(o.taskLeftUsd)+' for this task, '+usd(o.monthLeftUsd)+' this month. '+
+  (o.model?esc(o.model)+' was quoted at up to '+usd(o.maxUsd)+'. ':'')+(o.selection?.explanation?esc(o.selection.explanation)+' ':'')+'Budget at quote: '+usd(o.taskLeftUsd)+' for this task, '+usd(o.monthLeftUsd)+' this month. '+
   (o.freeMayRecover?'Free capacity may recover after a cooldown, so waiting may also work. ':'The free models answered but could not finish it, so waiting alone is unlikely to help. ')+'A paid model may still not solve it.'+(o.approvedAt?' <em>One rescue approved: retry the task to use it.</em>':'')+'</p>'+
   '<div class="settings-actions"><button class="btn" data-premium-allow="'+o.task+':'+esc(o.step)+'">Allow one rescue</button><button class="btn secondary" data-premium-enable="'+o.task+':'+esc(o.step)+'">Enable Premium Mode</button><button class="btn secondary" data-premium-dismiss="'+o.task+':'+esc(o.step)+'">Keep using free</button></div></div>').join('');
  const outcome={solved:'solved the step',not_solved:'did not solve the step',failed:'failed',pending:'result pending'};
  const history=(m.history||[]).slice(0,10).map(h=>'<li><strong>Task #'+h.task+'</strong> · '+esc(PREMIUM_STEPS[h.step]||h.step)+' · '+esc(h.model||'—')+'<br><small>'+esc(PREMIUM_REASONS[h.reason]||h.reason||'')+' · up to '+usd(h.estimateUsd)+' · '+
-  (h.billing==='confirmed'?'charged '+usd(h.usd):h.billing==='unresolved'?'charge unknown, counted at '+usd(h.estimateUsd):'reserved')+' · '+esc(outcome[h.outcome]||h.outcome)+' · '+new Date(h.at).toLocaleDateString()+'</small></li>').join('');
+  (h.billing==='confirmed'?'charged '+usd(h.usd):h.billing==='unresolved'?'charge unknown, counted at '+usd(h.estimateUsd):'reserved')+' · '+esc(outcome[h.outcome]||h.outcome)+' · '+new Date(h.at).toLocaleDateString()+'</small>'+
+  (h.selection?.explanation?'<p>'+esc(h.selection.explanation)+'</p>':'')+(h.reconciliation==='needs_review'?'<small>Automatic billing checks ended without confirmation. The reservation stays counted; no paid retry was sent.</small>':'')+'</li>').join('');
  return '<h3 class="u-hdr">Premium rescue</h3><div class="u-card"><div class="u-ttl"><strong>Premium Mode '+(m.enabled?'on':'off')+'</strong><span>Resets in '+untilReset(m.resetsAt)+'</span></div>'+uMeter(p,'#ff9f0a')+
   '<div class="u-lim"><span><b>'+usd(m.monthUsd)+'</b> of '+usd(m.monthCapUsd)+' this month</span><span>'+(p>=100?'Maxed':p+'%')+'</span></div>'+
   '<p class="u-note">Confirmed '+usd(m.confirmedUsd)+' · reserved '+usd(m.reservedUsd)+' · unresolved '+usd(m.unresolvedUsd)+' (counted at its maximum until OpenRouter reports it) · '+usd(m.monthLeftUsd)+' left · up to '+usd(m.taskCapUsd)+' a task.'+
@@ -187,7 +196,7 @@ function premiumCard(){
 }
 async function premiumAction(kind,key){
  const [task,step]=[Number(key.split(':')[0]),key.split(':').slice(1).join(':')];
- if(kind==='enable'){if(!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.'))return;
+ if(kind==='enable'){if(!confirm(premiumEnableMessage()))return;
   await settingsAPI('/premium',{action:'set',enabled:true});}
  if(kind==='allow'){if(!confirm('Allow one premium rescue for task #'+task+'? It is used once, for this step only, within 24 hours.'))return;
   await settingsAPI('/premium',{action:'approve',task,step});}
@@ -195,6 +204,7 @@ async function premiumAction(kind,key){
  await refreshIntelligence(false);
  if(kind!=='dismiss'){if(typeof taskRetry==='function'&&trackedJobs.some(j=>j.number===task))await taskRetry(task);else toast('Retry task #'+task+' to use the rescue.');}
 }
+function premiumEnableMessage(){const m=capabilities?.premium;return 'Turn on Premium Mode? OpenRouter spending is limited to '+usd(m?.taskCapUsd)+' per task, '+usd(m?.dailyCapUsd??m?.monthCapUsd)+' per UTC day and '+usd(m?.monthCapUsd)+' per UTC month. Free models are tried first.';}
 function usageHome(){
  const model=usageModel(),state=capabilities?.routingState;
  if(!model||!state)return '<div class="u-card"><p class="s-empty">Tap Refresh to load today’s usage and limits from your backend.</p></div>';
@@ -394,7 +404,7 @@ function settingsSectionBody(){
   kGroup('Response detail',kChoices('data-pref-set="reasoning" data-value',preferences.reasoning,[['concise','Concise'],['standard','Standard'],['thorough','Thorough']],'k-seg'))+
   kGroup('',kToggle('refresh','Fallback','Try other models when one is busy or out of quota. Files and images always use Gemini.','<input type="checkbox" data-pref="fallback" '+(preferences.fallback?'checked':'')+'>')+
    kToggle('bolt','Start tasks from chat','Tasks are always draft PRs. Nothing merges until you tap Merge.','<input type="checkbox" data-pref="autoStart" '+(preferences.autoStart?'checked':'')+'>'))+
-  '<div class="k-legacy">'+premiumModeField()+'</div>'+
+  premiumModeField()+
   '<h3 class="k-gh">Providers</h3><div class="k-grp k-providers">'+providerSwitches()+'</div><p class="k-foot">Cost routing prefers Lite models; live prices and provider quota are not available.</p>'+
   kBtns(kBtn('s-refresh','Refresh available models'))+'<div class="k-legacy">'+probePanel()+'</div>';
  }
@@ -503,8 +513,16 @@ function bindSettings(){
  on('s-refresh',refreshIntelligence);on('usage-refresh',refreshIntelligence);
  document.getElementById('premium-mode')?.addEventListener('change',async e=>{
   const enabled=e.target.checked;
-  if(enabled&&!confirm('Turn on Premium Mode? KappaForge may then use up to $1 of OpenRouter credit a task ($5 a month) when the free models cannot finish a step. Free models are always tried first.')){e.target.checked=false;return;}
+  if(enabled&&!confirm(premiumEnableMessage())){e.target.checked=false;return;}
   try{await settingsAPI('/premium',{action:'set',enabled});await refreshIntelligence(false);}catch(err){e.target.checked=!enabled;settingsNotice='Premium Mode not changed: '+err.message;render();}
+ });
+ on('premium-limits-save',async()=>{
+  const limits={};
+  for(const [part,key] of [['task','taskCapUsd'],['daily','dailyCapUsd'],['month','monthCapUsd']]){
+   const input=document.getElementById('premium-limit-'+part);if(!input?.reportValidity())return;
+   limits[key]=Number(input.value);
+  }
+  await settingsAPI('/premium',{action:'limits',limits});await refreshIntelligence(false);settingsNotice='Premium spending limits saved.';render();
  });
  document.querySelectorAll('[data-premium-allow],[data-premium-enable],[data-premium-dismiss]').forEach(b=>b.onclick=async()=>{
   b.disabled=true;const kind=b.dataset.premiumAllow?'allow':b.dataset.premiumEnable?'enable':'dismiss';
