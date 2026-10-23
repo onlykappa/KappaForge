@@ -338,3 +338,24 @@ body.sheet-open{overflow:hidden}
 .task-sheet-body li{display:flex;gap:8px;align-items:baseline;font-size:var(--t-sub)}
 @media(prefers-reduced-motion:reduce){.ios-switch,.ios-switch::after{transition:none}}
 @media(max-width:840px){body[data-view=chat] .content{padding-top:16px}}
+/* More: the model route switch, two numbers for today, then shortcuts. */
+.more-model{padding:12px 12px 14px;margin:0 0 12px}
+.more-label{margin:0 4px 10px;font-size:var(--t-sub);font-weight:600;color:color-mix(in srgb,var(--text) 70%,transparent)}
+.more-routes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.more-routes button{min-height:44px;border:0;border-radius:22px;background:var(--fill);color:var(--text);font:inherit;font-size:var(--t-sub);font-weight:700}
+.more-routes button[aria-pressed=true]{background:var(--accent-fill);color:var(--on-accent)}
+.more-routes button:active{opacity:.7}
+.more-glance{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 12px}
+.more-glance .home-glance{min-height:84px;padding:14px 16px}.more-glance .home-glance small{font-size:var(--t-foot);color:color-mix(in srgb,var(--text) 70%,transparent)}
+.more-glance .st-bad{color:var(--bad)}
+.ios-group.icons+.ios-group.icons{margin-top:12px}
+.more-foot{text-align:center;padding-top:10px}.more-foot .text-button{min-height:44px;border:0;background:transparent;color:color-mix(in srgb,var(--text) 70%,transparent);font-size:var(--t-foot)}
+/* Dashboard task menu */
+.agent-task{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.task-menu-title{margin:-4px 2px 12px;font-size:var(--t-sub);color:color-mix(in srgb,var(--text) 70%,transparent)}
+.ios-sheet .ios-group+.ios-group{margin-top:12px}
+.ios-row .ios-sq.bad{color:var(--bad)}.ios-row:has(.ios-sq.bad) b{color:var(--bad-text)}
+.ios-sheet .ios-row-text small{white-space:normal}
+/* Long chats: messages off screen skip layout and paint until they scroll near, so redraws stay fast. */
+.chat-message{content-visibility:auto;contain-intrinsic-size:auto 160px}
+.chat-message:nth-last-child(-n+6),.chat-message:has(details[open]){content-visibility:visible}

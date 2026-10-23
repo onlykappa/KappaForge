@@ -69,6 +69,14 @@ function inactiveTask(job){
  if(taskHasActiveExecution(job))return false;
  return job.finished||['completed','failed','cancelled','closed','ready','blocked'].includes(job.progress?.status)||['failed','tests-failed','closed','merged','cancelled'].includes(job.message);
 }
+async function deleteTaskHistory(number){
+ const job=trackedJobs.find(j=>j.number===number);
+ if(!job)throw Error('This task is no longer available.');
+ if(!inactiveTask(job))throw Error('Active or unknown work stays tracked. Cancel it first and wait for termination before clearing its history.');
+ const result=await executeAppCapability({id:'tasks.clear-history',params:{status:'inactive',tasks:[number]}},{source:'user-control'});
+ if(!dismissedTaskIds.has(number))throw Error('The task became active or changed before deletion. Its tracking was preserved.');
+ return result;
+}
 function taskHistoryMatches(job,status){
  if(!inactiveTask(job))return false;
  if(status==='inactive')return true;
