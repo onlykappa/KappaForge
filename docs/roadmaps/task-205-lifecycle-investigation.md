@@ -16,6 +16,8 @@ Each fix is its own PR from `main` (`71cddc0`). They touch separate code and can
 | P0 lifecycle asks decided from source review; repair chases "no PR exists" (#205 root cause) | #213 | Open |
 | P1 task card waits for an iOS build that was never dispatched | #214 | Open |
 
+Release plan (owner): merge #208–#214 together, then build one IPA containing all of them, not one per PR. All seven were merged locally on 2026-10-23 with no conflicts: Python suite OK, 793/793 Node tests, web checks OK, regenerated dependency map 5960 chars with nothing omitted.
+
 After merging, regenerate `dependency_map.json` (`python3 scripts/dependency-map.py`); #208 and #211 add test links.
 
 ### Remaining queue (next PRs, in order)
@@ -24,7 +26,7 @@ After merging, regenerate `dependency_map.json` (`python3 scripts/dependency-map
 2. **Protected-path stop message.** `recovery.diagnose` maps a protected-path rejection to authorization and tells the owner to "provide missing access". That's wrong: the fix is to drop the edit. Give policy rejections their own wording. Keep the stop.
 3. **Native trigger overlap and checkout binding.** `ios-build.yml` also runs on `pull_request` for app paths, so a draft update can start a duplicate native run. Check every dispatch checks out `candidate_sha` (today it checks out the branch input) and refuses a moved head. Deduplicate by task + SHA + kind only after confirming the event overlap from run history.
 4. **User-visible truth in the task card.** Persist a "Draft #N created" milestone across retries. Label attempt, total and validation time separately. Distinguish policy rejection, missing context, provider unavailable and real access errors.
-5. **PR-first contract (needs the owner's decision).** Is "open a fresh draft first" before any code, or after the first safe checkpoint (current behavior)? Don't implement it until the owner chooses.
+5. **PR-first contract (owner decided 2026-10-23).** Every development task opens its draft PR *before any code is written*. The first commit is a task-owned plan document stating the goal and the planned stages (from `plan_change`), and the PR body carries the same layout. Code stages then land on that draft. The PR stays a draft until the owner reviews it; KappaForge never marks it ready or merges it on its own. Implementation notes: create the plan commit and draft PR in `produce_development_pr` right after planning, before `build_in_stages`. Treat a failed PR creation as its own orchestration failure (no code generation). Retries reuse the same draft (journal `pr`). The plan document must not count as "code changed" for native/sandbox path selection. #213's lifecycle receipt then always exists during review.
 6. **Provider diagnostics and failure provenance.** Show per-provider coding/chat eligibility and capture raw failure bodies and request IDs for non-JSON 503s (see the [provider audit](provider-lifecycle-stress-audit.md)). Keep #203's cutoff recovery and backoff.
 7. **P2 repeated, model-pinned sampling**, permitted providers only. Report distributions and limits, not rankings.
 
