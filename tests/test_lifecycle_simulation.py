@@ -189,6 +189,45 @@ class SimGitHubTests(unittest.TestCase):
             sim.guarded_urlopen(urllib.request.Request("https://api.github.com/user"))
 
 
+class ReportTests(unittest.TestCase):
+    def test_usage_totals_count_measured_tokens_failures_and_routes(self):
+        records = [{"status": 200, "route": "groq:a", "promptChars": 700, "usage": {"promptTokenCount": 200, "candidatesTokenCount": 50,
+                                                                                   "totalTokenCount": 250}},
+                   {"status": 200, "route": "groq:a", "promptChars": 350, "usage": None},
+                   {"status": 429, "code": "quota_exhausted", "promptChars": 70, "usage": None}]
+        usage = sim.usage_summary(records)
+        self.assertEqual((usage["requests"], usage["answered"], usage["answers_with_usage"]), (3, 2, 1))
+        self.assertEqual(usage["tokens"], {"prompt": 200, "output": 50, "total": 250})
+        self.assertEqual(usage["routes"], {"groq:a": 2})
+        self.assertEqual(usage["failures"], {"quota_exhausted": 1})
+        self.assertEqual(usage["estimated_prompt_tokens_from_chars"], 320)
+
+    def test_markdown_reports_results_and_rules_honestly(self):
+        usage = sim.usage_summary([])
+        scenario = {"key": "easy", "title": "t", "result": "draft_pr", "seconds": 1.0, "usage": usage, "changed_files": ["a.py"],
+                    "open_problems": [], "timeline": [{"kind": "pr_opened", "files": []}],
+                    "lifecycle": {"draft_opened_before_any_code": True, "stays_draft": False},
+                    "tests": {"own_python": {"passed": True, "output": "ok"}, "acceptance_python": {"passed": False, "output": "boom"}}}
+        text = sim.markdown({"finished_at": "now", "scenarios": [scenario], "totals": usage})
+        self.assertIn("| easy | draft_pr | 1.0 | 0/0 | 0 / 0 / 0 | pass | FAIL | 1/2 |", text)
+        self.assertIn("stays_draft ❌", text)
+        self.assertIn("acceptance_python: FAIL", text)
+
+    def test_the_simulation_refuses_to_run_without_the_real_gateway(self):
+        with patch.dict(os.environ, {"KAPPA_ROUTER_REQUIRED": ""}), self.assertRaises(SystemExit):
+            sim.main(["--only", "easy"])
+
+    def test_a_broken_lifecycle_rule_fails_the_process(self):
+        broken = {"key": "easy", "title": "t", "result": "draft_pr", "seconds": 0, "usage": sim.usage_summary([]), "changed_files": [],
+                  "open_problems": [], "timeline": [], "lifecycle": {"stays_draft": False}, "tests": {"skipped": "x"}}
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"KAPPA_ROUTER_REQUIRED": "true", "GITHUB_STEP_SUMMARY": ""}), \
+                patch.object(sim, "run_scenario", return_value=broken), patch.object(sim, "docker_available", return_value=False), \
+                patch("builtins.print"):
+            self.assertEqual(sim.main(["--only", "easy", "--out", os.path.join(folder, "r.json")]), 1)
+            with patch.object(sim, "run_scenario", return_value={**broken, "lifecycle": {"stays_draft": True}}):
+                self.assertEqual(sim.main(["--only", "easy", "--out", os.path.join(folder, "r.json")]), 0)
+
+
 class ScriptedScenarioTests(unittest.TestCase):
     """The easy scenario through the real engine with a scripted model: the harness wiring and its lifecycle rules."""
 
