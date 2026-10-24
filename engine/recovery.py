@@ -61,8 +61,10 @@ def notify_wake(task):
         print('Recovery wake-up skipped: unapproved backend origin', flush=True)
         return
     try:
+        # Cloudflare refuses Python's default User-Agent (HTTP 403); every other gateway call names itself.
         request = urllib.request.Request(endpoint + '/router/recovery', data=json.dumps({'task': task}).encode(),
-                                         headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+                                         headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                                                  'Accept': 'application/json', 'User-Agent': 'KappaForge-Recovery-Wake/1'})
         with urllib.request.urlopen(request, timeout=15) as response:
             if response.status != 202:
                 raise ValueError('Unexpected wake-up acknowledgement')
