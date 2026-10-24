@@ -1210,6 +1210,20 @@ class StageRecoveryTests(unittest.TestCase):
         self.assertIn("int(a)", changes["app/main.py"])
         self.assertTrue(developer.UNFINISHED[0].startswith("No test proves the change works yet"))
 
+    def test_a_candidate_change_during_a_stage_stops_the_build_instead_of_skipping_the_step(self):
+        from engine import task_state
+        for parallel, stages in ((False, ["Cast", "Test"]),
+                                 (True, [developer.Stage("Cast", ["app/main.py"], True), developer.Stage("Other", ["app/other.py"], True)])):
+            with self.subTest(parallel=parallel):
+                developer.UNFINISHED.clear()
+                moved = task_state.CandidateChanged('Task state: candidate changed during inference')
+                with patch.object(developer, "generate", side_effect=moved) as generate, \
+                        self.assertRaises(task_state.CandidateChanged):
+                    developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, stages)
+                self.assertEqual(developer.UNFINISHED, [], 'not recorded as an unfinished step')
+                if not parallel:
+                    self.assertEqual(generate.call_count, 1, 'no later stage builds on the stale candidate')
+
     def test_syntax_errors_say_what_and_where_not_the_node_version(self):
         message = developer.syntax_error("tests/a.test.mjs", "import x from 'y';\nconst a = ;\n")
         self.assertEqual(message, "tests/a.test.mjs: SyntaxError: Unexpected token ';' (line 2)")

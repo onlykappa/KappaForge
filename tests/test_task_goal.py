@@ -163,6 +163,30 @@ class TaskGoalTests(unittest.TestCase):
         self.assertIsNone(task_goal.from_request(REQUEST + ' Also fix the API.').paths)
         self.assertIsNone(task_goal.from_request('Fix the API. ' + REQUEST).paths)
 
+    def test_guidance_is_bounded_idempotent_and_keeps_an_exact_goal_for_lifecycle_only_messages(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        messages = ['first ' + 'a' * 3000, 'second', 'third', 'fourth']
+        goal.guidance(messages)
+        self.assertNotIn('first', goal.request, 'only the latest three messages are kept')
+        self.assertIn('second', goal.request)
+        self.assertIn('fourth', goal.request)
+        long = task_goal.from_request('Make add accept numeric strings')
+        long.guidance(['b' * 5000])
+        self.assertEqual(long.request.count('b'), task_goal.GUIDANCE_CHARS)
+        request, digest = goal.request, task_state.digest(goal)
+        goal.guidance(messages)
+        goal.guidance(list(messages))
+        self.assertEqual((goal.request, task_state.digest(goal)), (request, digest), 'reapplying guidance changes nothing')
+        goal.guidance(messages + ['fifth'])
+        self.assertIn('fifth', goal.request)
+        self.assertEqual(goal.request.count('OWNER GUIDANCE'), 1)
+        for message in ('Do not merge', 'Open a draft PR and don\u2019t merge it', 'Change nothing else.', 'Let me know when it is ready'):
+            with self.subTest(message=message):
+                exact = task_goal.from_request(REQUEST)
+                exact.guidance([message])
+                self.assertEqual((exact.paths, exact.comment), ((PATH,), COMMENT))
+                self.assertIn(message, exact.request)
+
     def test_only_explicit_owner_guidance_can_amend_the_goal(self):
         goal = task_goal.from_request(REQUEST)
         goal.guidance(['Also update the workflow description.'])

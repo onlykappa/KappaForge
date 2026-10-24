@@ -250,6 +250,16 @@ class GatewayEvidenceTests(unittest.TestCase):
         self.assertEqual(journal.state['pinnedGatewayCalls'], 2)
         journal.persist.assert_called_once()
 
+    def test_the_pinned_prompt_cap_applies_without_a_task_record(self):
+        prompt = 'x' * (gateway.PINNED_PROMPT_CHARS + 1)
+        self.assertTrue(gateway.prompt_fits(prompt), 'unpinned routes keep the router budget')
+        handle = recovery.CURRENT.set(SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b')))
+        try:
+            self.assertFalse(gateway.prompt_fits(prompt), 'run_model would refuse it, so sizing loops must keep shrinking')
+            self.assertTrue(gateway.prompt_fits('x' * gateway.PINNED_PROMPT_CHARS))
+        finally:
+            recovery.CURRENT.reset(handle)
+
     def test_bounded_test_dispatch_disables_automatic_fixes_on_reviewed_ref(self):
         journal = SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b'))
         handle = recovery.CURRENT.set(journal)

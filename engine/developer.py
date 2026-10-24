@@ -1548,7 +1548,9 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         nonlocal model, writer
         task_state.stage_result(i, not isinstance(outcome, Exception))
         if isinstance(outcome, Exception):
-            if not isinstance(outcome, ValueError):
+            # A terminal failure (the candidate moved during inference) must stop the build: later stages would
+            # otherwise build on a stale candidate.
+            if not isinstance(outcome, ValueError) or getattr(outcome, 'terminal', False):
                 raise outcome
             if not combined:
                 raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {outcome}") from outcome

@@ -28,12 +28,20 @@ class Goal:
     reasons: dict = field(default_factory=dict, repr=False)
     review_paths: tuple = ()
     review_diff: str = ''
+    original: str = field(default='', repr=False)
+    applied: tuple = field(default=(), repr=False)
+
+    def __post_init__(self):
+        self.original = self.original or self.request
 
     def guidance(self, messages):
-        if messages:
+        # Like the task text, keep only the latest few messages, each bounded, so prompts and the digest stay stable.
+        recent = tuple(m.strip()[:GUIDANCE_CHARS] for m in (messages or ())[-GUIDANCE_MESSAGES:] if isinstance(m, str) and m.strip())
+        if recent and recent != self.applied:
             # Only caller-verified owner guidance may amend the task, never review/model suggestions.
-            updated = from_request(self.request + '\n\nOWNER GUIDANCE:\n' + '\n'.join(messages))
-            self.request, self.paths, self.comment = updated.request, updated.paths, updated.comment
+            # Rebuilt from the original request, so applying the same guidance again changes nothing.
+            updated = from_request(self.original, recent)
+            self.request, self.paths, self.comment, self.applied = updated.request, updated.paths, updated.comment, recent
             self.baseline = {}
             self.reasons.clear()
             if self.record is not None:
@@ -117,18 +125,25 @@ class Goal:
         return text
 
 
-def from_request(request):
-    goal = Goal(request)
+GUIDANCE_MESSAGES, GUIDANCE_CHARS = 3, 1500
+
+
+def incidental(part):
+    """A clause that asks for no source work: "change nothing else", a merge hold or a PR lifecycle ask."""
+    from engine import verify
+    return bool(re.fullmatch(r'change nothing else', part, re.I) or verify.lifecycle_requirement(part)
+                or verify.LIFECYCLE_CONTINUATION_RE.match(part.replace('\u2019', "'")) and not verify.CODE_WORK_RE.search(part))
+
+
+def from_request(request, guidance=()):
+    goal = Goal(request + ('\n\nOWNER GUIDANCE:\n' + '\n'.join(guidance) if guidance else ''), original=request)
     # A literal one-line insertion has a deterministic result. No special "nothing else" instruction is needed.
     match = re.search(r'\b(?:add|insert|prepend)\s+(?:a\s+)?(?:(?:single|one)\s+)?comment(?:\s+line)?\s+(.+?)\s+(?:as\s+(?:the\s+)?first\s+line|(?:at|to)\s+(?:the\s+)?(?:top|start|beginning))\s+(?:of|in)\s+[`\"\']?([\w./-]+\.[\w]+)[`\"\']?', request, re.I)
     if match:
-        from engine import verify
-        # Do not narrow a compound owner request that also asks for other source work.
+        # Do not narrow a compound owner request, or guidance, that also asks for other source work.
         tail = request[match.end():].strip(' .\n')
-        remaining = [part.strip() for part in re.split(r'[.\n]+', tail) if part.strip()]
-        if request[:match.start()].strip().lower() not in ('', 'please') or any(
-                not re.fullmatch(r'change nothing else', part, re.I) and not verify.lifecycle_requirement(part)
-                for part in remaining):
+        remaining = [part.strip() for text in (tail, *guidance) for part in re.split(r'[.\n]+', text) if part.strip()]
+        if request[:match.start()].strip().lower() not in ('', 'please') or not all(map(incidental, remaining)):
             return goal
         comment, path = match[1].strip(), match[2].rstrip('.')
         if len(comment) > 1 and comment[0] == comment[-1] and comment[0] in ('`', '"', "'"):
