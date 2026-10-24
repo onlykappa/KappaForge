@@ -504,6 +504,67 @@ def syntax_error(path, text):
     return None
 
 
+def module_name(path):
+    return path[:-3].replace('/', '.').removesuffix('.__init__') if path.endswith('.py') else None
+
+
+def top_level_imports(path, text, exists):
+    """Module-level imports of one Python file as (module, from_name) edges; parsed, never imported."""
+    package = module_name(path).rsplit('.', 1)[0] if '/' in path else ''
+    try:
+        tree = ast.parse(text, filename=path)
+    except SyntaxError:
+        return []
+    statements, edges = list(tree.body), []
+    while statements:
+        node = statements.pop(0)
+        if isinstance(node, (ast.If, ast.Try)):
+            statements.extend(node.body + getattr(node, 'orelse', []) + [s for h in getattr(node, 'handlers', []) for s in h.body])
+        elif isinstance(node, ast.Import):
+            edges += [(alias.name, False) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ''
+            if node.level:
+                parent = package.split('.')[:len(package.split('.')) - node.level + 1] if package else []
+                base = '.'.join(parent + ([node.module] if node.module else []))
+            for alias in node.names:
+                submodule = base + '.' + alias.name
+                # "from engine import repair_loop" imports a module; "from engine.x import name" needs x initialised.
+                edges.append((submodule, False) if exists(submodule.replace('.', '/') + '.py') else (base, True))
+    return edges
+
+
+def import_cycle(changes, read, limit=60):
+    """A module-level import cycle through a changed Python file that would fail at import time, or None.
+
+    Python finishes no module in a cycle before the others start, so a `from X import name` inside a cycle reads a
+    partially initialised module. Static only: sources are parsed, nothing generated is imported or executed.
+    """
+    texts = dict(changes)
+    def source(path):
+        if path not in texts:
+            texts[path] = read(path)
+        return texts[path]
+    exists = lambda path: source(path) is not None
+    graph = {}
+    def edges(module):
+        if module not in graph and len(graph) < limit:
+            path = module.replace('.', '/') + '.py'
+            text = source(path)
+            graph[module] = [(m, named) for m, named in top_level_imports(path, text, exists) if exists(m.replace('.', '/') + '.py')] if text else []
+        return graph.get(module, [])
+    for start in [module_name(p) for p in changes if p.endswith('.py') and changes[p] is not None]:
+        stack = [(start, [(start, False)])]
+        while stack:
+            module, trail = stack.pop()
+            for target, named in edges(module):
+                if target == start and (named or any(n for _, n in trail[1:])):
+                    return ' -> '.join([m for m, _ in trail] + [target])
+                if target not in [m for m, _ in trail]:
+                    stack.append((target, trail + [(target, named)]))
+    return None
+
+
 # Lines kept on each side of a traceback frame's line in an excerpt.
 EXCERPT_FRAME_LINES = 6
 STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", "would", "could", "make",
@@ -1081,6 +1142,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             problems = [e for e in (syntax_error(p, t) for p, t in changes.items()) if e]
             if problems:
                 raise ValueError("Syntax check failed: " + "; ".join(problems))
+            cycle = import_cycle(changes, lambda path: working_source(path, working_sources, existing, journal))
+            if cycle:
+                raise ValueError("Import cycle would fail at import time: " + cycle +
+                                 ". Import inside the function that needs it, or move the shared helper.")
             text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
             note("code", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}: " + ", ".join(list(changes)[:4]))
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
@@ -2289,6 +2354,19 @@ def base_test_regressions(log, repo, base_sha, token):
         if len(found) >= MAX_REGRESSIONS:
             break
     return found
+
+
+def working_source(path, sources, existing, journal):
+    """A file's current text for static checks: shown source, then the candidate loader; None when it does not exist."""
+    if path in sources:
+        return sources[path]
+    if path not in existing:
+        return None
+    loader = getattr(journal, 'loader', None)
+    try:
+        return loader(path) if loader else None
+    except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
+        return None
 
 
 def files_named_in(log, existing, changed):
