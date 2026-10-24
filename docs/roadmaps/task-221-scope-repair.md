@@ -39,3 +39,7 @@ PR #222 remains evidence and is not merged or rewritten by this engine fix.
 - Full Node suite: 822 passed.
 - Dependency map regenerated within the existing 6000-character budget.
 - CI runs the pinned Linux structural tools, Docker canaries, browser tests and Worker checks before owner review.
+
+## Shared task-state extension (owner requested)
+
+Carry a bounded task record into every planning, coding, review and recovery model call. It must contain the owner goal, task/repository/branch/candidate identity, verified PR facts, candidate-bound check outcomes, recent rejected attempts, remaining requirements, and the next action with a reason and success condition. Saved/model-reported progress is not independent proof. Rebuild from the existing recovery journal after interruption, refresh receipts, invalidate stale checks when the candidate moves, and preserve all existing authorization and budget limits. Validate stale/different-task facts, context-size boundaries, secret redaction, and the full #221 replay.
