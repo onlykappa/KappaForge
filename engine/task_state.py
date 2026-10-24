@@ -70,7 +70,12 @@ def bind(repo, task, branch, candidate, journal=None):
         return
     record = Record(identity)
     goal.record = record
-    saved = (getattr(journal, 'state', {}) or {}).get('taskRecord', {})
+    goal.receipt = None
+    state = getattr(journal, 'state', {}) or {}
+    if (state.get('repo') == repo and state.get('task') == int(task) and state.get('candidate') == candidate
+            and isinstance(state.get('files'), list)):
+        record.files = sorted({clean(path, 160) for path in state['files'] if isinstance(path, str)})
+    saved = state.get('taskRecord', {})
     if (isinstance(saved, dict) and saved.get('version') == 1 and saved.get('goalDigest') == digest(goal)
             and isinstance(saved.get('identity'), dict)
             and all(saved['identity'].get(k) == identity[k] for k in ('repository', 'task', 'branch'))):
@@ -100,7 +105,7 @@ def checkpoint(candidate, files=()):
             record.checks.clear()
             record.review = {}
         record.identity['candidate'] = candidate
-        record.files = sorted(set(record.files) | {clean(path, 160) for path in files})[:24]
+        record.files = sorted(set(record.files) | {clean(path, 160) for path in files})
         record.revision += 1
 
 
@@ -232,7 +237,8 @@ def snapshot(journal=None):
                 budgets[key] = dict(used=used, limit=limit, remaining=max(0, limit - used))
         return dict(version=1, revision=record.revision, identity=dict(record.identity),
                     goal=dict(text=clean(goal.title + '\n' + goal.request, 1400), digest=digest(goal)),
-                    facts=facts, changedFiles=list(record.files), recentAttempts=list(record.attempts),
+                    facts=facts, touchedFiles=list(record.files[:24]), omittedFiles=max(0, len(record.files) - 24),
+                    recentAttempts=list(record.attempts),
                     stage=STAGE.get(), plannedStages=[dict(item) for item in record.stages],
                     review=dict(record.review),
                     savedProgress=dict(status=clean(state.get('status', 'unknown'), 40),
@@ -264,8 +270,9 @@ def add_to_prompt(prompt, journal=None):
     while len(wire().encode('utf-16-le')) // 2 > MAX_CONTEXT:
         if data['recentAttempts']:
             data['recentAttempts'].pop(0)
-        elif data['changedFiles']:
-            data['changedFiles'].pop()
+        elif data['touchedFiles']:
+            data['touchedFiles'].pop()
+            data['omittedFiles'] += 1
         elif data['plannedStages']:
             data['plannedStages'].pop()
         elif data['savedProgress']['requirementInterpretations']:

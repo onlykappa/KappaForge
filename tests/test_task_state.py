@@ -130,6 +130,21 @@ class TaskStateTests(unittest.TestCase):
             finally:
                 task_goal.CURRENT.reset(token)
 
+    def test_resume_restores_touched_paths_without_reusing_pr_facts(self):
+        fresh = task_goal.from_request(self.goal.request)
+        fresh.receipt = {'url': 'stale', 'open': True, 'draft': True}
+        token = task_goal.CURRENT.set(fresh)
+        try:
+            paths = [f'app/file{i}.py' for i in range(30)]
+            journal = SimpleNamespace(state={'repo': REPO, 'task': 221, 'candidate': SHA, 'files': paths})
+            task_state.bind(REPO, 221, BRANCH, SHA, journal=journal)
+            data = task_state.snapshot()
+            self.assertEqual(len(data['touchedFiles']), 24)
+            self.assertEqual(data['omittedFiles'], 6)
+            self.assertNotIn('pr', data['facts'])
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_stage_progress_is_not_a_claim_that_checks_passed(self):
         task_state.plan(['Fix the handler', 'Verify its output'])
         task_state.stage_result(1, True)
