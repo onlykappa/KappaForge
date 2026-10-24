@@ -27,12 +27,15 @@ class SandboxRepairController:
                 }
                 if self.attempts:
                     attempt['diff_from_prev'] = (diff != self.attempts[-1]['diff'])
-                if self.attempts:
-                    attempt['diff_from_prev'] = (diff != self.attempts[-1]['diff'])
+                else:
+                    attempt['diff_from_prev'] = True
                 
                 if any(a['fingerprint'] == fingerprint for a in self.attempts):
                     break
                 
+                if not diff:
+                    break
+
                 self.attempts.append(attempt)
                 
                 if self._verify_success(result):
