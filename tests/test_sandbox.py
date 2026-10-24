@@ -366,6 +366,54 @@ class RealDockerTests(unittest.TestCase):
         after = self.session.run_tests()
         self.assertEqual([r.status for r in after], ['passed', 'passed'], [r.stderr[-500:] for r in after])
 
+    def test_scripted_tool_loop_repairs_the_faulty_project_and_runs_final_regression(self):
+        from engine.sandbox_repair_controller import run_sandbox_repair
+        files = {p.relative_to(FAULTY).as_posix(): p.read_bytes() for p in FAULTY.rglob('*')
+                 if p.is_file() and not p.relative_to(FAULTY).as_posix().startswith('fixes/')}
+        candidate = sandbox.Session(sandbox.Tree('onlykappa/KappaForge', SHA, files), versions=self.session.versions)
+        self.addCleanup(candidate.close)
+        before = candidate.run_tests()
+        self.assertEqual([r.status for r in before], ['failed', 'failed'])
+        self.assertIn('AssertionError: 1999 != 1699', before[0].stderr)
+        self.assertIn('Expected values to be strictly equal', before[1].stdout)
+        replies = iter([
+            {'tool': 'inspect_test_results', 'args': {'index': 0}, 'reason': 'Diagnose the Python discount failure'},
+            {'tool': 'inspect_test_results', 'args': {'index': 1}, 'reason': 'Diagnose the Node quantity failure'},
+            {'tool': 'apply_patch', 'args': {'edits': [
+                {'path': 'shop/pricing.py', 'find': 'return total_cents - total_cents * (percent // 100)',
+                 'replace': 'return total_cents - round(total_cents * percent / 100)'},
+                {'path': 'web/cart.mjs', 'find': 'sum + line.priceCents', 'replace': 'sum + line.priceCents * line.qty'},
+            ]}, 'reason': 'Apply fractional discounts and count quantities; the untouched implementation ignored both'},
+            {'tool': 'run_tests', 'args': {}, 'reason': 'Verify the correction against both unchanged suites'},
+        ])
+        calls = []
+
+        def model(key, prompt, **kwargs):
+            self.assertEqual(key, 'fixture-no-live-key')
+            self.assertEqual(kwargs['allowed'], ['ollama'])
+            self.assertNotIn(key, prompt)
+            calls.append(prompt)
+            return 'scripted:fixture', json.dumps(next(replies))
+
+        def scope(changes):
+            if set(changes) - {'shop/pricing.py', 'web/cart.mjs'}:
+                raise PermissionError('Fixture repair may not alter tests or commands')
+
+        with patch('engine.developer.commit_changes', side_effect=AssertionError('Controller published code')) as commit:
+            report = run_sandbox_repair('Repair both faulty fixture implementations without editing tests', model,
+                'fixture-no-live-key', session_factory=lambda: candidate, allowed=['ollama'], validate_change=scope)
+        self.assertTrue(report['success'], report)
+        self.assertEqual(report['attempts'], 1)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([r['status'] for r in report['final_results']], ['passed', 'passed'])
+        self.assertEqual([r.status for r in candidate.results if r.profile == 'test'],
+                         ['failed', 'failed', 'passed', 'passed', 'passed', 'passed'])
+        self.assertEqual(set(candidate.changes), {'shop/pricing.py', 'web/cart.mjs'})
+        for path in ('tests/test_pricing.py', 'web/cart.test.mjs', 'package.json'):
+            self.assertEqual(candidate.current()[path], files[path])
+        self.assertTrue(candidate.closed)
+        commit.assert_not_called()
+
     def test_secrets_network_and_system_files_are_out_of_reach(self):
         with patch.dict(os.environ, {'GITHUB_TOKEN': 'ghp_' + 'r' * 36, 'KAPPA_ROUTER_TOKEN': 'router-secret-value-9'}):
             self.session.apply({'probe.py': (
