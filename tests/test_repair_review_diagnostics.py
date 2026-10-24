@@ -94,6 +94,72 @@ class IncompleteExcerptTests(GuardCase):
                 self.assertEqual(rows[0]['verdict'], 'needs_validation')
 
 
+class GateDiagnosticsTests(GuardCase):
+    """A confirming answer that fails a deterministic check says which check, without loosening any check."""
+    SOURCE = {'engine/developer.py': 'def produce_development_pr():\n    ' + PUBLISH_LINE + '\n    build_in_stages()\n'}
+
+    def decide(self, **change):
+        journal = SimpleNamespace(state={}, persist=Mock())
+        recovery.CURRENT.set(journal)
+
+        def model(key, prompt, **kw):
+            row = dict(id=review_input(prompt)['findings'][0]['id'], verdict='confirmed', in_goal=True,
+                       reason='`produce_development_pr` calls `open_plan_draft(repo, token)` before `build_in_stages`',
+                       owner_quote=OWNER_QUOTE, evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)])
+            row.update(change)
+            return 'verifier', json.dumps({'findings': [row]})
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['Plan PR opens before validation'], self.SOURCE)
+        return rows[0], journal.state['repairEvidence']['findings'][0]
+
+    def test_an_inexact_extra_quote_no_longer_voids_a_literal_one(self):
+        row, saved = self.decide(evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE),
+                                           dict(path='engine/developer.py', quote='open_plan_draft(repo, token)'),
+                                           dict(path='/home/runner/work/x/engine/developer.py', quote=PUBLISH_LINE)])
+        self.assertEqual(row['verdict'], 'confirmed')
+        self.assertEqual(row['evidence'], [dict(path='engine/developer.py', quote=PUBLISH_LINE)], 'only literal items are kept')
+        self.assertEqual(saved['gate'], [])
+
+    def test_each_failed_check_is_named_and_still_blocks(self):
+        for change, gate in ((dict(evidence=[dict(path='engine/developer.py', quote='open_plan_draft(repo, token)')]), ['no_literal_source_evidence']),
+                             (dict(evidence=[]), ['no_literal_source_evidence']),
+                             (dict(evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)] * 5), ['no_literal_source_evidence']),
+                             (dict(owner_quote='publish only after review'), ['owner_quote_not_literal']),
+                             (dict(in_goal=False), ['not_in_goal']),
+                             (dict(in_goal=False, owner_quote='', evidence=[]), ['not_in_goal', 'no_literal_source_evidence', 'owner_quote_not_literal'])):
+            with self.subTest(gate=gate, change=change):
+                row, saved = self.decide(**change)
+                self.assertEqual(row['verdict'], 'needs_validation')
+                self.assertEqual(row['gate'], gate)
+                self.assertEqual(saved['gate'], gate)
+                self.assertIn('[gate: ' + ', '.join(gate) + ']', repair_guard.summary([row]))
+
+    def test_a_rejection_without_its_proof_is_named_too(self):
+        row, _ = self.decide(verdict='rejected', evidence=[])
+        self.assertEqual((row['verdict'], row['gate']), ('needs_validation', ['no_literal_source_evidence']))
+        row, _ = self.decide(verdict='rejected', in_goal=False, owner_quote='not in the request')
+        self.assertEqual((row['verdict'], row['gate']), ('needs_validation', ['owner_quote_not_literal']))
+
+    def test_owner_quote_may_join_a_wrapped_line_but_not_change_words(self):
+        wrapped = OWNER_QUOTE.replace('until sandbox validation', 'until\n  sandbox   validation')
+        self.assertTrue(repair_guard.owner_quoted(wrapped, OWNER))
+        self.assertFalse(repair_guard.owner_quoted(OWNER_QUOTE.replace('AND', 'or'), OWNER))
+        self.assertFalse(repair_guard.owner_quoted('   ', OWNER))
+        row, _ = self.decide(owner_quote=wrapped)
+        self.assertEqual(row['verdict'], 'confirmed')
+
+    def test_source_quotes_still_need_exact_text(self):
+        squeezed = PUBLISH_LINE.replace(', ', ',')
+        row, _ = self.decide(evidence=[dict(path='engine/developer.py', quote=squeezed)])
+        self.assertEqual(row['gate'], ['no_literal_source_evidence'])
+
+    def test_saved_reasons_keep_identifier_names_but_not_source(self):
+        _, saved = self.decide(in_goal=False)
+        self.assertIn('`produce_development_pr`', saved['reason'])
+        self.assertIn('`build_in_stages`', saved['reason'])
+        self.assertNotIn('open_plan_draft(repo', saved['reason'])
+        self.assertIn('[excerpt]', saved['reason'])
+
+
 class TracebackExcerptTests(unittest.TestCase):
     SOURCE = ''.join(f'total += step()  # r{n}\n' for n in range(600))
 
