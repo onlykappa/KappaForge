@@ -4,8 +4,8 @@ Goal: KappaForge applies its edits in an isolated workspace, runs the project's 
 validates the result **before** the first commit or draft PR. Everything runs on cloud infrastructure (GitHub Actions);
 the owner's phone or computer never needs to stay online.
 
-Tracking: one branch (`phase1/execution-sandbox`) and one draft PR. Boxes are ticked only when the step's code, tests
-and documentation are on the branch. Nothing here is merged, deployed or released by KappaForge.
+Tracking: numbered steps are delivered in pull requests against `main`. Boxes are ticked only when the step's code,
+tests and documentation are on its delivery branch. Merges, deployments and releases require owner authorization.
 
 ## Progress
 

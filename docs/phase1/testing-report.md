@@ -145,10 +145,17 @@ The first local full Python invocation used Windows' legacy default text encodin
 UTF-8 sources. UTF-8 mode corrected the environment. Intermediate test failures from simplified GitHub fixtures were
 fixed by recording branch movement and PR heads in those fixtures; publication guards were retained.
 
-### Pending CI / inspected only
+### Ran in CI
 
-- The added real-Docker restart acceptance repairs the faulty Python/Node fixture after an injected provider outage.
-  It is skipped locally and will execute in the PR's sandbox self-test workflow.
+| Check | Measured result |
+| --- | --- |
+| [Real-Docker sandbox self-test on candidate `e56c81d`](https://github.com/onlykappa/KappaForge/actions/runs/40144566928) | 25 sandbox tests passed; both faulty-project tests passed, including persisted recovery after a provider outage with no replay of completed failing suites |
+| KappaForge's own suites in that container | Python: 808 tests ran, OK with 13 skipped; Node: 840 passed |
+| Sandbox cleanup | No labeled containers or volumes remained |
+| [Ubuntu CI on the same code candidate](https://github.com/onlykappa/KappaForge/actions/runs/40144566877) | Unit, worker and structure checks passed; web/native completion remains visible on PR #261 |
+
+### Inspected or failure-injected only
+
 - Live provider quota exhaustion, real runner termination and GitHub mutation outages are failure-injected locally;
   no live inference or production task dispatch was used to implement these steps.
 - The browser/iOS shared JavaScript renderer and escaping are automated; native iOS simulator screenshots were not run locally.
