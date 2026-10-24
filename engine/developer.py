@@ -2379,7 +2379,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
         task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
         task += ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
-                 design[:2000] + '\n' + '\n'.join(tried[-3:]) + '\n' + notes + '\n' + native_history[:3000] + '\nCurrent PR diff:\n' + diff)
+                 verified_history(design, tried, notes, native_history, diff))
         if loop_approach:
             task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
         # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
@@ -2399,6 +2399,20 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             UNFINISHED[:] = prior
         explanation = verdict + "\n\n" + explanation + "\n\n" + review_record(remaining)
     return model, summary, changes, explanation, modes
+
+
+# Advisory history beside verified repair targets. The owner goal, project rules and SOURCE FILES are what the coder
+# must follow; this block only explains earlier attempts, so it is bounded to leave the gateway budget for source.
+VERIFIED_HISTORY_CHARS = 12000
+TRUNCATED_DIFF = '\n(PR diff shortened; SOURCE FILES above hold the current branch and are authoritative.)'
+
+
+def verified_history(design, tried, notes, native_history, diff):
+    """Design, earlier attempts, saved notes, native builds and the PR diff, within VERIFIED_HISTORY_CHARS."""
+    head = '\n'.join([design[:2000], '\n'.join(tried[-3:]), (notes or '')[:2000], native_history[:1500]])
+    room = max(0, VERIFIED_HISTORY_CHARS - len(head) - len('\nCurrent PR diff:\n') - len(TRUNCATED_DIFF))
+    shown = diff if len(diff) <= room else diff[:room] + TRUNCATED_DIFF
+    return head + '\nCurrent PR diff:\n' + shown
 
 
 # Failed tests are fixed automatically up to MAX_FIXES times; each owner "Guidance:" comment on the task allows one more.
