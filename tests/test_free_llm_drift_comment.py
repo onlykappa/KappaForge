@@ -5,7 +5,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-
 class FreeLLMDriftWorkflowCommentTest(unittest.TestCase):
     def test_workflow_has_comment(self):
         workflow_path = ROOT / ".github/workflows/free-llm-drift.yml"
