@@ -412,7 +412,9 @@ CODE_WORK_RE = re.compile(r"\b(?:fix|add|implement|audit|test|tests|refactor|rem
                           r"workflow|automation|hook|command|bug|bugs|code)\b", re.I)
 
 
-LIFECYCLE_CONTINUATION_RE = re.compile(r"(?:do\s+not|don't|never)\s+merge\b|keep\b|leave\b", re.I)
+MERGE_HOLD_RE = re.compile(r"(?:do\s+not|don't|never)\s+merge\b", re.I)
+LIFECYCLE_CONTINUATION_RE = re.compile(r"(?:do\s+not|don't|never)\s+merge\b|(?:keep|leave)\s+(?:it|this|the\s+(?:PR|pull request|draft))\b|"
+                                       r"(?:I|we)(?:'ll|\s+will)\s+(?:review|check|look|test)\b|wait\s+for\s+(?:my|me)\b", re.I)
 
 
 def lifecycle_requirement(text):
@@ -549,6 +551,8 @@ def executable_evidence(path, source, quote):
 
 
 REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
+# Set when model_review returned None because the file-scope review could not decide: no source repair may follow.
+SCOPE_UNDECIDED = ContextVar('scope_review_undecided', default=False)
 
 
 class ScopeReviewUnavailable(ValueError):
@@ -560,6 +564,7 @@ class ScopeReviewUnavailable(ValueError):
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's bounded source-backed verdict; None leaves verification incomplete."""
     REVIEW_FAILURE.set('')
+    SCOPE_UNDECIDED.set(False)
     try:
         requested = []
         unavailable_sources, original_requirements = set(), {}
@@ -572,7 +577,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             for path in goal.review_paths:
                 if path not in review_changes:
                     source = read(path) if path in known else None
-                    if not isinstance(source, str):
+                    if not isinstance(source, str) or not source:  # read() gives '' when the source cannot be read.
                         raise ScopeReviewUnavailable('Current PR source is unavailable for scope review: ' + path)
                     review_changes[path] = source
         scope_required = scope_required and bool(review_changes)
@@ -619,22 +624,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
-            for requirement in reqs:
-                original_requirements.setdefault(requirement['text'], dict(requirement))
-                if requirement['met'] and not lifecycle_requirement(requirement['text']):
-                    evidence = requirement['evidence']
-                    path = evidence['path']
-                    source = changes[path] if path in changes else read(path) if path in known else ''
-                    if (path not in known or not source or evidence['quote'] not in source
-                            or not executable_evidence(path, source, evidence['quote'])):
-                        requirement['met'] = False
-                        problems.append('Requirement evidence does not match executable current source: ' + requirement['text'])
-            present = {r['text'] for r in reqs}
-            for text, original in original_requirements.items():
-                if text not in present:
-                    reqs.append({**original, 'met': False})
-                    if not lifecycle_requirement(text):
-                        problems.append('A previously reviewed requirement disappeared from the follow-up: ' + text)
+            # Decide the scope answer first: a rejected answer's requirements must not bind the retry.
             wire = re.sub(r'^```(?:json)?\s*|\s*```$', '', output.strip())
             raw = json.loads(wire[wire.find('{'):wire.rfind('}') + 1])
             if scope_required:
@@ -662,6 +652,22 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                             retried = True
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
+            for requirement in reqs:
+                original_requirements.setdefault(requirement['text'], dict(requirement))
+                if requirement['met'] and not lifecycle_requirement(requirement['text']):
+                    evidence = requirement['evidence']
+                    path = evidence['path']
+                    source = changes[path] if path in changes else read(path) if path in known else ''
+                    if (path not in known or not source or evidence['quote'] not in source
+                            or not executable_evidence(path, source, evidence['quote'])):
+                        requirement['met'] = False
+                        problems.append('Requirement evidence does not match executable current source: ' + requirement['text'])
+            present = {r['text'] for r in reqs}
+            for text, original in original_requirements.items():
+                if text not in present:
+                    reqs.append({**original, 'met': False})
+                    if not lifecycle_requirement(text):
+                        problems.append('A previously reviewed requirement disappeared from the follow-up: ' + text)
             needed = raw.get('files_to_inspect', [])
             if not isinstance(needed, list):
                 needed = []
@@ -688,6 +694,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             raise  # A provider failure cannot trigger new coding calls through review repair.
         from engine.recovery import clean
         REVIEW_FAILURE.set(type(exc).__name__ + ': ' + clean(exc, 180))
+        SCOPE_UNDECIDED.set(isinstance(exc, ScopeReviewUnavailable))
         return None
 
 

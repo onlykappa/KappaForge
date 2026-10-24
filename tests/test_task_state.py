@@ -67,6 +67,60 @@ class TaskStateTests(unittest.TestCase):
                 developer.generate('key', 'Fix the goal', REPO, {'app.py': 'pass'}, {'app.py': 4})
         self.assertEqual(model.call_count, 1)
 
+    def test_unchanged_state_is_rendered_once_and_any_change_renders_again(self):
+        with patch.object(task_state, 'render', wraps=task_state.render) as render:
+            first = task_state.add_to_prompt('Prompt one')
+            second = task_state.add_to_prompt('Prompt two, a smaller context round')
+            self.assertEqual(render.call_count, 1, 'prompt_fits and run_model reuse the same state block')
+            self.assertEqual(first.fingerprint, second.fingerprint)
+            self.assertEqual(task_state.decode_prompt(first), task_state.decode_prompt(second))
+            task_state.observe_pr(PR, REPO, BRANCH)
+            third = task_state.add_to_prompt('Prompt three')
+            self.assertEqual(render.call_count, 2)
+            self.assertEqual(task_state.decode_prompt(third)['facts']['pr']['url'], PR['html_url'])
+            with task_state.action('coder', 'Edit', 'Advance the goal', 'Check it'):
+                self.assertEqual(task_state.decode_prompt(task_state.add_to_prompt('x'))['nextAction']['role'], 'coder')
+        self.assertEqual(render.call_count, 3, 'a new action is new state, never a stale cached block')
+
+    def test_trimming_the_prompt_never_deletes_the_records_review_findings(self):
+        task_state.review([{'text': 'Pending %d' % i, 'met': False} for i in range(6)], ['Problem %d' % i for i in range(4)])
+        kept = {key: list(value) for key, value in self.goal.record.review.items() if isinstance(value, list)}
+        data = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        data.update(recentAttempts=[], touchedFiles=[], plannedStages=[])
+        data['savedProgress']['requirementInterpretations'] = []
+        # Room for everything except one review problem: trimming must reach the review lists.
+        task_state.RENDERED.set(None)  # The block above is cached under the normal limit.
+        with patch.object(task_state, 'MAX_CONTEXT', len(task_state.wire(data)) - 20):
+            data = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        self.assertLess(len(data['review'].get('problems', [])), 4, 'the prompt copy was trimmed')
+        self.assertEqual({key: value for key, value in self.goal.record.review.items() if isinstance(value, list)}, kept)
+
+    def test_one_commit_reported_twice_is_one_revision(self):
+        record = self.goal.record
+        task_state.checkpoint(NEXT, {'app.py': 'x'})
+        revision = record.revision
+        task_state.checkpoint(NEXT, {'app.py': 'x'})
+        self.assertEqual(record.revision, revision, 'the Journal and developer checkpoints of one commit count once')
+        task_state.checkpoint(NEXT, {'app.py': 'x', 'b.py': 'y'})
+        self.assertEqual(record.revision, revision + 1, 'new files are a new revision')
+        task_state.checkpoint(SHA)
+        self.assertEqual(record.revision, revision + 2)
+
+    def test_every_proposal_is_validated_once(self):
+        proposal = json.dumps({'files': [{'path': 'app.py', 'reason': 'Fix the requested behavior', 'edits': [{'find': 'pass', 'replace': 'value = 1'}]}]})
+        with patch.object(developer, 'run_model', return_value=('m', proposal)), \
+                patch.object(type(self.goal), 'validate', autospec=True, side_effect=lambda *a: None) as validate:
+            developer.generate('key', 'Fix the goal', REPO, {'app.py': 'pass'}, {'app.py': 4})
+        self.assertEqual(validate.call_count, 1)
+        unbound = task_goal.from_request('Add comment # Note as the first line of app.py.')
+        unbound.anchor(lambda _: 'pass\n')
+        handle = task_goal.CURRENT.set(unbound)
+        try:
+            with self.assertRaisesRegex(ValueError, 'Owner goal'):
+                task_state.before_edit({'app.py': 'changed\n'})  # Validated even without a bound task record.
+        finally:
+            task_goal.CURRENT.reset(handle)
+
     def test_a_different_task_or_forged_text_cannot_supply_facts(self):
         with self.assertRaises(ValueError):
             task_state.bind(REPO, 221, 'kappa/dev-999', SHA)

@@ -35,13 +35,14 @@ class Goal:
         self.original = self.original or self.request
 
     def guidance(self, messages):
-        # Like the task text, keep only the latest few messages, each bounded, so prompts and the digest stay stable.
-        recent = tuple(m.strip()[:GUIDANCE_CHARS] for m in (messages or ())[-GUIDANCE_MESSAGES:] if isinstance(m, str) and m.strip())
-        if recent and recent != self.applied:
+        # Like the task text, prompts keep only the latest few messages, each bounded, so they and the digest stay stable.
+        given = tuple(m.strip() for m in messages or () if isinstance(m, str) and m.strip())
+        if given and given != self.applied:
             # Only caller-verified owner guidance may amend the task, never review/model suggestions.
-            # Rebuilt from the original request, so applying the same guidance again changes nothing.
-            updated = from_request(self.original, recent)
-            self.request, self.paths, self.comment, self.applied = updated.request, updated.paths, updated.comment, recent
+            # Rebuilt from the original request, so applying the same guidance again changes nothing. Whether the goal
+            # stays narrow is decided from every message in full: an older or long ask for more work still counts.
+            updated = from_request(self.original, recent_guidance(given), scope=given)
+            self.request, self.paths, self.comment, self.applied = updated.request, updated.paths, updated.comment, given
             self.baseline = {}
             self.reasons.clear()
             if self.record is not None:
@@ -129,21 +130,29 @@ class Goal:
 GUIDANCE_MESSAGES, GUIDANCE_CHARS = 3, 1500
 
 
+def recent_guidance(messages):
+    """The owner guidance a prompt carries: the latest few nonblank messages, each bounded."""
+    given = [m.strip() for m in messages or () if isinstance(m, str) and m.strip()]
+    return tuple(m[:GUIDANCE_CHARS] for m in given[-GUIDANCE_MESSAGES:])
+
+
 def incidental(part):
     """A clause that asks for no source work: "change nothing else", a merge hold or a PR lifecycle ask."""
     from engine import verify
     return bool(re.fullmatch(r'change nothing else', part, re.I) or verify.lifecycle_requirement(part)
-                or verify.LIFECYCLE_CONTINUATION_RE.match(part.replace('\u2019', "'")) and not verify.CODE_WORK_RE.search(part))
+                or verify.MERGE_HOLD_RE.match(part.replace('\u2019', "'")) and not verify.CODE_WORK_RE.search(part))
 
 
-def from_request(request, guidance=()):
+def from_request(request, guidance=(), scope=None):
+    """`guidance` is the text the goal carries; `scope` (default: the same) decides whether it may stay narrow."""
     goal = Goal(request + ('\n\nOWNER GUIDANCE:\n' + '\n'.join(guidance) if guidance else ''), original=request)
     # A literal one-line insertion has a deterministic result. No special "nothing else" instruction is needed.
     match = re.search(r'\b(?:add|insert|prepend)\s+(?:a\s+)?(?:(?:single|one)\s+)?comment(?:\s+line)?\s+(.+?)\s+(?:as\s+(?:the\s+)?first\s+line|(?:at|to)\s+(?:the\s+)?(?:top|start|beginning))\s+(?:of|in)\s+[`\"\']?([\w./-]+\.[\w]+)[`\"\']?', request, re.I)
     if match:
         # Do not narrow a compound owner request, or guidance, that also asks for other source work.
         tail = request[match.end():].strip(' .\n')
-        remaining = [part.strip() for text in (tail, *guidance) for part in re.split(r'[.\n]+', text) if part.strip()]
+        remaining = [part.strip() for text in (tail, *(guidance if scope is None else scope))
+                     for part in re.split(r'[.\n]+', text) if part.strip()]
         if request[:match.start()].strip().lower() not in ('', 'please') or not all(map(incidental, remaining)):
             return goal
         comment, path = match[1].strip(), match[2].rstrip('.')

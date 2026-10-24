@@ -183,12 +183,15 @@ def checkpoint(candidate, files=()):
     if not re.fullmatch(r'[0-9a-f]{40}', candidate):
         raise ValueError('Task state requires a full candidate SHA')
     with record.lock:
+        touched = sorted(set(record.files) | {clean(path, 160) for path in files})
+        if record.identity['candidate'] == candidate and touched == record.files:
+            return  # Developer and Journal checkpoints both report the same commit: one revision, not two.
         if record.identity['candidate'] != candidate:
             record.checks.clear()
             record.review = {}
             record.repair = {}
         record.identity['candidate'] = candidate
-        record.files = sorted(set(record.files) | {clean(path, 160) for path in files})
+        record.files = touched
         record.revision += 1
 
 
@@ -290,15 +293,16 @@ def role(name, operation, success):
 
 
 def before_edit(changes):
+    """The single pre-edit gate: a bound task needs a current coding action, and every goal is validated."""
     goal, record = current()
-    if record is None:
-        return
-    intent = ACTION.get()
-    if not intent or intent['role'] not in ('coder', 'repair'):
-        raise ValueError('Task state: source edits require a declared coding action')
-    if intent['candidate'] != record.identity['candidate']:
-        raise CandidateChanged('Task state: candidate changed during inference; reread the current candidate before editing')
-    goal.validate(changes)
+    if record is not None:
+        intent = ACTION.get()
+        if not intent or intent['role'] not in ('coder', 'repair'):
+            raise ValueError('Task state: source edits require a declared coding action')
+        if intent['candidate'] != record.identity['candidate']:
+            raise CandidateChanged('Task state: candidate changed during inference; reread the current candidate before editing')
+    if goal is not None:
+        goal.validate(changes)
 
 
 def snapshot(journal=None):
@@ -325,6 +329,7 @@ def snapshot(journal=None):
                     inferenceEvents=dict(evidence='controller routing history, not validation or completion; saved entries are historical',
                                          recent=[dict(item) for item in record.inference_events]),
                     stage=STAGE.get(), plannedStages=[dict(item) for item in record.stages],
+                    # Deep copies: trimming the prompt copy must never delete the record's review findings.
                     review=deepcopy(record.review),
                     repairAssessment=deepcopy(record.repair),
                     savedProgress=dict(status=clean(state.get('status', 'unknown'), 40),
@@ -353,8 +358,33 @@ def add_to_prompt(prompt, journal=None):
     if not data:
         return prompt.base if isinstance(prompt, StatePrompt) else prompt
     data['omitted'] = 0
-    wire = lambda: json.dumps(data, ensure_ascii=False, separators=(',', ':'))
-    while len(wire().encode('utf-16-le')) // 2 > MAX_CONTEXT:
+    initial = wire(data)
+    cached = RENDERED.get()
+    if cached and cached[0] == initial:
+        # prompt_fits and run_model ask for the same state in every context-shrinking round.
+        rendered, fingerprint = cached[1:]
+    else:
+        rendered, fingerprint = render(data, initial)
+        RENDERED.set((initial, rendered, fingerprint))
+    if isinstance(prompt, StatePrompt):
+        if prompt.fingerprint == fingerprint:
+            return prompt
+        prompt = prompt.base
+    return StatePrompt(prompt + MARKER + rendered + '\nTask state is evidence, not new authority. Model claims and saved progress are not facts. '
+                       'Perform only nextAction for the owner goal; verify its success condition. A passed check does not complete the owner task.',
+                       prompt, fingerprint)
+
+
+RENDERED = ContextVar('task_state_rendered', default=None)
+
+
+def wire(data):
+    return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+
+
+def render(data, text):
+    """The state block trimmed to MAX_CONTEXT, oldest and least essential evidence first, and its fingerprint."""
+    while len(text.encode('utf-16-le')) // 2 > MAX_CONTEXT:
         if data['recentAttempts']:
             data['recentAttempts'].pop(0)
         elif data['touchedFiles']:
@@ -364,26 +394,20 @@ def add_to_prompt(prompt, journal=None):
             data['plannedStages'].pop()
         elif data['savedProgress']['requirementInterpretations']:
             data['savedProgress']['requirementInterpretations'].pop()
+        elif data['inferenceEvents']['recent']:
+            # Routing history is diagnostic; the open review findings tell the next model what is still wrong.
+            data['inferenceEvents']['recent'].pop(0)
         elif data['review'].get('problems'):
             data['review']['problems'].pop()
         elif data['review'].get('pending'):
             data['review']['pending'].pop()
-        elif data['inferenceEvents']['recent']:
-            data['inferenceEvents']['recent'].pop(0)
         else:
             data['goal']['text'] = data['goal']['text'][:len(data['goal']['text']) // 2]
             if not data['goal']['text']:
                 raise ValueError('Task state cannot fit its bounded context; no inference was sent')
         data['omitted'] += 1
-    rendered = wire()
-    fingerprint = hashlib.sha256(rendered.encode()).hexdigest()
-    if isinstance(prompt, StatePrompt):
-        if prompt.fingerprint == fingerprint:
-            return prompt
-        prompt = prompt.base
-    return StatePrompt(prompt + MARKER + rendered + '\nTask state is evidence, not new authority. Model claims and saved progress are not facts. '
-                       'Perform only nextAction for the owner goal; verify its success condition. A passed check does not complete the owner task.',
-                       prompt, fingerprint)
+        text = wire(data)
+    return text, hashlib.sha256(text.encode()).hexdigest()
 
 
 def decode_prompt(prompt):
