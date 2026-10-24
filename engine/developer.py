@@ -504,16 +504,19 @@ def syntax_error(path, text):
     return None
 
 
+# Lines kept on each side of a traceback frame's line in an excerpt.
+EXCERPT_FRAME_LINES = 6
 STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", "would", "could", "make",
               "please", "add", "the", "and", "for", "repository", "mode", "develop", "onlykappa", "kappaforge"}
 
 
-def excerpt(text, task, budget=MAX_FILE_CHARS):
+def excerpt(text, task, budget=MAX_FILE_CHARS, lines_near=()):
     """Select literal source lines by discriminating task symbols, within a hard budget.
 
     Reserve matching lines before adding nearby context, so an oversized opening or
     neighboring line cannot hide a short late-file target. Every omitted span is marked;
-    a budget too small for even the marker returns no source.
+    a budget too small for even the marker returns no source. `lines_near` holds 0-based
+    lines (such as traceback frames) whose small window is reserved before any keyword hit.
     """
     if budget <= 0:
         return ""
@@ -547,6 +550,15 @@ def excerpt(text, task, budget=MAX_FILE_CHARS):
         return "\n".join(out)
 
     selected, anchors = set(), []
+    # A traceback frame stays visible even when its neighbourhood has no distinctive words.
+    for line in sorted({n for n in lines_near if 0 <= n < len(lines)}):
+        for i in sorted(range(max(0, line - EXCERPT_FRAME_LINES), min(len(lines), line + EXCERPT_FRAME_LINES + 1)),
+                        key=lambda i: abs(i - line)):
+            candidate = selected | {i}
+            if len(render(candidate)) <= budget:
+                selected = candidate
+        if line in selected:
+            anchors.append(line)
     for i in ranked:
         candidate = selected | {i}
         if len(render(candidate)) <= budget:
@@ -2288,8 +2300,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                 sources[path] = read_source(repo, path, head_sha, repo_token)
             except (ValueError, UnicodeDecodeError):
                 continue
-            sources = _add_engine_developer_source(sources, existing, repo, head_sha, repo_token)
-        body = pr.get("body") or ""
+    sources = _add_engine_developer_source(sources, existing, repo, head_sha, repo_token)
+    body = pr.get("body") or ""
     design = (re.search(r"^## Design notes\n(.*?)(?=\n## |\Z)", body, re.S | re.M) or [None, ""])[1].strip()
     diff = "".join(f"\n--- {f['filename']}\n{f.get('patch', '(diff too large to show)')[:6000]}" for f in files)[:30000]
     goal.review_paths = tuple(f['filename'] for f in files)
@@ -2360,7 +2372,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
         targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
         if not targets:
-            raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained')
+            raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
+                                                    'Verifier: ' + repair_guard.summary(findings))
         loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
         # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
         task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
