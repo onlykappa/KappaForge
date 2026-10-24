@@ -129,7 +129,7 @@ class RepairLedgerTests(unittest.TestCase):
         self.assertIn('Handle permission denial', review.call_args.args[2])
 
     def test_protected_path_stops_the_real_generation_loop_after_one_call(self):
-        proposal = json.dumps({'files': [{'path': '.github/workflows/unsafe.yml', 'content': 'x'}]})
+        proposal = json.dumps({'files': [{'path': '.git/config', 'content': 'x'}]})
         with patch.object(developer, 'run_model', return_value=('model', proposal)) as model:
             with self.assertRaisesRegex(ValueError, 'Protected path'):
                 developer.generate_with('key', 'task', 'onlykappa/KappaForge', {}, {}, '', None, developer.SMALL)

@@ -65,20 +65,22 @@ class DeveloperValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
 
-    def test_config_and_guardrail_files_can_be_proposed_but_workflows_and_unsafe_paths_still_stop(self):
+    def test_workflows_env_config_and_guardrails_can_be_proposed_and_unsafe_paths_still_stop(self):
         proposal = json.dumps({"files": [
+            {"path": ".github/workflows/lint.yml", "content": "name: lint\npermissions:\n  contents: read\n"},
             {"path": "config/providers.json", "content": "{}\n"},
             {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
         ]})
         with patch.object(developer, "run_model", return_value=("test-model", proposal)) as model:
             _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
+        self.assertIn(".github/workflows/lint.yml", changes)
         self.assertIn("config/providers.json", changes)
-        self.assertIn("int(a)", changes["app/main.py"])
         prompt = model.call_args.args[1]
-        self.assertIn("You may edit any file in the repository", prompt)
-        self.assertIn("except .github/", prompt)
+        self.assertIn("GitHub workflows and actions under .github/, .env files", prompt)
+        self.assertIn("highlighted on the PR for the owner's review", prompt)
+        self.assertNotIn("waits for the owner's confirmation", prompt)
         self.assertEqual(recovery.diagnose(ValueError("Unsafe path: ../secret")), ("authorization", "stop"))
-        self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .github/x.yml")),
+        self.assertEqual(recovery.diagnose(ValueError("Protected path cannot be changed by the agent: .git/config")),
                          ("authorization", "stop"))
 
     def test_five_failed_attempts_use_distinct_repair_instructions(self):
@@ -158,18 +160,18 @@ class DeveloperValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/other.py", "edits": [{"find": "a", "replace": "b"}]}]})
 
-    def test_in_repo_paths_are_editable_except_workflows_git_and_env_files(self):
+    def test_every_in_repo_path_is_editable_except_git_internals(self):
         editable = ["chat-backend/wrangler.toml", "scripts/preflight.py",
                     "chat-backend/src/review.js", "chat-backend/src/github.js", "chat-backend/src/providers.js",
                     "config/providers.json", "package-lock.json", "web/package-lock.json",
                     "engine/developer.py", "engine/intent_guard.py", "tests/test_workflow_safety.py",
-                    "docs/github/notes.md", "app/environment.py"]
+                    "docs/github/notes.md", "app/environment.py", ".github/workflows/agent.yml", ".github/workflows/new.yml",
+                    ".github/dependabot.yml", ".github/actions/setup/action.yml", ".env", "app/.env.local"]
         for path in editable:
             with self.subTest(editable=path):
                 self.assertEqual(check_path(path), path)
-        # Workflows on the agent's branch and PR run with repository secrets before the owner reviews anything.
-        for path in [".github/workflows/agent.yml", ".github/workflows/new.yml", ".github/dependabot.yml",
-                     ".git/config", ".env", "app/.env.local"]:
+        # .git is Git's own data; no commit can contain it.
+        for path in [".git/config", ".git/hooks/pre-commit"]:
             with self.subTest(protected=path), self.assertRaisesRegex(ValueError, "Protected path"):
                 check_path(path)
         for path in ["../escape.py", "/abs.py", "a//b.py", "a\\b.py", "dir/"]:
@@ -377,7 +379,7 @@ class DeveloperValidationTests(unittest.TestCase):
             developer.generate("key", "task", "onlykappa/OmniPC", sources, existing)
 
     def test_unsafe_and_protected_paths_remain_hard_stops(self):
-        for path in ["../x.yml", ".github/workflows/x.yml"]:
+        for path in ["../x.yml", ".git/config"]:
             bad = json.dumps({"files": [{"path": path, "content": "x"}]})
             with self.subTest(path=path), patch.object(developer, "run_model", return_value=("flash", bad)) as ai, \
                     self.assertRaises(ValueError):
@@ -724,6 +726,104 @@ class FlaggedChangeTests(unittest.TestCase):
                          ["repos/onlykappa/OmniPC/git/commits", "repos/onlykappa/OmniPC/git/refs", "repos/onlykappa/OmniPC/pulls"])
         self.assertIn("repos/onlykappa/KappaForge/issues/9/comments", calls)
         self.assertFalse(developer.flags_allowed("Allow flagged changes: no"))
+
+
+class WorkflowAccessTests(unittest.TestCase):
+    """The task agent edits workflows like any file and never pauses for them (the owner reviews the draft PR and
+    merges by hand); edits that could reach secrets or raise permissions are called out at the top of the PR, and
+    workflow commits use a token GitHub lets change workflows."""
+    SECRET_WF = "name: deploy\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n    - run: deploy\n      env:\n        T: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n"
+    PLAIN_WF = "name: lint\non: pull_request\npermissions:\n  contents: read\njobs:\n  l:\n    runs-on: ubuntu-latest\n    steps:\n    - run: npm run lint\n"
+
+    def test_flag_rules(self):
+        path = ".github/workflows/x.yml"
+        self.assertEqual(developer.workflow_flags({}, {path: self.PLAIN_WF}), {}, "a read-only workflow without secrets goes through")
+        self.assertEqual(developer.workflow_flags({path: self.PLAIN_WF}, {path: self.PLAIN_WF.replace("npm run lint", "npm test")}), {})
+        self.assertEqual(list(developer.workflow_flags({}, {path: self.SECRET_WF})), [
+            "changes a GitHub workflow that can use your repository secrets",
+            "adds a GitHub workflow without a permissions: block (it would get the default token)"])
+        edited = self.SECRET_WF.replace("run: deploy", "run: deploy --verbose")
+        self.assertIn("changes a GitHub workflow that can use your repository secrets",
+                      developer.workflow_flags({path: self.SECRET_WF}, {path: edited}), "editing a secret-holding workflow at all")
+        for grant in ("  contents: write", "permissions: write-all", "  id-token: 'write'"):
+            self.assertIn("gives a GitHub workflow write permissions",
+                          developer.workflow_flags({path: self.PLAIN_WF}, {path: self.PLAIN_WF + grant + "\n"}), grant)
+        self.assertIn("changes a GitHub workflow that can use your repository secrets",
+                      developer.workflow_flags({}, {".github/actions/a/action.yml": "env: ${{ toJSON(secrets) }}"}))
+        self.assertEqual(developer.workflow_flags({}, {".github/dependabot.yml": "x: ${{ secrets.A }}", "app.py": "secrets.A"}), {})
+        self.assertEqual(developer.change_flags(developer.ROOT, {}, {path: self.SECRET_WF}, ""), {},
+                         "KappaForge's own changes, secret workflows included, never pause")
+        self.assertEqual(developer.change_flags(developer.ROOT, {}, {"a.py": "os.environ['X']"}, ""), {})
+        self.assertIn("reads secrets or environment variables",
+                      developer.change_flags("onlykappa/OmniPC", {}, {"a.py": "os.environ['X']"}, ""), "other repositories keep their check")
+        self.assertEqual(developer.workflow_notice({}, {path: self.PLAIN_WF}), "")
+        notice = developer.workflow_notice({}, {path: self.SECRET_WF})
+        self.assertTrue(notice.startswith("## ⚠️ Workflow changes to review first"))
+        self.assertIn("can use your repository secrets: `.github/workflows/x.yml`", notice)
+
+    def test_workflow_commits_use_the_workflow_capable_token(self):
+        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}):
+            self.assertEqual(developer.push_token(developer.ROOT, "actions", [".github/workflows/x.yml", "a.py"]), "pat")
+            self.assertEqual(developer.push_token(developer.ROOT, "actions", ["a.py", ".github/dependabot.yml"]), "actions")
+            self.assertEqual(developer.push_token("onlykappa/OmniPC", "owner", [".github/workflows/x.yml"]), "owner")
+        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(PermissionError, "workflow scope"):
+            developer.push_token(developer.ROOT, "actions", [".github/workflows/x.yml"])
+
+    def test_a_refused_workflow_push_says_which_token_needs_the_scope(self):
+        import io
+        refusal = urllib.error.HTTPError("u", 422, "Unprocessable", {}, io.BytesIO(
+            b'{"message":"refusing to allow a Personal Access Token to create or update workflow `.github/workflows/x.yml` without `workflow` scope"}'))
+        with patch.object(developer, "gh", side_effect=refusal), self.assertRaisesRegex(PermissionError, "update KAPPA_CODER_TOKEN"):
+            developer.move_branch(developer.ROOT, "pat", "kappa/dev-9", "c" * 40)
+        with patch.object(developer, "gh", side_effect=urllib.error.HTTPError("u", 422, "Reference update failed", {}, io.BytesIO(b"{}"))), \
+                self.assertRaises(urllib.error.HTTPError):
+            developer.move_branch(developer.ROOT, "pat", "kappa/dev-9", "c" * 40)
+
+    def run_task(self, workflow, body_extra=""):
+        world = PrFirstTests()
+        calls, base_gh = world.world()
+        tokens = []
+        def fake_gh(path, token, payload=None, method=None):
+            tokens.append((path, token, method))
+            return base_gh(path, token, payload, method)
+        answers = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast inputs and add the workflow"],
+                                         "stage_files": [["app/main.py", ".github/workflows/ci.yml"]], "design": "x"})),
+                   ("flash", json.dumps({"summary": "Cast inputs", "files": [
+                       {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+                       {"path": ".github/workflows/ci.yml", "content": workflow}]})),
+                   ("flash", json.dumps({"requirements": [{"text": "Cast inputs", "met": True,
+                                                           "evidence": {"path": "app/main.py", "quote": "return int(a) + int(b)"}}], "problems": []}))]
+        issue = world.issue()
+        issue["body"] += body_extra
+        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
+                patch.object(developer, "run_model", side_effect=answers), patch.object(developer, "notify"):
+            result = produce_development_pr(issue, "key", "token")
+        return result, calls, tokens
+
+    def test_an_everyday_workflow_change_is_pushed_with_the_workflow_token(self):
+        result, calls, tokens = self.run_task(self.PLAIN_WF)
+        self.assertTrue(result)
+        trees = [c for c in calls if c[0].endswith("/git/trees")]
+        self.assertEqual(len(trees), 1)
+        self.assertIn(".github/workflows/ci.yml", [e["path"] for e in trees[0][1]["tree"]])
+        writes = [(p, t) for p, t, m in tokens if p.endswith(("/git/trees", "/git/refs/heads/kappa/dev-9"))]
+        self.assertTrue(writes and all(t == "pat" for _, t in writes), writes)
+        plan = [t for p, t, m in tokens if p.endswith("/git/refs")]
+        self.assertEqual(plan, ["token"], "the plan-only branch is still created with the usual token")
+
+    def test_a_secret_workflow_change_is_written_to_the_draft_and_called_out_for_review(self):
+        result, calls, tokens = self.run_task(self.SECRET_WF)
+        self.assertTrue(result, "the task finishes its code instead of pausing")
+        self.assertTrue(any(c[0].endswith("/git/trees") for c in calls))
+        self.assertFalse(any("Stopped before changing" in str(c[1]) for c in calls), "no stop comment")
+        final = [c[1] for c in calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        self.assertTrue(final["body"].startswith("## ⚠️ Workflow changes to review first"))
+        self.assertIn("`.github/workflows/ci.yml`", final["body"].split("\n\n## ", 1)[0] + final["body"][:400])
+        self.assertTrue(final["title"].startswith("Draft"), "it stays a draft for the owner")
+        self.assertFalse(any(c[0].endswith("/merge") for c in calls), "never merged")
+        _, plain_calls, _ = self.run_task(self.PLAIN_WF)
+        plain = [c[1] for c in plain_calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        self.assertNotIn("Workflow changes to review first", plain["body"])
 
 
 class ProgressTests(unittest.TestCase):
