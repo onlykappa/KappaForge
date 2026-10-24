@@ -118,6 +118,18 @@ def read_source(repo, path, sha, token):
     return base64.b64decode(blob["content"]).decode("utf-8")
 
 
+def read_target(repo, path, sha, token):
+    """An owner-goal target's text at `sha`, or None when it does not exist there or is not readable text."""
+    try:
+        return read_source(repo, path, sha, token)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+    except (ValueError, UnicodeDecodeError):
+        pass
+    return None
+
+
 def parse_json(text):
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -1536,7 +1548,9 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
         nonlocal model, writer
         task_state.stage_result(i, not isinstance(outcome, Exception))
         if isinstance(outcome, Exception):
-            if not isinstance(outcome, ValueError):
+            # A terminal failure (the candidate moved during inference) must stop the build: later stages would
+            # otherwise build on a stale candidate.
+            if not isinstance(outcome, ValueError) or getattr(outcome, 'terminal', False):
                 raise outcome
             if not combined:
                 raise ValueError(f"Stage {i} of {len(stages)} ({stage[:120]}) failed: {outcome}") from outcome
@@ -1736,6 +1750,10 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         # one. The re-check after it is free again.
         if rescued is not None:
             break
+        if review is None and verify.REVIEW_FAILURE.get().startswith(verify.ScopeReviewUnavailable.__name__):
+            # An undecided scope review authorizes no source repair. The saved candidate and this open problem
+            # stay on the draft, so Retry continues from it instead of restarting the task.
+            break
         if not problems or round_ == MAX_CHECK_ROUNDS and not (review and premium_possible("check")):
             break
         rescue_round = round_ == MAX_CHECK_ROUNDS
@@ -1885,12 +1903,14 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     progress.now(f"Reading the {repo} code")
     base, sha, existing, modes = snapshot(repo, repo_token)
     goal = task_goal.CURRENT.get()
-    goal.anchor(lambda path: read_source(repo, path, sha, repo_token))
-    if goal.satisfied() and adopt is None:
+    goal.anchor(lambda path: read_target(repo, path, sha, repo_token))
+    if goal.satisfied():
         # Do not ask a model to invent a diff, create a plan-only PR, or dispatch checks for unchanged source.
+        # A continued plan-only draft is no different: no proposal could pass, so say so instead of retrying.
         message = (f"No source changes needed: `{goal.paths[0]}` already starts with the exact requested comment "
-                   f"at `{sha}`. No branch or draft PR was created and no tests were started. "
-                   "The source goal is already satisfied; a new PR would have no source change to review.")
+                   f"at `{sha}`. " + (f"The plan-only draft PR {adopt['html_url']} has no source change to add; close it "
+                   "when convenient. " if adopt is not None else "No branch or draft PR was created. ") +
+                   "No tests were started. The source goal is already satisfied; a new PR would have no source change to review.")
         progress.ok(message, phase=True, status='blocked')
         gh(f"repos/{ROOT}/issues/{number}/comments", token, {'body': message})
         return None
@@ -2181,7 +2201,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             raise ValueError('Owner goal: original PR base is unavailable; no repair was written')
         comparison = gh(f'repos/{repo}/compare/{base_sha}...{head_sha}', repo_token)
         original = comparison['merge_base_commit']['sha']
-        goal.anchor(lambda path: read_source(repo, path, original, repo_token))
+        goal.anchor(lambda path: read_target(repo, path, original, repo_token))
     existing, modes = list_tree(repo, head_sha, repo_token)
     guide = project_guide(repo, head_sha, existing, repo_token)
     journal = recovery.CURRENT.get()

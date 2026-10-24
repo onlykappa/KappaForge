@@ -412,14 +412,21 @@ CODE_WORK_RE = re.compile(r"\b(?:fix|add|implement|audit|test|tests|refactor|rem
                           r"workflow|automation|hook|command|bug|bugs|code)\b", re.I)
 
 
+LIFECYCLE_CONTINUATION_RE = re.compile(r"(?:do\s+not|don't|never)\s+merge\b|keep\b|leave\b", re.I)
+
+
 def lifecycle_requirement(text):
     """A requirement only KappaForge's own orchestration can satisfy, such as "Open a fresh draft PR"."""
-    text = str(text or "")
+    text = str(text or "").replace("\u2019", "'")
     # "for this change" refers to the existing task; it does not ask for another source edit (#221).
     text = re.sub(r"\b(?:for|with)\s+(?:this\s+change|these\s+changes)\b", "", text, flags=re.I)
-    # Compound lifecycle wording must not absorb a substantive second ask.
-    if re.search(r"\b(?:and|then)\s+(?!do\s+not\s+merge\b|don't\s+merge\b|never\s+merge\b|keep\b|leave\b)", text, re.I):
-        return False
+    # Compound lifecycle wording must not absorb a substantive second ask: every "and"/"then" clause must itself be
+    # a lifecycle ask ("and let me know"), a merge hold ("and don't merge it") or keep/leave the PR as it is.
+    for clause in re.split(r"\b(?:and|then)\b", text, flags=re.I)[1:]:
+        clause = clause.strip(" ,;")
+        if clause and not (LIFECYCLE_CONTINUATION_RE.match(clause)
+                           or LIFECYCLE_ASK_RE.search(clause) and LIFECYCLE_OBJECT_RE.search(clause)):
+            return False
     return bool(LIFECYCLE_ASK_RE.search(text) and LIFECYCLE_OBJECT_RE.search(text) and not CODE_WORK_RE.search(text))
 
 
@@ -545,7 +552,7 @@ REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
 
 
 class ScopeReviewUnavailable(ValueError):
-    terminal = True
+    """The scope review could not decide; the candidate stays saved and the review is marked incomplete."""
 
 
 @task_state.role('reviewer', 'Review the current candidate against the owner goal',
@@ -569,7 +576,9 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                         raise ScopeReviewUnavailable('Current PR source is unavailable for scope review: ' + path)
                     review_changes[path] = source
         scope_required = scope_required and bool(review_changes)
-        for attempt in range(2):
+        # A malformed scope answer gets its own retry; it never uses up the source-inspection round.
+        inspected = retried = False
+        while True:
             source_limit, diff_limit = 220000, 40000
             while True:
                 complete = set()
@@ -605,7 +614,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             except (ValueError, TypeError):
                 if not scope_required:
                     raise
-                if not attempt:
+                if not retried:
+                    retried = True
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
@@ -635,7 +645,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                                  and row['reason'].strip() for row in decisions)
                          and {row['path'] for row in decisions} == set(review_changes))
                 if not valid:
-                    if not attempt:
+                    if not retried:
+                        retried = True
                         continue  # Ask the reviewer again; never write source to repair a missing review field.
                     raise ScopeReviewUnavailable('File scope review is incomplete; no source repair is authorized by a missing review decision')
                 else:
@@ -647,7 +658,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                               or row['quote'] not in review_changes[row['path']]):
                             unsupported.append(row['path'])
                     if unsupported:
-                        if not attempt:
+                        if not retried:
+                            retried = True
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
             needed = raw.get('files_to_inspect', [])
@@ -666,11 +678,11 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             result = reqs, problems, files
             if not requested:
                 return result
-            if attempt:
+            if inspected:
                 reqs, problems, files = result
                 return reqs, problems + ['Requirement evidence is still incomplete after source inspection: '
                                          + ', '.join(requested)], list(dict.fromkeys(files + requested))
-        return result
+            inspected = True
     except Exception as exc:  # Wiring checks still run; the caller preserves unavailable review as incomplete.
         if getattr(exc, 'gateway_failure', False) or getattr(exc, 'terminal', False):
             raise  # A provider failure cannot trigger new coding calls through review repair.

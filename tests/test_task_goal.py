@@ -50,19 +50,69 @@ class TaskGoalTests(unittest.TestCase):
             model = lambda *a, **kw: ('m', json.dumps(response))
             result = verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
             self.assertIn('Unrelated change outside the owner goal: unrelated.md', result[1][0])
+            # An undecided scope review leaves the review incomplete instead of aborting the task.
             for decisions in (None, [], [response['file_scope'][0]] * 2):
                 response['file_scope'] = decisions
-                with self.assertRaises(verify.ScopeReviewUnavailable):
-                    verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+                self.assertIsNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes))
+                self.assertRegex(verify.REVIEW_FAILURE.get(), '^ScopeReviewUnavailable: File scope review is incomplete')
             response['file_scope'] = [{'path': path, 'necessary': True, 'reason': 'needed', 'quote': 'invented source'} for path in changes]
-            with self.assertRaisesRegex(verify.ScopeReviewUnavailable, 'does not match current source'):
-                verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+            self.assertIsNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes))
+            self.assertIn('does not match current source', verify.REVIEW_FAILURE.get())
             with patch.object(developer, 'run_model', return_value=('m', 'not JSON')) as invalid_review:
-                with self.assertRaisesRegex(verify.ScopeReviewUnavailable, 'invalid response'):
-                    verify.model_review(invalid_review, 'key', goal.request, lambda _: '', changes, changes)
+                self.assertIsNone(verify.model_review(invalid_review, 'key', goal.request, lambda _: '', changes, changes))
+            self.assertIn('invalid response', verify.REVIEW_FAILURE.get())
             self.assertEqual(invalid_review.call_count, 2, 'Retry review only; a format error cannot authorize code edits')
         finally:
             task_goal.CURRENT.reset(token)
+
+    def test_a_source_inspection_round_does_not_use_up_the_scope_retry(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            changes = {'app.py': 'return int(a) + int(b)'}
+            scope = [{'path': 'app.py', 'necessary': True, 'reason': 'Convert numeric inputs', 'quote': 'int(a)'}]
+            met = [{'text': 'Accept numeric strings', 'met': True, 'evidence': {'path': 'app.py', 'quote': 'int(a) + int(b)'}}]
+            answers = [{'requirements': met, 'problems': [], 'file_scope': scope, 'files_to_inspect': ['helpers.py']},
+                       {'requirements': met, 'problems': [], 'file_scope': [{**scope[0], 'quote': 'not literal'}]},
+                       {'requirements': met, 'problems': [], 'file_scope': scope}]
+            with patch.object(developer, 'run_model', side_effect=[('m', json.dumps(a)) for a in answers]) as model:
+                result = verify.model_review(model, 'key', goal.request, lambda _: 'def helper(): pass', changes, ['app.py', 'helpers.py'])
+            self.assertEqual(model.call_count, 3, 'one inspection round plus its own scope retry')
+            self.assertIsNotNone(result)
+            self.assertEqual(result[1], [])
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_compound_lifecycle_asks_stay_lifecycle_but_a_second_code_ask_does_not(self):
+        for text in ("Open a draft PR and let me know when it's ready", 'Open a PR and notify me',
+                     'Open a draft PR and don\u2019t merge it', "Open a draft PR and don't merge it",
+                     'Open a draft PR then ping me', 'Open a draft PR and keep it as a draft', 'Open a draft PR and do not merge.'):
+            with self.subTest(text=text):
+                self.assertTrue(verify.lifecycle_requirement(text))
+        for text in ('Open a draft PR and fix the API', 'Open a PR then add a settings button', 'Open a draft PR and email the team'):
+            with self.subTest(text=text):
+                self.assertFalse(verify.lifecycle_requirement(text))
+        curly = REQUEST.replace('and do not merge', 'and don\u2019t merge it')
+        self.assertEqual(task_goal.from_request(curly).paths, (PATH,), 'a curly apostrophe keeps the exact comment goal')
+        notify = REQUEST.replace('and do not merge', 'and let me know when it is ready')
+        self.assertEqual(task_goal.from_request(notify).comment, COMMENT)
+
+    def test_a_comment_goal_for_a_missing_or_unreadable_file_falls_back_to_the_reviewed_flow(self):
+        goal = task_goal.from_request(REQUEST)
+        goal.anchor(lambda path: None)
+        self.assertIsNone(goal.paths)
+        self.assertIsNone(goal.comment)
+        self.assertFalse(goal.satisfied())
+        goal.validate({PATH: COMMENT + '\n'})  # The model may now create the file.
+        import urllib.error
+        for error, expected in ((urllib.error.HTTPError('u', 404, 'missing', {}, None), None),
+                                (ValueError('Full source unavailable: ' + PATH), None), (UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'bad'), None)):
+            with self.subTest(error=type(error).__name__), patch.object(developer, 'read_source', side_effect=error):
+                self.assertEqual(developer.read_target('onlykappa/KappaForge', PATH, 'b' * 40, 't'), expected)
+        with patch.object(developer, 'read_source', side_effect=urllib.error.HTTPError('u', 500, 'down', {}, None)), \
+                self.assertRaises(urllib.error.HTTPError):
+            developer.read_target('onlykappa/KappaForge', PATH, 'b' * 40, 't')
 
     def test_repair_scope_review_also_checks_files_already_on_the_pr(self):
         goal = task_goal.from_request('Make add accept numeric strings')
@@ -112,6 +162,30 @@ class TaskGoalTests(unittest.TestCase):
         self.assertIsNone(task_goal.from_request('Audit the workflow and fix its bugs').paths)
         self.assertIsNone(task_goal.from_request(REQUEST + ' Also fix the API.').paths)
         self.assertIsNone(task_goal.from_request('Fix the API. ' + REQUEST).paths)
+
+    def test_guidance_is_bounded_idempotent_and_keeps_an_exact_goal_for_lifecycle_only_messages(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        messages = ['first ' + 'a' * 3000, 'second', 'third', 'fourth']
+        goal.guidance(messages)
+        self.assertNotIn('first', goal.request, 'only the latest three messages are kept')
+        self.assertIn('second', goal.request)
+        self.assertIn('fourth', goal.request)
+        long = task_goal.from_request('Make add accept numeric strings')
+        long.guidance(['b' * 5000])
+        self.assertEqual(long.request.count('b'), task_goal.GUIDANCE_CHARS)
+        request, digest = goal.request, task_state.digest(goal)
+        goal.guidance(messages)
+        goal.guidance(list(messages))
+        self.assertEqual((goal.request, task_state.digest(goal)), (request, digest), 'reapplying guidance changes nothing')
+        goal.guidance(messages + ['fifth'])
+        self.assertIn('fifth', goal.request)
+        self.assertEqual(goal.request.count('OWNER GUIDANCE'), 1)
+        for message in ('Do not merge', 'Open a draft PR and don\u2019t merge it', 'Change nothing else.', 'Let me know when it is ready'):
+            with self.subTest(message=message):
+                exact = task_goal.from_request(REQUEST)
+                exact.guidance([message])
+                self.assertEqual((exact.paths, exact.comment), ((PATH,), COMMENT))
+                self.assertIn(message, exact.request)
 
     def test_only_explicit_owner_guidance_can_amend_the_goal(self):
         goal = task_goal.from_request(REQUEST)

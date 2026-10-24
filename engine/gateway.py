@@ -27,7 +27,8 @@ def prompt_fits(prompt, reserve=0):
     # Match JS UTF-16 length and the conservative context estimate used by the router.
     chars = len(prompt.encode('utf-16-le')) // 2
     maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
-    if isinstance(prompt, task_state.StatePrompt) and getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
+    # run_model refuses any pinned-route prompt over this cap, with or without a task record.
+    if getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
         maximum = min(maximum, PINNED_PROMPT_CHARS)
     wire = len(json.dumps(prompt).encode('utf-8'))
     return chars + reserve <= maximum and wire + reserve + 4096 <= limits['maxRequestBytes']

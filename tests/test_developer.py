@@ -529,6 +529,59 @@ class PrFirstTests(unittest.TestCase):
         self.assertIn('No source changes needed', writes[-1][1]['body'])
         self.assertIn('b' * 40, writes[-1][1]['body'])
 
+    def test_a_continued_plan_only_draft_whose_comment_is_already_on_main_stops_as_satisfied(self):
+        path, comment = '.github/workflows/free-llm-drift.yml', '# Maintained weekly'
+        issue = {**self.issue(), 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n'
+                 + f'Add comment {comment} as the first line of {path}. Open a draft PR and do not merge.'}
+        adopt = {'number': 50, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/50', 'draft': True, 'state': 'open',
+                 'head': {'ref': 'kappa/dev-9', 'sha': 'e' * 40}}
+        calls, world = self.world(branch_exists=True)
+        with patch.object(developer, 'gh', side_effect=world), \
+                patch.object(developer, 'snapshot', return_value=('main', 'b' * 40, {path: 20}, {})), \
+                patch.object(developer, 'read_source', return_value=comment + '\nname: existing\n'), \
+                patch.object(developer, 'run_model') as model:
+            self.assertIsNone(produce_development_pr(issue, 'key', 'token', adopt=adopt))
+        model.assert_not_called()
+        writes = [(endpoint, body) for endpoint, body, _ in calls if body is not None]
+        self.assertTrue(all('/issues/' in endpoint for endpoint, _ in writes), 'no commit, branch move or PR edit')
+        self.assertIn('No source changes needed', writes[-1][1]['body'])
+        self.assertIn(adopt['html_url'], writes[-1][1]['body'])
+
+    def test_a_comment_goal_for_a_new_file_lets_the_model_create_it(self):
+        path, comment = 'tools/new_helper.py', '# Helpers'
+        issue = {**self.issue(), 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n'
+                 + f'Add a comment {comment} as the first line of {path}.'}
+        calls, world = self.world()
+        scope = [{'path': path, 'necessary': True, 'reason': 'The owner asked for this file', 'quote': comment}]
+        answers = [('m', json.dumps({'read': ['app/main.py'], 'stages': ['Create the helper']})),
+                   ('m', json.dumps({'files': [{'path': path, 'reason': 'The owner named this file', 'content': comment + '\ndef helper():\n    return 1\n'}]})),
+                   ('m', json.dumps({'file_scope': scope, 'problems': [], 'requirements': [
+                       {'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': 'return 1'}}]}))]
+        with patch.object(developer, 'gh', side_effect=world), patch.object(developer, 'run_model', side_effect=answers), \
+                patch.object(developer, 'push_token', return_value='token'):
+            url = produce_development_pr(issue, 'key', 'token')
+        self.assertEqual(url, 'https://github.com/onlykappa/KappaForge/pull/50')
+        self.assertTrue(any(path in endpoint for endpoint, _, _ in calls if '/contents/' in endpoint), 'the 404 read was tolerated')
+        tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
+        self.assertEqual({entry['path'] for entry in tree_entries}, {path})
+
+    def test_an_undecided_scope_review_keeps_the_saved_candidate_for_retry_without_repairing(self):
+        calls, world = self.world()
+        undecided = ('flash', json.dumps({'requirements': [{'text': 'Cast inputs', 'met': True,
+                     'evidence': {'path': 'app/main.py', 'quote': 'return int(a) + int(b)'}}], 'problems': []}))
+        answers = self.answers()[:2] + [undecided, undecided]
+        with patch.object(developer, 'gh', side_effect=world), patch.object(developer, 'run_model', side_effect=answers) as model, \
+                patch.object(developer, 'push_token', return_value='token'):
+            url = produce_development_pr(self.issue(), 'key', 'token')
+        self.assertEqual(url, 'https://github.com/onlykappa/KappaForge/pull/50', 'the task ends on its draft instead of failing')
+        self.assertEqual(model.call_count, 4, 'plan, edit, review and one scope retry; no source repair round')
+        tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
+        self.assertIn('return int(a) + int(b)', ''.join(entry.get('content', '') for entry in tree_entries),
+                      'the validated candidate is committed for Retry to continue from')
+        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
+        self.assertIn('Requirement review unavailable', final['body'])
+        self.assertIn('ScopeReviewUnavailable', final['body'])
+
     def test_task_221_stops_after_the_requested_comment_and_uses_the_real_pr_receipt(self):
         path = '.github/workflows/free-llm-drift.yml'
         comment = '# Weekly check of the free model list; maintained by KappaForge.'
@@ -1160,6 +1213,20 @@ class StageRecoveryTests(unittest.TestCase):
                                                          ["Cast"], require_test=True)
         self.assertIn("int(a)", changes["app/main.py"])
         self.assertTrue(developer.UNFINISHED[0].startswith("No test proves the change works yet"))
+
+    def test_a_candidate_change_during_a_stage_stops_the_build_instead_of_skipping_the_step(self):
+        from engine import task_state
+        for parallel, stages in ((False, ["Cast", "Test"]),
+                                 (True, [developer.Stage("Cast", ["app/main.py"], True), developer.Stage("Other", ["app/other.py"], True)])):
+            with self.subTest(parallel=parallel):
+                developer.UNFINISHED.clear()
+                moved = task_state.CandidateChanged('Task state: candidate changed during inference')
+                with patch.object(developer, "generate", side_effect=moved) as generate, \
+                        self.assertRaises(task_state.CandidateChanged):
+                    developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None, stages)
+                self.assertEqual(developer.UNFINISHED, [], 'not recorded as an unfinished step')
+                if not parallel:
+                    self.assertEqual(generate.call_count, 1, 'no later stage builds on the stale candidate')
 
     def test_syntax_errors_say_what_and_where_not_the_node_version(self):
         message = developer.syntax_error("tests/a.test.mjs", "import x from 'y';\nconst a = ;\n")
