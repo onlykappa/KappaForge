@@ -147,6 +147,78 @@ def tests_without_real_code(changes, all_paths=()):
     return problems
 
 
+STAND_IN_RE = re.compile(r"^(?:Fake|Stub|Mock|Dummy)([A-Z]\w*)$")
+
+
+def stand_in_problems(read, changes, all_paths):
+    """Python tests that replace a real repository class with a hand-written stand-in and never build the real one.
+
+    A stand-in written from memory can differ from the real class (#228's FakeSession returned text where the real
+    Session returns bytes), so every test passes while the code fails against the real object. A test may keep a
+    stand-in for something that cannot run in tests (network, credentials, Docker) by saying so on a comment line
+    starting "# stand-in:" next to the class."""
+    known = set(all_paths) | set(changes)
+    source = lambda path: changes[path] if path in changes else (read(path) if path in known else None)
+
+    def module_paths(tree, path):
+        found, package = set(), path.split("/")[:-1]
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:
+                    if node.level > len(package) + 1:
+                        continue
+                    base = ".".join(package[:len(package) - node.level + 1] + ([node.module] if node.module else []))
+                names = [base] + [base + "." + alias.name if base else alias.name for alias in node.names]
+            for name in names:
+                for candidate in (name.replace(".", "/") + ".py", name.replace(".", "/") + "/__init__.py"):
+                    if candidate in known and not TEST_RE.search(candidate):
+                        found.add(candidate)
+        return found
+
+    def classes(path):
+        text = source(path)
+        try:
+            return {node.name for node in parse_quietly(text).body if isinstance(node, ast.ClassDef)} if isinstance(text, str) else set()
+        except SyntaxError:
+            return set()
+
+    problems = []
+    for path, text in changes.items():
+        if not (TEST_RE.search(path) and path.endswith(".py")):
+            continue
+        try:
+            tree = parse_quietly(text)
+        except SyntaxError:
+            continue
+        # The code under test counts too: a changed module written against a class it imports.
+        imported = module_paths(tree, path)
+        for changed in [p for p in changes if p.endswith(".py") and not TEST_RE.search(p)]:
+            try:
+                imported |= module_paths(parse_quietly(changes[changed]), changed) | {changed}
+            except SyntaxError:
+                continue
+        real = {name: module for module in sorted(imported) for name in classes(module)}
+        built = {node.func.id if isinstance(node.func, ast.Name) else node.func.attr for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))}
+        lines = text.splitlines()
+        for node in tree.body:
+            match = STAND_IN_RE.match(node.name) if isinstance(node, ast.ClassDef) else None
+            if not match or match[1] not in real or match[1] in built:
+                continue
+            nearby = lines[max(0, node.lineno - 3):node.lineno + 2]
+            if any(line.strip().startswith("# stand-in:") for line in nearby):
+                continue
+            problems.append(f"{path} tests only the hand-written {node.name}, never the real {match[1]} from "
+                            f"{real[match[1]]}: a stand-in can differ from it (types, return values, errors), so the tests pass "
+                            f"while the code fails. Add a test that uses the real {match[1]} and make {node.name} match its "
+                            f"source; if the real one cannot run in tests, say why on a '# stand-in:' comment next to the class")
+    return problems
+
+
 def worker_problems(sources, changes):
     """New Worker routes must be on the router's allowlist, and the body is read once, into `input`."""
     if WORKER not in changes:
@@ -346,8 +418,8 @@ def removed_problems(read, changes, task=""):
 
 def wiring_problems(repo, root, read, sources, changes, all_paths, task=""):
     """Deterministic checks; the KappaForge-specific ones run only on KappaForge itself."""
-    problems = (tests_without_real_code(changes, all_paths) + test_binding_problems(read, changes, all_paths)
-                + misuse_problems(changes) + removed_problems(read, changes, task))
+    problems = (tests_without_real_code(changes, all_paths) + stand_in_problems(read, changes, all_paths)
+                + test_binding_problems(read, changes, all_paths) + misuse_problems(changes) + removed_problems(read, changes, task))
     if repo == root:
         problems += worker_problems(sources, changes) + preference_problems(read, changes) + unused_problems(read, changes, all_paths)
     return problems
@@ -583,6 +655,12 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
         scope_required = scope_required and bool(review_changes)
         # A malformed scope answer gets its own retry; it never uses up the source-inspection round.
         inspected = retried = False
+        avoid = ()
+        # Retry an undecided scope review on a different model (#228: one model omitted file_scope twice), unless
+        # the task is pinned to one route.
+        from engine.recovery import CURRENT as JOURNAL
+        pinned = getattr(getattr(JOURNAL.get(), 'scope', None), 'inference_route', None)
+        other_model = lambda model: () if pinned or not isinstance(model, str) or not model else (model,)
         while True:
             source_limit, diff_limit = 220000, 40000
             while True:
@@ -612,15 +690,15 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                     gateway.require_prompt_fits(prompt)
                 source_limit //= 2
                 diff_limit //= 2
-            _, output = run_model(api_key, prompt,
-                                  max_output_tokens=6000, allowed=allowed, json_mode=True)
+            model, output = run_model(api_key, prompt, max_output_tokens=6000, allowed=allowed, json_mode=True,
+                                      **({'skip': avoid} if avoid else {}))
             try:
                 result = parse_review(output)
             except (ValueError, TypeError):
                 if not scope_required:
                     raise
                 if not retried:
-                    retried = True
+                    retried, avoid = True, other_model(model)
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
@@ -636,7 +714,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                          and {row['path'] for row in decisions} == set(review_changes))
                 if not valid:
                     if not retried:
-                        retried = True
+                        retried, avoid = True, other_model(model)
                         continue  # Ask the reviewer again; never write source to repair a missing review field.
                     raise ScopeReviewUnavailable('File scope review is incomplete; no source repair is authorized by a missing review decision')
                 else:
@@ -649,7 +727,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                             unsupported.append(row['path'])
                     if unsupported:
                         if not retried:
-                            retried = True
+                            retried, avoid = True, other_model(model)
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
             for requirement in reqs:

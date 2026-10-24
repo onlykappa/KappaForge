@@ -396,6 +396,47 @@ class RemovedCode(unittest.TestCase):
         self.assertIn("function b was removed", found[0])
 
 
+class StandInTests(unittest.TestCase):
+    """#228: every test passed against a FakeSession that returned text where the real Session returns bytes."""
+    REAL = {'engine/sandbox.py': 'class Session:\n    def current(self):\n        return {}\n\nclass Docker:\n    pass\n'}
+    CODE = {'engine/sandbox_tools.py': 'from . import sandbox\n\nclass SandboxTools:\n    def __init__(self, session):\n        self.session = session\n'}
+    TEST = ('import unittest\nfrom engine import sandbox\nfrom engine.sandbox_tools import SandboxTools\n\n'
+            'class FakeSession:\n    def current(self):\n        return {"a.py": "text"}\n\n'
+            'class T(unittest.TestCase):\n    def test_it(self):\n        SandboxTools(FakeSession())\n')
+
+    def problems(self, test, extra=None):
+        changes = {**self.CODE, 'tests/test_tools.py': test, **(extra or {})}
+        read = lambda path: self.REAL.get(path)
+        return verify.stand_in_problems(read, changes, list(self.REAL) + list(changes))
+
+    def test_a_stand_in_for_a_real_class_needs_a_test_with_the_real_class(self):
+        found = self.problems(self.TEST)
+        self.assertEqual(len(found), 1)
+        self.assertIn('hand-written FakeSession, never the real Session from engine/sandbox.py', found[0])
+        self.assertIn(found[0], verify.wiring_problems('onlykappa/Other', developer.ROOT, lambda p: self.REAL.get(p), {},
+                                                       {**self.CODE, 'tests/test_tools.py': self.TEST}, list(self.REAL)))
+
+    def test_building_the_real_class_or_naming_why_not_satisfies_the_check(self):
+        self.assertEqual(self.problems(self.TEST + '\n    def test_real(self):\n        SandboxTools(sandbox.Session())\n'), [])
+        self.assertEqual(self.problems(self.TEST.replace('class FakeSession:', '# stand-in: the real one needs Docker\nclass FakeSession:')), [])
+
+    def test_stand_ins_for_outside_or_unknown_classes_are_not_flagged(self):
+        self.assertEqual(self.problems(self.TEST.replace('FakeSession', 'FakeHttpClient')), [])
+        self.assertEqual(self.problems(self.TEST.replace('FakeSession', 'Fakesession')), [], 'only Fake<ClassName>')
+        unrelated = self.TEST.replace('from engine import sandbox\n', '').replace('FakeSession', 'FakeDocker')
+        self.assertEqual(len(self.problems(unrelated)), 1, 'the code under test imports engine.sandbox, so Docker is reachable')
+        self.assertEqual(verify.stand_in_problems(lambda p: None, {'tests/test_x.py': 'class FakeThing: pass\n'}, []), [])
+
+    def test_the_generation_prompt_asks_for_real_objects(self):
+        with patch.object(developer, 'run_model', return_value=('m', json.dumps({'files': []}))) as model:
+            try:
+                developer.generate_with('k', 'Add a feature', developer.ROOT, {'a.py': 'x = 1\n'}, {'a.py': 6}, '', None,
+                                        developer.SMALL, allow_empty=True, max_attempts=1)
+            except ValueError:
+                pass
+        self.assertIn('not stand-ins that differ from their source', model.call_args.args[1])
+
+
 class PythonTestImports(unittest.TestCase):
     """A Python test counts as testing real code when it imports any repository module, not only engine/tools/scripts."""
 
