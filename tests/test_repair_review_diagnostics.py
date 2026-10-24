@@ -120,12 +120,12 @@ class GateDiagnosticsTests(GuardCase):
         self.assertEqual(saved['gate'], [])
 
     def test_each_failed_check_is_named_and_still_blocks(self):
-        for change, gate in ((dict(evidence=[dict(path='engine/developer.py', quote='open_plan_draft(repo, token)')]), ['no_literal_source_evidence']),
-                             (dict(evidence=[]), ['no_literal_source_evidence']),
-                             (dict(evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)] * 5), ['no_literal_source_evidence']),
+        for change, gate in ((dict(evidence=[dict(path='engine/developer.py', quote='open_plan_draft(repo, token)')]), ['no_literal_source_evidence', 'evidence:not_in_source']),
+                             (dict(evidence=[]), ['no_literal_source_evidence', 'evidence:evidence_count']),
+                             (dict(evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)] * 5), ['no_literal_source_evidence', 'evidence:evidence_count']),
                              (dict(owner_quote='publish only after review'), ['owner_quote_not_literal']),
                              (dict(in_goal=False), ['not_in_goal']),
-                             (dict(in_goal=False, owner_quote='', evidence=[]), ['not_in_goal', 'no_literal_source_evidence', 'owner_quote_not_literal'])):
+                             (dict(in_goal=False, owner_quote='', evidence=[]), ['not_in_goal', 'no_literal_source_evidence', 'owner_quote_not_literal', 'evidence:evidence_count'])):
             with self.subTest(gate=gate, change=change):
                 row, saved = self.decide(**change)
                 self.assertEqual(row['verdict'], 'needs_validation')
@@ -135,7 +135,7 @@ class GateDiagnosticsTests(GuardCase):
 
     def test_a_rejection_without_its_proof_is_named_too(self):
         row, _ = self.decide(verdict='rejected', evidence=[])
-        self.assertEqual((row['verdict'], row['gate']), ('needs_validation', ['no_literal_source_evidence']))
+        self.assertEqual((row['verdict'], row['gate']), ('needs_validation', ['no_literal_source_evidence', 'evidence:evidence_count']))
         row, _ = self.decide(verdict='rejected', in_goal=False, owner_quote='not in the request')
         self.assertEqual((row['verdict'], row['gate']), ('needs_validation', ['owner_quote_not_literal']))
 
@@ -150,7 +150,41 @@ class GateDiagnosticsTests(GuardCase):
     def test_source_quotes_still_need_exact_text(self):
         squeezed = PUBLISH_LINE.replace(', ', ',')
         row, _ = self.decide(evidence=[dict(path='engine/developer.py', quote=squeezed)])
-        self.assertEqual(row['gate'], ['no_literal_source_evidence'])
+        self.assertEqual(row['gate'], ['no_literal_source_evidence', 'evidence:not_in_source'])
+
+    def test_reflowed_or_elided_quotes_count_only_when_every_piece_is_literal(self):
+        reflowed = '    ' + PUBLISH_LINE.replace('issue, base', 'issue,\n        base') + '\n  build_in_stages()'
+        elided = 'saved.update(open_plan_draft(repo ... layout, design))'
+        for quote in (reflowed, elided, elided.replace('...', '\u2026')):
+            with self.subTest(quote=quote):
+                row, _ = self.decide(evidence=[dict(path='engine/developer.py', quote=quote)])
+                self.assertEqual((row['verdict'], row['gate']), ('confirmed', []))
+        for quote, issue in (('saved.update(open_plan_draft(repo ... invented_call()', 'abbreviated_or_paraphrased'),
+                             ('saved ... design))', 'abbreviated_or_paraphrased'),
+                             ('build_in_stages() ... saved.update(open_plan_draft(repo', 'abbreviated_or_paraphrased'),
+                             ('...', 'abbreviated_or_paraphrased'),
+                             ('saved.update(open_plan_draft(repo,token))', 'not_in_source')):
+            with self.subTest(quote=quote):
+                row, saved = self.decide(evidence=[dict(path='engine/developer.py', quote=quote)])
+                self.assertEqual(row['verdict'], 'needs_validation')
+                self.assertEqual(saved['gate'], ['no_literal_source_evidence', 'evidence:' + issue])
+        row, _ = self.decide(evidence=[dict(path='engine/other.py', quote=PUBLISH_LINE)])
+        self.assertEqual(row['gate'], ['no_literal_source_evidence', 'evidence:unknown_path'])
+
+    def test_elided_quotes_must_stay_within_one_short_span(self):
+        far = 'alpha_marker_begin()\n' + '# filler line\n' * 60 + 'omega_marker_end()\n'
+        self.assertTrue(repair_guard.quote_found('alpha_marker_begin() ... # filler line', far))
+        self.assertFalse(repair_guard.quote_found('alpha_marker_begin() ... omega_marker_end()', far))
+
+    def test_a_quote_outside_the_shown_excerpt_is_named(self):
+        source = {'engine/developer.py': 'def produce_development_pr():\n    ' + PUBLISH_LINE + '\n' + '# filler\n' * 900 + 'hidden_unrelated_line = 42\n'}
+        data = repair_guard.payload(source, ['produce_development_pr open_plan_draft'])
+        self.assertEqual(repair_guard.quote_issue(dict(path='engine/developer.py', quote='hidden_unrelated_line = 42'), data, source),
+                         'outside_excerpt')
+
+    def test_owner_quote_may_be_elided_but_not_invented(self):
+        self.assertTrue(repair_guard.owner_quoted('defer those commits/branch writes ... final regression succeed', OWNER))
+        self.assertFalse(repair_guard.owner_quoted('defer those commits ... until the owner merges', OWNER))
 
     def test_saved_reasons_keep_identifier_names_but_not_source(self):
         _, saved = self.decide(in_goal=False)
