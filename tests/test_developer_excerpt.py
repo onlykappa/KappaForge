@@ -28,7 +28,8 @@ class TestExcerptRelevance(unittest.TestCase):
         # No clues match – use a clue that does not exist.
         result = excerpt(self.source, "nonexistent_function", 2000)
         # Result should be a prefix of the source and not raise.
-        self.assertTrue(result.startswith(self.source[:2000]))
+        self.assertTrue(self.source.startswith(result.split("... omitted ...", 1)[0]))
+        self.assertIn("... omitted ...", result)
         self.assertLessEqual(len(result), 2000)
 
     def test_tiny_budget(self):

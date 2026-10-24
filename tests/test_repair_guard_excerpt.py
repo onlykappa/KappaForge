@@ -36,7 +36,8 @@ class TestRepairGuardExcerpt(unittest.TestCase):
         file_info = result["sources"][self.path]
         excerpt_text = file_info["text"]
         # Should start with the beginning of the source.
-        self.assertTrue(excerpt_text.startswith(self.source[:len(excerpt_text)]))
+        self.assertTrue(self.source.startswith(excerpt_text.split("... omitted ...", 1)[0]))
+        self.assertIn("... omitted ...", excerpt_text)
         # No late functions should be forced in when clue absent.
         self.assertNotIn("def produce_development_pr", excerpt_text)
         self.assertNotIn("def fix_pull_request", excerpt_text)

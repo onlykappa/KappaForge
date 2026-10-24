@@ -492,180 +492,72 @@ STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", 
               "please", "add", "the", "and", "for", "repository", "mode", "develop", "onlykappa", "kappaforge"}
 
 
-def excerpt(source, clues, budget=MAX_FILE_CHARS):
-    """Return a relevance‑aware excerpt of *source* limited to *budget* characters.
+def excerpt(text, task, budget=MAX_FILE_CHARS):
+    """Select literal source lines by discriminating task symbols, within a hard budget.
 
-    *source* – full file text.
-    *clues* – newline‑separated strings the model is interested in.
-    *budget* – maximum characters to return, including any omission markers.
-
-    The function scores each clue by the rarity of its tokens in the whole source, selects the
-    most discriminating hits, expands each to a surrounding line window, merges overlapping
-    windows, and inserts "... omitted ..." markers between non‑contiguous spans. All output,
-    including markers, respects *budget*. Edge cases (non‑positive budget, a single line
-    longer than the budget, or no hits) fall back to a safe truncated prefix.
+    Reserve matching lines before adding nearby context, so an oversized opening or
+    neighboring line cannot hide a short late-file target. Every omitted span is marked;
+    a budget too small for even the marker returns no source.
     """
-    # Simplified relevance‑aware excerpt implementation
-    # Handles budgets, clues, and inserts omission markers.
     if budget <= 0:
         return ""
-    if len(source) <= budget:
-        return source
-    # Split source into lines for processing.
-    lines = source.splitlines()
-    clue_list = [c for c in clues.splitlines() if c]
-    if not clue_list:
-        # No clues – return prefix with possible omission marker.
-        prefix = source[:budget]
-        marker = "... omitted ..."
-        if len(source) > budget and len(prefix) + len(marker) <= budget:
-            return prefix + marker
-        return prefix
-    # Find indices of lines containing any clue.
-    matched = [i for i, line in enumerate(lines) if any(clue in line for clue in clue_list)]
-    if not matched:
-        # No matches – fallback to prefix.
-        prefix = source[:budget]
-        marker = "... omitted ..."
-        if len(source) > budget and len(prefix) + len(marker) <= budget:
-            return prefix + marker
-        return prefix
-    # Build excerpt with omission markers between non‑adjacent matched lines.
-    parts = []
-    prev = None
-    for idx in matched:
-        if prev is not None and idx != prev + 1:
-            parts.append("... omitted ...")
-        parts.append(lines[idx])
-        prev = idx
-    result = "\n".join(parts)
-    # Truncate if over budget and add marker.
-    if len(result) > budget:
-        marker = "... omitted ..."
-        if budget >= len(marker):
-            return result[:budget - len(marker)] + marker
-        return result[:budget]
-    # Append trailing omission marker if source not fully included.
-    if len(result) < len(source):
-        marker = "... omitted ..."
-        if len(result) + len(marker) <= budget:
-            result = result + "\n" + marker
-    return result
-    # Fast‑path: whole source fits or no budget.
-    if budget <= 0:
+    if len(text) <= budget:
+        return text
+    marker = "... omitted ..."
+    if budget < len(marker):
         return ""
-    if len(source) <= budget:
-        return source
-
-    # Token frequency map for rarity scoring.
-    tokens = re.findall(r"\w+", source.lower())
-    freq = collections.Counter(tokens)
-
-    # Gather hit positions for each clue.
-    hits = []
-    for clue in clues.splitlines():
-        if not clue:
-            continue
-        pos = source.find(clue)
-        if pos != -1:
-            # Rarity score: sum of inverse frequencies of tokens in the clue.
-            clue_tokens = re.findall(r"\w+", clue.lower())
-            rarity = sum(1 / (freq[t] or 1) for t in clue_tokens)
-            hits.append((rarity, pos, pos + len(clue), clue))
-
-    if not hits:
-        # No clues found – return a simple truncated prefix.
-        return source[:budget]
-
-    # Sort hits by descending rarity (most rare first).
-    hits.sort(key=lambda x: -x[0])
-
-    lines = source.split("\n")
-    # Pre‑compute line start offsets for binary search.
-    offsets = []
-    cum = 0
-    for line in lines:
-        offsets.append(cum)
-        cum += len(line) + 1  # +1 for the newline that was split away.
-
-    def line_for_offset(pos):
-        # Return line index containing the character at *pos*.
-        return bisect.bisect_right(offsets, pos) - 1
-
-    # Selected line spans (as (start, end) inclusive).
-    spans = []
-    MARKER = "... omitted ..."
-
-    def total_length(candidate_spans):
-        # Compute total characters of the excerpt including markers.
-        length = 0
-        prev_end = -1
-        for s, e in sorted(candidate_spans):
-            if prev_end != -1 and s > prev_end + 1:
-                length += len(MARKER) + 1  # marker + newline
-            for i in range(s, e + 1):
-                length += len(lines[i]) + 1
-            prev_end = e
-        return length
-
-    for _, start_pos, end_pos, _ in hits:
-        start_line = line_for_offset(start_pos)
-        end_line = line_for_offset(end_pos)
-        win_start = max(0, start_line - 20)
-        win_end = min(len(lines) - 1, end_line + 20)
-        new_spans = spans + [(win_start, win_end)]
-        if total_length(new_spans) > budget:
-            continue
-        spans = new_spans
-
-    if not spans:
-        # Fallback if even the smallest window exceeds budget.
-        return source[:budget]
-
-    # Merge overlapping spans.
-    spans.sort()
-    merged = []
-    cur_start, cur_end = spans[0]
-    for s, e in spans[1:]:
-        if s <= cur_end + 1:
-            cur_end = max(cur_end, e)
-        else:
-            merged.append((cur_start, cur_end))
-            cur_start, cur_end = s, e
-    merged.append((cur_start, cur_end))
-
-    # Build the final excerpt with omission markers.
-    out_lines = []
-    prev_end = -1
-    for s, e in merged:
-        if prev_end != -1 and s > prev_end + 1:
-            out_lines.append(MARKER)
-        out_lines.extend(lines[s:e + 1])
-        prev_end = e
-    # If there is trailing omitted content, add a final marker.
-    if prev_end < len(lines) - 1:
-        out_lines.append(MARKER)
-    return "\n".join(out_lines)
-
-    """Relevant windows of a large file: its opening plus lines matching the task's words."""
     lines = text.split("\n")
-    terms = {t for t in re.findall(r"[a-z][a-z0-9_-]{3,}", task.lower()) if t not in STOP_WORDS}
-    hits = [i for i, line in enumerate(lines) if any(t in line.lower() for t in terms)]
-    keep = set(range(min(40, len(lines))))
-    for i in hits:
-        window = set(range(max(0, i - 20), min(len(lines), i + 21)))
-        if sum(len(lines[j]) + 1 for j in keep | window) > budget:
-            break
-        keep |= window
-    out, previous = [], -1
-    for i in sorted(keep):
-        if i != previous + 1:
-            out.append(f"... [lines {previous + 2}-{i} omitted] ...")
-        out.append(lines[i])
-        previous = i
-    if previous < len(lines) - 1:
-        out.append(f"... [lines {previous + 2}-{len(lines)} omitted] ...")
-    return "\n".join(out)
+    terms = {word for word in re.findall(r"[a-z_][a-z0-9_]*", task.lower())
+             if len(word) >= 4 and word not in STOP_WORDS}
+    matches = [set(re.findall(r"[a-z_][a-z0-9_]*", line.lower())) & terms for line in lines]
+    frequency = collections.Counter(word for words in matches for word in words)
+    # Explicit identifiers outrank generic prose, and rare matches outrank repeated ones.
+    scores = {i: sum((40 if "_" in word else 1) / frequency[word] for word in words)
+              for i, words in enumerate(matches) if words}
+    # Do not reserve dozens of generic hits at the cost of the rare target's context.
+    threshold = max(scores.values(), default=0) / 8
+    ranked = sorted((i for i in scores if scores[i] >= threshold),
+                    key=lambda i: (-scores[i], i))
+
+    def render(selected):
+        out, previous = [], -1
+        for i in sorted(selected):
+            if i > previous + 1:
+                out.append(marker)
+            out.append(lines[i])
+            previous = i
+        if previous < len(lines) - 1:
+            out.append(marker)
+        return "\n".join(out)
+
+    selected, anchors = set(), []
+    for i in ranked:
+        candidate = selected | {i}
+        if len(render(candidate)) <= budget:
+            selected = candidate
+            anchors.append(i)
+            if len(anchors) == 24:
+                break
+    if anchors:
+        # Add context evenly across targets instead of spending it all on the first.
+        for distance in range(1, 21):
+            for anchor in anchors:
+                for i in (anchor - distance, anchor + distance):
+                    if 0 <= i < len(lines) and i not in selected:
+                        candidate = selected | {i}
+                        if len(render(candidate)) <= budget:
+                            selected = candidate
+    else:
+        # With no usable hits, retain a bounded opening of complete literal lines.
+        length, count = 0, 0
+        for i, line in enumerate(lines):
+            next_length = length + bool(i) + len(line)
+            suffix = 1 + len(marker) if i < len(lines) - 1 else 0
+            if next_length + suffix > budget:
+                break
+            length, count = next_length, i + 1
+        return "\n".join(lines[:count] + ([marker] if count < len(lines) else []))
+    return render(selected)
 
 
 # KappaForge's iPhone app bundles an identical copy of the web app; the agent edits preview/ and the copy follows.
