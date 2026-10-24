@@ -472,7 +472,8 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
         # Large files may grow moderately; new or fully rewritten files keep the normal cap.
         limit = min(MAX_LARGE_FILE_CHARS, max(budget.file_chars, len(sources.get(path, "")) + budget.file_chars // 2))
         if len(text) > limit:
-            raise ValueError("Resulting file too large: " + path)
+            raise ValueError(f"Resulting file too large: {path} ({len(text)} chars; limit {limit}). "
+                             "Reduce this to the smallest exact edit needed; do not return a full-file rewrite.")
         if text == sources.get(path):
             raise ValueError("Change leaves file unchanged: " + path)
         changes[path] = text
@@ -500,6 +501,16 @@ def syntax_error(path, text):
                     what = next((line for line in lines if re.match(r"\w*Error\b", line)), lines[0] if lines else "syntax error")
                     return f"{path}: {what[:200]}" + (f" (line {number})" if number else "")
     except (SyntaxError, ValueError) as exc:
+        if path.endswith(".py") and isinstance(exc, SyntaxError) and exc.lineno:
+            lines = text.splitlines()
+            line = min(max(exc.lineno - 1, 0), len(lines) - 1) if lines else 0
+            actual = len(lines[line]) - len(lines[line].lstrip(" \t")) if lines else 0
+            previous = next((i for i in range(line - 1, -1, -1) if lines[i].strip()), None)
+            nearby = (f"; previous nonblank line {previous + 1} uses "
+                      f"{len(lines[previous]) - len(lines[previous].lstrip(' \t'))} leading spaces" if previous is not None else "")
+            return (f"{path}: {type(exc).__name__} on line {exc.lineno}, column {exc.offset or 1} "
+                    f"({actual} leading spaces{nearby}): {exc.msg}. Match the enclosing block's indentation "
+                    "and check the indicated line and its nearby delimiters; keep the edit small.")
         return path + ": " + type(exc).__name__ + " " + str(exc)[:200]
     return None
 
@@ -831,8 +842,15 @@ def diagnose_generation_failure(message, sources):
         return ("Create or modify a real discovered regression test in the same proposal; "
                 "it must exercise the changed behavior rather than check a mock or comment.")
     if "Syntax check failed" in message:
-        return ("Identify the parser diagnostic and correct the generated syntax while "
-                "preserving the requested functionality.")
+        return ("Use the exact file, line, column and indentation counts in the parser diagnostic. "
+                "Copy the surrounding block's indentation and balance delimiters at that location; "
+                "correct only the small affected edit while preserving the requested functionality.")
+    if "empty response" in message.lower():
+        return ("The model returned no proposal text. Regenerate one complete strict JSON object in the required "
+                "files/find/replace format. Keep each edit small and do not return an empty response.")
+    if "Resulting file too large" in message:
+        return ("The proposed result exceeds the exact character limit in the validator message. "
+                "Use a few exact find/replace edits on the required lines; do not return the whole file or unrelated code.")
     if "JSON" in message or "Expecting" in message:
         return ("Return one complete, syntactically valid JSON object with no markdown fences.")
     return ("Re-evaluate the error and the current source, adjust the implementation, "
@@ -1176,14 +1194,16 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                         journal.persist()
                         context, shown_sources, partial_sources = source_context()
                         evidence += "\nReread immutable candidate source: " + path
-            if isinstance(exc, json.JSONDecodeError):
+            if isinstance(exc, json.JSONDecodeError) and output.strip():
                 malformed = output
             if signature:
                 rejected_signatures.add(signature)
             if proposal is not None:
                 rejected_files = proposal.get("files", []) if isinstance(proposal, dict) else proposal
                 rejected_proposals.append(json.dumps(rejected_files, ensure_ascii=False)[:1600])
-            error = recovery.clean(exc, 300) or type(exc).__name__
+            error = ("Model returned an empty response; no proposal was applied. Return one complete strict JSON object."
+                     if isinstance(exc, json.JSONDecodeError) and not output.strip()
+                     else recovery.clean(exc, 300) or type(exc).__name__)
             errors.append(error)
             # Switch models mid-task: two rejected answers from one model in a round hand the next try to another.
 

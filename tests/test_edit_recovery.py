@@ -43,6 +43,22 @@ class EditRecoveryTests(unittest.TestCase):
         self.assertIn("submit\",send);", self.sources["preview/app-main.js"], "rejected proposals do not mutate source")
         self.assertEqual(len(calls), 3)
 
+    def test_empty_model_response_is_regenerated_instead_of_sent_for_json_repair(self):
+        calls = []
+
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            if len(calls) == 1:
+                return "free-model", ""
+            self.assertIn("empty response", prompt.lower())
+            self.assertNotIn("Repair ONLY the JSON serialization", prompt)
+            return "other-free-model", json.dumps(self.valid)
+
+        with patch.object(developer, "run_model", side_effect=model):
+            _, _, changes, _ = self.generate()
+        self.assertIn("sendWeather", changes["preview/app-main.js"])
+        self.assertEqual(len(calls), 2)
+
     def test_non_object_edit_retries_instead_of_crashing(self):
         for invalid in (42, [], "bad", None):
             with self.subTest(edit=invalid), patch.object(developer, "run_model", side_effect=[
