@@ -6,68 +6,35 @@ from engine.sandbox_repair_controller import run_sandbox_repair
 
 class TestSandboxRepairController(unittest.TestCase):
     def setUp(self):
-        self.task = "Fix the faulty project"
-        self.api_key = "dummy"
-        # Simple stub model – the controller never inspects the model output directly.
-        self.run_model = lambda *a, **kw: ("dummy_route", "{}")
+        # Keep the original success/repeat/limit assertions against real Session behavior.
+        self.helper = RepairControllerReviewTests()
 
-    def _make_loop_result(self, tool, result):
-        return {"stop_reason": "done", "summary": "", "steps": [{"tool": tool, "args": {}, "reason": "test", "result": result}], "models": []}
+    def test_successful_repair(self):
+        session, tested = self.helper.make_session()
+        model = self.helper.script([self.helper.edit(0, 2), self.helper.call('run_tests')])
+        result = run_sandbox_repair('Fix value', model, 'review-key', session_factory=lambda: session)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(result['steps'][-1]['tool'], 'run_tests')
+        self.assertGreaterEqual(tested.count('value = 2\n'), 2)
 
-    @patch("engine.tool_loop.run_tool_loop")
-    def test_successful_repair(self, mock_run_tool_loop):
-        # First loop: apply a patch.
-        apply_step = self._make_loop_result(
-            "apply_patch",
-            {"ok": True, "status": "applied", "changed_paths": ["fixed.txt"]},
-        )
-        # Second loop: run tests and pass.
-        test_step = self._make_loop_result(
-            "run_tests",
-            {"status": "passed"},
-        )
-        mock_run_tool_loop.side_effect = [apply_step, test_step]
+    def test_repeat_patch_detection(self):
+        session, tested = self.helper.make_session()
+        model = self.helper.script([self.helper.edit(0, 1), self.helper.call('run_tests'), self.helper.edit(1, 0)])
+        result = run_sandbox_repair('Fix value', model, 'review-key', session_factory=lambda: session)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['reason'], 'repeat_patch')
+        self.assertEqual(result['attempts'], 1)
 
-        result = run_sandbox_repair(self.task, self.run_model, self.api_key)
-        self.assertTrue(result["success"])
-        self.assertEqual(result["attempts"], 1)
-        self.assertEqual(result["steps"][0]["tool"], "run_tests")
-
-    @patch("engine.tool_loop.run_tool_loop")
-    def test_repeat_patch_detection(self, mock_run_tool_loop):
-        # Two identical patches – should trigger repeat detection on second attempt.
-        patch1 = self._make_loop_result(
-            "apply_patch",
-            {"ok": True, "status": "applied", "changed_paths": ["a.txt"]},
-        )
-        patch2 = self._make_loop_result(
-            "apply_patch",
-            {"ok": True, "status": "applied", "changed_paths": ["a.txt"]},
-        )
-        mock_run_tool_loop.side_effect = [patch1, patch2]
-
-        result = run_sandbox_repair(self.task, self.run_model, self.api_key)
-        self.assertFalse(result["success"])
-        self.assertEqual(result["reason"], "repeat_patch")
-        self.assertEqual(result["attempts"], 1)
-
-    @patch("engine.tool_loop.run_tool_loop")
-    def test_max_attempts_exhausted(self, mock_run_tool_loop):
-        # Five distinct patches, never passing tests.
-        side_effects = []
+    def test_max_attempts_exhausted(self):
+        session, tested = self.helper.make_session(outcome=lambda source, count: False)
+        replies = []
         for i in range(5):
-            side_effects.append(
-                self._make_loop_result(
-                    "apply_patch",
-                    {"ok": True, "status": "applied", "changed_paths": [f"file{i}.txt"]},
-                )
-            )
-        mock_run_tool_loop.side_effect = side_effects
-
-        result = run_sandbox_repair(self.task, self.run_model, self.api_key)
-        self.assertFalse(result["success"])
-        self.assertEqual(result["reason"], "max_attempts")
-        self.assertEqual(result["attempts"], 5)
+            replies.extend([self.helper.edit(i, i + 1), self.helper.call('run_tests')])
+        result = run_sandbox_repair('Fix value', self.helper.script(replies), 'review-key', session_factory=lambda: session)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['reason'], 'max_attempts')
+        self.assertEqual(result['attempts'], 5)
 
 
 if __name__ == "__main__":
@@ -136,6 +103,17 @@ class RepairControllerReviewTests(unittest.TestCase):
         self.assertFalse(result['success'])
         self.assertTrue(session.closed)
 
+    def test_five_attempt_bound_also_covers_tests_run_via_run_command(self):
+        session, tested = self.make_session(outcome=lambda source, count: False)
+        replies = []
+        for i in range(6):
+            replies.extend([self.edit(i, i + 1), self.call('run_command', {
+                'argv': ['python', '-B', '-m', 'unittest', 'discover', '-s', 'tests'],
+            })])
+        result = run_sandbox_repair('fix value', self.script(replies), 'review-key', session_factory=lambda: session)
+        self.assertLessEqual(len(set(tested)), 5)
+        self.assertFalse(result['success'])
+
     def test_correcting_the_same_file_twice_is_not_a_repeated_patch(self):
         session, tested = self.make_session()
         model = self.script([self.edit(0, 1), self.call('run_tests'), self.call('inspect_test_results'),
@@ -180,6 +158,89 @@ class RepairControllerReviewTests(unittest.TestCase):
                                     'review-key', session_factory=lambda: session, allowed=['ollama'])
         self.assertTrue(calls)
         self.assertTrue(all(options['allowed'] == ['ollama'] for prompt, options in calls))
+        self.assertTrue(session.closed)
+
+    def test_nonpassing_and_missing_test_results_never_validate(self):
+        from engine import sandbox
+        for status in ('skipped', 'rejected', 'error', 'timeout'):
+            with self.subTest(status=status):
+                session, tested = self.make_session()
+
+                def result():
+                    row = sandbox.RunResult(['python', '-m', 'unittest'], 'test', status, stderr='test did not pass')
+                    session.results.append(row)
+                    return [row]
+
+                with patch.object(session, 'run_tests', side_effect=result):
+                    report = run_sandbox_repair('fix value', self.script([self.edit(0, 2), self.call('run_tests')]),
+                                                'review-key', session_factory=lambda: session)
+                self.assertFalse(report['success'])
+                self.assertEqual(report['final_results'], [])
+                self.assertTrue(session.closed)
+        session, tested = self.make_session()
+        session.base.files.pop('tests/test_app.py')
+        session.toolchains = []
+        report = run_sandbox_repair('fix value', self.script([self.edit(0, 2), self.call('run_tests')]),
+                                    'review-key', session_factory=lambda: session)
+        self.assertFalse(report['success'])
+        self.assertTrue(session.closed)
+
+    def test_identical_errors_ignore_elapsed_time_and_stop_progress(self):
+        from engine import sandbox
+        session, tested = self.make_session()
+        durations = iter(('0.01', '0.02', '0.03'))
+        session.docker.run = lambda args: sandbox.Exec(1, '',
+            'Traceback (most recent call last):\nAssertionError: same defect\n\nRan 1 test in ' + next(durations) +
+            's\nFAILED (failures=1)\n')
+        replies = []
+        for i in range(4):
+            replies.extend([self.edit(i, i + 1), self.call('run_tests')])
+        report = run_sandbox_repair('fix value', self.script(replies), 'review-key', session_factory=lambda: session)
+        self.assertFalse(report['success'])
+        self.assertEqual(report['reason'], 'identical_errors')
+        self.assertEqual(report['attempts'], 3)
+        self.assertTrue(all(row['why_different'] and row['results'] for row in report['history']))
+        self.assertEqual(len({row['fingerprint'] for row in report['history']}), 3)
+        self.assertTrue(session.closed)
+
+    def test_dishonest_model_done_still_requires_actual_tests(self):
+        session, tested = self.make_session(outcome=lambda source, count: False)
+        report = run_sandbox_repair('fix value', self.script([{'done': True, 'summary': 'all tests passed'}]),
+                                    'review-key', session_factory=lambda: session, initial_changes={'app.py': 'value = 2\n'})
+        self.assertFalse(report['success'])
+        self.assertTrue(tested, 'model done was accepted without actual tests')
+        self.assertIn('+value = 2', report['diff'])
+        self.assertTrue(session.closed)
+
+    def test_rejected_edits_do_not_reach_candidate_execution(self):
+        session, tested = self.make_session()
+
+        def scope(changes):
+            if set(changes) - {'app.py'}:
+                raise PermissionError('outside owner scope')
+
+        report = run_sandbox_repair('fix value', self.script([self.call('apply_patch', {'edits': [
+            {'path': 'other.py', 'find': '', 'replace': 'unauthorized'},
+        ]})]), 'review-key', session_factory=lambda: session, validate_change=scope)
+        self.assertFalse(report['success'])
+        self.assertEqual(report['reason'], 'rejected')
+        self.assertEqual(session.changes, {})
+        self.assertEqual(tested, [])
+        self.assertTrue(session.closed)
+
+    def test_model_exception_retains_diff_and_redacts_error_then_closes(self):
+        import json
+        session, tested = self.make_session()
+
+        def broken(key, prompt, **kwargs):
+            raise RuntimeError('failure using ' + key)
+
+        report = run_sandbox_repair('fix value', broken, 'review-key', session_factory=lambda: session,
+                                    initial_changes={'app.py': 'value = 2\n'})
+        self.assertFalse(report['success'])
+        self.assertIn('+value = 2', report['diff'])
+        self.assertIn('[redacted]', json.dumps(report['logs']))
+        self.assertNotIn('review-key', json.dumps(report))
         self.assertTrue(session.closed)
 
     def test_new_development_does_not_open_a_plan_pr_before_generation_or_validation(self):
