@@ -55,3 +55,12 @@ Carry a bounded task record into every planning, coding, review and recovery mod
 - The record is valid JSON within 6000 UTF-16 code units, with explicit omission counts. Context-budget checks measure the full augmented prompt; secrets in error/history text are redacted.
 
 Validation adds 14 shared-state tests, including the real runner boundary for both routing modes, #221's planner/coder/reviewer sequence, stale edits and checks, saved-state refresh, restored touched paths, task identity, corrupt/forged context, stage progress, concurrency, budgets and context growth. The complete suite now contains 554 Python tests; Linux CI supplies the Docker and structural-tool checks skipped on this Windows host.
+
+### Review hardening requested by the owner
+
+- A literal comment already present at the start of the controller-read source is preserved. New tasks report the observed commit and stop before model calls, branch/PR creation or test dispatch. The report explains that the source needs no change and a new source PR cannot be produced; it does not claim that a requested PR was opened. Duplicate insertions fail validation, including with Windows line endings.
+- Both dispatched iOS jobs prefer `candidate_sha` over a moving branch, then compare the actual checkout's `git rev-parse HEAD` with that SHA. Manual runs without a candidate retain their branch behavior. A regression executes the production checkout guard against matching and moved Git commits.
+- Broad-task proposals must justify each changed file before acceptance. Claims are bound to source hashes and are untrusted review input. Independent requirement review must judge every file's necessity against the original request and cite current source. Repair review includes files already on the PR, so an unrelated earlier checkpoint cannot disappear from scrutiny.
+- Missing scope decisions or unsupported quotes cause a bounded review retry and then leave the draft incomplete. They never authorize source edits to manufacture missing review evidence. Negative scope decisions keep unrelated work flagged as unfinished; passing CI cannot override them. These semantic judgments remain model assessments, not a deterministic proof of relevance.
+
+Seven additional regressions bring the suite to 561 Python tests. Local verification passed with five existing Docker/structural-tool skips, and all 822 Node tests passed. Linux CI and the iOS workflow provide the remaining checks before owner review.

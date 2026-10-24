@@ -2,6 +2,7 @@
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import wraps
+import hashlib
 import re
 
 CURRENT = ContextVar('owner_task_goal', default=None)
@@ -24,6 +25,9 @@ class Goal:
     baseline: dict = field(default_factory=dict)
     receipt: dict | None = None
     record: object = field(default=None, repr=False)
+    reasons: dict = field(default_factory=dict, repr=False)
+    review_paths: tuple = ()
+    review_diff: str = ''
 
     def guidance(self, messages):
         if messages:
@@ -31,6 +35,7 @@ class Goal:
             updated = from_request(self.request + '\n\nOWNER GUIDANCE:\n' + '\n'.join(messages))
             self.request, self.paths, self.comment = updated.request, updated.paths, updated.comment
             self.baseline = {}
+            self.reasons.clear()
             if self.record is not None:
                 with self.record.lock:
                     self.record.review = {}
@@ -56,9 +61,37 @@ class Goal:
                 raise ValueError('Owner goal: the requested comment is missing')
             before = self.baseline[path]
             newline = '\r\n' if '\r\n' in before else '\n'
-            expected = self.comment + newline + before
+            expected = before if self.satisfied() else self.comment + newline + before
             if changes[path] != expected:
                 raise ValueError('Owner goal: prepend exactly the requested comment once; preserve all original contents')
+
+    def satisfied(self):
+        """Only literal, controller-read goals can be declared satisfied without inference."""
+        if self.comment is None or not self.paths or self.paths[0] not in self.baseline:
+            return False
+        before = self.baseline[self.paths[0]]
+        lines = before.splitlines()
+        return bool(lines) and lines[0] == self.comment
+
+    def file_reasons(self, proposal, changes):
+        """Require an explicit necessity claim; the independent review judges its truth."""
+        if self.record is None or self.paths:
+            return
+        entries = {item['path']: item for item in proposal['files']}
+        reasons = {}
+        for path in changes:
+            reason = entries[path].get('reason')
+            if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+                raise ValueError('Owner goal: each changed file needs a reason linking it to the original request: ' + path)
+            reasons[path] = reason.strip()
+        with self.record.lock:
+            self.reasons.update({path: (hashlib.sha256(changes[path].encode()).hexdigest(), reason)
+                                 for path, reason in reasons.items()})
+
+    def review_reasons(self, changes):
+        with self.record.lock:
+            return {path: self.reasons[path][1] for path, text in changes.items()
+                    if path in self.reasons and self.reasons[path][0] == hashlib.sha256(text.encode()).hexdigest()}
 
     def prompt(self):
         text = ('\n\nOWNER GOAL (unchanged through planning, generation and repair):\n' + self.title + '\n' + self.request +

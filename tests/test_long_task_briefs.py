@@ -11,7 +11,7 @@ TASK = 'Implement the authorized change.\n' + 'x' * (20000 - len(TAIL) - len('Im
 SOURCES = {'app/main.py': 'def main():\n    return 1\n'}
 EXISTING = {path: len(source) for path, source in SOURCES.items()}
 PROPOSAL = json.dumps({'summary': 'Change return value', 'files': [
-    {'path': 'app/main.py', 'edits': [{'find': 'return 1', 'replace': 'return 2'}]}]})
+    {'path': 'app/main.py', 'reason': 'Implement the requested return value', 'edits': [{'find': 'return 1', 'replace': 'return 2'}]}]})
 
 
 class LongTaskBriefTests(unittest.TestCase):

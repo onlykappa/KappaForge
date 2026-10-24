@@ -138,7 +138,7 @@ class World:
             if model.startswith("ollama") and self.stage1_bad < 2:  # Two answers that don't apply: switch models.
                 self.stage1_bad += 1
                 return json.dumps({"files": [{"path": "preview/core.js", "edits": [{"find": "no such text " + str(self.stage1_bad), "replace": "x"}]}]})
-            return json.dumps({"summary": "Adds weatherUnits", "files": [{"path": "preview/core.js", "edits": [
+            return json.dumps({"summary": "Adds weatherUnits", "files": [{"path": "preview/core.js", "reason": "Save the owner requested weather units setting", "edits": [
                 {"find": "autoStart:true}", "replace": "autoStart:true,weatherUnits:'F'}"}]}]})
         if kind == "stage2":
             return json.dumps({"summary": "Bundling is automatic", "files": []})

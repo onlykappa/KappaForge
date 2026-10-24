@@ -88,7 +88,8 @@ class CloudAuditTests(unittest.TestCase):
             return result
         def answer(key,prompt,**kwargs):
             if 'You are reviewing a change' in prompt:
-                return 'model', json.dumps({'requirements':[{'text':'Add feature','met':True,
+                return 'model', json.dumps({'file_scope': [{'path': 'app/main.py', 'necessary': True,
+                    'reason': 'Convert the requested numeric inputs', 'quote': 'return int(a) + int(b)'}], 'requirements':[{'text':'Add feature','met':True,
                     'evidence':{'path':'app/main.py','quote':'return int(a) + int(b)'}}], 'problems':[]})
             return case.answer()
         with patch.object(developer,'gh',side_effect=incomplete_gh),patch.object(developer.native_build if hasattr(developer,'native_build') else __import__('engine.native_build',fromlist=['gh']),'gh',side_effect=incomplete_gh), \

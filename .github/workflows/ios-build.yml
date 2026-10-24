@@ -11,8 +11,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ inputs.candidate_sha || inputs.branch }}
         persist-credentials: false
+    - name: Verify candidate checkout
+      if: inputs.candidate_sha != ''
+      env:
+        CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      shell: bash
+      run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
     - run: |-
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
@@ -47,8 +53,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ inputs.branch || github.sha }}
+        ref: ${{ inputs.candidate_sha || inputs.branch || github.sha }}
         persist-credentials: false
+    - name: Verify candidate checkout
+      if: github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''
+      env:
+        CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      shell: bash
+      run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
     - name: Choose the release version (next patch when the configured one is already published)
       id: version
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -304,7 +316,7 @@ jobs:
         default: main
         type: string
       candidate_sha:
-        description: Commit being validated (names the run; set by the agent)
+        description: Exact commit to check out and validate (also names the run)
         required: false
         default: ''
         type: string
