@@ -48,6 +48,7 @@ class Goal:
             if self.record is not None:
                 with self.record.lock:
                     self.record.review = {}
+                    self.record.repair = {}
 
     def anchor(self, read):
         """Read the original target; `read` returns None when it is missing or not text at the base."""

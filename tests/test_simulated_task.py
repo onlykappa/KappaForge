@@ -5,6 +5,7 @@ comment (with its live activity feed) and the draft PR all run for real. The pro
 tasks #119-#125: rate limits, a retired model, empty answers, answers that don't apply, a step and a test that can't
 be written, and more retries in the whole task than one shared budget of 5 allowed.
 """
+from tests.repair_fixtures import response_or
 import base64
 import io
 import json
@@ -125,6 +126,9 @@ class World:
 
     def answer(self, model, prompt):
         """The scripted model: what each kind of request gets back."""
+        verification = response_or(prompt, None)
+        if verification is not None:
+            return verification[1]
         kind = ("plan" if "You are planning a code change" in prompt else
                 "review" if "You are reviewing a change" in prompt else
                 "fix" if "SELF-REVIEW" in prompt else
@@ -169,7 +173,7 @@ class SimulatedTask(unittest.TestCase):
             return answer(model, prompt)
         if interrupt:
             world.answer = interrupted
-        for cache in (runner._lists, runner.EXHAUSTED, runner.COOLDOWN):
+        for cache in (runner._lists, runner.EXHAUSTED, runner.COOLDOWN, runner.PROVIDER_PAUSES):
             cache.clear()
         developer.UNFINISHED.clear()
         env = {k: "" for k in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "ZAI_API_KEY",

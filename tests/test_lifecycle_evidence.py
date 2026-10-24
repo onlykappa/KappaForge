@@ -1,4 +1,5 @@
 """PR lifecycle asks are decided by GitHub's record of the task's draft PR, never turned into code work (task #205)."""
+from tests.repair_fixtures import response_or
 import unittest
 from unittest.mock import patch
 
@@ -129,6 +130,7 @@ class Task205ReplayTests(unittest.TestCase):
             patch.object(developer, "is_private", return_value=True),
             patch.object(developer, "code_providers", return_value=["groq"]),
             patch.object(developer, "generate", side_effect=generate),
+            patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('m', '{}'))),
             patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
             patch.object(developer, "has_tests", return_value=True),
         ):
@@ -164,6 +166,7 @@ class Task205ReplayTests(unittest.TestCase):
             patch.object(developer, "is_private", return_value=True),
             patch.object(developer, "code_providers", return_value=["groq"]),
             patch.object(developer, "generate", side_effect=generate),
+            patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('m', '{}'))),
             patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
             patch.object(developer, "has_tests", return_value=True),
         ):

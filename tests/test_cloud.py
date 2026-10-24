@@ -91,7 +91,7 @@ class CloudAuditTests(unittest.TestCase):
                 return 'model', json.dumps({'file_scope': [{'path': 'app/main.py', 'necessary': True,
                     'reason': 'Convert the requested numeric inputs', 'quote': 'return int(a) + int(b)'}], 'requirements':[{'text':'Add feature','met':True,
                     'evidence':{'path':'app/main.py','quote':'return int(a) + int(b)'}}], 'problems':[]})
-            return case.answer()
+            return case.model_response(key, prompt)
         with patch.object(developer,'gh',side_effect=incomplete_gh),patch.object(developer.native_build if hasattr(developer,'native_build') else __import__('engine.native_build',fromlist=['gh']),'gh',side_effect=incomplete_gh), \
              patch.object(developer,'run_model',side_effect=answer):
             developer.fix_pull_request(case.ISSUE,'key','token')

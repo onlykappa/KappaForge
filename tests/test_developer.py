@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from engine import developer, native_build, recovery, task_state
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
+from tests.repair_fixtures import response_or
 
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
 ADD_SCOPE = [{"path": "app/main.py", "necessary": True, "reason": "Convert the inputs at the requested add boundary", "quote": "return int(a) + int(b)"}]
@@ -1017,10 +1018,13 @@ class OwnerRequestedFixTests(unittest.TestCase):
         return ("flash", json.dumps({"explanation": "Fixes the adding bug the tests caught.", "summary": "Cast", "files": [
             {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))
 
+    def model_response(self, key, prompt, **kwargs):
+        return response_or(prompt, self.answer())
+
     def test_fix_fast_forwards_the_branch_retests_and_explains(self):
         calls, gh = self.fake()
         with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
-                patch.object(developer, "run_model", return_value=self.answer()):
+                patch.object(developer, "run_model", side_effect=self.model_response):
             developer.fix_pull_request(self.ISSUE, "key", "token")
         ref = next(c for c in calls if c[0] == "repos/onlykappa/KappaForge/git/refs/heads/kappa/dev-9")
         self.assertEqual(ref[1:], ({"sha": "e" * 40, "force": False}, "PATCH"))
@@ -1033,7 +1037,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
     def test_fix_sees_the_diff_design_notes_and_earlier_attempts(self):
         calls, gh = self.fake(fixes=1)
         with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL test_add"), \
-                patch.object(developer, "run_model", return_value=self.answer()) as ai:
+                patch.object(developer, "run_model", side_effect=self.model_response) as ai:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         prompt = ai.call_args[0][1]
         self.assertIn("+new_feature_line", prompt)
@@ -1081,7 +1085,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
     def test_owner_guidance_reaches_the_fix_and_allows_one_more_attempt(self):
         calls, gh = self.fake(fixes=developer.MAX_FIXES, guidance=["keep the old date format"])
         with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), patch.object(developer, "job_log", return_value="FAIL"), \
-                patch.object(developer, "run_model", return_value=self.answer()) as ai:
+                patch.object(developer, "run_model", side_effect=self.model_response) as ai:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         prompt = ai.call_args[0][1]
         self.assertIn("keep the old date format", prompt)
@@ -1108,7 +1112,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
         logs = {3: "", 4: "KappaWebView.swift:42:17: error: cannot find 'composer' in scope"}
         with patch.object(developer, "gh", side_effect=self.native(gh)), patch.object(native_build, "gh", side_effect=self.native(gh)), \
                 patch.object(developer, "job_log", side_effect=lambda job, token: logs[job]), \
-                patch.object(developer, "run_model", return_value=self.answer()) as ai:
+                patch.object(developer, "run_model", side_effect=self.model_response) as ai:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         prompt = ai.call_args[0][1]
         self.assertIn("cannot find 'composer' in scope", prompt)
@@ -1137,7 +1141,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
                     result["workflow_runs"][0] = dict(result["workflow_runs"][0], status="in_progress", conclusion=None)
             return result
         with patch.object(developer, "gh", side_effect=slow), patch.object(native_build, "gh", side_effect=slow), patch.object(developer, "job_log", return_value="FAIL"), \
-                patch.object(developer, "run_model", return_value=self.answer()), patch.object(developer.time, "sleep") as sleep:
+                patch.object(developer, "run_model", side_effect=self.model_response), patch.object(developer.time, "sleep") as sleep:
             developer.fix_pull_request(self.ISSUE, "key", "token")
         sleep.assert_called_once()
         self.assertTrue(any(c[2] == "PATCH" for c in calls))

@@ -4,15 +4,18 @@ The recovery journal remains the durable source. Model output is never a PR, CI 
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import wraps
 import hashlib
 import json
 import re
 import threading
+import uuid
 
 ACTION = ContextVar('task_next_action', default=None)
 STAGE = ContextVar('task_current_stage', default=None)
+INFERENCE = ContextVar('task_inference_call', default=None)
 MARKER = '\n\nKAPPA_TASK_STATE_V1\n'
 MAX_CONTEXT = 6000
 
@@ -29,8 +32,10 @@ class Record:
     checks: dict = field(default_factory=dict)
     attempts: list = field(default_factory=list)
     review: dict = field(default_factory=dict)
+    repair: dict = field(default_factory=dict)
     files: list = field(default_factory=list)
     stages: list = field(default_factory=list)
+    inference_events: list = field(default_factory=list)
     lock: object = field(default_factory=threading.RLock, repr=False)
 
 
@@ -54,6 +59,92 @@ def current():
 
 def digest(goal):
     return hashlib.sha256((goal.title + '\n' + goal.request).encode()).hexdigest()
+
+
+INFERENCE_EVENTS = 8
+
+
+def inference_key():
+    """Authority and observations an answer depends on; routing never refreshes this stamp."""
+    data = snapshot()
+    goal, _ = current()
+    if goal:
+        data['ownerGoalDigest'] = digest(goal)
+    # A rejected provider request records a recovery attempt/revision before falling back.
+    # Those diagnostics do not change authority; compare the underlying observations instead.
+    for key in ('budgets', 'inferenceEvents', 'savedProgress', 'revision', 'recentAttempts'):
+        data.pop(key, None)
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class InferenceCall:
+    goal: object
+    record: object
+    key: str
+    prompt_digest: str
+    engine: str
+    call_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    prompt: str = field(default=None, repr=False, compare=False)
+
+    def check(self, prompt=None):
+        goal, record = current()
+        # The same prompt object needs no re-hash on every retry and provider switch.
+        changed_prompt = (prompt is not None and prompt is not self.prompt
+                          and hashlib.sha256(prompt.encode()).hexdigest() != self.prompt_digest)
+        if goal is not self.goal or record is not self.record or inference_key() != self.key or changed_prompt:
+            raise CandidateChanged('Inference context changed; discard the answer and reconcile the owner goal, candidate and action')
+
+    def event(self, outcome, route=''):
+        # Fixed event vocabulary and controller route names only: no prompts, output, credentials or exception text.
+        if self.record:
+            with self.record.lock:
+                row = dict(call=self.call_id, engine=self.engine, outcome=outcome,
+                           route=clean(route, 100), context=self.key)
+                events = list(self.record.inference_events)
+                last = events[-1] if events else {}
+                if (outcome == 'attempted' and last.get('call') == self.call_id and last.get('outcome') == 'attempted'
+                        and last.get('route') == row['route']):
+                    row['attempts'] = last.get('attempts', 1) + 1  # Retries of one route share a row.
+                    events.pop()
+                events.append(row)
+                while len(events) > INFERENCE_EVENTS:
+                    # Drop the oldest provider attempt before any call's start or outcome, so one call that walks many
+                    # providers cannot push its own start and every earlier call's result out of the history.
+                    events.pop(next((i for i, item in enumerate(events[:-1]) if item.get('outcome') == 'attempted'), 0))
+                self.record.inference_events = events
+
+
+@contextmanager
+def inference(prompt, engine):
+    goal, record = current()
+    call = InferenceCall(goal, record, inference_key(), hashlib.sha256(prompt.encode()).hexdigest(), engine, prompt=prompt)
+    token = INFERENCE.set(call)
+    call.event('started')
+    try:
+        yield call
+    except Exception as error:
+        call.event('discarded' if isinstance(error, CandidateChanged) else 'failed')
+        raise
+    finally:
+        INFERENCE.reset(token)
+
+
+def inference_attempt(prompt, route):
+    """Adapters must call immediately before each request, including retries and provider switches."""
+    call = INFERENCE.get()
+    if call:
+        call.check(prompt)
+        call.event('attempted', route)
+
+
+def require_journal_identity(journal):
+    _, record = current()
+    if record and journal:
+        state = journal.state
+        if any(state.get(key, expected) != expected for key, expected in
+               (('repo', record.identity['repository']), ('task', record.identity['task']))):
+            raise CandidateChanged('Inference journal belongs to a different task or repository')
 
 
 def bind(repo, task, branch, candidate, journal=None):
@@ -92,6 +183,14 @@ def bind(repo, task, branch, candidate, journal=None):
                 if type(item.get('index')) is int:
                     record.stages.append(dict(description=clean(item.get('description', ''), 120),
                                               state='saved proposal progress; recheck current source', index=item['index']))
+        events = saved.get('inferenceEvents', [])
+        for item in events[-8:] if isinstance(events, list) else ():
+            if (isinstance(item, dict) and item.get('engine') in ('direct', 'gateway')
+                    and item.get('outcome') in ('started', 'attempted', 'answered', 'failed', 'discarded')
+                    and all(isinstance(item.get(k), str) for k in ('call', 'route', 'context'))
+                    and re.fullmatch(r'[0-9a-f]{32}', item['call'])
+                    and re.fullmatch(r'[0-9a-f]{64}', item['context'])):
+                record.inference_events.append({k: clean(item[k], 100) for k in ('call', 'engine', 'outcome', 'route', 'context')})
 
 
 def checkpoint(candidate, files=()):
@@ -107,6 +206,7 @@ def checkpoint(candidate, files=()):
         if record.identity['candidate'] != candidate:
             record.checks.clear()
             record.review = {}
+            record.repair = {}
         record.identity['candidate'] = candidate
         record.files = touched
         record.revision += 1
@@ -243,9 +343,12 @@ def snapshot(journal=None):
                     goal=dict(text=clean(goal.title + '\n' + goal.request, 1400), digest=digest(goal)),
                     facts=facts, touchedFiles=list(record.files[:24]), omittedFiles=max(0, len(record.files) - 24),
                     recentAttempts=list(record.attempts),
+                    inferenceEvents=dict(evidence='controller routing history, not validation or completion; saved entries are historical',
+                                         recent=[dict(item) for item in record.inference_events]),
                     stage=STAGE.get(), plannedStages=[dict(item) for item in record.stages],
-                    # Copied lists: trimming the prompt copy must never delete the record's review findings.
-                    review={key: list(value) if isinstance(value, list) else value for key, value in record.review.items()},
+                    # Deep copies: trimming the prompt copy must never delete the record's review findings.
+                    review=deepcopy(record.review),
+                    repairAssessment=deepcopy(record.repair),
                     savedProgress=dict(status=clean(state.get('status', 'unknown'), 40),
                                        evidence='saved orchestration state, not proof of completion',
                                        requirementInterpretations=[clean(x, 120) for x in state.get('requirements', [])[:4]]),
@@ -263,7 +366,8 @@ def save(journal):
     if isinstance(state, dict) and state.get('repo') == record.identity['repository'] and state.get('task') == record.identity['task']:
         with record.lock:
             state['taskRecord'] = dict(version=1, goalDigest=digest(goal), identity=dict(record.identity),
-                                       revision=record.revision, recentAttempts=list(record.attempts), stages=list(record.stages))
+                                       revision=record.revision, recentAttempts=list(record.attempts), stages=list(record.stages),
+                                       inferenceEvents=[dict(item) for item in record.inference_events])
 
 
 def add_to_prompt(prompt, journal=None):
@@ -307,6 +411,9 @@ def render(data, text):
             data['plannedStages'].pop()
         elif data['savedProgress']['requirementInterpretations']:
             data['savedProgress']['requirementInterpretations'].pop()
+        elif data['inferenceEvents']['recent']:
+            # Routing history is diagnostic; the open review findings tell the next model what is still wrong.
+            data['inferenceEvents']['recent'].pop(0)
         elif data['review'].get('problems'):
             data['review']['problems'].pop()
         elif data['review'].get('pending'):
