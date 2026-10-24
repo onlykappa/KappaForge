@@ -39,15 +39,19 @@ function compareVersions(a,b){const x=String(a).replace(/^v/,'').split('.').map(
 function weatherQuestion(text){
  text=String(text||'').trim().replace(/’/g,"'");
  if(/\b(?:implement|repair|debug|code|endpoint|unit test|pull request)\b/i.test(text))return false;
- return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain|snow|temperature|wind|umbrella)\b/i.test(text);
+ return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain(?:ing|y)?|snow(?:ing|y)?|temperature|wind(?:y)?|storm(?:ing|y|s)?|umbrella)\b/i.test(text);
 }
 const LOCATION_CODE=/\b(?:implement|repair|debug|code|endpoint|unit test|pull request|function|refactor|commit|deploy)\b/i;
-const LOCATION_WHERE=/\b(?:where am i|where i am|my (?:current |exact |precise )?(?:location|coordinates|gps|position|address|lat(?:itude)?|long(?:itude)?)|current location|what (?:city|town|state|country|county|street|neighbou?rhood|zip(?: code)?|postcode) am i in)\b/i;
+const LOCATION_WHERE=/\b(?:where am i|where are we|where i am|my (?:current |exact |precise )?(?:location|coordinates|gps|position|address|lat(?:itude)?|long(?:itude)?)|current location|what (?:city|town|state|country|county|street|neighbou?rhood|zip(?: code)?|postcode) am i in)\b/i;
 const LOCATION_NEARBY=/\b(?:near me|close to me|around me|nearby|nearest|closest|around here|near here|from here|from me|my area|this area|how far (?:am i|away am i))\b/i;
 const LOCATION_BEYOND=/\b(?:how far|distance|directions?|route|drive|walk|near|nearest|closest|weather|time|restaurants?|food|coffee|gas|hotel|store|shop)\b/i;
+// "Where am I in the queue / on task 221 / with the release" asks for status, not a place ("in the world" still is).
+const LOCATION_STATUS=/\bwhere (?:am i|are we)\s+(?:at\s+)?(?:in|on|at|with)\s+(?:the|my|our|this|task|pr)\b(?!\s+(?:world|map|planet|earth|globe|city|town|country|state)\b)/i;
+const LOCATION_PLACE_WORDS=/\bmy (?:current |exact |precise )?(?:location|coordinates|gps|position|address)\b/i;
 function locationQuestion(text){
  text=String(text||'').trim().replace(/’/g,"'");
  if(!text||LOCATION_CODE.test(text))return null;
+ if(LOCATION_STATUS.test(text)&&!LOCATION_PLACE_WORDS.test(text)&&!LOCATION_NEARBY.test(text))return null;
  if(LOCATION_WHERE.test(text))return LOCATION_BEYOND.test(text)?'nearby':'where';
  return LOCATION_NEARBY.test(text)?'nearby':null;
 }

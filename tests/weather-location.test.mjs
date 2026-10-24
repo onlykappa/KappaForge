@@ -16,6 +16,16 @@ test('the app and the Worker agree on what is a weather question and whether it 
  }
 });
 
+test('everyday weather wording is recognized, so the answer uses real data instead of a guess',()=>{
+ // Post-release audit: "raining"/"snowing" missed the plain-word match and went to the model with no weather data.
+ for(const text of ['Is it raining here?','Is it snowing?','Will it be rainy tomorrow?','Is it going to be windy today?','Will it storm tonight?','Is it stormy in Denver?']){
+  assert.equal(weatherRequest(text),true,text);assert.equal(KappaCore.weatherQuestion(text),true,'app: '+text);
+ }
+ assert.equal(KappaCore.weatherLocationNeeded('Is it raining here?',{}),true,'"here" uses the device location');
+ assert.equal(weatherArguments('Is it stormy in Denver?',{}).city,'Denver');
+ for(const text of ['Fix the rainy-day test','What is a brainstorm?'])assert.equal(weatherRequest(text),false,text);
+});
+
 test('location is needed only for a weather question with no typed or saved city, unless turned off',()=>{
  assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{}),true);
  assert.equal(KappaCore.weatherLocationNeeded('Will it rain today?',{locationAccess:'allowed'}),true);

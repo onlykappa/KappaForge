@@ -401,6 +401,15 @@ async function refreshTaskDiagnostics(){
  settingsNotice='Checked '+jobs.length+' saved task'+(jobs.length===1?'':'s')+'; refreshed '+loaded+' failure record'+(loaded===1?'':'s')+'.';
  render();
 }
+// Opening Task diagnostics reads the ledgers by itself (Refresh still forces it): at most every two minutes, one read
+// at a time, and quietly; a failed read leaves the cached records and the Refresh button.
+let taskDiagnosticsReadAt=0,taskDiagnosticsReading=null;
+function autoRefreshTaskDiagnostics(){
+ if(taskDiagnosticsReading||Date.now()-taskDiagnosticsReadAt<120000)return false;
+ taskDiagnosticsReadAt=Date.now();
+ taskDiagnosticsReading=refreshTaskDiagnostics().catch(()=>{}).finally(()=>{taskDiagnosticsReading=null});
+ return taskDiagnosticsReading;
+}
 // Recovery ledger kinds (engine/recovery.py diagnose) in plain words: what went wrong, and what it means.
 const TASK_FAILURE_KINDS={
  edit_anchor:['Edit didn’t match the file','The model quoted code that isn’t in the current file, often because the file changed since it was read.'],
@@ -478,6 +487,7 @@ function bindTaskDiagnostics(){
  }));
  document.querySelectorAll('details.tf-attempt').forEach(el=>el.addEventListener('toggle',()=>{el.open?openDiagnosticAttempts.add(el.dataset.attempt):openDiagnosticAttempts.delete(el.dataset.attempt)}));
  document.querySelectorAll('[data-task-report]').forEach(b=>b.onclick=()=>{try{downloadTaskDiagnostics(b.dataset.taskReport)}catch(e){settingsNotice=e.message}render()});
+ if(settingsSection==='tasks')autoRefreshTaskDiagnostics();
 }
 function settingsSectionBody(){
  const native=!!window.webkit?.messageHandlers?.kappa,model=preferences.model==='auto'?'Automatic · '+preferences.routing:preferences.model.split(':').pop();

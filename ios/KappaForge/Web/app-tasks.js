@@ -621,7 +621,8 @@ function collectTaskFailureHistory(job,body){
    if(!item||typeof item!=='object')return;
    const error=String(item.error||record.cause||'').slice(0,1000);if(!error)return;
    const at=Number(item.at||record.at)||0,model=String(item.model||record.model||'').slice(0,140);
-   rows.push({id:String(fingerprint)+':'+String(at)+':'+index,at,kind:String(item.kind||record.kind||'failure').slice(0,80),
+   // Identify an attempt by what it is, never by its position: the ledger keeps the latest ten and shifts the rest.
+   rows.push({id:String(fingerprint)+':'+String(at)+':'+String(item.kind||'')+':'+error.slice(0,80),at,kind:String(item.kind||record.kind||'failure').slice(0,80),
     error,model,strategy:String(item.strategy||record.strategy||'').slice(0,100),
     next:String(item.next||record.next||'').slice(0,300),
     files:Array.isArray(item.files||record.files)?(item.files||record.files).filter(x=>typeof x==='string').slice(0,10):[],
