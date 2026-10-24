@@ -163,19 +163,64 @@ def summary(rows):
     return '; '.join(line(row) for row in rows[:4]) + (f'; {len(rows) - 4} more' if len(rows) > 4 else '')
 
 
+ELLIPSIS_RE = re.compile(r'\s*(?:\.\.\.+|\u2026)\s*')
+MIN_FRAGMENT_CHARS = 8
+MAX_ELIDED_SPAN = 400
+
+
+def quote_found(quote, text):
+    """Whether `quote` is literal text of `text`, up to runs of whitespace (a reflowed or joined line).
+
+    A quote abbreviated with "..." counts only when every fragment is literal, at least eight characters,
+    in order, and within one short span of the text; anything else is not evidence.
+    """
+    flat = ' '.join(text.split())
+    fragments = [' '.join(part.split()) for part in ELLIPSIS_RE.split(quote.strip())]
+    fragments = [part for part in fragments if part]
+    if not fragments:
+        return False
+    if len(fragments) == 1:
+        return fragments[0] in flat
+    if any(len(part) < MIN_FRAGMENT_CHARS for part in fragments):
+        return False
+    start = flat.find(fragments[0])
+    while start >= 0:
+        position, ok = start + len(fragments[0]), True
+        for part in fragments[1:]:
+            found = flat.find(part, position)
+            if found < 0 or found + len(part) - start > MAX_ELIDED_SPAN:
+                ok = False
+                break
+            position = found + len(part)
+        if ok:
+            return True
+        start = flat.find(fragments[0], start + 1)
+    return False
+
+
+def quote_issue(item, data, sources):
+    """Why one evidence item is not literal current source: a fixed code, never the quote itself."""
+    if not isinstance(item, dict) or not isinstance(item.get('path'), str) or not isinstance(item.get('quote'), str) or not item['quote'].strip():
+        return 'malformed'
+    if item['path'] not in data['sources']:
+        return 'unknown_path'
+    if quote_found(item['quote'], data['sources'][item['path']]['text']) and quote_found(item['quote'], sources[item['path']]):
+        return ''
+    if quote_found(item['quote'], sources[item['path']]):
+        return 'outside_excerpt'
+    return 'abbreviated_or_paraphrased' if ELLIPSIS_RE.search(item['quote']) else 'not_in_source'
+
+
 def literal_evidence(evidence, data, sources):
     """The evidence items whose quote is literal in both the shown excerpt and the current source; others are dropped."""
     if not isinstance(evidence, list) or not 1 <= len(evidence) <= 4:
         return []
-    return [item for item in evidence
-            if isinstance(item, dict) and isinstance(item.get('path'), str) and item['path'] in data['sources']
-            and isinstance(item.get('quote'), str) and item['quote'].strip()
-            and item['quote'] in data['sources'][item['path']]['text'] and item['quote'] in sources[item['path']]]
+    return [item for item in evidence if not quote_issue(item, data, sources)]
 
 
 def owner_quoted(quote, task):
-    """The owner's own words, compared with whitespace collapsed (a quote may join a wrapped line); never source text."""
-    return isinstance(quote, str) and bool(quote.strip()) and ' '.join(quote.split()) in ' '.join(task.split())
+    """The owner's own words, literal up to whitespace and short ellipses; never source text."""
+    return isinstance(quote, str) and bool(quote.strip()) and quote_found(quote, task)
 
 
 def parse(output):
@@ -207,6 +252,8 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
               'Exactly one decision per id. confirmed means a demonstrated defect relevant to the owner goal. '
               'rejected means source disproves the finding, or the owner request excludes it. '
               'A confirmation needs literal current-source evidence and an owner_quote linking it to the request. '
+              'Copy every quote exactly from REVIEW_INPUT as one short contiguous fragment (one source line is best); '
+              'do not abbreviate, reformat or quote the traceback instead of the source text. '
               'A rejection needs source disproof; an out-of-goal rejection instead needs a literal owner_quote. '
               'Missing source, inability to reproduce or conflicting facts mean needs_validation, '
               'not permission to implement a speculative fix. An incomplete excerpt means needs_validation only when its '
@@ -242,6 +289,11 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
             evidence = literal_evidence(row.get('evidence'), data, sources)
             source_proof = bool(evidence)
             owner_proof = owner_quoted(row.get('owner_quote'), task)
+            raw = row.get('evidence') if isinstance(row.get('evidence'), list) else []
+            # Fixed codes only: which quote problem blocked the proof, never the quoted text.
+            quote_issues = sorted({quote_issue(item, data, sources) for item in raw[:4]} - {''}) if not source_proof else []
+            if not source_proof and not 1 <= len(raw) <= 4:
+                quote_issues = ['evidence_count']
             gate = []
             if verdict == 'confirmed':
                 gate = [name for name, failed in (('not_in_goal', not row['in_goal']), ('no_literal_source_evidence', not source_proof),
@@ -251,6 +303,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
                     ([] if owner_proof else ['owner_quote_not_literal'])
             if gate:
                 verdict = 'needs_validation'
+                gate = gate + ['evidence:' + issue for issue in quote_issues if 'no_literal_source_evidence' in gate]
             # Missing verification is never converted into a coding request.
             result.append(dict(id=row['id'], claim=shown_claims[row['id']], verdict=verdict, reason=reason[:600],
                                evidence=evidence, in_goal=row['in_goal'], gate=gate,
