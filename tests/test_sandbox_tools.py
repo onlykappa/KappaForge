@@ -151,3 +151,71 @@ class SandboxToolsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RealSessionReviewTests(unittest.TestCase):
+    """Owner review of #228: the same tools against the real engine.sandbox.Session (fake Docker only).
+
+    The real Session stores file contents as bytes, applies {path: text or None} and records changes in
+    session.changes. Do not weaken or delete these tests; fix SandboxTools so they pass."""
+
+    def setUp(self):
+        from tests.test_sandbox import FakeDocker
+        self.session = sandbox.Session(sandbox.Tree('onlykappa/KappaForge', 'a' * 40, {'app.py': b'a = 1\nb = 2\n'}),
+                                       FakeDocker(), versions=('3.13', '22'))
+        self.tools = SandboxTools(self.session)
+
+    def text(self, path):
+        return self.session.current()[path].decode()
+
+    def test_an_existing_file_is_edited(self):
+        result = self.tools.apply_patch([{'path': 'app.py', 'find': 'a = 1', 'replace': 'a = 10'}])
+        self.assertEqual((result['ok'], result['status']), (True, 'applied'))
+        self.assertEqual(self.text('app.py'), 'a = 10\nb = 2\n')
+
+    def test_several_edits_to_one_file_all_apply_in_order(self):
+        result = self.tools.apply_patch([{'path': 'app.py', 'find': 'a = 1', 'replace': 'a = 10'},
+                                         {'path': 'app.py', 'find': 'b = 2', 'replace': 'b = 20'}])
+        self.assertTrue(result['ok'])
+        self.assertEqual(self.text('app.py'), 'a = 10\nb = 20\n')
+        self.assertEqual(result['changed_paths'], ['app.py'])
+
+    def test_a_failing_edit_applies_nothing(self):
+        result = self.tools.apply_patch([{'path': 'app.py', 'find': 'a = 1', 'replace': 'a = 10'},
+                                         {'path': 'app.py', 'find': 'missing', 'replace': 'x'}])
+        self.assertEqual((result['ok'], result['status']), (False, 'invalid'))
+        self.assertIn('app.py', result['error'])
+        self.assertEqual(self.session.changes, {})
+
+    def test_bad_input_is_reported_never_raised(self):
+        for edits in ('oops', [42], [{'path': '../x', 'find': '', 'replace': 'x'}],
+                      [{'path': 'app.py', 'find': 123, 'replace': 'x'}], [{'find': 'a', 'replace': 'b'}]):
+            with self.subTest(edits=edits):
+                result = self.tools.apply_patch(edits)
+                self.assertEqual((result['ok'], result['status']), (False, 'invalid'))
+                self.assertTrue(result['error'])
+        self.assertEqual(self.session.changes, {})
+        self.session.results.append(sandbox.RunResult(['x'], 'test', 'failed', stderr='abcdef'))
+        for kwargs in ({'offset': -1}, {'limit': 0}, {'offset': 'x'}, {'index': 5}):
+            with self.subTest(kwargs=kwargs):
+                self.assertEqual(self.tools.read_execution_log(**kwargs)['status'], 'invalid')
+
+    def test_node_tap_counts_every_test_and_names_the_failures(self):
+        self.session.results.append(sandbox.RunResult(['npm', 'test'], 'test', 'failed', stdout=(
+            'TAP version 13\nok 1 - adds\nnot ok 2 - total counts units\nok 3 - empty cart\n'
+            '# tests 3\n# pass 2\n# fail 1\n# skipped 0\n')))
+        result = self.tools.inspect_test_results()
+        self.assertEqual(result['counts'], {'ran': 3, 'failures': 1, 'errors': 0, 'skipped': 0})
+        self.assertEqual(result['failing'], ['total counts units'])
+
+    def test_missing_docker_is_unavailable_not_invalid_input(self):
+        self.session.docker._available = False
+        result = self.tools.run_command(['python', 'app.py'])
+        self.assertEqual((result['ok'], result['status']), (False, 'unavailable'))
+        self.assertIn('Docker', result['error'])
+
+    def test_the_diff_lists_exactly_the_candidate_changes_including_deletions(self):
+        self.session.apply({'app.py': None, 'new.py': 'x = 1\n'})
+        result = self.tools.inspect_diff()
+        self.assertEqual(result['changed_paths'], ['app.py', 'new.py'])
+        self.assertIn('+x = 1', result['diff'])
