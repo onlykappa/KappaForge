@@ -61,6 +61,9 @@ def digest(goal):
     return hashlib.sha256((goal.title + '\n' + goal.request).encode()).hexdigest()
 
 
+INFERENCE_EVENTS = 8
+
+
 def inference_key():
     """Authority and observations an answer depends on; routing never refreshes this stamp."""
     data = snapshot()
@@ -82,11 +85,14 @@ class InferenceCall:
     prompt_digest: str
     engine: str
     call_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    prompt: str = field(default=None, repr=False, compare=False)
 
     def check(self, prompt=None):
         goal, record = current()
-        if (goal is not self.goal or record is not self.record or inference_key() != self.key
-                or (prompt is not None and hashlib.sha256(prompt.encode()).hexdigest() != self.prompt_digest)):
+        # The same prompt object needs no re-hash on every retry and provider switch.
+        changed_prompt = (prompt is not None and prompt is not self.prompt
+                          and hashlib.sha256(prompt.encode()).hexdigest() != self.prompt_digest)
+        if goal is not self.goal or record is not self.record or inference_key() != self.key or changed_prompt:
             raise CandidateChanged('Inference context changed; discard the answer and reconcile the owner goal, candidate and action')
 
     def event(self, outcome, route=''):
@@ -95,13 +101,24 @@ class InferenceCall:
             with self.record.lock:
                 row = dict(call=self.call_id, engine=self.engine, outcome=outcome,
                            route=clean(route, 100), context=self.key)
-                self.record.inference_events = (self.record.inference_events + [row])[-8:]
+                events = list(self.record.inference_events)
+                last = events[-1] if events else {}
+                if (outcome == 'attempted' and last.get('call') == self.call_id and last.get('outcome') == 'attempted'
+                        and last.get('route') == row['route']):
+                    row['attempts'] = last.get('attempts', 1) + 1  # Retries of one route share a row.
+                    events.pop()
+                events.append(row)
+                while len(events) > INFERENCE_EVENTS:
+                    # Drop the oldest provider attempt before any call's start or outcome, so one call that walks many
+                    # providers cannot push its own start and every earlier call's result out of the history.
+                    events.pop(next((i for i, item in enumerate(events[:-1]) if item.get('outcome') == 'attempted'), 0))
+                self.record.inference_events = events
 
 
 @contextmanager
 def inference(prompt, engine):
     goal, record = current()
-    call = InferenceCall(goal, record, inference_key(), hashlib.sha256(prompt.encode()).hexdigest(), engine)
+    call = InferenceCall(goal, record, inference_key(), hashlib.sha256(prompt.encode()).hexdigest(), engine, prompt=prompt)
     token = INFERENCE.set(call)
     call.event('started')
     try:

@@ -711,10 +711,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         payload["task"] = task_number  # Free answers on a task are the evidence a premium rescue needs.
     rescue = getattr(journal, "premium_request", None) if not pinned_route else None
     if rescue and "task" in payload:
-        journal.premium_request = None  # One rescue call per step: every later call is free.
         premium = {"task": task_number, "step": rescue["step"], "reason": rescue["reason"]}
         from engine.task_state import inference_attempt
+        # A stale context raises before anything is sent; the step keeps its rescue for the reconciled retry.
         inference_attempt(prompt, 'gateway:premium-quote')
+        journal.premium_request = None  # One rescue call per step: every later call is free.
         status, body = _router_post("/router/infer", {**payload, "requestId": str(uuid.uuid4()), "premium": {**premium, "quote": True}})
         quote = body.get("premium") if isinstance(body.get("premium"), dict) else {"refused": "premium_state_unavailable"}
         premium_used(quote)

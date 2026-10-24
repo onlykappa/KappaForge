@@ -95,6 +95,47 @@ class TaskStateTests(unittest.TestCase):
         self.assertLess(len(data['review'].get('problems', [])), 4, 'the prompt copy was trimmed')
         self.assertEqual({key: value for key, value in self.goal.record.review.items() if isinstance(value, list)}, kept)
 
+    def test_one_call_walking_many_providers_keeps_its_start_and_earlier_outcomes(self):
+        with task_state.inference('first prompt', 'direct') as first:
+            first.event('answered', 'groq:a')
+        prompt = 'second prompt'
+        with task_state.inference(prompt, 'direct') as call:
+            task_state.inference_attempt(prompt, 'gemini:flash')
+            task_state.inference_attempt(prompt, 'gemini:flash')  # A retry of the same route shares its row.
+            for i in range(8):
+                task_state.inference_attempt(prompt, 'fallback:%d' % i)
+            call.event('answered', 'fallback:7')
+        events = self.goal.record.inference_events
+        self.assertEqual(len(events), task_state.INFERENCE_EVENTS)
+        outcomes = [(e['call'], e['outcome']) for e in events if e['outcome'] != 'attempted']
+        self.assertEqual(outcomes, [(first.call_id, 'started'), (first.call_id, 'answered'),
+                                    (call.call_id, 'started'), (call.call_id, 'answered')])
+        self.assertEqual(events[-2]['route'], 'fallback:7', 'the newest attempts are kept')
+
+    def test_a_retry_with_the_same_prompt_object_is_not_rehashed(self):
+        prompt = 'x' * 1000
+        with task_state.inference(prompt, 'direct'):
+            with patch.object(task_state.hashlib, 'sha256', wraps=task_state.hashlib.sha256) as sha:
+                task_state.inference_attempt(prompt, 'gemini:flash')
+            self.assertFalse(any(call.args and len(call.args[0]) >= 1000 for call in sha.call_args_list))
+            with self.assertRaises(task_state.CandidateChanged):
+                task_state.inference_attempt(prompt + ' changed', 'gemini:flash')
+
+    def test_routing_history_is_trimmed_before_the_open_review_findings(self):
+        task_state.review([], ['Problem %d' % i for i in range(4)])
+        for i in range(8):
+            with task_state.inference('prompt %d' % i, 'direct') as call:
+                call.event('answered', 'groq:%d' % i)
+        data = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        data.update(recentAttempts=[], touchedFiles=[], plannedStages=[])
+        data['savedProgress']['requirementInterpretations'] = []
+        data['inferenceEvents']['recent'] = data['inferenceEvents']['recent'][:1]
+        task_state.RENDERED.set(None)
+        with patch.object(task_state, 'MAX_CONTEXT', len(task_state.wire(data))):
+            trimmed = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        self.assertEqual(len(trimmed['review']['problems']), 4, 'every open problem reaches the next model')
+        self.assertLess(len(trimmed['inferenceEvents']['recent']), 16)
+
     def test_one_commit_reported_twice_is_one_revision(self):
         record = self.goal.record
         task_state.checkpoint(NEXT, {'app.py': 'x'})

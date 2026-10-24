@@ -88,6 +88,16 @@ class PremiumEngineTests(unittest.TestCase):
         self.assertNotIn("premium", sent[0])
         self.assertEqual(quotes, [])
 
+    def test_a_stale_context_before_the_quote_keeps_the_rescue_for_the_reconciled_retry(self):
+        from engine import task_state
+        current = journal(premium_request={"step": "check", "reason": "check_rounds_exhausted"})
+        stale = task_state.CandidateChanged("Inference context changed")
+        with patch("engine.task_state.inference_attempt", side_effect=stale):
+            with self.assertRaises(task_state.CandidateChanged):
+                self.call(current)
+        self.assertEqual(current.premium_request, {"step": "check", "reason": "check_rounds_exhausted"},
+                         "nothing was sent, so the step keeps its one rescue")
+
     def test_no_rescue_outside_a_gateway_task_or_twice_for_a_step(self):
         handle = recovery.CURRENT.set(None)
         try:
