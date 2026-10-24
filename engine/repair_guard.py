@@ -13,6 +13,7 @@ LOOP_MARKER = 'KAPPA_REPAIR_LOOP_REVIEW_V1'
 MAX_FINDINGS = 12
 MAX_SOURCE_CHARS = 14000
 MAX_REASON_CHARS = 180
+IDENTIFIER_RE = re.compile(r'[A-Za-z_][\w./:-]{0,79}')
 MAX_CLAIM_CHARS = 800
 # A compacted traceback keeps its failing frame and assertion within a slightly larger, still bounded claim.
 MAX_TRACEBACK_CLAIM_CHARS = 1200
@@ -60,8 +61,8 @@ def save(stamp, rows, loop=None):
             raise task_state.CandidateChanged('Finding evidence no longer belongs to the active task candidate')
         record.repair = dict(candidate=stamp['identity']['candidate'], source=stamp['source'],
                              evidence='independent model assessments; reverify before every repair',
-                             findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''))
-                                       for row in rows[-4:]],
+                             findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''),
+                                            gate=list(row.get('gate') or [])) for row in rows[-4:]],
                              omittedFindings=max(0, len(rows) - 4))
         if loop:
             record.repair['loop'] = dict(loop)
@@ -70,8 +71,8 @@ def save(stamp, rows, loop=None):
     if journal:
         journal.state['repairEvidence'] = dict(version=1, goal=stamp['goal'], identity=stamp['identity'],
             source=stamp['source'], evidence='saved diagnostic decisions; reverify before any edit',
-            findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''))
-                      for row in rows[-MAX_FINDINGS:]])
+            findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''),
+                           gate=list(row.get('gate') or [])) for row in rows[-MAX_FINDINGS:]])
         if loop:
             journal.state['repairEvidence']['loop'] = dict(decision=loop['decision'])
         journal.persist()
@@ -145,7 +146,8 @@ def safe_reason(row, sources=None):
     quotes = [item.get('quote') for item in evidence if isinstance(item, dict)]
     for quote in sorted((q for q in quotes if isinstance(q, str) and q.strip()), key=len, reverse=True):
         reason = reason.replace(quote, '[excerpt]')
-    reason = re.sub(r'`[^`]*`|"[^"\n]*"', '[excerpt]', reason)
+    # A backticked bare name or path (`produce_development_pr`, `engine/developer.py`) is a reference, not source text.
+    reason = re.sub(r'`([^`]*)`|"[^"\n]*"', lambda m: '`' + m[1] + '`' if m[1] and IDENTIFIER_RE.fullmatch(m[1]) else '[excerpt]', reason)
     if sources:
         # Any whole line of current source the model repeated without quoting it.
         source_lines = {line.strip() for text in sources.values() for line in text.split('\n') if len(line.strip()) >= 12}
@@ -154,9 +156,26 @@ def safe_reason(row, sources=None):
 
 
 def summary(rows):
-    """Bounded text for a blocked repair: each verdict with its sanitized reason."""
-    return '; '.join(f"{row['verdict']}: {(row.get('safe_reason') or 'no reason given')[:120]}" for row in rows[:4]) + \
-        (f'; {len(rows) - 4} more' if len(rows) > 4 else '')
+    """Bounded text for a blocked repair: each verdict, why the gate downgraded it, and its sanitized reason."""
+    def line(row):
+        gate = f" [gate: {', '.join(row['gate'])}]" if row.get('gate') else ''
+        return f"{row['verdict']}{gate}: {(row.get('safe_reason') or 'no reason given')[:120]}"
+    return '; '.join(line(row) for row in rows[:4]) + (f'; {len(rows) - 4} more' if len(rows) > 4 else '')
+
+
+def literal_evidence(evidence, data, sources):
+    """The evidence items whose quote is literal in both the shown excerpt and the current source; others are dropped."""
+    if not isinstance(evidence, list) or not 1 <= len(evidence) <= 4:
+        return []
+    return [item for item in evidence
+            if isinstance(item, dict) and isinstance(item.get('path'), str) and item['path'] in data['sources']
+            and isinstance(item.get('quote'), str) and item['quote'].strip()
+            and item['quote'] in data['sources'][item['path']]['text'] and item['quote'] in sources[item['path']]]
+
+
+def owner_quoted(quote, task):
+    """The owner's own words, compared with whitespace collapsed (a quote may join a wrapped line); never source text."""
+    return isinstance(quote, str) and bool(quote.strip()) and ' '.join(quote.split()) in ' '.join(task.split())
 
 
 def parse(output):
@@ -219,20 +238,22 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
             verdict, reason = row.get('verdict'), row.get('reason')
             if verdict not in ('confirmed', 'rejected', 'needs_validation') or type(row.get('in_goal')) is not bool or not isinstance(reason, str) or not reason.strip():
                 raise ValueError('Invalid finding verdict')
-            evidence = row.get('evidence')
-            source_proof = (isinstance(evidence, list) and 1 <= len(evidence) <= 4 and all(
-                isinstance(item, dict) and isinstance(item.get('path'), str) and item['path'] in data['sources']
-                and isinstance(item.get('quote'), str) and item['quote'].strip()
-                and item['quote'] in data['sources'][item['path']]['text']
-                and item['quote'] in sources[item['path']] for item in evidence))
-            owner_proof = isinstance(row.get('owner_quote'), str) and bool(row['owner_quote'].strip()) and row['owner_quote'] in task
-            if verdict == 'confirmed' and (not row['in_goal'] or not source_proof or not owner_proof):
-                verdict = 'needs_validation'
-            if verdict == 'rejected' and not (source_proof if row['in_goal'] else owner_proof):
+            # An inexact extra quote is dropped rather than voiding a literal one; at least one must be literal.
+            evidence = literal_evidence(row.get('evidence'), data, sources)
+            source_proof = bool(evidence)
+            owner_proof = owner_quoted(row.get('owner_quote'), task)
+            gate = []
+            if verdict == 'confirmed':
+                gate = [name for name, failed in (('not_in_goal', not row['in_goal']), ('no_literal_source_evidence', not source_proof),
+                                                  ('owner_quote_not_literal', not owner_proof)) if failed]
+            elif verdict == 'rejected':
+                gate = ([] if source_proof else ['no_literal_source_evidence']) if row['in_goal'] else \
+                    ([] if owner_proof else ['owner_quote_not_literal'])
+            if gate:
                 verdict = 'needs_validation'
             # Missing verification is never converted into a coding request.
             result.append(dict(id=row['id'], claim=shown_claims[row['id']], verdict=verdict, reason=reason[:600],
-                               evidence=evidence if source_proof else [], in_goal=row['in_goal'],
+                               evidence=evidence, in_goal=row['in_goal'], gate=gate,
                                safe_reason=safe_reason(row, sources)))
         save(stamp, result)
         return result
