@@ -31,6 +31,18 @@ MAX_EVENTS = 40
 MAX_COMMENT_BYTES = 60000
 ARCHIVE_BYTES = 45000
 BOT = 'github-actions[bot]'
+OWNER = 'onlykappa'
+# Owner review commits KappaForge continues from; more than this needs an explicit restart.
+MAX_ADOPTED_COMMITS = 20
+
+
+def _time(value):
+    """A GitHub ISO timestamp in seconds, or None when it is missing or malformed."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+    except ValueError:
+        return None
 SHA = re.compile(r'^[a-f0-9]{40}$')
 DISPATCH_ACK_SECONDS = 120
 
@@ -526,6 +538,41 @@ class Journal:
             if metadata.get('full_name') != self.scope.repo or not metadata.get('permissions', {}).get('push'):
                 raise PermissionError('Configured credential cannot write the registered project')
 
+    def adopt_reviewed_commits(self, head):
+        """Continue from commits the owner added on top of the checkpoint, such as review tests (#228).
+
+        Commit authors are self-declared, so they prove nothing. What the owner proves is a "Guidance:" comment on
+        the task issue written after the newest added commit. Only a fast-forward of at most MAX_ADOPTED_COMMITS is
+        adopted; anything else still blocks, so concurrent work is never built over unseen."""
+        if not re.fullmatch(r'[0-9a-f]{40}', head or '') or not re.fullmatch(r'[0-9a-f]{40}', self.state['candidate'] or ''):
+            return False
+        try:
+            comparison = self.target_read(f"repos/{self.scope.repo}/compare/{self.state['candidate']}...{head}")
+        except (urllib.error.URLError, ValueError, KeyError):
+            return False
+        added = comparison.get('commits') if isinstance(comparison, dict) else None
+        if (comparison.get('status') != 'ahead' or not isinstance(added, list) or not added
+                or len(added) != comparison.get('ahead_by') or len(added) > MAX_ADOPTED_COMMITS):
+            return False
+        try:
+            dates = [_time(commit['commit']['committer']['date']) for commit in added]
+        except (KeyError, TypeError):
+            return False
+        if None in dates:
+            return False
+        newest = max(dates)
+        guided = [c for c in comments(self.read, self.scope.number)
+                  if (c.get('user') or {}).get('login', '').lower() == OWNER
+                  and re.match(r'^\s*guidance\s*:', c.get('body') or '', re.I)
+                  and (_time(c.get('created_at')) or 0) >= newest]
+        if not guided:
+            return False
+        files = [f.get('filename') for f in comparison.get('files') or [] if isinstance(f, dict) and isinstance(f.get('filename'), str)]
+        self.event(f'Adopted {len(added)} owner-reviewed commit(s) on top of the checkpoint', outcome='recovering',
+                   strategy='continue_from_reviewed_commits')
+        self.state.update(candidate=head, files=sorted(set(files) | set(self.state['files'])))
+        return True
+
     def begin(self, action=''):
         """Consume a dispatch exactly once, on the same authorization and candidate."""
         if action.startswith('resume:'):
@@ -540,7 +587,7 @@ class Journal:
         if self.state['files']:
             branch = f"kappa/dev-{self.scope.number}"
             head = self.target_read(f'repos/{self.scope.repo}/git/ref/heads/{branch}')['object']['sha']
-            if head != self.state['candidate']:
+            if head != self.state['candidate'] and not self.adopt_reviewed_commits(head):
                 self.event('Candidate branch moved since the checkpoint; concurrent work is preserved', outcome='blocked', strategy='stop')
                 self.publish('blocked', 'Candidate changed. Review newer work before resuming.')
                 return False

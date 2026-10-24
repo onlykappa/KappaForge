@@ -30,6 +30,7 @@ class GitHub:
         self.files = {'value.py': 'value = 1\n'}
         self.trees = {}
         self.parents = {}
+        self.comparisons = {}
         intent_guard.activate(self.issue)
 
     def read(self, path):
@@ -62,6 +63,8 @@ class GitHub:
 
         if '/git/commits/' in path:
             return {'tree': {'sha': 'base'}}
+        if '/compare/' in path:
+            return copy.deepcopy(self.comparisons.get(path.split('/compare/')[1], {'status': 'diverged', 'ahead_by': 1, 'commits': []}))
         raise AssertionError('Unhandled GET ' + path)
 
     def write(self, path, payload, method):
@@ -418,6 +421,39 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertFalse(self.journal.begin())
         self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40)
         self.assertEqual(self.journal.state['status'], 'blocked')
+
+    def review(self, commits=1, guidance_delay=60, author='onlykappa', body='Guidance: make the review tests pass'):
+        """An owner review commit on top of the checkpoint, then (optionally) a guidance comment."""
+        self.journal.checkpoint('b' * 40, files=['value.py'])
+        self.world.refs['kappa/dev-130'] = 'd' * 40
+        stamp = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat().replace('+00:00', 'Z')
+        committed = self.world.now - 120
+        self.world.comparisons['b' * 40 + '...' + 'd' * 40] = {
+            'status': 'ahead', 'ahead_by': commits,
+            'commits': [{'commit': {'committer': {'date': stamp(committed)}}} for _ in range(commits)],
+            'files': [{'filename': 'tests/test_value.py'}]}
+        if guidance_delay is not None:
+            self.world.rows.append(dict(id=len(self.world.rows) + 1, body=body, user={'login': author},
+                                        created_at=stamp(committed + guidance_delay)))
+
+    def test_owner_review_commits_with_later_guidance_are_continued_from(self):
+        self.review()
+        self.assertTrue(self.journal.begin('fix'))  # The automatic fix the failing review tests start.
+        self.assertEqual(self.journal.state['candidate'], 'd' * 40)
+        self.assertEqual(self.journal.state['files'], ['tests/test_value.py', 'value.py'])
+        self.assertIn('Adopted 1 owner-reviewed commit', json.dumps(self.journal.state['events']))
+        self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40, 'the branch itself is never moved')
+
+    def test_other_branch_moves_stay_blocked(self):
+        for kwargs in ({'guidance_delay': None}, {'guidance_delay': -30}, {'author': 'someone-else'},
+                       {'body': 'Looks fine to me'}, {'commits': recovery.MAX_ADOPTED_COMMITS + 1}):
+            with self.subTest(**kwargs):
+                self.tearDown()  # A fresh world per case, without leaking the previous journal or patches.
+                self.setUp()
+                self.review(**kwargs)
+                self.assertFalse(self.journal.begin('fix'))
+                self.assertEqual(self.journal.state['status'], 'blocked')
+                self.assertEqual(self.journal.state['candidate'], 'b' * 40)
 
     def test_changed_task_cancellation_and_expiry_revoke_continuation(self):
         self.journal.defer(RuntimeError('offline'))
