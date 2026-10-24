@@ -832,6 +832,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
            "automatically), return \"files\":[] and say why in summary. " if allow_empty else "")
         + ("Add or update a test that checks the new behaviour itself: it must fail without your change and pass "
            "with it. A code change without such a test is rejected (docs, styles and text-only changes need none). " if require_test else "Add tests for changed behavior, not for comment or documentation edits. ") +
+        # #228: tests passed against a FakeSession that returned text where the real Session returns bytes.
+        "Test the real objects your code uses, not stand-ins that differ from their source. " +
         "Do not claim tests ran. "
         "Observations outside the owner task are suggested follow-ups, never additional work. "
         "Never weaken assertions or alter tests merely to hide implementation failures. "

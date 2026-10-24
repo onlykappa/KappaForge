@@ -69,6 +69,34 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_an_undecided_scope_review_is_retried_on_a_different_model(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            changes = {'app.py': 'return int(a) + int(b)'}
+            missing = {'requirements': [], 'problems': []}
+            complete = {**missing, 'file_scope': [{'path': 'app.py', 'necessary': True, 'reason': 'Convert inputs', 'quote': 'int(a)'}]}
+            calls = []
+
+            def model(key, prompt, **kwargs):
+                calls.append(kwargs.get('skip', ()))
+                return ('mistral:codestral-latest', json.dumps(missing)) if len(calls) == 1 else ('ollama:gpt-oss:120b', json.dumps(complete))
+
+            self.assertIsNotNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, ['app.py']))
+            self.assertEqual(calls, [(), ('mistral:codestral-latest',)])
+            from types import SimpleNamespace
+            from engine import recovery
+            handle = recovery.CURRENT.set(SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b')))
+            try:
+                calls.clear()
+                verify.model_review(model, 'key', goal.request, lambda _: '', changes, ['app.py'])
+            finally:
+                recovery.CURRENT.reset(handle)
+            self.assertEqual(calls, [(), ()], 'a pinned task never switches routes')
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_a_source_inspection_round_does_not_use_up_the_scope_retry(self):
         goal = task_goal.from_request('Make add accept numeric strings')
         token = task_goal.CURRENT.set(goal)
