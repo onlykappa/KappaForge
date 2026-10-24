@@ -85,8 +85,8 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("def target_fixed():", changes["app/main.py"])
         first_prompt = model.call_args_list[0].args[1]
         retry_prompt = model.call_args_list[1].args[1]
-        self.assertIn("Edits for the same file are applied in array order", first_prompt)
-        self.assertIn("match its find against that updated text", first_prompt)
+        self.assertIn("Same-file edits apply in array order", first_prompt)
+        self.assertIn("each find must match the result of earlier edits", first_prompt)
         self.assertIn("def target_v2():", retry_prompt)
         self.assertIn("No edits from the rejected proposal were saved", retry_prompt)
 
