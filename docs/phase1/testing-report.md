@@ -40,3 +40,45 @@ was run both in the checkout and in a Git-less export. The next CI run re-checks
 
 - Behavior on cgroup v2 runners (GitHub's current Ubuntu images) for memory and pids limits: same Docker flags, not run here.
 - Docker Hub rate limits on shared runner IPs: handled as `SandboxUnavailable`; not reproducible on demand.
+
+## Step 3: development tool loop
+
+Step 3A is merged in #228. Step 3B is reviewed in #231; merging it requires owner approval.
+The source candidate tested for 3B is `25df5b63a76d225cb85e77c08d5edd4e521c781f`.
+
+`SandboxTools` exposes the seven structured development methods over a real `sandbox.Session`. The loop accepts
+either that tools instance or a mapping of those method names to bound methods, invokes them with keyword arguments,
+and uses the engine's `run_model(api_key, prompt, ..., allowed=..., json_mode=True)` protocol. `allowed` selects model
+providers. Returned `models` records the provider routes, and `steps` records calls and bounded results. Prompts include
+the task, signatures, JSON reply instructions and action/result history. Serialized results are at most 3000 characters,
+and prompt history is at most 30000. Invalid replies, unavailable execution, repeated calls and the step limit stop the
+loop as specified; tool exceptions become error results.
+
+### Ran
+
+| Check | Measured result |
+| --- | --- |
+| Original `RealSessionReviewTests` against initial 3A code | 7 tests failed: 5 failures and 7 errors, including subtests |
+| Additional real-Session 3A regressions before repair | 7 tests failed: 6 failures and 11 errors, including subtests |
+| Nine initial 3B reviewer tests against KappaForge's candidate | All 9 failed on the incompatible model-call protocol |
+| Focused tests after repairs, local Windows | 25 SandboxTools and 19 tool-loop tests passed (44 total); real Session/SandboxTools with fake Docker, no model/network calls |
+| `npm test`, local Windows | 822 passed; checkout line endings normalized to the repository's LF content |
+| [3A Ubuntu CI](https://github.com/onlykappa/KappaForge/actions/runs/40107693526) | 674 Python tests ran, OK with 6 Docker tests skipped; npm, dependency map, browser, Worker and structural checks passed |
+| [3B Ubuntu CI](https://github.com/onlykappa/KappaForge/actions/runs/40109578717) | 693 Python tests ran, OK with 6 Docker tests skipped; `npm test` passed; dependency map matched; Worker and structural checks passed |
+| [3B exact-candidate branch validation](https://github.com/onlykappa/KappaForge/actions/runs/40109600258) | Passed Python, Node, compilation and web configuration checks on the source candidate; this workflow runs without API secrets and does not start Docker |
+| `python3 scripts/dependency-map.py --check` | Passed in Ubuntu CI; also passed locally using the bundled Python executable |
+| Original 3A owner-test preservation | Parsed AST compared with `78d5ef1`; assertions unchanged |
+
+The full local Windows Python run during 3A encountered existing runner/path issues. Ubuntu CI supplies the full-suite
+acceptance evidence. The report does not count the local failed run as a pass.
+
+KappaForge wrote both initial implementations. Three 3A repair runs stopped before source edits at finding verification;
+3B's automatic fix and explicit restart stopped on recovery state transitions after a provider outage. Reviewer bug
+fixes used the owner's authorized fallback after these blocked rounds. No pipeline changes were made for those failures.
+
+### Inspected, not executed for step 3
+
+- Real Docker isolation and execution: source and prior step-2 evidence inspected; the six integration tests stayed skipped.
+- Live model selection and network/provider responses through the new loop: scripted model callbacks exercised the real
+  calling convention; no live model inference ran through the new loop.
+- Pre-commit autonomous repair and the faulty-project acceptance flow belong to step 4 and are not claimed complete.
