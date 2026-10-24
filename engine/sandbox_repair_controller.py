@@ -15,19 +15,19 @@ class SandboxRepairController:
                 diff = diff_info.get('diff', '')
                 fingerprint = hashlib.sha256(diff.encode()).hexdigest()
                 
+                steps = result.get('steps', [])
                 attempt = {
                     'index': attempt_idx,
                     'diff': diff,
                     'fingerprint': fingerprint,
                     'results': result,
-                    'rationale': result.get('steps', [{}])[-1].get('reason', ''),
+                    'rationale': steps[-1].get('reason', '') if steps else 'No steps taken',
                     'logs': self.tools.read_execution_log().get('output', '')
                 }
                 if self.attempts:
                     attempt['diff_from_prev'] = (diff != self.attempts[-1]['diff'])
                 
                 if any(a['fingerprint'] == fingerprint for a in self.attempts):
-                    self.attempts.append(attempt)
                     break
                 
                 self.attempts.append(attempt)

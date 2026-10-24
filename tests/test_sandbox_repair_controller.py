@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import Mock
 from engine import sandbox, sandbox_repair_controller, sandbox_tools
 
 class FakeDocker(sandbox.Docker):
@@ -18,10 +19,12 @@ class TestSandboxRepairController(unittest.TestCase):
         self.controller = sandbox_repair_controller.SandboxRepairController(self.session)
 
     def test_attempt_limit(self):
+        self.call_count = 0
         def mock_model(*args, **kwargs):
-            return 'route', '{"done":false, "tool":"run_command", "args":{"argv":["ls"]}, "reason":"fail"}'
+            self.call_count += 1
+            return 'route', '{"done":false, "tool":"run_command", "args":{"argv":["ls ' + str(self.call_count) + '"]}, "reason":"fail"}'
         res = self.controller.run_repair('task', mock_model, 'key')
-        self.assertEqual(res['last_attempt'], 5)
+        self.assertEqual(len(self.controller.attempts), 5)
 
     def test_success_verification(self):
         def mock_model(*args, **kwargs):
@@ -33,11 +36,11 @@ class TestSandboxRepairController(unittest.TestCase):
     def test_deduplication(self):
         def mock_model(*args, **kwargs):
             return 'route', '{"done":false, "tool":"run_command", "args":{"argv":["ls"]}, "reason":"fail"}'
-        res = self.controller.run_repair('task', mock_model, 'key')
+        self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(len(self.controller.attempts), 1)
 
     def test_session_cleanup(self):
-        self.session.close = unittest.mock.Mock()
+        self.session.close = Mock()
         def mock_model(*args, **kwargs):
             return 'route', '{"done":true, "summary":"fixed"}'
         self.controller.run_repair('task', mock_model, 'key')
