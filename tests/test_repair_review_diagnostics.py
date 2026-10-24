@@ -369,6 +369,62 @@ class Pr234ReplayTests(RevisionHarness):
         self.assertEqual(self.writes, [])
 
 
+class VerifiedRepairPromptBudgetTests(RevisionHarness):
+    """Run 40126246053: verified targets plus a 30K PR diff pushed the coder prompt past the gateway budget."""
+    def github(self, path, _token, *args, **kwargs):
+        if '/files?' in path:
+            return [{'filename': f'engine/module_{n}.py', 'status': 'added', 'patch': '+' + ('x = 1  # filler\n+' * 400)[:6000]}
+                    for n in range(5)]
+        return super().github(path, _token, *args, **kwargs)
+
+    def test_verified_repair_prompt_stays_within_the_gateway_budget(self):
+        from engine import gateway
+        for n in range(5):
+            self.files[f'engine/module_{n}.py'] = 'x = 1\n'
+        sent = []
+
+        def model(key, prompt, **kw):
+            if repair_guard.FINDING_MARKER in prompt:
+                data = review_input(prompt)
+                return 'verifier', json.dumps({'findings': [dict(
+                    id=row['id'], verdict='confirmed' if 'open_plan_draft' in row['claim'] else 'needs_validation', in_goal=True,
+                    reason='Publishes before validation', owner_quote=OWNER_QUOTE,
+                    evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)]) for row in data['findings']]})
+            sent.append(prompt)
+            self.assertTrue(gateway.prompt_fits(prompt), 'every coding prompt sent fits the gateway budget')
+            return 'coder', '{}'
+        issue = {'number': 232, 'title': 'Phase 1 step 4',
+                 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + OWNER + '\n' + 'Requirement detail. ' * 600}
+        pr = {'number': 234, 'body': '## Design notes\n' + 'Design note. ' * 300, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/234'}
+        with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
+                patch.object(developer, 'gh', side_effect=self.github), \
+                patch.object(developer, 'list_tree', return_value=({p: len(t) for p, t in self.files.items()}, {})), \
+                patch.object(developer, 'project_guide', return_value='Project rule. ' * 1650), \
+                patch.object(developer, 'read_source', side_effect=self.read), \
+                patch.object(developer, 'requirements_open', return_value=self.PROBLEMS), \
+                patch.object(developer, 'job_log', return_value=failing_log(self.line)), \
+                patch.object(developer, 'is_private', return_value=False), \
+                patch.object(developer, 'code_providers', return_value={'groq'}), \
+                patch.object(developer, 'run_model', side_effect=model), \
+                patch.object(developer, 'note'), \
+                patch.object(developer, 'plan_change', side_effect=developer.GenerationFailure('no replan in this test')):
+            with self.assertRaises(Exception) as stopped:
+                developer.revise_branch(issue, pr, 'kappa/dev-232', SHA, [{'id': 1, 'steps': []}], 'fixture', 'fixture')
+        self.assertNotIsInstance(stopped.exception, gateway.GatewayRequestTooLarge)
+        self.assertTrue(sent, 'the verified repair reached the coder')
+        self.assertIn('Verified repair targets only:', sent[0])
+        self.assertIn(OWNER_QUOTE, sent[0], 'the owner goal is never shortened')
+        self.assertIn('PR diff shortened', sent[0])
+
+    def test_history_is_bounded_and_keeps_short_diffs_whole(self):
+        short = developer.verified_history('design', ['a', 'b'], 'notes', '', '--- f\n+line\n')
+        self.assertTrue(short.endswith('--- f\n+line\n'))
+        self.assertNotIn('shortened', short)
+        long = developer.verified_history('d' * 5000, ['t' * 600] * 5, 'n' * 5000, 'b' * 5000, '+' * 30000)
+        self.assertLessEqual(len(long), developer.VERIFIED_HISTORY_CHARS)
+        self.assertTrue(long.endswith(developer.TRUNCATED_DIFF))
+
+
 class SourceReadFailureTests(RevisionHarness):
     def test_failed_source_reads_still_load_the_pr_body_and_design(self):
         def unreadable(*args):
