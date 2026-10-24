@@ -214,6 +214,20 @@ class DeveloperValidationTests(unittest.TestCase):
         if developer.shutil.which("node"):
             self.assertIsNotNone(syntax_error("a.js", "function (\n"))
 
+    def test_python_syntax_rejection_points_to_the_line_and_indentation(self):
+        message = syntax_error("engine/developer.py", "def run():\n    value = 1\n        return value\n")
+        self.assertIn("line 3", message)
+        self.assertIn("8 leading spaces", message)
+        self.assertIn("previous nonblank line 2 uses 4 leading spaces", message)
+        self.assertIn("Match the enclosing block's indentation", message)
+
+    def test_oversized_result_reports_exact_limit_and_recommends_small_edits(self):
+        source = {"app/main.py": "x = 1\n"}
+        proposal = {"files": [{"path": "app/main.py", "content": "x" * (developer.SMALL.file_chars + 1)}]}
+        with self.assertRaisesRegex(ValueError, r"Resulting file too large: app/main.py \(60001 chars; limit 60000\)") as caught:
+            apply_changes(source, {"app/main.py": len(source["app/main.py"])}, proposal)
+        self.assertIn("smallest exact edit", str(caught.exception))
+
     def test_invalid_output_is_retried_with_the_rejection_reason(self):
         bad = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "missing", "replace": "x"}]}]})
         good = json.dumps({"explanation": "Adding now works with text numbers.", "summary": "Cast inputs", "files": [
