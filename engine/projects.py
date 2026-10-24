@@ -15,7 +15,10 @@ def registered(repo):
         raise ValueError('Invalid registered project branch or waiting policy')
     re.compile(entry['branches'])
     for name, value in entry.get('budgets', {}).items():
-        if name not in ('edits','modelCalls','fixCycles') or not isinstance(value,int) or not 1 <= value <= 1000:
+        # Only fix cycles may be explicitly unlimited (null); edits and model calls always keep a cap.
+        if name == 'fixCycles' and value is None:
+            continue
+        if name not in ('edits','modelCalls','fixCycles') or type(value) is not int or not 1 <= value <= 1000:
             raise ValueError('Invalid registered project recovery budget')
     if entry.get('tokenEnv') and not re.fullmatch(r'[A-Z][A-Z0-9_]*', entry['tokenEnv']):
         raise ValueError('Invalid project credential reference')
