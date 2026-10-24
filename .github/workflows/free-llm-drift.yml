@@ -1,4 +1,5 @@
 # Weekly check of the free model list; maintained by KappaForge.
+# Weekly check of the free model list; maintained by KappaForge.
 name: Free LLM list drift
 run-name: Compare the AI providers with the free LLM API list
 # Weekly: reads the public mnfst/awesome-free-llm-apis data file and reports providers KappaForge does not use yet and
