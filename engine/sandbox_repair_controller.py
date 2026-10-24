@@ -21,14 +21,10 @@ class SandboxRepairController:
                     'diff': diff,
                     'fingerprint': fingerprint,
                     'results': result,
-                    'rationale': steps[-1].get('reason', '') if steps else 'No steps taken',
+                    'rationale': steps[-1].get('reason', '') if steps and isinstance(steps[-1], dict) else 'No steps taken',
                     'logs': self.tools.read_execution_log().get('output', ''),
                     'changed_paths': diff_info.get('changed_paths', [])
                 }
-                if self.attempts:
-                    attempt['diff_from_prev'] = (diff != self.attempts[-1]['diff'])
-                else:
-                    attempt['diff_from_prev'] = True
                 
                 if any(a['fingerprint'] == fingerprint for a in self.attempts):
                     break
