@@ -184,6 +184,9 @@ class RecoveryJournalTests(unittest.TestCase):
             request = transport.call_args.args[0]
             self.assertTrue(request.full_url.endswith('/router/recovery'))
             self.assertEqual(json.loads(request.data), {'task':130})
+            # Cloudflare answers HTTP 403 to Python's default User-Agent; the wake-up must name itself like other calls.
+            self.assertEqual(request.get_header('User-agent'), 'KappaForge-Recovery-Wake/1')
+            self.assertNotIn('Python-urllib', request.get_header('User-agent'))
 
     def test_fresh_explicit_authorization_retains_candidate_budgets_and_failure_history(self):
         self.journal.checkpoint('b'*40, files=['value.py'])
