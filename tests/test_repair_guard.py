@@ -47,6 +47,23 @@ class RepairGuardTests(unittest.TestCase):
         rows, _ = self.assess(lambda p: finding_response(p, verdict='rejected', in_goal=False))
         self.assertEqual(rows[0]['verdict'], 'rejected')
 
+    def test_explicitly_premature_publication_can_be_confirmed_without_relaxing_evidence(self):
+        goal = 'Run validation before publishing. Only then open a PR.'
+        source = {'engine/developer.py': 'publish_plan()\nrun_final_regression()\n'}
+        def respond(prompt):
+            data = json.JSONDecoder().raw_decode(prompt.split('REVIEW_INPUT\n', 1)[1])[0]
+            self.assertIn('PR existence by itself as a source bug', prompt)
+            self.assertIn('publishes before a validation phase explicitly required by the owner', prompt)
+            return 'verifier', json.dumps({'findings': [dict(
+                id=data['findings'][0]['id'], verdict='confirmed', in_goal=True,
+                reason='Publication occurs before the required regression check',
+                owner_quote='Only then open a PR.',
+                evidence=[dict(path='engine/developer.py', quote='publish_plan()')]) ]})
+        model = Mock(side_effect=lambda key, prompt, **kw: respond(prompt))
+        rows = repair_guard.verify_findings(model, 'key', goal,
+                                            ['Failing test: publication preceded final validation'], source)
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+
     def test_rejection_also_needs_evidence_and_omitted_source_is_not_proof(self):
         rows, _ = self.assess(lambda p: finding_response(p, verdict='rejected', quote='missing'))
         self.assertEqual(rows[0]['verdict'], 'needs_validation')
