@@ -5,12 +5,21 @@ loop handling. No upstream implementation is vendored. Model verdicts never gran
 """
 import hashlib
 import json
+import re
 from engine import recovery, task_state
 
 FINDING_MARKER = 'KAPPA_FINDING_VERIFICATION_V1'
 LOOP_MARKER = 'KAPPA_REPAIR_LOOP_REVIEW_V1'
 MAX_FINDINGS = 12
 MAX_SOURCE_CHARS = 14000
+MAX_REASON_CHARS = 180
+MAX_CLAIM_CHARS = 800
+# A compacted traceback keeps its failing frame and assertion within a slightly larger, still bounded claim.
+MAX_TRACEBACK_CLAIM_CHARS = 1200
+# Python traceback frames, and the noise around them that would crowd the frame out of a bounded claim.
+FRAME_RE = re.compile(r'File "([^"]+)", line (\d+)')
+CARET_LINE_RE = re.compile(r'^\s*[\^~]+\s*$')
+RULE_LINE_RE = re.compile(r'^\s*[-=]{10,}\s*$')
 
 
 class RepairReviewRequired(ValueError):
@@ -51,7 +60,7 @@ def save(stamp, rows, loop=None):
             raise task_state.CandidateChanged('Finding evidence no longer belongs to the active task candidate')
         record.repair = dict(candidate=stamp['identity']['candidate'], source=stamp['source'],
                              evidence='independent model assessments; reverify before every repair',
-                             findings=[{k: recovery.clean(row[k], 180) for k in ('id', 'verdict', 'reason')}
+                             findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''))
                                        for row in rows[-4:]],
                              omittedFindings=max(0, len(rows) - 4))
         if loop:
@@ -61,10 +70,51 @@ def save(stamp, rows, loop=None):
     if journal:
         journal.state['repairEvidence'] = dict(version=1, goal=stamp['goal'], identity=stamp['identity'],
             source=stamp['source'], evidence='saved diagnostic decisions; reverify before any edit',
-            findings=[dict(id=row['id'], verdict=row['verdict']) for row in rows[-MAX_FINDINGS:]])
+            findings=[dict(id=row['id'], verdict=row['verdict'], reason=row.get('safe_reason', ''))
+                      for row in rows[-MAX_FINDINGS:]])
         if loop:
             journal.state['repairEvidence']['loop'] = dict(decision=loop['decision'])
         journal.persist()
+
+
+def compact_claim(claim):
+    """A failure log as the verifier should read it: repository frames first, not runner paths and carets.
+
+    Without this, interpreter frames and caret lines push the failing source frame and assertion past
+    the bounded claim. Only display text changes; the finding id stays the digest of the original claim.
+    """
+    if 'Traceback (most recent call last)' not in claim:
+        return claim
+    from engine.developer import RUNNER_CHECKOUT_RE
+    lines, kept, skip_code = RUNNER_CHECKOUT_RE.sub('', claim).split('\n'), [], False
+    for line in lines:
+        frame = FRAME_RE.search(line)
+        if frame:
+            # Absolute paths left after removing the checkout are interpreter or library frames.
+            skip_code = frame.group(1).startswith('/')
+            if skip_code:
+                continue
+        elif skip_code and line.startswith('    '):
+            continue
+        else:
+            skip_code = False
+        if not (CARET_LINE_RE.match(line) or RULE_LINE_RE.match(line)):
+            kept.append(line)
+    return '\n'.join(kept)
+
+
+def shown_claim(claim):
+    compact = compact_claim(claim)
+    return recovery.clean(compact, MAX_CLAIM_CHARS if compact == claim else MAX_TRACEBACK_CLAIM_CHARS)
+
+
+def frame_lines(claims, path):
+    """0-based lines of `path` that traceback frames in the claims point at, innermost last."""
+    from engine.developer import RUNNER_CHECKOUT_RE
+    # Only repository-relative frames count; a library path that merely ends like `path` is another file.
+    lines = [int(number) - 1 for file, number in FRAME_RE.findall(RUNNER_CHECKOUT_RE.sub('', '\n'.join(claims)))
+             if file == path]
+    return list(dict.fromkeys(lines))
 
 
 def payload(sources, claims):
@@ -78,11 +128,35 @@ def payload(sources, claims):
         if remaining <= 0:
             break
         file_budget = min(3000, remaining)
-        shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget)
+        frames = frame_lines(claims, path)[-2:]
+        shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget, lines_near=frames)
         files[path] = dict(text=shown, complete=shown == source)
+        if frames and shown != source:
+            files[path]['traceback_lines'] = [n + 1 for n in frames]
         used += len(shown) + len(path) + 80
-    return dict(findings=[dict(id=digest(claim), claim=recovery.clean(claim, 800)) for claim in claims],
+    return dict(findings=[dict(id=digest(claim), claim=shown_claim(claim)) for claim in claims],
                 sources=files, omittedFiles=len(sources) - len(files))
+
+
+def safe_reason(row, sources=None):
+    """A short diagnostic for a verdict: no evidence quotes, quoted fragments, source lines or secrets."""
+    reason = str(row.get('reason') or '')
+    evidence = row.get('evidence') if isinstance(row.get('evidence'), list) else []
+    quotes = [item.get('quote') for item in evidence if isinstance(item, dict)]
+    for quote in sorted((q for q in quotes if isinstance(q, str) and q.strip()), key=len, reverse=True):
+        reason = reason.replace(quote, '[excerpt]')
+    reason = re.sub(r'`[^`]*`|"[^"\n]*"', '[excerpt]', reason)
+    if sources:
+        # Any whole line of current source the model repeated without quoting it.
+        source_lines = {line.strip() for text in sources.values() for line in text.split('\n') if len(line.strip()) >= 12}
+        reason = '\n'.join('[excerpt]' if line.strip() in source_lines else line for line in reason.split('\n'))
+    return recovery.clean(re.sub(r'\s+', ' ', reason).strip(), MAX_REASON_CHARS)
+
+
+def summary(rows):
+    """Bounded text for a blocked repair: each verdict with its sanitized reason."""
+    return '; '.join(f"{row['verdict']}: {(row.get('safe_reason') or 'no reason given')[:120]}" for row in rows[:4]) + \
+        (f'; {len(rows) - 4} more' if len(rows) > 4 else '')
 
 
 def parse(output):
@@ -115,8 +189,12 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
               'rejected means source disproves the finding, or the owner request excludes it. '
               'A confirmation needs literal current-source evidence and an owner_quote linking it to the request. '
               'A rejection needs source disproof; an out-of-goal rejection instead needs a literal owner_quote. '
-              'Missing source, incomplete excerpts, inability to reproduce or conflicting facts mean needs_validation, '
-              'not permission to implement a speculative fix. Quotes alone do not prove a defect; explain its cause and effect. '
+              'Missing source, inability to reproduce or conflicting facts mean needs_validation, '
+              'not permission to implement a speculative fix. An incomplete excerpt means needs_validation only when its '
+              'omitted code could change the verdict; say which omitted code that is. A failing candidate test whose traceback '
+              'frame (traceback_lines) names a source line shown literally in the excerpt is reproduction evidence for that line, '
+              'but a confirmation still needs the literal current-source evidence and owner_quote. '
+              'Quotes alone do not prove a defect; explain its cause and effect. '
               'Do not treat GitHub/API access errors, absent or closed PRs, or PR existence by itself as a source bug. '
               'A current-source control-flow path that commits or publishes before a validation phase explicitly required by the owner is an in-scope defect. '
               'Do not reject behavior as a new feature solely because its implementation is missing; when the owner explicitly requires it, verify the smallest claim against current source and failure evidence. '
@@ -154,7 +232,8 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
                 verdict = 'needs_validation'
             # Missing verification is never converted into a coding request.
             result.append(dict(id=row['id'], claim=shown_claims[row['id']], verdict=verdict, reason=reason[:600],
-                               evidence=evidence if source_proof else [], in_goal=row['in_goal']))
+                               evidence=evidence if source_proof else [], in_goal=row['in_goal'],
+                               safe_reason=safe_reason(row, sources)))
         save(stamp, result)
         return result
     except (task_state.CandidateChanged, RepairReviewRequired):
