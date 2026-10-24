@@ -317,12 +317,18 @@ class ScriptedScenarioTests(unittest.TestCase):
         self.assertEqual(sim.continuation_wait(gateway.error(503, None)), 60)
 
     def test_the_real_gateway_client_path_works_inside_the_simulation(self):
-        """Run #2 failed before any inference (the journal's task re-check needed GITHUB_TOKEN): only HTTP is faked here."""
+        """Exercise inference and its best-effort quality report through the real gateway client."""
         from unittest.mock import MagicMock
         sent = []
 
         def gateway_http(req, timeout=None):
             body = json.loads(req.data)
+            if req.full_url.endswith('/router/quality'):
+                reply = MagicMock()
+                reply.__enter__.return_value = reply
+                reply.status = 200
+                reply.read.return_value = b'{}'
+                return reply
             sent.append(body)
             _, text = self.answer("", body["messages"][0]["content"])
             reply = MagicMock()

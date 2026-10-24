@@ -100,7 +100,7 @@ export function liveLimits(headers,now=Date.now()){
  return kept.length?Object.fromEntries(kept.map(([k,r])=>[k,{limit:r.limit,remaining:Math.min(r.remaining,r.limit),reset:Number.isFinite(r.reset)?r.reset:null}])):null;
 }
 
-export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null,body=null}){
+export async function reportProviderOutcome(env,{requestId,route,status,category="",headers=null,usage=null,body=null,role="light"}){
  const remainingHeader=headers?.get?.("x-ratelimit-remaining-requests");
  // A remaining daily request allowance is not the cause of a token/minute 429.
  // Prefer the provider's explicit Retry-After; only use an exhausted bucket's reset.
@@ -115,7 +115,7 @@ export async function reportProviderOutcome(env,{requestId,route,status,category
  const bodyReset=status===429&&body?quotaResetFromBody(route,body):null;
  const resetAt=Number.isFinite(bodyReset)?bodyReset:deadlines.length?Math.max(...deadlines):undefined;
  const response=await stubFor(env).fetch("https://memory.internal/router/outcome",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-  requestId,provider:route.provider,model:route.model,status,category,modelScoped:modelScoped(env,route.provider,status),
+  requestId,provider:route.provider,model:route.model,status,category,role,modelScoped:modelScoped(env,route.provider,status),
   full:status>=200&&status<300&&(exhausted("x-ratelimit-remaining-requests")||exhausted("x-ratelimit-remaining-tokens")),
   live:liveLimits(headers)||undefined,
   retryAfter,resetAt:Number.isFinite(resetAt)?resetAt:undefined,

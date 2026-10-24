@@ -258,7 +258,7 @@ def parse(output):
 
 
 @task_state.role('reviewer', 'Try to disprove proposed repair findings before authorizing source work',
-                 'Every repair target is relevant to the original goal and has current-source evidence')
+                 'Every repair target is relevant to the original goal and has current-source evidence', routing_role='verify')
 def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
     if (not isinstance(sources, dict) or any(not isinstance(path, str) or not isinstance(text, str)
                                            for path, text in sources.items())):

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from engine import runner
 from engine import continuous
-from engine import gateway, developer, verify
+from engine import gateway, developer, verify, task_state
 
 
 class Response:
@@ -52,7 +52,8 @@ class IntegratedRouterTests(unittest.TestCase):
 
         with patch.dict(os.environ, {
             "KAPPA_ROUTER_URL": "https://router.example", "KAPPA_ROUTER_TOKEN": "t" * 40,
-        }, clear=False), patch.object(runner.urllib.request, "urlopen", side_effect=open_request):
+        }, clear=False), patch.object(runner.urllib.request, "urlopen", side_effect=open_request), \
+                task_state.action('coder', 'Generate exact source edits', 'Owner goal', 'Proposal validates'):
             route, text = runner.run_integrated_router("exact edit instruction", 1200, ["gemini"])
 
         self.assertEqual((route, text), ("gemini:gemini-2.5-flash", "fixture result"))
@@ -62,6 +63,7 @@ class IntegratedRouterTests(unittest.TestCase):
         self.assertEqual(captured["body"]["providers"], ["gemini"])
         self.assertEqual(captured["body"]["messages"][0]["content"], "exact edit instruction")
         self.assertEqual(captured["body"]["maxTokens"], 1200)
+        self.assertEqual(captured["body"]["role"], "code")
 
     def test_missing_gateway_fails_closed_without_direct_provider_fallback(self):
         with patch.dict(os.environ, {"KAPPA_ROUTER_URL": "", "KAPPA_ROUTER_TOKEN": ""}, clear=False), \
@@ -74,7 +76,11 @@ class IntegratedRouterTests(unittest.TestCase):
         captured = {}
 
         def open_request(request, timeout):
-            captured["body"] = json.loads(request.data.decode())
+            body = json.loads(request.data.decode())
+            if request.full_url.endswith('/router/quality'):
+                captured['quality'] = body
+                return GroqResponse()
+            captured["body"] = body
             return GroqResponse()
 
         journal = SimpleNamespace(scope=SimpleNamespace(repo="onlykappa/KappaForge",

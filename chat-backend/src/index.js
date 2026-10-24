@@ -161,7 +161,8 @@ const workerImplementation = {
       const diagnostics=pathname==="/router/diagnostics"&&request.method==="GET";
       const recovery=pathname==="/router/recovery"&&request.method==="POST";
       const premiumOutcome=pathname==="/router/premium-outcome"&&request.method==="POST";
-      if(!diagnostics&&!recovery&&!premiumOutcome&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
+      const quality=pathname==="/router/quality"&&request.method==="POST";
+      if(!diagnostics&&!recovery&&!premiumOutcome&&!quality&&(pathname!=="/router/infer"||request.method!=="POST"))return json({error:"Not found"},404);
       if(!env.ROUTER_ACCESS_TOKEN||env.ROUTER_ACCESS_TOKEN.length<32||!env.MEMORY||env.ROUTING_POLICY_VERSION!=="v1")return json({error:"Integrated router is not configured"},503);
       const auth=request.headers.get("Authorization")||"";
       if(!auth.startsWith("Bearer ")||!safeEqual(auth.slice(7),env.ROUTER_ACCESS_TOKEN))return json({error:"Unauthorized"},401);
@@ -169,6 +170,10 @@ const workerImplementation = {
       if(premiumOutcome){
         const input=await request.json().catch(()=>null);
         try{return json(await premiumOp(env,{op:"outcome",task:input?.task,step:input?.step,outcome:input?.outcome}))}catch{return json({error:"Premium outcome could not be recorded"},400)}
+      }
+      if(quality){
+        const input=await request.json().catch(()=>null);
+        return await env.MEMORY.get(env.MEMORY.idFromName("owner-v1")).fetch("https://memory.internal/router/quality",{method:"POST",body:JSON.stringify(input||{})});
       }
       if(recovery){
         const input=await request.json().catch(()=>null);

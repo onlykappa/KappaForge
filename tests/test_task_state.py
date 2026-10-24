@@ -273,6 +273,18 @@ class TaskStateTests(unittest.TestCase):
         self.assertEqual(data['budgets']['modelCalls'], {'used': 3, 'limit': 5, 'remaining': 2})
         self.assertTrue(data['ownerReviewRequired'])
 
+    def test_routing_role_follows_task_role_and_verifier_override(self):
+        observed = []
+        for role, expected in (('planner', 'diagnose'), ('coder', 'code'), ('reviewer', 'review')):
+            with task_state.action(role, 'Work', 'Owner goal', 'Check'):
+                observed.append(task_state.ROUTING_ROLE.get())
+        @task_state.role('reviewer', 'Verify repair evidence', 'Current evidence', routing_role='verify')
+        def verify():
+            return task_state.ROUTING_ROLE.get()
+        observed.append(verify())
+        self.assertEqual(observed, ['diagnose', 'code', 'review', 'verify'])
+        self.assertEqual(task_state.ROUTING_ROLE.get(), 'light')
+
     def test_engine_switch_preserves_goal_identity_role_and_ordered_history(self):
         prompts = []
         def answer(prompt, *args):

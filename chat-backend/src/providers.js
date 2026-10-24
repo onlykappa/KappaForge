@@ -184,7 +184,25 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  const turn=new Map(),seen={};for(const r of routes)turn.set(r,seen[r.provider]=(seen[r.provider]??-1)+1);
  // The preferred family (DeepSeek) leads coding; chat keeps Gemini first, where a short reply should come fast.
  const preferredRoute=r=>channel==="coding"&&typeof preferred==="string"&&r.model.toLowerCase().includes(preferred);
- routes.sort((a,b)=>Number(reasoning(a))-Number(reasoning(b))||Number(preferredRoute(b))-Number(preferredRoute(a))||
+ const role=ROLES.has(options.role)?options.role:"light",ranking=Array.isArray(options.roleRanking?.[role])?options.roleRanking[role]:[];
+ const rank=new Map(ranking.map((label,index)=>[label,index]));
+ const quality=options.roleQuality&&typeof options.roleQuality==="object"?options.roleQuality:{};
+ const learnedScore=route=>{const row=quality[role+"|"+route.provider+":"+route.model];
+  const n=Number.isInteger(row?.successes)&&Number.isInteger(row?.failures)?row.successes+row.failures:0;
+  return n>=4?(0.5-(row.successes+1)/(n+2))*4:0;};
+ const byProvider=new Map();for(const route of routes){const list=byProvider.get(route.provider)||[];list.push(route);byProvider.set(route.provider,list);}
+ const round=new Map();for(const list of byProvider.values()){
+  list.sort((a,b)=>(rank.get(a.provider+":"+a.model)??Number.MAX_SAFE_INTEGER)+learnedScore(a)-(rank.get(b.provider+":"+b.model)??Number.MAX_SAFE_INTEGER)-learnedScore(b)||turn.get(a)-turn.get(b));
+  list.forEach((route,index)=>round.set(route,index));
+ }
+ const roleScore=route=>{const label=route.provider+":"+route.model;
+  // Keep new routes exploratory until four semantic observations exist. Counters are bounded in the Worker.
+  const learned=learnedScore(route);
+  const seed=rank.get(label)??ranking.length+turn.get(route);
+  // Keep the existing provider round-robin: a broken top model should fail over to another provider before that
+  // provider's second model. Seed and learned rank order each provider's route within its own model-number round.
+  return round.get(route)*(ranking.length+routes.length+1)+seed+learned;};
+ routes.sort((a,b)=>Number(reasoning(a))-Number(reasoning(b))||roleScore(a)-roleScore(b)||Number(preferredRoute(b))-Number(preferredRoute(a))||
   (channel==="coding"?(turn.get(a)-turn.get(b)||Number(!!registry.providers[b.provider]?.strong)-Number(!!registry.providers[a.provider]?.strong)||
    (a.provider==="gemini"?1:0)-(b.provider==="gemini"?1:0)):0));
  if(manual){
@@ -196,6 +214,8 @@ export async function fallbackRoutes(env,geminiModels,prefs={},hasMedia=false,op
  const eligible=withinContext(routes,options);
  return prefs.fallback===false?eligible.slice(0,1):eligible;
 }
+
+const ROLES=new Set(["verify","review","diagnose","code","light"]);
 
 function withinContext(routes,options){
  const promptTokens=Math.ceil(Math.max(0,Number(options.promptChars)||0)/3.5),maxOutput=Math.max(0,Number(options.maxOutputTokens)||0);

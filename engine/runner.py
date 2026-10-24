@@ -591,7 +591,7 @@ def _router_post(path, payload, timeout=30):
             return exc.code, json.loads(exc.read(65536) or b'{}')
         except ValueError:
             return exc.code, {}
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+    except Exception:
         return 0, {}
 
 
@@ -658,7 +658,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
 
 def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     """Send authorized coding inference through KappaForge's shared Durable-Object router."""
-    from engine import recovery, gateway
+    from engine import recovery, gateway, task_state
     endpoint = os.getenv("KAPPA_ROUTER_URL", "").strip().rstrip("/")
     token = os.getenv("KAPPA_ROUTER_TOKEN", "")
     parsed = urllib.parse.urlsplit(endpoint)
@@ -708,6 +708,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
         "excludedRoutes": excluded,
+        "role": task_state.ROUTING_ROLE.get() if task_state.ROUTING_ROLE.get() in ('verify', 'review', 'diagnose', 'code', 'light') else 'light',
     }
     if pinned_model:
         payload["model"] = pinned_route
@@ -746,7 +747,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
-                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
+                    'maxTokens': payload['maxTokens'], 'role': payload['role'], 'rank': 1 if pinned_route else None,
+                    'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
         if not isinstance(body, dict):
             # A refusal that is not the Worker's own JSON came from in front of it (Cloudflare). Keep only what names
             # the cause: never the body text itself.
@@ -781,7 +783,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
                         + '; provider attempts and remaining quota are unknown; fallback stays within the approved gateway',)
         gateway.record(journal, {'requestId': payload['requestId'], 'route': pinned_route, 'status': None,
                                 'code': failure.code, 'retryAt': None, 'promptChars': len(prompt),
-                                'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details,
+                                'maxTokens': payload['maxTokens'], 'role': payload['role'], 'rank': 1 if pinned_route else None,
+                                'usage': None, 'failure': failure.details,
                                 'attempts': []})
         raise failure from None
     if status != 200 or not isinstance(data, dict):
@@ -798,7 +801,16 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
              and type(value) is int and value >= 0}
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
+                             'role': payload['role'], 'rank': data.get('routing', {}).get('rank') if isinstance(data.get('routing'), dict) else None,
                              'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
+    if json_mode:
+        try:
+            usable = isinstance(json.loads(output), dict)
+        except (ValueError, TypeError):
+            usable = False
+        provider, _, route_model = model.partition(':')
+        _router_post('/router/quality', {'requestId': payload['requestId'], 'provider': provider,
+                                         'model': route_model, 'role': payload['role'], 'usable': usable})
     premium_used(data.get('premium'))
     asking(model)
     return model, output
