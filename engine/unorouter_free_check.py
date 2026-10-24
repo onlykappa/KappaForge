@@ -1,8 +1,9 @@
-"""One-off: ask every UnoRouter model whose ID says "free" for one word, one request per model, all in parallel.
+"""One-off: ask every UnoRouter chat model whose ID says "free" for one word, one request per model, three at a time.
 
 Temporary branch only (not merged). Uses the UNOROUTER_API_KEY secret; the key is never printed.
 """
 import http.client
+import re
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
@@ -19,11 +20,18 @@ def headers():
     return {"Content-Type": "application/json", "User-Agent": "KappaForge", **({"Authorization": "Bearer " + key} if key else {})}
 
 
+# Image, embedding, audio, speech and decision-only models: never chat routes for KappaForge.
+NOT_CHAT = re.compile(r"embed|bge-|jina|whisper|aura-|nova-3|mercury-decide|riva-translate|pony|sdxl|-xl|xl-|amponyxl|"
+                      r"absolutereality|anything-v|cyberrealistic|deliberate|dreamshaper|fustercluck|animerge|icbinp|"
+                      r"juggernaut|rev-animated|wai-|quiet-goodnight|ntr-mix|albedobase", re.I)
+
+
 def free_models():
     with urllib.request.urlopen(urllib.request.Request(BASE + "/models", headers=headers()), timeout=60) as response:
         data = json.load(response)
     rows = data.get("data") if isinstance(data, dict) else data
-    return sorted({row["id"] for row in rows or [] if isinstance(row, dict) and isinstance(row.get("id"), str) and "free" in row["id"].lower()})
+    ids = sorted({row["id"] for row in rows or [] if isinstance(row, dict) and isinstance(row.get("id"), str) and "free" in row["id"].lower()})
+    return [m for m in ids if not NOT_CHAT.search(m)], [m for m in ids if NOT_CHAT.search(m)]
 
 
 def ask(model):
@@ -52,12 +60,16 @@ def main():
     if not os.getenv("UNOROUTER_API_KEY"):
         print("UNOROUTER_API_KEY is not set")
         return
-    models = free_models()
-    # All at once: one request per model, fired together (UnoRouter limits each model, not the batch).
-    with ThreadPoolExecutor(max_workers=max(1, min(64, len(models)))) as pool:
+    models, skipped = free_models()
+    # Let the per-model one-minute windows from earlier runs expire, then go a few at a time: UnoRouter also limits
+    # concurrent requests per account, which made the all-at-once run report rate limits instead of real results.
+    time.sleep(120)
+    with ThreadPoolExecutor(max_workers=3) as pool:
         rows = [(model, *result) for model, result in zip(models, pool.map(ask, models))]
     ok = sum(1 for row in rows if row[1] == "ok")
-    lines = [f"## UnoRouter free models: {ok} of {len(rows)} answered", "", "| Model | Status | Detail |", "|---|---|---|"]
+    lines = [f"## UnoRouter free chat models: {ok} of {len(rows)} answered", "",
+             f"Skipped {len(skipped)} non-chat free models (image, embedding, audio, decision-only).", "",
+             "| Model | Status | Detail |", "|---|---|---|"]
     lines += [f"| `{m}` | {'✅' if s == 'ok' else '❌'} {s} | {d} |" for m, s, d in rows]
     text = "\n".join(lines) + "\n"
     print(text)
