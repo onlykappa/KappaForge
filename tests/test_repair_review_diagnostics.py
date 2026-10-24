@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 import unittest
+import urllib.error
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -348,15 +349,15 @@ class RevisionHarness(GuardCase):
     def read(self, _repo, path, _sha, _token):
         return self.files[path]
 
-    def revise(self, model, read=None, problems=None, failed=True, pr_body=''):
+    def revise(self, model, read=None, problems=None, failed=True, pr_body='', log=None):
         issue = {'number': 232, 'title': 'Phase 1 step 4', 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + OWNER}
-        pr = {'number': 234, 'body': pr_body, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/234'}
+        pr = {'number': 234, 'body': pr_body, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/234', 'base': {'sha': 'c' * 40}}
         with patch.object(developer, 'gh', side_effect=self.github), \
                 patch.object(developer, 'list_tree', return_value=({p: len(t) for p, t in self.files.items()}, {})), \
                 patch.object(developer, 'project_guide', return_value=''), \
                 patch.object(developer, 'read_source', side_effect=read or self.read), \
                 patch.object(developer, 'requirements_open', return_value=self.PROBLEMS if problems is None else problems), \
-                patch.object(developer, 'job_log', return_value=failing_log(self.line)), \
+                patch.object(developer, 'job_log', return_value=failing_log(self.line) if log is None else log), \
                 patch.object(developer, 'is_private', return_value=False), \
                 patch.object(developer, 'code_providers', return_value={'groq'}), \
                 patch.object(developer, 'run_model', side_effect=model), \
@@ -466,6 +467,51 @@ class VerifiedRepairPromptBudgetTests(RevisionHarness):
         long = developer.verified_history('d' * 5000, ['t' * 600] * 5, 'n' * 5000, 'b' * 5000, '+' * 30000)
         self.assertLessEqual(len(long), developer.VERIFIED_HISTORY_CHARS)
         self.assertTrue(long.endswith(developer.TRUNCATED_DIFF))
+
+
+REGRESSION_LOG = ('ERROR: test_commits_one_change (test_developer.DeveloperTests.test_commits_one_change)\n' + '-' * 70 +
+                  '\nTraceback (most recent call last):\n  File "tests/test_developer.py", line 430, in test_commits_one_change\n'
+                  "    developer.produce_development_pr(issue, 'key', 'token')\nTypeError: 'dict' object is not subscriptable\n\n" + '=' * 70 +
+                  '\nFAIL: test_brand_new_check (test_new_module.NewTests.test_brand_new_check)\n' + '-' * 70 + '\nAssertionError: 1 != 2\n\n' + '=' * 70 +
+                  '\nERROR: test_broken_import (unittest.loader._FailedTest.test_broken_import)\nImportError: nope\n' + '-' * 70 + '\nRan 3 tests\n')
+BASE_FILES = {'tests/test_developer.py': 'class DeveloperTests:\n    def test_commits_one_change(self):\n        pass\n'}
+
+
+class BaseRegressionTests(RevisionHarness):
+    """A test that already exists on the PR base and now fails is a repair target from CI evidence alone."""
+    def base_read(self, _repo, path, sha, _token):
+        if sha == 'c' * 40:
+            if path in BASE_FILES:
+                return BASE_FILES[path]
+            raise urllib.error.HTTPError('u', 404, 'Not Found', {}, None)
+        return self.files[path]
+
+    def unconvinced(self, key, prompt, **kw):
+        return 'verifier', json.dumps({'findings': [dict(id=row['id'], verdict='needs_validation', in_goal=True, reason='Unsure')
+                                                    for row in review_input(prompt)['findings']]})
+
+    def test_only_existing_base_tests_become_regressions(self):
+        with patch.object(developer, 'read_target', side_effect=lambda repo, path, sha, token:
+                          BASE_FILES.get(path)):
+            found = developer.base_test_regressions(REGRESSION_LOG, developer.ROOT, 'c' * 40, 't')
+        self.assertEqual(len(found), 1)
+        self.assertIn('existing test test_commits_one_change', found[0])
+        self.assertIn("TypeError: 'dict' object is not subscriptable", found[0], 'the traceback travels with the target')
+        self.assertNotIn('test_brand_new_check', found[0])
+        self.assertEqual(developer.base_test_regressions('', developer.ROOT, 'c' * 40, 't'), [])
+
+    def test_a_regression_reaches_generation_even_when_the_verifier_is_unconvinced(self):
+        _, generate = self.revise(self.unconvinced, read=self.base_read, log=REGRESSION_LOG)
+        task = generate.call_args.args[1]
+        targets = task.split('Verified repair targets only:', 1)[1].split('Existing design and attempt history', 1)[0]
+        self.assertIn('existing test test_commits_one_change', targets)
+        self.assertNotIn('test_brand_new_check', targets, 'a test the candidate added still needs the verifier')
+        self.assertEqual(self.writes, [])
+
+    def test_without_a_base_regression_an_unconvinced_review_still_stops(self):
+        log = REGRESSION_LOG.split('=' * 70, 1)[1]
+        with self.assertRaises(repair_guard.RepairReviewRequired):
+            self.revise(self.unconvinced, read=self.base_read, log=log)
 
 
 class SourceReadFailureTests(RevisionHarness):

@@ -2253,6 +2253,44 @@ def failure_excerpt(text, limit):
 RUNNER_CHECKOUT_RE = re.compile(r"/(?:Users|home)/runner/work/[^/\s]+/[^/\s]+/")
 
 
+TEST_FAILURE_RE = re.compile(r"^(?:FAIL|ERROR): (test\w*) \(([\w.]+)\)", re.M)
+MAX_REGRESSIONS = 8
+
+
+def base_test_regressions(log, repo, base_sha, token):
+    """Failing unittest cases that already exist at the PR base, as repair targets with their failure excerpt.
+
+    Only `module.Class.test` names whose module file exists at `base_sha` and defines that test count; loader
+    errors, unknown modules and tests the candidate added are left to the verifier.
+    """
+    found, files = [], {}
+    for match in TEST_FAILURE_RE.finditer(log or ''):
+        name, parts = match.group(1), match.group(2).split('.')
+        modules = []
+        for part in parts:
+            if part[:1].isupper():
+                break
+            modules.append(part)
+        if not modules or modules[0] == 'unittest':
+            continue
+        path = '/'.join(modules) + '.py'
+        path = path if path.startswith('tests/') else 'tests/' + path
+        if path not in files:
+            files[path] = read_target(repo, path, base_sha, token) or ''
+        if not re.search(r'^\s*def ' + re.escape(name) + r'\(', files[path], re.M):
+            continue
+        block = log[match.start():]
+        # unittest prints a dashed rule under the heading; the traceback runs until the next ==== rule or heading.
+        end = re.search(r'\n(?:={20,}|FAIL: |ERROR: |Ran \d+ tests?)', block[1:])
+        excerpt = recovery.clean(block[:end.start() + 1 if end else 600], 600)
+        target = f'Regression from this candidate: existing test {name} ({match.group(2)}) exists on the base branch and now fails:\n{excerpt}'
+        if target not in found:
+            found.append(target)
+        if len(found) >= MAX_REGRESSIONS:
+            break
+    return found
+
+
 def files_named_in(log, existing, changed):
     """Repository files a failure log names, such as the Swift file an Xcode error points at, beyond the PR's own files."""
     # Xcode and other tools print absolute paths inside the runner's checkout; reduce them to repository paths.
@@ -2371,7 +2409,14 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         claims = pending + (["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
         original_goal = goal.title + '\n' + goal.request
         findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
-        targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
+        # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
+        # evidence, so it is a repair target without a model opinion; tests the PR itself adds still need the verifier.
+        base_sha = (pr.get('base') or {}).get('sha')
+        regressions = base_test_regressions(log, repo, base_sha, repo_token) if failed_jobs and base_sha else []
+        targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed'] + regressions
+        if journal and regressions:
+            journal.event('Existing tests regressed: ' + str(len(regressions)), strategy='repair_regressions',
+                          next_action='Restore the existing behaviour while keeping the owner goal')
         if not targets:
             raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
                                                     'Verifier: ' + repair_guard.summary(findings))
