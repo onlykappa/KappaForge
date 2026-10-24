@@ -25,7 +25,7 @@ class TestSandboxRepairController(unittest.TestCase):
         self.call_count = 0
         def mock_model(*args, **kwargs):
             self.call_count += 1
-            return 'route', '{"done":false, "tool":"apply_patch", "args":{"edits":[{"path":"test_file.py", "find":"line' + str(self.call_count) + '", "replace":"changed' + str(self.call_count) + '"}]}, "reason":"fail"}'
+            return 'route', '{"done":false, "tool":"apply_patch", "args":{"edits":[{"path":"test_file.py", "find":"line' + str(self.call_count) + '", "replace":"line' + str(self.call_count) + '_changed"}]}, "reason":"fail"}'
         self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(len(self.controller.attempts), 5)
 

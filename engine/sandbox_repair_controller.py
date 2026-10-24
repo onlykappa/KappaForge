@@ -39,7 +39,8 @@ class SandboxRepairController:
                 
                 if attempt_idx >= 5:
                     break
-            return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': self.attempts[-1]['diff'], 'logs': self.attempts[-1]['logs']}
+            last_attempt = self.attempts[-1] if self.attempts else {'diff': '', 'logs': ''}
+            return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': last_attempt['diff'], 'logs': last_attempt['logs']}
         finally:
             self.session.close()
 
