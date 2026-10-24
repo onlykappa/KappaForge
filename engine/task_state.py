@@ -29,6 +29,7 @@ class Record:
     checks: dict = field(default_factory=dict)
     attempts: list = field(default_factory=list)
     review: dict = field(default_factory=dict)
+    repair: dict = field(default_factory=dict)
     files: list = field(default_factory=list)
     stages: list = field(default_factory=list)
     lock: object = field(default_factory=threading.RLock, repr=False)
@@ -104,6 +105,7 @@ def checkpoint(candidate, files=()):
         if record.identity['candidate'] != candidate:
             record.checks.clear()
             record.review = {}
+            record.repair = {}
         record.identity['candidate'] = candidate
         record.files = sorted(set(record.files) | {clean(path, 160) for path in files})
         record.revision += 1
@@ -241,6 +243,7 @@ def snapshot(journal=None):
                     recentAttempts=list(record.attempts),
                     stage=STAGE.get(), plannedStages=[dict(item) for item in record.stages],
                     review=dict(record.review),
+                    repairAssessment=dict(record.repair),
                     savedProgress=dict(status=clean(state.get('status', 'unknown'), 40),
                                        evidence='saved orchestration state, not proof of completion',
                                        requirementInterpretations=[clean(x, 120) for x in state.get('requirements', [])[:4]]),

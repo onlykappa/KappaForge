@@ -39,6 +39,7 @@ class Goal:
             if self.record is not None:
                 with self.record.lock:
                     self.record.review = {}
+                    self.record.repair = {}
 
     def anchor(self, read):
         if self.paths and not self.baseline:

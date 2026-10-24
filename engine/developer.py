@@ -30,7 +30,7 @@ from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
-from engine import verify, task_goal, task_state
+from engine import verify, task_goal, task_state, repair_guard
 from engine.verify import open_problems as requirements_open, review_record
 
 ROOT = "onlykappa/KappaForge"
@@ -1679,6 +1679,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']} if journal else {}
     repair_failures = []
     rescued = None
+    loop = repair_guard.RepairLoop() if repair_guard.enabled() else None
+    finding_feedback, recheck_only_used = [], False
     for round_ in range(MAX_CHECK_ROUNDS + 2):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
                      if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
@@ -1695,6 +1697,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         elif journal:
             canonical_task = (journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')
         review_task = canonical_task
+        if finding_feedback:
+            review_task += ('\n\nINDEPENDENT FINDING ASSESSMENTS (unverified model judgments; recheck current source, '
+                            'do not invent replacement work):\n' + json.dumps(finding_feedback))
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
                            + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
@@ -1734,11 +1739,42 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         if not problems or round_ == MAX_CHECK_ROUNDS and not (review and premium_possible("check")):
             break
         rescue_round = round_ == MAX_CHECK_ROUNDS
+        repair_targets = list(problems)
+        loop_approach = ''
+        if loop is not None:
+            # Missing review evidence is not a source defect and cannot authorize a coding pass.
+            if not review:
+                break
+            progress.ok(f'Found {len(problems)} finding(s); verifying evidence before any repair', warn=True, status='blocked')
+            current_evidence = {path: read(path) for path in dict.fromkeys(list(changes) + list(sources) + files_needed) if path in existing or path in changes}
+            current_evidence.update(changes)
+            try:
+                findings = repair_guard.verify_findings(run_model, api_key, canonical_task, problems, current_evidence, allowed)
+            except repair_guard.RepairReviewRequired as error:
+                problems = [str(error)] + problems
+                task_state.review(reqs, problems)
+                break
+            confirmed = {row['id'] for row in findings if row['verdict'] == 'confirmed'}
+            repair_targets = [problem for problem in problems if repair_guard.digest(problem) in confirmed]
+            if not repair_targets:
+                if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
+                    finding_feedback = [{k: row[k] for k in ('id', 'verdict', 'reason')} for row in findings]
+                    recheck_only_used = True
+                    continue  # Re-review once; a rejected finding is not itself proof the task is complete.
+                problems = ['Repair findings need validation; no speculative source edits were authorized'] + problems
+                task_state.review(reqs, problems)
+                break
+            try:
+                loop_approach = loop.before_repair(run_model, api_key, current_evidence, findings, allowed) or ''
+            except repair_guard.RepairReviewRequired as error:
+                problems = [str(error)] + problems
+                task_state.review(reqs, problems)
+                break
         progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
         progress.now("Free fix rounds used up: checking whether a premium rescue is allowed" if rescue_round
                      else f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
         # The fix sees every file the problems name, the change so far, and the files it already touched.
-        named = {path for path in existing if any(path in p for p in problems)} | {p for p in files_needed if p in existing}
+        named = {path for path in existing if any(path in p for p in repair_targets)} | {p for p in files_needed if p in existing}
         # Changed files and explicitly requested dependencies precede unrelated context.
         current = {path: read(path) for path in dict.fromkeys(list(changes) + sorted(named) + list(sources))}
         current.update(changes)
@@ -1749,15 +1785,17 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
         if edit_path and edit_path not in existing:
             sizes.pop(edit_path, None)
-        fix_task = (task + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
+        fix_task = ((canonical_task if loop is not None else task) + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
                     "against the task found these problems. Fix every one of them now, editing the real code paths they "
-                    "name; keep everything that already works.\n" + "\n".join("- " + p for p in problems[:20])
+                    "name; keep everything that already works.\n" + "\n".join("- " + p for p in repair_targets[:20])
                     + "\n\nREQUIREMENT CHECKLIST (retain every item in all subsequent reviews):\n"
-                    + "\n".join('- ' + text for text in requirement_catalog if not verify.lifecycle_requirement(text))
+                    + "\n".join('- ' + text for text in (repair_targets if loop is not None else requirement_catalog) if not verify.lifecycle_requirement(text))
                     + "\n\nKappaForge itself opens and updates this task's draft PR and reports progress: never add code, "
                     "scripts or workflows that open PRs or send notifications.\n"
                     + ("\n\nPREVIOUS REPAIR COULD NOT BE APPLIED. Use a different source-exact edit based on the "
                        "current files, not the rejected proposal:\n" + "\n".join(repair_failures[-2:]) if repair_failures else ""))
+        if loop_approach:
+            fix_task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
         if rescue_round:
             before = len(problems)
             result, dispatched = premium_rescue_step("check", "check_rounds_exhausted", lambda: generate(
@@ -2221,6 +2259,25 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         if len(files) != 1 or files[0]['filename'] != edit_path or files[0]['status'] != 'added':
             raise PermissionError('Bounded repair requires only the task-owned new document')
         existing = {path: size for path, size in existing.items() if path != edit_path}
+    if repair_guard.enabled() and (pending or failed_jobs):
+        claims = pending + (["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
+        original_goal = goal.title + '\n' + goal.request
+        findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
+        confirmed = {row['id'] for row in findings if row['verdict'] == 'confirmed'}
+        targets = [claim for claim in claims if repair_guard.digest(claim) in confirmed]
+        if not targets:
+            raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained')
+        loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
+        # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
+        task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
+        task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
+        task += ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
+                 design[:2000] + '\n' + '\n'.join(tried[-3:]) + '\n' + notes + '\n' + native_history[:3000] + '\nCurrent PR diff:\n' + diff)
+        if loop_approach:
+            task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
+        if receipt:
+            task += '\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: ' + receipt['url'] + '. Do not recreate it.'
+            task += '\n' + '\n'.join('- ' + claim for claim in pr_lifecycle)
     model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
     if checkpoint:
         checkpoint(changes, modes)

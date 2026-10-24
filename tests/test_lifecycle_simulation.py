@@ -1,4 +1,5 @@
 """The lifecycle simulation harness: its simulated GitHub, its rules and its hidden acceptance tests."""
+from tests.repair_fixtures import response_or
 import json
 import os
 import shutil
@@ -267,10 +268,13 @@ class ScriptedScenarioTests(unittest.TestCase):
         state = {"failed": False}
 
         def answer(key, prompt, *args, **kwargs):
+            verification = response_or(prompt, None)
+            if verification is not None:
+                return verification
             if fail_on in prompt and not state["failed"]:
                 state["failed"] = True
                 raise gateway.error(503, None)
-            if "independent checks FAILED" in prompt or "Complete this unfinished change" in prompt:
+            if "independent checks FAILED" in prompt or "Complete this unfinished change" in prompt or "Verified repair targets only:" in prompt:
                 return "scripted", json.dumps({"summary": "Finish", "files": [{"path": "tests/test_convert.py", "reason": "Finish the requested conversion tests", "edits": [{
                     "find": "from units.convert import celsius_to_fahrenheit",
                     "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})

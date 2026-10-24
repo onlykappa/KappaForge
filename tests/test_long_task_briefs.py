@@ -1,4 +1,5 @@
 """The owner brief must reach every coding consumer without silent truncation."""
+from tests.repair_fixtures import response_or
 import json
 import unittest
 from unittest.mock import patch
@@ -81,6 +82,8 @@ class ResumedBriefTests(unittest.TestCase):
                 patch.object(developer, 'is_private', return_value=False), \
                 patch.object(developer, 'code_providers', return_value={'groq'}), \
                 patch.object(developer, 'check_the_work', return_value=({'app/main.py': 'x'}, '', [])), \
+                patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('m', '{}'))), \
+                patch.object(journal, 'persist', lambda: None, create=True), \
                 patch.object(developer, 'generate', return_value=('fixture', 'done', {'app/main.py': 'x'}, '')) as generate:
             developer.revise_branch({'number': 1, 'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
                                     'kappa/dev-1', 'a' * 40, [], 'fixture', 'fixture')
