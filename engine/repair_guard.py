@@ -74,10 +74,11 @@ def payload(sources, claims):
     clues = '\n'.join(claims)
     for path in sorted(sources, key=lambda path: (path not in clues, path)):
         source = sources[path]
-        room = MAX_SOURCE_CHARS - used - len(path) - 80
-        if room <= 0:
+        remaining = MAX_SOURCE_CHARS - used - len(path) - 80
+        if remaining <= 0:
             break
-        shown = source if len(source) <= min(3000, room) else excerpt(source, clues, min(3000, room))
+        file_budget = min(3000, remaining)
+        shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget)
         files[path] = dict(text=shown, complete=shown == source)
         used += len(shown) + len(path) + 80
     return dict(findings=[dict(id=digest(claim), claim=recovery.clean(claim, 800)) for claim in claims],
