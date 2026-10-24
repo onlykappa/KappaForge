@@ -219,3 +219,78 @@ class RealSessionReviewTests(unittest.TestCase):
         result = self.tools.inspect_diff()
         self.assertEqual(result['changed_paths'], ['app.py', 'new.py'])
         self.assertIn('+x = 1', result['diff'])
+
+
+class AdditionalRealSessionReviewTests(unittest.TestCase):
+    """Reviewer regressions: malformed tool calls must stay structured and atomic."""
+
+    def setUp(self):
+        from tests.test_sandbox import FakeDocker
+        self.session = sandbox.Session(sandbox.Tree('onlykappa/KappaForge', 'a' * 40, {
+            'app.py': b'a = 1\nb = 2\n', 'tests/test_app.py': b'import unittest\n',
+            'binary.dat': b'\xff\xfe',
+        }), FakeDocker(), versions=('3.12', '22'))
+        self.tools = SandboxTools(self.session)
+
+    def test_patch_validates_shape_fields_and_text_without_partial_changes(self):
+        invalid = [None, 42, {}, [None], [{'path': ['app.py'], 'find': '', 'replace': 'x'}],
+                   [{'path': 'app.py', 'replace': 'x'}], [{'path': 'app.py', 'find': 'a = 1'}],
+                   [{'path': 'app.py', 'find': 'a = 1', 'replace': None}],
+                   [{'path': 'binary.dat', 'find': 'x', 'replace': 'y'}]]
+        for edits in invalid:
+            with self.subTest(edits=edits):
+                result = self.tools.apply_patch(edits)
+                self.assertEqual((result['ok'], result['status']), (False, 'invalid'))
+                self.assertTrue(result['error'])
+                self.assertEqual(self.session.changes, {})
+
+    def test_sequential_edits_can_target_text_created_by_the_previous_edit(self):
+        result = self.tools.apply_patch([
+            {'path': 'new.py', 'find': '', 'replace': 'x = 1\n'},
+            {'path': 'new.py', 'find': 'x = 1', 'replace': 'x = 2'},
+        ])
+        self.assertTrue(result['ok'])
+        self.assertEqual(self.session.current()['new.py'], b'x = 2\n')
+        self.assertEqual(result['changed_paths'], ['new.py'])
+
+    def test_diff_rejects_noninteger_limits(self):
+        for limit in ('x', None, [], 1.5):
+            with self.subTest(limit=limit):
+                result = self.tools.inspect_diff(limit=limit)
+                self.assertEqual((result['ok'], result['status']), (False, 'invalid'))
+
+    def test_revert_rejects_a_string_path_collection(self):
+        self.session.apply({'app.py': 'changed\n'})
+        result = self.tools.revert_candidate_change('app.py')
+        self.assertEqual((result['ok'], result['status']), (False, 'invalid'))
+        self.assertEqual(self.session.current()['app.py'], b'changed\n')
+
+    def test_missing_docker_in_run_tests_is_unavailable(self):
+        self.session.docker._available = False
+        result = self.tools.run_tests()
+        self.assertEqual((result['ok'], result['status']), (False, 'unavailable'))
+        self.assertIn('Docker', result['error'])
+
+    def test_failed_unittest_keeps_skipped_count_and_bounded_stderr_traceback(self):
+        self.session.results.append(sandbox.RunResult(['python'], 'test', 'failed', stderr=(
+            'FAIL: test_total (test_app.PriceTests)\n'
+            'Traceback (most recent call last):\n' + '  assertion context\n' * 150 +
+            'AssertionError: wrong total\n\nRan 5 tests in 0.1s\n\nFAILED (failures=1, skipped=2)\n')))
+        result = self.tools.inspect_test_results()
+        self.assertEqual(result['counts'], {'ran': 5, 'failures': 1, 'errors': 0, 'skipped': 2})
+        self.assertEqual(result['failing'], ['test_total (test_app.PriceTests)'])
+        self.assertTrue(result['first_error'].startswith('Traceback'))
+        self.assertLessEqual(len(result['first_error']), 2000)
+
+    def test_real_node_assertion_block_is_available_for_diagnosis(self):
+        self.session.results.append(sandbox.RunResult(['node', '--test'], 'test', 'failed', stdout=(
+            'TAP version 13\nnot ok 1 - total\n  ---\n  duration_ms: 1\n'
+            '  location: /work/tests/pricing.test.mjs:4:1\n  failureType: testCodeFailure\n'
+            '  error: |-\n    Expected values to be strictly equal:\n    1999 !== 1699\n'
+            '  code: ERR_ASSERTION\n  expected: 1699\n  actual: 1999\n'
+            '  operator: strictEqual\n  ...\n# tests 1\n# pass 0\n# fail 1\n# skipped 0\n')))
+        result = self.tools.inspect_test_results()
+        self.assertEqual(result['failing'], ['total'])
+        self.assertIn('1999', result['first_error'])
+        self.assertIn('1699', result['first_error'])
+        self.assertLessEqual(len(result['first_error']), 2000)
