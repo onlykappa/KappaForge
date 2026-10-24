@@ -138,6 +138,42 @@ class Task205ReplayTests(unittest.TestCase):
         self.assertNotIn("- Requirement not met: Open a fresh draft PR", lifecycle[0])
         self.assertIn("- Requirement not met: Open a fresh draft PR", lifecycle[1])
 
+    def repair_prompt(self, body, open_items):
+        prompt = []
+        files = [{"filename": "engine/developer.py", "status": "modified", "patch": "@@ -1 +1 @@\n-old\n+new"}]
+
+        def generate(_key, task, *_a, **_k):
+            prompt.append(task)
+            return "m", "s", {"engine/developer.py": "new\n"}, "summary"
+
+        with (
+            patch.object(developer, "gh", side_effect=lambda path, *_a, **_k: files if path.endswith("/pulls/206/files?per_page=100") else []),
+            patch.object(developer, "list_tree", return_value=({"engine/developer.py": 10}, {"engine/developer.py": "100644"})),
+            patch.object(developer, "project_guide", return_value=""),
+            patch.object(developer, "read_source", return_value="old\n"),
+            patch.object(developer, "requirements_open", return_value=open_items),
+            patch.object(developer, "is_private", return_value=True),
+            patch.object(developer, "code_providers", return_value=["groq"]),
+            patch.object(developer, "generate", side_effect=generate),
+            patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
+            patch.object(developer, "has_tests", return_value=True),
+        ):
+            developer.revise_branch({"number": 205, "title": "Task", "body": body}, {**PR, "number": 206}, BRANCH, "a" * 40,
+                                    [], "token", "key", repo=REPO, repo_token="token")
+        return prompt[0]
+
+    def test_the_pr_automation_ban_appears_only_when_the_owner_asked_for_pr_lifecycle_work(self):
+        unrelated = self.repair_prompt("Add a workflow that comments on PRs", ["Requirement not met: Add the PR comment workflow"])
+        self.assertNotIn("TASK PR LIFECYCLE ALREADY SATISFIED", unrelated)
+        self.assertNotIn("Do not create or change repository code", unrelated)
+        self.assertIn("VERIFIED TASK PR: " + PR["html_url"] + " (draft)", unrelated, "the receipt is still shown")
+        # Task #221: the ask is in the owner request even when no lifecycle problem is stored.
+        asked = self.repair_prompt("Fix the API. Open a draft PR for this change and do not merge it.",
+                                   ["Requirement not met: Fix the API"])
+        section = asked.split("TASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + PR["html_url"] + "\n", 1)
+        self.assertEqual(len(section), 2)
+        self.assertTrue(section[1].startswith("KappaForge has already opened"), "no empty bullet list")
+
     def test_repairs_target_real_code_work_and_forbid_pr_automation(self):
         reviews = iter([
             ([{"text": "Open a fresh draft PR", "met": False}, {"text": "Fix the chat bug", "met": False}], [], []),

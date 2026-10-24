@@ -249,8 +249,16 @@ class TaskGoalTests(unittest.TestCase):
         token = task_goal.CURRENT.set(goal)
         try:
             answer = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'pass\n', 'replace': '# Explain this helper\npass\n'}]}]})
+            existing = {'app.py': 5, 'tests/test_app.py': 9}
+            self.assertFalse(developer.tests_required(existing), 'the one require_test decision for every stage and review')
             with patch.object(developer, 'run_model', return_value=('m', answer)):
-                result = developer.generate('key', request, developer.ROOT, {'app.py': 'pass\n'}, {'app.py': 5}, require_test=True)
+                result = developer.generate('key', request, developer.ROOT, {'app.py': 'pass\n'}, existing,
+                                            require_test=developer.tests_required(existing))
             self.assertEqual(set(result[2]), {'app.py'})
         finally:
             task_goal.CURRENT.reset(token)
+        broad = task_goal.CURRENT.set(task_goal.from_request('Make add accept numeric strings'))
+        try:
+            self.assertTrue(developer.tests_required(existing), 'behavior changes still need a test')
+        finally:
+            task_goal.CURRENT.reset(broad)

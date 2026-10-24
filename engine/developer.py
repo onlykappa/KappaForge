@@ -118,6 +118,13 @@ def read_source(repo, path, sha, token):
     return base64.b64decode(blob["content"]).decode("utf-8")
 
 
+def tests_required(existing):
+    """Whether changes must come with a test. Exact source preservation proves a comment-only goal; no new
+    behavior needs testing."""
+    goal = task_goal.CURRENT.get()
+    return has_tests(existing) and not (goal and goal.comment is not None)
+
+
 def read_target(repo, path, sha, token):
     """An owner-goal target's text at `sha`, or None when it does not exist there or is not readable text."""
     try:
@@ -750,8 +757,6 @@ def source_priorities(sources, existing, task, journal=None):
                  'Edits match current source, preserve scope and pass syntax; independent validation is still required')
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     goal = task_goal.CURRENT.get()
-    if goal and goal.comment is not None:
-        require_test = False  # Exact source preservation proves a comment-only edit; no new behavior needs testing.
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
     priority = source_priorities(working_sources, existing, task, journal)
@@ -989,9 +994,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     for entry in proposal['files']):
                 raise ValueError('Large file was shown as excerpts; change it with edits, not content')
             changes = apply_changes(shown_sources, existing, proposal, budget)
-            task_state.before_edit(changes)
+            task_state.before_edit(changes)  # Also validates the owner goal.
             if goal:
-                goal.validate(changes)
                 goal.file_reasons(proposal, changes)
             if edit_path and (set(changes) != {edit_path} or not changes[edit_path].strip()):
                 raise PermissionError('Bounded task can create only its exact nonempty documentation path')
@@ -1736,7 +1740,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 outstanding = []
         else:
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
-        if require_test and not (goal and goal.comment is not None) and needs_test(changes) and not has_tests(changes):
+        if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
         task_state.review(reqs, problems)
@@ -1901,7 +1905,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     progress.ok(f"Read {len(sources)} files: {short_list(sources)}")
     if design:
         progress.ok("Recorded the implementation plan")
-    require_test = has_tests(existing) and goal.comment is None
+    require_test = tests_required(existing)
     if stages:
         progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
     else:
@@ -2212,12 +2216,17 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     receipt = verify.pr_receipt(pr, repo, branch)
     pr_lifecycle = [p for p in all_open_problems
                     if verify.lifecycle_problem(p) and re.search(r"\b(?:pull request|PR|draft)\b", p, re.I)]
-    if receipt and receipt["open"] and receipt["draft"]:
+    # The owner may ask for the PR without it being an open problem (#221: "Open a draft PR for this change").
+    lifecycle_asked = pr_lifecycle or any(verify.lifecycle_requirement(part)
+                                          for part in re.split(r"[.\n]+", getattr(goal, "original", "") or ""))
+    if receipt and receipt["open"] and receipt["draft"] and lifecycle_asked:
         task += ("\n\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\n"
-                 + "\n".join("- " + p for p in pr_lifecycle) + "\n"
+                 + "".join("- " + p + "\n" for p in pr_lifecycle)
                  + "KappaForge has already opened this task's draft PR. Do not create or change repository code, "
                  + "scripts, workflows, hooks, or commands to open, update, or notify about this PR. Continue only "
                  + "with the unfinished code requirements and failed checks listed above.\n")
+    elif receipt and receipt["open"]:
+        task += "\n\nVERIFIED TASK PR: " + receipt["url"] + (" (draft)" if receipt["draft"] else "") + ". Do not recreate it.\n"
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task
@@ -2249,7 +2258,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         UNFINISHED[:] = pending
         try:
             changes, verdict, remaining = check_the_work(api_key, task, repo, head_sha, repo_token, sources, existing,
-                                                        changes, guide, allowed, design, has_tests(existing), Progress.latest,
+                                                        changes, guide, allowed, design, tests_required(existing), Progress.latest,
                                                         **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
                                                         receipt=verify.pr_receipt(pr, repo, branch))
         finally:
