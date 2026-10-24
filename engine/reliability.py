@@ -125,10 +125,22 @@ class RecoveryCoordinator:
             raise RecoveryBudgetExceeded('Invalid recovery state transition: ' + previous + ' -> ' + next_state, terminal=True)
 
     @staticmethod
+    def limit(project, kind):
+        """The cap for one counter; None only when the project explicitly sets fixCycles to null."""
+        budgets = (project or {}).get('budgets', {})
+        if kind not in budgets:
+            return RecoveryCoordinator.LIMITS[kind]
+        value = budgets[kind]
+        if value is None and kind == 'fixCycles':
+            return None
+        # Anything else that is not a valid cap fails closed to the default.
+        return value if type(value) is int and value >= 1 else RecoveryCoordinator.LIMITS[kind]
+
+    @staticmethod
     def charge(journal, kind):
         counts = journal.state.setdefault('budgets', {})
-        maximum = journal.project.get('budgets', {}).get(kind, RecoveryCoordinator.LIMITS[kind])
-        if counts.get(kind, 0) >= maximum:
+        maximum = RecoveryCoordinator.limit(journal.project, kind)
+        if maximum is not None and counts.get(kind, 0) >= maximum:
             raise RecoveryBudgetExceeded('Task ' + kind + ' budget exhausted; saved evidence requires review', terminal=True)
         counts[kind] = counts.get(kind, 0) + 1
         journal.persist()  # Debit before work; interrupted calls cannot reset counters.
@@ -142,7 +154,7 @@ class RecoveryCoordinator:
             journal.state['repairStrategy'] = 'compact'
             journal.event('Earlier repair cycles did not finish the task', strategy='compact_and_replan',
                           next_action='Reread current source and use smaller proposals under the remaining durable budget')
-        return counts['fixCycles'], journal.project.get('budgets', {}).get('fixCycles', 12)
+        return counts['fixCycles'], RecoveryCoordinator.limit(journal.project, 'fixCycles')
 
     @staticmethod
     def state(status, error=''):

@@ -2408,6 +2408,11 @@ STUCK_MARKER = "<!-- KAPPA_STUCK:"
 GUIDANCE_RE = re.compile(r"^\s*guidance\s*:\s*(.+)", re.I | re.S)
 
 
+def fix_label(cycle, limit):
+    """"fix 3 of 12", or just "fix 13" when the project sets no fix-cycle cap."""
+    return f"fix {cycle}" if limit is None else f"fix {cycle} of {limit}"
+
+
 def owner_guidance(number, token):
     """The owner's "Guidance: ..." comments on the task issue, oldest first."""
     comments = gh(f"repos/{ROOT}/issues/{number}/comments?per_page=100", token)
@@ -2509,7 +2514,7 @@ def fix_pull_request(issue, api_key, token):
     progress = Progress(number, token, ahead=["Write the fix", "Push it and rerun the tests"])
     steps = [s.get("name", "") for j in failed for s in j.get("steps", []) if s.get("conclusion") == "failure"]
     progress.ok(("Requirements are unfinished" if pending else "Tests failed") + (" at: " + ", ".join(steps[:3]) if steps else ""), warn=True)
-    progress.now(f"Reading the failure and writing fix {cycle} of {cycle_limit}" + (" with your guidance" if guidance else ""), phase=True)
+    progress.now(f"Reading the failure and writing {fix_label(cycle, cycle_limit)}" + (" with your guidance" if guidance else ""), phase=True)
     journal = recovery.CURRENT.get()
     saved = {'sha': head, 'changes': {}}
     def checkpoint_revision(changes, modes):
@@ -2581,7 +2586,7 @@ def fix_pull_request(issue, api_key, token):
             "title": "Draft" + (" (incomplete)" if requirements_open({"body": explanation}) else "") + ": " + title,
             "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
     dispatch_tests(repo, branch, commit["sha"], token, pr_files + list(changes))
-    progress.ok(f"Pushed fix {cycle} of {cycle_limit}: {short_list(changes)}; tests are running again", phase=True, status="testing")
+    progress.ok(f"Pushed {fix_label(cycle, cycle_limit)}: {short_list(changes)}; tests are running again", phase=True, status="testing")
     note = workflow_notice(before, changes) + (f"**What the fix does:** {explanation or summary}\n\nChanged: " + ", ".join("`" + p + "`" for p in changes) +
             ". Sandbox tests are running again; Merge appears on the Dashboard if they pass.")
     previous = re.split(r"\n\n## Latest fix\n", pr.get("body") or "", maxsplit=1)[0]

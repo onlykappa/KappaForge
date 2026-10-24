@@ -333,11 +333,13 @@ def snapshot(journal=None):
             facts['pr'] = {**goal.receipt, 'evidence': 'GitHub PR receipt observed in this execution; no claim about current checkout'}
         state = getattr(journal, 'state', {}) or {}
         from engine.reliability import RecoveryCoordinator
-        limits = (getattr(journal, 'project', {}) or {}).get('budgets', {})
+        project = getattr(journal, 'project', {}) or {}
         budgets = {}
         for key in ('modelCalls', 'edits', 'fixCycles'):
-            used, limit = state.get('budgets', {}).get(key), limits.get(key, RecoveryCoordinator.LIMITS[key])
-            if type(used) is int and type(limit) is int:
+            used, limit = state.get('budgets', {}).get(key), RecoveryCoordinator.limit(project, key)
+            if type(used) is int and limit is None:
+                budgets[key] = dict(used=used, limit=None, remaining=None, unlimited=True)
+            elif type(used) is int:
                 budgets[key] = dict(used=used, limit=limit, remaining=max(0, limit - used))
         return dict(version=1, revision=record.revision, identity=dict(record.identity),
                     goal=dict(text=clean(goal.title + '\n' + goal.request, 1400), digest=digest(goal)),
