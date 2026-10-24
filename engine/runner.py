@@ -469,7 +469,29 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
 
     tier "strong" takes only providers marked strong (good at writing code), "rest" only the others, None all of them.
     A provider whose context window the prompt does not fit is passed over."""
-    for pid in PROVIDERS["order"]:
+    from engine import task_state
+    role = task_state.ROUTING_ROLE.get() if task_state.ACTION.get() else None
+    ranking = PROVIDERS.get('routing', {}).get('roleRanking', {}).get(role, []) if role else []
+    rank = {name: index for index, name in enumerate(ranking)}
+    catalogs = {}
+    if ranking:
+        for pid in PROVIDERS["order"]:
+            if allowed is not None and pid not in allowed:
+                continue
+            config = PROVIDERS["providers"][pid]
+            if tier is not None and bool(config.get("strong")) != (tier == "strong"):
+                continue
+            models = provider_models(pid)
+            original = {model: index for index, model in enumerate(models)}
+            models.sort(key=lambda model: (rank.get(pid + ':' + model, len(ranking) + original[model]), original[model]))
+            catalogs[pid] = models
+    provider_order = list(PROVIDERS["order"])
+    if ranking:
+        positions = {pid: index for index, pid in enumerate(provider_order)}
+        provider_order.sort(key=lambda pid: (min((rank.get(pid + ':' + model, len(ranking) + index)
+                                                  for index, model in enumerate(catalogs.get(pid, ()))), default=len(ranking) + positions[pid]),
+                                              positions[pid]))
+    for pid in provider_order:
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
@@ -481,7 +503,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
             continue
         if not fits(p, prompt, max_output_tokens):
             continue
-        for model in provider_models(pid):
+        for model in catalogs[pid] if ranking else provider_models(pid):
             if provider_paused(identity):
                 break
             name = pid + ":" + model
@@ -593,6 +615,18 @@ def _router_post(path, payload, timeout=30):
             return exc.code, {}
     except Exception:
         return 0, {}
+
+
+def report_route_quality(call, usable):
+    """Send only controller-observed role success, never prompts or model output."""
+    if not isinstance(call, dict) or call.get('role') not in ('verify', 'review', 'diagnose', 'code', 'light'):
+        return
+    if (not isinstance(call.get('requestId'), str) or not re.fullmatch(r'[a-f0-9-]{36}', call['requestId'], re.I)
+            or not isinstance(call.get('provider'), str) or not re.fullmatch(r'[a-z0-9-]{1,40}', call['provider'], re.I)
+            or not isinstance(call.get('model'), str) or not re.fullmatch(r'[A-Za-z0-9@._:/-]{1,180}', call['model'])):
+        return
+    _router_post('/router/quality', {'requestId': call['requestId'], 'provider': call['provider'],
+                                     'model': call['model'], 'role': call['role'], 'usable': bool(usable)})
 
 
 def premium_outcome(task, step, outcome):
@@ -803,14 +837,9 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
                              'role': payload['role'], 'rank': data.get('routing', {}).get('rank') if isinstance(data.get('routing'), dict) else None,
                              'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
-    if json_mode:
-        try:
-            usable = isinstance(json.loads(output), dict)
-        except (ValueError, TypeError):
-            usable = False
-        provider, _, route_model = model.partition(':')
-        _router_post('/router/quality', {'requestId': payload['requestId'], 'provider': provider,
-                                         'model': route_model, 'role': payload['role'], 'usable': usable})
+    provider, _, route_model = model.partition(':')
+    task_state.ROUTER_CALL.set({'requestId': payload['requestId'], 'provider': provider,
+                                'model': route_model, 'role': payload['role']})
     premium_used(data.get('premium'))
     asking(model)
     return model, output

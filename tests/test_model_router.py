@@ -4,7 +4,7 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import patch, MagicMock
-from engine import runner
+from engine import runner, task_state
 
 KEYS = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "NVIDIA_API_KEY",
         "OLLAMA_API_KEY", "ZAI_API_KEY", "LLM7_API_KEY", "UNOROUTER_API_KEY", "REQUESTY_API_KEY")
@@ -123,6 +123,28 @@ class ModelRoutingTests(unittest.TestCase):
             self.assertEqual(runner.provider_models("zai"), [], "keyed providers stay off without a key")
             self.assertEqual(runner.run_fallback_providers("Write code", 100, []), ("kilo:poolside/laguna-s-2.1:free", "free pool answer"))
         self.assertTrue(all(auth is None for _, auth in requests))
+
+    def test_task_role_seed_ranks_local_fallback_routes(self):
+        requests = []
+        def response(data):
+            result = MagicMock()
+            result.__enter__.return_value = result
+            result.__exit__.return_value = False
+            result.read.return_value = json.dumps(data).encode()
+            return result
+        def urlopen(req, timeout=None):
+            requests.append((req.full_url, json.loads(req.data)['model']))
+            return response({'choices':[{'message':{'content':'{"ok":true}'}}]})
+        with patch.dict(os.environ, {'NVIDIA_API_KEY':'fixture','MISTRAL_API_KEY':'fixture'}), \
+                patch.object(runner, 'provider_models', side_effect=lambda pid: {
+                    'nvidia':['nvidia/nemotron-3-ultra-550b-a55b','deepseek-ai/deepseek-v4.1-flash'],
+                    'mistral':['mistral-small-latest']}[pid]), \
+                patch.object(runner, 'provider_paused', return_value=False), patch.object(runner, 'fits', return_value=True), \
+                patch('engine.runner.urllib.request.urlopen', side_effect=urlopen):
+            with task_state.action('coder', 'Generate source edits', 'Owner goal', 'Changes validate'):
+                result = runner.run_fallback_providers('prompt', 100, [], allowed={'nvidia','mistral'}, json_mode=True)
+        self.assertEqual(result, ('nvidia:deepseek-ai/deepseek-v4.1-flash', '{"ok":true}'))
+        self.assertEqual(requests[0][1], 'deepseek-ai/deepseek-v4.1-flash')
 
     def test_fixed_free_list_and_optional_keys(self):
         with patch.dict(os.environ, {"ZAI_API_KEY": "zai-key", "LLM7_API_KEY": "llm7-key"}), \
