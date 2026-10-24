@@ -22,13 +22,19 @@ Updated per step. **Ran** means executed, with the measured result. **Inspected*
 This environment's internet goes through a loopback proxy that Docker containers cannot use. So registry installs
 (`npm ci`, `pip`) and the `git` image layer could not be exercised here.
 
-### Runs only in CI (`.github/workflows/sandbox-selftest.yml`, GitHub-hosted ubuntu-latest)
+### Ran in CI (`.github/workflows/sandbox-selftest.yml`, GitHub-hosted ubuntu-latest)
+
+First run, on `70e62f4`:
 
 | Check | Result |
 | --- | --- |
-| Real-Docker tests with `KAPPA_SANDBOX_NETWORK=1`: locked `npm ci` and `pip` wheel installs feeding networkless test runs | Pending first CI run |
-| KappaForge's own Python and Node suites inside the sandbox, with `git` in the image | Pending first CI run |
-| No sandbox containers or volumes left on the runner | Pending first CI run |
+| `KAPPA_SANDBOX_INTEGRATION=1 KAPPA_SANDBOX_NETWORK=1 python -m unittest tests.test_sandbox` | 25 of 25 passed, including the locked `npm ci` and `pip` wheel installs feeding networkless test runs |
+| Sandbox image | `kappaforge-sandbox:py3.12-node22`, built with `git` (`missingTools: []`) |
+| KappaForge's own suites inside the sandbox | `npm ci` passed in 1.7 s; Node: 822 passed; Python: 641 of 642, with 1 error in a test that ran `git ls-files` on a tree that has no `.git` by design |
+| No sandbox containers or volumes left on the runner | Passed |
+
+That one error was fixed: `tests/test_verify.py` now lists files from the folder when there is no Git metadata, and it
+was run both in the checkout and in a Git-less export. The next CI run re-checks the whole self-test.
 
 ### Inspected, not executed
 

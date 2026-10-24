@@ -446,7 +446,11 @@ class PythonTestImports(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         # Use the actual tracked-source inventory. A fixed list falsely rejected #221's real workflow reader.
         import subprocess
-        paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
+        if (root / '.git').exists():
+            paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
+        else:  # An exported tree, such as the execution sandbox's copy, has no Git metadata.
+            paths = [str(p.relative_to(root)) for p in root.rglob('*')
+                     if p.is_file() and not {'.git', 'node_modules', '__pycache__'} & set(p.relative_to(root).parts)]
         # test_test_discovery checks test file names only; it has no repository code to load.
         for test in sorted(t for t in (root / "tests").glob("test_*.py") if t.name != "test_test_discovery.py"):
             name = "tests/" + test.name
