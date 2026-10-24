@@ -24,7 +24,8 @@ class FaultyProjectRepairAcceptance(unittest.TestCase):
             calls.append(prompt)
             self.assertIn("1699", prompt, "the model receives the actual Python regression evidence")
             response = {"tool": "apply_patch", "args": {"edits": [
-                {"path": "shop/pricing.py", "find": "percent // 100", "replace": "percent / 100"},
+                {"path": "shop/pricing.py", "find": "total_cents * (percent // 100)",
+                 "replace": "round(total_cents * percent / 100)"},
                 {"path": "web/cart.mjs", "find": "sum + line.priceCents, 0",
                  "replace": "sum + line.priceCents * line.qty, 0"}]},
                 "reason": "The Python failure proves integer division loses partial discounts; the Node test proves quantity is omitted."}
