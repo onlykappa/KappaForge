@@ -45,5 +45,6 @@ jobs:
             core.info('Drift issue updated: #' + open[0].number);
           } else {
             const made = await github.rest.issues.create({owner, repo, title: 'Free LLM list changed', body, labels: [label]});
+
             core.info('Drift issue opened: #' + made.data.number);
           }
