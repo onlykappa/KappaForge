@@ -26,7 +26,7 @@ class TestSandboxRepairController(unittest.TestCase):
         def mock_model(*args, **kwargs):
             self.call_count += 1
             return 'route', '{"done":false, "tool":"apply_patch", "args":{"edits":[{"path":"test_file.py", "find":"line' + str(self.call_count) + '", "replace":"changed' + str(self.call_count) + '"}]}, "reason":"fail"}'
-        res = self.controller.run_repair('task', mock_model, 'key')
+        self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(len(self.controller.attempts), 5)
 
     def test_success_verification(self):
@@ -43,7 +43,6 @@ class TestSandboxRepairController(unittest.TestCase):
         self.assertEqual(len(self.controller.attempts), 1)
 
     def test_session_cleanup(self):
-        from unittest.mock import Mock
         self.session.close = Mock()
         def mock_model(*args, **kwargs):
             return 'route', '{"done":true, "summary":"fixed"}'
