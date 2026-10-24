@@ -2331,6 +2331,21 @@ def base_test_regressions(log, repo, base_sha, token):
     found, files = [], {}
     for match in TEST_FAILURE_RE.finditer(log or ''):
         name, parts = match.group(1), match.group(2).split('.')
+        if parts[:2] == ['unittest', 'loader'] and parts[-1] == name and re.fullmatch(r'test\w*', name):
+            # A whole existing test module failed to import (unittest's _FailedTest): a regression of every test in it.
+            path = 'tests/' + name + '.py'
+            if path not in files:
+                files[path] = read_target(repo, path, base_sha, token) or ''
+            if files[path]:
+                block = log[match.start():]
+                end = re.search(r'\n(?:={20,}|FAIL: |ERROR: |Ran \d+ tests?)', block[1:])
+                target = (f'Regression from this candidate: existing test module {path} no longer imports:\n'
+                          + recovery.clean(block[:end.start() + 1 if end else 600], 600))
+                if target not in found:
+                    found.append(target)
+                if len(found) >= MAX_REGRESSIONS:
+                    break
+            continue
         modules = []
         for part in parts:
             if part[:1].isupper():

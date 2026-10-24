@@ -498,7 +498,20 @@ class BaseRegressionTests(RevisionHarness):
         self.assertIn('existing test test_commits_one_change', found[0])
         self.assertIn("TypeError: 'dict' object is not subscriptable", found[0], 'the traceback travels with the target')
         self.assertNotIn('test_brand_new_check', found[0])
+        self.assertFalse(any('test_broken_import' in item for item in found), 'a loader error for a module absent at the base')
         self.assertEqual(developer.base_test_regressions('', developer.ROOT, 'c' * 40, 't'), [])
+
+    def test_an_existing_test_module_that_no_longer_imports_is_a_regression(self):
+        log = ('ERROR: test_developer (unittest.loader._FailedTest.test_developer)\n' + '-' * 70 +
+               "\nImportError: Failed to import test module: test_developer\nImportError: cannot import name 'job_log' "
+               "from partially initialized module 'engine.developer'\n\n" + '=' * 70 +
+               '\nERROR: test_new_module (unittest.loader._FailedTest.test_new_module)\nImportError: nope\n')
+        with patch.object(developer, 'read_target', side_effect=lambda repo, path, sha, token:
+                          {'tests/test_developer.py': 'import unittest\n'}.get(path)):
+            found = developer.base_test_regressions(log, developer.ROOT, 'c' * 40, 't')
+        self.assertEqual(len(found), 1)
+        self.assertIn('existing test module tests/test_developer.py no longer imports', found[0])
+        self.assertIn('partially initialized module', found[0])
 
     def test_a_regression_reaches_generation_even_when_the_verifier_is_unconvinced(self):
         _, generate = self.revise(self.unconvinced, read=self.base_read, log=REGRESSION_LOG)
