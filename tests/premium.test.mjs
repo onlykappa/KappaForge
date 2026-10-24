@@ -74,8 +74,10 @@ test('fresh verified provider balance also reserves concurrent local charges; mi
  for(const snapshot of [null,{availableUsd:9,checkedAt:Date.now()-60000},{availableUsd:NaN,checkedAt:Date.now()}])assert.equal((await op({op:'reserve',task:922,step:'check',requestId:'bad-'+crypto.randomUUID(),estimateUsd:0.1,account:snapshot})).reason,'balance_unverified');
 });
 
+// Tests that move the clock to billing alarms start at midday UTC: from the real time, a few minutes' jump near
+// 00:00 UTC crossed into the next day and the day's spend read 0 (it failed CI on #218 at 23:59 UTC).
 test('the existing reconciliation operation is driven by durable alarms and settles only matching generation evidence',async()=>{
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,930);
   const model='deepseek/deepseek-v4.1-flash-1017';
   await h.op({op:'reserve',task:930,step:'check',requestId:'reconcile-alarm',estimateUsd:0.5,model});
@@ -90,7 +92,7 @@ test('the existing reconciliation operation is driven by durable alarms and sett
 });
 
 test('unconfirmed generation checks stop after bounded attempts and never assume a zero charge',async()=>{
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,940);
   await h.op({op:'reserve',task:940,step:'check',requestId:'reconcile-bounded',estimateUsd:0.5,model:'deepseek/deepseek-v4.1-flash-1017'});
   await h.op({op:'settle',requestId:'reconcile-bounded',generation:'gen-bounded'});
@@ -103,7 +105,7 @@ test('unconfirmed generation checks stop after bounded attempts and never assume
 });
 
 test('a crash before a generation ID is saved stays charged at its reservation without an inference retry',async()=>{
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,950);
   await h.op({op:'reserve',task:950,step:'check',requestId:'orphan-hold',estimateUsd:0.4});
   now=h.alarm.at;h.alarm.at=null;
@@ -448,7 +450,7 @@ test('the model audit never asks an unlisted model that could charge',async()=>{
 
 // Review fixes (PR #202).
 test('a lost answer stays counted against the caps but is not subtracted from a balance read after it ended',async()=>{
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,970);await evidence(h.op,971);await evidence(h.op,972);
   await h.op({op:'reserve',task:970,step:'check',requestId:'lost-answer',estimateUsd:0.8,account:{availableUsd:5,checkedAt:now}});
   await h.op({op:'settle',requestId:'lost-answer'});
@@ -463,7 +465,7 @@ test('a lost answer stays counted against the caps but is not subtracted from a 
 });
 
 test('reconciliation leaves a request in flight alone and re-arms when its generation arrives late',async()=>{
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;await h.op({op:'settings',enabled:true});await evidence(h.op,975);
   await h.op({op:'reserve',task:975,step:'check',requestId:'slow-request',estimateUsd:0.5,model:'deepseek/deepseek-v4.1-flash-1017'});
   assert.ok(h.alarm.at-now>=200000,'the first check waits out the longest request');
@@ -499,7 +501,7 @@ test('without readable credits a key credit limit bounds Premium; with neither i
 
 test('billing and recovery alarms share the slot: both handlers run and scheduling recovery keeps the billing wake',async()=>{
  const {RECOVERY_KEY}=await import('../chat-backend/src/recovery-wake.js');
- const h=memory(),real=Date.now;let now=real();
+ const h=memory(),real=Date.now;let now=Date.UTC(2026,9,15,12);
  try{Date.now=()=>now;h.store.deleteAlarm=async()=>{h.alarm.at=null};
   await h.op({op:'settings',enabled:true});await evidence(h.op,980);
   await h.op({op:'reserve',task:980,step:'check',requestId:'shared-slot',estimateUsd:0.4});
