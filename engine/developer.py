@@ -28,6 +28,7 @@ from engine import recovery
 from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 from . import sandbox
 from engine import repair_loop
+from .sandbox_repair_controller import run_sandbox_repair
 from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
@@ -2021,7 +2022,20 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         saved.update(sha=adopt["head"]["sha"], pr=adopt)
         progress.act("git", f"Continuing on draft PR {adopt['html_url']}, which holds the plan")
     else:
-        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
+        # Defer PR creation until after sandbox repair succeeds
+        # Run sandbox repair before creating the plan PR
+        def _noop_model(*args, **kwargs):
+            return None, "{}"
+        repair_success, _ = run_sandbox_repair(
+            task=issue,
+            run_model=_noop_model,
+            api_key=api_key,
+            session_factory=lambda: sandbox.open_session(repo, sha, repo_token),
+        )
+        if not repair_success:
+            progress.act("sandbox", "Repair failed, aborting PR creation")
+        else:
+            saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
         saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
         progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
     progress.saved_pr = saved["pr"]["html_url"]
