@@ -5,13 +5,17 @@ const cache=new Map(),TTL=300000,MAX_CACHE=32;
 const finite=n=>typeof n==="number"&&Number.isFinite(n);
 const CODE_WORDS=/\b(?:implement|repair|debug|code|endpoint|unit test|pull request|function|refactor|commit|deploy)\b/i;
 // Keep in step with preview/core.js locationQuestion (tests compare them).
-const WHERE=/\b(?:where am i|where i am|my (?:current |exact |precise )?(?:location|coordinates|gps|position|address|lat(?:itude)?|long(?:itude)?)|current location|what (?:city|town|state|country|county|street|neighbou?rhood|zip(?: code)?|postcode) am i in)\b/i;
+const WHERE=/\b(?:where am i|where are we|where i am|my (?:current |exact |precise )?(?:location|coordinates|gps|position|address|lat(?:itude)?|long(?:itude)?)|current location|what (?:city|town|state|country|county|street|neighbou?rhood|zip(?: code)?|postcode) am i in)\b/i;
 const NEARBY=/\b(?:near me|close to me|around me|nearby|nearest|closest|around here|near here|from here|from me|my area|this area|how far (?:am i|away am i))\b/i;
+// "Where am I in the queue / on task 221 / with the release" asks for status, not a place ("in the world" still is).
+const STATUS_WHERE=/\bwhere (?:am i|are we)\s+(?:at\s+)?(?:in|on|at|with)\s+(?:the|my|our|this|task|pr)\b(?!\s+(?:world|map|planet|earth|globe|city|town|country|state)\b)/i;
+const PLACE_WORDS=/\bmy (?:current |exact |precise )?(?:location|coordinates|gps|position|address)\b/i;
 // "where": the question is the location itself (answered directly). "nearby": the location is context for the model.
 const BEYOND=/\b(?:how far|distance|directions?|route|drive|walk|near|nearest|closest|weather|time|restaurants?|food|coffee|gas|hotel|store|shop)\b/i;
 export function locationQuestion(text){
  text=String(text||"").trim().replace(/’/g,"'");
  if(!text||CODE_WORDS.test(text))return null;
+ if(STATUS_WHERE.test(text)&&!PLACE_WORDS.test(text)&&!NEARBY.test(text))return null;
  if(WHERE.test(text))return BEYOND.test(text)?"nearby":"where";
  return NEARBY.test(text)?"nearby":null;
 }

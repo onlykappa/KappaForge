@@ -13,9 +13,12 @@ const request=body=>new Request('https://worker.test/chat',{method:'POST',header
 const here={latitude:47.658812,longitude:-117.426022,accuracy:8};
 const nominatim={address:{house_number:'808',road:'West Spokane Falls Boulevard',city:'Spokane',state:'Washington',postcode:'99201',country:'United States'},display_name:'ignored'};
 const sentences={
- where:['Where am I?','where am i right now','What are my coordinates?','What is my exact location?','What city am I in?','Tell me my current location','What’s my latitude and longitude?'],
+ where:['Where am I?','where am i right now','What are my coordinates?','What is my exact location?','What city am I in?','Tell me my current location','What’s my latitude and longitude?',
+  'Where are we?','Where am I located?','Where am I in the world?','Where am I on the map?'],
  nearby:['What coffee shops are near me?','Find the closest gas station','How far is Seattle from my location?','What restaurants are nearby?','How far away am I from the airport?'],
- none:['Tell me a joke','Fix the location endpoint code','Implement a nearby search function','Will it rain today?','What is the capital of France?']};
+ // Status questions in a task app, not places: these never ask for GPS (post-release audit).
+ none:['Tell me a joke','Fix the location endpoint code','Implement a nearby search function','Will it rain today?','What is the capital of France?',
+  'Where am I in the queue?','Where am I on the task list?','Where am I with the release?','where am i at with my tasks','Where are we on task 221?']};
 
 test('the app and the Worker agree on which questions need the location, and of which kind',()=>{
  for(const [kind,list] of Object.entries(sentences))for(const text of list){

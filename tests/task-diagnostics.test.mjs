@@ -76,3 +76,30 @@ test('a task report downloads with every attempt, the full error and the raw led
  assert.doesNotMatch(settings,/Download all|task-diagnostics-download/);
  assert.match(slice(settings,'function taskDiagnosticsHTML(','\nfunction taskDiagnosticReport('),/Download this task’s error log/);
 });
+
+test('a ledger history that rolls past ten entries never shows the same attempt twice',()=>{
+ // Post-release audit: row IDs included the position in the ledger history, which keeps only the latest ten, so every
+ // older attempt reappeared under a new ID once an eleventh failure pushed the list along.
+ const box=harness([]),job=box.trackedJobs[0];
+ const attempt=i=>({at:1700000000+i*60,kind:'validation',error:'attempt '+i,model:'m',strategy:'compact'});
+ const shard=from=>({user:{login:'github-actions[bot]'},body:'### KappaForge failure ledger\n\n<!-- KAPPA_FAILURES_V1 '+JSON.stringify({task:7,records:{fp:{history:Array.from({length:10},(_,i)=>attempt(from+i))}}})+' -->'});
+ box.collectTaskFailureHistory(job,shard(0).body);
+ box.collectTaskFailureHistory(job,shard(1).body);
+ const errors=[...job.failureHistory].map(r=>String(r.error));
+ assert.equal(new Set(errors).size,errors.length,'no attempt appears twice: '+errors.join(', '));
+ assert.deepEqual(errors,Array.from({length:10},(_,i)=>'attempt '+(i+1)),'the latest ten, oldest first');
+});
+
+test('opening Task diagnostics reads the ledgers by itself, at most every two minutes and never twice at once',async()=>{
+ let reads=0,release;
+ const box=harness([]);box.taskComments=async()=>{reads++;await new Promise(r=>{release=r});return []};
+ vm.runInContext("var autoNow=1e12;Date.now=()=>autoNow",box);
+ const first=box.autoRefreshTaskDiagnostics();
+ assert.equal(box.autoRefreshTaskDiagnostics(),false,'a read already running is not started again');
+ release();await first;assert.equal(reads,1);
+ assert.equal(box.autoRefreshTaskDiagnostics(),false,'within two minutes the cached records are shown');
+ vm.runInContext('autoNow+=120001',box);
+ const second=box.autoRefreshTaskDiagnostics();release();await second;assert.equal(reads,2);
+ const settings=read('settings.js');
+ assert.match(slice(settings,'function bindTaskDiagnostics(','\n}'),/settingsSection==='tasks'[^;]*autoRefreshTaskDiagnostics\(\)/,'the page triggers it on open');
+});

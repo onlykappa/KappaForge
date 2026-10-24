@@ -9,7 +9,7 @@ function coordinates(lat,lon){return finite(lat)&&finite(lon)&&Math.abs(lat)<=90
 export function weatherRequest(text){
  text=String(text||"").trim();
  if(/\b(?:implement|repair|debug|code|endpoint|unit test|pull request)\b/i.test(text))return false;
- return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain|snow|temperature|wind|umbrella)\b/i.test(text);
+ return /^(?:what(?:'s| is)|how(?:'s| is)|will|is it|do i need|show|give|tell|weather\b|forecast\b|seven.day\b|7.day\b)/i.test(text)&&/\b(?:weather|forecast|rain(?:ing|y)?|snow(?:ing|y)?|temperature|wind(?:y)?|storm(?:ing|y|s)?|umbrella)\b/i.test(text);
 }
 export function weatherArguments(text,preferences={},location=null){
  const match=String(text).match(/\b(?:in|for)\s+(.+?)(?=[?!]|$)/i);
