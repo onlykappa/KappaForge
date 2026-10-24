@@ -52,7 +52,7 @@ def run_sandbox_repair(
             task=task,
             tools=tools,
             max_steps=20,
-            allowed=None,
+            allowed=allowed,
         )
         steps = loop_result.get("steps", [])
         last_steps = steps
@@ -77,7 +77,7 @@ def run_sandbox_repair(
 
         # Check for a passing test run.
         for step in steps:
-            if step.get("tool") == "run_tests" and step.get("result", {}).get("status") == "passed":
+            if step.get("tool") == "run_tests" and step.get("result", {}).get("status") == "ok" and step.get("result", {}).get("passed"):
                 return {
                     "success": True,
                     "attempts": attempts,
