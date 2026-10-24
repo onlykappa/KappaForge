@@ -1078,14 +1078,15 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                                       json_mode=True, **({"skip": tuple(avoid)} if avoid else {}))
             attempts_made += 1
         except RuntimeError as exc:
-            if router_required and isinstance(exc, gateway.GatewayRequestTooLarge) and context:
-                # A stricter transport envelope can reject a locally fitting prompt.
-                # Keep this recovery in the same bounded attempt and exact task scope.
-                budget = budget._replace(context_chars=budget.context_chars // 2,
-                                         file_chars=max(1000, budget.file_chars // 2))
+            if router_required and (isinstance(exc, gateway.GatewayRequestTooLarge) or getattr(exc, 'shrink_context', False)) and context:
+                # A stricter transport envelope, or the gateway Worker's CPU/memory limit, can reject a locally
+                # fitting prompt. Halve the source context actually sent (not just a budget it never reached),
+                # within the same bounded attempt and exact task scope.
+                shown = max(1000, min(budget.context_chars, len(context)) // 2)
+                budget = budget._replace(context_chars=shown, file_chars=max(1000, min(budget.file_chars, shown)))
                 context, shown_sources, partial_sources = source_context()
                 errors.append(str(exc))
-                note("fix", "Reducing source context after the gateway request-size guard")
+                note("fix", "Reducing source context after the gateway's size or resource limit")
                 continue
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(exc, RecoveryBudgetExceeded) or getattr(exc, 'terminal', False) or getattr(exc, 'gateway_failure', False):

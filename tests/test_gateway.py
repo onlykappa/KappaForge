@@ -69,8 +69,9 @@ class GatewayEvidenceTests(unittest.TestCase):
         output = io.StringIO()
         with patch.dict(os.environ, {'KAPPA_ROUTER_URL': 'https://fixture.example', 'KAPPA_ROUTER_TOKEN': 'x' * 40}), \
                 patch.object(runner.urllib.request, 'urlopen', side_effect=error), contextlib.redirect_stdout(output), \
-                self.assertRaises(gateway.GatewayUnavailable):
+                self.assertRaises(gateway.GatewayUnavailable) as raised:
             runner.run_integrated_router('brief', 100, ['groq'])
+        self.assertTrue(raised.exception.shrink_context, '1102 asks generation to retry with less source context')
         evidence = json.loads(output.getvalue().split('KAPPA_ROUTER_RESULT ', 1)[1].splitlines()[0])
         self.assertEqual(evidence['platformError'], {'errorCode': 1102, 'errorName': 'worker_exceeded_resources',
                                                      'title': 'Error 1102: Worker exceeded resource limits', 'retryable': True})
