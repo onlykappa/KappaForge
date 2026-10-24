@@ -32,7 +32,8 @@ class FreeCapacityExhaustionTests(unittest.TestCase):
         retry_at = self.world.now + 900
         error = ProviderRoutesUnavailable('Approved Gemini routes unavailable: groq HTTP 429, ollama HTTP 429', retry_at=retry_at)
         self.assertTrue(self.journal.defer(error))
-        self.assertGreaterEqual(self.journal.state['nextAt'], retry_at + 30, 'no blind retry before the provider retry time')
+        self.assertGreaterEqual(self.journal.state['nextAt'], retry_at + 5, 'no blind retry before the provider retry time')
+        self.assertLessEqual(self.journal.state['nextAt'], retry_at + 5, 'and no idle time after it')
         body = self.progress()[-1]
         self.assertIn('Free model capacity is exhausted', body)
         self.assertIn('No paid model was used', body)

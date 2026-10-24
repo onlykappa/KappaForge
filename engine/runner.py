@@ -881,12 +881,8 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
             errors.append(model + ": empty response")
             return None
         except urllib.error.HTTPError as exc:
-            if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
-                # Per-minute quotas reset slowly; honor the provider's Retry-After when given.
-                retry_after = (exc.headers or {}).get("Retry-After", "")
-                delay = int(retry_after) if retry_after.isdecimal() else 5 * (attempt + 1)
-                time.sleep(min(delay, 60, model_timeout()))
-                continue
+            # A rate limit or server error moves straight on to the next free model; the failure is recorded below, so
+            # this model rests until its own reset instead of the task sleeping on it.
             provider_failure('gemini', model, exc.code, key=api_key, headers=exc.headers)
             if exc.code in (404, 429):
                 rate_limited(model, exc)

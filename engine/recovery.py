@@ -501,8 +501,11 @@ class Journal:
         # Only a real provider limit is a cooldown. Other failures (a rejected proposal, a timeout of this run)
         # continue on the next recovery scan with other free models; there is nothing to wait out.
         provider_limit = kind in QUOTA_KINDS or bool(getattr(error, 'retry_at', 0))
-        minimum_wait = 60 if kind in ('provider_outage', 'rate_limit', 'invalid_response') or not provider_limit else 300
-        due = max(now + minimum_wait, getattr(error, 'retry_at', 0) + 30, availability.get('retryAt', 0) + 30)
+        known_reset = max(getattr(error, 'retry_at', 0), availability.get('retryAt', 0))
+        # Nothing to wait out without a provider limit: continue at once. With one, resume just after the provider's
+        # own reset time; only an unknown reset falls back to a short minute.
+        minimum_wait = 0 if not provider_limit else (0 if known_reset else 60)
+        due = max(now + minimum_wait, known_reset + 5 if known_reset else 0)
         end = min(self.scope.expires - 1200, self.state['waitingSince'] + self.project.get('maxWaitSeconds', 21600))
         if due > end:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')

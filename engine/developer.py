@@ -2423,6 +2423,22 @@ STUCK_MARKER = "<!-- KAPPA_STUCK:"
 GUIDANCE_RE = re.compile(r"^\s*guidance\s*:\s*(.+)", re.I | re.S)
 
 
+# Repair rounds a single run starts back to back after a rejected round, before handing off to the recovery queue.
+# The durable modelCalls/edits caps and the task deadline bound the total.
+IMMEDIATE_REPAIR_ROUNDS = 5
+IMMEDIATE_RETRY_MIN_SECONDS = 20 * 60
+
+
+def retry_now(error, journal, repair_round):
+    """Whether a rejected repair round may start the next one at once in this run."""
+    if journal is None or repair_round >= IMMEDIATE_REPAIR_ROUNDS:
+        return False
+    if getattr(error, 'blocked', False) or getattr(error, 'provider_routes', False) or getattr(error, 'terminal', False):
+        return False
+    deadline = getattr(runner_module, 'TASK_DEADLINE', None)
+    return deadline is None or deadline - time.monotonic() > IMMEDIATE_RETRY_MIN_SECONDS
+
+
 def fix_label(cycle, limit):
     """"fix 3 of 12", or just "fix 13" when the project sets no fix-cycle cap."""
     return f"fix {cycle}" if limit is None else f"fix {cycle} of {limit}"
@@ -2489,10 +2505,10 @@ def fix_pull_request(issue, api_key, token):
     task_state.observe_pr(pr, repo, branch)
     run = sandbox_result(branch, head, token, repo)
     # An automatic fix is started from the test run's last job, moments before the run itself is marked finished.
-    for _ in range(9):
+    for _ in range(30):
         if not run or run.get("status") == "completed":
             break
-        time.sleep(10)
+        time.sleep(3)
         run = sandbox_result(branch, head, token, repo)
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
@@ -2561,8 +2577,19 @@ def fix_pull_request(issue, api_key, token):
     if journal:
         journal.event('Tests failed' if failures else 'Original requirements remain unmet', strategy='repair_from_test_evidence',
                       next_action='Read failed assertions and preserve original requirements')
-    model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
-                                                                native_history, **({'checkpoint': checkpoint_revision} if journal else {}))
+    for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
+        try:
+            model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
+                                                                        native_history, **({'checkpoint': checkpoint_revision} if journal else {}))
+            break
+        except GenerationFailure as exc:
+            # A rejected round is not a reason to idle: start the next round now, with the rejected proposals and
+            # models on record so it differs. Provider limits, blocked work and budgets still stop as before.
+            if not retry_now(exc, journal, repair_round):
+                raise
+            journal.event(exc, strategy='retry_now', next_action='Start another repair round immediately with other free models')
+            cycle, cycle_limit = RecoveryCoordinator.start_fix(journal, fixes)
+            progress.now(f"Previous round was rejected; writing {fix_label(cycle, cycle_limit)} immediately", phase=True)
     flags, before = {}, {}
     if (repo != ROOT and not flags_allowed(issue.get("body"))) or any(WORKFLOW_PATH.match(p) for p in changes):
         for path in changes:
