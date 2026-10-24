@@ -5,7 +5,12 @@ on:
   pull_request:
     paths:
     - engine/sandbox.py
+    - engine/sandbox_repair_controller.py
+    - engine/sandbox_tools.py
+    - engine/tool_loop.py
     - tests/test_sandbox.py
+    - tests/test_sandbox_repair_controller.py
+    - tests/test_sandbox_repair_integration.py
     - tests/fixtures/sandbox/**
     - tools/sandbox_selftest.py
     - .github/workflows/sandbox-selftest.yml
@@ -31,6 +36,14 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python -m unittest tests.test_sandbox -v
+      shell: bash
+    - name: Faulty project repaired through the agent tool loop
+      env:
+        KAPPA_SANDBOX_INTEGRATION: '1'
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest tests.test_sandbox_repair_integration -v
       shell: bash
     - name: KappaForge's own suites inside the sandbox
       run: |-

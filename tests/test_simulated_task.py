@@ -183,9 +183,13 @@ class SimulatedTask(unittest.TestCase):
         scope = intent_guard.activate(TASK)
         self.addCleanup(intent_guard.ACTIVE.set, None)
         self.addCleanup(setattr, developer.Progress, "latest", None)
+        sandbox_success = lambda repo, sha, token, changes, task, api_key, allowed, **kw: {
+            "status": "success", "stop_reason": "validated", "summary": "simulated tests passed",
+            "candidate_changes": dict(changes), "test_results": [{"status": "passed", "ran": 1}],
+            "attempts": [], "models": [], "logs": "simulated test pass"}
         with patch.dict(os.environ, env), patch.object(developer, "gh", side_effect=world.gh), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=world.urlopen), patch("engine.runner.time.sleep"), \
-                patch("engine.native_build.dispatch"):
+                patch("engine.native_build.dispatch"), patch.object(developer, "run_sandbox_repair", side_effect=sandbox_success):
             url = developer.produce_development_pr(TASK, "sim-gemini", "sim-token")
         return world, url, scope
 
@@ -193,13 +197,8 @@ class SimulatedTask(unittest.TestCase):
         with self.assertRaises(runner.TaskTimeExpired):
             self.run_task(interrupt=True)
         world = self.world
-        self.assertEqual(len(world.prs), 1)
-        self.assertTrue(world.prs[0]['draft'])
-        self.assertTrue(developer.requirements_open(world.prs[0]))
-        tree = next(p for path, p in world.writes if path.endswith('/git/trees'))['tree']
-        self.assertIn("weatherUnits:'F'", tree[0]['content'])
-        self.assertTrue(any(path.endswith('/git/refs') for path, _ in world.writes))
-        self.assertFalse(any('/refs/heads/main' in path for path, _ in world.writes))
+        self.assertEqual(world.prs, [], 'unvalidated edits are never committed or published')
+        self.assertFalse(any('/git/trees' in path or path.endswith('/git/refs') for path, _ in world.writes))
         self.assertFalse(world.dispatches)
 
     def test_the_whole_task_gets_through_every_failure_and_opens_an_honest_draft(self):
