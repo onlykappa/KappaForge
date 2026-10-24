@@ -8,19 +8,36 @@ class SandboxRepairController:
         self.attempts = []
 
     def run_repair(self, task_description, run_model, api_key):
-        for attempt_idx in range(1, 6):
-            attempt = {'index': attempt_idx, 'rationale': '', 'diff': '', 'results': None}
-            result = tool_loop.run_tool_loop(run_model, api_key, task_description, self.tools)
-            attempt['results'] = result
-            attempt['diff'] = self.tools.inspect_diff()['diff']
-            self.attempts.append(attempt)
-            if self._verify_success(result):
-                regression = self.tools.run_tests()
-                if regression.get('passed'):
-                    return {'status': 'success', 'attempt': attempt_idx, 'summary': result.get('summary')}
-            if attempt_idx >= 5:
-                break
-        return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': self.attempts[-1]['diff']}
+        try:
+            for attempt_idx in range(1, 6):
+                result = tool_loop.run_tool_loop(run_model, api_key, task_description, self.tools)
+                diff_info = self.tools.inspect_diff()
+                diff = diff_info.get('diff', '')
+                fingerprint = hashlib.sha256(diff.encode()).hexdigest()
+                
+                attempt = {
+                    'index': attempt_idx,
+                    'diff': diff,
+                    'fingerprint': fingerprint,
+                    'results': result
+                }
+                
+                if any(a['fingerprint'] == fingerprint for a in self.attempts):
+                    self.attempts.append(attempt)
+                    break
+                
+                self.attempts.append(attempt)
+                
+                if self._verify_success(result):
+                    regression = self.tools.run_tests()
+                    if regression.get('passed'):
+                        return {'status': 'success', 'attempt': attempt_idx, 'summary': result.get('summary')}
+                
+                if attempt_idx >= 5:
+                    break
+            return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': self.attempts[-1]['diff']}
+        finally:
+            self.session.close()
 
     def _verify_success(self, result):
         if result.get('stop_reason') != 'done':
