@@ -1,8 +1,9 @@
-"""One-off: ask every UnoRouter model whose ID says "free" for one word, one request per model, sequentially.
+"""One-off: ask every UnoRouter model whose ID says "free" for one word, one request per model, all in parallel.
 
 Temporary branch only (not merged). Uses the UNOROUTER_API_KEY secret; the key is never printed.
 """
 import http.client
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import time
@@ -52,7 +53,9 @@ def main():
         print("UNOROUTER_API_KEY is not set")
         return
     models = free_models()
-    rows = [(model, *ask(model)) for model in models]
+    # All at once: one request per model, fired together (UnoRouter limits each model, not the batch).
+    with ThreadPoolExecutor(max_workers=max(1, min(64, len(models)))) as pool:
+        rows = [(model, *result) for model, result in zip(models, pool.map(ask, models))]
     ok = sum(1 for row in rows if row[1] == "ok")
     lines = [f"## UnoRouter free models: {ok} of {len(rows)} answered", "", "| Model | Status | Detail |", "|---|---|---|"]
     lines += [f"| `{m}` | {'✅' if s == 'ok' else '❌'} {s} | {d} |" for m, s, d in rows]
