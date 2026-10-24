@@ -98,6 +98,36 @@ function renderTaskActivity(m,i=-1){
  (stalled?'<p class="task-stalled" role="alert">No update for over 15 minutes. The task may be stuck.</p>':'')+timeline+'</details>'+stageCard+actions+
  activityFeed(shown.map(r=>({kind:activityKind(r.title),text:r.title+(r.detail?': '+r.detail:''),state:r.state})),!finished||testing,taskNum||String(i))+'</section>';
 }
+function executionDiagnostics(execution,now){
+ if(!execution)return '';
+ const label=s=>({running:'Running',passed:'Passed',failed:'Failed',skipped:'Skipped',blocked:'Blocked',pending:'Pending'})[s]||'Blocked';
+ const since=(started,finished)=>started?'<time'+(!finished?' data-since="'+new Date(started).toISOString()+'"':'')+'>'+esc(KappaActions.formatDuration(Math.round(Math.max(0,((finished||now)-started)/1000))))+'</time>':'';
+ const command=(c,index)=>'<li class="execution-command"><strong>'+esc(c.source||'Command '+(index+1))+' · '+esc(label(c.status))+'</strong>'+since(c.startedAt,c.finishedAt)+
+  (c.argv.length?'<code>'+esc(JSON.stringify(c.argv))+'</code>':'')+(c.reused?'<small>Saved result reused for this workspace revision</small>':'')+
+  (c.counts?'<small>Tests: '+c.counts.ran+' ran · '+c.counts.failures+' failed · '+c.counts.errors+' errors · '+c.counts.skipped+' skipped</small>':'')+
+  (c.errorCategory?'<small>Error category: '+esc(c.errorCategory)+'</small>':'')+
+  (c.evidence?'<p>'+esc(c.evidence)+'</p>':'')+(c.log?'<details><summary>Execution log</summary><pre>'+esc(c.log)+'</pre></details>':'')+'</li>';
+ const attempts=execution.attempts.map(a=>'<li class="execution-attempt"><strong>Attempt '+a.index+' · '+esc(label(a.status))+'</strong>'+
+  (a.changed_paths.length?'<small>Changed: '+esc(a.changed_paths.join(', '))+'</small>':'')+
+  (a.rationale?'<p>What changed and why: '+esc(a.rationale)+'</p>':'')+
+  (a.why_different?'<p>Why this differs from the previous attempt: '+esc(a.why_different)+'</p>':'')+
+  (a.diagnostics?'<p>'+esc(a.diagnostics)+'</p>':'')+'</li>').join('');
+ const current=execution.currentCommand?'<div class="execution-current"><strong>Current command · '+esc(label(execution.currentCommand.status))+'</strong>'+since(execution.currentCommand.startedAt,execution.currentCommand.finishedAt)+
+  (execution.currentCommand.source?'<small>'+esc(execution.currentCommand.source)+'</small>':'')+
+  (execution.currentCommand.argv.length?'<code>'+esc(JSON.stringify(execution.currentCommand.argv))+'</code>':'')+
+  (execution.currentCommand.errorCategory?'<small>Error category: '+esc(execution.currentCommand.errorCategory)+'</small>':'')+
+  (execution.currentCommand.evidence?'<p>'+esc(execution.currentCommand.evidence)+'</p>':'')+
+  (execution.currentCommand.log?'<details><summary>Current log</summary><pre>'+esc(execution.currentCommand.log)+'</pre></details>':'')+'</div>':'';
+ const final=execution.finalValidation?'<p class="execution-final">Final regression: <strong>'+esc(label(typeof execution.finalValidation==='string'?execution.finalValidation:execution.finalValidation.status))+'</strong>'+ (typeof execution.finalValidation==='object'&&execution.finalValidation.summary?' · '+esc(execution.finalValidation.summary):'')+'</p>':'';
+ const commands=execution.commands.length?'<details class="execution-section"><summary>Commands ('+execution.commands.length+')</summary><ol>'+execution.commands.map(command).join('')+'</ol></details>':'';
+ const attemptRows=attempts?'<details class="execution-section" open><summary>Repair attempts ('+execution.attempts.length+')</summary><ol>'+attempts+'</ol></details>':'';
+ const history=execution.history.length?'<details class="execution-section"><summary>Diagnostic history ('+execution.history.length+')</summary><ol>'+execution.history.map(h=>'<li><time>'+esc(h.at?new Date(h.at).toLocaleTimeString():'')+'</time> <strong>'+esc(h.stage)+' · '+esc(label(h.status))+'</strong>'+ (h.message?'<p>'+esc(h.message)+'</p>':'')+'</li>').join('')+'</ol></details>':'';
+ const evidence=execution.evidence?'<p class="execution-evidence">'+esc(execution.evidence)+'</p>':'';
+ const stageLabel=({dependencies:'Preparing dependencies',candidate:'Testing candidate',repair:'Diagnosing and repairing',final:'Final regression',complete:'Validation complete'})[execution.stage]||execution.stage||'Repair';
+ return '<section class="execution-diagnostics" aria-label="Execution diagnostics"><strong>Execution · '+esc(stageLabel)+' · '+esc(label(execution.status))+'</strong>'+since(execution.startedAt,execution.finishedAt)+
+  (execution.attempt?'<p>Candidate attempt '+execution.attempt+'</p>':'')+
+  (execution.errorCategory?'<p>Error category: '+esc(execution.errorCategory)+'</p>':'')+evidence+current+final+attemptRows+commands+history+'</section>';
+}
 // Structured snapshots are preferred; legacy checklist comments remain readable after an app upgrade.
 function renderExecutionActivity(m,job,i=-1){
  const now=Date.now(),legacy=KappaJobs.progressSteps(m.text),p=job.progress||{
@@ -156,7 +186,7 @@ function renderExecutionActivity(m,job,i=-1){
  const doneSteps=shown.filter(r=>r.status==='completed').length+validation.filter(r=>r.state==='done').length,allSteps=shown.length+validation.length;
  const clockSince=ended?'':p.startedAt?new Date(p.startedAt).toISOString():new Date(job.queuedAt||now).toISOString();
  const clock='<time class="task-clock"'+(clockSince?' data-since="'+clockSince+'"':'')+' aria-label="'+(status==='waiting'?'Waiting time':p.startedAt?'Working time':'Queued time')+'">'+esc(duration(p.startedAt?times.activeMs:times.queuedMs))+'</time>';
- return '<section class="agent-activity'+(failed?' failed':ended?' finished'+(status==='cancelled'||status==='closed'?' stopped':''):status==='testing'||validation.some(r=>r.state==='current')?' testing':'')+(stale||unavailable||reminder?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary>'+heroRing(doneSteps,allSteps)+'<span class="activity-pulse" aria-hidden="true"></span><span class="activity-tag" role="status">'+esc(recoveryDisplay?.label||labels[status]||'IN PROGRESS')+'</span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="task-sub">Task #'+esc(id)+(allSteps?' · '+doneSteps+' of '+allSteps+' steps':'')+'</span>'+clock+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+checks+'</ol>'+bar+fresh+'</details>'+findingsCard(findings)+
+ return '<section class="agent-activity'+(failed?' failed':ended?' finished'+(status==='cancelled'||status==='closed'?' stopped':''):status==='testing'||validation.some(r=>r.state==='current')?' testing':'')+(stale||unavailable||reminder?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary>'+heroRing(doneSteps,allSteps)+'<span class="activity-pulse" aria-hidden="true"></span><span class="activity-tag" role="status">'+esc(recoveryDisplay?.label||labels[status]||'IN PROGRESS')+'</span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="task-sub">Task #'+esc(id)+(allSteps?' · '+doneSteps+' of '+allSteps+' steps':'')+'</span>'+clock+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+checks+'</ol>'+bar+executionDiagnostics(p.execution,now)+fresh+'</details>'+findingsCard(findings)+
   (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
   (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+actions+
   activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'),id)+'</section>';

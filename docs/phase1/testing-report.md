@@ -95,7 +95,7 @@ report retains the candidate diff, bounded logs and repair history without publi
 
 | Check | Measured result |
 | --- | --- |
-| `py -3.12 -m unittest discover -s tests -q` | 782 passed, 12 skipped |
+| `py -3.12 -m unittest discover -s tests -q` | 782 tests ran, OK with 12 skipped |
 | `npm test` | 835 passed |
 | `py -3.12 scripts/dependency-map.py --check` | Passed |
 | `git diff --check` | Passed |
@@ -120,3 +120,35 @@ rerun passed both suites.
   executes it and confirms both Python and Node suites pass after the scripted repair.
 - Networkless container execution and secret isolation for the Step 4 controller; these rely on the real-container
   Step 2 checks above plus the Step 4 CI acceptance run.
+
+## Steps 5 and 6: durable recovery and execution diagnostics
+
+The recovery journal now references exact uncommitted patches and generation-stage checkpoints. Resuming checks the
+authorized task, original base/tree, workspace fingerprint and execution contract, then reuses completed stage and
+command receipts. Separate final-regression results remain required. Existing task cards render the backend's real
+command timestamps, outcomes, repair evidence and sanitized bounded history. See
+[checkpoint and diagnostic behavior](checkpoints-and-diagnostics.md) for storage limits and recovery boundaries.
+
+### Ran locally (Windows, Python 3.12 with UTF-8 mode)
+
+| Check | Measured result |
+| --- | --- |
+| `py -3.12 -m unittest discover -s tests -q` | 807 tests ran, OK with 13 skipped |
+| `npm test` | 840 passed |
+| `py -3.12 scripts/dependency-map.py --check` and `git diff --check` | Passed |
+| New failure-injection tests | Real Journal and Session with recording Docker: provider outage, partial suites, completed-validation reuse, changed base/task/tree, corrupt/untrusted fragments, secret redaction/rejection, private storage guard, usage counters, publication receipt/head checks and saved generation plan |
+| Generation-stage recovery tests | Completed stages and no-edit stages resume without another model call; changed plans and generated secrets are rejected |
+| Backend-to-UI contract | Python emits real Progress/controller snapshots; Node normalizes and renders command timing, measured counts, attempt status and final validation |
+| Workflow interruption finalizer | Node executes the actual finalizer script; interrupted command timers freeze and final validation becomes blocked |
+
+The first local full Python invocation used Windows' legacy default text encoding and failed while reading existing
+UTF-8 sources. UTF-8 mode corrected the environment. Intermediate test failures from simplified GitHub fixtures were
+fixed by recording branch movement and PR heads in those fixtures; publication guards were retained.
+
+### Pending CI / inspected only
+
+- The added real-Docker restart acceptance repairs the faulty Python/Node fixture after an injected provider outage.
+  It is skipped locally and will execute in the PR's sandbox self-test workflow.
+- Live provider quota exhaustion, real runner termination and GitHub mutation outages are failure-injected locally;
+  no live inference or production task dispatch was used to implement these steps.
+- The browser/iOS shared JavaScript renderer and escaping are automated; native iOS simulator screenshots were not run locally.

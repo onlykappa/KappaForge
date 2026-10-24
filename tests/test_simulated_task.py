@@ -59,13 +59,22 @@ class World:
         self.comments, self.edits, self.prs, self.dispatches, self.writes = [], [], [], [], []
         self.asked = []  # (model, kind of prompt)
         self.stage1_bad = 0
+        self.refs = {}
 
     # ---- GitHub -------------------------------------------------------------------------------------------
     def gh(self, path, token, payload=None, method=None):
         if payload is not None:
             self.writes.append((path, payload))
         if path.endswith("/git/ref/heads/kappa/dev-777"):
+            if 'kappa/dev-777' in self.refs:
+                return {'object': {'sha': self.refs['kappa/dev-777']}}
             raise urllib.error.HTTPError(path, 404, "missing", {}, None)
+        if path.endswith('/git/refs') and payload:
+            self.refs[payload['ref'].removeprefix('refs/heads/')] = payload['sha']
+            return {}
+        if '/git/refs/heads/' in path and payload:
+            self.refs[path.split('/git/refs/heads/')[1]] = payload['sha']
+            return {}
         if path == f"repos/{REPO}":
             return {"default_branch": "main", "private": False}
         if path == f"repos/{REPO}/git/ref/heads/main":
@@ -87,7 +96,8 @@ class World:
             return {}
         if path == f"repos/{REPO}/pulls":
             self.prs.append(payload)
-            return {"html_url": f"https://github.com/{REPO}/pull/900", "number": 900}
+            return {"html_url": f"https://github.com/{REPO}/pull/900", "number": 900,
+                    'head': {'sha': self.refs['kappa/dev-777'], 'ref': 'kappa/dev-777', 'repo': {'full_name': REPO}}}
         if path == f"repos/{REPO}/pulls/900" and method == "PATCH":
             self.prs[-1].update(payload)
             return {"html_url": f"https://github.com/{REPO}/pull/900", "number": 900}

@@ -24,6 +24,7 @@ MAX_CONTINUATIONS = 3
 # long task keeps going across rate limits. maxWaitSeconds and the authorization expiry still bound the total wait.
 MAX_QUOTA_RESUMES = 12
 QUOTA_KINDS = ('rate_limit', 'provider_outage')
+WAIT_KINDS = QUOTA_KINDS + ('infrastructure',)
 RECOVERY_SCAN_SECONDS = 300
 MAX_EVENTS = 40
 # GitHub comment content has a 65,536-character ceiling; UTF-8 bytes are
@@ -76,16 +77,16 @@ def notify_wake(task):
 
 
 def clean(value, size=700):
-    value = str(value)
-    for name, secret in os.environ.items():
-        if len(secret) >= 8 and re.search(r'TOKEN|SECRET|PASSWORD|API_KEY', name, re.I):
-            value = value.replace(secret, '[redacted]')
+    from engine.sandbox import redact
+    value = redact(str(value))
     return value[:size].encode('utf-8', 'backslashreplace').decode('utf-8')
 
 
 def diagnose(error):
     """Deterministic failure class and a different, relevant next strategy."""
     from engine.reliability import RecoveryBudgetExceeded, ProviderResponseError
+    if getattr(error, 'category', '') == 'execution_infrastructure':
+        return 'infrastructure', 'wait_for_infrastructure'
     if isinstance(error, RecoveryBudgetExceeded):
         return 'recovery_budget', 'stop' if error.terminal else 'checkpoint_and_continue'
     if isinstance(error, ProviderResponseError):
@@ -457,7 +458,7 @@ class Journal:
     def resumes_left(self, kind):
         """Automatic continuations still available for a failure of this kind."""
         quota = self.state.get('quotaResumes', 0)
-        if kind in QUOTA_KINDS:
+        if kind in WAIT_KINDS:
             return MAX_QUOTA_RESUMES - quota
         return MAX_CONTINUATIONS - (self.state['continuations'] - quota)
 
@@ -500,7 +501,7 @@ class Journal:
         availability = self.state.get('routingAvailability', {})
         # Only a real provider limit is a cooldown. Other failures (a rejected proposal, a timeout of this run)
         # continue on the next recovery scan with other free models; there is nothing to wait out.
-        provider_limit = kind in QUOTA_KINDS or bool(getattr(error, 'retry_at', 0))
+        provider_limit = kind in WAIT_KINDS or bool(getattr(error, 'retry_at', 0))
         known_reset = max(getattr(error, 'retry_at', 0), availability.get('retryAt', 0))
         # Nothing to wait out without a provider limit: continue at once. With one, resume just after the provider's
         # own reset time; only an unknown reset falls back to a short minute.
@@ -516,7 +517,7 @@ class Journal:
                     self.publish('blocked', notice)
             return False
         self.state['nextAt'] = due
-        self.state['quotaWait'] = kind in QUOTA_KINDS
+        self.state['quotaWait'] = kind in WAIT_KINDS
         self.state['waitReason'] = ('retry' if getattr(error, 'gateway_failure', False)
                                     and max(getattr(error, 'retry_at', 0), availability.get('retryAt', 0)) <= now
                                     else 'cooldown' if provider_limit else 'continue')
@@ -548,6 +549,15 @@ class Journal:
                                     startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
                         recovery=dict(executionState='dispatch_requested' if self.state['status']=='dispatching' else execution, lastTransitionAt=at, scanIntervalSeconds=RECOVERY_SCAN_SECONDS, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
                                       continuations=self.state['continuations'], expiresAt=int(self.scope.expires * 1000), last=last))
+        if self.state.get('executionDiagnostics'):
+            from engine.execution import sanitized
+            diagnostic = copy.deepcopy(self.state['executionDiagnostics'])
+            if status in ('waiting', 'queued', 'blocked', 'failed'):
+                diagnostic.update(status='blocked', finishedAt=at, errorCategory=last.get('kind', 'interruption'),
+                                  evidence=last.get('error', message))
+                if (diagnostic.get('currentCommand') or {}).get('status') == 'running':
+                    diagnostic['currentCommand'].update(status='blocked', finishedAt=at)
+            snapshot['execution'] = sanitized(diagnostic)
         wire = json.dumps(snapshot, ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
         self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',
                    {'body': '### KappaForge is working on it\n\n<!-- KAPPA_PROGRESS_V1 ' + wire + ' -->\n' + message}, 'POST')
@@ -623,6 +633,12 @@ class Journal:
         if self.state['files']:
             branch = f"kappa/dev-{self.scope.number}"
             head = self.target_read(f'repos/{self.scope.repo}/git/ref/heads/{branch}')['object']['sha']
+            receipt = self.state.get('executionPublication', {})
+            if head != self.state['candidate'] and receipt.get('sha') == head and receipt.get('branch') == branch:
+                commit = self.target_read(f'repos/{self.scope.repo}/git/commits/{head}')
+                if [p.get('sha') for p in commit.get('parents', [])] != [self.state['candidate']]:
+                    raise PermissionError('Saved publication commit has a different parent; recovery stopped')
+                self.state.update(candidate=head, phase='publication')
             if head != self.state['candidate'] and not self.adopt_reviewed_commits(head):
                 self.event('Candidate branch moved since the checkpoint; concurrent work is preserved', outcome='blocked', strategy='stop')
                 self.publish('blocked', 'Candidate changed. Review newer work before resuming.')

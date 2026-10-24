@@ -9,6 +9,18 @@ test('snapshots validate identity, step identities, lifecycle and measured units
  assert.equal(snapshot({units:{done:3,total:2}}).units,null);
  assert.deepEqual(snapshot({units:{done:2,total:3,label:'tests'}}).units,{done:2,total:3,label:'tests'});
 });
+test('execution diagnostics normalize bounded commands, attempts, timestamps and regression state',()=>{
+ const long='x'.repeat(6000),p=snapshot({execution:{stage:'repair',status:'running',startedAt:1000,updatedAt:2000,attempt:2,
+  currentCommand:{argv:['python','-m','unittest'],source:'final regression',status:'running',startedAt:1500,evidence:long,log:long,counts:{ran:2,failures:0,errors:0,skipped:0}},
+  commands:Array.from({length:60},(_,i)=>({source:'check '+i,status:'passed',log:long})),
+  attempts:[{index:2,changed_paths:['src/app.py'],rationale:'Fix edge case',why_different:'Prior patch changed the wrong branch',status:'failed',diagnostics:long}],
+  finalValidation:'pending',errorCategory:'assertion',evidence:long,history:Array.from({length:60},(_,i)=>({at:1000+i,stage:'test',status:'failed',message:long}))}});
+ assert.equal(p.execution.currentCommand.log.length,4000);assert.equal(p.execution.currentCommand.evidence.length,1000);
+ assert.equal(p.execution.commands.length,50);assert.equal(p.execution.attempts.length,1);assert.equal(p.execution.history.length,50);
+ assert.equal(p.execution.finalValidation,'pending');assert.equal(p.execution.attempts[0].why_different,'Prior patch changed the wrong branch');
+ assert.equal(snapshot({execution:{status:'impossible'}}).execution.status,'blocked');
+ assert.equal(snapshot({execution:null}).execution,null);
+});
 test('duplicate and delayed revisions cannot roll progress backwards',()=>{
  const current=snapshot({revision:3});
  for(const next of [snapshot(),snapshot({revision:3}),snapshot({attemptAt:900,revision:4}),snapshot({updatedAt:1500,revision:4})])assert.equal(P.reconcile(current,next),current);

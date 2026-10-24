@@ -217,6 +217,13 @@ body.sheet-open{overflow:hidden}
 .task-card .task-progress-head strong{font-size:var(--t-sub);color:var(--text)}
 .task-card .task-progress-icon{color:var(--label-2)}
 .task-card .task-progress-row small,.task-card .task-progress-card>small{font-size:var(--t-foot);color:var(--label-2)}
+.execution-diagnostics{margin-top:10px;padding-top:10px;border-top:.5px solid var(--sep);font-size:var(--t-foot);color:var(--label-2)}
+.execution-diagnostics>strong,.execution-command>strong,.execution-attempt>strong,.execution-current>strong{display:block;color:var(--text);font-size:var(--t-sub)}
+.execution-current,.execution-section,.execution-final{margin-top:8px}
+.execution-current code,.execution-command code{display:block;overflow-wrap:anywhere;white-space:pre-wrap;margin-top:4px;color:var(--text)}
+.execution-diagnostics ol{margin:6px 0;padding-left:20px}.execution-diagnostics li{margin:6px 0}
+.execution-diagnostics p{margin:4px 0;overflow-wrap:anywhere}.execution-diagnostics pre{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:8px;border-radius:8px;background:var(--cell-2);color:var(--text)}
+.execution-diagnostics details>summary{cursor:pointer;color:var(--text)}
 .task-result-link{display:inline-flex!important;align-items:center;gap:6px;align-self:flex-start;min-height:36px!important;padding:0 14px;border-radius:18px;background:var(--accent-fill);color:var(--on-accent)!important;font-size:var(--t-sub)!important;font-weight:600;text-decoration:none!important}
 /* The native composer copies this size; Body (1rem) follows Dynamic Type. */
 @media(max-width:840px){.compose-inner textarea{font-size:1rem;line-height:1.35}}

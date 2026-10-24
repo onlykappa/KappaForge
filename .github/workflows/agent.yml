@@ -213,6 +213,14 @@ jobs:
             state.updatedAt = now;
             state.finishedAt = recoveryPending ? 0 : now;
             state.revision = Number(state.revision || 0) + 1;
+            if (state.execution && typeof state.execution === 'object') {
+              state.execution = {...state.execution, status: 'blocked', updatedAt: now, finishedAt: now,
+                errorCategory: 'interruption', evidence: 'Workflow stopped before the current execution stage finished'};
+              if (['pending','running'].includes(state.execution.finalValidation)) state.execution.finalValidation = 'blocked';
+              if (state.execution.currentCommand?.status === 'running')
+                state.execution.currentCommand = {...state.execution.currentCommand, status: 'blocked', finishedAt: now,
+                  errorCategory: 'interruption', evidence: 'Command completion was not observed; recovery must verify the saved workspace'};
+            }
             state.steps = (state.steps || []).filter(s => s.status !== 'queued').map(s =>
               ['running','recovering'].includes(s.status) ? {...s, status: recoveryPending ? 'waiting' : 'failed', finishedAt: recoveryPending ? 0 : now, detail: recoveryPending ? 'Progress saved; automatic recovery queue will resume this task' : 'Workflow stopped before completion'} : s);
             state.activity = [...(state.activity || []), {kind: recoveryPending ? 'fix' : 'error', at: now, text: recoveryPending ? 'Progress saved; waiting for automatic continuation' : 'Workflow stopped; saved draft stages remain available. Use Fix it on an existing draft.'}].slice(-60);

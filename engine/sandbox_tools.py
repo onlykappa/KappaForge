@@ -151,6 +151,10 @@ class SandboxTools:
         m_skip_tap = re.search(r"# skipped (\d+)", output)
         if m_skip_tap:
             counts["skipped"] = int(m_skip_tap.group(1))
+        saved_counts = getattr(result, 'test_counts', {})
+        if (isinstance(saved_counts, dict) and set(saved_counts) == set(counts)
+                and all(type(value) is int and value >= 0 for value in saved_counts.values())):
+            counts = dict(saved_counts)  # Measured before bounded checkpoint logs were clipped.
         # Collect failing test names (simple heuristic)
         failing: List[str] = []
         for line in output.splitlines():

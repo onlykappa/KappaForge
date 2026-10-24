@@ -13,8 +13,9 @@ class RealSourceExcerptReviewTests(unittest.TestCase):
         self.assertLessEqual(len(shown['text']), 3000)
         self.assertIn('run_sandbox_repair(', shown['text'])
         produce = inspect.getsource(developer.produce_development_pr)
-        self.assertLess(produce.index('run_sandbox_repair('), produce.index('commit_changes('))
-        self.assertLess(produce.index('run_sandbox_repair('), produce.index('pulls', produce.index('commit_changes(')))
+        self.assertLess(produce.index('run_sandbox_repair('), produce.index('publish_candidate('))
+        self.assertLess(produce.index('run_sandbox_repair('), produce.index('pulls', produce.index('publish_candidate(')))
+        self.assertIn('commit_changes(', inspect.getsource(developer.publish_candidate))
 
     def test_natural_language_clues_prioritize_rare_symbols_over_common_words(self):
         source = '# source tests review\n' * 400 + 'def unusual_boundary():\n    publish_before_tests()\n' + '# tail\n' * 200

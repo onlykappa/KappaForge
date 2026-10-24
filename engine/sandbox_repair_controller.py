@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-from . import sandbox, sandbox_tools, tool_loop
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery
 
 
 MAX_ATTEMPTS = 5
@@ -31,167 +31,138 @@ def _failure_key(results):
 class SandboxRepairController:
     """Keep every proposed edit uncommitted until the full sandbox regression passes."""
 
-    def __init__(self, session: sandbox.Session):
+    def __init__(self, session: sandbox.Session, journal=None, context=None, progress=None):
         self.session = session
         self.tools = sandbox_tools.SandboxTools(session)
+        self.journal, self.context, self.progress = journal, context, progress
+        self.execution = None
         self.attempts = []
         self.models = []
 
     def run_repair(self, task_description, run_model, api_key, initial_changes=None, allowed=None):
-        seen_patches = set()
-        seen_errors = set()
-        history = []
-        last_action_key, repeated_action_count = None, 0
-        invalid_reply_streak = 0
-        last_diff = ""
-        last_summary = ""
-        status = "failed"
-        stop_reason = "attempt_limit"
+        self.state = dict(phase="candidate", attempts=[], models=[], seen_patches=[], seen_errors=[], history=[],
+                          actions=0, invalid=0, repeated=0, action_key=None, fingerprint="", last_diff="",
+                          last_summary="", rationale="Generated candidate; first sandbox test run")
         try:
-            if initial_changes:
+            # Reconstruct only after checking the stored authority and exact base tree.
+            if not execution.pending(self.journal) and initial_changes:
                 self.session.apply(initial_changes)
+            self.execution = execution.Execution(self.session, task_description, self.state, self.journal,
+                                                  self.context, self.progress)
+            self.attempts, self.models = self.state["attempts"], self.state["models"]
+            if self.state["phase"] == "complete":
+                return self._result(self.state["status"], self.state["stop_reason"], self.state["last_summary"],
+                                    self.state["last_diff"], self.state.get("test_results"))
             if self.session.test_definition_changed():
                 return self._result("failed", "test_definition_changed", "Candidate changes the test command")
-
+            self.execution.transition("dependencies", message="Restore isolated dependencies; previous runner volumes cannot be reused")
             installs = self.session.install()
             bad_installs = [item for item in installs if not item.ok and item.status != "skipped"]
             if bad_installs:
-                stop_reason = "unavailable" if any(item.status == "error" for item in bad_installs) else "install_failed"
-                return self._result("unavailable" if stop_reason == "unavailable" else "failed", stop_reason,
+                unavailable = any(item.status == "error" for item in bad_installs)
+                return self._result("unavailable" if unavailable else "failed", "unavailable" if unavailable else "install_failed",
                                     self._format_runs(bad_installs))
 
-            # Validate the generated candidate before asking a model to repair anything.
-            test_result = self.tools.run_tests()
-            if test_result.get("status") == "unavailable":
-                return self._result("unavailable", "unavailable", test_result.get("error", "Sandbox unavailable"))
-            if not self._has_discovered_tests(test_result):
-                return self._result("failed", "no_tests_discovered", "The sandbox found no runnable tests")
-            if self._only_skipped_tests(test_result):
-                return self._result("failed", "no_tests_passed", "Every discovered test was skipped")
-            fingerprint = self._diff_fingerprint()
-            if fingerprint:
-                seen_patches.add(fingerprint)
-                self._record_attempt(fingerprint, test_result, "Generated candidate; first sandbox test run",
-                                     "Initial generated candidate")
-            if self._verified(test_result):
-                return self._final_regression("initial candidate passed", self.tools.inspect_diff().get("diff", ""))
-
-            last_diff = self.tools.inspect_diff().get("diff", "")
-            last_summary = self._diagnostics(test_result)
-            error_key = _failure_key(test_result.get("results", []))
-            if error_key:
-                seen_errors.add(error_key)
-
-            for action_number in range(MAX_MODEL_ACTIONS):
-                if len(self.attempts) >= MAX_ATTEMPTS:
-                    stop_reason = "attempt_limit"
-                    break
-                prompt_task = self._repair_prompt(task_description, last_diff, last_summary, history)
-                response = tool_loop.run_tool_loop(run_model, api_key, prompt_task, self.tools,
-                                                   max_steps=1, allowed=allowed)
-                if response.get("models"):
-                    self.models.extend(response["models"])
-                    history.append("Model route: " + ", ".join(str(item) for item in response["models"]))
-                if response.get("stop_reason") == "unavailable":
-                    stop_reason = "unavailable"
-                    break
-                if response.get("stop_reason") == "invalid_limit":
-                    stop_reason = "invalid_limit"
-                    break
-                if response.get("stop_reason") == "done":
-                    last_summary = response.get("summary", "")[:2000]
+            while True:
+                phase = self.state["phase"]
+                self.execution.transition(phase)
+                if phase in ("candidate", "final"):
                     test_result = self.tools.run_tests()
-                    if self._verified(test_result):
-                        return self._final_regression(last_summary, last_diff)
+                    if self.execution.error:
+                        raise self.execution.error
                     if test_result.get("status") == "unavailable":
-                        stop_reason = "unavailable"
-                        break
+                        return self._result("unavailable", "unavailable", test_result.get("error", "Sandbox unavailable"))
+                    if any(row.get("status") == "error" for row in test_result.get("results", [])):
+                        return self._result("unavailable", "unavailable", self._diagnostics(test_result))
                     if not self._has_discovered_tests(test_result):
-                        return self._result("failed", "no_tests_discovered", "The sandbox found no runnable tests", last_diff)
+                        return self._result("failed", "no_tests_discovered", "The sandbox found no runnable tests")
                     if self._only_skipped_tests(test_result):
-                        return self._result("failed", "no_tests_passed", "Every discovered test was skipped", last_diff)
-                    last_summary = self._diagnostics(test_result)
-                    stop_reason = "model_done_with_failures"
+                        return self._result("failed", "no_tests_passed", "Every discovered test was skipped")
+                    self.state["last_diff"] = self.tools.inspect_diff().get("diff", "")
+                    self.state["last_summary"] = self._diagnostics(test_result)
+                    if phase == "final":
+                        return self._result("success" if self._verified(test_result) else "failed",
+                                            "validated" if self._verified(test_result) else "final_regression_failed",
+                                            "sandbox repair passed final regression" if self._verified(test_result)
+                                            else self.state["last_summary"], self.state["last_diff"],
+                                            test_results=test_result.get("results", []))
+                    fingerprint = self._diff_fingerprint()
+                    if fingerprint and fingerprint != self.state["fingerprint"]:
+                        if fingerprint in self.state["seen_patches"]:
+                            return self._result("failed", "repeated_patch")
+                        if len(self.attempts) >= MAX_ATTEMPTS:
+                            return self._result("failed", "attempt_limit")
+                        self.state["seen_patches"].append(fingerprint)
+                        why = ("Initial generated candidate" if not self.attempts and self.state["actions"] == 0 else
+                               "First repair candidate differs from the failing base state (fingerprint " + fingerprint[:12] + ")"
+                               if not self.attempts else "Different patch fingerprint " + fingerprint[:12])
+                        self._record_attempt(fingerprint, test_result, self.state["rationale"], why)
+                    self.state["fingerprint"] = fingerprint
+                    if self._verified(test_result):
+                        self.state["phase"] = "final"
+                        self.execution._save()
+                        continue
+                    error_key = _failure_key(test_result.get("results", []))
+                    if error_key and error_key in self.state["seen_errors"]:
+                        return self._result("failed", "identical_error")
+                    if error_key:
+                        self.state["seen_errors"].append(error_key)
+                    self.state["phase"] = "repair"
+                    self.execution._save()
                     continue
 
+                if len(self.attempts) >= MAX_ATTEMPTS:
+                    return self._result("failed", "attempt_limit")
+                if self.state["actions"] >= MAX_MODEL_ACTIONS:
+                    return self._result("failed", "action_limit")
+                self.state["actions"] += 1
+                self.execution._save()  # An interrupted model request cannot reset its action budget.
+                prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
+                                                  self.state["last_summary"], self.state["history"])
+                response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
+                                                   self.tools, max_steps=1, allowed=allowed)
+                if self.execution.error:
+                    raise self.execution.error
+                self.models.extend(response.get("models", []))
+                if response.get("stop_reason") == "unavailable":
+                    return self._result("unavailable", "unavailable", "Sandbox tool unavailable")
+                if response.get("stop_reason") == "done":
+                    self.state["phase"] = "candidate"
+                    # A model saying done is evidence to recheck, never a pass receipt.
+                    self.state["history"].append("Model said done: " + str(response.get("summary", ""))[:1000])
+                    self.execution._save()
+                    continue
                 steps = response.get("steps") or []
                 if not steps:
-                    history.append("No sandbox action was returned.")
+                    self.execution._save()
                     continue
                 step = steps[-1]
                 observed = step.get("result") or {}
-                if step.get("tool") is None:
-                    invalid_reply_streak += 1
-                    if invalid_reply_streak >= 3:
-                        stop_reason = "invalid_limit"
-                        break
-                else:
-                    invalid_reply_streak = 0
-                action_key = (step.get("tool"), json.dumps(step.get("args"), sort_keys=True, ensure_ascii=False),
-                              observed.get("status"))
-                repeated_action_count = repeated_action_count + 1 if action_key == last_action_key else 1
-                last_action_key = action_key
-                history.append(json.dumps({"tool": step.get("tool"), "args": step.get("args"),
-                                           "reason": step.get("reason"), "result": observed},
-                                          sort_keys=True, ensure_ascii=False)[:3000])
-                if observed.get("status") == "unavailable":
-                    stop_reason = "unavailable"
-                    break
-                if repeated_action_count >= 3:
-                    stop_reason = "repeated_tool_call"
-                    break
-
-                new_fingerprint = self._diff_fingerprint()
-                if new_fingerprint and new_fingerprint != fingerprint:
-                    if new_fingerprint in seen_patches:
-                        stop_reason = "repeated_patch"
-                        break
-                    fingerprint = new_fingerprint
-                    seen_patches.add(fingerprint)
-                    last_diff = self.tools.inspect_diff().get("diff", "")
-                    test_result = self.tools.run_tests()
-                    if test_result.get("status") == "unavailable":
-                        stop_reason = "unavailable"
-                        break
-                    if not self._has_discovered_tests(test_result):
-                        return self._result("failed", "no_tests_discovered", "The sandbox found no runnable tests", last_diff)
-                    if self._only_skipped_tests(test_result):
-                        return self._result("failed", "no_tests_passed", "Every discovered test was skipped", last_diff)
-                    rationale = str(step.get("reason") or "No model rationale supplied")[:1000]
-                    why = ("First repair candidate differs from the failing base state (fingerprint " + fingerprint[:12]
-                           + "); rationale: " + rationale if not self.attempts else
-                           "Different patch fingerprint " + fingerprint[:12] + "; rationale: " + rationale)
-                    self._record_attempt(fingerprint, test_result, rationale, why)
-                    last_summary = self._diagnostics(test_result)
-                    error_key = _failure_key(test_result.get("results", []))
-                    if self._verified(test_result):
-                        return self._final_regression("sandbox repair passed", last_diff)
-                    if error_key and error_key in seen_errors:
-                        stop_reason = "identical_error"
-                        break
-                    if error_key:
-                        seen_errors.add(error_key)
-                elif response.get("stop_reason") == "repeated":
-                    stop_reason = "repeated_tool_call"
-                    break
-            else:
-                stop_reason = "action_limit"
-
-            return self._result("failed", stop_reason, last_summary, last_diff)
+                self.state["invalid"] = self.state["invalid"] + 1 if step.get("tool") is None else 0
+                action_key = [step.get("tool"), json.dumps(step.get("args"), sort_keys=True, ensure_ascii=False), observed.get("status")]
+                self.state["repeated"] = self.state["repeated"] + 1 if action_key == self.state["action_key"] else 1
+                self.state["action_key"] = action_key
+                self.state["history"] = (self.state["history"] + [execution.clean(json.dumps(step, ensure_ascii=False), 3000)])[-10:]
+                self.state["rationale"] = execution.clean(step.get("reason") or "No model rationale supplied", 1000)
+                if self.state["invalid"] >= 3:
+                    return self._result("failed", "invalid_limit")
+                if self.state["repeated"] >= 3:
+                    return self._result("failed", "repeated_tool_call")
+                # Session.apply/revert also saves this phase before returning to model code.
+                if self._diff_fingerprint() != self.state["fingerprint"]:
+                    self.state["phase"] = "candidate"
+                self.execution._save()
+        except (execution.CheckpointMismatch, execution.CheckpointUnavailable):
+            raise
         except sandbox.SandboxUnavailable as exc:
-            return self._result("unavailable", "unavailable", str(exc), last_diff)
+            return self._result("unavailable", "unavailable", str(exc))
         except Exception as exc:
-            return self._result("failed", "controller_error", f"{type(exc).__name__}: {exc}", last_diff)
+            if self.journal and self.execution:
+                self.execution.model_failure(exc)
+                raise  # Existing runner/journal policy owns quota, outage and deadline recovery.
+            return self._result("failed", "controller_error", f"{type(exc).__name__}: {exc}")
         finally:
             self.session.close()
-
-    def _final_regression(self, summary, diff):
-        result = self.tools.run_tests()
-        if result.get("status") == "unavailable":
-            return self._result("unavailable", "unavailable", result.get("error", "Sandbox unavailable"), diff)
-        if not self._verified(result):
-            return self._result("failed", "final_regression_failed", self._diagnostics(result), diff)
-        return self._result("success", "validated", summary, diff, test_results=result.get("results", []))
 
     def _verified(self, test_result):
         if test_result.get("status") != "ok" or not test_result.get("passed"):
@@ -234,6 +205,7 @@ class SandboxRepairController:
                               "diff": diff_info.get("diff", "")[:20000],
                               "changed_paths": diff_info.get("changed_paths", []),
                               "why_different": why[:1500], "rationale": rationale[:1000],
+                              "status": "passed" if self._verified(test_result) else "failed",
                               "test_results": test_result.get("results", []),
                               "diagnostics": self._diagnostics(test_result)[:4000]})
 
@@ -264,16 +236,39 @@ class SandboxRepairController:
                             "stderr": run.stderr[-1500:]} for run in runs], ensure_ascii=False)[:LOG_CHARS]
 
     def _result(self, status, stop_reason, summary="", diff="", test_results=None):
+        if self.execution:
+            if not summary:
+                summary = self.state["last_summary"]
+            if not diff:
+                diff = self.tools.inspect_diff().get("diff", "")
+            self.state.update(status=status, stop_reason=stop_reason, last_summary=execution.clean(summary, 2000),
+                              last_diff=execution.clean(diff, 20000), test_results=test_results or [])
+            if status != "unavailable":
+                self.state["phase"] = "complete"
+            self.execution.data["models"] = self.models
+            if stop_reason in ("validated", "final_regression_failed"):
+                self.execution.data["diagnostics"]["finalValidation"] = "passed" if status == "success" else "failed"
+            elif status != "success":
+                self.execution.data["diagnostics"]["finalValidation"] = "blocked"
+            if status != "success":
+                diagnostic = self.execution.data["diagnostics"]
+                diagnostic['errorCategory'] = diagnostic.get('errorCategory') or stop_reason
+                diagnostic['evidence'] = execution.clean(summary, 1000)
+            self.execution.transition("complete" if status != "unavailable" else self.state["phase"],
+                                      "passed" if status == "success" else "blocked" if status == "unavailable" else "failed",
+                                      stop_reason + ": " + str(summary)[:800])
+            if status == "unavailable" and self.journal:
+                raise execution.CheckpointUnavailable(execution.clean(summary, 1000))
         logs = []
         for index, result in enumerate(self.session.results[-10:]):
             logs.append({"index": max(0, len(self.session.results) - 10) + index,
                          "source": result.source, "argv": result.argv, "status": result.status,
                          "reason": result.reason, "stdout": result.stdout[-1500:], "stderr": result.stderr[-1500:]})
-        return {"status": status, "stop_reason": stop_reason, "summary": str(summary)[:2000],
+        return execution.sanitized({"status": status, "stop_reason": stop_reason, "summary": str(summary)[:2000],
                 "attempts": list(self.attempts), "steps": len(self.session.results),
                 "models": list(self.models),
                 "candidate_changes": {path: (None if data is None else data.decode("utf-8", "replace"))
                                       for path, data in self.session.changes.items()},
                 "last_diff": (diff or self.tools.inspect_diff().get("diff", ""))[:20000],
                 "logs": json.dumps(logs, ensure_ascii=False)[-LOG_CHARS:],
-                "test_results": test_results or []}
+                "test_results": test_results or []})

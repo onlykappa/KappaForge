@@ -21,11 +21,12 @@ and documentation are on the branch. Nothing here is merged, deployed or release
 - [x] **4. Test-driven autonomous repair**: generate, apply, test, diagnose, correct, retest; up to five meaningful
       attempts per candidate; repeated-patch, identical-error and loop detection; final regression run; commit and draft
       PR only after validation; honest failure reports that keep the diff and logs.
-- [ ] **5. Persistent checkpoints and recovery**: reuse the recovery journal for the task, base revision, candidate patch,
+- [x] **5. Persistent checkpoints and recovery**: reuse the recovery journal for the task, base revision, candidate patch,
       commands, results, repair history, error fingerprints, provider usage and stage; resume without redoing finished
       steps after verifying the workspace and revision.
-- [ ] **6. Execution diagnostics**: live command, real elapsed time, pass/fail/skip/blocked states, error category and
+- [x] **6. Execution diagnostics**: live command, real elapsed time, pass/fail/skip/blocked states, error category and
       evidence, attempt number and changes, final validation; bounded, sanitized logs in the task history.
+      [Steps 5 and 6 behavior and recovery boundaries](../phase1/checkpoints-and-diagnostics.md).
 - [ ] **7. Cost and resource enforcement**: free-first only; check permissions and free capacity before choosing
       infrastructure; stop with an actionable explanation instead of falling back to unsafe or billable execution.
 - [ ] **8. Tests and acceptance**: automated proof of every Phase 1 acceptance requirement, including a realistic faulty
