@@ -510,6 +510,39 @@ class PrFirstTests(unittest.TestCase):
     """The draft opens with the goal and plan before any code; the code lands on it; it waits for the owner's review."""
     ROOT_ = "repos/onlykappa/KappaForge"
 
+    def test_task_221_stops_after_the_requested_comment_and_uses_the_real_pr_receipt(self):
+        path = '.github/workflows/free-llm-drift.yml'
+        comment = '# Weekly check of the free model list; maintained by KappaForge.'
+        before = 'name: Free LLM list drift\njobs: {}\n'
+        goal = f'Add a single comment line {comment} as the first line of {path}. Open a draft PR for this change and do not merge it.'
+        issue = {**self.issue(), 'title': 'Document workflow', 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + goal}
+        calls, world = self.world()
+        def github(endpoint, token, payload=None, method=None):
+            if endpoint.startswith(self.ROOT_ + '/git/trees/'):
+                return {'tree': [{'path': path, 'type': 'blob', 'size': len(before)},
+                                 {'path': 'tests/existing.py', 'type': 'blob', 'size': 10}]}
+            if endpoint.startswith(self.ROOT_ + '/contents/' + path):
+                import base64
+                return {'encoding': 'base64', 'content': base64.b64encode(before.encode()).decode()}
+            result = world(endpoint, token, payload, method)
+            if endpoint == self.ROOT_ + '/pulls' and payload:
+                result.update(state='open', draft=True, head={'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}})
+            return result
+        answers = [('m', json.dumps({'read': [path], 'stages': ['Add comment']})),
+                   ('m', json.dumps({'files': [{'path': path, 'edits': [{'find': before, 'replace': comment + '\n' + before}]}]})),
+                   ('m', json.dumps({'requirements': [
+                       {'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': comment}},
+                       {'text': 'Open a draft PR for this change and do not merge it.', 'met': False}], 'problems': []}))]
+        with patch.object(developer, 'gh', side_effect=github), patch.object(developer, 'run_model', side_effect=answers) as model, \
+                patch.object(developer, 'push_token', return_value='token'):
+            produce_development_pr(issue, 'key', 'token')
+        self.assertEqual(model.call_count, 3, 'one plan, one edit, one review; no false repair')
+        tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
+        self.assertEqual({entry['path'] for entry in tree_entries}, {path})
+        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
+        self.assertEqual(developer.requirements_open(final), [])
+        self.assertIn('VERIFIED TASK PR:', model.call_args_list[1].args[1])
+
     def world(self, pr_status=201, branch_exists=False, pr_files=()):
         calls = []
         def fake_gh(path, token, payload=None, method=None):

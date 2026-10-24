@@ -15,6 +15,17 @@ class Progress:
 
 
 class ClassifierTests(unittest.TestCase):
+    def test_task_221_referential_change_is_not_a_code_requirement(self):
+        for text in ("Open a draft PR for this change and do not merge it.",
+                     "Open a draft PR for these changes", "Create a pull request with these changes"):
+            self.assertTrue(verify.lifecycle_requirement(text), text)
+            requirement = verify.resolve_lifecycle([{'text': text, 'met': False}],
+                                                   verify.pr_receipt(PR, REPO, BRANCH))[0]
+            self.assertTrue(requirement['met'])
+        for text in ("Open a PR for this change and fix the bug", "Open a PR that changes the workflow",
+                     "Open a PR with changes to the API", "Create a PR for this change and notify users"):
+            self.assertFalse(verify.lifecycle_requirement(text), text)
+
     def test_only_pure_orchestration_asks_are_lifecycle(self):
         for text in ("Open a fresh draft PR", "Keep it as a draft", "Notify me when it is ready for review",
                      "Let me know when done", "Keep the PR in draft", "Create a pull request", "Keep it a draft until I review",

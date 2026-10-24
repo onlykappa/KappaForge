@@ -444,8 +444,9 @@ class PythonTestImports(unittest.TestCase):
     def test_this_repositorys_own_tests_count_as_real(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
-        paths = [p.relative_to(root).as_posix() for folder in ("engine", "tools", "scripts") for p in (root / folder).glob("*.py")]
-        paths += [".github/workflows/sandbox-tests.yml"]
+        # Use the actual tracked-source inventory. A fixed list falsely rejected #221's real workflow reader.
+        import subprocess
+        paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
         # test_test_discovery checks test file names only; it has no repository code to load.
         for test in sorted(t for t in (root / "tests").glob("test_*.py") if t.name != "test_test_discovery.py"):
             name = "tests/" + test.name

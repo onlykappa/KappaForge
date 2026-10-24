@@ -414,6 +414,11 @@ CODE_WORK_RE = re.compile(r"\b(?:fix|add|implement|audit|test|tests|refactor|rem
 def lifecycle_requirement(text):
     """A requirement only KappaForge's own orchestration can satisfy, such as "Open a fresh draft PR"."""
     text = str(text or "")
+    # "for this change" refers to the existing task; it does not ask for another source edit (#221).
+    text = re.sub(r"\b(?:for|with)\s+(?:this\s+change|these\s+changes)\b", "", text, flags=re.I)
+    # Compound lifecycle wording must not absorb a substantive second ask.
+    if re.search(r"\b(?:and|then)\s+(?!do\s+not\s+merge\b|don't\s+merge\b|never\s+merge\b|keep\b|leave\b)", text, re.I):
+        return False
     return bool(LIFECYCLE_ASK_RE.search(text) and LIFECYCLE_OBJECT_RE.search(text) and not CODE_WORK_RE.search(text))
 
 
@@ -454,6 +459,9 @@ def review_prompt(task, diff, paths, context=''):
         "You are reviewing a change another engineer wrote for this task. Be strict: the owner will test it on a phone. "
         "List the task's requirements one entry per distinct ask: every numbered or bulleted item and every sentence that "
         "asks for something is its own entry, never merged into a broad summary like \"Add the feature\". "
+        "The owner goal bounds the work even when they do not say 'change nothing else'. Reject unrelated edits, "
+        "placeholder files and invented requirements. A plan or an earlier review cannot expand the task. "
+        "Comment/documentation edits need exact content verification, not additional behavior or test files. "
         "For EVERY requirement, decide from the current source and diff whether it is fully implemented and actually reachable "
         "at runtime (wired up, called, saved, sent where it is needed), not just mentioned. Also list concrete defects: "
         "code that cannot run, data that is fetched but never used, settings that are not saved, tests that do not test "
