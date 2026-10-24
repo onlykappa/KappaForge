@@ -41,8 +41,15 @@ class Goal:
                     self.record.review = {}
 
     def anchor(self, read):
+        """Read the original target; `read` returns None when it is missing or not text at the base."""
         if self.paths and not self.baseline:
-            self.baseline = {path: read(path) for path in self.paths}
+            baseline = {path: read(path) for path in self.paths}
+            if self.comment is not None and any(text is None for text in baseline.values()):
+                # "Prepend to the original" has no exact result for a file that does not exist yet (or cannot be read
+                # whole): leave it to the ordinary source-reviewed flow, which may create it.
+                self.paths = self.comment = None
+                return
+            self.baseline = baseline
             if any(not isinstance(text, str) for text in self.baseline.values()):
                 raise ValueError('Owner goal: the original target source is unavailable')
 
