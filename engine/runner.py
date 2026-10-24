@@ -759,6 +759,9 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
             platform = gateway.platform_error(body)
             if platform:
                 evidence['platformError'] = platform
+                # Cloudflare 1102: the gateway Worker ran out of CPU/memory on this request. A smaller prompt usually
+                # fits, so generation shrinks its source context and asks again at once instead of stopping the run.
+                failure.shrink_context = platform.get('errorCode') == 1102
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

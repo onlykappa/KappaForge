@@ -13,17 +13,29 @@ async function github(env,path,body){
 export async function recoveryTask(env,task){
  const issue=await github(env,'issues/'+task),body=issue.body||'';
  if(issue.state!=='open'||issue.pull_request||issue.user?.login!=='onlykappa'||!issue.labels?.some(x=>typeof x.name==='string'&&x.name.toLowerCase()==='kappa-task')||!/^Mode:\s*develop\s*$/m.test(body))return null;
- let auth;try{auth=JSON.parse(body.match(/^<!-- kappa-authorization:(\{[^\n]+\}) -->$/m)?.[1])}catch{return null}
- if(!auth||auth.intent!=='execution'||auth.state!=='executing'||!auth.id||!Number.isFinite(auth.expiresAt)||auth.expiresAt<=Date.now()||!/^onlykappa\/[A-Za-z0-9_.-]+$/.test(auth.repo))return null;
- const authStore=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
- const status=await authStore.fetch('https://memory.internal/authorization/status',{method:'POST',body:JSON.stringify({id:auth.id,conversationId:auth.conversationId})});
- if(!status.ok)return null;
- const binding=await status.json();
- if(binding.state==='cancelled'||binding.issueNumber!==task)return null;
+ let auth;
+ // A body that carries a chat authorization record always takes the stricter chat path (record plus bound grant).
+ if(body.includes('Approved from KappaForge Chat.')||/^<!-- kappa-authorization:/m.test(body)){
+  try{auth=JSON.parse(body.match(/^<!-- kappa-authorization:(\{[^\n]+\}) -->$/m)?.[1])}catch{return null}
+  if(!auth||auth.intent!=='execution'||auth.state!=='executing'||!auth.id||!Number.isFinite(auth.expiresAt)||auth.expiresAt<=Date.now()||!/^onlykappa\/[A-Za-z0-9_.-]+$/.test(auth.repo))return null;
+  const authStore=env.MEMORY.get(env.MEMORY.idFromName('owner-v1'));
+  const status=await authStore.fetch('https://memory.internal/authorization/status',{method:'POST',body:JSON.stringify({id:auth.id,conversationId:auth.conversationId})});
+  if(!status.ok)return null;
+  const binding=await status.json();
+  if(binding.state==='cancelled'||binding.issueNumber!==task)return null;
+ }else{
+  // An owner-created GitHub task, exactly as the Python controller authorizes it (intent_guard.TaskScope):
+  // identity github-task:<number>, one repository, valid one day from creation. Closing the issue cancels it.
+  const repos=[...body.matchAll(/^Repository:\s*(onlykappa\/[A-Za-z0-9_.-]+)\s*$/gm)],created=Date.parse(issue.created_at);
+  if(repos.length!==1||!Number.isFinite(created))return null;
+  auth={id:'github-task:'+task,repo:repos[0][1],expiresAt:created+86400000};
+  if(auth.expiresAt<=Date.now())return null;
+ }
  const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))].map(x=>x.toString(16).padStart(2,'0')).join('');
  let journal=null,conflicting=false;
  for(let page=1;page<=10;page++){
   const rows=await github(env,'issues/'+task+'/comments?per_page=100&page='+page);
+  if(!Array.isArray(rows))return conflicting&&!journal?null:{auth,journal};
   for(const row of rows){
    if(row.user?.login!=='github-actions[bot]'||!row.body?.startsWith('### KappaForge recovery checkpoint\n'))continue;
    try{const s=JSON.parse(row.body.match(/<!-- KAPPA_RECOVERY_V1 (.*?) -->/)?.[1]);

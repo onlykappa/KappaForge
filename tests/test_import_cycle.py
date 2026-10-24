@@ -65,3 +65,45 @@ class ImportCycleTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WorkerResourceLimitTests(unittest.TestCase):
+    """Cloudflare 1102 on a large coding prompt shrinks the source context and retries at once."""
+    def test_generation_retries_with_less_context_after_1102(self):
+        from engine import gateway
+        big = 'def main():\n    return 1\n' + ''.join(f'# filler line {n}\n' for n in range(4000))
+        sources = {'app/main.py': big}
+        good = json.dumps({'summary': 's', 'files': [{'path': 'app/main.py', 'reason': 'Return two',
+                           'edits': [{'find': '    return 1', 'replace': '    return 2'}]}]})
+        prompts = []
+
+        def model(key, prompt, **kw):
+            prompts.append(prompt)
+            if len(prompts) == 1:
+                failure = gateway.GatewayUnavailable('Integrated provider gateway failed (HTTP 503, code unreported)')
+                failure.shrink_context = True
+                raise failure
+            return 'm', good
+        handle = recovery.CURRENT.set(None)
+        try:
+            with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), patch.object(developer, 'run_model', side_effect=model), \
+                    patch.object(developer, 'note'):
+                _, _, changes, _ = developer.generate('fixture', 'Return two from main', 'onlykappa/KappaForge', sources,
+                                                      {'app/main.py': len(big)})
+        finally:
+            recovery.CURRENT.reset(handle)
+        self.assertEqual(len(prompts), 2, 'retried once, immediately, in the same attempt')
+        self.assertLess(len(prompts[1]), len(prompts[0]), 'with a smaller source context')
+        self.assertIn('return 2', changes['app/main.py'])
+
+    def test_other_gateway_outages_still_stop_generation(self):
+        from engine import gateway
+        handle = recovery.CURRENT.set(None)
+        try:
+            with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), patch.object(developer, 'note'), \
+                    patch.object(developer, 'run_model', side_effect=gateway.GatewayUnavailable('daily limit')) as model, \
+                    self.assertRaises(gateway.GatewayUnavailable):
+                developer.generate('fixture', 'Return two', 'onlykappa/KappaForge', {'app/main.py': 'x = 1\n'}, {'app/main.py': 6})
+        finally:
+            recovery.CURRENT.reset(handle)
+        self.assertEqual(model.call_count, 1)

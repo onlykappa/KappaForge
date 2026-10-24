@@ -53,6 +53,25 @@ test('an ordinary continuation is scheduled as recovery, never as a provider coo
  }finally{w.restore()}
 });
 
+const githubTask=w=>{
+ w.issue.body='Repository: onlykappa/KappaForge\nMode: develop\nImplement exact original request.';
+ w.issue.created_at=new Date(Date.now()-3600000).toISOString();
+ Object.assign(w.journal,{authorization:'github-task:174',digest:createHash('sha256').update(w.issue.body).digest('hex'),waitReason:'continue'});
+ return w;
+};
+
+test('an owner-created GitHub task wakes on the same terms the engine authorizes it',async()=>{
+ const w=githubTask(fixture());try{
+  const body=await (await w.schedule()).json();assert.equal(body.status,'recovery_requested');
+  w.advance(60001);await w.wake();assert.equal(deliveries(w).length,1,'the trusted scanner is dispatched');
+ }finally{w.restore()}
+ for(const [why,change] of [['expired after one day',w=>{w.issue.created_at=new Date(Date.now()-86400001).toISOString()}],
+   ['not the owner',w=>{w.issue.user={login:'someone-else'}}],['closed means cancelled',w=>{w.issue.state='closed'}],
+   ['ambiguous repository',w=>{w.issue.body+='\nRepository: onlykappa/Other'}],['not a develop task',w=>{w.issue.body=w.issue.body.replace('Mode: develop','Mode: audit')}]]){
+  const w=githubTask(fixture());try{change(w);assert.equal((await w.schedule()).status,409,why);assert.equal(deliveries(w).length,0,why);}finally{w.restore()}
+ }
+});
+
 test('production label casing registers recovery while unrelated labels remain unauthorized',async()=>{
  const w=fixture();try{
   w.issue.labels=[{name:'kappa-Task'}];
