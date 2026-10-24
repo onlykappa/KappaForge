@@ -505,7 +505,52 @@ def excerpt(source, clues, budget=MAX_FILE_CHARS):
     including markers, respects *budget*. Edge cases (non‑positive budget, a single line
     longer than the budget, or no hits) fall back to a safe truncated prefix.
     """
-    import bisect
+    # Simplified relevance‑aware excerpt implementation
+    # Handles budgets, clues, and inserts omission markers.
+    if budget <= 0:
+        return ""
+    if len(source) <= budget:
+        return source
+    # Split source into lines for processing.
+    lines = source.splitlines()
+    clue_list = [c for c in clues.splitlines() if c]
+    if not clue_list:
+        # No clues – return prefix with possible omission marker.
+        prefix = source[:budget]
+        marker = "... omitted ..."
+        if len(source) > budget and len(prefix) + len(marker) <= budget:
+            return prefix + marker
+        return prefix
+    # Find indices of lines containing any clue.
+    matched = [i for i, line in enumerate(lines) if any(clue in line for clue in clue_list)]
+    if not matched:
+        # No matches – fallback to prefix.
+        prefix = source[:budget]
+        marker = "... omitted ..."
+        if len(source) > budget and len(prefix) + len(marker) <= budget:
+            return prefix + marker
+        return prefix
+    # Build excerpt with omission markers between non‑adjacent matched lines.
+    parts = []
+    prev = None
+    for idx in matched:
+        if prev is not None and idx != prev + 1:
+            parts.append("... omitted ...")
+        parts.append(lines[idx])
+        prev = idx
+    result = "\n".join(parts)
+    # Truncate if over budget and add marker.
+    if len(result) > budget:
+        marker = "... omitted ..."
+        if budget >= len(marker):
+            return result[:budget - len(marker)] + marker
+        return result[:budget]
+    # Append trailing omission marker if source not fully included.
+    if len(result) < len(source):
+        marker = "... omitted ..."
+        if len(result) + len(marker) <= budget:
+            result = result + "\n" + marker
+    return result
     # Fast‑path: whole source fits or no budget.
     if budget <= 0:
         return ""
