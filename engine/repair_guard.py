@@ -223,11 +223,37 @@ def owner_quoted(quote, task):
     return isinstance(quote, str) and bool(quote.strip()) and quote_found(quote, task)
 
 
+VERIFIER_ATTEMPTS = 3
+
+
+def review_shape(output, ids):
+    """The verifier's decisions, or ValueError naming what is wrong with the envelope. Never repairs an answer."""
+    decisions = parse(output).get('findings')
+    if (not isinstance(decisions, list) or len(decisions) != len(ids)
+            or any(not isinstance(row, dict) or not isinstance(row.get('id'), str) for row in decisions)
+            or {row['id'] for row in decisions} != ids):
+        raise ValueError('missing_or_foreign_ids')
+    for row in decisions:
+        reason = row.get('reason')
+        if row.get('verdict') not in ('confirmed', 'rejected', 'needs_validation') or type(row.get('in_goal')) is not bool \
+                or not isinstance(reason, str) or not reason.strip():
+            raise ValueError('invalid_verdict_fields')
+    return decisions
+
+
+def invalid_code(error):
+    """A fixed label for an invalid verifier answer; never the answer text."""
+    if isinstance(error, json.JSONDecodeError):
+        return 'malformed_json'
+    text = str(error)
+    return text if text in ('missing_or_foreign_ids', 'invalid_verdict_fields', 'not_an_object') else 'invalid'
+
+
 def parse(output):
     # Strict envelopes: no extraction of a convenient object from arbitrary prose.
     row = json.loads(output)
     if not isinstance(row, dict):
-        raise ValueError('Expected a review object')
+        raise ValueError('not_an_object')
     return row
 
 
@@ -271,20 +297,26 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
     if not gateway.prompt_fits(prompt):
         raise RepairReviewRequired('Finding evidence exceeds the review context budget; no speculative repair was started')
     try:
-        _, output = run_model(api_key, prompt, max_output_tokens=3500, allowed=allowed, json_mode=True)
-        fresh(stamp, sources)
-        decisions = parse(output).get('findings')
-        ids = {row['id'] for row in data['findings']}
-        if (not isinstance(decisions, list) or len(decisions) != len(ids)
-                or any(not isinstance(row, dict) or not isinstance(row.get('id'), str) for row in decisions)
-                or {row['id'] for row in decisions} != ids):
-            raise ValueError('Finding decisions are missing, duplicated or foreign')
+        # A malformed answer is one free model's failure, not a verdict: ask a different free model (the routes that
+        # already answered badly are skipped), up to VERIFIER_ATTEMPTS. Every answer must still pass the full shape check.
+        tried, problems = [], []
+        while True:
+            route, output = run_model(api_key, prompt, max_output_tokens=3500, allowed=allowed, json_mode=True,
+                                      **({'skip': tuple(tried)} if tried else {}))
+            fresh(stamp, sources)
+            try:
+                decisions = review_shape(output, {row['id'] for row in data['findings']})
+                break
+            except ValueError as bad:
+                problems.append(f'{route}: {invalid_code(bad)}')
+                tried.append(route)
+                if len(tried) >= VERIFIER_ATTEMPTS:
+                    raise RepairReviewRequired('Finding verification was invalid from ' + str(len(tried)) + ' free models ('
+                                               + '; '.join(problems) + '); no speculative edits authorized') from bad
         result = []
         shown_claims = {row['id']: row['claim'] for row in data['findings']}
         for row in decisions:
             verdict, reason = row.get('verdict'), row.get('reason')
-            if verdict not in ('confirmed', 'rejected', 'needs_validation') or type(row.get('in_goal')) is not bool or not isinstance(reason, str) or not reason.strip():
-                raise ValueError('Invalid finding verdict')
             # An inexact extra quote is dropped rather than voiding a literal one; at least one must be literal.
             evidence = literal_evidence(row.get('evidence'), data, sources)
             source_proof = bool(evidence)

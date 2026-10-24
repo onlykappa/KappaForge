@@ -194,6 +194,49 @@ class GateDiagnosticsTests(GuardCase):
         self.assertIn('[excerpt]', saved['reason'])
 
 
+class VerifierFallbackTests(GuardCase):
+    """One free model's malformed answer is retried on a different free model, never accepted or treated as a verdict."""
+    SOURCE = {'engine/developer.py': 'def produce_development_pr():\n    ' + PUBLISH_LINE + '\n'}
+
+    def good(self, prompt):
+        return json.dumps({'findings': [dict(id=review_input(prompt)['findings'][0]['id'], verdict='confirmed', in_goal=True,
+                           reason='Publishes before validation', owner_quote=OWNER_QUOTE,
+                           evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)])]})
+
+    def test_a_malformed_answer_is_retried_on_another_free_model(self):
+        calls = []
+
+        def model(key, prompt, **kw):
+            calls.append(kw.get('skip', ()))
+            if len(calls) == 1:
+                return 'ollama:gpt-oss:120b', '{"findings": [{"id": "x", "verdict": "needs validation"}]}'
+            if len(calls) == 2:
+                return 'mistral:codestral-latest', 'not json'
+            return 'nvidia:deepseek-v4.1-flash', self.good(prompt)
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['Plan PR opens before validation'], self.SOURCE)
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+        self.assertEqual(calls, [(), ('ollama:gpt-oss:120b',), ('ollama:gpt-oss:120b', 'mistral:codestral-latest')])
+
+    def test_three_invalid_answers_stop_with_each_route_and_problem_named(self):
+        answers = iter([('ollama:gpt-oss:120b', 'not json'), ('mistral:codestral-latest', '[]'),
+                        ('groq:qwen', '{"findings": [{"id": "foreign", "verdict": "confirmed", "in_goal": true, "reason": "x"}]}')])
+        model = Mock(side_effect=lambda key, prompt, **kw: next(answers))
+        with self.assertRaises(repair_guard.RepairReviewRequired) as stopped:
+            repair_guard.verify_findings(model, 'key', self.goal.request, ['Plan PR opens before validation'], self.SOURCE)
+        message = str(stopped.exception)
+        self.assertIn('invalid from 3 free models', message)
+        for part in ('ollama:gpt-oss:120b: malformed_json', 'mistral:codestral-latest: not_an_object', 'groq:qwen: missing_or_foreign_ids'):
+            self.assertIn(part, message)
+        self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
+        self.assertNotIn('foreign', message.replace('missing_or_foreign_ids', ''), 'answer text is never echoed')
+
+    def test_a_valid_but_unconvinced_answer_is_not_retried(self):
+        model = Mock(side_effect=lambda key, prompt, **kw: ('ollama:gpt-oss:120b', json.dumps({'findings': [dict(
+            id=review_input(prompt)['findings'][0]['id'], verdict='needs_validation', in_goal=True, reason='Omitted code matters')]})))
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['Plan PR opens before validation'], self.SOURCE)
+        self.assertEqual((rows[0]['verdict'], model.call_count), ('needs_validation', 1), 'a verdict is not shopped around')
+
+
 class TracebackExcerptTests(unittest.TestCase):
     SOURCE = ''.join(f'total += step()  # r{n}\n' for n in range(600))
 
