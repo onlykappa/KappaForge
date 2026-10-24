@@ -493,25 +493,71 @@ STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", 
 
 
 def excerpt(text, task, budget=MAX_FILE_CHARS):
-    """Relevant windows of a large file: its opening plus lines matching the task's words."""
+    """Select literal source lines by discriminating task symbols, within a hard budget.
+
+    Reserve matching lines before adding nearby context, so an oversized opening or
+    neighboring line cannot hide a short late-file target. Every omitted span is marked;
+    a budget too small for even the marker returns no source.
+    """
+    if budget <= 0:
+        return ""
+    if len(text) <= budget:
+        return text
+    marker = "... omitted ..."
+    if budget < len(marker):
+        return ""
     lines = text.split("\n")
-    terms = {t for t in re.findall(r"[a-z][a-z0-9_-]{3,}", task.lower()) if t not in STOP_WORDS}
-    hits = [i for i, line in enumerate(lines) if any(t in line.lower() for t in terms)]
-    keep = set(range(min(40, len(lines))))
-    for i in hits:
-        window = set(range(max(0, i - 20), min(len(lines), i + 21)))
-        if sum(len(lines[j]) + 1 for j in keep | window) > budget:
-            break
-        keep |= window
-    out, previous = [], -1
-    for i in sorted(keep):
-        if i != previous + 1:
-            out.append(f"... [lines {previous + 2}-{i} omitted] ...")
-        out.append(lines[i])
-        previous = i
-    if previous < len(lines) - 1:
-        out.append(f"... [lines {previous + 2}-{len(lines)} omitted] ...")
-    return "\n".join(out)
+    terms = {word for word in re.findall(r"[a-z_][a-z0-9_]*", task.lower())
+             if len(word) >= 4 and word not in STOP_WORDS}
+    matches = [set(re.findall(r"[a-z_][a-z0-9_]*", line.lower())) & terms for line in lines]
+    frequency = collections.Counter(word for words in matches for word in words)
+    # Explicit identifiers outrank generic prose, and rare matches outrank repeated ones.
+    scores = {i: sum((40 if "_" in word else 1) / frequency[word] for word in words)
+              for i, words in enumerate(matches) if words}
+    # Do not reserve dozens of generic hits at the cost of the rare target's context.
+    threshold = max(scores.values(), default=0) / 8
+    ranked = sorted((i for i in scores if scores[i] >= threshold),
+                    key=lambda i: (-scores[i], i))
+
+    def render(selected):
+        out, previous = [], -1
+        for i in sorted(selected):
+            if i > previous + 1:
+                out.append(marker)
+            out.append(lines[i])
+            previous = i
+        if previous < len(lines) - 1:
+            out.append(marker)
+        return "\n".join(out)
+
+    selected, anchors = set(), []
+    for i in ranked:
+        candidate = selected | {i}
+        if len(render(candidate)) <= budget:
+            selected = candidate
+            anchors.append(i)
+            if len(anchors) == 24:
+                break
+    if anchors:
+        # Add context evenly across targets instead of spending it all on the first.
+        for distance in range(1, 21):
+            for anchor in anchors:
+                for i in (anchor - distance, anchor + distance):
+                    if 0 <= i < len(lines) and i not in selected:
+                        candidate = selected | {i}
+                        if len(render(candidate)) <= budget:
+                            selected = candidate
+    else:
+        # With no usable hits, retain a bounded opening of complete literal lines.
+        length, count = 0, 0
+        for i, line in enumerate(lines):
+            next_length = length + bool(i) + len(line)
+            suffix = 1 + len(marker) if i < len(lines) - 1 else 0
+            if next_length + suffix > budget:
+                break
+            length, count = next_length, i + 1
+        return "\n".join(lines[:count] + ([marker] if count < len(lines) else []))
+    return render(selected)
 
 
 # KappaForge's iPhone app bundles an identical copy of the web app; the agent edits preview/ and the copy follows.
