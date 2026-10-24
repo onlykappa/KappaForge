@@ -22,9 +22,12 @@ class TestSandboxRepairController(unittest.TestCase):
         self.call_count = 0
         def mock_model(*args, **kwargs):
             self.call_count += 1
-            return 'route', '{"done":false, "tool":"run_command", "args":{"argv":["ls ' + str(self.call_count) + '"]}, "reason":"fail"}'
+            return 'route', '{"done":false, "tool":"apply_patch", "args":{"edits":[{"path":"test_file.py", "find":"old_code", "replace":"new_code' + str(self.call_count) + '"}]}, "reason":"fail"}'
         res = self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(len(self.controller.attempts), 5)
+        self.assertEqual(len(self.controller.attempts), 5)
+        self.assertTrue(all(attempt['diff_from_prev'] for attempt in self.controller.attempts[1:]))
+        self.assertTrue(all(attempt['changed_paths'] for attempt in self.controller.attempts))
 
     def test_success_verification(self):
         def mock_model(*args, **kwargs):
@@ -35,11 +38,12 @@ class TestSandboxRepairController(unittest.TestCase):
 
     def test_deduplication(self):
         def mock_model(*args, **kwargs):
-            return 'route', '{"done":false, "tool":"run_command", "args":{"argv":["ls"]}, "reason":"fail"}'
+            return 'route', '{"done":false, "tool":"apply_patch", "args":{"edits":[{"path":"test_file.py", "find":"old_code", "replace":"new_code"}]}, "reason":"fail"}'
         self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(len(self.controller.attempts), 1)
 
     def test_session_cleanup(self):
+        from unittest.mock import Mock
         self.session.close = Mock()
         def mock_model(*args, **kwargs):
             return 'route', '{"done":true, "summary":"fixed"}'
@@ -52,6 +56,7 @@ class TestSandboxRepairController(unittest.TestCase):
         self.controller.tools.run_tests = lambda: {'ok': True, 'passed': False}
         res = self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(res['status'], 'failed')
+        self.assertEqual(len(self.controller.attempts), 1)
 
     def test_unavailable_outcome(self):
         def mock_model(*args, **kwargs):
@@ -59,6 +64,7 @@ class TestSandboxRepairController(unittest.TestCase):
         self.controller.tools.run_command = lambda **kwargs: {'ok': False, 'status': 'unavailable'}
         res = self.controller.run_repair('task', mock_model, 'key')
         self.assertEqual(res['status'], 'failed')
+        self.assertEqual(len(self.controller.attempts), 1)
 
     def test_real_session_and_tools_use_docker_exec_contract(self):
         session = sandbox.Session(
