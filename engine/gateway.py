@@ -132,6 +132,8 @@ def safe_attempts(rows):
         safe = {key: value for key, value in row.items() if
                 key in ('provider', 'model', 'source', 'category') and isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_:/@.-]{1,180}', value)
                 or key == 'attempted' and type(value) is bool
+                or key == 'role' and value in ('verify', 'review', 'diagnose', 'code', 'light')
+                or key == 'rank' and type(value) is int and 1 <= value <= 10000
                 or key in ('status', 'upstreamStatus') and type(value) is int and 0 <= value <= 599}
         attempts.append(safe)
     return attempts

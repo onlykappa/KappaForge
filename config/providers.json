@@ -768,6 +768,13 @@
   "routing": {
     "version": 1,
     "preferredModelFamily": "deepseek",
+  "roleRanking": {
+    "code": ["nvidia:deepseek-ai/deepseek-v4.1-flash", "nvidia:nvidia/nemotron-3-ultra-550b-a55b", "mistral:mistral-small-latest", "groq:openai/gpt-oss-120b", "groq:qwen/qwen3.8-27b", "gemini:gemini-3.1-flash-lite"],
+    "verify": ["nvidia:nvidia/nemotron-3-ultra-550b-a55b", "nvidia:deepseek-ai/deepseek-v4.1-flash", "groq:openai/gpt-oss-120b", "mistral:mistral-small-latest", "gemini:gemini-3.1-flash-lite"],
+    "review": ["nvidia:nvidia/nemotron-3-ultra-550b-a55b", "nvidia:deepseek-ai/deepseek-v4.1-flash", "groq:openai/gpt-oss-120b", "mistral:mistral-small-latest", "gemini:gemini-3.1-flash-lite"],
+    "diagnose": ["nvidia:deepseek-ai/deepseek-v4.1-flash", "nvidia:nvidia/nemotron-3-ultra-550b-a55b", "groq:openai/gpt-oss-120b", "gemini:gemini-3.1-flash-lite"],
+    "light": ["groq:openai/gpt-oss-20b", "gemini:gemini-3.1-flash-lite", "mistral:mistral-small-latest", "workers-ai:@cf/zai-org/glm-4.7-flash"]
+  },
     "defaults": {
       "maxConcurrent": 1,
       "leaseMs": 120000,

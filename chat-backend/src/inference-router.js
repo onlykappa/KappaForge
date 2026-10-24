@@ -35,6 +35,7 @@ const safeError=(message,status=400)=>Response.json({error:message},{status,head
 const completeResult=result=>{const finish=result?.candidates?.[0]?.finishReason;if(finish==="MAX_TOKENS")throw new OutputLimitError(result.usageMetadata);if(finish&&finish!=="STOP")throw Error("Provider output is incomplete");return result;};
 const CODING_OUTPUT_CEILING=registry.routing.defaults.maxCodingOutputTokens||registry.routing.defaults.maxOutputTokens;
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
+const ROLES=new Set(["verify","review","diagnose","code","light"]);
 
 function validate(input){
  if(!input||typeof input!=="object"||Array.isArray(input)||input.version!==1||input.channel!=="coding"||input.privateCode!==true||!validRepo(input.repo))return "Invalid coding inference request";
@@ -56,6 +57,7 @@ function validate(input){
  if(input.excludedRoutes!==undefined&&(!Array.isArray(input.excludedRoutes)||input.excludedRoutes.length>160||input.excludedRoutes.some(route=>typeof route!=="string"||!/^[A-Za-z0-9@._:/-]{1,200}$/.test(route))))return "Invalid excluded model routes";
  if(input.requestId!==undefined&&(typeof input.requestId!=="string"||!/^[a-f0-9-]{36}$/i.test(input.requestId)))return "Invalid request id";
  if(input.task!==undefined&&(!Number.isInteger(input.task)||input.task<1))return "Invalid task number";
+ if(input.role!==undefined&&!ROLES.has(input.role))return "Invalid routing role";
  if(input.premium!==undefined&&(!validRescue(input.premium)||input.task!==input.premium.task))return "Invalid premium request";
  return "";
 }
@@ -115,9 +117,11 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
   return premiumResponse(summary,summary.dispatched?502:403,{error:summary.dispatched?"Premium rescue did not answer":"Premium rescue not authorized",code:summary.dispatched?"premium_failed":"premium_not_authorized"});
  }
  const requested=Array.isArray(input.providers)?input.providers:[];
+ const role=ROLES.has(input.role)?input.role:"code";
+ let snapshot={roleQuality:{}};try{snapshot=await routingSnapshot(env)}catch{}
  const available=providerAllowed(env,"coding","gemini",{privateCode:true,requested})?await discover(env).catch(()=>[]):[];
  const prefs={model:input.model||"auto",fallback:input.fallback!==false};
- const discoveredRoutes=await fallbackRoutes(env,available,prefs,false,{channel:"coding",privateCode:true,hasStructuredOutput:input.responseFormat==="json_object",requestedProviders:requested});
+ const discoveredRoutes=await fallbackRoutes(env,available,prefs,false,{channel:"coding",privateCode:true,hasStructuredOutput:input.responseFormat==="json_object",requestedProviders:requested,role,roleRanking:registry.routing.roleRanking,roleQuality:snapshot.roleQuality});
  const excluded=new Set(input.excludedRoutes||[]);
  const routes=discoveredRoutes.filter(route=>!excluded.has(route.provider+":"+route.model));
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
@@ -137,7 +141,7 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
   }catch{}
  };
  // A free answer on a task is the evidence a premium rescue needs later (several answers, more than one free model).
- const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,outcome);lastRetryAt=retryDeadline(lastRetryAt,result.retryAt);await recordUsage(outcome);
+ const reportOutcome=async outcome=>{const result=await reportProviderOutcome(env,{...outcome,role});lastRetryAt=retryDeadline(lastRetryAt,result.retryAt);await recordUsage(outcome);
   if(outcome.status===200&&input.task)await recordFreeAnswer(env,input.task,outcome.route.provider+":"+outcome.route.model);return result;};
  let lastRoute=null,attempt=null;const history=[];
  let failure={source:"gateway_guard",category:"context_limit",upstreamStatus:null};
@@ -151,7 +155,7 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
   if(Date.now()>=deadline){lastStatus=0;attempt=null;failure={source:"gateway_guard",category:"timeout",upstreamStatus:null};skipped.time_budget=(skipped.time_budget||0)+routes.length-i;break;}
   if(attempts-refused>=maxAttempts){skipped.attempt_limit=(skipped.attempt_limit||0)+routes.length-i;break;}
   if(rejectedProviders.has(route.provider)){skip("provider_resting_or_rejected");continue;}
-  lastRoute=route;attempt={provider:route.provider,model:route.model,attempted:false,status:null};history.push(attempt);
+  lastRoute=route;attempt={provider:route.provider,model:route.model,role,rank:i+1,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
   // A route's own limits (a model's published context and output) only ever tighten the provider's.
   let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens,route.provider!=="gemini"&&route.maxOutput||Infinity);
@@ -211,7 +215,7 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
     const text=collected.candidates[0].content.parts[0].text;usage=collected.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{role,rank:i+1,attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}},{headers:{"Cache-Control":"no-store"}});
    }
    try{data=await response.json()}catch{lastStatus=502;setFailure({source:"normalization",category:"malformed_json",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"malformed_json",headers:response.headers});continue;}
    if(route.provider==="gemini"){
@@ -220,13 +224,13 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
     usage=data.usageMetadata||null;
     if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
     await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
+    return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{role,rank:i+1,attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
    }
    let normalized;try{normalized=completeResult(normalizeResult(route,data));}catch(error){await invalidOutput(error);continue;}
    const candidate=normalized.candidates?.[0]||{},text=(candidate.content?.parts||[]).map(p=>p.text||"").join("\n");usage=normalized.usageMetadata||null;
    if(!text.trim()){lastStatus=502;setFailure({source:"normalization",category:"empty_response",upstreamStatus:response.status});await reportOutcome({requestId:reservationId,route,status:502,category:"empty_response",headers:response.headers,usage});continue;}
    await reportOutcome({requestId:reservationId,route,status:200,headers:response.headers,usage});
-   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
+   return Response.json({text,provider:route.provider,model:route.model,route:route.provider+":"+route.model,usage,limits:{contextTokens:p.context||null,requestContextCeiling:context,maxOutputTokens:maxTokens},routing:{role,rank:i+1,attempts,skipped,history:history.slice(-16),elapsedMs:Date.now()-started,quotaRemaining:null,quotaSource:"unknown"}}, {headers:{"Cache-Control":"no-store"}});
   }catch(error){
    lastStatus=callerSignal?.aborted?499:0;
    setFailure({source:"transport",category:callerSignal?.aborted?"cancelled":timedOut?"timeout":"network_failure",upstreamStatus:null});

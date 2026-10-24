@@ -4,6 +4,7 @@ import {routingStore} from "../chat-backend/src/router-state.js";
 import {providerAllowed,routePolicy} from "../chat-backend/src/routing-policy.js";
 import {inferenceRouter} from "../chat-backend/src/inference-router.js";
 import worker from "../chat-backend/src/index.js";
+import {fallbackRoutes} from "../chat-backend/src/providers.js";
 
 function storage(){
  let value,tail=Promise.resolve();
@@ -25,10 +26,45 @@ test("routing policy intersects free, channel, and private-code approvals",()=>{
  assert.deepEqual(routePolicy(env).privateCodeProviders,["gemini"]);
  assert.equal(providerAllowed({...env,KAPPA_FREE_PROVIDERS:""},"chat","groq"),false);
 });
+
+test("coding route order follows validated role seeds and learned outcomes without escaping eligibility",async()=>{
+ const env={ROUTING_POLICY_VERSION:"v1",KAPPA_FREE_PROVIDERS:"gemini",KAPPA_CODE_PROVIDERS:"gemini",KAPPA_PRIVATE_CODE_PROVIDERS:"gemini"};
+ const ranking={code:["gemini:gemini-3.1-flash-lite","gemini:gemini-3.8-flash"],light:["gemini:gemini-3.8-flash","gemini:gemini-3.1-flash-lite"]};
+ const get=async(role,roleQuality={})=>fallbackRoutes(env,["gemini-3.8-flash","gemini-3.1-flash-lite"],{},false,{channel:"coding",privateCode:true,requestedProviders:["gemini"],role,roleRanking:ranking,roleQuality});
+ assert.deepEqual((await get("code")).map(r=>r.model),["gemini-3.1-flash-lite","gemini-3.8-flash"]);
+ assert.deepEqual((await get("light")).map(r=>r.model),["gemini-3.8-flash","gemini-3.1-flash-lite"]);
+ const poor=Object.fromEntries(Array.from({length:4},(_,i)=>["verify|gemini:gemini-3.1-flash-lite",{successes:0,failures:i+1}]));
+ assert.deepEqual((await get("verify",poor)).map(r=>r.model),["gemini-3.8-flash","gemini-3.1-flash-lite"],"four failed quality samples demote the seeded route");
+ assert.equal((await get("unknown")).length,2,"unrecognized internal role falls back to light routing");
+ const bad=await inferenceRouter({ROUTING_POLICY_VERSION:"v1"}, {version:1,channel:"coding",privateCode:true,repo:"onlykappa/KappaForge",role:"admin",messages:[{role:"user",content:"x"}]});
+ assert.equal(bad.status,400,"the Worker rejects unknown caller-supplied roles");
+});
+
+test("durable role quality is bounded, idempotent, and tied to the exact successful route",async()=>{
+ const store=storage(),base={requestId:"quality-1",provider:"groq",model:"openai/gpt-oss-120b",accountPool:"groq",quotaPool:"groq",maxConcurrent:1};
+ assert.equal((await invoke(store,"/router/reserve",base)).status,200);
+ await invoke(store,"/router/outcome",{requestId:base.requestId,provider:base.provider,model:base.model,status:200,role:"code"});
+ const report={requestId:base.requestId,provider:base.provider,model:base.model,role:"code",usable:false};
+ assert.equal((await (await invoke(store,"/router/quality",report)).json()).stored,true);
+ assert.equal((await (await invoke(store,"/router/quality",report)).json()).duplicate,true);
+ const snapshot=await (await invoke(store,"/router/status")).json();
+ assert.deepEqual(snapshot.roleQuality["code|groq:openai/gpt-oss-120b"],{successes:0,failures:1,updatedAt:snapshot.roleQuality["code|groq:openai/gpt-oss-120b"].updatedAt});
+ assert.equal((await invoke(store,"/router/quality",{...report,requestId:"forged",usable:true})).status,409);
+ assert.equal((await invoke(store,"/router/quality",{...report,role:"admin"})).status,400);
+ for(let n=2;n<=42;n++){
+  const requestId="quality-"+n;
+  await invoke(store,"/router/reserve",{...base,requestId});
+  await invoke(store,"/router/outcome",{requestId,provider:base.provider,model:base.model,status:200,role:"code"});
+  await invoke(store,"/router/quality",{...report,requestId,usable:n%2===0});
+ }
+ const bounded=(await (await invoke(store,"/router/status")).json()).roleQuality["code|groq:openai/gpt-oss-120b"];
+ assert.ok(bounded.successes+bounded.failures<=40,"per-route counters decay at their hard cap");
+});
 test("runner gateway authentication protects inference and exposes no management routes",async()=>{
  const env={ROUTING_POLICY_VERSION:"v1",ROUTER_ACCESS_TOKEN:"x".repeat(40),MEMORY:{}};
  const make=(path,method="POST",token="",body="{}")=>new Request("https://worker.example"+path,{method,headers:{Authorization:token?"Bearer "+token:"","Content-Type":"application/json"},body:method==="GET"?undefined:body});
  assert.equal((await worker.fetch(make("/router/infer"),env)).status,401);
+ assert.equal((await worker.fetch(make("/router/quality"),env)).status,401);
  assert.equal((await worker.fetch(make("/router/infer","POST","wrong"),env)).status,401);
  assert.equal((await worker.fetch(make("/router/diagnostics","GET"),env)).status,401);
  assert.equal((await worker.fetch(make("/router/status","GET",env.ROUTER_ACCESS_TOKEN),env)).status,404);

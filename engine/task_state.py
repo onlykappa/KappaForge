@@ -14,6 +14,8 @@ import threading
 import uuid
 
 ACTION = ContextVar('task_next_action', default=None)
+ROUTING_ROLE = ContextVar('task_routing_role', default='light')
+ROUTER_CALL = ContextVar('task_router_call', default=None)
 STAGE = ContextVar('task_current_stage', default=None)
 INFERENCE = ContextVar('task_inference_call', default=None)
 MARKER = '\n\nKAPPA_TASK_STATE_V1\n'
@@ -292,19 +294,38 @@ def action(role, operation, reason, success):
     next_action = dict(role=role, operation=clean(operation, 200), reason=clean(reason, 160),
                        successCondition=clean(success, 200), candidate=record.identity['candidate'] if record else '')
     token = ACTION.set(next_action)
+    route_role = ROUTING_ROLE.set({'planner':'diagnose','coder':'code','repair':'code','reviewer':'review'}.get(role,'light'))
     try:
         yield
     finally:
+        ROUTING_ROLE.reset(route_role)
         ACTION.reset(token)
 
 
-def role(name, operation, success):
+def role(name, operation, success, routing_role=None):
     def decorate(method):
         @wraps(method)
         def run(*args, **kwargs):
             effective = 'repair' if name == 'coder' and (ACTION.get() or {}).get('role') == 'repair' else name
             with action(effective, operation, 'Advance the original owner goal; observations cannot expand it', success):
-                return method(*args, **kwargs)
+                route_role = routing_role or {'planner':'diagnose','coder':'code','repair':'code','reviewer':'review'}.get(name,'light')
+                token = ROUTING_ROLE.set(route_role)
+                call_token = ROUTER_CALL.set(None)
+                usable = False
+                try:
+                    result = method(*args, **kwargs)
+                    usable = True
+                    return result
+                finally:
+                    call = ROUTER_CALL.get()
+                    if call:
+                        try:
+                            from engine.runner import report_route_quality
+                            report_route_quality(call, usable)
+                        except Exception:
+                            pass  # Quality feedback is best-effort and never changes task execution.
+                    ROUTER_CALL.reset(call_token)
+                    ROUTING_ROLE.reset(token)
         return run
     return decorate
 

@@ -273,6 +273,37 @@ class TaskStateTests(unittest.TestCase):
         self.assertEqual(data['budgets']['modelCalls'], {'used': 3, 'limit': 5, 'remaining': 2})
         self.assertTrue(data['ownerReviewRequired'])
 
+    def test_routing_role_follows_task_role_and_verifier_override(self):
+        observed = []
+        for role, expected in (('planner', 'diagnose'), ('coder', 'code'), ('reviewer', 'review')):
+            with task_state.action(role, 'Work', 'Owner goal', 'Check'):
+                observed.append(task_state.ROUTING_ROLE.get())
+        @task_state.role('reviewer', 'Verify repair evidence', 'Current evidence', routing_role='verify')
+        def verify():
+            return task_state.ROUTING_ROLE.get()
+        observed.append(verify())
+        self.assertEqual(observed, ['diagnose', 'code', 'review', 'verify'])
+        self.assertEqual(task_state.ROUTING_ROLE.get(), 'light')
+
+    def test_role_quality_uses_controller_validation_result_without_capturing_output(self):
+        reports = []
+        call = {'requestId': 'a' * 36, 'provider': 'nvidia', 'model': 'deepseek-ai/deepseek-v4.1-flash', 'role': 'code'}
+        with patch('engine.runner.report_route_quality', side_effect=lambda item, usable: reports.append((item, usable))):
+            @task_state.role('coder', 'Generate and validate edits', 'The proposal passes validation')
+            def validated():
+                task_state.ROUTER_CALL.set(call)
+                return {'validated': True}
+
+            @task_state.role('reviewer', 'Review source', 'Review is well-formed')
+            def rejected():
+                task_state.ROUTER_CALL.set({**call, 'role': 'review'})
+                raise ValueError('bad response')
+
+            validated()
+            with self.assertRaisesRegex(ValueError, 'bad response'):
+                rejected()
+        self.assertEqual(reports, [(call, True), ({**call, 'role': 'review'}, False)])
+
     def test_engine_switch_preserves_goal_identity_role_and_ordered_history(self):
         prompts = []
         def answer(prompt, *args):

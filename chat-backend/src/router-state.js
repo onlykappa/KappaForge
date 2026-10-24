@@ -3,18 +3,20 @@ const MAX_LEASE_MS=5*60_000;
 const RETENTION_MS=7*24*60*60_000;
 const MAX_COOLDOWN_MS=7*24*60*60_000;
 
-const blank=()=>({version:1,pools:{},routes:{},reservations:{},outcomes:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{},quotas:{}});
+const ROLES=new Set(["verify","review","diagnose","code","light"]);
+const blank=()=>({version:1,pools:{},routes:{},reservations:{},outcomes:{},quality:{},qualityReports:{},usage:{},requests:{},dailyRequests:{},minuteRequests:{},quotas:{}});
 const validId=value=>typeof value==="string"&&/^[A-Za-z0-9._:-]{1,160}$/.test(value);
 const limitValue=value=>value===undefined||Number.isInteger(value)&&value>=0&&value<=1e9;
 const validQuota=q=>!!q&&typeof q.key==="string"&&q.key.length<=200&&Number.isFinite(q.day)&&Number.isFinite(q.dayEnd)&&Number.isInteger(q.tokens)&&q.tokens>=0&&
  limitValue(q.rpm)&&limitValue(q.rpd)&&limitValue(q.tpm);
 const validModel=value=>typeof value==="string"&&/^[A-Za-z0-9@._:/-]{1,180}$/.test(value);
 const clean=(state,now)=>{
- state.expiredLeases ||= {};state.quotas ||= {};
+ state.expiredLeases ||= {};state.quotas ||= {};state.quality ||= {};state.qualityReports ||= {};
  for(const [id,row] of Object.entries(state.quotas))if(!row||row.dayEnd<=now&&Math.floor(now/60000)!==row.minute)delete state.quotas[id];
  for(const [id,row] of Object.entries(state.reservations))if(!row||row.expiresAt<=now){if(row)state.expiredLeases[id]=row;delete state.reservations[id];}
  for(const [id,row] of Object.entries(state.expiredLeases))if(row.expiresAt+RETENTION_MS<=now)delete state.expiredLeases[id];
  for(const [id,row] of Object.entries(state.outcomes))if(!row||row.at+RETENTION_MS<=now)delete state.outcomes[id];
+ for(const [id,row] of Object.entries(state.quality||{}))if(!row||row.updatedAt+RETENTION_MS<=now)delete state.quality[id];
  for(const [id,row] of Object.entries(state.requests))if(!row||row.at+RETENTION_MS<=now)delete state.requests[id];
  for(const [id,row] of Object.entries(state.live||{}))if(!row||row.at+2*86400000<=now)delete state.live[id];
 };
@@ -35,10 +37,27 @@ export async function routingStore(state,request){
  const url=new URL(request.url),storage=state.storage;
  if(request.method==="GET"&&url.pathname==="/router/status"){
   return Response.json(await transact(storage,async data=>{const now=Date.now(),day=new Date(now).toISOString().slice(0,10),minute=Math.floor(now/60000);return {version:1,pools:data.pools,routes:data.routes,usage:data.usage,live:data.live||{},
-   activeReservations:Object.keys(data.reservations).length,dailyRequests:{day,used:data.dailyRequests[day]||0,source:"durable-object-counter"},minuteRequests:{windowStart:minute*60000,used:data.minuteRequests[minute]||0,source:"durable-object-counter"},quotaRemaining:null,quotaSource:"unknown"}}));
+   activeReservations:Object.keys(data.reservations).length,roleQuality:data.quality||{},dailyRequests:{day,used:data.dailyRequests[day]||0,source:"durable-object-counter"},minuteRequests:{windowStart:minute*60000,used:data.minuteRequests[minute]||0,source:"durable-object-counter"},quotaRemaining:null,quotaSource:"unknown"}}));
  }
  if(request.method!=="POST")return Response.json({error:"Method not allowed"},{status:405});
  let input;try{input=await request.json()}catch{return Response.json({error:"Invalid JSON"},{status:400});}
+ if(url.pathname==="/router/quality"){
+  const {requestId,provider,model,role,usable}=input||{};
+  if(!validId(requestId)||!validId(provider)||!validModel(model)||!ROLES.has(role)||typeof usable!=="boolean")return Response.json({error:"Invalid role quality report"},{status:400});
+  const result=await transact(storage,async data=>{
+   const prior=data.qualityReports[requestId];if(prior)return {stored:true,duplicate:true};
+   const outcome=data.outcomes[requestId];if(!outcome||outcome.status!==200||outcome.provider!==provider||outcome.model!==model||outcome.role!==role)return {stored:false,reason:"outcome_mismatch"};
+   const key=role+"|"+provider+":"+model,row=data.quality[key]||{successes:0,failures:0,updatedAt:Date.now()};
+   // Decay at the cap to keep the signal current and all storage strictly bounded.
+   if(row.successes+row.failures>=40){row.successes=Math.floor(row.successes/2);row.failures=Math.floor(row.failures/2);}
+   if(usable)row.successes++;else row.failures++;row.updatedAt=Date.now();data.quality[key]=row;
+   const qualityKeys=Object.keys(data.quality);if(qualityKeys.length>300)for(const old of qualityKeys.sort((a,b)=>data.quality[a].updatedAt-data.quality[b].updatedAt).slice(0,qualityKeys.length-300))delete data.quality[old];
+   data.qualityReports[requestId]=Date.now();
+   const keys=Object.keys(data.qualityReports);if(keys.length>256)for(const old of keys.sort((a,b)=>data.qualityReports[a]-data.qualityReports[b]).slice(0,keys.length-256))delete data.qualityReports[old];
+   return {stored:true,duplicate:false};
+  });
+  return Response.json(result,{status:result.stored?200:409});
+ }
  if(url.pathname==="/router/reserve"){
   const {requestId,provider,model,accountPool,quotaPool,quotaScope="account",maxConcurrent=1,leaseMs=120_000,quota=null,fresh=false,testShare=null}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!validId(accountPool)||!validId(quotaPool)||
@@ -106,7 +125,7 @@ export async function routingStore(state,request){
   return Response.json(result,{status:result.allowed?200:429});
  }
  if(url.pathname==="/router/outcome"){
-  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped,full,live}=input||{};
+  const {requestId,provider,model,status,category,usage,remaining,remainingSource,retryAfter,resetAt,modelScoped,full,live,role="light"}=input||{};
   if(!validId(requestId)||!validId(provider)||!validModel(model)||!Number.isInteger(status)||status<0||status>599)
    return Response.json({error:"Invalid outcome"},{status:400});
   const result=await transact(storage,async data=>{
@@ -169,7 +188,7 @@ export async function routingStore(state,request){
    // The provider's own counters for this model, newest answer wins.
    const validLive=live&&typeof live==="object"&&!Array.isArray(live)?Object.entries(live).slice(0,8).filter(([k,r])=>typeof k==="string"&&k.length<=40&&r&&Number.isFinite(r.limit)&&r.limit>0&&Number.isFinite(r.remaining)):[];
    if(validLive.length){data.live ||= {};data.live[routeKey(provider,model)]={at:now,limits:Object.fromEntries(validLive.map(([k,r])=>[k,{limit:r.limit,remaining:Math.max(0,Math.min(r.remaining,r.limit)),reset:Number.isFinite(r.reset)?r.reset:null}]))};}
-   data.outcomes[requestId]={at:now,status,provider,model,category:typeof category==="string"?category.slice(0,60):""};
+   data.outcomes[requestId]={at:now,status,provider,model,role:ROLES.has(role)?role:"light",category:typeof category==="string"?category.slice(0,60):""};
    return {stored:true,duplicate:false,retryAt:Math.max(data.pools[pool]?.until||0,data.routes[route]?.until||0)||null};
   });
   return Response.json(result,{status:result.stored?200:409});

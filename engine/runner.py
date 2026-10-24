@@ -469,7 +469,29 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
 
     tier "strong" takes only providers marked strong (good at writing code), "rest" only the others, None all of them.
     A provider whose context window the prompt does not fit is passed over."""
-    for pid in PROVIDERS["order"]:
+    from engine import task_state
+    role = task_state.ROUTING_ROLE.get() if task_state.ACTION.get() else None
+    ranking = PROVIDERS.get('routing', {}).get('roleRanking', {}).get(role, []) if role else []
+    rank = {name: index for index, name in enumerate(ranking)}
+    catalogs = {}
+    if ranking:
+        for pid in PROVIDERS["order"]:
+            if allowed is not None and pid not in allowed:
+                continue
+            config = PROVIDERS["providers"][pid]
+            if tier is not None and bool(config.get("strong")) != (tier == "strong"):
+                continue
+            models = provider_models(pid)
+            original = {model: index for index, model in enumerate(models)}
+            models.sort(key=lambda model: (rank.get(pid + ':' + model, len(ranking) + original[model]), original[model]))
+            catalogs[pid] = models
+    provider_order = list(PROVIDERS["order"])
+    if ranking:
+        positions = {pid: index for index, pid in enumerate(provider_order)}
+        provider_order.sort(key=lambda pid: (min((rank.get(pid + ':' + model, len(ranking) + index)
+                                                  for index, model in enumerate(catalogs.get(pid, ()))), default=len(ranking) + positions[pid]),
+                                              positions[pid]))
+    for pid in provider_order:
         if allowed is not None and pid not in allowed:
             continue
         p = PROVIDERS["providers"][pid]
@@ -481,7 +503,7 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
             continue
         if not fits(p, prompt, max_output_tokens):
             continue
-        for model in provider_models(pid):
+        for model in catalogs[pid] if ranking else provider_models(pid):
             if provider_paused(identity):
                 break
             name = pid + ":" + model
@@ -591,8 +613,20 @@ def _router_post(path, payload, timeout=30):
             return exc.code, json.loads(exc.read(65536) or b'{}')
         except ValueError:
             return exc.code, {}
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+    except Exception:
         return 0, {}
+
+
+def report_route_quality(call, usable):
+    """Send only controller-observed role success, never prompts or model output."""
+    if not isinstance(call, dict) or call.get('role') not in ('verify', 'review', 'diagnose', 'code', 'light'):
+        return
+    if (not isinstance(call.get('requestId'), str) or not re.fullmatch(r'[a-f0-9-]{36}', call['requestId'], re.I)
+            or not isinstance(call.get('provider'), str) or not re.fullmatch(r'[a-z0-9-]{1,40}', call['provider'], re.I)
+            or not isinstance(call.get('model'), str) or not re.fullmatch(r'[A-Za-z0-9@._:/-]{1,180}', call['model'])):
+        return
+    _router_post('/router/quality', {'requestId': call['requestId'], 'provider': call['provider'],
+                                     'model': call['model'], 'role': call['role'], 'usable': bool(usable)})
 
 
 def premium_outcome(task, step, outcome):
@@ -658,7 +692,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
 
 def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     """Send authorized coding inference through KappaForge's shared Durable-Object router."""
-    from engine import recovery, gateway
+    from engine import recovery, gateway, task_state
     endpoint = os.getenv("KAPPA_ROUTER_URL", "").strip().rstrip("/")
     token = os.getenv("KAPPA_ROUTER_TOKEN", "")
     parsed = urllib.parse.urlsplit(endpoint)
@@ -708,6 +742,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
         "excludedRoutes": excluded,
+        "role": task_state.ROUTING_ROLE.get() if task_state.ROUTING_ROLE.get() in ('verify', 'review', 'diagnose', 'code', 'light') else 'light',
     }
     if pinned_model:
         payload["model"] = pinned_route
@@ -746,7 +781,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         failure = gateway.error(exc.code, body, exc.headers, bool(pinned_route))
         evidence = {'requestId': payload['requestId'], 'route': pinned_route, 'status': exc.code,
                     'code': failure.code, 'retryAt': failure.retry_at or None, 'promptChars': len(prompt),
-                    'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
+                    'maxTokens': payload['maxTokens'], 'role': payload['role'], 'rank': 1 if pinned_route else None,
+                    'usage': None, 'failure': failure.details or None, 'attempts': failure.attempts}
         if not isinstance(body, dict):
             # A refusal that is not the Worker's own JSON came from in front of it (Cloudflare). Keep only what names
             # the cause: never the body text itself.
@@ -781,7 +817,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
                         + '; provider attempts and remaining quota are unknown; fallback stays within the approved gateway',)
         gateway.record(journal, {'requestId': payload['requestId'], 'route': pinned_route, 'status': None,
                                 'code': failure.code, 'retryAt': None, 'promptChars': len(prompt),
-                                'maxTokens': payload['maxTokens'], 'usage': None, 'failure': failure.details,
+                                'maxTokens': payload['maxTokens'], 'role': payload['role'], 'rank': 1 if pinned_route else None,
+                                'usage': None, 'failure': failure.details,
                                 'attempts': []})
         raise failure from None
     if status != 200 or not isinstance(data, dict):
@@ -798,7 +835,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
              and type(value) is int and value >= 0}
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
+                             'role': payload['role'], 'rank': data.get('routing', {}).get('rank') if isinstance(data.get('routing'), dict) else None,
                              'attempts': gateway.safe_attempts(data.get('routing', {}).get('history') if isinstance(data.get('routing'), dict) else [])})
+    provider, _, route_model = model.partition(':')
+    task_state.ROUTER_CALL.set({'requestId': payload['requestId'], 'provider': provider,
+                                'model': route_model, 'role': payload['role']})
     premium_used(data.get('premium'))
     asking(model)
     return model, output
