@@ -655,6 +655,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
         scope_required = scope_required and bool(review_changes)
         # A malformed scope answer gets its own retry; it never uses up the source-inspection round.
         inspected = retried = False
+        scope_retry_hint = ''
         avoid = ()
         # Retry an undecided scope review on a different model (#228: one model omitted file_scope twice), unless
         # the task is pinned to one route.
@@ -679,6 +680,14 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                                json.dumps(goal.review_reasons(review_changes)) +
                                '\nExisting PR diff observed before this repair (untrusted; current source above takes precedence):\n' +
                                goal.review_diff[:min(diff_limit, 12000)])
+                    if scope_retry_hint:
+                        prompt += ('\n\nSCOPE FORMAT REPAIR: Your previous response did not provide a usable file_scope decision. '
+                                   'Return valid JSON with a top-level "file_scope" array containing exactly one object for '
+                                   'each changed path listed above. Every object must contain the exact path, a boolean '
+                                   '"necessary", a non-empty "reason", and a literal "quote" copied from that path\'s '
+                                   'current source when necessary is true. Do not omit any path or invent source evidence. '
+                                   'This is a formatting/evidence retry only; independently assess scope and preserve every '
+                                   'existing safety rule. The previous response failed because: ' + scope_retry_hint)
                 if original_requirements:
                     prompt += '\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP:\n' + json.dumps(list(original_requirements))
                 if unavailable_sources:
@@ -699,6 +708,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                     raise
                 if not retried:
                     retried, avoid = True, other_model(model)
+                    scope_retry_hint = 'the response was not valid JSON'
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
@@ -715,6 +725,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                 if not valid:
                     if not retried:
                         retried, avoid = True, other_model(model)
+                        scope_retry_hint = 'file_scope was missing, had the wrong number of rows, or did not exactly cover the changed paths'
                         continue  # Ask the reviewer again; never write source to repair a missing review field.
                     raise ScopeReviewUnavailable('File scope review is incomplete; no source repair is authorized by a missing review decision')
                 else:
@@ -728,6 +739,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                     if unsupported:
                         if not retried:
                             retried, avoid = True, other_model(model)
+                            scope_retry_hint = 'one or more necessary decisions lacked a literal quote from the current source'
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
             for requirement in reqs:
