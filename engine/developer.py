@@ -47,6 +47,8 @@ def _add_engine_developer_source(sources, existing, repo, sha, token):
     """Ensure engine/developer.py is present in sources if space permits.
     Respects LARGE.read_files limit and file‑size constraints.
     """
+    if repo != ROOT:
+        return sources
     path = 'engine/developer.py'
     if path in sources:
         return sources
