@@ -18,6 +18,26 @@ def step(name):
 
 
 class ValidationWorkflowTests(unittest.TestCase):
+    def test_native_dispatch_pins_checkout_and_checks_the_actual_commit(self):
+        source = (ROOT / '.github/workflows/ios-build.yml').read_text(encoding='utf-8')
+        for job in ('sandbox', 'native'):
+            section = source.split('  ' + job + ':\n', 1)[1]
+            section = section.split('    - name: Verify candidate checkout', 1)
+            self.assertIn('ref: ${{ inputs.candidate_sha || ', section[0])
+            guard = section[1].split('    - ', 1)[0]
+            self.assertIn('CANDIDATE_SHA: ${{ inputs.candidate_sha }}', guard)
+            script = guard.split('      run: ', 1)[1].splitlines()[0]
+            with tempfile.TemporaryDirectory() as folder:
+                subprocess.run(['git', 'init', '-q', folder], check=True, capture_output=True)
+                commit = ['git', '-C', folder, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'candidate']
+                subprocess.run(commit, check=True, capture_output=True)
+                candidate = subprocess.check_output(['git', '-C', folder, 'rev-parse', 'HEAD'], text=True).strip()
+                env = dict(os.environ, CANDIDATE_SHA=candidate)
+                self.assertEqual(subprocess.run([BASH, '-c', script], cwd=folder, env=env, capture_output=True).returncode, 0)
+                subprocess.run(commit, check=True, capture_output=True)
+                self.assertNotEqual(subprocess.run([BASH, '-c', script], cwd=folder, env=env, capture_output=True).returncode, 0,
+                                    'A different checkout must never receive a green receipt for the requested candidate')
+
     def run_step(self, name, head=SHA, result='success', title='Draft: Complete work'):
         with tempfile.TemporaryDirectory() as folder:
             effects = Path(folder) / 'effects'

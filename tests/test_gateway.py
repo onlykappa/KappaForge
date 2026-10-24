@@ -147,7 +147,7 @@ class GatewayEvidenceTests(unittest.TestCase):
                         patch.object(developer, 'is_private', return_value=False), \
                         patch.object(developer, 'code_providers', return_value={'groq'}), \
                         patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', json.dumps({
-                            'files': [{'path': path, 'content': '# Corrected note\n'}]}))) as model:
+                            'files': [{'path': path, 'reason': 'Correct the owner requested note', 'content': '# Corrected note\n'}]}))) as model:
                     if len(delta) == 1 and delta[0]['status'] == 'added':
                         result = developer.revise_branch({'title': 'Correct note', 'body': 'Only ' + path},
                                                         pr, 'kappa/dev-1', 'b'*40, [], 'fixture', '')

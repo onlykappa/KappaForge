@@ -246,13 +246,18 @@ class ScriptedScenarioTests(unittest.TestCase):
                                            "stages": ["Add the two conversions", "Test them"],
                                            "stage_files": [["units/convert.py"], ["tests/test_convert.py"]]})
         if "You are reviewing a change" in prompt:
-            return "scripted", json.dumps({"requirements": [{"text": "Add fahrenheit_to_celsius", "met": True, "evidence": {
+            # A repair can propose only the unfinished test; earlier source is already on its candidate.
+            changed = json.loads(prompt.split('\nChanged files: ', 1)[1].splitlines()[0])
+            return "scripted", json.dumps({"file_scope": [
+                row for row in (
+                    {"path": "units/convert.py", "necessary": True, "reason": "Implement the requested conversions", "quote": "def fahrenheit_to_celsius"},
+                    {"path": "tests/test_convert.py", "necessary": True, "reason": "Exercise the requested conversions", "quote": "fahrenheit_to_celsius"}) if row['path'] in changed], "requirements": [{"text": "Add fahrenheit_to_celsius", "met": True, "evidence": {
                 "path": "units/convert.py", "quote": "def fahrenheit_to_celsius"}}], "problems": []})
         if "THIS IS STAGE 1" in prompt:
-            return "scripted", json.dumps({"summary": "Add conversions", "files": [{"path": "units/convert.py", "content":
+            return "scripted", json.dumps({"summary": "Add conversions", "files": [{"path": "units/convert.py", "reason": "Implement the requested conversions", "content":
                                                                                   REFERENCE["easy"]["units/convert.py"]}]})
         if "THIS IS STAGE 2" in prompt:
-            return "scripted", json.dumps({"summary": "Tests", "files": [{"path": "tests/test_convert.py", "edits": [{
+            return "scripted", json.dumps({"summary": "Tests", "files": [{"path": "tests/test_convert.py", "reason": "Exercise the requested conversion behavior", "edits": [{
                 "find": "from units.convert import celsius_to_fahrenheit",
                 "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
         return "scripted", "{}"
@@ -266,7 +271,7 @@ class ScriptedScenarioTests(unittest.TestCase):
                 state["failed"] = True
                 raise gateway.error(503, None)
             if "independent checks FAILED" in prompt or "Complete this unfinished change" in prompt:
-                return "scripted", json.dumps({"summary": "Finish", "files": [{"path": "tests/test_convert.py", "edits": [{
+                return "scripted", json.dumps({"summary": "Finish", "files": [{"path": "tests/test_convert.py", "reason": "Finish the requested conversion tests", "edits": [{
                     "find": "from units.convert import celsius_to_fahrenheit",
                     "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
             return self.answer(key, prompt, *args, **kwargs)

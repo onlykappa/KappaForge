@@ -3,11 +3,12 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
-from engine import developer, native_build, recovery
+from engine import developer, native_build, recovery, task_state
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
+ADD_SCOPE = [{"path": "app/main.py", "necessary": True, "reason": "Convert the inputs at the requested add boundary", "quote": "return int(a) + int(b)"}]
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 
@@ -31,9 +32,9 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_a_repeated_rejected_patch_moves_on_to_another_model(self):
         """Task #123 stopped at attempt 2 of 5 when a model repeated itself; now the other attempts ask other models."""
-        invalid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+        invalid = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return a + b"}]}]})
-        valid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+        valid = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         calls = []
 
@@ -52,7 +53,7 @@ class DeveloperValidationTests(unittest.TestCase):
     def test_a_stage_with_nothing_to_change_is_skipped_after_asking_twice(self):
         """Task #123's "bundle the web assets" stage had nothing to edit; it failed the whole task."""
         first = json.dumps({"summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         empty = json.dumps({"summary": "Bundling is automatic", "files": []})
         with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", empty), ("flash", empty)]) as ai:
             _, summary, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None,
@@ -69,7 +70,7 @@ class DeveloperValidationTests(unittest.TestCase):
         proposal = json.dumps({"files": [
             {"path": ".github/workflows/lint.yml", "content": "name: lint\npermissions:\n  contents: read\n"},
             {"path": "config/providers.json", "content": "{}\n"},
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
         ]})
         with patch.object(developer, "run_model", return_value=("test-model", proposal)) as model:
             _, _, changes, _ = developer.generate("key", "fix add", "onlykappa/KappaForge", SOURCES, EXISTING)
@@ -84,7 +85,7 @@ class DeveloperValidationTests(unittest.TestCase):
                          ("authorization", "stop"))
 
     def test_five_failed_attempts_use_distinct_repair_instructions(self):
-        bad = json.dumps({"files": [{"path": "app/main.py", "edits": [
+        bad = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "not present", "replace": "x"}]}]})
         prompts = []
         def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):
@@ -101,9 +102,9 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertNotEqual(prompts[1], prompts[2])
 
     def test_failed_patch_does_not_prevent_changed_retry(self):
-        no_op = json.dumps({"files": [{"path": "app/main.py", "edits": [
+        no_op = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return a + b"}]}]})
-        valid = json.dumps({"files": [{"path": "app/main.py", "edits": [
+        valid = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", side_effect=[("test-model", no_op),
                                                                  ("test-model", valid)]):
@@ -112,7 +113,7 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("return int(a) + int(b)", changes["app/main.py"])
 
     def test_edits_apply_to_read_files(self):
-        changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/main.py", "edits": [
+        changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         self.assertIn("int(a) + int(b)", changes["app/main.py"])
         self.assertIn("return a - b", changes["app/main.py"])
@@ -139,7 +140,7 @@ class DeveloperValidationTests(unittest.TestCase):
         with patch.object(developer, "run_model", return_value=("flash", plan)) as model:
             developer.select_files("key", "task", EXISTING, guide=loaded)
         self.assertIn("END_RULE", model.call_args.args[1])
-        proposal = json.dumps({"summary": "Updated add", "files": [{"path": "app/main.py", "edits": [
+        proposal = json.dumps({"summary": "Updated add", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", return_value=("flash", proposal)) as model:
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, guide=loaded)
@@ -152,7 +153,7 @@ class DeveloperValidationTests(unittest.TestCase):
     def test_ambiguous_or_missing_find_is_rejected(self):
         for find in ["return a", "not in the file"]:
             with self.subTest(find=find), self.assertRaises(ValueError):
-                apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/main.py", "edits": [{"find": find, "replace": "x"}]}]})
+                apply_changes(SOURCES, EXISTING, {"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": find, "replace": "x"}]}]})
 
     def test_unread_existing_files_cannot_be_overwritten_or_edited(self):
         with self.assertRaises(ValueError):
@@ -213,9 +214,9 @@ class DeveloperValidationTests(unittest.TestCase):
             self.assertIsNotNone(syntax_error("a.js", "function (\n"))
 
     def test_invalid_output_is_retried_with_the_rejection_reason(self):
-        bad = json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "missing", "replace": "x"}]}]})
+        bad = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "missing", "replace": "x"}]}]})
         good = json.dumps({"explanation": "Adding now works with text numbers.", "summary": "Cast inputs", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", side_effect=[("flash", bad), ("flash", good)]) as ai:
             model, summary, changes, explanation = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
         self.assertEqual(summary, "Cast inputs")
@@ -241,7 +242,7 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_large_budget_first_then_small_budget_for_fallbacks(self):
         good = json.dumps({"summary": "Cast inputs", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", return_value=("flash", good)) as ai:
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, allowed={"groq"})
         self.assertEqual(ai.call_args.kwargs["max_output_tokens"], developer.LARGE.output_tokens)
@@ -267,9 +268,9 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_big_changes_are_built_in_stages_on_top_of_each_other(self):
         first = json.dumps({"explanation": "Adds casting.", "summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         second = json.dumps({"explanation": "Adds a test.", "summary": "Test", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return int(a) + int(b)", "replace": "return int(a) + int(b)  # checked"}]},
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return int(a) + int(b)", "replace": "return int(a) + int(b)  # checked"}]},
             {"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
         with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", second)]) as ai:
             model, summary, changes, explanation = developer.build_in_stages(
@@ -304,9 +305,9 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_design_notes_reach_the_change_and_a_test_is_required_when_the_repo_has_tests(self):
         no_test = json.dumps({"summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with_test = json.dumps({"summary": "Cast + test", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
             {"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
         with patch.object(developer, "run_model", side_effect=[("flash", no_test), ("flash", with_test)]) as ai:
             _, _, changes, _ = developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING,
@@ -348,9 +349,9 @@ class DeveloperValidationTests(unittest.TestCase):
 
     def test_staged_build_ends_with_a_test_stage_when_no_stage_added_one(self):
         first = json.dumps({"summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         second = json.dumps({"summary": "Sub", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a - b", "replace": "return int(a) - int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a - b", "replace": "return int(a) - int(b)"}]}]})
         test = json.dumps({"summary": "Test", "files": [{"path": "tests/test_main.py", "content": "def test_add():\n    assert True\n"}]})
         with patch.object(developer, "run_model", side_effect=[("flash", first), ("flash", second), ("flash", test)]) as ai:
             _, summary, changes, _ = developer.build_in_stages(
@@ -455,9 +456,9 @@ class DeveloperAuthorizationTests(unittest.TestCase):
                 return {"encoding": "base64", "content": base64.b64encode(SOURCES["app/main.py"].encode()).decode()}
             return responses.get(path, {})
         answers = [("flash", json.dumps({"read": ["app/main.py"]})),
-                   ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "edits": [
+                   ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
                        {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))]
-        answers.append(("flash", json.dumps({"requirements":[{"text":"Cast inputs","met":True,
+        answers.append(("flash", json.dumps({"file_scope": ADD_SCOPE, "requirements":[{"text":"Cast inputs","met":True,
             "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})))
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=answers):
             url = produce_development_pr(self.issue(), "key", "token")
@@ -510,13 +511,74 @@ class PrFirstTests(unittest.TestCase):
     """The draft opens with the goal and plan before any code; the code lands on it; it waits for the owner's review."""
     ROOT_ = "repos/onlykappa/KappaForge"
 
+    def test_already_satisfied_comment_makes_no_pr_code_or_model_calls(self):
+        path, comment = '.github/workflows/free-llm-drift.yml', '# Maintained weekly'
+        issue = {**self.issue(), 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n'
+                 + f'Add comment {comment} as the first line of {path}. Open a draft PR and do not merge.'}
+        calls, world = self.world()
+        with patch.object(developer, 'gh', side_effect=world), \
+                patch.object(developer, 'snapshot', return_value=('main', 'b' * 40, {path: 20}, {})), \
+                patch.object(developer, 'read_source', return_value=comment + '\nname: existing\n'), \
+                patch.object(developer, 'run_model') as model:
+            self.assertIsNone(produce_development_pr(issue, 'key', 'token'))
+        model.assert_not_called()
+        writes = [(endpoint, body) for endpoint, body, _ in calls if body is not None]
+        self.assertTrue(writes)
+        self.assertTrue(all('/issues/' in endpoint for endpoint, _ in writes))
+        self.assertIn('No source changes needed', writes[-1][1]['body'])
+        self.assertIn('b' * 40, writes[-1][1]['body'])
+
+    def test_task_221_stops_after_the_requested_comment_and_uses_the_real_pr_receipt(self):
+        path = '.github/workflows/free-llm-drift.yml'
+        comment = '# Weekly check of the free model list; maintained by KappaForge.'
+        before = 'name: Free LLM list drift\njobs: {}\n'
+        goal = f'Add a single comment line {comment} as the first line of {path}. Open a draft PR for this change and do not merge it.'
+        issue = {**self.issue(), 'title': 'Document workflow', 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + goal}
+        calls, world = self.world()
+        def github(endpoint, token, payload=None, method=None):
+            if endpoint.startswith(self.ROOT_ + '/git/trees/'):
+                return {'tree': [{'path': path, 'type': 'blob', 'size': len(before)},
+                                 {'path': 'tests/existing.py', 'type': 'blob', 'size': 10}]}
+            if endpoint.startswith(self.ROOT_ + '/contents/' + path):
+                import base64
+                return {'encoding': 'base64', 'content': base64.b64encode(before.encode()).decode()}
+            result = world(endpoint, token, payload, method)
+            if endpoint == self.ROOT_ + '/pulls' and payload:
+                result.update(state='open', draft=True, head={'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}})
+            return result
+        answers = [('m', json.dumps({'read': [path], 'stages': ['Add comment']})),
+                   ('m', json.dumps({'files': [{'path': path, 'edits': [{'find': before, 'replace': comment + '\n' + before}]}]})),
+                   ('m', json.dumps({'requirements': [
+                       {'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': comment}},
+                       {'text': 'Open a draft PR for this change and do not merge it.', 'met': False}], 'problems': []}))]
+        observations, responses = [], iter(answers)
+        def model_response(*args, **kwargs):
+            observations.append(task_state.snapshot())
+            return next(responses)
+        with patch.object(developer, 'gh', side_effect=github), patch.object(developer, 'run_model', side_effect=model_response) as model, \
+                patch.object(developer, 'push_token', return_value='token'):
+            produce_development_pr(issue, 'key', 'token')
+        self.assertEqual(model.call_count, 3, 'one plan, one edit, one review; no false repair')
+        tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
+        self.assertEqual({entry['path'] for entry in tree_entries}, {path})
+        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
+        self.assertEqual(developer.requirements_open(final), [])
+        self.assertIn('VERIFIED TASK PR:', model.call_args_list[1].args[1])
+        self.assertEqual([data['nextAction']['role'] for data in observations], ['planner', 'coder', 'reviewer'])
+        self.assertNotIn('pr', observations[0]['facts'], 'planning precedes opening the draft')
+        for data in observations[1:]:
+            self.assertEqual(data['facts']['pr']['url'], 'https://github.com/onlykappa/KappaForge/pull/50')
+            self.assertEqual(data['identity']['branch'], 'kappa/dev-9')
+            self.assertTrue(data['ownerReviewRequired'])
+        self.assertEqual(observations[2]['facts']['checks'], [], 'a saved edit must not invent a passing CI result')
+
     def world(self, pr_status=201, branch_exists=False, pr_files=()):
         calls = []
         def fake_gh(path, token, payload=None, method=None):
             calls.append((path, payload, method))
             if path.endswith("/git/ref/heads/kappa/dev-9"):
                 if branch_exists:
-                    return {"object": {"sha": "p" * 40}}
+                    return {"object": {"sha": "e" * 40}}
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             if path == self.ROOT_:
                 return {"default_branch": "main"}
@@ -545,9 +607,9 @@ class PrFirstTests(unittest.TestCase):
     def answers(self):
         return [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast both inputs to int"], "stage_files": [["app/main.py"]],
                                       "design": "Convert at the boundary."})),
-                ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "edits": [
+                ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
                     {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})),
-                ("flash", json.dumps({"requirements": [{"text": "Cast inputs", "met": True,
+                ("flash", json.dumps({"file_scope": ADD_SCOPE, "requirements": [{"text": "Cast inputs", "met": True,
                                                         "evidence": {"path": "app/main.py", "quote": "return int(a) + int(b)"}}], "problems": []}))]
 
     def issue(self):
@@ -594,22 +656,22 @@ class PrFirstTests(unittest.TestCase):
     def test_a_stopped_run_continues_on_its_plan_draft(self):
         calls, fake_gh = self.world(branch_exists=True)
         plan_draft = {"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "draft": True, "state": "open",
-                      "head": {"ref": "kappa/dev-9", "sha": "p" * 40}}
+                      "head": {"ref": "kappa/dev-9", "sha": "e" * 40}}
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
             url = produce_development_pr(self.issue(), "key", "token", adopt=plan_draft)
         self.assertEqual(url, plan_draft["html_url"])
         self.assertFalse(any(p == self.ROOT_ + "/pulls" and body is not None for p, body, _ in calls), "no second draft")
         code = next(body for p, body, _ in calls if p == self.ROOT_ + "/git/commits" and body and body["tree"] == "t" * 40)
-        self.assertEqual(code["parents"], ["p" * 40], "the code lands on top of the plan commit")
+        self.assertEqual(code["parents"], ["e" * 40], "the code lands on top of the plan commit")
         self.assertTrue(any(p == self.ROOT_ + "/git/refs/heads/kappa/dev-9" and m == "PATCH" for p, _, m in calls))
 
     def test_a_staged_build_marks_the_draft_as_holding_code_once_the_first_stage_is_saved(self):
         calls, fake_gh = self.world()
         two_stages = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast a", "Cast b"],
                                             "stage_files": [["app/main.py"], ["app/main.py"]]})),
-                      ("flash", json.dumps({"summary": "Cast a", "files": [{"path": "app/main.py", "edits": [
+                      ("flash", json.dumps({"summary": "Cast a", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
                           {"find": "return a + b", "replace": "return int(a) + b"}]}]})),
-                      ("flash", json.dumps({"summary": "Cast b", "files": [{"path": "app/main.py", "edits": [
+                      ("flash", json.dumps({"summary": "Cast b", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
                           {"find": "return int(a) + b", "replace": "return int(a) + int(b)"}]}]})),
                       self.answers()[2]]
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=two_stages), \
@@ -663,11 +725,11 @@ class OtherRepositoryTests(unittest.TestCase):
             prompts.append(prompt)
             allowances.append(allowed)
             if "You are reviewing a change" in prompt:
-                return "flash", json.dumps({"requirements":[{"text":"Fix adding","met":True,
+                return "flash", json.dumps({"file_scope": ADD_SCOPE, "requirements":[{"text":"Fix adding","met":True,
                     "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})
             if len(prompts) == 1:
                 return "flash", json.dumps({"read": ["app/main.py"]})
-            return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         issue = {"number": 9, "title": "Fix", "user": {"login": "onlykappa"}, "body": "Repository: onlykappa/OmniPC\nMode: develop\n\nFix adding"}
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "owner-pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=model):
@@ -713,8 +775,8 @@ class FlaggedChangeTests(unittest.TestCase):
                 return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3", "number": 3}
             return {"sha": "c" * 40} if path.endswith("/git/commits") else {}
         answers = [("flash", json.dumps({"read": ["app/main.py"]})), ("flash", json.dumps({"summary": "x", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return a + b  # os.environ['SECRET']"}]}]}))]
-        answers.append(("flash", json.dumps({"requirements":[{"text":"Change adding","met":True,
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return a + b  # os.environ['SECRET']"}]}]}))]
+        answers.append(("flash", json.dumps({"file_scope": [{**ADD_SCOPE[0], "quote": "return a + b"}], "requirements":[{"text":"Change adding","met":True,
             "evidence":{"path":"app/main.py","quote":"return a + b"}}],"problems":[]})))
         issue = {"number": 9, "title": "t", "user": {"login": "onlykappa"}, "body": "Repository: onlykappa/OmniPC\nMode: develop\n\nx"}
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
@@ -789,9 +851,9 @@ class WorkflowAccessTests(unittest.TestCase):
         answers = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast inputs and add the workflow"],
                                          "stage_files": [["app/main.py", ".github/workflows/ci.yml"]], "design": "x"})),
                    ("flash", json.dumps({"summary": "Cast inputs", "files": [
-                       {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
-                       {"path": ".github/workflows/ci.yml", "content": workflow}]})),
-                   ("flash", json.dumps({"requirements": [{"text": "Cast inputs", "met": True,
+                       {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+                       {"path": ".github/workflows/ci.yml", "reason": "Run the requested workflow checks", "content": workflow}]})),
+                   ("flash", json.dumps({"file_scope": ADD_SCOPE + [{"path": ".github/workflows/ci.yml", "necessary": True, "reason": "Run the requested workflow checks", "quote": "name:"}], "requirements": [{"text": "Cast inputs", "met": True,
                                                            "evidence": {"path": "app/main.py", "quote": "return int(a) + int(b)"}}], "problems": []}))]
         issue = world.issue()
         issue["body"] += body_extra
@@ -900,7 +962,7 @@ class OwnerRequestedFixTests(unittest.TestCase):
 
     def answer(self):
         return ("flash", json.dumps({"explanation": "Fixes the adding bug the tests caught.", "summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))
 
     def test_fix_fast_forwards_the_branch_retests_and_explains(self):
         calls, gh = self.fake()
@@ -1088,7 +1150,7 @@ class StageRecoveryTests(unittest.TestCase):
     def test_a_failed_test_stage_keeps_the_change_for_the_work_check(self):
         """Task #125's final "write a test" stage failing threw away three finished stages."""
         first = json.dumps({"summary": "Cast", "files": [
-            {"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            {"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", side_effect=[("flash", first)] + [("flash", "not json")] * 10):
             _, _, changes, _ = developer.build_in_stages("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, "", None,
                                                          ["Cast"], require_test=True)
@@ -1107,8 +1169,8 @@ class ModelSwitchTests(unittest.TestCase):
         developer.Progress.latest = None
 
     def test_a_model_whose_answers_keep_failing_is_swapped_mid_task(self):
-        bad = [json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "missing " + str(i), "replace": "x"}]}]}) for i in range(2)]
-        good = json.dumps({"files": [{"path": "app/main.py", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+        bad = [json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "missing " + str(i), "replace": "x"}]}]}) for i in range(2)]
+        good = json.dumps({"files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         calls = []
 
         def model(api_key, prompt, max_output_tokens=0, allowed=None, json_mode=False, skip=()):

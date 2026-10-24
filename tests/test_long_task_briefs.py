@@ -11,7 +11,7 @@ TASK = 'Implement the authorized change.\n' + 'x' * (20000 - len(TAIL) - len('Im
 SOURCES = {'app/main.py': 'def main():\n    return 1\n'}
 EXISTING = {path: len(source) for path, source in SOURCES.items()}
 PROPOSAL = json.dumps({'summary': 'Change return value', 'files': [
-    {'path': 'app/main.py', 'edits': [{'find': 'return 1', 'replace': 'return 2'}]}]})
+    {'path': 'app/main.py', 'reason': 'Implement the requested return value', 'edits': [{'find': 'return 1', 'replace': 'return 2'}]}]})
 
 
 class LongTaskBriefTests(unittest.TestCase):
@@ -56,8 +56,8 @@ class LongTaskBriefTests(unittest.TestCase):
                 patch.object(developer, 'is_private', return_value=False), \
                 patch.object(developer, 'code_providers', return_value={'groq'}), \
                 patch.object(developer, 'run_model', return_value=('fixture', PROPOSAL)) as model:
-            _, _, changes, _, _ = developer.revise_branch({'title': 'Authorized task', 'body': TASK},
-                {'number': 1, 'body': ''}, 'fixture', 'fixture', [], 'fixture', 'fixture')
+            _, _, changes, _, _ = developer.revise_branch({'number': 1, 'title': 'Authorized task', 'body': TASK},
+                {'number': 1, 'body': ''}, 'kappa/dev-1', 'a' * 40, [], 'fixture', 'fixture')
         self.assertIn(TASK, model.call_args.args[1])
         self.assertIn('return 2', changes['app/main.py'])
 
@@ -82,8 +82,8 @@ class ResumedBriefTests(unittest.TestCase):
                 patch.object(developer, 'code_providers', return_value={'groq'}), \
                 patch.object(developer, 'check_the_work', return_value=({'app/main.py': 'x'}, '', [])), \
                 patch.object(developer, 'generate', return_value=('fixture', 'done', {'app/main.py': 'x'}, '')) as generate:
-            developer.revise_branch({'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
-                                    'fixture', 'fixture', [], 'fixture', 'fixture')
+            developer.revise_branch({'number': 1, 'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
+                                    'kappa/dev-1', 'a' * 40, [], 'fixture', 'fixture')
         prompt = generate.call_args.args[1]
         self.assertIn('SAVED PROGRESS', prompt)
         self.assertIn('1. [done] Change the return value', prompt)
