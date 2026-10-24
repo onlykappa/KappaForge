@@ -181,3 +181,26 @@ class RepairControllerReviewTests(unittest.TestCase):
         self.assertTrue(calls)
         self.assertTrue(all(options['allowed'] == ['ollama'] for prompt, options in calls))
         self.assertTrue(session.closed)
+
+    def test_new_development_does_not_open_a_plan_pr_before_generation_or_validation(self):
+        import urllib.error
+        from engine import developer
+        issue = {'number': 987, 'title': 'Fix value', 'user': {'login': 'onlykappa'},
+                 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\nFix the value in app.py.'}
+
+        def github(path, token, payload=None, method=None):
+            if path.endswith('/git/ref/heads/kappa/dev-987'):
+                raise urllib.error.HTTPError(path, 404, 'missing', {}, None)
+            return [] if path.endswith('/comments?per_page=100') else {}
+
+        with patch.object(developer, 'gh', side_effect=github), \
+                patch.object(developer, 'snapshot', return_value=('main', 'a' * 40, {'app.py': 10}, {})), \
+                patch.object(developer, 'project_guide', return_value=''), \
+                patch.object(developer, 'build_repo_map', return_value=None), \
+                patch.object(developer, 'plan_change', return_value=(['app.py'], [], '')), \
+                patch.object(developer, 'read_source', return_value='value = 0\n'), \
+                patch.object(developer, 'build_in_stages', side_effect=RuntimeError('review stopped generation')), \
+                patch.object(developer, 'open_plan_draft', side_effect=AssertionError('PR created before sandbox validation')) as draft, \
+                self.assertRaisesRegex(RuntimeError, 'review stopped generation'):
+            developer.produce_development_pr(issue, 'review-key', 'github-test-token')
+        draft.assert_not_called()
