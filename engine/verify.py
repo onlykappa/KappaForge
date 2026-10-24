@@ -600,7 +600,14 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                 diff_limit //= 2
             _, output = run_model(api_key, prompt,
                                   max_output_tokens=6000, allowed=allowed, json_mode=True)
-            result = parse_review(output)
+            try:
+                result = parse_review(output)
+            except (ValueError, TypeError):
+                if not scope_required:
+                    raise
+                if not attempt:
+                    continue
+                raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
             for requirement in reqs:
                 original_requirements.setdefault(requirement['text'], dict(requirement))

@@ -57,6 +57,10 @@ class TaskGoalTests(unittest.TestCase):
             response['file_scope'] = [{'path': path, 'necessary': True, 'reason': 'needed', 'quote': 'invented source'} for path in changes]
             with self.assertRaisesRegex(verify.ScopeReviewUnavailable, 'does not match current source'):
                 verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+            with patch.object(developer, 'run_model', return_value=('m', 'not JSON')) as invalid_review:
+                with self.assertRaisesRegex(verify.ScopeReviewUnavailable, 'invalid response'):
+                    verify.model_review(invalid_review, 'key', goal.request, lambda _: '', changes, changes)
+            self.assertEqual(invalid_review.call_count, 2, 'Retry review only; a format error cannot authorize code edits')
         finally:
             task_goal.CURRENT.reset(token)
 
