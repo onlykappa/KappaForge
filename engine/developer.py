@@ -42,6 +42,22 @@ MAX_FILE_CHARS = 60000
 # Larger files are shown to the model as relevant excerpts but edited in full.
 MAX_LARGE_FILE_CHARS = 400000
 MAX_READ_FILES = 12
+
+def _add_engine_developer_source(sources, existing, repo, sha, token):
+    """Ensure engine/developer.py is present in sources if space permits.
+    Respects LARGE.read_files limit and file‑size constraints.
+    """
+    if repo != ROOT:
+        return sources
+    path = 'engine/developer.py'
+    if path in sources:
+        return sources
+    if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS and len(sources) < LARGE.read_files:
+        try:
+            sources[path] = read_source(repo, path, sha, token)
+        except (ValueError, UnicodeDecodeError):
+            pass
+    return sources
 MAX_CONTEXT_CHARS = 160000
 MAX_LISTED_PATHS = 700
 # Files read from the repository map's ranking when the planner cannot choose.
@@ -2272,7 +2288,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                 sources[path] = read_source(repo, path, head_sha, repo_token)
             except (ValueError, UnicodeDecodeError):
                 continue
-    body = pr.get("body") or ""
+            sources = _add_engine_developer_source(sources, existing, repo, head_sha, repo_token)
+        body = pr.get("body") or ""
     design = (re.search(r"^## Design notes\n(.*?)(?=\n## |\Z)", body, re.S | re.M) or [None, ""])[1].strip()
     diff = "".join(f"\n--- {f['filename']}\n{f.get('patch', '(diff too large to show)')[:6000]}" for f in files)[:30000]
     goal.review_paths = tuple(f['filename'] for f in files)
