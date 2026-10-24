@@ -61,6 +61,10 @@ class TaskGoalTests(unittest.TestCase):
             with patch.object(developer, 'run_model', return_value=('m', 'not JSON')) as invalid_review:
                 self.assertIsNone(verify.model_review(invalid_review, 'key', goal.request, lambda _: '', changes, changes))
             self.assertIn('invalid response', verify.REVIEW_FAILURE.get())
+            self.assertTrue(verify.SCOPE_UNDECIDED.get(), 'a typed signal stops source repair, not the message text')
+            with patch.object(developer, 'run_model', side_effect=OSError('network down')) as down:
+                self.assertIsNone(verify.model_review(down, 'key', goal.request, lambda _: '', changes, changes))
+            self.assertFalse(verify.SCOPE_UNDECIDED.get(), 'other review failures keep their bounded repair rounds')
             self.assertEqual(invalid_review.call_count, 2, 'Retry review only; a format error cannot authorize code edits')
         finally:
             task_goal.CURRENT.reset(token)
@@ -108,6 +112,34 @@ class TaskGoalTests(unittest.TestCase):
         request = 'Add a comment # v2 at the top of preview/app.js. Keep the header text in sync with the README'
         self.assertIsNone(task_goal.from_request(request).paths)
         self.assertEqual(task_goal.from_request(REQUEST.replace('Change nothing else. ', 'Keep it as a draft. ')).paths, (PATH,))
+
+    def test_an_older_or_long_guidance_ask_still_widens_the_goal(self):
+        older = task_goal.from_request(REQUEST)
+        older.guidance(['Also update README.md', 'Do not merge', "Let me know when it is ready", 'Keep it as a draft'])
+        self.assertIsNone(older.paths, 'the README ask fell out of the prompt window but still counts')
+        self.assertNotIn('README', older.request, 'prompts still carry only the latest three messages')
+        long = task_goal.from_request(REQUEST)
+        long.guidance(['Do not merge. ' + 'x' * 2000 + '. Also update README.md'])
+        self.assertIsNone(long.paths)
+        self.assertEqual(task_goal.recent_guidance(['a', ' ', None, 'b', 'c', 'd']), ('b', 'c', 'd'), 'blank messages take no slot')
+
+    def test_a_pr_that_created_the_comment_target_can_still_be_repaired(self):
+        import urllib.error
+        request = 'Add a comment # Helpers as the first line of new/mod.py.'
+        files = [{'filename': 'new/mod.py', 'status': 'added'}, {'filename': 'tests/test_mod.py', 'status': 'added'}]
+        pr = {'number': 7, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/7', 'state': 'open', 'draft': True,
+              'base': {'sha': 'b' * 40}, 'head': {'ref': 'kappa/dev-5', 'repo': {'full_name': developer.ROOT}}}
+        def github(path, *_a, **_k):
+            if '/compare/' in path:
+                return {'merge_base_commit': {'sha': 'b' * 40}}
+            return files if path.endswith('/pulls/7/files?per_page=100') else []
+        def missing(*_a):
+            raise urllib.error.HTTPError('u', 404, 'missing', {}, None)
+        with patch.object(developer, 'gh', side_effect=github), patch.object(developer, 'read_source', side_effect=missing), \
+                patch.object(developer, 'list_tree', side_effect=RuntimeError('reached the repair')):
+            with self.assertRaisesRegex(RuntimeError, 'reached the repair'):
+                developer.revise_branch({'number': 5, 'title': 'Helpers', 'body': request}, pr, 'kappa/dev-5', 'a' * 40, [],
+                                        'token', 'key', repo=developer.ROOT, repo_token='token')
 
     def test_compound_lifecycle_asks_stay_lifecycle_but_a_second_code_ask_does_not(self):
         for text in ("Open a draft PR and let me know when it's ready", 'Open a PR and notify me',

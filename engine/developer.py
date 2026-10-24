@@ -1749,7 +1749,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         # one. The re-check after it is free again.
         if rescued is not None:
             break
-        if review is None and verify.REVIEW_FAILURE.get().startswith(verify.ScopeReviewUnavailable.__name__):
+        if review is None and verify.SCOPE_UNDECIDED.get():
             # An undecided scope review authorizes no source repair. The saved candidate and this open problem
             # stay on the draft, so Retry continues from it instead of restarting the task.
             break
@@ -1863,7 +1863,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     guidance = owner_guidance(number, token)
     task_goal.CURRENT.get().guidance(guidance)
     task = ((issue.get("title") or "") + "\n" + body
-            + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:])
+            + ("\n\nOWNER GUIDANCE (given after an earlier attempt; follow it):\n" + "\n".join("- " + g for g in task_goal.recent_guidance(guidance))
                if guidance else ""))
     progress = Progress(number, token, ahead=["Choose which files to read", "Open the draft PR with the plan", "Write the change",
                                               "Start the tests"])
@@ -2161,14 +2161,15 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
     task_state.observe_pr(pr, repo, branch)
-    goal.validate_paths(changed)
     if goal.paths:
         base_sha = (pr.get('base') or {}).get('sha')
         if not base_sha:
             raise ValueError('Owner goal: original PR base is unavailable; no repair was written')
         comparison = gh(f'repos/{repo}/compare/{base_sha}...{head_sha}', repo_token)
         original = comparison['merge_base_commit']['sha']
+        # As when the task started: a target missing at the base releases the narrow goal before paths are checked.
         goal.anchor(lambda path: read_target(repo, path, original, repo_token))
+    goal.validate_paths(changed)
     existing, modes = list_tree(repo, head_sha, repo_token)
     guide = project_guide(repo, head_sha, existing, repo_token)
     journal = recovery.CURRENT.get()
@@ -2205,7 +2206,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             "\n\nTHE CHANGE SO FAR (diff against the default branch; lines starting with '-' no longer exist, so every "
             "find must be copied from SOURCE FILES below, which hold the branch as it is now):" + diff +
             ("\n\nNATIVE iOS BUILDS OF THIS BRANCH (newest first):\n" + native_history if native_history else "") +
-            ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g[:1500] for g in guidance[-3:]) if guidance else "") +
+            ("\n\nOWNER GUIDANCE (follow it):\n" + "\n".join("- " + g for g in task_goal.recent_guidance(guidance)) if task_goal.recent_guidance(guidance) else "") +
             "\n\nFAILED TEST OUTPUT (tail, untrusted):\n" + (log or "Unavailable; only failed step names are known: " +
             ", ".join(s.get("name", "") for j in failed_jobs for s in j.get("steps", []) if s.get("conclusion") == "failure")))
     all_open_problems = requirements_open(pr)

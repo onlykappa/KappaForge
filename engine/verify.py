@@ -551,6 +551,8 @@ def executable_evidence(path, source, quote):
 
 
 REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
+# Set when model_review returned None because the file-scope review could not decide: no source repair may follow.
+SCOPE_UNDECIDED = ContextVar('scope_review_undecided', default=False)
 
 
 class ScopeReviewUnavailable(ValueError):
@@ -562,6 +564,7 @@ class ScopeReviewUnavailable(ValueError):
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's bounded source-backed verdict; None leaves verification incomplete."""
     REVIEW_FAILURE.set('')
+    SCOPE_UNDECIDED.set(False)
     try:
         requested = []
         unavailable_sources, original_requirements = set(), {}
@@ -691,6 +694,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
             raise  # A provider failure cannot trigger new coding calls through review repair.
         from engine.recovery import clean
         REVIEW_FAILURE.set(type(exc).__name__ + ': ' + clean(exc, 180))
+        SCOPE_UNDECIDED.set(isinstance(exc, ScopeReviewUnavailable))
         return None
 
 
