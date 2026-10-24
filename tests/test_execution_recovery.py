@@ -185,6 +185,14 @@ class ExecutionRecoveryTests(unittest.TestCase):
         row = self.reload().state['providerUsage']['free:model']
         self.assertEqual(row, dict(responses=2, failures=1, measuredResponses=1, tokens=dict(input=10, output=2, total=12)))
 
+    def test_usage_storage_outage_is_not_misclassified_as_a_provider_response_failure(self):
+        handle = recovery.CURRENT.set(self.journal)
+        self.addCleanup(recovery.CURRENT.reset, handle)
+        self.journal.write = Mock(side_effect=ConnectionError('tracker offline'))
+        with self.assertRaises(execution.CheckpointUnavailable) as error:
+            task_state.provider_usage('free:model', {'total_tokens': 12})
+        self.assertEqual(recovery.diagnose(error.exception)[0], 'infrastructure')
+
     def test_private_code_is_blocked_before_writing_to_a_public_task_tracker(self):
         journal = SimpleNamespace(scope=SimpleNamespace(repo='owner/private'), state={},
                                   target_read=lambda path: {'private': True}, read=lambda path: {'private': False}, write=Mock())

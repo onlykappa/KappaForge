@@ -275,7 +275,11 @@ def provider_usage(route, usage=None, failed=False):
         row['measuredResponses'] += 1
         for key, value in measured.items():
             row['tokens'][key] = row['tokens'].get(key, 0) + value
-    journal.persist()
+    try:
+        journal.persist()
+    except Exception as exc:
+        from engine.execution import CheckpointUnavailable
+        raise CheckpointUnavailable('Provider usage checkpoint unavailable: ' + clean(type(exc).__name__, 100)) from exc
 
 
 def review(requirements, problems):

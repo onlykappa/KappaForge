@@ -133,7 +133,7 @@ command timestamps, outcomes, repair evidence and sanitized bounded history. See
 
 | Check | Measured result |
 | --- | --- |
-| `py -3.12 -m unittest discover -s tests -q` | 807 tests ran, OK with 13 skipped |
+| `py -3.12 -m unittest discover -s tests -q` | 808 tests ran, OK with 13 skipped |
 | `npm test` | 840 passed |
 | `py -3.12 scripts/dependency-map.py --check` and `git diff --check` | Passed |
 | New failure-injection tests | Real Journal and Session with recording Docker: provider outage, partial suites, completed-validation reuse, changed base/task/tree, corrupt/untrusted fragments, secret redaction/rejection, private storage guard, usage counters, publication receipt/head checks and saved generation plan |
