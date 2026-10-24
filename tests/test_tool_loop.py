@@ -10,30 +10,30 @@ class FakeModel:
         self._responses = list(responses)
         self.calls = []
 
-    def __call__(self, prompt, api_key):
+    def __call__(self, api_key, prompt, **kwargs):
         # Record the prompt for potential debugging (not used in assertions)
         self.calls.append(prompt)
         if not self._responses:
             raise AssertionError("No more fake responses available")
-        return self._responses.pop(0)
+        return 'scripted:original', self._responses.pop(0)
 
 
-def echo_tool(args):
+def echo_tool(**args):
     return {"status": "ok", "output": args.get("msg", "")}
 
 
-def unavailable_tool(args):
+def unavailable_tool(**args):
     return {"status": "unavailable"}
 
 
-def error_tool(args):
+def error_tool(**args):
     raise RuntimeError("boom")
 
 
 class TestToolLoop(unittest.TestCase):
     def test_done_immediately(self):
         model = FakeModel([json.dumps({"done": True, "summary": "All done"})])
-        result = run_tool_loop(model, "key", "test task", {"echo": echo_tool})
+        result = run_tool_loop(model, "key", "test task", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "done")
         self.assertEqual(result["summary"], "All done")
         self.assertEqual(result["steps"], [])
@@ -41,7 +41,7 @@ class TestToolLoop(unittest.TestCase):
 
     def test_invalid_json_three_times(self):
         model = FakeModel(["not json", "{bad", "{\"tool\": \"echo\", \"args\": 123}"])
-        result = run_tool_loop(model, "k", "t", {"echo": echo_tool})
+        result = run_tool_loop(model, "k", "t", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "invalid_limit")
         self.assertEqual(len(result["steps"]), 3)
         for step in result["steps"]:
@@ -50,45 +50,44 @@ class TestToolLoop(unittest.TestCase):
     def test_unknown_tool(self):
         reply = json.dumps({"tool": "unknown", "args": {}, "reason": "test"})
         model = FakeModel([reply, reply, reply])
-        result = run_tool_loop(model, "k", "t", {"echo": echo_tool})
+        result = run_tool_loop(model, "k", "t", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "invalid_limit")
         self.assertTrue(all(s["result"]["status"] == "invalid" for s in result["steps"]))
 
     def test_args_not_object(self):
-        reply = json.dumps({"tool": "echo", "args": "not a dict", "reason": "test"})
+        reply = json.dumps({"tool": "read_execution_log", "args": "not a dict", "reason": "test"})
         model = FakeModel([reply, reply, reply])
-        result = run_tool_loop(model, "k", "t", {"echo": echo_tool})
+        result = run_tool_loop(model, "k", "t", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "invalid_limit")
 
     def test_unavailable_stops(self):
-        reply = json.dumps({"tool": "unavail", "args": {}, "reason": "test"})
+        reply = json.dumps({"tool": "run_tests", "args": {}, "reason": "test"})
         model = FakeModel([reply])
-        result = run_tool_loop(model, "k", "t", {"unavail": unavailable_tool})
+        result = run_tool_loop(model, "k", "t", {"run_tests": unavailable_tool})
         self.assertEqual(result["stop_reason"], "unavailable")
         self.assertEqual(len(result["steps"]), 1)
         self.assertEqual(result["steps"][0]["result"]["status"], "unavailable")
 
     def test_repeated_tool_stops(self):
-        reply = json.dumps({"tool": "echo", "args": {"msg": "hi"}, "reason": "test"})
+        reply = json.dumps({"tool": "read_execution_log", "args": {"msg": "hi"}, "reason": "test"})
         model = FakeModel([reply, reply, reply])
-        result = run_tool_loop(model, "k", "t", {"echo": echo_tool})
+        result = run_tool_loop(model, "k", "t", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "repeated")
         self.assertEqual(len(result["steps"]), 3)
         self.assertTrue(all(s["result"]["status"] == "ok" for s in result["steps"]))
 
     def test_tool_exception_becomes_error(self):
-        reply = json.dumps({"tool": "boom", "args": {}, "reason": "test"})
+        reply = json.dumps({"tool": "inspect_diff", "args": {}, "reason": "test"})
         model = FakeModel([reply, json.dumps({"done": True, "summary": "finished"})])
-        result = run_tool_loop(model, "k", "t", {"boom": error_tool})
+        result = run_tool_loop(model, "k", "t", {"inspect_diff": error_tool})
         self.assertEqual(result["stop_reason"], "done")
         self.assertEqual(result["steps"][0]["result"]["status"], "error")
         self.assertIn("boom", result["steps"][0]["result"]["error"])
 
     def test_max_steps(self):
-        # Provide a valid echo reply many times; loop should stop after max_steps (default 20)
-        reply = json.dumps({"tool": "echo", "args": {"msg": "x"}, "reason": "test"})
-        model = FakeModel([reply] * 25)
-        result = run_tool_loop(model, "k", "t", {"echo": echo_tool})
+        # Distinct arguments exercise max_steps without triggering the repeat guard.
+        model = FakeModel([json.dumps({"tool": "read_execution_log", "args": {"offset": i}, "reason": "test"}) for i in range(25)])
+        result = run_tool_loop(model, "k", "t", {"read_execution_log": echo_tool})
         self.assertEqual(result["stop_reason"], "max_steps")
         self.assertEqual(len(result["steps"]), 20)
 
@@ -136,6 +135,7 @@ class ToolLoopReviewerTests(unittest.TestCase):
         })
         self.assertEqual(calls, [])
         self.assertEqual(len(model.prompts), 3)
+        self.assertNotIn('delete_everything', model.prompts[0])
         self.assertTrue(all(row['result']['status'] == 'invalid' for row in result['steps']))
 
     def test_invalid_feedback_is_in_the_next_prompt_and_resets_after_valid_calls(self):
@@ -217,6 +217,30 @@ class ToolLoopReviewerTests(unittest.TestCase):
         overhead = len(model.prompts[0])
         self.assertTrue(all(len(p) <= overhead + 30000 for p in model.prompts))
         self.assertLessEqual(len(model.prompts[1]) - overhead, 3500)
+        self.assertTrue(all(len(json.dumps(s['result'], ensure_ascii=False)) <= 3000 for s in result['steps']))
+
+    def test_escaped_and_unicode_results_stay_json_serializable_within_the_limit(self):
+        model = GatewayScript([tool_reply('inspect_diff'), {'done': True, 'summary': 'read'}])
+        result = run_tool_loop(model, 'review-key', 'task', {
+            'inspect_diff': lambda **args: {'status': 'ok', 'diff': ('"\\\n\t界' * 2000)},
+        })
+        bounded = result['steps'][0]['result']
+        self.assertEqual(bounded['status'], 'ok')
+        self.assertLessEqual(len(json.dumps(bounded, ensure_ascii=False)), 3000)
+        json.dumps(result)
+
+    def test_a_sandbox_tools_instance_is_usable_without_exposing_its_session(self):
+        from engine import sandbox
+        from engine.sandbox_tools import SandboxTools
+        from tests.test_sandbox import FakeDocker
+        session = sandbox.Session(sandbox.Tree('onlykappa/KappaForge', 'a' * 40, {'app.py': b'x = 1\n'}),
+                                  FakeDocker(), versions=('3.12', '22'))
+        model = GatewayScript([tool_reply('inspect_diff'), {'done': True, 'summary': 'read'}])
+        result = run_tool_loop(model, 'review-key', 'task', SandboxTools(session))
+        self.assertEqual(result['stop_reason'], 'done')
+        self.assertEqual(result['steps'][0]['result']['status'], 'ok')
+        self.assertIn('edits', model.prompts[0])
+        self.assertNotIn('"session"', model.prompts[0])
 
     def test_max_steps_uses_distinct_calls_so_repeat_detection_does_not_mask_it(self):
         model = GatewayScript([tool_reply('read_execution_log', {'offset': i}) for i in range(20)])
