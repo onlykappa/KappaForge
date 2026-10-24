@@ -14,9 +14,10 @@ and documentation are on the branch. Nothing here is merged, deployed or release
 - [x] **2. Isolated execution sandbox** (`engine/sandbox.py`, [step 2 notes](../phase1/execution-architecture.md#step-2-implementation-enginesandboxpy)): short-lived, isolated workers on existing GitHub Actions infrastructure; exact
       revision fetch; uncommitted edits; controlled commands; lockfile installs; extensible toolchain adapters; test
       command detection; per-session results; cleanup; no credentials in the sandbox; resource, network and output limits.
-- [ ] **3. Development tool loop**: structured tools (`apply_patch`, `run_command`, `run_tests`, `inspect_test_results`,
+- [x] **3. Development tool loop**: structured tools (`apply_patch`, `run_command`, `run_tests`, `inspect_test_results`,
       `read_execution_log`, `inspect_diff`, `revert_candidate_change`) with machine-readable results; the agent picks
-      the next tool from the last result.
+      the next tool from the last result. Implemented by `engine/sandbox_tools.py` and `engine/tool_loop.py`;
+      [step 3 validation and interface notes](../phase1/testing-report.md#step-3-development-tool-loop).
 - [ ] **4. Test-driven autonomous repair**: generate, apply, test, diagnose, correct, retest; up to five meaningful
       attempts per candidate; repeated-patch, identical-error and loop detection; final regression run; commit and draft
       PR only after validation; honest failure reports that keep the diff and logs.
