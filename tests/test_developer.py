@@ -67,6 +67,29 @@ class DeveloperValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No files changed"):
                 developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING)
 
+    def test_same_file_edits_are_sequential_and_retry_explains_rejected_state(self):
+        initial = {"app/main.py": "def target():\n    return 1\n"}
+        existing = {"app/main.py": len(initial["app/main.py"])}
+        stale_anchor = json.dumps({"summary": "Rename target", "files": [{
+            "path": "app/main.py", "reason": "Rename the requested target function", "edits": [
+                {"find": "def target():", "replace": "def target_v2():"},
+                {"find": "def target():", "replace": "def target_v3():"},
+            ]}]})
+        corrected = json.dumps({"summary": "Rename target", "files": [{
+            "path": "app/main.py", "reason": "Rename the requested target function", "edits": [
+                {"find": "def target():", "replace": "def target_fixed():"},
+            ]}]})
+        with patch.object(developer, "run_model", side_effect=[("flash", stale_anchor), ("flash", corrected)]) as model:
+            _, _, changes, _ = developer.generate("key", "rename target", "onlykappa/KappaForge", initial, existing)
+
+        self.assertIn("def target_fixed():", changes["app/main.py"])
+        first_prompt = model.call_args_list[0].args[1]
+        retry_prompt = model.call_args_list[1].args[1]
+        self.assertIn("Edits for the same file are applied in array order", first_prompt)
+        self.assertIn("match its find against that updated text", first_prompt)
+        self.assertIn("def target_v2():", retry_prompt)
+        self.assertIn("No edits from the rejected proposal were saved", retry_prompt)
+
     def test_workflows_env_config_and_guardrails_can_be_proposed_and_unsafe_paths_still_stop(self):
         proposal = json.dumps({"files": [
             {"path": ".github/workflows/lint.yml", "content": "name: lint\npermissions:\n  contents: read\n"},

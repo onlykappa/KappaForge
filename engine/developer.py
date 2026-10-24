@@ -963,6 +963,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         '{"path":"new/file.py","reason":"why the goal needs this new file","content":"full file"}]}\n'
         "Rules: each find must be copied exactly from the file below and occur exactly once; keep finds "
         "short but unique, preferably under 300 characters; split long minified handlers into small edits. "
+        "Edits for the same file are applied in array order to the text produced by earlier edits. "
+        "Before each later edit, match its find against that updated text; never reuse an anchor that an earlier edit changed. "
         "Use content only for new files or a full rewrite of a file shown below. "
         + (f"Edit the web app only under preview/; its copies under {IOS_WEB} are updated automatically. " if repo == ROOT else "") +
         f"At most {budget.changed_files} files per proposal. Only when needed for the owner goal, you may edit any file in the repository, including "
