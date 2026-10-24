@@ -244,7 +244,8 @@ def snapshot(journal=None):
                     facts=facts, touchedFiles=list(record.files[:24]), omittedFiles=max(0, len(record.files) - 24),
                     recentAttempts=list(record.attempts),
                     stage=STAGE.get(), plannedStages=[dict(item) for item in record.stages],
-                    review=dict(record.review),
+                    # Copied lists: trimming the prompt copy must never delete the record's review findings.
+                    review={key: list(value) if isinstance(value, list) else value for key, value in record.review.items()},
                     savedProgress=dict(status=clean(state.get('status', 'unknown'), 40),
                                        evidence='saved orchestration state, not proof of completion',
                                        requirementInterpretations=[clean(x, 120) for x in state.get('requirements', [])[:4]]),

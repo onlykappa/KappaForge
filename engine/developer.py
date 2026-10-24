@@ -2219,14 +2219,13 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     # The owner may ask for the PR without it being an open problem (#221: "Open a draft PR for this change").
     lifecycle_asked = pr_lifecycle or any(verify.lifecycle_requirement(part)
                                           for part in re.split(r"[.\n]+", getattr(goal, "original", "") or ""))
+    # Goal.prompt() already shows the verified receipt; this block adds the ban only when it is relevant.
     if receipt and receipt["open"] and receipt["draft"] and lifecycle_asked:
         task += ("\n\nTASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + receipt["url"] + "\n"
                  + "".join("- " + p + "\n" for p in pr_lifecycle)
                  + "KappaForge has already opened this task's draft PR. Do not create or change repository code, "
                  + "scripts, workflows, hooks, or commands to open, update, or notify about this PR. Continue only "
                  + "with the unfinished code requirements and failed checks listed above.\n")
-    elif receipt and receipt["open"]:
-        task += "\n\nVERIFIED TASK PR: " + receipt["url"] + (" (draft)" if receipt["draft"] else "") + ". Do not recreate it.\n"
     notes = journal.notes.brief() if getattr(journal, "notes", None) else ""
     if notes:
         task = notes + "\n\n" + task

@@ -82,6 +82,19 @@ class TaskStateTests(unittest.TestCase):
                 self.assertEqual(task_state.decode_prompt(task_state.add_to_prompt('x'))['nextAction']['role'], 'coder')
         self.assertEqual(render.call_count, 3, 'a new action is new state, never a stale cached block')
 
+    def test_trimming_the_prompt_never_deletes_the_records_review_findings(self):
+        task_state.review([{'text': 'Pending %d' % i, 'met': False} for i in range(6)], ['Problem %d' % i for i in range(4)])
+        kept = {key: list(value) for key, value in self.goal.record.review.items() if isinstance(value, list)}
+        data = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        data.update(recentAttempts=[], touchedFiles=[], plannedStages=[])
+        data['savedProgress']['requirementInterpretations'] = []
+        # Room for everything except one review problem: trimming must reach the review lists.
+        task_state.RENDERED.set(None)  # The block above is cached under the normal limit.
+        with patch.object(task_state, 'MAX_CONTEXT', len(task_state.wire(data)) - 20):
+            data = task_state.decode_prompt(task_state.add_to_prompt('p'))
+        self.assertLess(len(data['review'].get('problems', [])), 4, 'the prompt copy was trimmed')
+        self.assertEqual({key: value for key, value in self.goal.record.review.items() if isinstance(value, list)}, kept)
+
     def test_one_commit_reported_twice_is_one_revision(self):
         record = self.goal.record
         task_state.checkpoint(NEXT, {'app.py': 'x'})

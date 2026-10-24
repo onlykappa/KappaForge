@@ -84,6 +84,31 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_a_rejected_scope_answer_does_not_bind_the_retry_or_the_source_check(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            changes = {'app.py': 'return int(a) + int(b)'}
+            evidence = {'path': 'app.py', 'quote': 'int(a) + int(b)'}
+            answers = [{'requirements': [{'text': 'Accept strings', 'met': True, 'evidence': evidence}], 'problems': []},
+                       {'requirements': [{'text': 'Accept numeric strings', 'met': True, 'evidence': evidence}], 'problems': [],
+                        'file_scope': [{'path': 'app.py', 'necessary': True, 'reason': 'Convert inputs', 'quote': 'int(a)'}]}]
+            with patch.object(developer, 'run_model', side_effect=[('m', json.dumps(a)) for a in answers]) as model:
+                result = verify.model_review(model, 'key', goal.request, lambda _: '', changes, ['app.py'])
+            self.assertEqual(result[1], [], 'the rejected answer\'s wording is not a disappeared requirement')
+            self.assertNotIn('Accept strings', model.call_args.args[1])
+            goal.review_paths = ('app/big.py',)
+            self.assertIsNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, ['app.py', 'app/big.py']))
+            self.assertIn('Current PR source is unavailable for scope review: app/big.py', verify.REVIEW_FAILURE.get())
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_keep_or_leave_guidance_that_names_other_content_widens_the_goal(self):
+        request = 'Add a comment # v2 at the top of preview/app.js. Keep the header text in sync with the README'
+        self.assertIsNone(task_goal.from_request(request).paths)
+        self.assertEqual(task_goal.from_request(REQUEST.replace('Change nothing else. ', 'Keep it as a draft. ')).paths, (PATH,))
+
     def test_compound_lifecycle_asks_stay_lifecycle_but_a_second_code_ask_does_not(self):
         for text in ("Open a draft PR and let me know when it's ready", 'Open a PR and notify me',
                      'Open a draft PR and don\u2019t merge it', "Open a draft PR and don't merge it",

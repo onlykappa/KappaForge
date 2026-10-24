@@ -132,7 +132,7 @@ def incidental(part):
     """A clause that asks for no source work: "change nothing else", a merge hold or a PR lifecycle ask."""
     from engine import verify
     return bool(re.fullmatch(r'change nothing else', part, re.I) or verify.lifecycle_requirement(part)
-                or verify.LIFECYCLE_CONTINUATION_RE.match(part.replace('\u2019', "'")) and not verify.CODE_WORK_RE.search(part))
+                or verify.MERGE_HOLD_RE.match(part.replace('\u2019', "'")) and not verify.CODE_WORK_RE.search(part))
 
 
 def from_request(request, guidance=()):

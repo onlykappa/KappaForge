@@ -26,6 +26,14 @@ class ClassifierTests(unittest.TestCase):
                      "Open a PR with changes to the API", "Create a PR for this change and notify users"):
             self.assertFalse(verify.lifecycle_requirement(text), text)
 
+    def test_owner_side_clauses_stay_lifecycle_but_keep_needs_the_pr_as_its_object(self):
+        for text in ("Open a draft PR and I'll review it tomorrow", "Open a pull request and wait for my approval",
+                     "Open a draft PR and leave it open", "Open a draft PR and keep the PR in draft"):
+            self.assertTrue(verify.lifecycle_requirement(text), text)
+        for text in ("Open a draft PR and keep the header text in sync with the README",
+                     "Open a draft PR and leave the old banner", "Open a PR and I will fix the API"):
+            self.assertFalse(verify.lifecycle_requirement(text), text)
+
     def test_only_pure_orchestration_asks_are_lifecycle(self):
         for text in ("Open a fresh draft PR", "Keep it as a draft", "Notify me when it is ready for review",
                      "Let me know when done", "Keep the PR in draft", "Create a pull request", "Keep it a draft until I review",
@@ -143,7 +151,8 @@ class Task205ReplayTests(unittest.TestCase):
         files = [{"filename": "engine/developer.py", "status": "modified", "patch": "@@ -1 +1 @@\n-old\n+new"}]
 
         def generate(_key, task, *_a, **_k):
-            prompt.append(task)
+            # generate_with appends Goal.prompt() to every coding prompt.
+            prompt.append(task + developer.task_goal.CURRENT.get().prompt())
             return "m", "s", {"engine/developer.py": "new\n"}, "summary"
 
         with (
@@ -166,7 +175,7 @@ class Task205ReplayTests(unittest.TestCase):
         unrelated = self.repair_prompt("Add a workflow that comments on PRs", ["Requirement not met: Add the PR comment workflow"])
         self.assertNotIn("TASK PR LIFECYCLE ALREADY SATISFIED", unrelated)
         self.assertNotIn("Do not create or change repository code", unrelated)
-        self.assertIn("VERIFIED TASK PR: " + PR["html_url"] + " (draft)", unrelated, "the receipt is still shown")
+        self.assertEqual(unrelated.count("VERIFIED TASK PR: " + PR["html_url"] + " (draft)"), 1, "the receipt is shown once")
         # Task #221: the ask is in the owner request even when no lifecycle problem is stored.
         asked = self.repair_prompt("Fix the API. Open a draft PR for this change and do not merge it.",
                                    ["Requirement not met: Fix the API"])
