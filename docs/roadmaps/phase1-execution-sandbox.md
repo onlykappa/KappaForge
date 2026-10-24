@@ -18,7 +18,7 @@ and documentation are on the branch. Nothing here is merged, deployed or release
       `read_execution_log`, `inspect_diff`, `revert_candidate_change`) with machine-readable results; the agent picks
       the next tool from the last result. Implemented by `engine/sandbox_tools.py` and `engine/tool_loop.py`;
       [step 3 validation and interface notes](../phase1/testing-report.md#step-3-development-tool-loop).
-- [ ] **4. Test-driven autonomous repair**: generate, apply, test, diagnose, correct, retest; up to five meaningful
+- [x] **4. Test-driven autonomous repair**: generate, apply, test, diagnose, correct, retest; up to five meaningful
       attempts per candidate; repeated-patch, identical-error and loop detection; final regression run; commit and draft
       PR only after validation; honest failure reports that keep the diff and logs.
 - [ ] **5. Persistent checkpoints and recovery**: reuse the recovery journal for the task, base revision, candidate patch,

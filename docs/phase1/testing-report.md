@@ -101,7 +101,18 @@ report retains the candidate diff, bounded logs and repair history without publi
 | `git diff --check` | Passed |
 
 The local unit tests use a recording Docker fake for controller behavior. The real faulty-project acceptance test is
-gated on `KAPPA_SANDBOX_INTEGRATION=1` and skipped locally; CI runs that test on a GitHub-hosted Docker runner.
+gated on `KAPPA_SANDBOX_INTEGRATION=1` and skipped locally.
+
+### Ran in CI
+
+| Check | Measured result |
+| --- | --- |
+| [Step 4 sandbox self-test on PR #260](https://github.com/onlykappa/KappaForge/actions/runs/40141771899) | 25 sandbox tests passed; real-Docker faulty-project repair passed (1 test); KappaForge sandbox self-test passed with Python 782 tests (12 skipped) and Node 835 passed; no sandbox containers or volumes remained |
+| [Required CI checks on candidate `fe365d8`](https://github.com/onlykappa/KappaForge/actions/runs/40141771903) | Unit, worker, structure, fetch, analyze, publish and web all passed |
+
+The first real-Docker acceptance attempt caught an incomplete scripted repair: it removed integer division but did not
+round the discount to cents. The fixture model patch was corrected to match the fixture's expected behavior, and the
+rerun passed both suites.
 
 ### Inspected, not executed locally
 
