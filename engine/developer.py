@@ -492,7 +492,116 @@ STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", 
               "please", "add", "the", "and", "for", "repository", "mode", "develop", "onlykappa", "kappaforge"}
 
 
-def excerpt(text, task, budget=MAX_FILE_CHARS):
+def excerpt(source, clues, budget=MAX_FILE_CHARS):
+    """Return a relevance‑aware excerpt of *source* limited to *budget* characters.
+
+    *source* – full file text.
+    *clues* – newline‑separated strings the model is interested in.
+    *budget* – maximum characters to return, including any omission markers.
+
+    The function scores each clue by the rarity of its tokens in the whole source, selects the
+    most discriminating hits, expands each to a surrounding line window, merges overlapping
+    windows, and inserts "... omitted ..." markers between non‑contiguous spans. All output,
+    including markers, respects *budget*. Edge cases (non‑positive budget, a single line
+    longer than the budget, or no hits) fall back to a safe truncated prefix.
+    """
+    import bisect
+    # Fast‑path: whole source fits or no budget.
+    if budget <= 0:
+        return ""
+    if len(source) <= budget:
+        return source
+
+    # Token frequency map for rarity scoring.
+    tokens = re.findall(r"\w+", source.lower())
+    freq = collections.Counter(tokens)
+
+    # Gather hit positions for each clue.
+    hits = []
+    for clue in clues.splitlines():
+        if not clue:
+            continue
+        pos = source.find(clue)
+        if pos != -1:
+            # Rarity score: sum of inverse frequencies of tokens in the clue.
+            clue_tokens = re.findall(r"\w+", clue.lower())
+            rarity = sum(1 / (freq[t] or 1) for t in clue_tokens)
+            hits.append((rarity, pos, pos + len(clue), clue))
+
+    if not hits:
+        # No clues found – return a simple truncated prefix.
+        return source[:budget]
+
+    # Sort hits by descending rarity (most rare first).
+    hits.sort(key=lambda x: -x[0])
+
+    lines = source.split("\n")
+    # Pre‑compute line start offsets for binary search.
+    offsets = []
+    cum = 0
+    for line in lines:
+        offsets.append(cum)
+        cum += len(line) + 1  # +1 for the newline that was split away.
+
+    def line_for_offset(pos):
+        # Return line index containing the character at *pos*.
+        return bisect.bisect_right(offsets, pos) - 1
+
+    # Selected line spans (as (start, end) inclusive).
+    spans = []
+    MARKER = "... omitted ..."
+
+    def total_length(candidate_spans):
+        # Compute total characters of the excerpt including markers.
+        length = 0
+        prev_end = -1
+        for s, e in sorted(candidate_spans):
+            if prev_end != -1 and s > prev_end + 1:
+                length += len(MARKER) + 1  # marker + newline
+            for i in range(s, e + 1):
+                length += len(lines[i]) + 1
+            prev_end = e
+        return length
+
+    for _, start_pos, end_pos, _ in hits:
+        start_line = line_for_offset(start_pos)
+        end_line = line_for_offset(end_pos)
+        win_start = max(0, start_line - 20)
+        win_end = min(len(lines) - 1, end_line + 20)
+        new_spans = spans + [(win_start, win_end)]
+        if total_length(new_spans) > budget:
+            continue
+        spans = new_spans
+
+    if not spans:
+        # Fallback if even the smallest window exceeds budget.
+        return source[:budget]
+
+    # Merge overlapping spans.
+    spans.sort()
+    merged = []
+    cur_start, cur_end = spans[0]
+    for s, e in spans[1:]:
+        if s <= cur_end + 1:
+            cur_end = max(cur_end, e)
+        else:
+            merged.append((cur_start, cur_end))
+            cur_start, cur_end = s, e
+    merged.append((cur_start, cur_end))
+
+    # Build the final excerpt with omission markers.
+    out_lines = []
+    prev_end = -1
+    for s, e in merged:
+        if prev_end != -1 and s > prev_end + 1:
+            out_lines.append(MARKER)
+        out_lines.extend(lines[s:e + 1])
+        prev_end = e
+    # If there is trailing omitted content, add a final marker.
+    if prev_end < len(lines) - 1:
+        out_lines.append(MARKER)
+    return "\n".join(out_lines)
+
     """Relevant windows of a large file: its opening plus lines matching the task's words."""
     lines = text.split("\n")
     terms = {t for t in re.findall(r"[a-z][a-z0-9_-]{3,}", task.lower()) if t not in STOP_WORDS}
