@@ -23,8 +23,8 @@ NETWORK = os.getenv('KAPPA_SANDBOX_NETWORK') == '1'
 
 
 def fixture(folder, skip=('fixes/',)):
-    return {str(p.relative_to(folder)): p.read_bytes() for p in sorted(folder.rglob('*'))
-            if p.is_file() and not str(p.relative_to(folder)).startswith(skip)}
+    return {relative: p.read_bytes() for p in sorted(folder.rglob('*'))
+            if p.is_file() and not (relative := p.relative_to(folder).as_posix()).startswith(skip)}
 
 
 def tarball(files, root='onlykappa-KappaForge-' + SHA[:7], extra=()):

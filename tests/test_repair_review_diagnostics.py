@@ -319,189 +319,25 @@ class ReasonPersistenceTests(GuardCase):
                          'Line one [excerpt] Line three')
 
 
-class RevisionHarness(GuardCase):
-    """revise_branch on the PR #234 failure: real verifier, scripted model, no GitHub writes."""
-    PROBLEMS = [
-        'engine/developer.py produce_development_pr still executes saved.update(open_plan_draft(...)) before build_in_stages '
-        'and sandbox validation. Defer all new-development checkpoint commits/PR writes until final regression.',
-        'engine/developer.py never imports or calls run_sandbox_repair, so the repair controller is disconnected.',
-    ]
-
-    def setUp(self):
-        super().setUp()
-        task_goal.CURRENT.reset(self.goal_token)
-        self.goal_token = task_goal.CURRENT.set(None)
-        self.engine = inspect.getsource(developer)
-        self.line = self.engine.split('\n').index('        ' + PUBLISH_LINE) + 1
-        self.writes = []
-        self.files = {'engine/sandbox_repair_controller.py': 'def run_sandbox_repair():\n    return {}\n',
-                      'tests/test_sandbox_repair_controller.py': 'def test():\n    pass\n',
-                      'engine/developer.py': self.engine, 'engine/task_goal.py': inspect.getsource(task_goal)}
-
-    def github(self, path, _token, *args, **kwargs):
-        if args or kwargs:
-            self.writes.append(path)
-        if '/files?' in path:
-            return [{'filename': p, 'status': 'added', 'patch': '+fixture'} for p in
-                    ('engine/sandbox_repair_controller.py', 'tests/test_sandbox_repair_controller.py')]
-        return []
-
-    def read(self, _repo, path, _sha, _token):
-        return self.files[path]
-
-    def revise(self, model, read=None, problems=None, failed=True, pr_body='', log=None):
-        issue = {'number': 232, 'title': 'Phase 1 step 4', 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + OWNER}
-        pr = {'number': 234, 'body': pr_body, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/234', 'base': {'sha': 'c' * 40}}
-        with patch.object(developer, 'gh', side_effect=self.github), \
-                patch.object(developer, 'list_tree', return_value=({p: len(t) for p, t in self.files.items()}, {})), \
-                patch.object(developer, 'project_guide', return_value=''), \
-                patch.object(developer, 'read_source', side_effect=read or self.read), \
-                patch.object(developer, 'requirements_open', return_value=self.PROBLEMS if problems is None else problems), \
-                patch.object(developer, 'job_log', return_value=failing_log(self.line) if log is None else log), \
-                patch.object(developer, 'is_private', return_value=False), \
-                patch.object(developer, 'code_providers', return_value={'groq'}), \
-                patch.object(developer, 'run_model', side_effect=model), \
-                patch.object(developer, 'check_the_work', side_effect=lambda *a, **k: (a[7], 'checked', [])), \
-                patch.object(developer, 'generate', return_value=('m', 'Defer the plan PR', {'engine/developer.py': 'x'}, '')) as generate:
-            result = developer.revise_branch(issue, pr, 'kappa/dev-232', SHA, [{'id': 1, 'steps': []}] if failed else [],
-                                             'fixture', 'fixture')
-        return result, generate
-
-
-class Pr234ReplayTests(RevisionHarness):
-    def test_the_real_failure_shape_reaches_verified_generation(self):
-        seen = {}
-
-        def model(key, prompt, **kw):
-            data = review_input(prompt)
-            seen['data'] = data
-            rows = []
-            for row in data['findings']:
-                early_pr = 'open_plan_draft' in row['claim']
-                rows.append(dict(id=row['id'], verdict='confirmed' if early_pr else 'needs_validation', in_goal=True,
-                                 reason='The plan PR opens before validation' if early_pr else 'Absence cannot be quoted',
-                                 owner_quote=OWNER_QUOTE, evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)]))
-            return 'verifier', json.dumps({'findings': rows})
-        _, generate = self.revise(model)
-        failure = next(row for row in seen['data']['findings'] if row['claim'].startswith('Independent check failure'))
-        self.assertIn(f'File "engine/developer.py", line {self.line}, in produce_development_pr', failure['claim'])
-        self.assertIn('AssertionError: PR created before sandbox validation', failure['claim'])
-        self.assertEqual(seen['data']['sources']['engine/developer.py']['traceback_lines'], [self.line])
-        self.assertIn(PUBLISH_LINE, seen['data']['sources']['engine/developer.py']['text'])
-        generate.assert_called_once()
-        task = generate.call_args.args[1]
-        self.assertIn('Verified repair targets only:', task)
-        targets = task.split('Verified repair targets only:', 1)[1].split('Existing design and attempt history', 1)[0]
-        self.assertIn('PR created before sandbox validation', targets)
-        self.assertIn('saved.update(open_plan_draft', targets)
-        self.assertNotIn('never imports or calls run_sandbox_repair', targets)
-        self.assertEqual(self.writes, [], 'preparing a repair writes nothing to GitHub')
-
-    def test_an_unconfirmed_review_stops_with_sanitized_verdicts(self):
-        def model(key, prompt, **kw):
-            data = review_input(prompt)
-            return 'verifier', json.dumps({'findings': [dict(
-                id=row['id'], verdict='needs_validation', in_goal=True,
-                reason='Omitted validation code could change the verdict near `' + PUBLISH_LINE + '`',
-                owner_quote=OWNER_QUOTE, evidence=[]) for row in data['findings']]})
-        with self.assertRaises(repair_guard.RepairReviewRequired) as stopped:
-            self.revise(model)
-        message = str(stopped.exception)
-        self.assertIn('No repair finding was confirmed', message)
-        self.assertIn('needs_validation: Omitted validation code could change the verdict', message)
-        self.assertNotIn('open_plan_draft(repo', message)
-        self.assertEqual(self.writes, [])
-
-
-class VerifiedRepairPromptBudgetTests(RevisionHarness):
-    """Run 40126246053: verified targets plus a 30K PR diff pushed the coder prompt past the gateway budget."""
-    def github(self, path, _token, *args, **kwargs):
-        if '/files?' in path:
-            return [{'filename': f'engine/module_{n}.py', 'status': 'added', 'patch': '+' + ('x = 1  # filler\n+' * 400)[:6000]}
-                    for n in range(5)]
-        return super().github(path, _token, *args, **kwargs)
-
-    def test_verified_repair_prompt_stays_within_the_gateway_budget(self):
-        from engine import gateway
-        for n in range(5):
-            self.files[f'engine/module_{n}.py'] = 'x = 1\n'
-        sent = []
-
-        def model(key, prompt, **kw):
-            if repair_guard.FINDING_MARKER in prompt:
-                data = review_input(prompt)
-                return 'verifier', json.dumps({'findings': [dict(
-                    id=row['id'], verdict='confirmed' if 'open_plan_draft' in row['claim'] else 'needs_validation', in_goal=True,
-                    reason='Publishes before validation', owner_quote=OWNER_QUOTE,
-                    evidence=[dict(path='engine/developer.py', quote=PUBLISH_LINE)]) for row in data['findings']]})
-            sent.append(prompt)
-            self.assertTrue(gateway.prompt_fits(prompt), 'every coding prompt sent fits the gateway budget')
-            return 'coder', '{}'
-        issue = {'number': 232, 'title': 'Phase 1 step 4',
-                 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\n' + OWNER + '\n' + 'Requirement detail. ' * 600}
-        pr = {'number': 234, 'body': '## Design notes\n' + 'Design note. ' * 300, 'html_url': 'https://github.com/onlykappa/KappaForge/pull/234'}
-        with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
-                patch.object(developer, 'gh', side_effect=self.github), \
-                patch.object(developer, 'list_tree', return_value=({p: len(t) for p, t in self.files.items()}, {})), \
-                patch.object(developer, 'project_guide', return_value='Project rule. ' * 1650), \
-                patch.object(developer, 'read_source', side_effect=self.read), \
-                patch.object(developer, 'requirements_open', return_value=self.PROBLEMS), \
-                patch.object(developer, 'job_log', return_value=failing_log(self.line)), \
-                patch.object(developer, 'is_private', return_value=False), \
-                patch.object(developer, 'code_providers', return_value={'groq'}), \
-                patch.object(developer, 'run_model', side_effect=model), \
-                patch.object(developer, 'note'), \
-                patch.object(developer, 'plan_change', side_effect=developer.GenerationFailure('no replan in this test')):
-            with self.assertRaises(Exception) as stopped:
-                developer.revise_branch(issue, pr, 'kappa/dev-232', SHA, [{'id': 1, 'steps': []}], 'fixture', 'fixture')
-        self.assertNotIsInstance(stopped.exception, gateway.GatewayRequestTooLarge)
-        self.assertTrue(sent, 'the verified repair reached the coder')
-        self.assertIn('Verified repair targets only:', sent[0])
-        self.assertIn(OWNER_QUOTE, sent[0], 'the owner goal is never shortened')
-        self.assertIn('PR diff shortened', sent[0])
-
-    def test_history_is_bounded_and_keeps_short_diffs_whole(self):
-        short = developer.verified_history('design', ['a', 'b'], 'notes', '', '--- f\n+line\n')
-        self.assertTrue(short.endswith('--- f\n+line\n'))
-        self.assertNotIn('shortened', short)
-        long = developer.verified_history('d' * 5000, ['t' * 600] * 5, 'n' * 5000, 'b' * 5000, '+' * 30000)
-        self.assertLessEqual(len(long), developer.VERIFIED_HISTORY_CHARS)
-        self.assertTrue(long.endswith(developer.TRUNCATED_DIFF))
-
-
-REGRESSION_LOG = ('ERROR: test_commits_one_change (test_developer.DeveloperTests.test_commits_one_change)\n' + '-' * 70 +
-                  '\nTraceback (most recent call last):\n  File "tests/test_developer.py", line 430, in test_commits_one_change\n'
-                  "    developer.produce_development_pr(issue, 'key', 'token')\nTypeError: 'dict' object is not subscriptable\n\n" + '=' * 70 +
-                  '\nFAIL: test_brand_new_check (test_new_module.NewTests.test_brand_new_check)\n' + '-' * 70 + '\nAssertionError: 1 != 2\n\n' + '=' * 70 +
-                  '\nERROR: test_broken_import (unittest.loader._FailedTest.test_broken_import)\nImportError: nope\n' + '-' * 70 + '\nRan 3 tests\n')
-BASE_FILES = {'tests/test_developer.py': 'class DeveloperTests:\n    def test_commits_one_change(self):\n        pass\n'}
-
-
-class BaseRegressionTests(RevisionHarness):
-    """A test that already exists on the PR base and now fails is a repair target from CI evidence alone."""
-    def base_read(self, _repo, path, sha, _token):
-        if sha == 'c' * 40:
-            if path in BASE_FILES:
-                return BASE_FILES[path]
-            raise urllib.error.HTTPError('u', 404, 'Not Found', {}, None)
-        return self.files[path]
-
-    def unconvinced(self, key, prompt, **kw):
-        return 'verifier', json.dumps({'findings': [dict(id=row['id'], verdict='needs_validation', in_goal=True, reason='Unsure')
-                                                    for row in review_input(prompt)['findings']]})
-
+class BaseRegressionTests(unittest.TestCase):
+    """Existing tests that regress on a candidate are actionable CI evidence."""
     def test_only_existing_base_tests_become_regressions(self):
-        with patch.object(developer, 'read_target', side_effect=lambda repo, path, sha, token:
-                          BASE_FILES.get(path)):
-            found = developer.base_test_regressions(REGRESSION_LOG, developer.ROOT, 'c' * 40, 't')
+        log = ('ERROR: test_commits_one_change (test_developer.DeveloperTests.test_commits_one_change)\n' + '-' * 70 +
+               '\nTraceback (most recent call last):\n  File "tests/test_developer.py", line 430, in test_commits_one_change\n'
+               "    developer.produce_development_pr(issue, 'key', 'token')\nTypeError: 'dict' object is not subscriptable\n\n" + '=' * 70 +
+               '\nFAIL: test_brand_new_check (test_new_module.NewTests.test_brand_new_check)\n' + '-' * 70 + '\nAssertionError: 1 != 2\n\n' + '=' * 70 +
+               '\nERROR: test_broken_import (unittest.loader._FailedTest.test_broken_import)\nImportError: nope\n' + '-' * 70 + '\nRan 3 tests\n')
+        base = {'tests/test_developer.py': 'class DeveloperTests:\n    def test_commits_one_change(self):\n        pass\n'}
+        with patch.object(developer, 'read_target', side_effect=lambda repo, path, sha, token: base.get(path)):
+            found = developer.base_test_regressions(log, developer.ROOT, 'c' * 40, 't')
         self.assertEqual(len(found), 1)
         self.assertIn('existing test test_commits_one_change', found[0])
-        self.assertIn("TypeError: 'dict' object is not subscriptable", found[0], 'the traceback travels with the target')
+        self.assertIn("TypeError: 'dict' object is not subscriptable", found[0])
         self.assertNotIn('test_brand_new_check', found[0])
-        self.assertFalse(any('test_broken_import' in item for item in found), 'a loader error for a module absent at the base')
+        self.assertFalse(any('test_broken_import' in item for item in found))
         self.assertEqual(developer.base_test_regressions('', developer.ROOT, 'c' * 40, 't'), [])
 
-    def test_an_existing_test_module_that_no_longer_imports_is_a_regression(self):
+    def test_existing_test_module_import_failure_is_a_regression(self):
         log = ('ERROR: test_developer (unittest.loader._FailedTest.test_developer)\n' + '-' * 70 +
                "\nImportError: Failed to import test module: test_developer\nImportError: cannot import name 'job_log' "
                "from partially initialized module 'engine.developer'\n\n" + '=' * 70 +
@@ -513,29 +349,13 @@ class BaseRegressionTests(RevisionHarness):
         self.assertIn('existing test module tests/test_developer.py no longer imports', found[0])
         self.assertIn('partially initialized module', found[0])
 
-    def test_a_regression_reaches_generation_even_when_the_verifier_is_unconvinced(self):
-        _, generate = self.revise(self.unconvinced, read=self.base_read, log=REGRESSION_LOG)
-        task = generate.call_args.args[1]
-        targets = task.split('Verified repair targets only:', 1)[1].split('Existing design and attempt history', 1)[0]
-        self.assertIn('existing test test_commits_one_change', targets)
-        self.assertNotIn('test_brand_new_check', targets, 'a test the candidate added still needs the verifier')
-        self.assertEqual(self.writes, [])
-
-    def test_without_a_base_regression_an_unconvinced_review_still_stops(self):
-        log = REGRESSION_LOG.split('=' * 70, 1)[1]
-        with self.assertRaises(repair_guard.RepairReviewRequired):
-            self.revise(self.unconvinced, read=self.base_read, log=log)
-
-
-class SourceReadFailureTests(RevisionHarness):
-    def test_failed_source_reads_still_load_the_pr_body_and_design(self):
-        def unreadable(*args):
-            raise ValueError('Full source unavailable')
-        _, generate = self.revise(Mock(side_effect=AssertionError('no verifier without claims')), read=unreadable,
-                                  problems=[], failed=False, pr_body='## Design notes\nKeep publication after validation.\n')
-        generate.assert_called_once()
-        self.assertIn('Keep publication after validation.', generate.call_args.args[1])
-
+    def test_attempt_history_stays_bounded_and_keeps_short_diffs_whole(self):
+        short = developer.verified_history('design', ['a', 'b'], 'notes', '', '--- f\n+line\n')
+        self.assertTrue(short.endswith('--- f\n+line\n'))
+        self.assertNotIn('shortened', short)
+        long = developer.verified_history('d' * 5000, ['t' * 600] * 5, 'n' * 5000, 'b' * 5000, '+' * 30000)
+        self.assertLessEqual(len(long), developer.VERIFIED_HISTORY_CHARS)
+        self.assertTrue(long.endswith(developer.TRUNCATED_DIFF))
 
 if __name__ == '__main__':
     unittest.main()

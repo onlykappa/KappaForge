@@ -96,6 +96,70 @@ def token_for(repo, token):
     return access(repo, token)
 
 
+def run_sandbox_repair(repo, sha, repo_token, changes, task, api_key, allowed, base_sources=None):
+    """Validate and repair a candidate before any commit or pull request is created."""
+    from engine import sandbox
+    from engine.sandbox_repair_controller import SandboxRepairController
+    session = None
+    try:
+        session = sandbox.open_session(repo, sha, repo_token)
+        controller = SandboxRepairController(session)
+        return controller.run_repair(task, run_model, api_key, initial_changes=changes, allowed=allowed)
+    except sandbox.SandboxUnavailable as exc:
+        if session:
+            try:
+                session.close()
+            except sandbox.SandboxUnavailable:
+                pass  # Docker was unavailable before this session could create an image, container or volume.
+        return {"status": "unavailable", "stop_reason": "unavailable", "summary": str(exc),
+                "attempts": [], "steps": 0, "models": [], "last_diff": "", "logs": "",
+                "candidate_changes": dict(changes), "test_results": []}
+    except Exception as exc:
+        if session:
+            try:
+                session.close()
+            except Exception:
+                pass
+        diff = ""
+        if base_sources:
+            diff = "".join("".join(difflib.unified_diff(
+                (base_sources.get(path) or "").splitlines(True), (text or "").splitlines(True),
+                "a/" + path if path in base_sources else "/dev/null", "b/" + path))
+                           for path, text in changes.items() if text != base_sources.get(path))
+        detail = sandbox.redact(f"Sandbox setup failed: {type(exc).__name__}: {exc}")[:2000]
+        if not diff:
+            diff = "Candidate paths retained in memory: " + ", ".join(sorted(changes))
+        diff = sandbox.redact(diff)[:20000]
+        return {"status": "failed", "stop_reason": "setup_failed", "summary": detail,
+                "attempts": [], "steps": 0, "models": [], "last_diff": diff,
+                "logs": detail, "candidate_changes": dict(changes), "test_results": []}
+
+
+def report_sandbox_failure(number, result, token):
+    """Keep bounded failure evidence on the task without publishing an unverified candidate."""
+    attempts = result.get("attempts", [])
+    detail = ("\n".join(f"Attempt {item.get('index')}: {item.get('why_different', '')}" for item in attempts)
+              or "No candidate repair was applied.")
+    body = ("### Pre-commit sandbox validation stopped\n\n"
+            f"**Reason:** `{result.get('stop_reason', 'unknown')}`\n\n"
+            f"{(result.get('summary') or 'No passing regression result was produced.')[:2000]}\n\n"
+            f"**Repair history:**\n{detail[:5000]}\n\n"
+            f"**Last candidate diff:**\n```diff\n{(result.get('last_diff') or '')[:12000]}\n```\n\n"
+            f"**Sandbox logs (bounded):**\n```text\n{(result.get('logs') or '')[:12000]}\n```")
+    from engine.sandbox import redact
+    gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": redact(body)})
+
+
+def repair_history(result):
+    """Summarize each meaningful candidate change and why it differs from the previous one."""
+    rows = []
+    for item in result.get("attempts", [])[:5]:
+        paths = ", ".join("`" + path + "`" for path in item.get("changed_paths", [])[:12]) or "no paths"
+        tests = ", ".join(str(row.get("status", "unknown")) for row in item.get("test_results", [])[:8]) or "no test result"
+        rows.append(f"- Attempt {item.get('index')}: {paths}. {item.get('why_different', '')[:900]} Test status: {tests}.")
+    return "\n".join(rows)[:5000] or "No meaningful repair candidate was applied."
+
+
 def gh(path, token, payload=None, method=None):
     return request("https://api.github.com/" + path, payload, token, method)
 
@@ -1844,7 +1908,7 @@ MAX_CHECK_ROUNDS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
-                   receipt=None):
+                   receipt=None, defer_lifecycle=False):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
 
     `receipt` is GitHub's record of this task's draft PR (verify.pr_receipt); it alone decides PR lifecycle asks.
@@ -1865,7 +1929,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     outstanding = list(UNFINISHED)
     previous_review_problems = []
     journal = recovery.CURRENT.get()
-    requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']} if journal else {}
+    requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']
+                           if not (defer_lifecycle and verify.lifecycle_requirement(text))} if journal else {}
     repair_failures = []
     rescued = None
     loop = repair_guard.RepairLoop() if repair_guard.enabled() else None
@@ -1885,6 +1950,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             canonical_task = goal.title + '\n' + goal.request
         elif journal:
             canonical_task = (journal.issue.get('title') or '') + '\n' + (journal.issue.get('body') or '')
+        if defer_lifecycle:
+            canonical_task = '\n'.join(part for part in re.split(r'(?<=[.!?])\s+|\n+', canonical_task)
+                                       if not verify.lifecycle_requirement(part))
         review_task = canonical_task
         if finding_feedback:
             review_task += ('\n\nINDEPENDENT FINDING ASSESSMENTS (unverified model judgments; recheck current source, '
@@ -1896,6 +1964,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         files_needed = []
         if review:
             reqs, found, files_needed = review
+            if defer_lifecycle:
+                reqs = [item for item in reqs if not verify.lifecycle_requirement(item.get('text', ''))]
             for requirement in reqs:
                 requirement_catalog.setdefault(requirement['text'], dict(requirement))
             if journal:
@@ -2120,63 +2190,19 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         progress.now("Writing the change", phase=True)
     if journal:
         note_progress(journal, plan=stages or ["Write the change"], design=design, done=[], status="Writing the change")
-    saved = {"sha": sha, "pr": None, "changes": {}}
+    saved = {"sha": adopt["head"]["sha"] if adopt else sha, "pr": adopt, "changes": {}}
     layout = plan_layout(issue, stages)
-    if adopt is not None:
-        saved.update(sha=adopt["head"]["sha"], pr=adopt)
-        progress.act("git", f"Continuing on draft PR {adopt['html_url']}, which holds the plan")
-    else:
-        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
-        progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
-    progress.saved_pr = saved["pr"]["html_url"]
-    task_state.checkpoint(saved['sha'])
-    task_state.observe_pr(saved['pr'], repo, branch)
-    if journal:
-        journal.checkpoint(saved["sha"], base=base, pr=saved["pr"]["html_url"])
-
-    def checkpoint(model, summary, changes, explanation):
-        goal.validate(changes)
-        # Save only validated proposals, never code from a rejected answer. The marker blocks merge even if CI passes.
-        if change_flags(repo, sources, changes, body):
-            return
-        delta = {p: t for p, t in changes.items() if t != saved["changes"].get(p, sources.get(p))}
-        if not delta:
-            return
-        writer = push_token(repo, repo_token, delta)
-        commit = commit_changes(repo, saved["sha"], delta, modes, f"KappaForge: save validated stage for {ROOT}#{number}", writer)
-        if saved["sha"] == sha:
-            move_branch(repo, writer, branch, commit["sha"], create=True)
-        else:
-            move_branch(repo, writer, branch, commit["sha"])
-        saved["sha"], saved["changes"] = commit["sha"], dict(changes)
-        task_state.checkpoint(commit['sha'], changes)
-        if journal:
-            journal.checkpoint(commit['sha'], base=base, files=changes)
-        if not saved.get("coded"):
-            # The draft stops saying no code exists: a run interrupted from here on is repaired, not restarted.
-            gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, {
-                "body": review_body(number, model, explanation, summary, changes, design, [CHECKPOINT_SAVED], layout)}, method="PATCH")
-            saved["coded"] = True
-        progress.act("write", "Saved validated stage on draft PR " + saved["pr"]["html_url"])
-        progress.saved_pr = saved["pr"]["html_url"]
-        if journal:
-            journal.checkpoint(saved['sha'], pr=saved['pr']['html_url'])
-            note_progress(journal, done=summary.splitlines(), files=list(changes), model=model,
-                         status="Saved a validated stage on " + saved["pr"]["html_url"])
-
-    if journal:
-        journal.stage_checkpoint = checkpoint
-    model, summary, changes, explanation = build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress,
-                                                           design, require_test, checkpoint=checkpoint)
-    if journal:
-        checkpoint(model, summary, changes, explanation)
+    if saved["pr"]:
+        progress.act("git", f"Continuing on existing draft PR {saved['pr']['html_url']}; candidate edits remain unpublished until validation")
+    model, summary, changes, explanation = build_in_stages(
+        api_key, task, repo, sources, existing, guide, allowed, stages, progress, design, require_test)
     if stages:
         progress.now("Saving the change")  # Marks the last step done before it is replaced.
     progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
     changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                      allowed, design, require_test, progress,
-                                                     **({'checkpoint': lambda changes: checkpoint('recovery', 'Saved review repair', changes, 'Unverified repair checkpoint')} if journal else {}),
-                                                     receipt=verify.pr_receipt(saved["pr"], repo, branch))
+                                                     receipt=verify.pr_receipt(saved["pr"], repo, branch) if saved["pr"] else None,
+                                                     defer_lifecycle=not saved["pr"])
     explanation = explanation or summary
     if verdict and open_problems and explanation:
         # The model describes what it meant to build; with problems open that description is not a fact.
@@ -2188,20 +2214,39 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     if flags:
         stop_for_flags(repo, number, flags, token)
         return None
-    # Include reversions made during review so a checkpoint can never leak an obsolete edit into the final PR.
-    delta = {p: changes.get(p, sources.get(p, "")) for p in set(changes) | set(saved["changes"])
-             if changes.get(p, sources.get(p, "")) != saved["changes"].get(p, sources.get(p, ""))}
+    progress.now("Running the candidate in the isolated sandbox")
+    validation_result = run_sandbox_repair(repo, saved["sha"], repo_token, changes, task, api_key, allowed,
+                                           base_sources=sources)
+    if validation_result["status"] != "success":
+        report_sandbox_failure(number, validation_result, token)
+        progress.ok("Sandbox validation stopped before publishing: " + validation_result["stop_reason"],
+                    phase=True, status="blocked")
+        return None
+    changes = validation_result["candidate_changes"]
+    summary = (summary + "\n\nSandbox validation: " + validation_result["summary"] +
+               "\n\nRepair attempts:\n" + repair_history(validation_result))[:8000]
+    task_state.checkpoint(saved["sha"], changes)
+    if journal:
+        journal.checkpoint(saved["sha"], base=base, files=changes)
+    delta = {p: changes.get(p, sources.get(p, "")) for p in set(changes)
+             if changes.get(p, sources.get(p, "")) != sources.get(p, "")}
+    if not delta:
+        raise ValueError("Sandbox repair produced no source changes")
     writer = push_token(repo, repo_token, delta)
     commit = commit_changes(repo, saved["sha"], delta, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", writer)
     move_branch(repo, writer, branch, commit["sha"], create=not saved["pr"])
     task_state.checkpoint(commit['sha'], changes)
     payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
-        "body": workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
+        "body": (workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)
+                 + "\n\n## Pre-commit sandbox validation\nPassed on the exact candidate before its first commit. "
+                 + f"{len(validation_result.get('test_results', []))} test command(s) passed with tests discovered.")}
     if saved["pr"]:
         pr = gh(f"repos/{repo}/pulls/{saved['pr']['number']}", repo_token, payload, method="PATCH")
     else:
         pr = gh(f"repos/{repo}/pulls", repo_token, {**payload, "head": branch, "base": base, "draft": True})
+    if not pr.get("html_url"):
+        raise RuntimeError("Validated code was committed, but GitHub did not return the draft PR")
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], base=base, pr=pr['html_url'], files=changes)
@@ -2423,7 +2468,7 @@ def files_named_in(log, existing, changed):
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None):
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)
@@ -2516,7 +2561,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             task = task.replace("The independent checks FAILED for this change:", "Complete this unfinished change; the available checks may pass:", 1)
         task = ("Complete the original task's unfinished requirements, even if the existing tests pass.\n"
                 + "\n".join("- " + p for p in pending) + "\n\n" + task)
-    allowed = code_providers(is_private(repo, repo_token))
+    allowed = allowed if allowed is not None else code_providers(is_private(repo, repo_token))
     if journal and checkpoint:
         journal.stage_checkpoint = lambda model, summary, changed, explanation: checkpoint(changed, modes)
     edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
@@ -2715,39 +2760,14 @@ def fix_pull_request(issue, api_key, token):
     progress.now(f"Reading the failure and writing {fix_label(cycle, cycle_limit)}" + (" with your guidance" if guidance else ""), phase=True)
     journal = recovery.CURRENT.get()
     saved = {'sha': head, 'changes': {}}
-    def checkpoint_revision(changes, modes):
-        goal = task_goal.CURRENT.get()
-        if goal:
-            goal.validate(changes)
-        # No unreviewed external-repository network/auth changes are checkpointed.
-        if repo != ROOT and not flags_allowed(issue.get('body')):
-            return
-        target = dict(changes)
-        for path in set(saved['changes']) - set(changes):
-            target[path] = read_source(repo, path, head, repo_token)
-        delta = {p: text for p, text in target.items() if text != saved['changes'].get(p)}
-        if not delta:
-            return
-        latest = gh(f'repos/{repo}/git/ref/heads/{branch}', repo_token)['object']['sha']
-        if latest != saved['sha']:
-            raise PermissionError('Candidate branch moved; refusing to overwrite concurrent work')
-        writer = push_token(repo, repo_token, delta)
-        commit = commit_changes(repo, saved['sha'], delta, modes, f'Save validated repair checkpoint for task #{number}', writer)
-        move_branch(repo, writer, branch, commit['sha'])
-        saved.update(sha=commit['sha'], changes=dict(changes))
-        journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
-        note_progress(journal, files=list(changes), append_done=['Saved a repair checkpoint; full review pending'],
-                      status='Running: repair checkpoint saved; full requirement review pending')
-        # Checkpoints are unverified even when the preceding candidate passed CI.
-        gh(f"repos/{repo}/pulls/{pr['number']}", repo_token,
-           {'body': (pr.get('body') or '') + '\n\n' + review_record(['Repair checkpoint awaiting full requirement review and independent tests'])}, method='PATCH')
+    allowed = code_providers(is_private(repo, repo_token))
     if journal:
         journal.event('Tests failed' if failures else 'Original requirements remain unmet', strategy='repair_from_test_evidence',
                       next_action='Read failed assertions and preserve original requirements')
     for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
         try:
             model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
-                                                                        native_history, **({'checkpoint': checkpoint_revision} if journal else {}))
+                                                                        native_history, allowed=allowed)
             break
         except GenerationFailure as exc:
             # A rejected round is not a reason to idle: start the next round now, with the rejected proposals and
@@ -2768,6 +2788,30 @@ def fix_pull_request(issue, api_key, token):
     if flags:
         stop_for_flags(repo, number, flags, token)
         return None
+    progress.now("Applying the repair in the isolated sandbox and rerunning the full test suite")
+    sandbox_task = (issue.get("title", "") + "\n" + (issue.get("body") or "") +
+                    ("\n\nOwner guidance:\n" + "\n".join(guidance) if guidance else ""))
+    repair_sources = {}
+    for path in changes:
+        try:
+            repair_sources[path] = read_source(repo, path, head, repo_token)
+        except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
+            continue  # A new candidate file has no base text.
+    validation = run_sandbox_repair(repo, head, repo_token, changes, sandbox_task, api_key, allowed,
+                                    base_sources=repair_sources)
+    if validation["status"] != "success":
+        report_sandbox_failure(number, validation, token)
+        progress.ok("Repair was retained as local evidence; no PR commit was made because sandbox validation stopped: "
+                    + validation["stop_reason"], phase=True, status="blocked")
+        return None
+    changes = validation["candidate_changes"]
+    summary = (summary + "\n\nSandbox validation: " + validation["summary"] +
+               "\n\nRepair attempts:\n" + repair_history(validation))[:8000]
+    if not changes:
+        raise ValueError("The sandbox-validated repair contains no source changes")
+    task_state.checkpoint(head, changes)
+    if journal:
+        journal.checkpoint(head, pr=pr["html_url"], files=changes)
     final = dict(changes)
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)

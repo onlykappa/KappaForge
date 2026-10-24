@@ -5,17 +5,16 @@ from engine import developer, repair_guard
 
 
 class RealSourceExcerptReviewTests(unittest.TestCase):
-    def test_actual_publishing_evidence_reaches_the_repair_payload(self):
+    def test_actual_precommit_sandbox_gate_reaches_the_repair_payload(self):
         source = inspect.getsource(developer)
-        claim = ('engine/developer.py: produce_development_pr calls open_plan_draft '
-                 'before sandbox validation; fix_pull_request checkpoint_revision '
-                 'commits before tests pass')
+        claim = ('engine/developer.py produce_development_pr run_sandbox_repair before commit_changes')
         shown = repair_guard.payload({'engine/developer.py': source}, [claim])['sources']['engine/developer.py']
         self.assertFalse(shown['complete'])
         self.assertLessEqual(len(shown['text']), 3000)
-        self.assertIn('def produce_development_pr(', shown['text'])
-        self.assertIn('def fix_pull_request(', shown['text'])
-        self.assertIn('saved.update(open_plan_draft(', shown['text'])
+        self.assertIn('run_sandbox_repair(', shown['text'])
+        produce = inspect.getsource(developer.produce_development_pr)
+        self.assertLess(produce.index('run_sandbox_repair('), produce.index('commit_changes('))
+        self.assertLess(produce.index('run_sandbox_repair('), produce.index('pulls', produce.index('commit_changes(')))
 
     def test_natural_language_clues_prioritize_rare_symbols_over_common_words(self):
         source = '# source tests review\n' * 400 + 'def unusual_boundary():\n    publish_before_tests()\n' + '# tail\n' * 200

@@ -15,13 +15,18 @@ EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 def setUpModule():
     # These tests fake GitHub's JSON API; the repository map's archive download stays offline (planning from paths).
-    global _no_archive
+    global _no_archive, _sandbox_validation
     _no_archive = patch.object(developer.repo_maps, "download_sources", side_effect=OSError("offline in tests"))
     _no_archive.start()
+    _sandbox_validation = patch.object(developer, "run_sandbox_repair", side_effect=lambda repo, sha, token, changes, task, api_key, allowed, **_kwargs: {
+        "status": "success", "stop_reason": "validated", "summary": "scripted sandbox pass",
+        "candidate_changes": dict(changes), "test_results": [{"status": "passed"}], "attempts": [], "logs": ""})
+    _sandbox_validation.start()
 
 
 def tearDownModule():
     _no_archive.stop()
+    _sandbox_validation.stop()
     developer.Progress.latest = None  # Later test modules start without this module's last checklist.
 
 
@@ -498,7 +503,14 @@ class DeveloperAuthorizationTests(unittest.TestCase):
                        {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))]
         answers.append(("flash", json.dumps({"file_scope": ADD_SCOPE, "requirements":[{"text":"Cast inputs","met":True,
             "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})))
-        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=answers):
+        def validate_before_publish(repo, sha, token, changes, task, api_key, allowed, **_kwargs):
+            self.assertFalse(any(path.endswith(("/git/commits", "/git/refs", "/pulls")) for path, _ in calls),
+                             "no commit, ref or PR exists before sandbox validation")
+            return {"status": "success", "stop_reason": "validated", "summary": "scripted sandbox pass",
+                    "candidate_changes": dict(changes), "test_results": [{"status": "passed"}],
+                    "attempts": [], "logs": ""}
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=answers), \
+                patch.object(developer, "run_sandbox_repair", side_effect=validate_before_publish):
             url = produce_development_pr(self.issue(), "key", "token")
         self.assertEqual(url, "https://github.com/onlykappa/KappaForge/pull/50")
         paths = [p for p, _ in calls]
@@ -523,21 +535,22 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             self.assertNotIn("tests are running", progress[-1])
         else:
             self.assertIn("tests are running", progress[-1])
-        # PR first: the draft opens with the goal and plan before any code is committed.
+        # Candidate code is committed only after the pre-commit sandbox validator returns.
         opened = next(n for n, (p, _) in enumerate(calls) if p == "repos/onlykappa/KappaForge/pulls")
         first_code = next(n for n, (p, _) in enumerate(calls) if p == "repos/onlykappa/KappaForge/git/trees")
-        self.assertLess(opened, first_code)
+        self.assertLess(first_code, opened)
         plan = calls[opened][1]
         self.assertTrue(plan["draft"])
-        self.assertTrue(plan["title"].startswith("Draft (incomplete):"))
+        self.assertTrue(plan["title"].startswith("Draft"))
         self.assertIn("## Goal\n**Add feature**\n\nAdd a feature", plan["body"])
         self.assertIn("## Plan\n1. ", plan["body"])
         self.assertNotIn("Repository:", plan["body"].split("## Goal")[1], "task metadata is not part of the goal")
-        self.assertEqual(developer.requirements_open(plan), [developer.PLAN_STARTED])
-        plan_commit = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/commits")
-        self.assertEqual(plan_commit["tree"], "r" * 40, "the plan commit changes no files")
-        final = [payload for p, payload in calls if p == "repos/onlykappa/KappaForge/pulls/50"][-1]
-        self.assertNotIn("draft", final, "the final update never marks the draft ready")
+        self.assertEqual(developer.requirements_open(plan), [])
+        self.assertIn("Pre-commit sandbox validation", plan["body"])
+        code_commit = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/commits")
+        self.assertEqual(code_commit["tree"], "t" * 40, "the one commit contains validated candidate code")
+        final = plan
+        self.assertTrue(final["draft"], "the created PR remains a draft for owner review")
         self.assertIn("## What this does\nChecked against the task: 1 of 1 requirements met.\n\nCast inputs", final["body"])
         self.assertIn("## Goal", final["body"])
         self.assertIn("- [x] Code written on this draft", final["body"])
@@ -546,7 +559,7 @@ class DeveloperAuthorizationTests(unittest.TestCase):
 
 
 class PrFirstTests(unittest.TestCase):
-    """The draft opens with the goal and plan before any code; the code lands on it; it waits for the owner's review."""
+    """Code is validated in the sandbox before one atomic commit and draft PR."""
     ROOT_ = "repos/onlykappa/KappaForge"
 
     def test_already_satisfied_comment_makes_no_pr_code_or_model_calls(self):
@@ -615,7 +628,7 @@ class PrFirstTests(unittest.TestCase):
         tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
         self.assertIn('return int(a) + int(b)', ''.join(entry.get('content', '') for entry in tree_entries),
                       'the validated candidate is committed for Retry to continue from')
-        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
+        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls' and body][-1]
         self.assertIn('Requirement review unavailable', final['body'])
         self.assertIn('ScopeReviewUnavailable', final['body'])
 
@@ -652,13 +665,13 @@ class PrFirstTests(unittest.TestCase):
         self.assertEqual(model.call_count, 3, 'one plan, one edit, one review; no false repair')
         tree_entries = [entry for endpoint, body, _ in calls if endpoint.endswith('/git/trees') and body for entry in body['tree']]
         self.assertEqual({entry['path'] for entry in tree_entries}, {path})
-        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
+        final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls' and body][-1]
         self.assertEqual(developer.requirements_open(final), [])
-        self.assertIn('VERIFIED TASK PR:', model.call_args_list[1].args[1])
+        self.assertIn('Pre-commit sandbox validation', final['body'])
         self.assertEqual([data['nextAction']['role'] for data in observations], ['planner', 'coder', 'reviewer'])
         self.assertNotIn('pr', observations[0]['facts'], 'planning precedes opening the draft')
         for data in observations[1:]:
-            self.assertEqual(data['facts']['pr']['url'], 'https://github.com/onlykappa/KappaForge/pull/50')
+            self.assertNotIn('pr', data['facts'], 'the reviewer sees no PR receipt before sandbox validation')
             self.assertEqual(data['identity']['branch'], 'kappa/dev-9')
             self.assertTrue(data['ownerReviewRequired'])
         self.assertEqual(observations[2]['facts']['checks'], [], 'a saved edit must not invent a passing CI result')
@@ -715,10 +728,9 @@ class PrFirstTests(unittest.TestCase):
         calls, fake_gh = self.world()
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
             produce_development_pr(self.issue(), "key", "token")
-        opened, final = [body for p, body, m in calls if p == self.ROOT_ + "/pulls" and body], \
-            [body for p, body, m in calls if p == self.ROOT_ + "/pulls/50"][-1]
-        self.assertIn("## Design notes\nConvert at the boundary.", opened[0]["body"], "the planned approach shows on the draft")
-        self.assertEqual(final["body"].count("Convert at the boundary."), 1, "the design is shown once")
+        created = [body for p, body, m in calls if p == self.ROOT_ + "/pulls" and body][-1]
+        self.assertIn("## Design notes\nConvert at the boundary.", created["body"], "the planned approach shows on the draft")
+        self.assertEqual(created["body"].count("Convert at the boundary."), 1, "the design is shown once")
 
     def test_the_goal_never_carries_authorization_chat_context_or_control_lines(self):
         authorization = '<!-- kappa-authorization:{"nonce":"n-123","signature":"secret-sig","repo":"onlykappa/KappaForge"} -->'
@@ -734,15 +746,35 @@ class PrFirstTests(unittest.TestCase):
                        "Approved from KappaForge Chat", "Allow flagged changes", "Repository:"):
             self.assertNotIn(leaked, layout)
 
-    def test_no_code_is_written_when_the_draft_cannot_be_opened(self):
+    def test_pr_creation_failure_keeps_only_the_already_validated_single_commit(self):
         calls, fake_gh = self.world(pr_status=422)
         model = MagicMock(side_effect=self.answers())
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", model), \
-                self.assertRaisesRegex(RuntimeError, "Could not open the draft PR with the plan; no code was written"):
+                self.assertRaises(urllib.error.HTTPError):
             produce_development_pr(self.issue(), "key", "token")
-        self.assertEqual(model.call_count, 1, "only the plan was asked for")
-        self.assertFalse(any(p.endswith("/git/trees") for p, _, _ in calls), "no code was committed")
-        self.assertIn((self.ROOT_ + "/git/refs/heads/kappa/dev-9", None, "DELETE"), calls, "the half-made branch is removed for a clean retry")
+        self.assertEqual(model.call_count, 3, "planning, generation, and requirement review finish before validation")
+        first_commit = next(i for i, (p, _, _) in enumerate(calls) if p.endswith("/git/commits"))
+        pr_create = next(i for i, (p, payload, _) in enumerate(calls) if p == self.ROOT_ + "/pulls" and payload)
+        self.assertLess(first_commit, pr_create)
+        self.assertFalse(any(p.endswith("/git/refs/heads/kappa/dev-9") and method == "DELETE"
+                             for p, _, method in calls), "the validated branch is retained for recovery")
+
+    def test_failed_precommit_sandbox_keeps_evidence_without_publishing(self):
+        calls, fake_gh = self.world()
+        failure = {"status": "failed", "stop_reason": "identical_error", "summary": "AssertionError: expected 2",
+                   "attempts": [{"index": 1, "changed_paths": ["app/main.py"], "why_different": "Corrected addition."}],
+                   "last_diff": "-return a + b\n+return a - b", "logs": "FAILED (failures=1)"}
+        with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()), \
+                patch.object(developer, "run_sandbox_repair", return_value=failure):
+            self.assertIsNone(produce_development_pr(self.issue(), "key", "token"))
+        self.assertFalse(any(path.endswith(("/git/commits", "/git/refs", "/pulls")) or "/dispatches" in path
+                         for path, _, _ in calls), "an unverified candidate is never committed, branched or published")
+        report = next(payload["body"] for path, payload, _ in calls
+                      if path == "repos/onlykappa/KappaForge/issues/9/comments" and payload and
+                      payload["body"].startswith("### Pre-commit sandbox validation stopped"))
+        self.assertIn("Corrected addition.", report)
+        self.assertIn("FAILED (failures=1)", report)
+        self.assertIn("return a - b", report)
 
     def test_a_stopped_run_continues_on_its_plan_draft(self):
         calls, fake_gh = self.world(branch_exists=True)
@@ -756,7 +788,7 @@ class PrFirstTests(unittest.TestCase):
         self.assertEqual(code["parents"], ["e" * 40], "the code lands on top of the plan commit")
         self.assertTrue(any(p == self.ROOT_ + "/git/refs/heads/kappa/dev-9" and m == "PATCH" for p, _, m in calls))
 
-    def test_a_staged_build_marks_the_draft_as_holding_code_once_the_first_stage_is_saved(self):
+    def test_staged_build_is_published_once_after_final_validation(self):
         calls, fake_gh = self.world()
         two_stages = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast a", "Cast b"],
                                             "stage_files": [["app/main.py"], ["app/main.py"]]})),
@@ -768,13 +800,13 @@ class PrFirstTests(unittest.TestCase):
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=two_stages), \
                 patch.object(developer, "review_stage", return_value=(True, "")):
             produce_development_pr(self.issue(), "key", "token")
-        first_code = next(n for n, (p, _, _) in enumerate(calls) if p.endswith("/git/trees"))
-        updates = [(n, body) for n, (p, body, m) in enumerate(calls) if p == self.ROOT_ + "/pulls/50" and m == "PATCH"]
-        marked = [n for n, body in updates if developer.requirements_open(body) == [developer.CHECKPOINT_SAVED]]
-        self.assertEqual(len(marked), 1, "updated once, when the first stage lands")
-        self.assertGreater(marked[0], first_code)
-        self.assertIn("- [x] Code written on this draft", updates[0][1]["body"])
-        self.assertEqual(developer.requirements_open(updates[-1][1]), [], "the final update records the finished check")
+        code_commit = next(n for n, (p, _, _) in enumerate(calls) if p.endswith("/git/commits"))
+        draft = next((n, body) for n, (p, body, _) in enumerate(calls) if p == self.ROOT_ + "/pulls" and body)
+        self.assertGreater(draft[0], code_commit, "the draft is created after the single candidate commit")
+        self.assertIn("Pre-commit sandbox validation", draft[1]["body"])
+        self.assertEqual(developer.requirements_open(draft[1]), [])
+        self.assertFalse(any(p == self.ROOT_ + "/pulls/50" and method == "PATCH" for p, _, method in calls),
+                         "attempts do not create or update intermediate PR states")
 
     def test_only_a_plan_only_open_draft_of_this_task_can_be_continued(self):
         base = {"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "draft": True, "state": "open",
@@ -873,10 +905,9 @@ class FlaggedChangeTests(unittest.TestCase):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=answers):
             self.assertIsNone(developer.produce_development_pr(issue, "key", "token"))
-        # Only the plan reached the repository (a commit that changes no files, and its draft); the flagged code did not.
+        # Flagged code never reaches a commit, branch ref, draft PR, or workflow dispatch.
         self.assertFalse(any(p.endswith("/git/trees") or "/dispatches" in p for p in calls))
-        self.assertEqual([p for p in calls if p.endswith(("/git/commits", "/git/refs", "/pulls"))],
-                         ["repos/onlykappa/OmniPC/git/commits", "repos/onlykappa/OmniPC/git/refs", "repos/onlykappa/OmniPC/pulls"])
+        self.assertFalse(any(p.endswith(("/git/commits", "/git/refs", "/pulls")) for p in calls))
         self.assertIn("repos/onlykappa/KappaForge/issues/9/comments", calls)
         self.assertFalse(developer.flags_allowed("Allow flagged changes: no"))
 
@@ -961,21 +992,21 @@ class WorkflowAccessTests(unittest.TestCase):
         self.assertIn(".github/workflows/ci.yml", [e["path"] for e in trees[0][1]["tree"]])
         writes = [(p, t) for p, t, m in tokens if p.endswith(("/git/trees", "/git/refs/heads/kappa/dev-9"))]
         self.assertTrue(writes and all(t == "pat" for _, t in writes), writes)
-        plan = [t for p, t, m in tokens if p.endswith("/git/refs")]
-        self.assertEqual(plan, ["token"], "the plan-only branch is still created with the usual token")
+        self.assertTrue(any(p.endswith("/git/refs") for p, _, _ in tokens),
+                        "the validated task branch is created after code commit")
 
     def test_a_secret_workflow_change_is_written_to_the_draft_and_called_out_for_review(self):
         result, calls, tokens = self.run_task(self.SECRET_WF)
         self.assertTrue(result, "the task finishes its code instead of pausing")
         self.assertTrue(any(c[0].endswith("/git/trees") for c in calls))
         self.assertFalse(any("Stopped before changing" in str(c[1]) for c in calls), "no stop comment")
-        final = [c[1] for c in calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        final = [c[1] for c in calls if c[0] == PrFirstTests.ROOT_ + "/pulls" and c[1]][-1]
         self.assertTrue(final["body"].startswith("## ⚠️ Workflow changes to review first"))
         self.assertIn("`.github/workflows/ci.yml`", final["body"].split("\n\n## ", 1)[0] + final["body"][:400])
         self.assertTrue(final["title"].startswith("Draft"), "it stays a draft for the owner")
         self.assertFalse(any(c[0].endswith("/merge") for c in calls), "never merged")
         _, plain_calls, _ = self.run_task(self.PLAIN_WF)
-        plain = [c[1] for c in plain_calls if c[0] == PrFirstTests.ROOT_ + "/pulls/50" and c[1]][-1]
+        plain = [c[1] for c in plain_calls if c[0] == PrFirstTests.ROOT_ + "/pulls" and c[1]][-1]
         self.assertNotIn("Workflow changes to review first", plain["body"])
 
 
@@ -1070,6 +1101,24 @@ class OwnerRequestedFixTests(unittest.TestCase):
         body = next(c for c in calls if c[0] == "repos/onlykappa/KappaForge/pulls/50")[1]["body"]
         self.assertTrue(body.endswith("## Latest fix\nFixes the adding bug the tests caught."))
         self.assertFalse(any(c[0].endswith("/merge") for c in calls))
+
+    def test_failed_sandbox_repair_does_not_move_or_dispatch_the_pr_branch(self):
+        calls, gh = self.fake()
+        failure = {"status": "failed", "stop_reason": "identical_error", "summary": "AssertionError remains",
+                   "attempts": [{"index": 1, "changed_paths": ["app/main.py"], "why_different": "Adjusted logic."}],
+                   "last_diff": "-old\n+new", "logs": "FAILED (failures=1)"}
+        with patch.object(developer, "gh", side_effect=gh), patch.object(native_build, "gh", side_effect=gh), \
+                patch.object(developer, "job_log", return_value="FAIL test_add"), \
+                patch.object(developer, "run_model", side_effect=self.model_response), \
+                patch.object(developer, "run_sandbox_repair", return_value=failure):
+            self.assertIsNone(developer.fix_pull_request(self.ISSUE, "key", "token"))
+        self.assertFalse(any(path.endswith(("/git/commits", "/git/refs/heads/kappa/dev-9")) or "/dispatches" in path
+                         for path, _, _ in calls))
+        report = next(payload["body"] for path, payload, _ in calls
+                      if path == "repos/onlykappa/KappaForge/issues/9/comments" and payload and
+                      payload["body"].startswith("### Pre-commit sandbox validation stopped"))
+        self.assertIn("AssertionError remains", report)
+        self.assertIn("FAILED (failures=1)", report)
 
     def test_fix_sees_the_diff_design_notes_and_earlier_attempts(self):
         calls, gh = self.fake(fixes=1)

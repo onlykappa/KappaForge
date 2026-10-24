@@ -82,3 +82,41 @@ fixes used the owner's authorized fallback after these blocked rounds. No pipeli
 - Live model selection and network/provider responses through the new loop: scripted model callbacks exercised the real
   calling convention; no live model inference ran through the new loop.
 - Pre-commit autonomous repair and the faulty-project acceptance flow belong to step 4 and are not claimed complete.
+
+## Step 4: test-driven autonomous repair
+
+The development path keeps the candidate uncommitted while the controller runs the base-selected test commands in a
+real `sandbox.Session`. It lets the model diagnose and correct failures through the seven sandbox tools, records up to
+five distinct candidate states with their diffs, rationale and test evidence, stops on repeated patches or identical
+errors, and reruns the final regression suite before committing or opening a draft PR. If validation stops, the task
+report retains the candidate diff, bounded logs and repair history without publishing the candidate.
+
+### Ran locally (Windows, Python 3.12)
+
+| Check | Measured result |
+| --- | --- |
+| `py -3.12 -m unittest discover -s tests -q` | 782 passed, 12 skipped |
+| `npm test` | 835 passed |
+| `py -3.12 scripts/dependency-map.py --check` | Passed |
+| `git diff --check` | Passed |
+
+The local unit tests use a recording Docker fake for controller behavior. The real faulty-project acceptance test is
+gated on `KAPPA_SANDBOX_INTEGRATION=1` and skipped locally.
+
+### Ran in CI
+
+| Check | Measured result |
+| --- | --- |
+| [Step 4 sandbox self-test on PR #260](https://github.com/onlykappa/KappaForge/actions/runs/40141771899) | 25 sandbox tests passed; real-Docker faulty-project repair passed (1 test); KappaForge sandbox self-test passed with Python 782 tests (12 skipped) and Node 835 passed; no sandbox containers or volumes remained |
+| [Required CI checks on candidate `fe365d8`](https://github.com/onlykappa/KappaForge/actions/runs/40141771903) | Unit, worker, structure, fetch, analyze, publish and web all passed |
+
+The first real-Docker acceptance attempt caught an incomplete scripted repair: it removed integer division but did not
+round the discount to cents. The fixture model patch was corrected to match the fixture's expected behavior, and the
+rerun passed both suites.
+
+### Inspected, not executed locally
+
+- Real Docker execution of the agent-driven repair on `tests/fixtures/sandbox/faulty-project`; the dedicated CI job
+  executes it and confirms both Python and Node suites pass after the scripted repair.
+- Networkless container execution and secret isolation for the Step 4 controller; these rely on the real-container
+  Step 2 checks above plus the Step 4 CI acceptance run.

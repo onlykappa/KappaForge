@@ -93,7 +93,11 @@ class CloudAuditTests(unittest.TestCase):
                     'evidence':{'path':'app/main.py','quote':'return int(a) + int(b)'}}], 'problems':[]})
             return case.model_response(key, prompt)
         with patch.object(developer,'gh',side_effect=incomplete_gh),patch.object(developer.native_build if hasattr(developer,'native_build') else __import__('engine.native_build',fromlist=['gh']),'gh',side_effect=incomplete_gh), \
-             patch.object(developer,'run_model',side_effect=answer):
+             patch.object(developer,'run_model',side_effect=answer), \
+             patch.object(developer, 'run_sandbox_repair', side_effect=lambda repo, sha, token, changes, *a, **k: {
+                 'status': 'success', 'stop_reason': 'validated', 'summary': 'simulated test pass',
+                 'candidate_changes': dict(changes), 'test_results': [{'status': 'passed', 'ran': 1}],
+                 'attempts': [], 'models': [], 'logs': 'simulated test pass'}):
             developer.fix_pull_request(case.ISSUE,'key','token')
         edits = [c[1] for c in calls if c[0].endswith('/pulls/50') and c[2]=='PATCH']
         self.assertEqual(edits[0]['title'],'Draft: Add feature')

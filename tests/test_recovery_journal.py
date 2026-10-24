@@ -34,6 +34,8 @@ class GitHub:
         intent_guard.activate(self.issue)
 
     def read(self, path):
+        if path == 'repos/onlykappa/KappaForge':
+            return {'private': False}
         if path.endswith('/issues/130'):
             return copy.deepcopy(self.issue)
         if '/issues/133/comments?' in path:
@@ -831,6 +833,10 @@ class RecoveryJournalTests(unittest.TestCase):
                 patch.object(developer, 'project_guide', return_value=''), patch.object(developer, 'job_log', return_value='AssertionError: expected value 2, got 1'), \
                 patch.object(developer, 'read_source', side_effect=lambda repo, path, sha, token: self.world.files[path]), \
                 patch.object(developer, 'is_private', return_value=False), patch.object(developer, 'code_providers', return_value={'groq'}), \
+                patch.object(developer, 'run_sandbox_repair', side_effect=lambda repo, sha, token, changes, *a, **k: {
+                    'status': 'success', 'stop_reason': 'validated', 'summary': 'simulated test pass',
+                    'candidate_changes': dict(changes), 'test_results': [{'status': 'passed', 'ran': 1}],
+                    'attempts': [], 'models': [], 'logs': 'simulated test pass'}), \
                 patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('writer', good))), patch.object(verify, 'wiring_problems', return_value=[]), \
                 patch.object(verify, 'model_review', return_value=([{'text': 'Implement value 2', 'met': True}], [], [])), \
                 patch.object(developer, 'dispatch_tests') as dispatch, patch.object(developer, 'notify'):

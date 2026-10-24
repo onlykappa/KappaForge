@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -133,7 +134,7 @@ def run_hidden(scenario, files):
                 handle.write(text)
         results = []
         if any(p.endswith(".py") for p in scenario["hidden"]):
-            results.append(subprocess.run(["python3", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", ".",
+            results.append(subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-t", ".",
                                            "-p", "test_zz_acceptance*.py"], cwd=root, capture_output=True, text=True))
         js = [p for p in scenario["hidden"] if p.endswith(".mjs")]
         if js:
@@ -263,6 +264,12 @@ class ScriptedScenarioTests(unittest.TestCase):
                 "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
         return "scripted", "{}"
 
+    @staticmethod
+    def sandbox_success(repo, sha, token, changes, task, api_key, allowed, **kwargs):
+        return {"status": "success", "stop_reason": "validated", "summary": "simulated test pass",
+                "candidate_changes": dict(changes), "test_results": [{"status": "passed", "ran": 1}],
+                "attempts": [], "models": [], "logs": "simulated test pass"}
+
     def flaky(self, fail_on):
         """The scripted model, with one real gateway 503 on the first prompt containing `fail_on`."""
         state = {"failed": False}
@@ -284,11 +291,13 @@ class ScriptedScenarioTests(unittest.TestCase):
     def run_flaky(self, fail_on):
         easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
         with patch.object(developer, "run_model", side_effect=self.flaky(fail_on)), \
-                patch.object(developer, "review_stage", return_value=(True, "")), patch.object(sim.time, "sleep") as sleep:
+                patch.object(developer, "review_stage", return_value=(True, "")), \
+                patch.object(developer, "run_sandbox_repair", side_effect=self.sandbox_success), \
+                patch.object(sim.time, "sleep") as sleep:
             outcome = sim.run_scenario(easy, [], docker=False, minutes=5)
         return outcome, sleep
 
-    def test_a_gateway_failure_before_any_code_resumes_on_the_same_plan_draft(self):
+    def test_a_gateway_failure_before_any_code_resumes_before_publishing(self):
         outcome, sleep = self.run_flaky("THIS IS STAGE 1")
         self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
         self.assertEqual(len(outcome["continuations"]), 1)
@@ -298,7 +307,7 @@ class ScriptedScenarioTests(unittest.TestCase):
         self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
         self.assertEqual(outcome["changed_files"], ["tests/test_convert.py", "units/convert.py"])
 
-    def test_a_gateway_failure_after_code_was_saved_is_repaired_on_the_same_draft(self):
+    def test_a_gateway_failure_after_uncommitted_code_resumes_before_publishing(self):
         outcome, _ = self.run_flaky("THIS IS STAGE 2")
         self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
         self.assertEqual(len(outcome["continuations"]), 1)
@@ -306,9 +315,9 @@ class ScriptedScenarioTests(unittest.TestCase):
         self.assertEqual(kinds.count("pr_opened"), 1)
         self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
         self.assertIn("tests/test_convert.py", outcome["changed_files"])
-        repair = [e for e in outcome["timeline"] if e["kind"] in ("commit", "pr_comment")][-2:]
-        self.assertTrue(repair[0]["message"].startswith("fix: finish the unfinished requirements"), "no test failed, so none is claimed")
-        self.assertTrue(repair[1]["first_line"].startswith("### Unfinished work continued"))
+        commits = [e for e in outcome["timeline"] if e["kind"] == "commit" and e["files"]]
+        opened = next(e for e in outcome["timeline"] if e["kind"] == "pr_opened")
+        self.assertTrue(commits and commits[-1]["n"] < opened["n"], "candidate code is validated and committed before publication")
 
     def test_terminal_failures_are_not_resumed(self):
         terminal = gateway.error(401, None)
@@ -343,7 +352,8 @@ class ScriptedScenarioTests(unittest.TestCase):
         env = {"KAPPA_ROUTER_REQUIRED": "true", "KAPPA_ROUTER_URL": "https://fixture.example", "KAPPA_ROUTER_TOKEN": "x" * 40}
         with patch.dict(os.environ, env), patch.object(sim, "REAL_URLOPEN", side_effect=gateway_http), \
                 patch.object(gateway, "record", side_effect=lambda journal, evidence: records.append(evidence)), \
-                patch.object(developer, "review_stage", return_value=(True, "")):
+                patch.object(developer, "review_stage", return_value=(True, "")), \
+                patch.object(developer, "run_sandbox_repair", side_effect=self.sandbox_success):
             os.environ.pop("GITHUB_TOKEN", None)
             outcome = sim.run_scenario(easy, records, docker=False, minutes=5)
             self.assertNotIn("GITHUB_TOKEN", os.environ, "the placeholder token does not outlive the scenario")
@@ -356,14 +366,15 @@ class ScriptedScenarioTests(unittest.TestCase):
     def test_easy_scenario_runs_the_real_engine_and_keeps_every_lifecycle_rule(self):
         easy = next(s for s in sim.SCENARIOS if s["key"] == "easy")
         with patch.object(developer, "run_model", side_effect=self.answer), \
-                patch.object(developer, "review_stage", return_value=(True, "")):
+                patch.object(developer, "review_stage", return_value=(True, "")), \
+                patch.object(developer, "run_sandbox_repair", side_effect=self.sandbox_success):
             outcome = sim.run_scenario(easy, [], docker=False, minutes=5)
         self.assertEqual(outcome["result"], "draft_pr", outcome.get("traceback_tail"))
         self.assertTrue(all(outcome["lifecycle"].values()), outcome["lifecycle"])
         self.assertEqual(outcome["changed_files"], ["tests/test_convert.py", "units/convert.py"])
         self.assertIn("## Goal", outcome["plan_body"])
         kinds = [e["kind"] for e in outcome["timeline"]]
-        self.assertLess(kinds.index("pr_opened"), kinds.index("branch_updated"))
+        self.assertLess(kinds.index("commit"), kinds.index("pr_opened"))
         self.assertIn("checks_requested", kinds)
         self.assertEqual(outcome["tests"], {"skipped": "Docker is not available here; the workflow runs this on GitHub's runner"})
 
