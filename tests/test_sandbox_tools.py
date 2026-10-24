@@ -1,42 +1,21 @@
 import unittest
-from typing import List
+import json
 
 from engine import sandbox
 from engine.sandbox_tools import SandboxTools
 
-# Minimal fake session that mimics the subset of Session used by SandboxTools
-class FakeSession:
+# stand-in: fake command execution avoids Docker; candidate operations use the real Session.
+class FakeSession(sandbox.Session):
     def __init__(self, files=None, results=None):
-        self._files = files or {}
-        self.results = results or []
-        # emulate a simple base tree for diff inspection
-        self.base = sandbox.Tree('repo', 'sha', {k: v.encode() for k, v in self._files.items()})
-
-    # Session API used by SandboxTools
-    def current(self):
-        return self._files
-
-    def apply(self, edits: dict):
-        self._files.update(edits)
-
-    def revert(self, paths: List[str] = None):
-        if paths is None:
-            self._files.clear()
-        else:
-            for p in paths:
-                self._files.pop(p, None)
-
-    def diff(self):
-        # Very simple diff representation – list of changed paths
-        diffs = []
-        for p, content in self._files.items():
-            diffs.append(f"+{p}\n{content}\n")
-        return "".join(diffs)
+        super().__init__(sandbox.Tree('repo', 'a' * 40, {k: v.encode() for k, v in (files or {}).items()}),
+                         versions=('3.12', '22'), results=list(results or []))
 
     def run(self, argv, profile='test'):
         # Return a successful RunResult with dummy output
-        return sandbox.RunResult(argv=argv, profile=profile, status='passed', exit_code=0,
-                                 duration_s=0.1, stdout='output', stderr='')
+        result = sandbox.RunResult(argv=argv, profile=profile, status='passed', exit_code=0,
+                                   duration_s=0.1, stdout='output', stderr='')
+        self.results.append(result)
+        return result
 
     def run_tests(self):
         # Return whatever is stored in self.results (already RunResult objects)
@@ -54,7 +33,7 @@ class SandboxToolsTest(unittest.TestCase):
         res = tools.apply_patch([{'path': 'file.txt', 'find': 'world', 'replace': 'there'}])
         self.assertTrue(res['ok'])
         self.assertIn('file.txt', sess.current())
-        self.assertEqual(sess.current()['file.txt'], 'hello there')
+        self.assertEqual(sess.current()['file.txt'], b'hello there')
 
     def test_apply_patch_duplicate_find(self):
         sess = FakeSession({'dup.txt': 'foo foo'})
@@ -63,7 +42,7 @@ class SandboxToolsTest(unittest.TestCase):
         self.assertFalse(res['ok'])
         self.assertIn('occurs 2 times', res['error'])
         # ensure file unchanged
-        self.assertEqual(sess.current()['dup.txt'], 'foo foo')
+        self.assertEqual(sess.current()['dup.txt'], b'foo foo')
 
     def test_apply_patch_create_missing(self):
         sess = FakeSession({})
@@ -71,7 +50,7 @@ class SandboxToolsTest(unittest.TestCase):
         res = tools.apply_patch([{'path': 'new.txt', 'find': '', 'replace': 'content'}])
         self.assertTrue(res['ok'])
         self.assertIn('new.txt', sess.current())
-        self.assertEqual(sess.current()['new.txt'], 'content')
+        self.assertEqual(sess.current()['new.txt'], b'content')
 
     def test_run_command_summary(self):
         sess = FakeSession()
@@ -107,12 +86,12 @@ class SandboxToolsTest(unittest.TestCase):
         self.assertIn('Traceback', res['first_error'])
 
     def test_inspect_test_results_tap(self):
-        out = "# pass 5\n# fail 2\n# skipped 1\n"
+        out = "# tests 8\n# pass 5\n# fail 2\n# skipped 1\n"
         sess = FakeSession(results=[make_result('failed', stdout=out)])
         tools = SandboxTools(sess)
         res = tools.inspect_test_results()
         self.assertTrue(res['ok'])
-        self.assertEqual(res['counts']['ran'], 5)
+        self.assertEqual(res['counts']['ran'], 8)
         self.assertEqual(res['counts']['failures'], 2)
         self.assertEqual(res['counts']['skipped'], 1)
 
@@ -134,7 +113,7 @@ class SandboxToolsTest(unittest.TestCase):
         res = tools.inspect_diff()
         self.assertTrue(res['ok'])
         self.assertIn('a.txt', res['changed_paths'])
-        self.assertIn('b.txt', res['changed_paths'])  # both differ from base (base had original values)
+        self.assertEqual(res['changed_paths'], ['a.txt'])
 
     def test_revert_candidate_change(self):
         sess = FakeSession({'x.txt': 'old'})
@@ -142,12 +121,12 @@ class SandboxToolsTest(unittest.TestCase):
         tools = SandboxTools(sess)
         res = tools.revert_candidate_change(['x.txt'])
         self.assertTrue(res['ok'])
-        self.assertNotIn('x.txt', sess.current())
+        self.assertEqual(sess.current()['x.txt'], b'old')
         # revert all
         sess.apply({'y.txt': 'y'})
         res_all = tools.revert_candidate_change()
         self.assertTrue(res_all['ok'])
-        self.assertEqual(sess.current(), {})
+        self.assertEqual(sess.current(), {'x.txt': b'old'})
 
 if __name__ == '__main__':
     unittest.main()
@@ -231,6 +210,19 @@ class AdditionalRealSessionReviewTests(unittest.TestCase):
             'binary.dat': b'\xff\xfe',
         }), FakeDocker(), versions=('3.12', '22'))
         self.tools = SandboxTools(self.session)
+
+    def test_outputs_are_json_serializable_and_keep_the_documented_limits(self):
+        output = 'start\n' + 'x' * 25000 + '\nend'
+        self.session.docker.run = lambda args: sandbox.Exec(0, output, '')
+        result = self.tools.run_command(['python', 'app.py'])
+        self.assertEqual(result['output'], output[-1500:])
+        self.assertEqual(json.loads(json.dumps(result)), result)
+        log = self.tools.read_execution_log(stream='stdout', limit=90000)
+        self.assertEqual(len(log['slice']), 20000)
+        self.assertEqual(log['total'], len(output))
+        self.assertTrue(log['more'])
+        self.assertEqual(json.loads(json.dumps(log)), log)
+        self.assertEqual(self.tools.inspect_test_results(index='bad')['status'], 'invalid')
 
     def test_patch_validates_shape_fields_and_text_without_partial_changes(self):
         invalid = [None, 42, {}, [None], [{'path': ['app.py'], 'find': '', 'replace': 'x'}],
