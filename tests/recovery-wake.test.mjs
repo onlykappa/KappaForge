@@ -45,6 +45,14 @@ test('gateway retry backoff is scheduled without claiming a provider cooldown',a
  }finally{w.restore()}
 });
 
+test('an ordinary continuation is scheduled as recovery, never as a provider cooldown',async()=>{
+ const w=fixture();try{
+  w.journal.waitReason='continue';
+  const body=await (await w.schedule()).json();
+  assert.equal(body.status,'recovery_requested');assert.equal(body.message.includes('cooldown'),false);
+ }finally{w.restore()}
+});
+
 test('production label casing registers recovery while unrelated labels remain unauthorized',async()=>{
  const w=fixture();try{
   w.issue.labels=[{name:'kappa-Task'}];

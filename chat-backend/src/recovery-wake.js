@@ -70,7 +70,8 @@ export async function recoveryWakeStore(state,env,request){
   return rows[task];
  });
  if(scheduled.stopped)return reply({error:'Recovery delivery is exhausted. Review GitHub Actions access before another attempt.',status:'blocked'},409);
- const cooldown=j?.status==='waiting'&&j.waitReason!=='retry'&&next>now;
+ // Only a recorded provider limit is a cooldown; a gateway retry or an ordinary continuation is not.
+ const cooldown=j?.status==='waiting'&&!['retry','continue'].includes(j.waitReason)&&next>now;
  return reply({status:j?.status==='waiting'?(cooldown?'waiting':'recovery_requested'):'monitoring',task,nextAt:next,message:j?.status==='waiting'?(cooldown?'Saved task is waiting for its recorded cooldown. Automatic wake-up is scheduled.':'Recovery check scheduled for the existing task. Runner start and provider capacity are not yet confirmed.'):'Checking the existing task and its runner; no duplicate execution was requested.'},202);
 }
 export async function recoveryAlarm(state,env){

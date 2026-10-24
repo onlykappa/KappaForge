@@ -145,6 +145,18 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertEqual(self.journal.state['waitReason'], 'cooldown')
         self.assertIn('recorded provider cooldown', self.world.rows[-1]['body'])
 
+    def test_a_rejected_proposal_continues_promptly_and_is_never_called_a_provider_cooldown(self):
+        from engine.developer import GenerationFailure
+        failure = GenerationFailure('No validated proposal after 5 distinct attempts. Syntax check failed: engine/developer.py')
+        self.assertTrue(self.journal.defer(failure))
+        self.assertEqual(self.journal.state['waitReason'], 'continue')
+        self.assertFalse(self.journal.state['quotaWait'])
+        self.assertLessEqual(self.journal.state['nextAt'], self.world.now + 60, 'no five-minute wait without a provider limit')
+        latest = self.world.rows[-1]['body']
+        self.assertNotIn('cooldown', latest)
+        self.assertIn('No provider limit is involved', latest)
+        self.assertIn('"status":"queued"', latest.replace(' ', ''))
+
     def test_targeted_automatic_scan_queues_existing_checkpoint_once(self):
         self.journal.checkpoint('b'*40, files=['value.py'])
         self.journal.defer(RuntimeError('offline'))
@@ -413,7 +425,10 @@ class RecoveryJournalTests(unittest.TestCase):
         restored = self.world.journal()
         self.assertEqual(restored.state['status'], 'waiting')
         self.assertEqual(restored.state['candidate'], 'b' * 40)
-        self.assertTrue(any('KAPPA_PROGRESS_V1' in row['body'] and '"status": "waiting"' in row['body'] for row in self.world.rows))
+        # An interrupted worker is not a provider limit: it is queued for the next scan, never shown as a cooldown.
+        self.assertTrue(any('KAPPA_PROGRESS_V1' in row['body'] and '"status": "queued"' in row['body']
+                            and 'No provider limit is involved' in row['body'] for row in self.world.rows))
+        self.assertEqual(restored.state['waitReason'], 'continue')
 
     def test_concurrent_branch_updates_are_blocked_before_any_model_work(self):
         self.journal.checkpoint('b' * 40, files=['value.py'])

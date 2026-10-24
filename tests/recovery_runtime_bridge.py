@@ -8,6 +8,7 @@ import time
 from unittest.mock import patch
 from test_recovery_journal import GitHub
 from engine import intent_guard, recovery
+from engine.reliability import ProviderRoutesUnavailable
 
 
 def main():
@@ -22,7 +23,8 @@ def main():
             intent_guard.activate(world.issue)
             journal = recovery.Journal(world.issue, world.read, world.write)
             journal.checkpoint('b'*40, files=['value.py'])
-            journal.defer(RuntimeError('isolated runtime fixture outage'))
+            # A real provider outage (a cooldown); an ordinary failure would continue without one.
+            journal.defer(ProviderRoutesUnavailable('isolated runtime fixture outage'))
             journal.state['nextAt'] = now+4
             journal.persist()
             return dict(issue=world.issue, rows=world.rows, auth=auth, nextAt=journal.state['nextAt']*1000)
