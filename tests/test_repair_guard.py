@@ -205,6 +205,22 @@ class RepairGuardTests(unittest.TestCase):
         with self.assertRaises(task_state.CandidateChanged):
             loop.before_repair(model, 'key', SOURCES, self.confirmed())
 
+    def test_late_loop_decisions_are_discarded_when_goal_or_source_changes(self):
+        for kind in ('goal', 'source'):
+            sources = dict(SOURCES)
+            loop = repair_guard.RepairLoop()
+            def respond(*args, **kwargs):
+                if kind == 'goal':
+                    self.goal.guidance(['Also accept empty inputs'])
+                else:
+                    sources['app.py'] += '# changed during review\n'
+                return 'm', '{"decision":"continue","reason":"Different approach","next_approach":"Convert the inputs"}'
+            model = Mock(side_effect=respond)
+            for _ in range(2):
+                loop.before_repair(model, 'key', sources, self.confirmed())
+            with self.subTest(kind=kind), self.assertRaises(task_state.CandidateChanged):
+                loop.before_repair(model, 'key', sources, self.confirmed())
+
     def test_invalid_loop_review_or_timeout_stops_and_stale_continue_is_rejected(self):
         for response in ('{}', 'not JSON', '{"decision":"continue","reason":"try again"}'):
             loop = repair_guard.RepairLoop()

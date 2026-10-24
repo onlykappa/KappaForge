@@ -496,6 +496,8 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     break
                 req = urllib.request.Request(p["base"] + "/chat/completions", json.dumps(payload).encode(),
                                              {"Content-Type": "application/json", **provider_headers(p)})
+                from engine.task_state import inference_attempt
+                inference_attempt(prompt, name)
                 try:
                     with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                         data = response_json(response)
@@ -627,6 +629,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     global MODEL_DEADLINE
     from engine import recovery, task_state
     journal = recovery.CURRENT.get()
+    task_state.require_journal_identity(journal)
     if journal:
         RecoveryCoordinator.charge(journal, 'modelCalls')
     prompt = task_state.add_to_prompt(prompt, journal)
@@ -634,9 +637,15 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:
         model_timeout()
-        if os.getenv("KAPPA_ROUTER_REQUIRED", "").strip().lower() == "true":
-            return run_integrated_router(prompt, max_output_tokens, allowed, json_mode, skip)
-        return _run_model(api_key, prompt, max_output_tokens, allowed, json_mode, skip)
+        integrated = os.getenv("KAPPA_ROUTER_REQUIRED", "").strip().lower() == "true"
+        with task_state.inference(prompt, 'gateway' if integrated else 'direct') as call:
+            if integrated:
+                answer = run_integrated_router(prompt, max_output_tokens, allowed, json_mode, skip)
+            else:
+                answer = _run_model(api_key, prompt, max_output_tokens, allowed, json_mode, skip)
+            call.check()
+            call.event('answered', answer[0])
+            return answer
     finally:
         MODEL_DEADLINE = previous
 
@@ -704,6 +713,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     if rescue and "task" in payload:
         journal.premium_request = None  # One rescue call per step: every later call is free.
         premium = {"task": task_number, "step": rescue["step"], "reason": rescue["reason"]}
+        from engine.task_state import inference_attempt
+        inference_attempt(prompt, 'gateway:premium-quote')
         status, body = _router_post("/router/infer", {**payload, "requestId": str(uuid.uuid4()), "premium": {**premium, "quote": True}})
         quote = body.get("premium") if isinstance(body.get("premium"), dict) else {"refused": "premium_state_unavailable"}
         premium_used(quote)
@@ -717,6 +728,8 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",
     })
+    from engine.task_state import inference_attempt
+    inference_attempt(prompt, pinned_route or 'gateway:auto')
     try:
         with urllib.request.urlopen(request, timeout=model_timeout(
                 (PROVIDERS["routing"]["defaults"]["requestTimeoutMs"] + PROVIDERS["routing"]["defaults"]["responseGraceMs"]) / 1000)) as response:
@@ -849,6 +862,8 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
         try:
             req = urllib.request.Request(url, json.dumps(payload).encode(), headers)
             # Long replies (large-budget development) take minutes to generate.
+            from engine.task_state import inference_attempt
+            inference_attempt(prompt, 'gemini:' + model)
             with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                 data = response_json(response)
             output, finish_reason = completion(data, gemini=True)
