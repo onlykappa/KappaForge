@@ -19,8 +19,12 @@ class SandboxRepairController:
                     'index': attempt_idx,
                     'diff': diff,
                     'fingerprint': fingerprint,
-                    'results': result
+                    'results': result,
+                    'rationale': result.get('steps', [{}])[-1].get('reason', ''),
+                    'logs': self.tools.read_execution_log().get('output', '')
                 }
+                if self.attempts:
+                    attempt['diff_from_prev'] = (diff != self.attempts[-1]['diff'])
                 
                 if any(a['fingerprint'] == fingerprint for a in self.attempts):
                     self.attempts.append(attempt)
@@ -35,7 +39,7 @@ class SandboxRepairController:
                 
                 if attempt_idx >= 5:
                     break
-            return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': self.attempts[-1]['diff']}
+            return {'status': 'failed', 'last_attempt': len(self.attempts), 'last_diff': self.attempts[-1]['diff'], 'logs': self.attempts[-1]['logs']}
         finally:
             self.session.close()
 
