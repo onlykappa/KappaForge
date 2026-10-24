@@ -78,13 +78,19 @@ class TaskGoalTests(unittest.TestCase):
             missing = {'requirements': [], 'problems': []}
             complete = {**missing, 'file_scope': [{'path': 'app.py', 'necessary': True, 'reason': 'Convert inputs', 'quote': 'int(a)'}]}
             calls = []
+            prompts = []
 
             def model(key, prompt, **kwargs):
+                prompts.append(prompt)
                 calls.append(kwargs.get('skip', ()))
                 return ('mistral:codestral-latest', json.dumps(missing)) if len(calls) == 1 else ('ollama:gpt-oss:120b', json.dumps(complete))
 
             self.assertIsNotNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, ['app.py']))
             self.assertEqual(calls, [(), ('mistral:codestral-latest',)])
+            self.assertNotIn('SCOPE FORMAT REPAIR', prompts[0])
+            self.assertIn('SCOPE FORMAT REPAIR', prompts[1])
+            self.assertIn('exactly one object for each changed path', prompts[1])
+            self.assertIn('app.py', prompts[1])
             from types import SimpleNamespace
             from engine import recovery
             handle = recovery.CURRENT.set(SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b')))
