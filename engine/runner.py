@@ -625,10 +625,11 @@ def rate_limited(model, exc):
 
 def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=False, skip=()):
     global MODEL_DEADLINE
-    from engine import recovery
+    from engine import recovery, task_state
     journal = recovery.CURRENT.get()
     if journal:
         RecoveryCoordinator.charge(journal, 'modelCalls')
+    prompt = task_state.add_to_prompt(prompt, journal)
     previous = MODEL_DEADLINE
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:

@@ -147,7 +147,7 @@ class GatewayEvidenceTests(unittest.TestCase):
                         patch.object(developer, 'is_private', return_value=False), \
                         patch.object(developer, 'code_providers', return_value={'groq'}), \
                         patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', json.dumps({
-                            'files': [{'path': path, 'content': '# Corrected note\n'}]}))) as model:
+                            'files': [{'path': path, 'reason': 'Correct the owner requested note', 'content': '# Corrected note\n'}]}))) as model:
                     if len(delta) == 1 and delta[0]['status'] == 'added':
                         result = developer.revise_branch({'title': 'Correct note', 'body': 'Only ' + path},
                                                         pr, 'kappa/dev-1', 'b'*40, [], 'fixture', '')
@@ -249,6 +249,16 @@ class GatewayEvidenceTests(unittest.TestCase):
         sleep.assert_called_once_with(5)
         self.assertEqual(journal.state['pinnedGatewayCalls'], 2)
         journal.persist.assert_called_once()
+
+    def test_the_pinned_prompt_cap_applies_without_a_task_record(self):
+        prompt = 'x' * (gateway.PINNED_PROMPT_CHARS + 1)
+        self.assertTrue(gateway.prompt_fits(prompt), 'unpinned routes keep the router budget')
+        handle = recovery.CURRENT.set(SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b')))
+        try:
+            self.assertFalse(gateway.prompt_fits(prompt), 'run_model would refuse it, so sizing loops must keep shrinking')
+            self.assertTrue(gateway.prompt_fits('x' * gateway.PINNED_PROMPT_CHARS))
+        finally:
+            recovery.CURRENT.reset(handle)
 
     def test_bounded_test_dispatch_disables_automatic_fixes_on_reviewed_ref(self):
         journal = SimpleNamespace(scope=SimpleNamespace(inference_route='groq:openai/gpt-oss-120b'))

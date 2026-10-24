@@ -765,8 +765,8 @@ class RecoveryJournalTests(unittest.TestCase):
         self.journal.note(plan=['Change value', 'Add test'], done=['Stage 1: Changed value'],
                           files=['value.py'], status='Paused for a provider limit; resumes automatically')
         self.world.files['test_value.py'] = 'from value import value\nassert value == 1\n'
-        good = json.dumps({'files': [{'path': 'value.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]},
-                                    {'path': 'test_value.py', 'edits': [{'find': 'value == 1', 'replace': 'value == 2'}]}]})
+        good = json.dumps({'files': [{'path': 'value.py', 'reason': 'Implement the requested value', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]},
+                                    {'path': 'test_value.py', 'reason': 'Test the requested value behavior', 'edits': [{'find': 'value == 1', 'replace': 'value == 2'}]}]})
         def gh(path, token, payload=None, method=None):
             return self.world.read(path) if payload is None else self.world.write(path, payload, method or 'POST')
         with patch.object(developer, 'gh', side_effect=gh), \

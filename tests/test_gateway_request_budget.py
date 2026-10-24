@@ -71,7 +71,7 @@ class RetryPromptBudgetTests(unittest.TestCase):
         bad = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'missing anchor', 'replace': 'value = 2'}]}]})
         good = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
         with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
-                patch.dict(runner.PROVIDERS['routing']['defaults'], {'maxPromptChars': 8000}), \
+                patch.dict(runner.PROVIDERS['routing']['defaults'], {'maxPromptChars': 8200}), \
                 patch.object(developer, 'run_model', side_effect=[('fixture', bad), ('fixture', good)]) as model:
             _, _, changes, _ = developer.generate_with('fixture', task, developer.ROOT, sources, existing, guide, None, developer.LARGE)
             prompts = [call.args[1] for call in model.call_args_list]
@@ -81,6 +81,7 @@ class RetryPromptBudgetTests(unittest.TestCase):
                 self.assertIn(guide, prompt)
         self.assertEqual(len(prompts), 2)
         self.assertLess(prompts[1].count('===== FILE'), prompts[0].count('===== FILE'))
+        self.assertIn('===== FILE app.py', prompts[1])
         self.assertIn('AUTONOMOUS REPAIR', prompts[1])
         self.assertEqual(changes['app.py'], 'value = 2\n')
 

@@ -15,6 +15,25 @@ class Progress:
 
 
 class ClassifierTests(unittest.TestCase):
+    def test_task_221_referential_change_is_not_a_code_requirement(self):
+        for text in ("Open a draft PR for this change and do not merge it.",
+                     "Open a draft PR for these changes", "Create a pull request with these changes"):
+            self.assertTrue(verify.lifecycle_requirement(text), text)
+            requirement = verify.resolve_lifecycle([{'text': text, 'met': False}],
+                                                   verify.pr_receipt(PR, REPO, BRANCH))[0]
+            self.assertTrue(requirement['met'])
+        for text in ("Open a PR for this change and fix the bug", "Open a PR that changes the workflow",
+                     "Open a PR with changes to the API", "Create a PR for this change and notify users"):
+            self.assertFalse(verify.lifecycle_requirement(text), text)
+
+    def test_owner_side_clauses_stay_lifecycle_but_keep_needs_the_pr_as_its_object(self):
+        for text in ("Open a draft PR and I'll review it tomorrow", "Open a pull request and wait for my approval",
+                     "Open a draft PR and leave it open", "Open a draft PR and keep the PR in draft"):
+            self.assertTrue(verify.lifecycle_requirement(text), text)
+        for text in ("Open a draft PR and keep the header text in sync with the README",
+                     "Open a draft PR and leave the old banner", "Open a PR and I will fix the API"):
+            self.assertFalse(verify.lifecycle_requirement(text), text)
+
     def test_only_pure_orchestration_asks_are_lifecycle(self):
         for text in ("Open a fresh draft PR", "Keep it as a draft", "Notify me when it is ready for review",
                      "Let me know when done", "Keep the PR in draft", "Create a pull request", "Keep it a draft until I review",
@@ -113,7 +132,7 @@ class Task205ReplayTests(unittest.TestCase):
             patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
             patch.object(developer, "has_tests", return_value=True),
         ):
-            developer.revise_branch({"title": "Full audit and bug fix draft",
+            developer.revise_branch({"number": 205, "title": "Full audit and bug fix draft",
                                      "body": "Open a fresh PR, audit and fix bugs"},
                                     draft, BRANCH, "a" * 40, [], "token", "key",
                                     repo=REPO, repo_token="token")
@@ -126,6 +145,43 @@ class Task205ReplayTests(unittest.TestCase):
         self.assertEqual(len(lifecycle), 2)
         self.assertNotIn("- Requirement not met: Open a fresh draft PR", lifecycle[0])
         self.assertIn("- Requirement not met: Open a fresh draft PR", lifecycle[1])
+
+    def repair_prompt(self, body, open_items):
+        prompt = []
+        files = [{"filename": "engine/developer.py", "status": "modified", "patch": "@@ -1 +1 @@\n-old\n+new"}]
+
+        def generate(_key, task, *_a, **_k):
+            # generate_with appends Goal.prompt() to every coding prompt.
+            prompt.append(task + developer.task_goal.CURRENT.get().prompt())
+            return "m", "s", {"engine/developer.py": "new\n"}, "summary"
+
+        with (
+            patch.object(developer, "gh", side_effect=lambda path, *_a, **_k: files if path.endswith("/pulls/206/files?per_page=100") else []),
+            patch.object(developer, "list_tree", return_value=({"engine/developer.py": 10}, {"engine/developer.py": "100644"})),
+            patch.object(developer, "project_guide", return_value=""),
+            patch.object(developer, "read_source", return_value="old\n"),
+            patch.object(developer, "requirements_open", return_value=open_items),
+            patch.object(developer, "is_private", return_value=True),
+            patch.object(developer, "code_providers", return_value=["groq"]),
+            patch.object(developer, "generate", side_effect=generate),
+            patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
+            patch.object(developer, "has_tests", return_value=True),
+        ):
+            developer.revise_branch({"number": 205, "title": "Task", "body": body}, {**PR, "number": 206}, BRANCH, "a" * 40,
+                                    [], "token", "key", repo=REPO, repo_token="token")
+        return prompt[0]
+
+    def test_the_pr_automation_ban_appears_only_when_the_owner_asked_for_pr_lifecycle_work(self):
+        unrelated = self.repair_prompt("Add a workflow that comments on PRs", ["Requirement not met: Add the PR comment workflow"])
+        self.assertNotIn("TASK PR LIFECYCLE ALREADY SATISFIED", unrelated)
+        self.assertNotIn("Do not create or change repository code", unrelated)
+        self.assertEqual(unrelated.count("VERIFIED TASK PR: " + PR["html_url"] + " (draft)"), 1, "the receipt is shown once")
+        # Task #221: the ask is in the owner request even when no lifecycle problem is stored.
+        asked = self.repair_prompt("Fix the API. Open a draft PR for this change and do not merge it.",
+                                   ["Requirement not met: Fix the API"])
+        section = asked.split("TASK PR LIFECYCLE ALREADY SATISFIED BY GITHUB: " + PR["html_url"] + "\n", 1)
+        self.assertEqual(len(section), 2)
+        self.assertTrue(section[1].startswith("KappaForge has already opened"), "no empty bullet list")
 
     def test_repairs_target_real_code_work_and_forbid_pr_automation(self):
         reviews = iter([

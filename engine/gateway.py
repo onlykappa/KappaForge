@@ -20,11 +20,16 @@ class GatewayRequestTooLarge(RuntimeError):
 
 
 def prompt_fits(prompt, reserve=0):
+    from engine import recovery, task_state
+    prompt = task_state.add_to_prompt(prompt, recovery.CURRENT.get())
     from engine.runner import PROVIDERS
     limits = PROVIDERS['routing']['defaults']
     # Match JS UTF-16 length and the conservative context estimate used by the router.
     chars = len(prompt.encode('utf-16-le')) // 2
     maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    # run_model refuses any pinned-route prompt over this cap, with or without a task record.
+    if getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
+        maximum = min(maximum, PINNED_PROMPT_CHARS)
     wire = len(json.dumps(prompt).encode('utf-8'))
     return chars + reserve <= maximum and wire + reserve + 4096 <= limits['maxRequestBytes']
 

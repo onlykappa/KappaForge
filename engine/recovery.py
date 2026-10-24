@@ -262,6 +262,8 @@ class Journal:
 
     def persist(self):
         from engine.reliability import RecoveryCoordinator
+        from engine import task_state
+        task_state.save(self)
         draft = copy.deepcopy(self.state)
         try:
             if self.renewed_scope:
@@ -360,6 +362,8 @@ class Journal:
         self.ledger[key] = record
 
     def event(self, error='', model='', strategy='', outcome='recovering', next_action='', signature=''):
+        from engine import task_state
+        task_state.failure(error, model)
         kind, default = diagnose(error)
         item = dict(at=self.clock(), candidate=self.state['candidate'], kind=kind, error=clean(error, 500),
                     model=clean(model, 140), strategy=strategy or default, outcome=outcome,
@@ -406,6 +410,8 @@ class Journal:
             self.state.pop('waitingSince', None)
         self.state.update(candidate=sha, base=base or self.state['base'], pr=pr or self.state['pr'],
                           files=sorted(set(files) | set(self.state['files'])), status='running')
+        from engine import task_state
+        task_state.checkpoint(sha, files)
         self.persist()
 
     def note(self, **changes):
