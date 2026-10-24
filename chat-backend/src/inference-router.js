@@ -33,6 +33,7 @@ async function collect(response,route,{onChunk}){
 }
 const safeError=(message,status=400)=>Response.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
 const completeResult=result=>{const finish=result?.candidates?.[0]?.finishReason;if(finish==="MAX_TOKENS")throw new OutputLimitError(result.usageMetadata);if(finish&&finish!=="STOP")throw Error("Provider output is incomplete");return result;};
+const CODING_OUTPUT_CEILING=registry.routing.defaults.maxCodingOutputTokens||registry.routing.defaults.maxOutputTokens;
 const validRepo=value=>typeof value==="string"&&/^onlykappa\/[A-Za-z0-9_.-]{1,100}$/.test(value);
 
 function validate(input){
@@ -44,7 +45,9 @@ function validate(input){
   chars+=message.content.length;
  }
  if(chars>MAX_BODY_CHARS)return "Prompt exceeds the gateway request limit";
- if(input.maxTokens!==undefined&&(!Number.isInteger(input.maxTokens)||input.maxTokens<1||input.maxTokens>registry.routing.defaults.maxOutputTokens))return "Invalid output limit";
+ // Coding asks may go up to the shared coding ceiling; each route still applies its own provider and model caps below,
+ // and a route that declares no cap keeps the general maxOutputTokens default.
+ if(input.maxTokens!==undefined&&(!Number.isInteger(input.maxTokens)||input.maxTokens<1||input.maxTokens>CODING_OUTPUT_CEILING))return "Invalid output limit";
  if(input.temperature!==undefined&&(!Number.isFinite(input.temperature)||input.temperature<0||input.temperature>2))return "Invalid temperature";
  if(input.reasoningEffort!==undefined&&!['low','medium','high'].includes(input.reasoningEffort))return "Invalid reasoning effort";
  if(input.responseFormat!==undefined&&input.responseFormat!==null&&input.responseFormat!=="json_object")return "Unsupported response format";
@@ -64,9 +67,14 @@ function geminiPayload(input,maxTokens){
   ...(system?{systemInstruction:{parts:[{text:system} ]}}:{})};
 }
 
-export async function inferenceRouter(env,input,callerSignal=null){
+// KappaForge never spends money on inference. A coding request that asks for a paid rescue is refused here, before any
+// quote, reservation or provider call, whatever Premium Mode, approvals or caps say. Nothing in the request body can lift
+// this: the dormant rescue path is reachable only from code that passes {paidRescue:true}, and /router/infer never does.
+export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=false}={}){
  if(env.ROUTING_POLICY_VERSION!=="v1")return safeError("Integrated provider routing is not enabled",503);
  const problem=validate(input);if(problem)return safeError(problem);
+ if(input.premium!==undefined&&paidRescue!==true)return Response.json({premium:{task:input.premium.task,step:input.premium.step,refused:"paid_inference_disabled"},
+  error:"Paid inference is disabled for KappaForge coding tasks; free models only",code:"paid_inference_disabled"},{status:403,headers:{"Cache-Control":"no-store"}});
  if(!env.MEMORY)return safeError("Shared routing storage unavailable",503);
  const baseId=input.requestId||crypto.randomUUID();
  const premiumResponse=(premium,status=200,extra={})=>Response.json({premium,...extra},{status,headers:{"Cache-Control":"no-store"}});

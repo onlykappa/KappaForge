@@ -778,6 +778,7 @@
       "maxPromptChars": 100000,
       "maxRequestBytes": 200000,
       "maxOutputTokens": 8192,
+      "maxCodingOutputTokens": 16384,
       "maxContextTokens": 32768,
       "maxChatSends": 3
     },

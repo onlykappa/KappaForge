@@ -467,6 +467,20 @@ class Journal:
         self.persist()
         return merged
 
+    def capacity_notice(self, error, retry_at=0, stopped=False):
+        """Tell the owner, once per waiting episode, that every usable free route is exhausted. No paid route is tried."""
+        episode = 'stopped' if stopped else str(self.state.get('waitingSince', ''))
+        if self.state.get('capacityNotice') == episode:
+            return ''
+        self.state['capacityNotice'] = episode
+        when = (' Next automatic retry: ' + time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(retry_at)) + '.') if retry_at and not stopped else ''
+        text = ('Free model capacity is exhausted: every authorized free route is rate-limited, out of quota or unavailable ('
+                + clean(error, 200) + '). No paid model was used.' + (when or (' Automatic retries have stopped; reply with Guidance or retry later.'
+                if stopped else '')))
+        from engine.runner import notify
+        notify(f'⏸️ KappaForge #{self.scope.number}: {text}\nhttps://github.com/{ROOT}/issues/{self.scope.number}')
+        return text
+
     def defer(self, error):
         kind, _ = diagnose(error)
         if (self.scope.inference_route or kind in ('authorization', 'access') or getattr(error, 'terminal', False) or self.state.get('routingAvailability', {}).get('terminal')
@@ -474,6 +488,10 @@ class Journal:
             self.event(error, model=self.scope.inference_route or '', strategy='stop', outcome='blocked',
                        next_action='Owner review required; automatic continuations exhausted or access blocked')
             self.note(stop={'reason': clean(error, 240), 'next': 'Stopped; needs the owner'}, status='Stopped: needs your review')
+            if kind in QUOTA_KINDS and getattr(error, 'provider_routes', False):
+                notice = self.capacity_notice(error, stopped=True)
+                if notice:
+                    self.publish('blocked', notice)
             return False
         now = self.clock()
         self.state.setdefault('waitingSince', now)
@@ -484,6 +502,10 @@ class Journal:
         if due > end:
             self.event(error, outcome='paused', strategy='stop', next_action='Waiting deadline reached; renew authorization or provider access')
             self.note(stop={'reason': clean(error, 240), 'next': 'Waiting deadline reached'}, status='Paused: waited too long for a provider')
+            if kind in QUOTA_KINDS:
+                notice = self.capacity_notice(error, stopped=True)
+                if notice:
+                    self.publish('blocked', notice)
             return False
         self.state['nextAt'] = due
         self.state['quotaWait'] = kind in QUOTA_KINDS
@@ -494,9 +516,11 @@ class Journal:
         self.note(stop={'reason': clean(error, 240), 'next': 'Resume ' + time.strftime('%H:%M UTC', time.gmtime(due))
                         + ' with the next available model'}, status='Paused for a provider limit; resumes automatically'
                   if kind in QUOTA_KINDS else 'Paused; resumes automatically')
+        # The wait honours the providers' own retry times (`due` above), so exhausted quota is not retried blindly.
+        notice = self.capacity_notice(error, due) if kind in QUOTA_KINDS else ''
         self.publish('waiting' if self.state['waitReason'] == 'cooldown' else 'queued',
-                     'Progress saved. Waiting for the recorded provider cooldown.' if self.state['waitReason'] == 'cooldown'
-                     else 'Progress saved. Gateway retry scheduled; provider quota remaining is unknown.')
+                     ((notice + ' ') if notice else '') + ('Progress saved. Waiting for the recorded provider cooldown.' if self.state['waitReason'] == 'cooldown'
+                     else 'Progress saved. Gateway retry scheduled; provider quota remaining is unknown.'))
         notify_wake(self.scope.number)
         return True
 

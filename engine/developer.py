@@ -1354,13 +1354,14 @@ def _premium(info):
 runner_module.ON_PREMIUM = _premium
 
 
+# Owner rule: KappaForge never spends money on inference. Paid rescue stays off for every coding task; free routes
+# fall back to each other, and when none is usable the task waits and tells the owner instead.
+PAID_INFERENCE_ALLOWED = False
+
+
 def premium_possible(step):
-    """A rescue may be asked for: a task runs through the gateway (the only path that can carry one), and this step has
-    not had one."""
-    journal = recovery.CURRENT.get()
-    return (journal is not None and os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true'
-            and type(getattr(getattr(journal, 'scope', None), 'number', None)) is int
-            and step not in getattr(journal, 'premium_steps', set()))
+    """Whether a paid rescue may be asked for. Never: the $0 rule has no exceptions, so blocked steps stay on free models."""
+    return PAID_INFERENCE_ALLOWED
 
 
 def premium_rescue_step(step, reason, attempt):

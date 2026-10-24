@@ -312,6 +312,12 @@ def code_providers(private=False):
 # Many free tiers cap a single reply well below Develop's request; retry once at this size before moving on.
 FALLBACK_MAX_TOKENS = 8192
 
+
+def coding_output_ceiling():
+    """The gateway's shared coding output ceiling; every route still applies its own provider/model cap."""
+    defaults = PROVIDERS['routing']['defaults']
+    return int(defaults.get('maxCodingOutputTokens') or defaults['maxOutputTokens'])
+
 # Leave ten minutes for GitHub writes and failure reporting before the six-hour job hard stop.
 TASK_DEADLINE = None
 MODEL_DEADLINE = None
@@ -698,7 +704,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
         "version": 1, "channel": "coding", "repo": repo, "privateCode": True,
         "requestId": str(uuid.uuid4()), "providers": selected,
         "messages": [{"role": "user", "content": prompt}],
-        "maxTokens": min(max(1, int(max_output_tokens)), 8192),
+        "maxTokens": min(max(1, int(max_output_tokens)), coding_output_ceiling()),
         "temperature": 0.2, "fallback": fallback,
         "responseFormat": "json_object" if json_mode else None,
         "excludedRoutes": excluded,
@@ -709,19 +715,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     task_number = getattr(getattr(journal, "scope", None), "number", None)
     if type(task_number) is int and task_number > 0:
         payload["task"] = task_number  # Free answers on a task are the evidence a premium rescue needs.
-    rescue = getattr(journal, "premium_request", None) if not pinned_route else None
-    if rescue and "task" in payload:
-        premium = {"task": task_number, "step": rescue["step"], "reason": rescue["reason"]}
-        from engine.task_state import inference_attempt
-        # A stale context raises before anything is sent; the step keeps its rescue for the reconciled retry.
-        inference_attempt(prompt, 'gateway:premium-quote')
-        journal.premium_request = None  # One rescue call per step: every later call is free.
-        status, body = _router_post("/router/infer", {**payload, "requestId": str(uuid.uuid4()), "premium": {**premium, "quote": True}})
-        quote = body.get("premium") if isinstance(body.get("premium"), dict) else {"refused": "premium_state_unavailable"}
-        premium_used(quote)
-        if status != 200 or not quote.get("eligible"):
-            raise PremiumNotUsed(quote)
-        payload["premium"] = premium
+    # KappaForge never spends money on inference: no coding request carries a paid rescue, whatever a step asked for.
+    # The gateway refuses one too (paid_inference_disabled); this side never sends it.
+    if getattr(journal, "premium_request", None):
+        journal.premium_request = None
+    payload.pop("premium", None)
     encoded = json.dumps(payload).encode('utf-8')
     if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
         raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
