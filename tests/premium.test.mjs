@@ -255,6 +255,9 @@ test('reservations cover multilingual input and the highest published scheduled 
 const env=binding=>({ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'openrouter',KAPPA_CODE_PROVIDERS:'openrouter',KAPPA_PRIVATE_CODE_PROVIDERS:'openrouter',OPENROUTER_API_KEY:'fixture',MEMORY:binding});
 const request=extra=>({version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',providers:['openrouter'],messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,requestId:crypto.randomUUID(),...extra});
 const rescue=(task,extra={})=>request({task,premium:{task,step:'check',reason:'check_rounds_exhausted',...extra}});
+// The dormant rescue machinery is exercised only through this explicit internal opt-in. /router/infer never passes it, so
+// KappaForge coding tasks cannot reach a paid model (see the $0 tests below).
+const PAID={paidRescue:true};
 function upstream({paid='answer',catalogUp=true,availableUsd=9,keyRemaining=null,accountFails=false}={}){
  const calls={paid:[],free:[],paidTargets:[]};
  const fetch=async(url,options={})=>{
@@ -315,13 +318,13 @@ test('with Premium Mode off a rescue request sends nothing paid and leaves one r
   for(let i=0;i<3;i++)await inferenceRouter(env(binding),request({task:60,providers:['openrouter']}));
   assert.ok(calls.free.length>=3,'free answers on the task');
   await evidence(op,60,1,['groq:other']);
-  const quote=await (await inferenceRouter(env(binding),rescue(60,{quote:true}))).json();
+  const quote=await (await inferenceRouter(env(binding),rescue(60,{quote:true}),null,PAID)).json();
   assert.equal(quote.premium.refused,'premium_off');assert.ok(quote.premium.maxUsd>0);
-  const sent=await inferenceRouter(env(binding),rescue(60));
+  const sent=await inferenceRouter(env(binding),rescue(60),null,PAID);
   assert.equal(sent.status,403);assert.equal((await sent.json()).code,'premium_not_authorized');
   assert.equal(calls.paid.length,0,'zero paid dispatches');
   const s=await op({op:'status'});assert.equal(s.offers.length,1,'one recommendation per task step');
-  await inferenceRouter(env(binding),rescue(60,{quote:true}));
+  await inferenceRouter(env(binding),rescue(60,{quote:true}),null,PAID);
   assert.equal((await op({op:'status'})).offers.length,1,'not repeated');
  });
 });
@@ -330,7 +333,7 @@ test('Premium preflight respects account and key balances and never sends a paid
  for(const mode of [{availableUsd:0},{keyRemaining:0},{accountFails:true}]){
   const {binding,op}=memory(),{fetch,calls}=upstream(mode);await op({op:'settings',enabled:true});await evidence(op,960);
   await withFetch(fetch,async()=>{
-   const data=await (await inferenceRouter(env(binding),rescue(960))).json();
+   const data=await (await inferenceRouter(env(binding),rescue(960),null,PAID)).json();
    assert.equal(data.premium.refused,mode.accountFails?'balance_unverified':'openrouter_balance');assert.equal(calls.paid.length,0);
    assert.equal((await op({op:'status'})).reservedUsd,0);
   });
@@ -340,20 +343,20 @@ test('Premium preflight respects account and key balances and never sends a paid
 test('a saved lower limit after an eligible quote takes effect before dispatch',async()=>{
  const {binding,op}=memory(),{fetch,calls}=upstream();await op({op:'settings',enabled:true});await evidence(op,970);
  await withFetch(fetch,async()=>{
-  assert.equal((await (await inferenceRouter(env(binding),rescue(970,{quote:true}))).json()).premium.eligible,true);
+  assert.equal((await (await inferenceRouter(env(binding),rescue(970,{quote:true}),null,PAID)).json()).premium.eligible,true);
   await op({op:'limits',limits:{taskCapUsd:0,dailyCapUsd:5,monthCapUsd:5}});
-  assert.equal((await (await inferenceRouter(env(binding),rescue(970))).json()).premium.refused,'task_cap');assert.equal(calls.paid.length,0);
+  assert.equal((await (await inferenceRouter(env(binding),rescue(970),null,PAID)).json()).premium.refused,'task_cap');assert.equal(calls.paid.length,0);
  });
 });
 
 test('paid rescues reuse routing cooldowns and persist the actual fallback explanation without a same-step paid retry',async()=>{
  const {binding,op}=memory(),bad=upstream({paid:'unavailable'}),good=upstream();await op({op:'settings',enabled:true});await evidence(op,980);await evidence(op,981);
  await withFetch(bad.fetch,async()=>{
-  assert.equal((await inferenceRouter(env(binding),rescue(980))).status,502);assert.equal(bad.calls.paid.length,1);
-  const again=await (await inferenceRouter(env(binding),rescue(980))).json();assert.equal(again.premium.refused,'step_already_rescued');assert.equal(bad.calls.paid.length,1);
+  assert.equal((await inferenceRouter(env(binding),rescue(980),null,PAID)).status,502);assert.equal(bad.calls.paid.length,1);
+  const again=await (await inferenceRouter(env(binding),rescue(980),null,PAID)).json();assert.equal(again.premium.refused,'step_already_rescued');assert.equal(bad.calls.paid.length,1);
  });
  await withFetch(good.fetch,async()=>{
-  const next=await (await inferenceRouter(env(binding),rescue(981))).json();
+  const next=await (await inferenceRouter(env(binding),rescue(981),null,PAID)).json();
   assert.equal(next.model,'deepseek/deepseek-v4.1-flash');assert.equal(good.calls.paid.length,1);
   assert.equal(next.premium.selection.skipped[0].reason,'cooldown');assert.match(next.premium.selection.explanation,/cooling down/);
   const receipt=(await op({op:'status'})).history.find(r=>r.task===981);assert.equal(receipt.selection.explanation,next.premium.selection.explanation);
@@ -367,7 +370,7 @@ test('the free-model quota cooldown does not consume the separately funded Premi
   return good.fetch(url,options);
  },async()=>{
   assert.equal((await inferenceRouter(env(binding),request({task:990}))).status,429);
-  const response=await inferenceRouter(env(binding),rescue(990));assert.equal(response.status,200);assert.equal(good.calls.paid.length,1);
+  const response=await inferenceRouter(env(binding),rescue(990),null,PAID);assert.equal(response.status,200);assert.equal(good.calls.paid.length,1);
  });
 });
 
@@ -375,12 +378,12 @@ test('with Premium Mode on: free evidence first, one capped rescue, its cost rec
  const {binding,op,usage}=memory(),{calls,fetch}=upstream();
  await op({op:'settings',enabled:true});
  await withFetch(fetch,async()=>{
-  const early=await inferenceRouter(env(binding),rescue(61));
+  const early=await inferenceRouter(env(binding),rescue(61),null,PAID);
   assert.equal((await early.json()).premium.refused,'free_not_exhausted','premium never comes before the free models');
   // One free model answering many times is still not exhaustion.
   for(let i=0;i<3;i++)await inferenceRouter(env(binding),request({task:61}));
   await evidence(op,61,1,['groq:other']);
-  const response=await inferenceRouter(env(binding),rescue(61));
+  const response=await inferenceRouter(env(binding),rescue(61),null,PAID);
   const data=await response.json();
   assert.equal(response.status,200);assert.equal(data.text,'premium answer');assert.equal(data.premium.billing,'confirmed');assert.equal(data.premium.usd,0.00063);
   assert.equal(calls.paid.length,1);
@@ -391,7 +394,7 @@ test('with Premium Mode on: free evidence first, one capped rescue, its cost rec
   assert.ok(calls.paid[0].provider.max_price.completion<=3,'OpenRouter is told the price ceiling the maximum was computed from');
   assert.ok(calls.paid[0].max_tokens<=8000);
   assert.equal(usage.find(e=>e.kind==='premium').cost,0.00063);
-  const again=await inferenceRouter(env(binding),rescue(61));
+  const again=await inferenceRouter(env(binding),rescue(61),null,PAID);
   assert.equal((await again.json()).premium.refused,'step_already_rescued');assert.equal(calls.paid.length,1,'no repeated rescue');
   const after=await (await inferenceRouter(env(binding),request({task:61}))).json();
   assert.match(after.route,/:free$/,'the following steps are free');
@@ -403,7 +406,7 @@ test('a timed-out rescue stays unresolved at its maximum; a missing cost is look
   const {binding,op}=memory(),{fetch}=upstream({paid:mode});
   await op({op:'settings',enabled:true});await evidence(op,62);
   await withFetch(fetch,async()=>{
-   const data=await (await inferenceRouter(env(binding),rescue(62))).json();
+   const data=await (await inferenceRouter(env(binding),rescue(62),null,PAID)).json();
    assert.equal(data.premium.billing,billing,mode);
    const s=await op({op:'status'});
    if(mode==='timeout'){assert.ok(s.unresolvedUsd>0);assert.equal(data.premium.usd,null);}
@@ -416,9 +419,9 @@ test('turning Premium Mode off between the quote and the dispatch blocks the dis
  const {binding,op}=memory(),{calls,fetch}=upstream();
  await op({op:'settings',enabled:true});await evidence(op,63);
  await withFetch(fetch,async()=>{
-  assert.equal((await (await inferenceRouter(env(binding),rescue(63,{quote:true}))).json()).premium.eligible,true);
+  assert.equal((await (await inferenceRouter(env(binding),rescue(63,{quote:true}),null,PAID)).json()).premium.eligible,true);
   await op({op:'settings',enabled:false});
-  assert.equal((await inferenceRouter(env(binding),rescue(63))).status,403);
+  assert.equal((await inferenceRouter(env(binding),rescue(63),null,PAID)).status,403);
   assert.equal(calls.paid.length,0);
  });
 });
@@ -427,14 +430,46 @@ test('no paid rescue for chat, malformed or unauthorized requests, unverifiable 
  const {binding,op}=memory(),{calls,fetch}=upstream({catalogUp:false});
  await op({op:'settings',enabled:true});await evidence(op,64);
  await withFetch(fetch,async()=>{
-  assert.equal((await inferenceRouter(env(binding),{...rescue(64),channel:'chat'})).status,400,'never chat');
-  assert.equal((await inferenceRouter(env(binding),rescue(64,{reason:'looks hard'}))).status,400,'only a recorded blocker');
-  assert.equal((await inferenceRouter(env(binding),{...rescue(64),task:65})).status,400,'the rescue names the request\'s own task');
-  const groqOnly=await inferenceRouter(env(binding),{...rescue(64),providers:['groq']});
+  assert.equal((await inferenceRouter(env(binding),{...rescue(64),channel:'chat'},null,PAID)).status,400,'never chat');
+  assert.equal((await inferenceRouter(env(binding),rescue(64,{reason:'looks hard'}),null,PAID)).status,400,'only a recorded blocker');
+  assert.equal((await inferenceRouter(env(binding),{...rescue(64),task:65},null,PAID)).status,400,'the rescue names the request\'s own task');
+  const groqOnly=await inferenceRouter(env(binding),{...rescue(64),providers:['groq']},null,PAID);
   assert.equal((await groqOnly.json()).premium.refused,'premium_unavailable','a project that does not allow OpenRouter never gets it');
-  assert.equal((await (await inferenceRouter(env(binding),rescue(64))).json()).premium.refused,'pricing_unverified');
+  assert.equal((await (await inferenceRouter(env(binding),rescue(64),null,PAID)).json()).premium.refused,'pricing_unverified');
   const broken={idFromName:()=>'',get:()=>({fetch:async u=>new URL(u).pathname.startsWith('/premium/')?new Response('down',{status:500}):Response.json({allowed:true})})};
-  assert.equal((await (await inferenceRouter(env(broken),rescue(64))).json()).premium.refused,'premium_state_unavailable');
+  assert.equal((await (await inferenceRouter(env(broken),rescue(64),null,PAID)).json()).premium.refused,'premium_state_unavailable');
+  assert.equal(calls.paid.length,0);
+ });
+});
+
+test('$0 rule: a coding request asking for a paid rescue is refused before any quote, reservation or provider call',async()=>{
+ const {binding,op}=memory(),{calls,fetch}=upstream();
+ await op({op:'settings',enabled:true});await evidence(op,70);await evidence(op,70,1,['groq:other']);
+ await withFetch(fetch,async()=>{
+  for(const input of [rescue(70),rescue(70,{quote:true}),rescue(70,{freeMayRecover:true})]){
+   const response=await inferenceRouter(env(binding),input);
+   const body=await response.json();
+   assert.equal(response.status,403);assert.equal(body.code,'paid_inference_disabled');assert.equal(body.premium.refused,'paid_inference_disabled');
+  }
+  for(const forged of [{paidRescue:true},{premium:{enabled:true}},{premiumMode:true}]){
+   const response=await inferenceRouter(env(binding),{...rescue(70),...forged});
+   assert.notEqual(response.status,200,'nothing in the body lifts the rule');
+  }
+  assert.equal(calls.paid.length,0,'zero paid dispatches even with Premium Mode on, free evidence and room in the caps');
+  assert.deepEqual(calls.paidTargets,[]);
+  const s=await op({op:'status'});assert.equal(s.reservedUsd,0);assert.equal(s.offers.length,0,'no paid offer is even quoted');
+  const free=await inferenceRouter(env(binding),request({task:70}));
+  assert.equal(free.status,200,'free routes still answer the same task');assert.match((await free.json()).route,/:free$/);
+ });
+});
+
+test('$0 rule holds through the runner gateway endpoint itself',async()=>{
+ const {binding,op}=memory(),{calls,fetch}=upstream(),token='runner-token-'.padEnd(40,'x');
+ await op({op:'settings',enabled:true});await evidence(op,71);await evidence(op,71,1,['groq:other']);
+ await withFetch(fetch,async()=>{
+  const response=await worker.fetch(new Request('https://worker.example/router/infer',{method:'POST',
+   headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(rescue(71))}),{...env(binding),ROUTER_ACCESS_TOKEN:token});
+  assert.equal(response.status,403);assert.equal((await response.json()).code,'paid_inference_disabled');
   assert.equal(calls.paid.length,0);
  });
 });
