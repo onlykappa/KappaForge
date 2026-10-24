@@ -2036,7 +2036,6 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             progress.act("sandbox", "Repair failed, aborting PR creation")
         else:
             saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
-        saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
         progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
     progress.saved_pr = saved["pr"]["html_url"]
     task_state.checkpoint(saved['sha'])
