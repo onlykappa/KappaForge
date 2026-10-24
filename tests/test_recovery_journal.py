@@ -151,7 +151,7 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertTrue(self.journal.defer(failure))
         self.assertEqual(self.journal.state['waitReason'], 'continue')
         self.assertFalse(self.journal.state['quotaWait'])
-        self.assertLessEqual(self.journal.state['nextAt'], self.world.now + 60, 'no five-minute wait without a provider limit')
+        self.assertEqual(self.journal.state['nextAt'], self.world.now, 'no wait at all without a provider limit')
         latest = self.world.rows[-1]['body']
         self.assertNotIn('cooldown', latest)
         self.assertIn('No provider limit is involved', latest)
@@ -362,7 +362,7 @@ class RecoveryJournalTests(unittest.TestCase):
         start = self.world.now
         self.journal.state['routingAvailability'] = {'retryAt': start + 7200}
         self.journal.defer(runner.ProviderRoutesUnavailable('outage', retry_at=start + 3600))
-        self.assertEqual(self.journal.state['nextAt'], start + 7230)
+        self.assertEqual(self.journal.state['nextAt'], start + 7205, 'resume 5s after the later recorded reset')
         self.world.now = start + 61
         self.assertFalse(self.world.journal().queue())
         self.assertEqual(self.world.journal().state['continuations'], 0)

@@ -274,16 +274,16 @@ class RateLimits(unittest.TestCase):
     def test_a_daily_quota_skips_the_model_for_the_rest_of_the_run(self):
         asked, results = self.run_calls(b'{"error":{"details":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel"}]}}')
         self.assertEqual(results, [("gemini-3-flash-lite", "ok")] * 2)
-        self.assertEqual(asked.count("gemini-3-flash"), 3, "retried on the first call only")
+        self.assertEqual(asked.count("gemini-3-flash"), 1, "moves on to the next model at once, then skips it")
         self.assertIn("gemini-3-flash", runner.EXHAUSTED)
 
     def test_a_per_minute_limit_rests_for_a_minute(self):
         asked, _ = self.run_calls(b"{}")
-        self.assertEqual(asked.count("gemini-3-flash"), 3)
+        self.assertEqual(asked.count("gemini-3-flash"), 1, "no sleeping retries on a rate-limited model")
         self.assertGreater(runner.COOLDOWN["gemini-3-flash"], 0)
         with patch("engine.runner.time.time", return_value=__import__("time").time() + 61):
             asked, _ = self.run_calls(b"{}", calls=1)
-        self.assertEqual(asked.count("gemini-3-flash"), 3, "asked again once the minute is over")
+        self.assertEqual(asked.count("gemini-3-flash"), 1, "asked again once the minute is over")
 
     def test_skipped_models_are_not_asked(self):
         asked, results = self.run_calls(b"{}", calls=1, skip=("gemini-3-flash",))
