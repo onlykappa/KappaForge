@@ -38,6 +38,14 @@ class AddEngineDeveloperSourceTests(unittest.TestCase):
         self.assertEqual(result, {})
 
     @patch('engine.developer.read_source')
+    def test_does_not_read_kappaforge_entrypoint_from_another_repository(self, mock_read):
+        sources = {}
+        result = developer._add_engine_developer_source(
+            sources, self.existing, 'someone/another-repo', self.sha, self.token)
+        self.assertEqual(result, sources)
+        mock_read.assert_not_called()
+
+    @patch('engine.developer.read_source')
     def test_respects_read_files_limit(self, mock_read):
         mock_read.return_value = self.content
         # Simulate sources already at LARGE.read_files limit
