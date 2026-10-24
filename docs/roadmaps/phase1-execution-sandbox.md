@@ -9,9 +9,9 @@ and documentation are on the branch. Nothing here is merged, deployed or release
 
 ## Progress
 
-- [ ] **1. Investigate before modifying**: map the real execution path, workflows, checkpoints, test dispatch, retry
+- [x] **1. Investigate before modifying** ([execution architecture](../phase1/execution-architecture.md)): map the real execution path, workflows, checkpoints, test dispatch, retry
       architecture, limits, provider routing and every existing security control; document the execution architecture.
-- [ ] **2. Isolated execution sandbox**: short-lived, isolated workers on existing GitHub Actions infrastructure; exact
+- [x] **2. Isolated execution sandbox** (`engine/sandbox.py`, [step 2 notes](../phase1/execution-architecture.md#step-2-implementation-enginesandboxpy)): short-lived, isolated workers on existing GitHub Actions infrastructure; exact
       revision fetch; uncommitted edits; controlled commands; lockfile installs; extensible toolchain adapters; test
       command detection; per-session results; cleanup; no credentials in the sandbox; resource, network and output limits.
 - [ ] **3. Development tool loop**: structured tools (`apply_patch`, `run_command`, `run_tests`, `inspect_test_results`,
@@ -34,10 +34,10 @@ and documentation are on the branch. Nothing here is merged, deployed or release
 ## Deliverables (end of Phase 1)
 
 - [ ] Implementation and regression tests
-- [ ] Execution architecture documentation and diagram
-- [ ] Sandbox threat model
-- [ ] Operating limits
-- [ ] Testing report (ran vs. inspected)
+- [x] Execution architecture documentation and diagram
+- [x] Sandbox threat model
+- [x] Operating limits (step 2 profiles; revisited in step 7)
+- [ ] Testing report (ran vs. inspected), [kept per step](../phase1/testing-report.md)
 - [ ] Readiness criteria for Phase 2
 
 Phase 2 and Phase 3 are out of scope, apart from minimal reusable interfaces Phase 1 needs.

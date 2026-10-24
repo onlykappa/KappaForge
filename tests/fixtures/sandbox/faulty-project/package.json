@@ -1,0 +1,8 @@
+{
+  "name": "sandbox-faulty-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test web/cart.test.mjs"
+  }
+}

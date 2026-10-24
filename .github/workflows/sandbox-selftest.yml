@@ -1,0 +1,47 @@
+name: Sandbox self-test
+# Phase 1 execution sandbox on a real GitHub-hosted runner: the real-Docker tests (isolation, limits, locked npm ci) and
+# KappaForge's own Python and Node suites run inside the sandbox. No secrets; the token stays read-only.
+on:
+  pull_request:
+    paths:
+    - engine/sandbox.py
+    - tests/test_sandbox.py
+    - tests/fixtures/sandbox/**
+    - tools/sandbox_selftest.py
+    - .github/workflows/sandbox-selftest.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Real-Docker sandbox tests
+      env:
+        KAPPA_SANDBOX_INTEGRATION: '1'
+        KAPPA_SANDBOX_NETWORK: '1'
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest tests.test_sandbox -v
+      shell: bash
+    - name: KappaForge's own suites inside the sandbox
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m tools.sandbox_selftest
+      shell: bash
+    - name: Nothing left behind
+      if: always()
+      run: |-
+        set -Eeuo pipefail
+        left=$(docker ps -aq --filter label=kappaforge.sandbox; docker volume ls -q --filter label=kappaforge.sandbox)
+        if [ -n "$left" ]; then echo "::error::Sandbox containers or volumes were left behind: $left"; exit 1; fi
+      shell: bash
