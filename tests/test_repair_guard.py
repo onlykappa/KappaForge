@@ -54,6 +54,7 @@ class RepairGuardTests(unittest.TestCase):
             data = json.JSONDecoder().raw_decode(prompt.split('REVIEW_INPUT\n', 1)[1])[0]
             self.assertIn('PR existence by itself as a source bug', prompt)
             self.assertIn('publishes before a validation phase explicitly required by the owner', prompt)
+            self.assertIn('Do not reject behavior as a new feature solely because its implementation is missing', prompt)
             return 'verifier', json.dumps({'findings': [dict(
                 id=data['findings'][0]['id'], verdict='confirmed', in_goal=True,
                 reason='Publication occurs before the required regression check',
