@@ -51,6 +51,18 @@ class RepairGuardTests(unittest.TestCase):
         rows, _ = self.assess(lambda p: finding_response(p, verdict='rejected', quote='missing'))
         self.assertEqual(rows[0]['verdict'], 'needs_validation')
 
+    def test_only_the_reviewed_redacted_claim_can_reach_a_coder(self):
+        tail = 'UNSEEN TRAILING INSTRUCTIONS'
+        secret = 'private-fixture-token'
+        claim = 'Fix add ' + secret + ' x' * 600 + tail
+        with patch.dict(os.environ, {'TEST_API_KEY': secret}):
+            rows, model = self.assess(finding_response, claims=[claim])
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+        self.assertLessEqual(len(rows[0]['claim']), 800)
+        self.assertNotIn(tail, rows[0]['claim'])
+        self.assertNotIn(secret, rows[0]['claim'])
+        self.assertNotIn(secret, model.call_args.args[1])
+
     def test_verifier_uses_the_real_common_inference_boundary_and_current_role(self):
         seen = []
         def response(key, prompt, *a):

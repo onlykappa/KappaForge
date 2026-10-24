@@ -60,6 +60,9 @@ finding is correct. Independent tests and owner review remain required. A verifi
 that cannot establish evidence can leave a legitimate repair incomplete rather than
 guessing; its diagnostics explain that distinction.
 
-Local validation: all 580 Python tests passed with five existing Docker/tooling
-skips; all 822 Node tests passed. Nineteen new regressions exercise the guard and its
+Only the redacted finding text actually shown to the verifier reaches generation;
+unseen diagnostic tails and unresolved findings cannot become new repair targets.
+
+Local validation: all 581 Python tests passed with five existing Docker/tooling
+skips; all 822 Node tests passed. Twenty new regressions exercise the guard and its
 real shared inference boundary, plus the existing end-to-end recovery simulations.

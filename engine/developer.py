@@ -1754,8 +1754,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 problems = [str(error)] + problems
                 task_state.review(reqs, problems)
                 break
-            confirmed = {row['id'] for row in findings if row['verdict'] == 'confirmed'}
-            repair_targets = [problem for problem in problems if repair_guard.digest(problem) in confirmed]
+            repair_targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
             if not repair_targets:
                 if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
                     finding_feedback = [{k: row[k] for k in ('id', 'verdict', 'reason')} for row in findings]
@@ -2263,8 +2262,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         claims = pending + (["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
         original_goal = goal.title + '\n' + goal.request
         findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
-        confirmed = {row['id'] for row in findings if row['verdict'] == 'confirmed'}
-        targets = [claim for claim in claims if repair_guard.digest(claim) in confirmed]
+        targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
         if not targets:
             raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained')
         loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
