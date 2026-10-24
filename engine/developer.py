@@ -30,7 +30,7 @@ from engine import repo_map as repo_maps
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
-from engine import verify, task_goal
+from engine import verify, task_goal, task_state
 from engine.verify import open_problems as requirements_open, review_record
 
 ROOT = "onlykappa/KappaForge"
@@ -234,6 +234,8 @@ class Stage(str):
         return stage
 
 
+@task_state.role('reviewer', 'Review the proposed stage against the owner goal',
+                 'Stage changes are necessary and coherent; this review is not independent CI evidence')
 def review_stage(api_key, task, stage, changes, before, allowed=None):
     """A quick reviewer pass on one parallel worker's output (after CrewAI's reviewer role): (ok, problem). Any failure
     to review counts as ok, so a review never blocks the work; the full check of the work still runs afterwards."""
@@ -318,6 +320,8 @@ def plan_change(api_key, task, files, guide="", allowed=None, limit=LARGE.read_f
     return select_files(api_key, task, files, guide, allowed, limit, with_stages=True, repo_map=repo_map)
 
 
+@task_state.role('planner', 'Plan the smallest complete change for the owner goal',
+                 'Identify necessary source, dependencies and checks; planning does not imply work is done')
 def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_files, with_stages=False, repo_map=None):
     goal = task_goal.CURRENT.get()
     named = [p for p in files if p in task]
@@ -730,6 +734,8 @@ def source_priorities(sources, existing, task, journal=None):
     return list(dict.fromkeys(p for p in saved + named if p in existing and not p.startswith(IOS_WEB)))[:20]
 
 
+@task_state.role('coder', 'Propose source edits for the current stage of the owner goal',
+                 'Edits match current source, preserve scope and pass syntax; independent validation is still required')
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     goal = task_goal.CURRENT.get()
     if goal and goal.comment is not None:
@@ -971,6 +977,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     for entry in proposal['files']):
                 raise ValueError('Large file was shown as excerpts; change it with edits, not content')
             changes = apply_changes(shown_sources, existing, proposal, budget)
+            task_state.before_edit(changes)
             if goal:
                 goal.validate(changes)
             if edit_path and (set(changes) != {edit_path} or not changes[edit_path].strip()):
@@ -985,12 +992,17 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             note("code", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}: " + ", ".join(list(changes)[:4]))
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            if isinstance(exc, task_state.CandidateChanged):
+                task_state.failure(exc, model)
+                raise
             evidence = repair_evidence(exc)
             kind, strategy = recovery.diagnose(exc)
             if journal:
                 journal.event(exc, model=model, strategy=strategy,
                               outcome='blocked' if strategy == 'stop' else 'recovering',
                               signature=signature if proposal is not None and 'signature' in locals() else '')
+            else:
+                task_state.failure(exc, model)
             if journal and journal.loader and kind in ('missing_context', 'edit_anchor'):
                 path = getattr(exc, 'path', '')
                 if not path:
@@ -1495,8 +1507,12 @@ UNFINISHED = []
 def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stages, progress=None, design="", require_test=False, checkpoint=None):
     """Build stages in order; optionally checkpoint each validated stage before starting the next."""
     UNFINISHED.clear()
+    task_state.plan(stages or ['Implement the owner goal'])
     if not stages:
-        return generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test)
+        with task_state.stage(1, 1, 'Implement the owner goal'):
+            result = generate(api_key, task, repo, sources, existing, guide, allowed, design, require_test)
+        task_state.stage_result(1, True)
+        return result
     # Tests may come in any stage; a final stage adds them only if none did.
     current, files, combined, summaries, explanations, model, writer = dict(sources), dict(existing), {}, [], [], "", ""
     unfinished = UNFINISHED
@@ -1517,6 +1533,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     def record(i, stage, outcome):
         """Apply one stage's result (or its failure) in stage order; returns False when nothing usable came back."""
         nonlocal model, writer
+        task_state.stage_result(i, not isinstance(outcome, Exception))
         if isinstance(outcome, Exception):
             if not isinstance(outcome, ValueError):
                 raise outcome
@@ -1545,7 +1562,8 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
     def attempt(i, stage, together=(), feedback="", worker=False):
         token = WORKER.set(i if worker else 0)
         try:
-            return build(i, stage, together, feedback)
+            with task_state.stage(i, len(stages), stage):
+                return build(i, stage, together, feedback)
         except Exception as exc:  # Reported in stage order by record().
             return exc
         finally:
@@ -1706,6 +1724,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         if require_test and not (goal and goal.comment is not None) and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
+        task_state.review(reqs, problems)
         # After the last free round, one premium rescue of this step may follow: only when the free review itself ran
         # (an unavailable review is a capacity problem, not proof the free models cannot do it) and the step has not had
         # one. The re-check after it is free again.
@@ -1830,6 +1849,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     goal = task_goal.CURRENT.get()
     goal.anchor(lambda path: read_source(repo, path, sha, repo_token))
     journal = recovery.CURRENT.get()
+    task_state.bind(repo, number, branch, sha, journal=journal)
     if journal:
         journal.checkpoint(sha, base=base)
         journal.loader = lambda path: read_source(repo, path, journal.state['candidate'], repo_token)
@@ -1868,7 +1888,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         saved.update(open_plan_draft(repo, repo_token, number, issue, base, sha, branch, layout, design))
         progress.act("git", f"Opened draft PR {saved['pr']['html_url']} with the goal and plan; writing the code next")
     progress.saved_pr = saved["pr"]["html_url"]
-    goal.receipt = verify.pr_receipt(saved['pr'], repo, branch)
+    task_state.checkpoint(saved['sha'])
+    task_state.observe_pr(saved['pr'], repo, branch)
     if journal:
         journal.checkpoint(saved["sha"], base=base, pr=saved["pr"]["html_url"])
 
@@ -1887,6 +1908,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         else:
             move_branch(repo, writer, branch, commit["sha"])
         saved["sha"], saved["changes"] = commit["sha"], dict(changes)
+        task_state.checkpoint(commit['sha'], changes)
         if journal:
             journal.checkpoint(commit['sha'], base=base, files=changes)
         if not saved.get("coded"):
@@ -1931,6 +1953,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     writer = push_token(repo, repo_token, delta)
     commit = commit_changes(repo, saved["sha"], delta, modes, f"KappaForge: implement {ROOT}#{number}\n\n{summary[:1500]}", writer)
     move_branch(repo, writer, branch, commit["sha"], create=not saved["pr"])
+    task_state.checkpoint(commit['sha'], changes)
     payload = {
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
         "body": workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)}
@@ -2091,6 +2114,8 @@ def files_named_in(log, existing, changed):
 
 
 @task_goal.owner_task
+@task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
+                 'Repaired source still implements the original goal; verify the same candidate independently')
 def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
@@ -2100,7 +2125,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     changed = [check_path(f["filename"]) for f in files]
     goal = task_goal.CURRENT.get()
     goal.guidance(guidance)
-    goal.receipt = verify.pr_receipt(pr, repo, branch)
+    task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
+    task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
+    task_state.observe_pr(pr, repo, branch)
     goal.validate_paths(changed)
     if goal.paths:
         base_sha = (pr.get('base') or {}).get('sha')
@@ -2249,6 +2276,7 @@ def report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments):
     notify(f"🆘 KappaForge is stuck on {repo} after {fixes} fixes; it needs your guidance.\n{pr['html_url']}")
 
 
+@task_goal.owner_task
 def fix_pull_request(issue, api_key, token):
     """Owner-requested fix for a development PR whose sandbox tests failed on its latest commit."""
     if (issue.get("user") or {}).get("login", "").lower() != OWNER:
@@ -2263,6 +2291,8 @@ def fix_pull_request(issue, api_key, token):
         raise ValueError("No open pull request for " + branch)
     pr = prs[0]
     head = pr["head"]["sha"]
+    task_state.bind(repo, number, branch, head, journal=recovery.CURRENT.get())
+    task_state.observe_pr(pr, repo, branch)
     run = sandbox_result(branch, head, token, repo)
     # An automatic fix is started from the test run's last job, moments before the run itself is marked finished.
     for _ in range(9):
@@ -2272,6 +2302,8 @@ def fix_pull_request(issue, api_key, token):
         run = sandbox_result(branch, head, token, repo)
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
+    task_state.observe_validation('sandbox', head, run)
+    task_state.observe_validation('native', head, native)
     # The draft PR this runs on is GitHub's proof of the PR lifecycle asks; only code work starts a repair.
     pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
     # An unfinished requirement is already actionable, as is a completed failed
@@ -2359,6 +2391,7 @@ def fix_pull_request(issue, api_key, token):
               if remaining else {'sha': saved['sha']})
     # Fast-forward only: refuses if the branch moved since the failed run.
     move_branch(repo, writer, branch, commit["sha"])
+    task_state.checkpoint(commit['sha'], changes)
     if journal:
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)

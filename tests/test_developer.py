@@ -3,7 +3,7 @@ import os
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
-from engine import developer, native_build, recovery
+from engine import developer, native_build, recovery, task_state
 from engine.runner import PROVIDERS
 from engine.developer import apply_changes, check_path, syntax_error, produce_development_pr
 
@@ -533,7 +533,11 @@ class PrFirstTests(unittest.TestCase):
                    ('m', json.dumps({'requirements': [
                        {'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': comment}},
                        {'text': 'Open a draft PR for this change and do not merge it.', 'met': False}], 'problems': []}))]
-        with patch.object(developer, 'gh', side_effect=github), patch.object(developer, 'run_model', side_effect=answers) as model, \
+        observations, responses = [], iter(answers)
+        def model_response(*args, **kwargs):
+            observations.append(task_state.snapshot())
+            return next(responses)
+        with patch.object(developer, 'gh', side_effect=github), patch.object(developer, 'run_model', side_effect=model_response) as model, \
                 patch.object(developer, 'push_token', return_value='token'):
             produce_development_pr(issue, 'key', 'token')
         self.assertEqual(model.call_count, 3, 'one plan, one edit, one review; no false repair')
@@ -542,6 +546,13 @@ class PrFirstTests(unittest.TestCase):
         final = [body for endpoint, body, _ in calls if endpoint == self.ROOT_ + '/pulls/50' and body][-1]
         self.assertEqual(developer.requirements_open(final), [])
         self.assertIn('VERIFIED TASK PR:', model.call_args_list[1].args[1])
+        self.assertEqual([data['nextAction']['role'] for data in observations], ['planner', 'coder', 'reviewer'])
+        self.assertNotIn('pr', observations[0]['facts'], 'planning precedes opening the draft')
+        for data in observations[1:]:
+            self.assertEqual(data['facts']['pr']['url'], 'https://github.com/onlykappa/KappaForge/pull/50')
+            self.assertEqual(data['identity']['branch'], 'kappa/dev-9')
+            self.assertTrue(data['ownerReviewRequired'])
+        self.assertEqual(observations[2]['facts']['checks'], [], 'a saved edit must not invent a passing CI result')
 
     def world(self, pr_status=201, branch_exists=False, pr_files=()):
         calls = []
@@ -549,7 +560,7 @@ class PrFirstTests(unittest.TestCase):
             calls.append((path, payload, method))
             if path.endswith("/git/ref/heads/kappa/dev-9"):
                 if branch_exists:
-                    return {"object": {"sha": "p" * 40}}
+                    return {"object": {"sha": "e" * 40}}
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             if path == self.ROOT_:
                 return {"default_branch": "main"}
@@ -627,13 +638,13 @@ class PrFirstTests(unittest.TestCase):
     def test_a_stopped_run_continues_on_its_plan_draft(self):
         calls, fake_gh = self.world(branch_exists=True)
         plan_draft = {"number": 50, "html_url": "https://github.com/onlykappa/KappaForge/pull/50", "draft": True, "state": "open",
-                      "head": {"ref": "kappa/dev-9", "sha": "p" * 40}}
+                      "head": {"ref": "kappa/dev-9", "sha": "e" * 40}}
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=self.answers()):
             url = produce_development_pr(self.issue(), "key", "token", adopt=plan_draft)
         self.assertEqual(url, plan_draft["html_url"])
         self.assertFalse(any(p == self.ROOT_ + "/pulls" and body is not None for p, body, _ in calls), "no second draft")
         code = next(body for p, body, _ in calls if p == self.ROOT_ + "/git/commits" and body and body["tree"] == "t" * 40)
-        self.assertEqual(code["parents"], ["p" * 40], "the code lands on top of the plan commit")
+        self.assertEqual(code["parents"], ["e" * 40], "the code lands on top of the plan commit")
         self.assertTrue(any(p == self.ROOT_ + "/git/refs/heads/kappa/dev-9" and m == "PATCH" for p, _, m in calls))
 
     def test_a_staged_build_marks_the_draft_as_holding_code_once_the_first_stage_is_saved(self):

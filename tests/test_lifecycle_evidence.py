@@ -124,7 +124,7 @@ class Task205ReplayTests(unittest.TestCase):
             patch.object(developer, "check_the_work", return_value=({"engine/developer.py": "new\n"}, "checked", [])),
             patch.object(developer, "has_tests", return_value=True),
         ):
-            developer.revise_branch({"title": "Full audit and bug fix draft",
+            developer.revise_branch({"number": 205, "title": "Full audit and bug fix draft",
                                      "body": "Open a fresh PR, audit and fix bugs"},
                                     draft, BRANCH, "a" * 40, [], "token", "key",
                                     repo=REPO, repo_token="token")

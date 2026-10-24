@@ -23,6 +23,7 @@ class Goal:
     comment: str | None = None
     baseline: dict = field(default_factory=dict)
     receipt: dict | None = None
+    record: object = field(default=None, repr=False)
 
     def guidance(self, messages):
         if messages:
@@ -30,6 +31,9 @@ class Goal:
             updated = from_request(self.request + '\n\nOWNER GUIDANCE:\n' + '\n'.join(messages))
             self.request, self.paths, self.comment = updated.request, updated.paths, updated.comment
             self.baseline = {}
+            if self.record is not None:
+                with self.record.lock:
+                    self.record.review = {}
 
     def anchor(self, read):
         if self.paths and not self.baseline:
@@ -100,8 +104,14 @@ def owner_task(method):
     @wraps(method)
     def run(issue, *args, **kwargs):
         request = owner_request(issue) or issue.get('title') or ''
+        repository = re.search(r'^Repository:\s*(\S+)\s*$', issue.get('body') or '', re.M)
+        identity = (issue.get('number'), repository[1] if repository else None, issue.get('title'), request)
+        active = CURRENT.get()
+        if active is not None and getattr(active, 'owner_identity', None) == identity:
+            return method(issue, *args, **kwargs)
         goal = from_request(request)
         goal.title = issue.get('title') or ''
+        goal.owner_identity = identity
         token = CURRENT.set(goal)
         try:
             return method(issue, *args, **kwargs)

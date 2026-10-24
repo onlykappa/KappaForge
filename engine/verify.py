@@ -7,6 +7,7 @@ written inside the test file. Then a model review compares the change with every
 Problems go back to the model as a follow-up stage; what still fails is reported plainly, never as success.
 """
 import ast
+from engine import task_state
 from contextvars import ContextVar
 import difflib
 import io
@@ -543,6 +544,8 @@ def executable_evidence(path, source, quote):
 REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
 
 
+@task_state.role('reviewer', 'Review the current candidate against the owner goal',
+                 'Current-source evidence covers each goal; model findings remain hypotheses until verified')
 def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
     """The model's bounded source-backed verdict; None leaves verification incomplete."""
     REVIEW_FAILURE.set('')

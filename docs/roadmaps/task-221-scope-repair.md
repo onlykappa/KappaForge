@@ -43,3 +43,15 @@ PR #222 remains evidence and is not merged or rewritten by this engine fix.
 ## Shared task-state extension (owner requested)
 
 Carry a bounded task record into every planning, coding, review and recovery model call. It must contain the owner goal, task/repository/branch/candidate identity, verified PR facts, candidate-bound check outcomes, recent rejected attempts, remaining requirements, and the next action with a reason and success condition. Saved/model-reported progress is not independent proof. Rebuild from the existing recovery journal after interruption, refresh receipts, invalidate stale checks when the candidate moves, and preserve all existing authorization and budget limits. Validate stale/different-task facts, context-size boundaries, secret redaction, and the full #221 replay.
+
+### Delivered shared record
+
+- `engine/task_state.py` builds one controller-owned view for all roles. The common `runner.run_model` boundary attaches it to direct-provider and integrated-gateway calls. Planner, coder, stage reviewer, final reviewer and repair actions declare their purpose and success condition.
+- The view contains the sanitized owner goal/digest, repository/task/branch/candidate, observed PR receipt, selected GitHub run status, current/planned stages, committed file paths, last four rejected attempts, pending review claims and remaining budgets.
+- Model reviews and saved progress are explicitly unverified. Selected workflow runs do not assert that their actual checkout was independently verified. A passing check never implies that the owner goal is finished.
+- Candidate movement clears check/review observations and stops an in-flight edit before checkpointing, with no model retry against the stale view. Existing remote fast-forward and authorization checks remain in force.
+- The existing recovery journal persists bounded history and stage hints. Restarts can reuse that history but must observe PR/CI facts again. Wrong-task, changed-goal and malformed saved records cannot supply facts.
+- Role and stage contexts are isolated across parallel workers. Reusing a wrapped prompt refreshes changed observations; a marker embedded in source cannot replace the controller record.
+- The record is valid JSON within 6000 UTF-16 code units, with explicit omission counts. Context-budget checks measure the full augmented prompt; secrets in error/history text are redacted.
+
+Validation adds 13 shared-state tests, including the real runner boundary for both routing modes, #221's planner/coder/reviewer sequence, stale edits and checks, saved-state refresh, task identity, corrupt/forged context, stage progress, concurrency, budgets and context growth. The complete local suite now contains 553 Python tests; Linux CI supplies the Docker and structural-tool checks skipped on this Windows host.
