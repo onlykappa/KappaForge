@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from engine import developer, execution, recovery, sandbox, sandbox_repair_controller, task_goal, task_state
+from engine import developer, execution, intent_guard, recovery, sandbox, sandbox_repair_controller, task_goal, task_state
 from tests.test_recovery_journal import GitHub
 from tests.test_sandbox_repair_controller import FakeDocker
 
@@ -347,3 +347,41 @@ class CheckpointTrailerTests(unittest.TestCase):
             receipt = execution._write_blob(journal, {'v': 1})
             with self.subTest(trailer=trailer), self.assertRaisesRegex(execution.CheckpointMismatch, 'fragment missing or untrusted'):
                 execution._read_blob(journal, receipt)
+
+
+class CheckpointRotationTests(unittest.TestCase):
+    """Saves reuse two rotating slots of comments instead of posting new ones each time (task #269: 194)."""
+    def setUp(self):
+        self.world = GitHub()
+        self.journal = self.world.journal()
+
+    def tearDown(self):
+        intent_guard.ACTIVE.set(None)
+
+    def checkpoints(self):
+        return [r for r in self.world.rows if r['body'].startswith(execution.HEADING)]
+
+    def test_many_saves_keep_two_slots_and_every_live_receipt_reads_back(self):
+        receipt = None
+        for n in range(25):
+            receipt = execution._write_blob(self.journal, {'save': n, 'pad': 'x' * 90_000}, receipt)
+            self.assertEqual(execution._read_blob(self.journal, receipt)['save'], n)
+        self.assertEqual(len(receipt['parts']), 4)
+        self.assertEqual(len(self.checkpoints()), 8, 'two slots of four parts, not 25 x 4 comments')
+
+    def test_an_unfinished_save_never_touches_the_live_checkpoint(self):
+        live = execution._write_blob(self.journal, {'save': 1})
+        live = execution._write_blob(self.journal, {'save': 2}, live)
+        # A run that dies after writing the next save but before persisting its receipt keeps the live one.
+        execution._write_blob(self.journal, {'save': 3}, live)
+        self.assertEqual(execution._read_blob(self.journal, live), {'save': 2})
+
+    def test_a_resumed_run_posts_fresh_instead_of_editing_comments_it_does_not_own(self):
+        live = execution._write_blob(self.journal, {'save': 1})
+        live = execution._write_blob(self.journal, {'save': 2}, live)
+        intent_guard.ACTIVE.get().own_comments.clear()  # A new runner has not posted these comments.
+        before = len(self.checkpoints())
+        receipt = execution._write_blob(self.journal, {'save': 3}, live)
+        self.assertEqual(execution._read_blob(self.journal, receipt), {'save': 3})
+        self.assertEqual(len(self.checkpoints()), before + 1)
+        self.assertFalse(any(m == 'PATCH' for _p, _b, m in self.world.calls[-1:]))

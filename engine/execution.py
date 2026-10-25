@@ -107,13 +107,30 @@ def _write_blob(journal, value, previous=None):
         return previous
     text = base64.b64encode(raw).decode()
     chunks = [text[i:i + PART_CHARS] for i in range(0, len(text), PART_CHARS)]
+    # Two slots rotate: a save rewrites the comments of the save before the live one, never the live one, so a run
+    # that dies mid-save still has its last committed checkpoint. Task #269 posted 194 new checkpoint comments in
+    # ten minutes before this; a long task would also have reached the 2,000-comment history limit.
+    spare = [n for n in (previous or {}).get('spare', []) if _reusable(n)]
     parts = []
     for index, chunk in enumerate(chunks):
         body = HEADING + '\n\n<!-- ' + MARKER + ' ' + journal.wire(dict(
             task=journal.scope.number, repo=journal.scope.repo, hash=fingerprint,
             part=index, total=len(chunks), data=chunk)) + ' -->'
-        parts.append(journal.write(f'repos/{recovery.ROOT}/issues/{journal.scope.number}/comments', {'body': body}, 'POST')['id'])
-    return dict(hash=fingerprint, parts=parts)
+        if index < len(spare):
+            journal.write(f'repos/{recovery.ROOT}/issues/comments/{spare[index]}', {'body': body}, 'PATCH')
+            parts.append(spare[index])
+        else:
+            parts.append(journal.write(f'repos/{recovery.ROOT}/issues/{journal.scope.number}/comments', {'body': body}, 'POST')['id'])
+    return dict(hash=fingerprint, parts=parts, spare=list((previous or {}).get('parts', [])))
+
+
+def _reusable(number):
+    """A comment this run posted itself: the authorization guard lets a task edit only its own comments."""
+    from engine import intent_guard
+    if type(number) is not int or number <= 0:
+        return False
+    scope = intent_guard.ACTIVE.get()
+    return scope is None or str(number) in scope.own_comments
 
 
 def pending(journal, kind=None):
