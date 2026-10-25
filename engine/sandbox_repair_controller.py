@@ -195,9 +195,9 @@ class SandboxRepairController:
         return total > 0 and total == skipped
 
     def _diff_fingerprint(self):
-        info = self.tools.inspect_diff()
-        diff = info.get("diff", "")
-        return _fingerprint(diff) if diff else ""
+        # Display diffs are truncated. Distinct edits past that boundary must still
+        # consume meaningful attempts and participate in repeated-patch detection.
+        return execution.revision(self.session) if self.session.changes else ""
 
     def _record_attempt(self, fingerprint, test_result, rationale, why):
         diff_info = self.tools.inspect_diff()
