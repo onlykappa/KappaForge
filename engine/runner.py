@@ -805,6 +805,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
                 # Cloudflare 1102: the gateway Worker ran out of CPU/memory on this request. A smaller prompt usually
                 # fits, so generation shrinks its source context and asks again at once instead of stopping the run.
                 failure.shrink_context = platform.get('errorCode') == 1102
+                if failure.shrink_context:
+                    failure.code = evidence['code'] = 'worker_resource_limit'
+                    failure.args = ('Integrated gateway Worker exceeded its CPU/memory limit (1102); '
+                                    'reduce review context before retrying; provider quota is unknown',)
+                    gateway.remember_resource_limit(prompt)
         if pinned_route:
             try:
                 evidence['postFailureDiagnostic'] = gateway.probe(endpoint, token)

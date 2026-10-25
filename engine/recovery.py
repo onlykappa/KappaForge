@@ -95,6 +95,8 @@ def diagnose(error):
         return 'invalid_response', 'switch_or_defer'
     if getattr(error, 'category', '') == 'repair_review':
         return 'repair_review', 'stop'
+    if getattr(error, 'category', '') == 'gateway_resource' or getattr(error, 'shrink_context', False):
+        return 'gateway_resource', 'stop' if getattr(error, 'terminal', False) else 'reduce_review_context'
     if getattr(error, 'code', '') == 'request_too_large' or type(error).__name__ == 'GatewayRequestTooLarge':
         return 'request_size', 'reduce_source_context'
     # Source snippets and filenames are evidence, not authorization decisions.

@@ -19,6 +19,16 @@ class GatewayRequestTooLarge(RuntimeError):
     gateway_failure = True
 
 
+def resource_ceiling():
+    from engine import recovery, task_state
+    journal = recovery.CURRENT.get()
+    if not isinstance(getattr(journal, 'state', None), dict):
+        return None
+    task_state.require_journal_identity(journal)
+    value = getattr(journal, 'state', {}).get('gatewayResourcePromptChars')
+    return value if type(value) is int and 1024 <= value <= 1000000 else None
+
+
 def prompt_fits(prompt, reserve=0):
     from engine import recovery, task_state
     prompt = task_state.add_to_prompt(prompt, recovery.CURRENT.get())
@@ -27,6 +37,9 @@ def prompt_fits(prompt, reserve=0):
     # Match JS UTF-16 length and the conservative context estimate used by the router.
     chars = len(prompt.encode('utf-16-le')) // 2
     maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    ceiling = resource_ceiling()
+    if ceiling is not None:
+        maximum = min(maximum, ceiling)
     # run_model refuses any pinned-route prompt over this cap, with or without a task record.
     if getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
         maximum = min(maximum, PINNED_PROMPT_CHARS)
@@ -42,6 +55,68 @@ def require_prompt_fits(prompt):
 
 class GatewayUnavailable(ProviderRoutesUnavailable):
     gateway_failure = True
+
+
+class GatewayResourceExhausted(GatewayUnavailable):
+    """No more identical task continuations after bounded resource adaptation fails."""
+    terminal = True
+    category = 'gateway_resource'
+
+    def __init__(self):
+        super().__init__('Gateway resource adaptation exhausted; review remains unverified. '
+                         'Inspect gateway CPU/memory diagnostics before another retry.', terminal=True)
+
+
+def remember_resource_limit(prompt):
+    from engine import recovery, task_state
+    journal = recovery.CURRENT.get()
+    task_state.require_journal_identity(journal)
+    chars = len(task_state.add_to_prompt(prompt, journal).encode('utf-16-le')) // 2
+    ceiling = max(1024, min(resource_ceiling() or chars, chars * 2 // 3))
+    if journal:
+        journal.state['gatewayResourcePromptChars'] = ceiling
+        journal.persist()
+    return ceiling
+
+
+class ReviewResources:
+    """Rebuild source evidence, never truncate an assembled prompt or relax review gates."""
+    def __init__(self):
+        self.ceiling, self.reductions = resource_ceiling(), 0
+
+    def fits(self, prompt):
+        from engine import recovery, task_state
+        return prompt_fits(prompt) and (self.ceiling is None or
+            len(task_state.add_to_prompt(prompt, recovery.CURRENT.get()).encode('utf-16-le')) // 2 <= self.ceiling)
+
+    def require(self, prompt):
+        if not self.fits(prompt):
+            if self.ceiling is not None:
+                raise GatewayResourceExhausted()
+            require_prompt_fits(prompt)
+
+    def retry(self, error, prompt):
+        if not getattr(error, 'shrink_context', False) or getattr(error, 'terminal', False):
+            return False
+        self.reductions += 1
+        # Include the same identity/role envelope sent by run_model. Keep the learned
+        # limit across worker handoff, so another attempt cannot recreate this request.
+        self.ceiling = min(self.ceiling or 1000000, remember_resource_limit(prompt))
+        if self.reductions > 3:
+            raise GatewayResourceExhausted()
+        print('Gateway resource limit: rebuilding review with less source evidence; all verdict gates remain required.', flush=True)
+        return True
+
+    def call(self, run_model, api_key, build, **kwargs):
+        while True:
+            prompt = build()
+            if self.ceiling is not None or os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true':
+                self.require(prompt)
+            try:
+                return run_model(api_key, prompt, **kwargs)
+            except Exception as error:
+                if not self.retry(error, prompt):
+                    raise
 
 
 def response_provenance(raw, headers):
