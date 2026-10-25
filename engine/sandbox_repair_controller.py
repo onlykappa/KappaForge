@@ -122,7 +122,7 @@ class SandboxRepairController:
                 prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
                                                   self.state["last_summary"], self.state["history"])
                 response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
-                                                   self.tools, max_steps=1, allowed=allowed)
+                                                   self.tools, max_steps=1, allowed=allowed, on_call=self._narrate)
                 if self.execution.error:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
@@ -144,6 +144,7 @@ class SandboxRepairController:
                     continue
                 step = steps[-1]
                 observed = step.get("result") or {}
+                self._report(step.get("tool"), step.get("args") or {}, observed)
                 self.state["invalid"] = self.state["invalid"] + 1 if step.get("tool") is None else 0
                 action_key = [step.get("tool"), json.dumps(step.get("args"), sort_keys=True, ensure_ascii=False), observed.get("status")]
                 self.state["repeated"] = self.state["repeated"] + 1 if action_key == self.state["action_key"] else 1
@@ -245,6 +246,35 @@ class SandboxRepairController:
     def _format_runs(self, runs):
         return json.dumps([{"status": run.status, "reason": run.reason, "stdout": run.stdout[-1500:],
                             "stderr": run.stderr[-1500:]} for run in runs], ensure_ascii=False)[:LOG_CHARS]
+
+    def _narrate(self, tool, args, reason):
+        """The model's stated reason for its next action, shown as narration before the action's own line."""
+        if self.progress and isinstance(reason, str) and reason.strip():
+            self.progress.act("plan", execution.clean(reason.strip(), 240), say=True)
+
+    def _report(self, tool, args, result):
+        """A transcript line for a tool call that is not a command; commands report themselves as they run."""
+        if not self.progress or not tool or result.get("ok") is False:
+            return
+        from engine.developer import line_delta
+        if tool == "apply_patch":
+            edits = [e for e in args.get("edits") or [] if isinstance(e, dict)]
+            paths = list(dict.fromkeys(str(p) for p in result.get("changed_paths") or []))
+            added = removed = 0
+            for edit in edits:
+                a, r = line_delta(edit.get("find") if isinstance(edit.get("find"), str) else "",
+                                  edit.get("replace") if isinstance(edit.get("replace"), str) else "")
+                added, removed = added + a, removed + r
+            self.progress.act("code", f"Edited {len(paths)} file{'s' if len(paths) != 1 else ''}: " + ", ".join(paths[:4]),
+                              tool="edit", detail="\n".join(paths[:12]), count=len(paths), added=added, removed=removed)
+        elif tool == "revert_candidate_change":
+            paths = [str(p) for p in result.get("reverted") or []]
+            self.progress.act("fix", f"Reverted {len(paths)} file{'s' if len(paths) != 1 else ''}", tool="edit",
+                              detail="\n".join(paths[:12]), count=len(paths))
+        elif tool in ("inspect_test_results", "read_execution_log", "inspect_diff"):
+            text = {"inspect_test_results": "Read the test results", "read_execution_log": "Read the command log",
+                    "inspect_diff": "Reviewed the candidate diff"}[tool]
+            self.progress.act("read", text, tool="read", count=1)
 
     def _result(self, status, stop_reason, summary="", diff="", test_results=None):
         if self.execution:

@@ -197,3 +197,35 @@ test('the feed is one line with a chevron; tapping it opens every earlier action
  assert.doesNotMatch(ctx.activityFeed(items,false,'777'),/ live"/,'nothing shimmers once the task ended');
  assert.doesNotMatch(ctx.activityFeed(items.slice(0,1),true,'1'),/<ol/,'a single action has nothing to open');
 });
+test('structured activity renders as a transcript: narration, folded action groups and command output',()=>{
+ const now=Date.now();
+ const progress=globalThis.KappaProgress.normalize({version:1,taskId:'31',attemptId:'a',attemptAt:now,revision:1,status:'running',updatedAt:now,steps:[],activity:[
+  {kind:'read',text:'Reading the repository',say:true},
+  {kind:'read',text:'Read 12 files: a.js',tool:'read',count:12,detail:'a.js\nb.js'},
+  {kind:'code',text:'Created 1 file with m: tests/new.test.mjs',tool:'create',count:1,added:90,removed:0},
+  {kind:'plan',text:'The test fails on <script>; fixing the parser',say:true},
+  {kind:'code',text:'Edited 1 file: src/parse.js',tool:'edit',count:1,added:3,removed:1,detail:'src/parse.js'},
+  {kind:'work',text:'Ran npm test (failed)',tool:'run',detail:'npm test',output:'1 failing\n<b>boom</b>',status:'failed'},
+  {kind:'test',text:'Running pytest -q',tool:'test',detail:'pytest -q',status:'running',bogus:'dropped'}]},31);
+ assert.equal(progress.activity[1].count,12);assert.equal(progress.activity[6].status,'running');assert.equal('bogus' in progress.activity[6],false);
+ const html=ctx.activityFeed(ctx.feedItems(progress),true,'31');
+ assert.match(html,/^<div class="task-transcript"/);
+ assert.match(html,/<p class="feed-say">Reading the repository<\/p>/);
+ assert.match(html,/Read 12 files, created a file<\/span><span class="feed-delta"[^>]*><span class="add">\+90<\/span><span class="del">−0<\/span>/,'one row per run of actions, like "Created a file, ran 4 commands"');
+ assert.match(html,/The test fails on &lt;script&gt;; fixing the parser/);assert.doesNotMatch(html,/<script>|<b>boom/);
+ assert.match(html,/<code class="feed-cmd">npm test<\/code>[^]*<pre class="feed-out">1 failing\n&lt;b&gt;boom&lt;\/b&gt;<\/pre>/);
+ assert.match(html,/feed-group" data-progress-detail="31:g3"><summary class="feed-item live">[^]*Running pytest -q/,'the running command shimmers');
+ assert.match(html,/feed-tool run failed[^]*npm test/,'the earlier failure stays visible inside the group');
+ const ended=ctx.activityFeed(ctx.feedItems({activity:progress.activity.slice(0,6)}),false,'31');
+ assert.match(ended,/feed-group error"/,'a group that ended on a failure is marked');
+ assert.match(ended,/<span class="feed-text">Edited 1 file<\/span><span class="feed-paths">src\/parse.js<\/span>/,'paths are listed once');
+ assert.equal((html.match(/ live"/g)||[]).length,1);
+ assert.doesNotMatch(ctx.activityFeed(ctx.feedItems(progress),false,'31'),/ live"/);
+});
+test('a long transcript keeps the latest blocks in view and folds the rest, kept open across updates',()=>{
+ const items=Array.from({length:9},(_,i)=>i%2?{kind:'work',text:'Ran step '+i,tool:'run',detail:'step '+i,status:'passed'}:{kind:'plan',text:'Note '+i,say:true});
+ const html=ctx.activityFeed(items,false,'9');
+ assert.match(html,/<details class="feed-earlier" data-progress-detail="9:earlier"><summary>3 earlier<\/summary>[^]*Note 0[^]*Note 2<\/p><\/details>/);
+ assert.match(html,/Ran a command/);
+ assert.equal((html.match(/class="feed-say"/g)||[]).length,5);
+});
