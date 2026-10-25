@@ -6,7 +6,7 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 
 | ID | Found in / checkpoint | Evidence and impact | Reproducer / initial result | Permanent fix and regression | Immediate rerun (command, counts, result) | Commit / PR | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | No Phase 3.1 audit findings recorded yet | This scaffold is not an audit result. | Not run | Not applicable | Not run | Draft PR #273 | OPEN |
+| P3-001 | 3.1a task/PR setup | The initial setup converted task #273 into PR #273. The workflow correctly filters PR objects out of task selection, so run [#264](https://github.com/onlykappa/KappaForge/actions/runs/40221871561) completed preflight/classify but skipped analyze and code. This was a setup error, not a KappaForge code defect. | Dispatch with issue_number=273 and action=fix; classify succeeded, analyze/code were skipped. | Corrected task/PR separation: owner-authored task #274, PR #275 on expected branch kappa/dev-274. | Corrective dispatch for issue #274 has not yet run; do not mark patched until code job starts and produces audit progress. | Draft PR #275 | OPEN |
 
 ## Finding template
 
