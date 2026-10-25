@@ -184,6 +184,8 @@ test('each step of a real iOS job maps to its own log section, and skipped steps
 test('re-run and cancel are validated, use the job token, and explain GitHub refusals',async()=>{
  const {actionsControl}=await import('../chat-backend/src/actions.js');
  const {fetcher,calls}=github([
+  [/repos\/onlykappa\/KappaForge$/,()=>Response.json({full_name:'onlykappa/KappaForge',private:false,visibility:'public',archived:false,disabled:false})],
+  [/actions\/runs\/5\/jobs\?/,()=>Response.json({total_count:1,jobs:[{labels:['ubuntu-latest']}]})],
   [/actions\/runs\/5\/rerun-failed-jobs$/,()=>new Response(null,{status:201})],
   [/actions\/runs\/6\/cancel$/,()=>Response.json({message:'Cannot cancel a workflow run that is completed.'},{status:409})]]);
  const env={GITHUB_JOB_TOKEN:'job',GITHUB_ACTIONS_READ_TOKEN:'read'};
@@ -199,4 +201,34 @@ test('re-run and cancel are validated, use the job token, and explain GitHub ref
  assert.throws(()=>validateRequest('/actions/control',{action:'rerun',runId:5},'Re-run','user-control'),/Confirm/);
  assert.throws(()=>validateRequest('/actions/control',{action:'rerun',runId:5,confirmed:true},'re-run it','assistant'),/direct user request/);
  validateRequest('/actions/control',{action:'rerun',runId:5,confirmed:true},'Confirmed re-run','user-control');
+});
+
+test('a re-run allocates jobs only on free capacity; cancelling needs no admission',async()=>{
+ const {actionsControl}=await import('../chat-backend/src/actions.js');
+ const env={GITHUB_JOB_TOKEN:'job'};
+ const PUBLIC={private:false,visibility:'public',archived:false,disabled:false};
+ const cases=[
+  ['private repository',{...PUBLIC,full_name:'onlykappa/OmniPC',private:true,visibility:'private'},['ubuntu-latest'],/active public repository/],
+  ['archived repository',{...PUBLIC,full_name:'onlykappa/OmniPC',archived:true},['ubuntu-latest'],/active public repository/],
+  ['larger runner',{...PUBLIC,full_name:'onlykappa/OmniPC'},['ubuntu-latest-8-cores'],/larger or unrecognized runner/],
+  ['xlarge macOS runner',{...PUBLIC,full_name:'onlykappa/OmniPC'},['macos-15-xlarge'],/larger or unrecognized runner/],
+  ['self-hosted runner',{...PUBLIC,full_name:'onlykappa/OmniPC'},['self-hosted','linux'],/self-hosted/],
+  ['unknown metadata',null,['ubuntu-latest'],/could not be verified \(HTTP 404\)/]];
+ for(const [name,repo,labels,reason] of cases){
+  const {fetcher,calls}=github([
+   [/repos\/onlykappa\/OmniPC$/,()=>repo?Response.json(repo):new Response('{}',{status:404})],
+   [/actions\/runs\/7\/jobs\?/,()=>Response.json({total_count:2,jobs:[{labels:['ubuntu-latest']},{labels}]})],
+   [/actions\/runs\/7\/(rerun|cancel)$/,()=>new Response(null,{status:202})]]);
+  const result=await actionsControl(env,{action:'rerun',runId:7,repo:'OmniPC'},{fetcher});
+  assert.equal(result.status,409,name);assert.equal(result.code,'execution_resource',name);
+  assert.match(result.error,reason,name);assert.match(result.error,/No paid capacity or other host was requested/,name);
+  assert.equal(calls.some(c=>c.url.endsWith('/rerun')),false,name+': nothing is allocated');
+  assert.equal((await actionsControl(env,{action:'cancel',runId:7,repo:'OmniPC'},{fetcher})).status,202,name+': cancel still works');
+ }
+ const {fetcher,calls}=github([
+  [/repos\/onlykappa\/OmniPC$/,()=>Response.json({...PUBLIC,full_name:'onlykappa/OmniPC'})],
+  [/actions\/runs\/7\/jobs\?/,()=>Response.json({total_count:2,jobs:[{labels:['macos-15']},{labels:['ubuntu-24.04-arm']}]})],
+  [/actions\/runs\/7\/rerun$/,()=>new Response(null,{status:201})]]);
+ assert.equal((await actionsControl(env,{action:'rerun',runId:7,repo:'OmniPC'},{fetcher})).status,202);
+ assert.equal(calls.filter(c=>c.url.endsWith('/rerun')).length,1);
 });

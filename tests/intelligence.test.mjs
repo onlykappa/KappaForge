@@ -25,6 +25,7 @@ import {webcrypto} from 'node:crypto';
 import '../preview/core.js';
 import rawWorker,{KappaMemory} from '../chat-backend/src/index.js';
 import {routes,telemetry,usageStore,discover,MODELS,isComplex,rest,awake} from '../chat-backend/src/intelligence.js';
+import {withFreeExecution} from './free-execution-fixture.mjs';
 const C=globalThis.KappaCore;
 const memoryState=()=>{const records=new Map();const storage={get:async k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>{for(const id of Array.isArray(k)?k:[k])records.delete(id)},list:async({prefix='',end,reverse=false,limit=1000}={})=>new Map([...records].filter(([k])=>k.startsWith(prefix)&&(!end||k<end)).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit))};storage.transaction=async f=>f(storage);return {storage,records};};
 const req=(path,body={},token='owner-token')=>new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});
@@ -155,7 +156,7 @@ test('review card explains the change, and merge requires passing tests on the e
  const pr={state:'open',draft:true,node_id:'PR_1',title:'Draft: Add tooltip',html_url:'https://github.com/onlykappa/KappaForge/pull/50',mergeable:true,
   body:'Owner-approved.\n\n## What this does\nAdds a tooltip to refresh.\n\n## Technical summary\nx',
   head:{ref:'kappa/dev-9',sha:head,repo:{full_name:'onlykappa/KappaForge'}},base:{repo:{full_name:'onlykappa/KappaForge'}}};
- globalThis.fetch=async(url,init={})=>{const u=String(url);calls.push({u,method:init.method||'GET',body:init.body});
+ globalThis.fetch=withFreeExecution(async(url,init={})=>{const u=String(url);calls.push({u,method:init.method||'GET',body:init.body});
   if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
   if(u.endsWith('/pulls/50'))return Response.json(pr);
   if(u.includes('/pulls/50/files'))return Response.json([{filename:'preview/ui.js',status:'modified',additions:3,deletions:1}]);
@@ -165,7 +166,7 @@ test('review card explains the change, and merge requires passing tests on the e
   if(u.endsWith('/pulls/50/merge'))return Response.json({merged:true});
   if(u.includes('/git/refs/heads/'))return new Response(null,{status:204});
   if(u.includes('agent.yml/dispatches'))return new Response(null,{status:204});
-  return new Response('{}',{status:404})};
+  return new Response('{}',{status:404})});
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh'};
  try{
   // An app change also needs the agent's native iOS build of the same commit to pass.
@@ -403,14 +404,14 @@ test('the chat model is told whether a task is starting, and Plan task plans any
 test('the same task sent twice within minutes joins the first instead of starting another',async()=>{
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),created=[];let open=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-dup',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
- globalThis.fetch=async(url,init={})=>{const u=String(url);
+ globalThis.fetch=withFreeExecution(async(url,init={})=>{const u=String(url);
   if(u.endsWith('/user'))return Response.json({login:'onlykappa'});
   if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
   if(u.includes('/issues?labels=kappa-task&state=open&sort=created'))return Response.json(open);
   if(u.endsWith('/KappaForge/issues')&&init.method==='POST'){const body=JSON.parse(init.body).body,n=200+created.length;created.push(n);open=[{number:n,html_url:'https://github.com/onlykappa/KappaForge/issues/'+n,created_at:new Date().toISOString(),body}];return Response.json({number:n,html_url:open[0].html_url,user:{login:'onlykappa'}})}
   if(u.endsWith('/repos/onlykappa/KappaForge'))return Response.json({name:'KappaForge'});
   if(init.method==='POST')return new Response(null,{status:204});
-  return new Response('{}',{status:404})};
+  return new Response('{}',{status:404})});
  const payload=()=>({repo:'onlykappa/KappaForge',mode:'develop',title:'Add a weather feature',instructions:'Add a weather feature to KappaForge.',approved:true,confirmed:true,authorization:{id:crypto.randomUUID(),requestId:crypto.randomUUID(),conversationId:'chat-dup'}});
  const launch=async()=>{const p=payload();assert.equal((await worker.fetch(req('/authorize',{path:'/jobs',payload:p,userText:p.instructions,source:'user-control'}),env)).status,200);return (await worker.fetch(req('/jobs',p),env)).json()};
  try{
@@ -442,7 +443,7 @@ test('owner guidance reaches only open KappaForge tasks and starts a fix when th
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),posted=[],dispatched=[];
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-guide',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>vault.fetch(new Request(u,o))})}};
  const head='c'.repeat(40);
- globalThis.fetch=async(url,init={})=>{const u=String(url);
+ globalThis.fetch=withFreeExecution(async(url,init={})=>{const u=String(url);
   if(u.endsWith('/issues/12'))return Response.json({number:12,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-Task'}],body:'Repository: onlykappa/KappaForge\nMode: develop'});
   if(u.endsWith('/issues/13'))return Response.json({number:13,state:'open',user:{login:'stranger'},labels:[{name:'kappa-task'}]});
   if(u.endsWith('/issues/12/comments')&&init.method==='POST'){posted.push(JSON.parse(init.body).body);return Response.json({id:1},{status:201})}
@@ -451,7 +452,7 @@ test('owner guidance reaches only open KappaForge tasks and starts a fix when th
   if(u.includes('/pulls/50/files'))return Response.json([{filename:'a.js',status:'modified',additions:1,deletions:0,patch:'+x'}]);
   if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{id:7,display_title:'Sandbox validation kappa/dev-12 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:'failure',html_url:'u'}]});
   if(u.includes('agent.yml/dispatches')){dispatched.push(JSON.parse(init.body).inputs);return new Response(null,{status:204})}
-  return Response.json({});};
+  return Response.json({});});
  try{
   const bad=await worker.fetch(req('/guidance',{task:13,text:'do it'}),env);assert.equal(bad.status,404);
   const r=await worker.fetch(req('/guidance',{task:12,text:'Keep the old date format'}),env);const d=await r.json();
@@ -464,7 +465,7 @@ test('owner guidance reaches only open KappaForge tasks and starts a fix when th
 test('guidance without an open PR starts a fresh attempt, and retry fixes a failed PR or starts a new attempt',async()=>{
  const original=globalThis.fetch,posted=[],dispatched=[],head='d'.repeat(40);let open=false;
  const env={CHAT_ACCESS_TOKEN:'owner-token',GITHUB_JOB_TOKEN:'gh-retry'};
- globalThis.fetch=async(url,init={})=>{const u=String(url);
+ globalThis.fetch=withFreeExecution(async(url,init={})=>{const u=String(url);
   if(u.endsWith('/issues/21'))return Response.json({number:21,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],created_at:new Date().toISOString(),body:'Repository: onlykappa/KappaForge\nMode: develop'});
   if(u.endsWith('/issues/22'))return Response.json({number:22,state:'closed',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:''});
   if(u.endsWith('/issues/21/comments')&&init.method==='POST'){posted.push(JSON.parse(init.body).body);return Response.json({id:1},{status:201})}
@@ -473,7 +474,7 @@ test('guidance without an open PR starts a fresh attempt, and retry fixes a fail
   if(u.includes('/pulls/60/files'))return Response.json([]);
   if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{id:8,display_title:'Sandbox validation kappa/dev-21 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:'failure',html_url:'u'}]});
   if(u.includes('agent.yml/dispatches')){dispatched.push(JSON.parse(init.body).inputs);return new Response(null,{status:204})}
-  return Response.json({})};
+  return Response.json({})});
  try{
   const g=await worker.fetch(req('/guidance',{task:21,text:'Use the existing helper'}),env),gd=await g.json();
   assert.equal(g.status,200,JSON.stringify(gd));assert.equal(gd.retry,true);assert.match(gd.message,/Dispatch requested for existing task #21; waiting for runner acknowledgement/);

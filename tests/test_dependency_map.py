@@ -24,7 +24,14 @@ class DependencyMapTests(unittest.TestCase):
         data = dependency_map.build()
         full = json.loads(dependency_map.render(data, budget=10 ** 6))
         self.assertNotIn("omitted", full)
-        for budget in (5000, 4000, 3500):
+        # File paths alone grow as modules are added. Exercise link omission with
+        # feasible budgets above that irreducible representation, without raising
+        # the actual 6000-character consumer limit tested separately above.
+        minimum = len(dependency_map.compact(data, [[m['path'], [], []] for m in data['modules']],
+            {'test_links': sum(len(m.get('tests', [])) for m in data['modules']),
+             'dependency_links': sum(len(m['depends_on']) for m in data['modules']),
+             'note': 'Links left out to fit the chat context; read the code for the full picture.'}))
+        for budget in (5000, 4000, max(3500, minimum)):
             text = dependency_map.render(data, budget=budget)
             self.assertLessEqual(len(text), budget)
             small = json.loads(text)

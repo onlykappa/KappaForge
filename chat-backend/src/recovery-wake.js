@@ -2,6 +2,7 @@
 // authority for task scope, atomic continuation claims and candidate validation.
 import {githubHeaders} from './github.js';
 import {armPremiumBilling} from './premium-store.js';
+import {admitDispatch,ExecutionBlocked} from './free-execution.js';
 const ROOT='repos/onlykappa/KappaForge',KEY='recovery-wakes:v1',ACK_MS=120000;
 export const RECOVERY_KEY=KEY;
 const reply=(value,status=200)=>Response.json(value,{status});
@@ -63,7 +64,7 @@ export async function recoveryWakeStore(state,env,request){
  if(!Number.isSafeInteger(task)||task<1)return reply({error:'Invalid task'},400);
  const current=await recoveryTask(env,task);
  if(!current)return reply({error:'Task is closed, expired or unauthorized'},409);
- if(input.statusOnly){const row=(await state.storage.get(KEY)||{})[task];return reply(row?{task,status:row.stopped?'blocked':'scheduled',due:row.due,lastCheckAt:row.lastCheckAt||null,lastDispatchAt:row.lastDispatchAt||null,deliveries:row.deliveries,reason:row.reason||null}:{task,status:'not_scheduled'});}
+ if(input.statusOnly){const row=(await state.storage.get(KEY)||{})[task];return reply(row?{task,status:row.stopped?'blocked':'scheduled',due:row.due,lastCheckAt:row.lastCheckAt||null,lastDispatchAt:row.lastDispatchAt||null,deliveries:row.deliveries,reason:row.reason||null,...(row.detail?{detail:row.detail}:{})}:{task,status:'not_scheduled'});}
  const j=current.journal,now=Date.now();
  if(j&&!['waiting','dispatching','running','recovering'].includes(j.status))return reply({status:'blocked',message:'Saved task requires owner review; no automatic retry scheduled.'});
  const expires=Math.min(current.auth.expiresAt,(j?.waitingSince?j.waitingSince*1000:now)+21600000);
@@ -76,7 +77,8 @@ export async function recoveryWakeStore(state,env,request){
   const prior=rows[task];
   if(!prior&&Object.keys(rows).length>=32)throw Error('Recovery queue limit reached');
   const revision=j?.updatedAt||0;
-  rows[task]=prior?.authorization===current.auth.id&&prior.revision===revision?prior:
+  // A free-execution stop ends when the owner schedules again: the next delivery rechecks the condition.
+  rows[task]=prior?.authorization===current.auth.id&&prior.revision===revision&&prior.reason!=='free_execution_unavailable'?prior:
    {task,authorization:current.auth.id,revision,due:Math.max(now,next),expires,deliveries:0};
   await storage.put(KEY,rows);await arm(storage,rows);
   return rows[task];
@@ -85,6 +87,13 @@ export async function recoveryWakeStore(state,env,request){
  // Only a recorded provider limit is a cooldown; a gateway retry or an ordinary continuation is not.
  const cooldown=j?.status==='waiting'&&!['retry','continue'].includes(j.waitReason)&&next>now;
  return reply({status:j?.status==='waiting'?(cooldown?'waiting':'recovery_requested'):'monitoring',task,nextAt:next,message:j?.status==='waiting'?(cooldown?'Saved task is waiting for its recorded cooldown. Automatic wake-up is scheduled.':'Recovery check scheduled for the existing task. Runner start and provider capacity are not yet confirmed.'):'Checking the existing task and its runner; no duplicate execution was requested.'},202);
+}
+// A policy stop, not a delivery failure: no retry can make paid or unknown capacity free, so the row stops
+// with the reason (reported by statusOnly) until the owner corrects it and schedules recovery again.
+// A transient GitHub outage still dispatches nothing and takes the ordinary bounded retry below.
+async function admitted(env,row){
+ try{await admitDispatch(env,'recovery.yml');return true}
+ catch(e){if(!(e instanceof ExecutionBlocked)||e.transient)throw e;row.stopped=true;row.reason='free_execution_unavailable';row.detail=e.message;row.due=row.expires;return false}
 }
 export async function recoveryAlarm(state,env){
  // No loop while idle. Network failures rearm a bounded pending row; the persisted
@@ -109,7 +118,7 @@ export async function recoveryAlarm(state,env){
      const active=runs.workflow_runs.some(r=>r.status!=='completed')||agents.workflow_runs.some(r=>r.display_title?.startsWith('Agent task #'+row.task+' ')&&r.status!=='completed');
      if(active)row.due=Date.now()+ACK_MS;
      else if(row.deliveries>=3){row.stopped=true;row.reason='delivery_exhausted';row.due=row.expires;}
-     else {
+     else if(await admitted(env,row)){
       row.deliveries++;debited=true;row.lastDispatchAt=Date.now();row.due=Date.now()+ACK_MS;
       const claimed=await state.storage.transaction(async storage=>{const latest=await storage.get(KEY)||{};if(latest[row.task]?.revision!==row.revision||latest[row.task]?.authorization!==row.authorization)return false;latest[row.task]=row;await storage.put(KEY,latest);await arm(storage,latest);return true});
       if(claimed)await github(env,'actions/workflows/recovery.yml/dispatches',{ref:'main',inputs:{issue_number:String(row.task)}});

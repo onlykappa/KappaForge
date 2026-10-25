@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
 import {classify,validateRequest,authorizationStore,fingerprint} from '../chat-backend/src/intent-guard.js';
+import {withFreeExecution} from './free-execution-fixture.mjs';
 globalThis.crypto ||= webcrypto;
 const req=(path,body)=>new Request('https://worker.test'+path,{method:'POST',headers:{Origin:'null',Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify(body)});
 function fixture(){
@@ -130,14 +131,14 @@ test('internal syntax stays hidden throughout fragmented streaming and malformed
 
 test('authorized Worker execution creates exactly the user task and dispatches once',async()=>{
  const f=fixture(),old=globalThis.fetch;const writes=[];
- globalThis.fetch=async(url,options={})=>{
+ globalThis.fetch=withFreeExecution(async(url,options={})=>{
   const path=new URL(url).pathname;
   if(options.method==='POST'){writes.push({path,body:JSON.parse(options.body)});if(path.endsWith('/issues'))return Response.json({number:201,html_url:'https://github.com/onlykappa/KappaForge/issues/201',user:{login:'onlykappa'}});return new Response(null,{status:204})}
   if(path==='/user')return Response.json({login:'onlykappa'});
   if(path==='/user/repos')return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
   if(path==='/repos/onlykappa/KappaForge')return Response.json({name:'KappaForge'});
   return new Response('{}',{status:404});
- };
+ });
  try{
   assert.equal((await f.issue()).status,200);
   assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,202);
