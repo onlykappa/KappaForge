@@ -60,8 +60,8 @@ GitHub-hosted label; a larger runner, an expression, a list or group, or a reusa
 
 ## Before sandbox execution
 
-The agent code job runs a non-allocating preflight before model work; the job grants its token `actions: read` so
-it can read its own runner metadata. Each sandbox preparation/command, including
+The agent code job runs a non-allocating preflight before model work; its existing `actions: write` permission lets
+it read its own runner metadata. Each sandbox preparation/command, including
 one with a cached image, rechecks the current repository and the actual running job in the current run attempt.
 The job must be a GitHub-hosted Linux job with the standard `ubuntu-latest` label, matched by its runner identity.
 An already completed command restored from its exact receipt needs no infrastructure allocation or repeated command.
