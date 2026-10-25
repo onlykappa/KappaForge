@@ -177,6 +177,7 @@ class Journal:
                           requirements=[], events=[], rejected={}, files=[], expiresAt=int(self.scope.expires * 1000))
         all_comments = comments(read, self.scope.number)
         conflicting_checkpoint = False
+        invalid_engine_checkpoint = False
         for comment in all_comments:
             if comment.get('user', {}).get('login') != BOT or not (comment.get('body') or '').startswith('### KappaForge recovery checkpoint\n'):
                 continue
@@ -185,6 +186,12 @@ class Journal:
                 continue
             try:
                 state = json.loads(match[1])
+                if state.get('status') == 'engine_pinned':
+                    if state.get('engineStatus') not in ('running', 'recovering', 'waiting', 'dispatching', 'blocked',
+                                                        'paused', 'testing', 'ready', 'needs_clarification') or not state.get('engine'):
+                        invalid_engine_checkpoint = True
+                        raise ValueError('Malformed engine-pinned checkpoint')
+                    state['status'] = state.pop('engineStatus')
                 same_scope = state.get('digest') == self.scope.digest and state.get('authorization') == self.scope.identity
                 renewed_scope = self.scope.resume_from == {'digest': state.get('digest'), 'authorization': state.get('authorization')}
                 valid = (state['version'] == 1 and state['task'] == self.scope.number and state['repo'] == self.scope.repo
@@ -203,6 +210,8 @@ class Journal:
                     conflicting_checkpoint = True
             except (ValueError, KeyError, TypeError):
                 continue
+        if invalid_engine_checkpoint:
+            raise PermissionError('Engine checkpoint is malformed; refusing fallback to an older engine')
         if conflicting_checkpoint and not self.comment:
             raise PermissionError('Saved checkpoint scope changed; explicit owner reconciliation is required')
         if 'budgets' not in self.state:
@@ -274,10 +283,12 @@ class Journal:
 
     def body(self, state):
         last = state['events'][-1] if state['events'] else {}
+        # Old scanners must not interpret a trial checkpoint as permission to fall back to main.
+        wire = dict(state, status='engine_pinned', engineStatus=state['status']) if state.get('engine') else state
         return ('### KappaForge recovery checkpoint\n\nStatus: ' + state['status'] +
                 '\nCandidate: ' + (state['candidate'] or 'no code saved yet') +
                 '\nNext action: ' + last.get('next', 'Continue the authorized task') +
-                '\n\n<!-- ' + MARKER + ' ' + self.wire(state) + ' -->')
+                '\n\n<!-- ' + MARKER + ' ' + self.wire(wire) + ' -->')
 
     def persist(self):
         from engine.reliability import RecoveryCoordinator
@@ -641,6 +652,17 @@ class Journal:
 
     def begin(self, action=''):
         """Consume a dispatch exactly once, on the same authorization and candidate."""
+        if self.state.get('engine') or os.getenv('KAPPA_ENGINE_CHECK') == 'true':
+            from engine.runtime_engine import attest
+            try:
+                engine = attest(self.scope, self.read, self.state.get('engine'))
+            except (urllib.error.URLError, KeyError, TypeError) as error:
+                raise PermissionError('Engine provenance is unavailable; no fallback engine is authorized') from error
+            if engine:
+                self.state['engine'] = engine
+            else:
+                self.state.pop('engine', None)
+            print('Engine verified before task work: ' + os.getenv('GITHUB_SHA', ''), flush=True)
         if action.startswith('resume:'):
             expected = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"
             if action != expected or self.state['status'] != 'dispatching':
@@ -679,7 +701,7 @@ class Journal:
         self.publish('running', 'Runner acknowledged the saved task. Execution started.')
         return True
 
-    def queue(self):
+    def queue(self, handoff=False):
         """Atomic ref reservation plus durable dispatch state prevents competing scanners."""
         if self.state['status'] != 'waiting' or self.clock() < self.state['nextAt']:
             return False
@@ -687,7 +709,8 @@ class Journal:
         # publishing its checkpoint. Do not spend a continuation alongside it.
         if self.state.get('run'):
             meta = self.read(f"repos/{ROOT}/actions/runs/{self.state['run']}")
-            if meta.get('status') != 'completed':
+            if meta.get('status') != 'completed' and not (handoff and self.state.get('engine')
+                    and self.state['run'] == os.getenv('GITHUB_RUN_ID') and os.getenv('KAPPA_ENGINE_CHECK') == 'true'):
                 return False
             if meta.get('conclusion') == 'cancelled':
                 self.event('Previous workflow was cancelled; automatic resumption stopped', outcome='blocked', strategy='stop')
@@ -703,7 +726,16 @@ class Journal:
         quota = self.state.get('quotaResumes', 0) + (1 if self.state.get('quotaWait') else 0)
         if n > MAX_CONTINUATIONS + MAX_QUOTA_RESUMES or quota > MAX_QUOTA_RESUMES or n - quota > MAX_CONTINUATIONS:
             return False
-        main = self.read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
+        from engine.runtime_engine import verify_receipt
+        engine = verify_receipt(self.state['engine'], self.scope, self.read) if self.state.get('engine') else None
+        if engine:
+            current = self.read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
+            merged = self.read(f"repos/{ROOT}/compare/{engine['sha']}...{current}")
+            if (merged.get('status') in ('ahead', 'identical')
+                    and (merged.get('merge_base_commit') or {}).get('sha') == engine['sha']):
+                self.state.pop('engine', None)
+                engine = None  # Current trusted main now includes the trial fixes.
+        main = engine['sha'] if engine else self.read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
         ref = f'refs/heads/kappa/recovery-{self.scope.number}-{self.scope.digest[:12]}-{n}'
         try:
             self.write(f'repos/{ROOT}/git/refs', {'ref': ref, 'sha': main}, 'POST')
@@ -713,7 +745,8 @@ class Journal:
             if self.clock() - self.state['updatedAt'] < DISPATCH_ACK_SECONDS:
                 return False
             # Recover a crash between reserving the ref and persisting dispatch state.
-            self.read(f'repos/{ROOT}/git/ref/heads/{ref.removeprefix("refs/heads/")}')
+            if self.read(f'repos/{ROOT}/git/ref/heads/{ref.removeprefix("refs/heads/")}')['object']['sha'] != main:
+                raise PermissionError('Recovery reservation contains a different engine revision')
         self.state.update(continuations=n, quotaResumes=quota, quotaWait=False, status='dispatching', dispatchAttempts=0)
         self.persist()
         self.dispatch()
@@ -728,8 +761,29 @@ class Journal:
         self.persist()  # Count even an ambiguous/lost acknowledgement.
         self.publish('queued', 'Dispatch requested. Waiting for GitHub Actions and runner acknowledgement.')
         action = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"
-        self.write(f'repos/{ROOT}/actions/workflows/agent.yml/dispatches',
-                   {'ref': 'main', 'inputs': {'issue_number': str(self.scope.number), 'action': action}}, 'POST')
+        from engine.runtime_engine import DISPATCH, verify_receipt
+        engine = verify_receipt(self.state['engine'], self.scope, self.read) if self.state.get('engine') else None
+        ref = f"kappa/recovery-{self.scope.number}-{self.scope.digest[:12]}-{self.state['continuations']}" if engine else 'main'
+        if engine and self.read(f'repos/{ROOT}/git/ref/heads/{ref}')['object']['sha'] != engine['sha']:
+            raise PermissionError('Recovery engine ref no longer matches its authorized revision')
+        handle = DISPATCH.set(dict(engine, ref=ref) if engine else None)
+        try:
+            self.write(f'repos/{ROOT}/actions/workflows/agent.yml/dispatches',
+                       {'ref': ref, 'inputs': {'issue_number': str(self.scope.number), 'action': action}}, 'POST')
+        finally:
+            DISPATCH.reset(handle)
+
+    def handoff_engine(self, sleep=time.sleep):
+        """Queue the attested trial engine before exiting; legacy main scanners cannot resume this protocol."""
+        if not self.state.get('engine'):
+            return False
+        from engine.runner import TASK_DEADLINE
+        while self.clock() < self.state['nextAt']:
+            if TASK_DEADLINE is not None and time.monotonic() + 60 >= TASK_DEADLINE:
+                return False  # The checkpoint remains protected for an engine-aware scanner.
+            self.scope.check_current(self.read(f'repos/{ROOT}/issues/{self.scope.number}'), now=self.clock())
+            sleep(min(30, self.state['nextAt'] - self.clock()))
+        return self.queue(handoff=True)
 
     def recover_interrupted(self):
         if self.state['status'] not in ('running', 'recovering'):

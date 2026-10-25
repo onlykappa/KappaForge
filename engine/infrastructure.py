@@ -117,7 +117,9 @@ def authorize_dispatch(url, payload, token=None, get=None):
     if parsed.scheme != 'https' or parsed.netloc != 'api.github.com' or parsed.query or not match or match[1] not in WORKFLOWS:
         raise blocked('automatic infrastructure dispatch is outside the reviewed workflow allowlist.')
     ref = (payload or {}).get('ref')
-    if ref not in ('main', 'codex/phase4-cloud-execution'):
+    from engine.runtime_engine import permits, DISPATCH
+    engine_ref = permits(ref) and match[1] == 'agent.yml'
+    if ref not in ('main', 'codex/phase4-cloud-execution') and not engine_ref:
         raise blocked('workflow execution requires its existing reviewed ref.')
     get = metadata_reader(get, token)
     public_repository(get)
@@ -128,6 +130,8 @@ def authorize_dispatch(url, payload, token=None, get=None):
     sha = get(f'repos/{ROOT}/git/ref/heads/{ref}').get('object', {}).get('sha', '')
     if not re.fullmatch('[0-9a-f]{40}', sha):
         raise blocked('the reviewed workflow ref could not be resolved.')
+    if engine_ref and sha != DISPATCH.get()['sha']:
+        raise blocked('the recovery engine ref differs from its verified owner-authorized revision.')
     file = get(f'repos/{ROOT}/contents/.github/workflows/{workflow}?ref={sha}')
     try:
         if file.get('encoding') != 'base64' or file.get('path') != '.github/workflows/' + workflow:

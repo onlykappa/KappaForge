@@ -172,6 +172,7 @@ jobs:
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
         INPUT_ACTION: ${{ inputs.action }}
+        KAPPA_ENGINE_CHECK: 'true'
         KAPPA_TASK_SCOPE: write
       run: |-
         set -Eeuo pipefail

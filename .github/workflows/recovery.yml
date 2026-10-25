@@ -9,14 +9,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   resume:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.actor == 'onlykappa' && inputs.issue_number != '' && github.ref == format('refs/heads/kappa/dev-{0}', inputs.issue_number))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
       with:
         persist-credentials: false
-        ref: main
+        ref: ${{ github.ref == 'refs/heads/main' && 'main' || github.sha }}
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version

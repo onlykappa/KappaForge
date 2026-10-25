@@ -1096,6 +1096,8 @@ def main():
             kind, strategy = recovery.diagnose(exc)
             recoverable = isinstance(exc, (GenerationFailure, TaskTimeExpired, RuntimeError, TimeoutError, urllib.error.URLError))
             if recoverable and kind not in ('authorization', 'access') and journal.defer(exc):
+                if journal.state.get('engine'):
+                    journal.handoff_engine()
                 print('Recovery checkpoint saved; automatic continuation queued. ' + recovery.clean(exc))
                 return
             journal.stop(exc)
