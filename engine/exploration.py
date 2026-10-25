@@ -7,6 +7,7 @@ JSON, and repository content in them is untrusted evidence, never instructions.
 """
 from contextvars import ContextVar
 from dataclasses import dataclass, asdict
+import functools
 import json
 from pathlib import Path
 import re
@@ -23,6 +24,20 @@ MAX_FILE_CHARS = repo_maps.MAX_FILE_BYTES
 CURRENT = ContextVar('exploration_repository', default=None)
 # Questions the planner could not answer from the listing and map; a non-empty list starts an investigation.
 REQUEST = ContextVar('exploration_request', default=())
+
+
+def scoped(function):
+    """Both variables belong to one task run: whatever the run sets is cleared when it returns or raises, so nothing
+    later in the process (another task, a test) reads a stale repository through them."""
+    @functools.wraps(function)
+    def run(*args, **kwargs):
+        tokens = CURRENT.set(None), REQUEST.set(())
+        try:
+            return function(*args, **kwargs)
+        finally:
+            CURRENT.reset(tokens[0])
+            REQUEST.reset(tokens[1])
+    return run
 READ_LINES = 400          # Lines one read_file call may return.
 READ_CHARS = 16_000       # Characters one read_file call may return.
 PAGE = 20                 # Search matches, references or directory entries per page.

@@ -505,8 +505,8 @@ def exploration_repository(repo, sha, existing, token, archive):
             return archive[path]
         try:
             return read_source(repo, path, sha, token)
-        except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
-            return None
+        except (ValueError, UnicodeDecodeError, urllib.error.URLError, OSError):
+            return None  # Unreadable now (including a network failure): the tools report it, nothing crashes.
     return exploration.Repository(existing, read)
 
 
@@ -2382,6 +2382,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
 
 
 @task_goal.owner_task
+@exploration.scoped
 def produce_development_pr(issue, api_key, token, adopt=None):
     """Plan, open the draft PR with the goal and plan, then write the code on it and leave it for the owner's review.
 
