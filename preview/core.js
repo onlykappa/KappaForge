@@ -159,7 +159,7 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
  const lines=raw.split('\n').map(x=>x.trim()).filter(Boolean);
  // A draft PR is a step, not the end: say so, and say plainly when checking the work left problems open.
  const draft=status==='complete'&&/generated a draft PR/i.test(raw);
- const heading=status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':draft?(/\*\*Not finished:\*\*/.test(raw)?'Draft PR opened · not finished':'Draft PR opened'):status==='complete'?'Task complete':'Progress update';
+ const heading=status==='question'?'Question for you · answer with Send guidance':status==='failed'?'Task needs attention':status==='tests-passed'?'Tests passed':status==='tests-failed'?'Tests failed':draft?(/\*\*Not finished:\*\*/.test(raw)?'Draft PR opened · not finished':'Draft PR opened'):status==='complete'?'Task complete':'Progress update';
  const issues=lines.filter(x=>FINDING.test(x));
  const useful=lines.filter(x=>!/^### |^#### Findings|^```|^<!--/.test(x)&&!FINDING.test(x)).slice(0,5);
  const message=(useful.length?useful:lines.slice(0,2)).join('\n').slice(0,900);
@@ -181,6 +181,7 @@ globalThis.KappaJobs={progressSteps,stageProgress,findings,seconds:durationSecon
  else if(/^### KappaForge repository audit batch \d+/i.test(heading))status=/^\*\*Status:\*\* All eligible paths processed/m.test(body)?'complete':'partial';
  else if(/^### (?:KappaForge (?:run completed|project map complete)|Continuous task complete)/i.test(heading)||/^(?:KappaForge generated a draft PR|Self-repair draft PR created)/i.test(heading))status='complete';
  else if(/^### KappaForge is working on it/i.test(heading))status='progress';
+ else if(/^### KappaForge has a question/i.test(heading))status='question';
  else if(/^### Continuous coding milestone/i.test(heading)||/^### KappaForge (?:fix ready|needs your help)/i.test(heading))status='partial';
  // Posted by the sandbox test run on a development PR's task: a result, never the end of the task.
  else if(/^### Tests passed\b.*\bwork is not finished\b/i.test(heading))status='tests-incomplete';
@@ -198,7 +199,7 @@ verifiedTask(job){return !job?.historyOnly&&job?.verification?.verified===true&&
 needsAttention(job,now=Date.now()){
  if(!job||job.historyOnly||['merged','closed','cancelled'].includes(job.message))return false;
  const p=job.progress,v=job.verification,current=v?.sha===job.candidate?.sha;
- return ['failed','tests-failed','native-failed','tests-incomplete'].includes(job.message)||['failed','blocked'].includes(p?.status)||!!(current&&(v?.failed||v?.incomplete))||(['waiting','recovering'].includes(p?.status)&&Number.isFinite(p.recovery?.expiresAt)&&p.recovery.expiresAt<=now);
+ return ['failed','tests-failed','native-failed','tests-incomplete','question'].includes(job.message)||['failed','blocked'].includes(p?.status)||!!(current&&(v?.failed||v?.incomplete))||(['waiting','recovering'].includes(p?.status)&&Number.isFinite(p.recovery?.expiresAt)&&p.recovery.expiresAt<=now);
 },
 // Act only on reports newer than the last one handled (comment ids only grow). A job tracked before ids were recorded
 // falls back to ignoring reports written before a retry or guidance resumed it.

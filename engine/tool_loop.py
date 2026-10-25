@@ -25,6 +25,8 @@ TOOL_CATALOG = {
     'compare_version': 'compare_version(ecosystem, name, installed)',
     'check_api': 'check_api(url, symbol)',
     'cite_source': 'cite_source(claim, source, quote)',
+    # Pause the task with one question for the owner (engine/clarification.py); only offered with a checkpoint.
+    'ask_owner': 'ask_owner(kind="implementation" | "authorization" | "expected_behavior" | "safety", question, why, evidence=[])',
 }
 
 

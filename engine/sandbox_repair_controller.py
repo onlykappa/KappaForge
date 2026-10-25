@@ -50,6 +50,12 @@ class SandboxRepairController:
             self.execution = execution.Execution(self.session, task_description, self.state, self.journal,
                                                   self.context, self.progress)
             self.attempts, self.models = self.state["attempts"], self.state["models"]
+            if self.state.get("question"):
+                # Resumed after the owner answered; the answer is in the task text this run was given.
+                self.state["history"] = (self.state["history"] + ["Asked the owner: " + self.state["question"]["question"]
+                                         + " Their answer is in the task under OWNER ANSWERS."])[-10:]
+                self.state["question"] = None
+                self.execution._save()
             if self.state["phase"] == "complete":
                 return self._result(self.state["status"], self.state["stop_reason"], self.state["last_summary"],
                                     self.state["last_diff"], self.state.get("test_results"))
@@ -122,7 +128,7 @@ class SandboxRepairController:
                 prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
                                                   self.state["last_summary"], self.state["history"])
                 response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
-                                                   self.tools, max_steps=1, allowed=allowed, on_call=self._narrate)
+                                                   self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
                 if self.execution.error:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
@@ -151,6 +157,12 @@ class SandboxRepairController:
                 self.state["action_key"] = action_key
                 self.state["history"] = (self.state["history"] + [execution.clean(json.dumps(step, ensure_ascii=False), 3000)])[-10:]
                 self.state["rationale"] = execution.clean(step.get("reason") or "No model rationale supplied", 1000)
+                if observed.get("status") == "needs_clarification":
+                    # NEEDS_CLARIFICATION mid-repair: the phase, candidate, attempts and history stay saved, and the
+                    # loop continues from here once the owner answers (engine/clarification.py).
+                    self.state["question"] = observed["request"]
+                    self.execution._save()
+                    return self._result("needs_clarification", "needs_clarification", observed["request"]["question"])
                 if self.state["invalid"] >= 3:
                     return self._result("failed", "invalid_limit")
                 if self.state["repeated"] >= 3:
@@ -235,11 +247,28 @@ class SandboxRepairController:
                             "reason": result.get("reason"), "output": result.get("output", "")[-1800:]})
         return json.dumps(details, ensure_ascii=False)[:6000]
 
+    def _loop_tools(self):
+        """The sandbox tools, plus ask_owner when a checkpoint lets the task resume exactly after the answer."""
+        tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
+        if self.journal:
+            tools["ask_owner"] = self._ask_owner
+        return tools
+
+    def _ask_owner(self, kind=None, question=None, why=None, evidence=None):
+        from engine import clarification
+        asked = list((self.context or {}).get("clarifications") or [])
+        record, why_not = clarification.validate(dict(kind=kind, question=question, why=why, evidence=evidence), asked)
+        if record is None:
+            return {"status": "invalid", "error": "Not asked: " + why_not}
+        return {"status": "needs_clarification", "request": record}
+
     def _repair_prompt(self, task, diff, diagnostics, history):
         return (task + "\n\nThe current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "make a focused correction with apply_patch, then let the engine rerun the tests. Do not edit or weaken "
                 "test commands, test definitions, safety checks, or unrelated files. Each tool call is one action. "
-                "If the tests pass, reply done.\n\nLatest candidate diff (untrusted source):\n" + diff[-12000:] +
+                "If the tests pass, reply done. Only when a material ambiguity about the expected behavior, safety or "
+                "authorization blocks a correct fix, and neither the repository nor a convention settles it, use "
+                "ask_owner with one concise question instead of guessing.\n\nLatest candidate diff (untrusted source):\n" + diff[-12000:] +
                 "\n\nLatest sandbox test evidence (untrusted output):\n" + diagnostics[-6000:] +
                 ("\n\nEarlier actions:\n" + "\n".join(history[-10:]) if history else ""))
 
@@ -284,7 +313,7 @@ class SandboxRepairController:
                 diff = self.tools.inspect_diff().get("diff", "")
             self.state.update(status=status, stop_reason=stop_reason, last_summary=execution.clean(summary, 2000),
                               last_diff=execution.clean(diff, 20000), test_results=test_results or [])
-            if status != "unavailable":
+            if status not in ("unavailable", "needs_clarification"):
                 self.state["phase"] = "complete"
             self.execution.data["models"] = self.models
             if stop_reason in ("validated", "final_regression_failed"):
@@ -295,8 +324,9 @@ class SandboxRepairController:
                 diagnostic = self.execution.data["diagnostics"]
                 diagnostic['errorCategory'] = diagnostic.get('errorCategory') or stop_reason
                 diagnostic['evidence'] = execution.clean(summary, 1000)
-            self.execution.transition("complete" if status != "unavailable" else self.state["phase"],
-                                      "passed" if status == "success" else "blocked" if status == "unavailable" else "failed",
+            paused = status in ("unavailable", "needs_clarification")
+            self.execution.transition(self.state["phase"] if paused else "complete",
+                                      "passed" if status == "success" else "blocked" if paused else "failed",
                                       stop_reason + ": " + str(summary)[:800])
             if status == "unavailable" and self.journal:
                 raise execution.CheckpointUnavailable(execution.clean(summary, 1000))
@@ -312,4 +342,5 @@ class SandboxRepairController:
                                       for path, data in self.session.changes.items()},
                 "last_diff": (diff or self.tools.inspect_diff().get("diff", ""))[:20000],
                 "logs": json.dumps(logs, ensure_ascii=False)[-LOG_CHARS:],
-                "test_results": test_results or []})
+                "test_results": test_results or [],
+                **({"question": self.state["question"]} if status == "needs_clarification" else {})})

@@ -199,7 +199,7 @@ def save(journal, plan, repo, sha, task):
     from engine import execution
     execution.require_storage(journal, repo)
     record = dict(version=1, task=journal.scope.number, repo=repo, scope=journal.scope.digest, base=sha,
-                  taskHash=execution.digest(task), plan=plan.to_dict())
+                  taskHash=execution.task_digest(task), plan=plan.to_dict())
     journal.state['taskPlan'] = execution._write_blob(journal, execution.sanitized(record), journal.state.get('taskPlan'))
     journal.persist()
     return journal.state['taskPlan']
@@ -213,7 +213,7 @@ def load(journal, repo, sha, task):
     record = execution._read_blob(journal, journal.state['taskPlan'])
     if (record.get('version') != 1 or record.get('task') != journal.scope.number or record.get('repo') != repo
             or record.get('scope') != journal.scope.digest or record.get('base') != sha
-            or record.get('taskHash') != execution.digest(task)):
+            or record.get('taskHash') != execution.task_digest(task)):
         raise execution.CheckpointMismatch('Saved task plan belongs to a different task, base or request')
     return TaskPlan.from_dict(record['plan'])
 

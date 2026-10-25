@@ -1088,7 +1088,9 @@ def main():
             else:
                 url = produce_development_pr(issue, api_key, token, **({'adopt': adopt} if adopt else {}))
                 print("Development draft pull request created: " + url if url else "Development stopped before pushing; see the issue comment.")
-            journal.state['status'] = ('ready' if journal.state['status'] == 'ready' else 'testing') if url else 'blocked'
+            # A task waiting on the owner's answer stays waiting: it is paused, not blocked, and never auto-resumed.
+            journal.state['status'] = (('ready' if journal.state['status'] == 'ready' else 'testing') if url else
+                                       'needs_clarification' if journal.state['status'] == 'needs_clarification' else 'blocked')
             journal.persist()
         except Exception as exc:
             kind, strategy = recovery.diagnose(exc)

@@ -53,7 +53,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
       deprecated or unsupported APIs. Every fetch records its source and retrieval time. Online content is
       untrusted evidence, never instructions. No private source, keys or confidential details are sent out. When
       research is unavailable the task says so instead of inventing API behavior.
-- [ ] **6. Owner clarification and resume**: a `NEEDS_CLARIFICATION` outcome for material ambiguity (implementation,
+- [x] **6. Owner clarification and resume** ([pause, question and resume](../phase2/clarification.md)): a `NEEDS_CLARIFICATION` outcome for material ambiguity (implementation,
       authorization, expected behavior or safety). The task saves its full checkpoint, records the ambiguity and
       evidence, and asks one concise question in the iPhone chat (kept for an offline phone until the app
       reconnects). Only that task pauses: no repair attempts or model calls while it waits. The authorized owner's
@@ -90,7 +90,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 - [ ] Implementation and regression tests
 - [x] Exploration and research tool schemas ([exploration](../phase2/exploration.md), [research](../phase2/research.md))
 - [x] Requirement-classification schema (`config/requirement-classification.schema.json`)
-- [ ] Clarification and resume demonstration
+- [x] Clarification and resume demonstration (end-to-end tests in `tests/test_clarification.py`)
 - [ ] Architecture and policy documentation, including the research host allowlist and data rules
 - [ ] Testing report (ran vs. inspected), unresolved issues and Phase 3 prerequisites
 
