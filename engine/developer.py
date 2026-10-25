@@ -477,8 +477,9 @@ def needs_test(changes):
 
 
 def download_repository(repo, sha, files, token):
-    """{path: text} of the repository's text files at sha from one archive, or {} when it cannot be downloaded."""
-    paths = [p for p in files if files[p] <= repo_maps.MAX_FILE_BYTES]
+    """{path: text} of the repository's text files at sha from one archive, or {} when it cannot be downloaded.
+    The iOS web copies mirror preview/, so they are not downloaded twice; exploration reads one on demand."""
+    paths = [p for p in files if files[p] <= repo_maps.MAX_FILE_BYTES and not p.startswith(IOS_WEB)]
     try:
         return repo_maps.download_sources(repo, sha, token, paths)
     except (urllib.error.URLError, OSError, ValueError, EOFError, tarfile.TarError) as exc:
