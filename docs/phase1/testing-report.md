@@ -194,6 +194,13 @@ on the host and is excluded from Docker and container environments. Current CI r
 Paid capacity, private billing, actual quota exhaustion and remote builders are rejected through injected boundaries;
 none were activated for testing. Existing zero-dollar provider enforcement was covered by the full regression suites.
 
+### Correction after merge
+
+Step 7 added a second `permissions` block to the agent code job, which already had one (with `actions: write`).
+PyYAML keeps the last value, so every local check passed, but GitHub rejected `agent.yml` as invalid and no agent task
+could start. The block is removed, restoring the reviewed file, and `scripts/execution-policy.py --check` now
+rejects any workflow with a duplicate key, with a regression test built from the broken file.
+
 ## Step 8: tests and acceptance
 
 Every Phase 1 acceptance requirement now has a named test in `tests/test_phase1_acceptance.py`, mapped in

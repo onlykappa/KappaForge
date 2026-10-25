@@ -38,12 +38,47 @@ def paid_runners(text):
     return problems
 
 
+KEY = re.compile(r'^(\s*)(- )?([\'"]?)([A-Za-z0-9_.-]+)\3:(?:\s|$)')
+
+
+def duplicate_keys(text):
+    """Keys repeated within one block mapping. GitHub rejects such a workflow outright, while PyYAML silently keeps
+    the last value, so local tooling would otherwise pass a file that never runs (agent.yml, Phase 1 Step 7)."""
+    problems, stack, scalar = [], [], None  # stack: [indent, keys of the mapping at that indent]
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        indent = len(line) - len(line.lstrip(' '))
+        if scalar is not None:
+            if indent > scalar:
+                continue  # Inside a | or > block scalar.
+            scalar = None
+        match = KEY.match(line)
+        if not match:
+            continue
+        level = indent + (2 if match[2] else 0)
+        if match[2]:  # A sequence item starts a new mapping.
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append([level, set()])
+        while stack and stack[-1][0] > level:
+            stack.pop()
+        if not stack or stack[-1][0] < level:
+            stack.append([level, set()])
+        if match[4] in stack[-1][1]:
+            problems.append(f'line {number}: duplicate key {match[4]!r}')
+        stack[-1][1].add(match[4])
+        if re.match(r'[|>][-+0-9]*\s*(?:#.*)?$', line[match.end():].strip()):
+            scalar = level
+    return problems
+
+
 def check_runners():
     problems = [f'{path.name}: {problem}' for path in sorted((ROOT / '.github/workflows').glob('*.y*ml'))
-                for problem in paid_runners(path.read_text(encoding='utf-8'))]
+                for check in (duplicate_keys, paid_runners) for problem in check(path.read_text(encoding='utf-8'))]
     if problems:
-        raise ValueError('Workflows could run on billed or unverifiable runners; use a standard GitHub-hosted label:\n  '
-                         + '\n  '.join(problems))
+        raise ValueError('Workflows GitHub would reject, or that could run on billed or unverifiable runners '
+                         '(use unique keys and a standard GitHub-hosted label):\n  ' + '\n  '.join(problems))
 
 
 def build():
