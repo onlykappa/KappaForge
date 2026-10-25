@@ -237,6 +237,7 @@ class Execution:
             if sanitized(changes) != changes:
                 raise CheckpointMismatch('Candidate contains credentials or private environment values; checkpoint and execution blocked')
             self.data['workspaceRevision'] = revision(self.session)
+            self.data['infrastructure'] = dict(self.session.infrastructure)
             self.data['controller'] = self.state
             diagnostic = self.data['diagnostics']
             diagnostic['updatedAt'] = self.now()

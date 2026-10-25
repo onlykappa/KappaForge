@@ -32,6 +32,7 @@ import {providerAllowed,providerPolicyStatus,routePolicy,requestRoutingPreferenc
 import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./recovery-wake.js";
 import {transcribe,speak} from "./voice.js";
+import {admitDispatch,ExecutionBlocked} from "./free-execution.js";
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -534,6 +535,8 @@ const workerImplementation = {
             !/^kappa\/(issue-\d+|repair-\d+|cont-\d+-\d+|dev-\d+)$/.test(pr.head?.ref || ""))
           return json({error:"Only open KappaForge agent proposals may be reviewed here."},403,cors);
         if (decision === "validate") {
+          try { await admitDispatch(env, "sandbox-tests.yml"); }
+          catch (e) { if (e instanceof ExecutionBlocked) return json({ error: e.message, code: e.category }, e.status, cors); throw e; }
           const dispatch = await fetch(base + "/actions/workflows/sandbox-tests.yml/dispatches", {
             method:"POST",headers,body:JSON.stringify({ref:"main",inputs:{branch:pr.head.ref,candidate_sha:pr.head.sha}})
           });
@@ -604,6 +607,10 @@ const workerImplementation = {
           if(!bound.ok)return json({error:"Request cancelled before joining the existing task"},409,cors);
           return json({ issueNumber: duplicate.number, issueUrl: duplicate.html_url, status: "existing" }, 200, cors);
         }
+        // Free capacity is checked before any issue, run reservation or dispatch, so a block leaves nothing behind.
+        const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
+        try { await admitDispatch(env, workflowName); }
+        catch (e) { if (e instanceof ExecutionBlocked) return json({ error: e.message, code: e.category }, e.status, cors); throw e; }
         const run = await reserveAgentRun(env);
         if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " tasks). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         try {
@@ -629,7 +636,6 @@ const workerImplementation = {
           await fetch(endpoint+"/issues/"+issue.number,{method:"PATCH",headers,body:JSON.stringify({state:"closed"})});
           await refundAgentRun(env,run);return json({error:"Task cancelled before dispatch",issueUrl:issue.html_url},409,cors);
         }
-        const workflowName = (mode === "continuous" || mode === "continuous-code" || mode === "watch") ? "continuous.yml" : "agent.yml";
         if(mode==="develop"){
           try{const wake=await scheduleRecovery(env,issue.number);if(!wake.ok)throw Error('registration');}
           catch{console.warn('Task '+issue.number+': durable wake-up registration failed; initial dispatch and cron fallback remain');}

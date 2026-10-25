@@ -138,6 +138,10 @@ jobs:
       actions: write
   code:
     runs-on: ubuntu-latest
+    # Free-execution admission reads this job's own runner metadata from the Actions API.
+    permissions:
+      contents: read
+      actions: read
     # Staged builds make several long model calls (up to 7 minutes each) plus a test stage.
     timeout-minutes: 360
     steps:
@@ -150,6 +154,10 @@ jobs:
     - name: Install ast-grep for the structural security scan
       shell: bash
       run: python -m pip install --quiet --no-deps --require-hashes -r .github/ast-grep-requirements.txt
+    - name: Verify free execution permissions and resource availability
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python -m engine.infrastructure
     - name: Preflight agent tools and build settings
       shell: bash
       run: |-

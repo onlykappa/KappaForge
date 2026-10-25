@@ -159,3 +159,65 @@ fixed by recording branch movement and PR heads in those fixtures; publication g
 - Live provider quota exhaustion, real runner termination and GitHub mutation outages are failure-injected locally;
   no live inference or production task dispatch was used to implement these steps.
 - The browser/iOS shared JavaScript renderer and escaping are automated; native iOS simulator screenshots were not run locally.
+
+## Step 7: cost and resource enforcement
+
+The execution path now admits only the reviewed standard public Actions workflows and runner-local Docker, verifies
+live repository/job/daemon metadata and current host headroom, and preserves the checkpoint when admission stops.
+Jobs the chat Worker starts or re-runs pass the same live admission, every workflow file is checked for billed
+runners in CI, and automated re-runs are refused by the engine.
+See [cost and resource policy](cost-and-resources.md) for permissions, operating limits and scope.
+
+### Ran locally
+
+| Check | Measured result |
+| --- | --- |
+| Full Python discovery | 829 tests ran, OK with 13 skipped |
+| `npm test` | 851 passed (includes `tests/ui-chat.test.mjs`, which needs the `jsdom` dev dependency installed) |
+| Focused admission tests | 18 passed: private/unknown metadata, unavailable permissions, actual runner identity, paid/dynamic/indirect workflows, changed/moving refs, resource shortages, missing isolation controls, remote Docker, empty CLI configuration, cached-image rechecks, terminal checkpoint retention and the real module entrypoint |
+| Worker admission tests | 9 added: public/active/enabled allowlisted dispatch with reads only; private, internal, archived, missing-visibility, permission-denied, disabled and unlisted workflows refused before any POST; outages marked transient without echoing bodies or tokens; re-runs need every job on a standard label (larger, xlarge, self-hosted, truncated job lists refused) while cancel still works; Fix it on a private repository creates nothing, then dispatches once when public; recovery wake-up stops on a policy refusal, resumes after rescheduling, and retries an outage without dispatching |
+| Repository runner check | `scripts/execution-policy.py --check` passes on all 20 workflows; larger, xlarge, self-hosted, expression, group, reusable and missing `runs-on` jobs are rejected |
+| Engine re-run refusal | Run and job re-run endpoints refused before any metadata read; cancel unaffected |
+| Dependency map and whitespace checks | Regenerated map check and `git diff --check` passed |
+| Public GitHub API metadata read | Existing sandbox job reports literal `ubuntu-latest`, the runner identity and run ID used by admission |
+
+Repository growth exposed a brittle dependency-map test budget below the space needed for the file names alone.
+The test now selects a feasible lower bound while retaining every module, omission reporting, the rejection of an
+impossible budget and the separate strict 6,000-character production-consumer limit.
+
+### CI and failure injection
+
+The real-Docker self-test workflow runs the same non-allocating preflight, isolation tests, faulty-project repair and
+outage recovery, full Python/Node sandbox suites and cleanup. Its read-only GitHub token permits metadata inspection
+on the host and is excluded from Docker and container environments. Current CI results are recorded on the delivery PR.
+
+Paid capacity, private billing, actual quota exhaustion and remote builders are rejected through injected boundaries;
+none were activated for testing. Existing zero-dollar provider enforcement was covered by the full regression suites.
+
+## Step 8: tests and acceptance
+
+Every Phase 1 acceptance requirement now has a named test in `tests/test_phase1_acceptance.py`, mapped in
+[acceptance requirements and their tests](acceptance.md), with a new realistic faulty fixture
+(`tests/fixtures/sandbox/invoice-service`) that fails five of its eight tests until an evidence-driven agent repairs
+both bugs in two targeted steps.
+
+### Ran locally
+
+| Check | Measured result |
+| --- | --- |
+| Acceptance suite against real Docker | 15 tests passed in 120 s (11 real-Docker, 4 policy) on a local Docker 29.9.2 daemon |
+| Acceptance tests catch regressions | Raising the attempt limit to six, disabling identical-failure detection and running containers as root each made the matching acceptance test fail (scratch run, nothing committed) |
+| Full Python discovery | 844 tests ran, OK with 22 skipped (the 13 earlier real-Docker skips plus the 9 new real-Docker acceptance tests, which need `KAPPA_SANDBOX_INTEGRATION=1`) |
+| `npm test` | 851 passed |
+| Workflow policy, dependency map and whitespace | `scripts/execution-policy.py --check`, the regenerated map check and `git diff --check` passed |
+
+The local real-Docker run replaced only Step 7's admission check (which accepts nothing but a GitHub-hosted runner)
+with a stub, in a scratch runner script that is not part of the repository. In CI the *Sandbox self-test* workflow runs
+the suite with real admission, after the free-execution preflight.
+
+### Inspected, not run
+
+- Deploy and release triggers: the tests read the workflow files and confirm deploy and release start only from
+  `main`; no deployment or release was run.
+- Live model inference: the repair agent is scripted from the failing test names in each prompt. Whether a given free
+  model makes the same targeted choices is a model-quality question, not part of these acceptance requirements.

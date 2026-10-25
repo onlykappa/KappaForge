@@ -1,6 +1,7 @@
 import '../../preview/actions-core.js';
 import {githubHeaders} from "./github.js";
 import {OWNER,isRepoName,listRepos} from "./repos.js";
+import {admitRerun,ExecutionBlocked} from "./free-execution.js";
 // Read-only GitHub Actions service for the dashboard: runs, jobs, steps, attempts, artifacts, annotations,
 // parsed logs and a streamed live view. The browser never sees a GitHub token, a signed log URL or a download URL.
 const K=globalThis.KappaActions;
@@ -152,6 +153,8 @@ export async function actionsControl(env,body,{fetcher=fetch}={}){
  if(!positive(runId))return {status:400,error:"A numeric run id is required"};
  if(!env?.GITHUB_JOB_TOKEN)return {status:503,error:"GitHub integration is not configured."};
  if(!(await checkRepo(env,repo)))return {status:400,error:"Choose an allowed repository"};
+ // A re-run allocates new jobs: only on free capacity. Cancelling allocates nothing.
+ if(action!=="cancel")try{await admitRerun(env,repo,runId,{fetcher})}catch(e){if(e instanceof ExecutionBlocked)return {status:409,error:e.message,code:e.category};throw e}
  const r=await fetcher(API+repo+"/actions/runs/"+runId+"/"+CONTROL[action],{method:"POST",headers:{...githubHeaders(env,"KappaForge-actions-control"),"Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(10000)});
  if(r.ok)return {status:202,data:{status:"requested",action,runId}};
  const detail=String((await r.json().catch(()=>({}))).message||"").slice(0,200);

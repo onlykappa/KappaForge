@@ -1,4 +1,5 @@
 import {githubHeaders} from "./github.js";
+import {admitDispatch,ExecutionBlocked} from "./free-execution.js";
 // Owner review of agent pull requests: explain, show test state, and merge only on a verified pass.
 const ROOT="KappaForge";
 export const agentBranch=(repo,ref)=>repo===ROOT?/^kappa\/(?:issue-\d+|repair-\d+|cont-\d+-\d+|dev-\d+|revert-\d+)$/.test(ref||""):/^kappa\/dev-\d+$/.test(ref||"");
@@ -134,7 +135,7 @@ export async function undoLast(env,confirmed,expectedSha){
  await write("git/refs",{ref:"refs/heads/"+branch,sha:commit.sha});
  const pr=await write("pulls",{title:"Undo: "+title,head:branch,base:"main",
   body:"## What this does\nPuts KappaForge back exactly as it was before \""+title+"\". That earlier version already passed its tests and ran live, so this can be merged straight away.\n\nUndoes "+head.html_url});
- await write("actions/workflows/sandbox-tests.yml/dispatches",{ref:"main",inputs:{branch,candidate_sha:commit.sha}}).catch(()=>{});
+ await admitDispatch(env,"sandbox-tests.yml").then(()=>write("actions/workflows/sandbox-tests.yml/dispatches",{ref:"main",inputs:{branch,candidate_sha:commit.sha}})).catch(()=>{});
  return {status:"undo_opened",url:pr.html_url,number:pr.number};
 }
 
@@ -149,12 +150,21 @@ export async function closePR(env,repo,number){
  return {status:"closed",url:pr.html_url};
 }
 
+// Every workflow a request would start must be free before the first one is dispatched.
+async function admitted(env,workflows){
+ try{for(const w of workflows)await admitDispatch(env,w)}
+ catch(e){if(e instanceof ExecutionBlocked)return {error:e.message,status:e.status,code:e.category};throw e}
+ return null;
+}
+
 // Start (or re-run) the sandbox tests for the PR's current commit.
 export async function requestTests(env,repo,number){
  const review=await reviewPR(env,repo,number);
  if(review.error)return review;
  if(!review.canTest)return {error:"Tests are already running for this pull request.",status:409};
  const w=testWorkflow(repo,review.branch,review.tests.sha);
+ const blocked=await admitted(env,[w.file,...(review.native?["ios-build.yml"]:[])]);
+ if(blocked)return blocked;
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/"+w.file+"/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:w.inputs})});
  if(!r.ok)return {error:"Tests could not start (GitHub HTTP "+r.status+").",status:502};
  if(review.native){
@@ -170,6 +180,8 @@ export async function requestFix(env,repo,number){
  if(review.error)return review;
  if(!review.canFix)return {error:"Fix it requires unfinished requirements or failed checks, with no verification still running.",status:409};
  const issue=review.branch.split("-").pop();
+ const blocked=await admitted(env,["agent.yml"]);
+ if(blocked)return blocked;
  const r=await api(env,"repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{issue_number:issue,action:"fix"}})});
  if(!r.ok)return {error:"The fix could not start (GitHub HTTP "+r.status+").",status:502};
  return {status:"fix_started",issue:Number(issue)};

@@ -9,6 +9,7 @@ import worker from '../chat-backend/src/index.js';
 import {validateRequest} from '../chat-backend/src/intent-guard.js';
 import {taskBody} from '../chat-backend/src/agent-work.js';
 import {retryTask} from '../chat-backend/src/agent-work.js';
+import {withFreeExecution} from './free-execution-fixture.mjs';
 const I=globalThis.KappaIntent,C=globalThis.KappaCapabilities;
 globalThis.crypto ||= webcrypto;
 const read=name=>readFileSync(new URL('../preview/'+name,import.meta.url),'utf8');
@@ -121,11 +122,11 @@ test('renewing an expired saved task retains its original owner restrictions',as
  const expired={id:'old-auth',conversationId:'chat',requestId:'old-request',issuedAt:Date.now()-2*86400000};
  const instructions='Investigate navigation, do not change code';let renewed;
  const issue={number:198,state:'open',created_at:new Date(expired.issuedAt).toISOString(),user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:taskBody('onlykappa/KappaForge','audit',instructions,'',expired)};
- const old=globalThis.fetch;globalThis.fetch=async(url,options={})=>{
+ const old=globalThis.fetch;globalThis.fetch=withFreeExecution(async(url,options={})=>{
   if(options.method==='PATCH'){renewed=JSON.parse(options.body).body;return Response.json({})}
   if(options.method==='POST')return new Response(null,{status:204});
   return Response.json(String(url).includes('/pulls?')?[]:issue);
- };
+ });
  try{
   const result=await retryTask({GITHUB_JOB_TOKEN:'fixture'},198,{id:'new-auth',conversationId:'chat',requestId:'new-request',issuedAt:Date.now()});
   assert.equal(result.status,'dispatch_requested');const record=JSON.parse(renewed.match(/<!-- kappa-authorization:(.*?) -->/)[1]);

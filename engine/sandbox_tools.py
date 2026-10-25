@@ -85,8 +85,11 @@ class SandboxTools:
     # 2. run_command
     # ---------------------------------------------------------------------
     def run_command(self, argv: List[str], profile: str = "test") -> Dict[str, Any]:
+        from engine.infrastructure import InfrastructureBlocked
         try:
             result = self.session.run(argv, profile=profile)
+        except InfrastructureBlocked as exc:
+            return {"ok": False, "status": "unavailable", "category": exc.category, "error": str(exc)}
         except sandbox.SandboxUnavailable as exc:
             return {"ok": False, "status": "unavailable", "error": str(exc)}
         except Exception as exc:  # defensive – should never raise per sandbox contract
@@ -98,8 +101,11 @@ class SandboxTools:
     # 3. run_tests
     # ---------------------------------------------------------------------
     def run_tests(self) -> Dict[str, Any]:
+        from engine.infrastructure import InfrastructureBlocked
         try:
             results = self.session.run_tests()
+        except InfrastructureBlocked as exc:
+            return {"ok": False, "status": "unavailable", "category": exc.category, "error": str(exc)}
         except sandbox.SandboxUnavailable as exc:
             return {"ok": False, "status": "unavailable", "error": str(exc)}
         except Exception as exc:

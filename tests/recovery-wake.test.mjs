@@ -10,7 +10,8 @@ function fixture(){
  const auth={id:'owner-authorization',conversationId:'conversation',repo:'onlykappa/KappaForge',intent:'execution',state:'executing',expiresAt:now+86400000};
  const issue={number:174,state:'open',user:{login:'onlykappa'},labels:[{name:'kappa-task'}],body:'Repository: onlykappa/KappaForge\nMode: develop\nImplement exact original request.\n<!-- kappa-authorization:'+JSON.stringify(auth)+' -->'};
  const journal={version:1,task:174,authorization:auth.id,repo:auth.repo,digest:createHash('sha256').update(issue.body).digest('hex'),status:'waiting',updatedAt:now/1000,nextAt:now/1000+60,waitingSince:now/1000,run:'41',continuations:0,candidate:'b'.repeat(40)};
- const world={issue,journal,calls,run:{status:'completed',conclusion:'success'},active:[],agents:[],cancelled:false,loseAck:false};
+ const world={issue,journal,calls,run:{status:'completed',conclusion:'success'},active:[],agents:[],cancelled:false,loseAck:false,
+  repository:{full_name:'onlykappa/KappaForge',private:false,visibility:'public',archived:false,disabled:false},workflow:{state:'active',path:'.github/workflows/recovery.yml'}};
  const storage={get:async k=>structuredClone(data.get(k)),put:async(k,v)=>data.set(k,structuredClone(v)),setAlarm:async t=>{alarm=t},deleteAlarm:async()=>{alarm=null}};
  storage.transaction=fn=>{const p=tail.then(()=>fn(storage));tail=p.catch(()=>{});return p};
  const state={storage},env={GITHUB_JOB_TOKEN:'fixture-only',ROUTER_ACCESS_TOKEN:'x'.repeat(40),ROUTING_POLICY_VERSION:'v1'};
@@ -21,6 +22,8 @@ function fixture(){
  const original=globalThis.fetch,clock=Date.now;Date.now=()=>now;
  globalThis.fetch=async(u,o={})=>{
   const url=String(u),path=new URL(url).pathname;calls.push({path,body:o.body?JSON.parse(o.body):null});
+  if(path==='/repos/onlykappa/KappaForge')return typeof world.repository==='number'?new Response('{}',{status:world.repository}):Response.json(world.repository);
+  if(path.endsWith('/actions/workflows/recovery.yml'))return Response.json(world.workflow);
   if(path.endsWith('/issues/174'))return Response.json(issue);
   if(path.endsWith('/issues/174/comments'))return Response.json(world.journal?[{user:{login:'github-actions[bot]'},body:'### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 '+JSON.stringify(world.journal)+' -->'}]:[]);
   if(path.includes('/pulls'))return Response.json([]);
@@ -164,4 +167,36 @@ test('a waiting episode past its six-hour deadline is blocked without claiming i
  const w=fixture();try{
   w.advance(21600001);const r=await w.schedule();assert.equal(r.status,409);assert.equal((await r.json()).status,'blocked');assert.equal(deliveries(w).length,0);
  }finally{w.restore()}
+});
+
+test('recovery never dispatches onto private, disabled or unverifiable capacity',async()=>{
+ const w=fixture();try{
+  w.repository={...w.repository,private:true,visibility:'private'};
+  await w.schedule();w.advance(60001);await w.wake();
+  assert.equal(deliveries(w).length,0,'nothing is allocated');
+  const row=(await w.rows())[174];
+  assert.equal(row.stopped,true);assert.equal(row.reason,'free_execution_unavailable');assert.equal(row.deliveries,0);
+  assert.match(row.detail,/active public repository[^]*No paid capacity or other host was requested/);
+  const status=await (await w.env.MEMORY.get('recovery-v1').fetch('https://memory.internal/recovery/schedule',{method:'POST',body:JSON.stringify({task:174,statusOnly:true})})).json();
+  assert.equal(status.status,'blocked');assert.equal(status.reason,'free_execution_unavailable');assert.match(status.detail,/public/);
+  // Once the owner corrects the condition, scheduling again rechecks it and delivers.
+  w.repository={...w.repository,private:false,visibility:'public'};
+  assert.equal((await w.schedule()).status,202);w.advance(60001);await w.wake();
+  assert.equal(deliveries(w).length,1);
+ }finally{w.restore()}
+});
+
+test('a disabled recovery workflow stops delivery; a GitHub outage retries without dispatching',async()=>{
+ const w=fixture();try{
+  w.workflow={...w.workflow,state:'disabled_manually'};
+  await w.schedule();w.advance(60001);await w.wake();
+  assert.equal(deliveries(w).length,0);assert.equal((await w.rows())[174].reason,'free_execution_unavailable');
+ }finally{w.restore()}
+ const o=fixture();try{
+  o.repository=503;
+  await o.schedule();o.advance(60001);await o.wake();
+  const row=(await o.rows())[174];
+  assert.equal(deliveries(o).length,0);assert.equal(row.stopped,undefined);
+  assert.equal(row.reason,'delivery_or_github_unavailable');assert.equal(row.deliveries,1);
+ }finally{o.restore()}
 });

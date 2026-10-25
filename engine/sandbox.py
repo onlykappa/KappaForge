@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 import tarfile
+import tempfile
 import threading
 import time
 import urllib.request
@@ -155,10 +156,26 @@ class Docker:
         self.binary = binary
 
     def call(self, args, stdin=b'', timeout=60, limit=64_000, on_timeout=None):
+        from engine.infrastructure import local_endpoint
+        local_endpoint()
+        # Explicit local transport and an empty configuration prevent Docker contexts,
+        # credential helpers and remote builders in the runner's home from being used.
+        with tempfile.TemporaryDirectory(prefix='kappa-docker-') as config:
+            return self._call(args, config, stdin, timeout, limit, on_timeout)
+
+    def authorize(self, profile, preparing=False):
+        from engine import infrastructure
+        infrastructure.local_endpoint()
+        receipt = infrastructure.runtime()
+        receipt.update(infrastructure.resources(self, profile, preparing))
+        receipt['checkedAt'] = now()
+        return receipt
+
+    def _call(self, args, config, stdin, timeout, limit, on_timeout):
         try:
             # The CLI itself gets no secrets either, so even a mistaken "--env NAME" could not copy one into a container.
-            env = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'XDG_RUNTIME_DIR') or k.startswith('DOCKER_')}
-            proc = subprocess.Popen([self.binary, *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            env = {k: v for k, v in os.environ.items() if k in ('PATH', 'XDG_RUNTIME_DIR')}
+            proc = subprocess.Popen([self.binary, '--host', 'unix:///var/run/docker.sock', '--config', config, *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, env=env)
         except OSError as exc:
             raise SandboxUnavailable('Docker could not be started: ' + type(exc).__name__) from None
@@ -444,6 +461,7 @@ class Session:
     volumes: dict = field(default_factory=dict)
     closed: bool = False
     observer: object = field(default=None, repr=False)
+    infrastructure: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.versions = self.versions or image_versions(self.base)
@@ -579,10 +597,11 @@ class Session:
         self.results.append(run)
         return run
 
-    def prepare(self):
+    def prepare(self, profile=None):
         """Check Docker, then build the session image offline from official Python and Node images."""
         if self.closed:
             raise SandboxUnavailable('This sandbox session is closed')
+        self.infrastructure = self.docker.authorize(profile or PROFILES['test'], preparing=not bool(self.image))
         if self.image:
             return self.image
         if not self.docker.available():
@@ -614,7 +633,7 @@ class Session:
 
     def install(self):
         """Install each toolchain's locked dependencies into a session volume; source code never reaches this step."""
-        self.prepare()
+        self.prepare(PROFILES['install'])
         results = []
         profile = PROFILES['install']
         for toolchain in self.toolchains:
@@ -631,6 +650,7 @@ class Session:
                     self.observer.finished(run)
                 continue
             argv, manifests, target = plan
+            self.infrastructure = self.docker.authorize(profile)
             volume = f'kfsb-{self.id}-{toolchain.name}'
             self.docker.call(['volume', 'create', '--label', 'kappaforge.sandbox=' + self.id, volume], timeout=30)
             # A fresh volume belongs to root; hand it to the sandbox user with only the CHOWN capability.
@@ -687,7 +707,7 @@ class Session:
                 self.observer.finished(cached, reused=True)
                 return cached
             self.observer.started(argv, profile.name, source)
-        self.prepare()
+        self.prepare(profile)
         files = {p: d for p, d in self.current().items() if not p.startswith('node_modules/')}
         mounts = [(volume, '/work/node_modules' if target == '/deps/node_modules' else target, True)
                   for target, volume in self.volumes.items()]
@@ -724,6 +744,7 @@ class Session:
 
     def summary(self):
         return {'session': self.id, 'repo': self.base.repo, 'base': self.base.sha, 'image': self.image,
+                'infrastructure': dict(self.infrastructure),
                 'missingTools': list(getattr(self, 'missing_tools', [])),
                 'changed': sorted(self.changes), 'testDefinitionChanged': self.test_definition_changed(),
                 'results': [r.to_dict() for r in self.results]}

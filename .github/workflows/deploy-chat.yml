@@ -227,6 +227,7 @@ jobs:
     - chat-backend/**
     - config/providers.json
     - config/app.json
+    - config/execution-infrastructure.json
     - preview/stream.js
     - preview/actions-core.js
     - preview/limits-core.js

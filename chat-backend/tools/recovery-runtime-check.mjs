@@ -24,6 +24,9 @@ try{
   const url=new URL(request.url);
   if(url.origin!=='https://api.github.com'){unexpected++;return new Response('External network forbidden',{status:403})}
   const path=url.pathname,base='/repos/onlykappa/KappaForge';
+  // Free-execution admission: the public repository and its enabled recovery workflow.
+  if(path===base)return Response.json({full_name:'onlykappa/KappaForge',private:false,visibility:'public',archived:false,disabled:false});
+  if(path===base+'/actions/workflows/recovery.yml')return Response.json({state:'active',path:'.github/workflows/recovery.yml'});
   if(path===base+'/issues/'+task)return Response.json(fixture.issue);
   if(path===base+'/issues/'+task+'/comments')return Response.json(fixture.rows);
   if(path===base+'/actions/runs/41')return Response.json({status:'completed',conclusion:'failure'});

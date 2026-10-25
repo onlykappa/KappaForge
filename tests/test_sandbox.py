@@ -65,6 +65,9 @@ class FakeDocker(sandbox.Docker):
     def available(self):
         return self._available
 
+    def authorize(self, profile, preparing=False):
+        return {'free': True, 'simulated': True}
+
     def runs(self):
         return [c for c in self.calls if c[:1] == ['run'] and 'kappaforge-sandbox' in c]
 
@@ -113,7 +116,7 @@ class ContainerIsolationTests(unittest.TestCase):
                 patch.object(sandbox.subprocess, 'Popen', side_effect=popen):
             sandbox.Docker().call(['info'])
         self.assertNotIn('GITHUB_TOKEN', seen)
-        self.assertEqual(seen.get('DOCKER_HOST'), 'unix:///run/docker.sock')
+        self.assertNotIn('DOCKER_HOST', seen)
 
     def test_each_command_gets_a_fresh_copy_of_the_uncommitted_candidate(self):
         s = session(fixture(FAULTY))
@@ -367,7 +370,9 @@ class RealDockerTests(unittest.TestCase):
         self.assertEqual([r.status for r in after], ['passed', 'passed'], [r.stderr[-500:] for r in after])
 
     def test_secrets_network_and_system_files_are_out_of_reach(self):
-        with patch.dict(os.environ, {'GITHUB_TOKEN': 'ghp_' + 'r' * 36, 'KAPPA_ROUTER_TOKEN': 'router-secret-value-9'}):
+        # Preserve the real read-only API credential required for live admission.
+        # A distinct sentinel plus the real GITHUB_TOKEN name prove neither crosses the container boundary.
+        with patch.dict(os.environ, {'KAPPA_SANDBOX_TEST_TOKEN': 'ghp_' + 'r' * 36, 'KAPPA_ROUTER_TOKEN': 'router-secret-value-9'}):
             self.session.apply({'probe.py': (
                 'import json, os, socket, pathlib\n'
                 'print(json.dumps(dict(os.environ)))\n'
