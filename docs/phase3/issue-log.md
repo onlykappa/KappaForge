@@ -32,6 +32,16 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Broader validation: full Python suite OK, 1,008 tests run, 33 skipped, both online (57.462 seconds) and with all four HTTP(S) proxy variables pointed at `127.0.0.1:9` (60.892 seconds); `npm test` passed 858/858; baseline Node checks passed 273/273; dependency map generation/check, execution-policy check and `git diff --check` passed. Web syntax/configuration/bundle check passed using installed Python with `PYTHONUTF8=1` and translating its child `python3` invocation to that same interpreter: the unadapted Windows command initially failed because `python3` is a Store alias, and the first child rerun lacked UTF-8 mode. No repository check was removed or weakened. Native/Docker checks have not run locally for this patch; the prior head's GitHub test/native success is inspected evidence only. Live candidate retry pending.
 - Status: PATCHED — deterministic reproducer passes; live review result pending. The source omission is reproduced; the exact reason each live model invented its quotes is not observable.
 
+## P3-011 — combined requirement and whole-PR scope response stalls the audit
+
+- Evidence: run [40231331855](https://github.com/onlykappa/KappaForge/actions/runs/40231331855), engine `75e98fa`, completed its controller but left the audit incomplete. Both bounded review attempts failed to return every required `file_scope` decision. No candidate edit or audit result was saved. Source budgeting alone did not solve response completeness.
+- Reproducer: a PR with more than four changed paths whose reviewer returns valid decisions for only part of a requested batch. The controller must retain validated decisions and request only the missing decisions in small, bounded scope-only calls, while separately reviewing requirements.
+- Before patch: 2 new regression tests FAILED (5 failures including subtests): the combined prompt could not preserve a partial scope response or isolate invalid rows.
+- Permanent patch: PRs over four files use scope-only batches of at most three paths, each with two bounded attempts. Valid decisions are retained only within this candidate snapshot; retries include only unresolved paths. Missing, duplicate, foreign-path, malformed and invented evidence cannot complete a batch. The reviewer sees current-source excerpts near PR hunks. Requirement review remains separate, retains the balanced source budget and carries every unrelated-change finding forward. A scope failure still prevents generation.
+- Immediate rerun: 78 related tests passed after the patch; after adding current-hunk evidence coverage, 79 related tests passed.
+- Broader checks actually run on the final source: Python online — 1,011 tests run, OK, 33 skipped, 56.586 seconds; proxy-blocked repeat — 1,011 tests run, OK, 33 skipped, 61.059 seconds. `npm test` — 858 passed; baseline Node — 273 passed. Dependency map generation/check, execution-policy check, Windows-adapted web syntax/configuration/bundle check and `git diff --check` passed. Native and Docker checks have not run locally for this patch. Live retry pending.
+- Status: PATCHED — deterministic regression proof only; live progress remains unverified.
+
 ## Finding template
 
 ### P3-NNN — short defect title
