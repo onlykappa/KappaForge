@@ -22,7 +22,8 @@ None yet.
 
 ## Findings
 
-- **P3-001 — task/PR setup prevented KappaForge from starting:** the first draft PR converted issue #273 into a PR, which task selection correctly excludes. Workflow run [#264](https://github.com/onlykappa/KappaForge/actions/runs/40221871561) completed classify but skipped analyze and code. This was an orchestration setup error, not a product-code defect. Corrected by separating task #274 from draft PR #275; rerun is pending. See the [issue ledger](issue-log.md).
+- **P3-001 — task/PR setup prevented KappaForge from starting:** the first draft PR converted issue #273 into a PR, which task selection correctly excludes. Workflow run [#264](https://github.com/onlykappa/KappaForge/actions/runs/40221871561) completed classify but skipped analyze and code. This was an orchestration setup error, not a product-code defect. Corrected by separating task #274 from draft PR #275; see the [issue ledger](issue-log.md).
+- **P3-002 — Fix action had no actionable PR state:** workflow run [#265](https://github.com/onlykappa/KappaForge/actions/runs/40222114273) passed admission and preflight and reached the code job, but no failed checks or pending requirement existed on the scaffold PR. KappaForge reported that there was nothing to fix; the audit did not start. The incomplete audit is now being marked explicitly on PR #275 before another Fix run. This is a workflow setup issue, not a confirmed source defect. See the [issue ledger](issue-log.md).
 
 ## Checks that ran
 
