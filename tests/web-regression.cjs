@@ -34,7 +34,9 @@ const apiServer=createServer(async(req,res)=>{
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
  res.setHeader('Content-Type','application/json');
  if(req.headers.authorization!=='Bearer fixture-private-token'){res.writeHead(401).end(JSON.stringify({error:'Unauthorized fixture request'}));return;}
- let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');
+ // A browser may cancel a request mid-body (Mobile Safari leaving settings); nobody is left to answer, so drop it
+ // instead of letting the rejected read crash the whole run (#264 CI).
+ let body='';try{for await(const chunk of req)body+=chunk}catch{return}const data=JSON.parse(body||'{}');
  let result;
  if(req.url==='/operation-capabilities')result={contract:{version:1,routerRevision:3,capabilities:['tasks.clear-history','tasks.archive-history','tasks.hide-history','tasks.restore-history','tasks.undo-history','tasks.retry','tasks.cancel','chats.rename','settings.update']},rollout:{mode:'active',percent:100}};
  else if(req.url==='/capabilities')result={version:'2.0.0',provider:'Gemini',models:['gemini-2.5-flash-lite','gemini-2.5-flash'],github:true,memory:true,maxAttempts:2,premium:{enabled:premiumEnabled,configured:true,...premiumLimits,dailyLeftUsd:premiumLimits.dailyCapUsd,monthLeftUsd:premiumLimits.monthCapUsd,account:{balanceUsd:9,availableUsd:4},selection:{policy:'reviewed-quality-first-v1',preferredName:'DeepSeek V4.1 Flash 1017'},example:{name:'DeepSeek V4.1 Flash 1017'}}};
