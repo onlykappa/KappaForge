@@ -140,6 +140,25 @@ class AdmissionTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, 'billed or unverifiable runners'):
             policy.check_runners()
 
+    def test_a_workflow_github_would_reject_for_a_duplicate_key_fails_the_check(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('execution_policy', infra.WORKFLOW_DIR.parents[1] / 'scripts/execution-policy.py')
+        policy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(policy)
+        # The Phase 1 Step 7 regression: a second permissions block in one job. PyYAML keeps the last value and
+        # passed every local check; GitHub rejected the file and no agent task could start.
+        broken = ('jobs:\n  code:\n    runs-on: ubuntu-latest\n    permissions:\n      actions: read\n'
+                  '    steps:\n    - run: echo\n    permissions:\n      contents: write\n')
+        self.assertEqual(policy.duplicate_keys(broken), ["line 8: duplicate key 'permissions'"])
+        self.assertEqual(policy.duplicate_keys('a:\n  b: 1\n  c:\n    b: 2\n  b: 3\n'), ["line 5: duplicate key 'b'"])
+        fine = ('jobs:\n  one:\n    runs-on: ubuntu-latest\n    steps:\n    - name: a\n      run: |-\n'
+                '        name: inside a script\n        name: again\n    - name: b\n      with:\n        name: x\n'
+                '  two:\n    runs-on: ubuntu-latest\n    steps:\n    - name: a\n')
+        self.assertEqual(policy.duplicate_keys(fine), [], 'sibling jobs, list items and block scalars may repeat keys')
+        for path in sorted(infra.WORKFLOW_DIR.glob('*.yml')):
+            with self.subTest(workflow=path.name):
+                self.assertEqual(policy.duplicate_keys(path.read_text(encoding='utf-8')), [])
+
     def test_real_request_boundary_blocks_dispatch_before_any_post(self):
         scope = intent_guard.ACTIVE.set(None)
         self.addCleanup(intent_guard.ACTIVE.reset, scope)
