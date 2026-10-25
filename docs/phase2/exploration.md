@@ -53,9 +53,12 @@ the model a tail slice of serialized JSON as if it were ordinary tool output.
 
 - Paths must be relative, inside the repository and not under `.git/`; `..`, absolute paths and unknown files are refused.
 - Binary files (with a NUL byte, or not UTF-8) and files over 300,000 characters are refused; search skips them.
-- Regex search accepts a conservative subset: backreferences, multiple repetitions and quantified groups with
-  alternatives are refused because they can backtrack unpredictably. Simpler patterns remain subject to deadline
-  checks during the repository scan.
+- Regex search refuses only the shapes known to backtrack catastrophically: backreferences, and a repeated group
+  that itself contains a repetition or alternatives (`(a+)+`, `(\w*)*`, `(a|aa)+`). Ordinary patterns with several
+  repetitions, such as `def\s+\w+\(` or `import\s+(\w+)`, work. Every regex search also runs in an isolated child
+  Python process with no environment, killed after 10 seconds or when the investigation's time runs out, whichever
+  comes first. A pattern the check misses is stopped and reported as invalid, never left running. Literal search runs
+  in-process with the usual deadline checks.
 - Repository content is untrusted evidence, never instructions; project instructions are conventions that never
   override KappaForge policy.
 - Investigation adds only files the agent actually read, within the remaining context budget, and records the line
