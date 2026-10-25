@@ -82,8 +82,10 @@ final review before publication. The ordinary no-change PR re-check regression r
 ## Remaining audit follow-ups
 
 These requested four repairs do not close the other audit observations: semantic overreach in the trivial-question
-filter, interruption within a long/regex exploration call, persistence of all exploration budget counters, and
-structured truncation of large model-facing tool results. Fixed-excerpt read-only analysis, dependency-update
-coverage, optional schema validation in CI and live model/phone demonstrations also remain documented limits.
-They should inform the separately authorized Phase 3 scope; this document does not claim production autonomy is
-fully proven. Test execution counts and local-versus-CI evidence are kept in [testing-report.md](testing-report.md).
+filter, interruption within a long/regex exploration call, and fixed-excerpt read-only analysis, dependency-update
+coverage, optional schema validation in CI and live model/phone demonstrations. The structured truncation issue was
+fixed in PR #272: oversized tool results now retain JSON fields and leading evidence, report omitted characters and
+items, and remain within the model-facing result cap. Regression tests cover large source reads and paged search
+results. These remaining items should inform the separately authorized Phase 3 scope; this document does not claim
+production autonomy is fully proven. Test execution counts and local-versus-CI evidence are kept in
+[testing-report.md](testing-report.md).

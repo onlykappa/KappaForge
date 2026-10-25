@@ -41,6 +41,12 @@ limit completes and the next one returns `budget_exhausted` naming the budget. T
 reason `budget_exhausted`; no further tool runs or model calls follow, and whatever was read so far is kept. The
 loop's own invalid-reply and repeated-call limits still apply.
 
+The model-facing loop also caps each serialized result at 3,000 characters. If a tool returns more, the loop keeps
+the JSON fields and their types, preserves leading source text and list entries, and adds a `_tool_loop_truncation`
+record with omitted character/item counts. Long strings carry an omission marker. The returned path, page and line
+metadata stay available so the agent can request a narrower range or another page when needed; the loop never hands
+the model a tail slice of serialized JSON as if it were ordinary tool output.
+
 ## Boundaries
 
 - Paths must be relative, inside the repository and not under `.git/`; `..`, absolute paths and unknown files are refused.
