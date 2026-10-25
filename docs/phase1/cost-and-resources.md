@@ -26,9 +26,42 @@ Queued jobs are not proof that a runner is available. No code changes account bi
 resolve a queue or an API failure. The existing workflows remain reviewed code; this is not a sandbox for arbitrary
 new workflow programs or third-party actions. It cannot make GitHub ref/visibility changes atomic with dispatch.
 
+## Jobs the chat Worker starts
+
+The Cloudflare Worker (`chat-backend/src/free-execution.js`) starts and re-runs Actions jobs without the engine:
+task launch and retry, owner guidance, Fix it, Run tests, Validate, Undo's test run, the durable recovery wake-up
+and the Actions panel re-run buttons. Each one now reads live metadata first and dispatches nothing unless:
+
+- the repository is the active, unarchived, public `onlykappa/KappaForge` (or, for a re-run, the public owner
+  repository the run belongs to);
+- a dispatched workflow is in the same reviewed allowlist the engine uses (read from
+  `config/execution-infrastructure.json`) and GitHub reports it enabled; a dispatch always targets `main`;
+- every job of a run to be re-run reports exactly one standard GitHub-hosted label. Larger runners (custom names,
+  `*-large`, `*-xlarge`) are billed even on public repositories, and self-hosted machines are not a reviewed sandbox.
+
+A refusal returns HTTP 409 with `code: execution_resource` and the failed condition. A request that would start more
+than one workflow checks all of them before the first dispatch, and task launch checks before creating the issue or
+debiting the daily run budget, so a refusal leaves nothing behind. Cancelling a run allocates nothing and needs no check.
+
+The recovery wake-up treats a policy refusal as a stop, not a delivery failure: the queued row is marked
+`free_execution_unavailable` with the reason (shown by its status), and no further delivery is attempted. Scheduling
+recovery again after correcting the condition rechecks it. A GitHub outage (network error, HTTP 5xx or 429) still
+dispatches nothing; it takes the existing bounded retry and counts toward the three-delivery limit.
+
+The engine applies the same rule to re-runs: `authorize_dispatch` refuses the run and job re-run endpoints, because a
+re-run repeats the original run's runners and ref, which admission cannot pin. The engine only dispatches.
+
+## Every workflow's runners
+
+Most workflows are not dispatched by KappaForge at all; they run on push, pull request or schedule. CI
+(`python3 scripts/execution-policy.py --check` in the tests workflow) now also checks every workflow file, so no
+job anywhere can move onto billed capacity unnoticed. Each job must declare exactly one literal standard
+GitHub-hosted label; a larger runner, an expression, a list or group, or a reusable workflow job fails the check.
+
 ## Before sandbox execution
 
-The agent code job runs a non-allocating preflight before model work. Each sandbox preparation/command, including
+The agent code job runs a non-allocating preflight before model work; the job grants its token `actions: read` so
+it can read its own runner metadata. Each sandbox preparation/command, including
 one with a cached image, rechecks the current repository and the actual running job in the current run attempt.
 The job must be a GitHub-hosted Linux job with the standard `ubuntu-latest` label, matched by its runner identity.
 An already completed command restored from its exact receipt needs no infrastructure allocation or repeated command.
@@ -51,6 +84,10 @@ restore read/daemon permissions, use the existing standard runner, wait for capa
 controls or remove a remote Docker configuration. The controller preserves its exact candidate checkpoint and marks
 execution/final validation blocked. It does not invoke a repair model to fix infrastructure or automatically retry
 with different hosting. A later authorized retry rechecks the original workspace and current infrastructure.
+
+Paid features are never a fallback. Free model routes keep the existing $0 inference guard; the owner-approved premium
+smoke test runs only from a branch the engine's scope cannot write. Cloudflare and GitHub plans, spending limits and
+billing settings are never read or changed by code; activating paid capacity remains a manual owner decision.
 
 Only bounded, nonsecret admission evidence (repository/run/job, label, timestamps and numeric resource measurements)
 is retained. Tokens remain in the privileged engine and never reach a container. GitHub failures report their class,

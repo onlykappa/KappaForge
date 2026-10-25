@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import worker,{KappaMemory} from '../chat-backend/src/index.js';
 import {reviewPR,mergePR,incomplete} from '../chat-backend/src/review.js';
 import {agentWork} from '../chat-backend/src/agent-work.js';
+import {withFreeExecution} from './free-execution-fixture.mjs';
 
 const request=(path,body)=>new Request('https://audit.test'+path,{method:'POST',headers:{Origin:'https://onlykappa.github.io',Authorization:'Bearer audit'},body:JSON.stringify(body)});
 function environment(){
@@ -11,7 +12,7 @@ function environment(){
  const memory=new KappaMemory({storage});
  return {records,env:{CHAT_ACCESS_TOKEN:'audit',GITHUB_JOB_TOKEN:'fake',MEMORY:{idFromName:()=>'',get:()=>({fetch:(u,o)=>memory.fetch(new Request(u,o))})}}};
 }
-function mockFetch(t,fn){const old=globalThis.fetch;globalThis.fetch=fn;t.after(()=>globalThis.fetch=old)}
+function mockFetch(t,fn){const old=globalThis.fetch;globalThis.fetch=withFreeExecution(fn);t.after(()=>globalThis.fetch=old)}
 async function authorize(env,path,payload){
  payload.authorization={id:crypto.randomUUID(),requestId:crypto.randomUUID(),conversationId:'audit'};
  const r=await worker.fetch(request('/authorize',{path,payload,userText:payload.instructions||'Retry selected task',source:'user-control'}),env);

@@ -116,6 +116,30 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(infra.InfrastructureBlocked):
             infra.authorize_dispatch(URL.replace('agent.yml', 'deploy-chat.yml'), {'ref': 'main'}, get=self.get)
 
+    def test_automatic_reruns_cannot_reallocate_unpinned_runners(self):
+        get = Mock(side_effect=self.get)
+        for suffix in ('runs/9/rerun', 'runs/9/rerun-failed-jobs', 'jobs/9/rerun'):
+            with self.subTest(suffix=suffix), self.assertRaisesRegex(infra.InfrastructureBlocked, 're-runs are not admitted'):
+                infra.authorize_dispatch(f'https://api.github.com/repos/{infra.ROOT}/actions/{suffix}', {}, get=get)
+        get.assert_not_called()
+        self.assertIsNone(infra.authorize_dispatch(f'https://api.github.com/repos/{infra.ROOT}/actions/runs/9/cancel', {}, get=get))
+
+    def test_every_repository_workflow_is_checked_for_billed_runners(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('execution_policy', infra.WORKFLOW_DIR.parents[1] / 'scripts/execution-policy.py')
+        policy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(policy)
+        policy.check_runners()  # The checked-in workflows, including ones the engine never dispatches.
+        self.assertEqual(policy.paid_runners('on: push\njobs:\n  a:\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: macos-15\n'), [])
+        for body in ('    runs-on: ubuntu-latest-8-cores', '    runs-on: macos-15-xlarge', '    runs-on: [self-hosted, linux]',
+                     '    runs-on: ${{ matrix.os }}', '    runs-on:\n      group: paid', '    uses: org/repo/.github/workflows/x.yml@v1',
+                     '    steps: []'):
+            with self.subTest(body=body):
+                self.assertEqual(len(policy.paid_runners('jobs:\n  ok:\n    runs-on: ubuntu-latest\n  test:\n' + body + '\n')), 1)
+        with patch.object(policy, 'paid_runners', return_value=['job: runs-on larger']), \
+                self.assertRaisesRegex(ValueError, 'billed or unverifiable runners'):
+            policy.check_runners()
+
     def test_real_request_boundary_blocks_dispatch_before_any_post(self):
         scope = intent_guard.ACTIVE.set(None)
         self.addCleanup(intent_guard.ACTIVE.reset, scope)

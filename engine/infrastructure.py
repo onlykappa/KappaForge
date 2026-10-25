@@ -108,6 +108,9 @@ def workflow_runners(text):
 def authorize_dispatch(url, payload, token=None, get=None):
     """Recheck free classification before the API call which can allocate a job."""
     parsed = urllib.parse.urlsplit(url)
+    if re.search(r'/actions/(?:runs|jobs)/[^/]+/(?:rerun|rerun-failed-jobs)/?$', parsed.path):
+        # A re-run repeats whatever runners and ref the original run used, which this guard cannot pin.
+        raise blocked('automatic workflow re-runs are not admitted; the engine dispatches the reviewed workflow instead.')
     if not parsed.path.endswith('/dispatches'):
         return
     match = re.fullmatch(r'/repos/onlykappa/KappaForge/actions/workflows/([A-Za-z0-9.-]+)/dispatches', parsed.path)
