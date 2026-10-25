@@ -193,3 +193,31 @@ on the host and is excluded from Docker and container environments. Current CI r
 
 Paid capacity, private billing, actual quota exhaustion and remote builders are rejected through injected boundaries;
 none were activated for testing. Existing zero-dollar provider enforcement was covered by the full regression suites.
+
+## Step 8: tests and acceptance
+
+Every Phase 1 acceptance requirement now has a named test in `tests/test_phase1_acceptance.py`, mapped in
+[acceptance requirements and their tests](acceptance.md), with a new realistic faulty fixture
+(`tests/fixtures/sandbox/invoice-service`) that fails five of its eight tests until an evidence-driven agent repairs
+both bugs in two targeted steps.
+
+### Ran locally
+
+| Check | Measured result |
+| --- | --- |
+| Acceptance suite against real Docker | 15 tests passed in 120 s (11 real-Docker, 4 policy) on a local Docker 29.9.2 daemon |
+| Acceptance tests catch regressions | Raising the attempt limit to six, disabling identical-failure detection and running containers as root each made the matching acceptance test fail (scratch run, nothing committed) |
+| Full Python discovery | 844 tests ran, OK with 22 skipped (the 13 earlier real-Docker skips plus the 9 new real-Docker acceptance tests, which need `KAPPA_SANDBOX_INTEGRATION=1`) |
+| `npm test` | 851 passed |
+| Workflow policy, dependency map and whitespace | `scripts/execution-policy.py --check`, the regenerated map check and `git diff --check` passed |
+
+The local real-Docker run replaced only Step 7's admission check (which accepts nothing but a GitHub-hosted runner)
+with a stub, in a scratch runner script that is not part of the repository. In CI the *Sandbox self-test* workflow runs
+the suite with real admission, after the free-execution preflight.
+
+### Inspected, not run
+
+- Deploy and release triggers: the tests read the workflow files and confirm deploy and release start only from
+  `main`; no deployment or release was run.
+- Live model inference: the repair agent is scripted from the failing test names in each prompt. Whether a given free
+  model makes the same targeted choices is a model-quality question, not part of these acceptance requirements.
