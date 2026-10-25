@@ -31,7 +31,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 - [x] **1. Verify Phase 1** ([verification and findings](../phase2/phase1-verification.md)): inspect the Phase 1 branches and latest `main`; confirm the sandbox, tool schemas,
       checkpoints, guard, admission and transcript that Phase 2 builds on; record the dependency and any Phase 1 gap
       that Phase 2 needs. No duplicate tool infrastructure.
-- [ ] **2. Dynamic repository exploration**: read-only `search_code`, `read_file` (line ranges), `list_directory`,
+- [x] **2. Dynamic repository exploration** ([tools, budgets and boundaries](../phase2/exploration.md)): read-only `search_code`, `read_file` (line ranges), `list_directory`,
       `find_references`, `inspect_symbols` and `read_project_instructions` tools, callable repeatedly through the
       existing tool loop. Configurable budgets for calls, time, output size and context use replace the one-time file
       selection. Paginated, bounded and structured results; repository boundaries, binary-file rules and existing
