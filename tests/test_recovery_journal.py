@@ -475,6 +475,35 @@ class RecoveryJournalTests(unittest.TestCase):
                 self.assertEqual(self.journal.state['status'], 'blocked')
                 self.assertEqual(self.journal.state['candidate'], 'b' * 40)
 
+    def test_scheduled_recovery_resumes_candidate_drift_only_after_owner_guidance(self):
+        self.review(guidance_delay=None)
+        self.assertFalse(self.journal.begin('fix'))
+        self.assertEqual(self.world.journal().state['status'], 'blocked')
+        stamp = datetime.fromtimestamp(self.world.now, timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.world.rows.append(dict(id=len(self.world.rows) + 1, body='Guidance: continue the reviewed task',
+                                    user={'login': 'onlykappa'}, created_at=stamp))
+
+        results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now)
+
+        self.assertIn((130, 'queued'), results)
+        resumed = self.world.journal()
+        self.assertEqual(resumed.state['candidate'], 'd' * 40)
+        self.assertEqual(resumed.state['status'], 'dispatching')
+        self.assertEqual(resumed.state['continuations'], 1)
+        self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40, 'automatic recovery never moves the candidate branch')
+        self.assertEqual(len([call for call in self.world.calls if call[0].endswith('/dispatches')]), 1)
+
+    def test_scheduled_recovery_does_not_resume_candidate_drift_without_owner_guidance(self):
+        self.review(guidance_delay=None)
+        self.assertFalse(self.journal.begin('fix'))
+
+        results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now)
+
+        self.assertIn((130, 'blocked'), results)
+        self.assertEqual(self.world.journal().state['candidate'], 'b' * 40)
+        self.assertEqual(self.world.journal().state['continuations'], 0)
+        self.assertFalse(any(call[0].endswith('/dispatches') for call in self.world.calls))
+
     def test_changed_task_cancellation_and_expiry_revoke_continuation(self):
         self.journal.defer(RuntimeError('offline'))
         self.world.now += 301

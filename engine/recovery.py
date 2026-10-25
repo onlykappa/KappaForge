@@ -621,6 +621,24 @@ class Journal:
         self.state.update(candidate=head, files=sorted(set(files) | set(self.state['files'])))
         return True
 
+    def resume_reviewed_candidate(self):
+        """Requeue a candidate-drift stop only after explicit owner guidance validates the fast-forward."""
+        if self.state['status'] != 'blocked' or not self.state['events']:
+            return False
+        last = self.state['events'][-1]
+        if (last.get('error') != 'Candidate branch moved since the checkpoint; concurrent work is preserved'
+                or last.get('strategy') != 'stop'):
+            return False
+        branch = f'kappa/dev-{self.scope.number}'
+        head = self.target_read(f'repos/{self.scope.repo}/git/ref/heads/{branch}')['object']['sha']
+        if head == self.state['candidate'] or not self.adopt_reviewed_commits(head):
+            return False
+        now = self.clock()
+        self.state.update(status='waiting', run='', nextAt=now, waitingSince=now, waitReason='continue')
+        self.persist()
+        self.publish('queued', 'Owner guidance verified the newer candidate. Automatic continuation is queued.')
+        return True
+
     def begin(self, action=''):
         """Consume a dispatch exactly once, on the same authorization and candidate."""
         if action.startswith('resume:'):
@@ -831,6 +849,8 @@ def scan(read, write, clock=time.time, task=None):
                 journal.persist()
             if journal.state['status'] in ('running', 'recovering'):
                 journal.recover_interrupted()
+            if journal.state['status'] == 'blocked':
+                journal.resume_reviewed_candidate()
             # If dispatch acknowledgement was lost, the same token is safe to send
             # again. begin() consumes it once under the per-task workflow queue.
             if journal.state['status'] == 'dispatching' and clock() - journal.state['updatedAt'] > DISPATCH_ACK_SECONDS:
