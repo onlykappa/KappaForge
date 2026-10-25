@@ -25,6 +25,9 @@ A question can come from two places:
 - asks permission for an owner-only action (merge, deploy, release, change access). KappaForge never does these, so there is nothing to ask;
 - repeats a question this task already asked.
 
+The convention filter uses specific convention cues; a broad word such as “order” does not make a question trivial.
+For example, refund allocation order is business behavior and remains an owner question when the task leaves it open.
+
 There is no cap on the number of questions: a task asks as many as it genuinely needs over its life, one
 at a time, and each waits for the owner's answer before the next can be asked.
 
@@ -87,7 +90,7 @@ answer is guidance text, and API merges stay refused.
 
 ## Tests
 
-`tests/test_clarification.py` (16) covers:
+`tests/test_clarification.py` (17) covers:
 - **Question checks:** material questions are accepted once; convention questions are decided, not asked; owner-only and malformed questions are refused.
 - **Answers:** only the owner's guidance after the question counts; silence is never an answer; answers leave checkpoint identities unchanged.
 - **Asking:** one comment; the task is marked waiting and never auto-resumed; the question is bound to its request.
