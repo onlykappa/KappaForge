@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger
 
 
 MAX_ATTEMPTS = 5
@@ -264,7 +264,7 @@ class SandboxRepairController:
         and ask_owner when a checkpoint lets the task resume exactly after the answer."""
         tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
         explorer = self._workspace_explorer()
-        if explorer and explorer.remaining()["calls"] > 0:
+        if explorer:
             tools.update({name: (lambda n: lambda **kw: self._explore(n, **kw))(name) for name in exploration.Explorer.TOOLS})
         if self.journal:
             tools["ask_owner"] = self._ask_owner
@@ -281,17 +281,18 @@ class SandboxRepairController:
         return exploration.Repository({path: len(data) for path, data in files.items()}, read)
 
     def _workspace_explorer(self):
-        """One exploration budget per task: calls already spent, saved in the checkpoint, survive a restart."""
+        """One exploration budget per task. Calls, time inside the tools, output and context already spent are kept
+        in the recovery journal (budget_ledger) and survive a restart; a resumed task never regains any of them."""
         if self.explorer is None:
-            budget = exploration.Budget.configured()
-            left = budget.calls - int(self.state.get("explored", 0))
-            if left <= 0:
-                return None
-            budget.calls = left
-            self._explored_before = int(self.state.get("explored", 0))
-            self.explorer = exploration.Explorer(self._workspace(), budget)
+            ledger = budget_ledger.Ledger(self.journal, "repairExploration")
+            # Checkpoints saved before the ledger existed recorded only the calls.
+            ledger.prior["calls"] = max(ledger.spent("calls"), int(self.state.get("explored", 0)))
+            self.explorer = exploration.Explorer(self._workspace(), exploration.Budget.configured(), ledger=ledger,
+                                                 active_time=True)
         else:
             self.explorer.repo = self._workspace()  # The candidate changes between actions; never read stale text.
+        if any(left <= 0 for left in self.explorer.remaining().values()):
+            return None
         return self.explorer
 
     def _explore(self, name, **args):
@@ -299,7 +300,7 @@ class SandboxRepairController:
         if explorer is None:
             return {"status": "invalid", "error": "the exploration budget for this task is used up"}
         result = explorer.call(name, **args)
-        self.state["explored"] = self._explored_before + explorer.calls
+        self.state["explored"] = explorer.totals()["calls"]
         return result
 
     def _investigate_failure(self, diagnostics):
@@ -419,6 +420,8 @@ class SandboxRepairController:
             self.progress.act("read", text, tool="read", count=1)
 
     def _result(self, status, stop_reason, summary="", diff="", test_results=None):
+        if self.explorer:
+            self.explorer.finish()
         if self.execution:
             if not summary:
                 summary = self.state["last_summary"]

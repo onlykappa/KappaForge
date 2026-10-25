@@ -33,6 +33,7 @@ from engine import task_plan
 from engine import requirements
 from engine import research
 from engine import clarification
+from engine import budget_ledger
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
@@ -2713,12 +2714,13 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             # The planner named what it could not tell from the listing: investigate before writing code, and keep
             # what was read. The saved plan below includes these files, so a resumed task does not investigate again.
             progress.now("Investigating the repository: " + "; ".join(questions)[:200])
-            researcher = research.Research(private_sources=sources, private_paths=existing)
+            researcher = research.Research(private_sources=sources, private_paths=existing,
+                                           ledger=budget_ledger.Ledger(journal, "research"))
             research.CURRENT.set(researcher)
             added, found, summary = exploration.investigate(
                 run_model, api_key, task, exploration.CURRENT.get(), sources, list(questions), allowed,
                 report=progress.act, add_limit=max(0, LARGE.context_chars - sum(map(len, sources.values()))),
-                research=researcher)
+                research=researcher, ledger=budget_ledger.Ledger(journal, "investigation"))
             sources.update(added)
             design = (design + ("\n\nInvestigation (" + str(found["calls"]) + " reads and searches): " + summary
                                 if summary else "") + research_notes(progress, researcher, bool(lookups))).strip()[:4000]

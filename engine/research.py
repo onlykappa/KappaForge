@@ -130,18 +130,23 @@ def default_opener(request, timeout):
 
 class Research:
     def __init__(self, settings=None, private_sources=None, private_paths=(), opener=None,
-                 clock=time.time, monotonic=time.monotonic):
+                 clock=time.time, monotonic=time.monotonic, ledger=None):
         self.settings = settings or config()
         self.limits = self.settings['limits']
         self.private = []
         self.private_paths = {p for p in private_paths if isinstance(p, str) and p}
         self.register_private(private_sources or {})
         self.opener, self.clock, self.monotonic = opener or default_opener, clock, monotonic
-        self.started = monotonic()
+        # Spend continues from earlier runs of the task (engine/budget_ledger.py); time counts only while fetching.
+        self.ledger = ledger
+        self.fetch_seconds = 0.0
         self.sources = []   # Provenance of every attempt.
         self.claims = []    # Cited claims, verified or not.
         self.pages = {}     # Source id -> fetched text, for citation checks.
         self.fetches = self.bytes = 0
+        if ledger:
+            self.fetches, self.bytes = int(ledger.spent('fetches')), int(ledger.spent('bytes'))
+            self.fetch_seconds = float(ledger.spent('seconds'))
         self._versions = {}  # (ecosystem, name) -> (versions, latest, source id)
         self.documents = {}  # url (requested and final) -> (source record, text, code blocks): fetched once per task
 
@@ -263,11 +268,31 @@ class Research:
             return self._record(tool, url, 'refused', reason=problem), '', ''
         if self.fetches >= self.limits['fetches']:
             return self._record(tool, url, 'budget_exhausted', reason='fetches'), '', ''
-        if self.monotonic() - self.started >= self.limits['seconds']:
+        if self.fetch_seconds >= self.limits['seconds']:
             return self._record(tool, url, 'budget_exhausted', reason='seconds'), '', ''
         if self.bytes >= self.limits['total_bytes']:
             return self._record(tool, url, 'budget_exhausted', reason='total_bytes'), '', ''
         self.fetches += 1
+        self._save_spend()  # Paid before the request: a run that dies mid-fetch cannot regain it.
+        started = self.monotonic()
+        try:
+            return self._fetch(tool, url, accept)
+        finally:
+            self.fetch_seconds += self.monotonic() - started
+            self._save_spend()  # And its bytes and time, as soon as it returns.
+
+    def _save_spend(self, flush=True):
+        if self.ledger:
+            self.ledger.record({'fetches': self.fetches, 'bytes': self.bytes, 'seconds': self.fetch_seconds}, flush)
+
+    def remaining_fetches(self):
+        return max(0, self.limits['fetches'] - self.fetches)
+
+    def finish(self):
+        """Save the task's research spend; a later run starts from it."""
+        self._save_spend()
+
+    def _fetch(self, tool, url, accept):
         current = url
         try:
             for _ in range(self.limits['redirects'] + 1):

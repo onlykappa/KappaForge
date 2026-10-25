@@ -112,17 +112,38 @@ class Explorer:
     """The six exploration tools, all spending from one Budget. Records every path it read for the plan's evidence."""
     TOOLS = ('search_code', 'read_file', 'list_directory', 'find_references', 'inspect_symbols', 'read_project_instructions')
 
-    def __init__(self, repository, budget=None, clock=time.monotonic):
+    def __init__(self, repository, budget=None, clock=time.monotonic, ledger=None, active_time=False):
+        """`ledger` (engine/budget_ledger.py) carries what earlier runs of the task spent, so a resumed task continues
+        from that total. With `active_time`, only time inside tool calls counts (the repair loop, where tests and model
+        turns run between reads); otherwise the time since the explorer started."""
         self.repo, self.budget, self.clock = repository, budget or Budget.configured(), clock
         self.started, self.calls, self.output, self.context = clock(), 0, 0, 0
+        self.active_time, self.active = active_time, 0.0
+        self.ledger = ledger
         self.read = {}       # path -> set of (start, end) ranges read
         self.log = []        # [{tool, args, status, chars}]
         self.exhausted = ''
 
     # -- budget -------------------------------------------------------------------------------------------------
+    def elapsed(self):
+        return self.active if self.active_time else self.clock() - self.started
+
+    def totals(self):
+        """What the task has spent: earlier runs (from the ledger) plus this one."""
+        prior = self.ledger.spent if self.ledger else (lambda key: 0)
+        return {'calls': prior('calls') + self.calls, 'seconds': prior('seconds') + self.elapsed(),
+                'output_chars': prior('output_chars') + self.output, 'context_chars': prior('context_chars') + self.context}
+
     def remaining(self):
-        return {'calls': self.budget.calls - self.calls, 'seconds': round(self.budget.seconds - (self.clock() - self.started), 1),
-                'output_chars': self.budget.output_chars - self.output, 'context_chars': self.budget.context_chars - self.context}
+        spent = self.totals()
+        return {'calls': self.budget.calls - spent['calls'], 'seconds': round(self.budget.seconds - spent['seconds'], 1),
+                'output_chars': self.budget.output_chars - spent['output_chars'],
+                'context_chars': self.budget.context_chars - spent['context_chars']}
+
+    def finish(self):
+        """Save the task's totals; a later run starts from them."""
+        if self.ledger:
+            self.ledger.record(self.totals())
 
     def _spend(self, name, args, result):
         text = json.dumps(result, ensure_ascii=False)
@@ -149,6 +170,9 @@ class Explorer:
         if stop:
             return stop
         self.calls += 1
+        if self.ledger:
+            self.ledger.record(self.totals())  # Paid before it runs: a run that dies mid-call cannot regain it.
+        started = self.clock()
         try:
             result = getattr(self, '_' + name)(**args)
         except TypeError as exc:
@@ -156,7 +180,11 @@ class Explorer:
         except (LookupError, ValueError, re.error) as exc:
             result = {'status': 'invalid', 'error': str(exc)[:300]}
         result.setdefault('status', 'ok')
-        return self._spend(name, args, result)
+        self.active += self.clock() - started
+        result = self._spend(name, args, result)
+        if self.ledger:
+            self.ledger.record(self.totals())  # And its output and time, as soon as it returns.
+        return result
 
     def tools(self):
         """Bound methods for the Phase 1 tool loop, which dispatches by name with keyword arguments."""
@@ -319,7 +347,7 @@ def module_paths(module, files):
 
 
 def investigate(run_model, api_key, task, repository, sources, questions, allowed=None, budget=None, report=None,
-                add_limit=None, research=None):
+                add_limit=None, research=None, ledger=None):
     """Answer the planner's open questions with the exploration tools, then add the files read to the sources.
 
     Returns (added {path: text}, evidence, summary). The loop stops when the agent is done, when a budget runs out,
@@ -328,7 +356,12 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
     are in evidence['research'].
     """
     from engine import tool_loop
-    explorer = Explorer(repository, budget)
+    explorer = Explorer(repository, budget, ledger=ledger)
+    if explorer.remaining()['calls'] <= 0 and not research:
+        # An earlier run of this task spent the whole budget; a resumed run gets none of it back.
+        evidence = explorer.evidence()
+        evidence.update(stop='budget_exhausted', exhausted='calls')
+        return {}, evidence, ''
     known = sorted(sources)
     brief = (task + '\n\nThe plan already reads: ' + (', '.join(known[:40]) or 'nothing yet') +
              '\nOpen questions to answer before writing code:\n' + '\n'.join('- ' + q for q in questions) +
@@ -359,7 +392,7 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
             return call
         tools = {name: observed(tool) for name, tool in tools.items()}
         tools.update(research.tools())
-    steps = explorer.budget.calls + 1 + (research.limits['fetches'] + 4 if research else 0)  # Citing costs no fetch.
+    steps = max(0, explorer.remaining()['calls']) + 1 + (research.remaining_fetches() + 4 if research else 0)  # Citing costs no fetch.
     out = tool_loop.run_tool_loop(run_model, api_key, brief, tools, max_steps=steps, allowed=allowed, on_call=narrate)
     for step in out['steps']:
         result, args = step.get('result') or {}, step.get('args') or {}
@@ -394,6 +427,9 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
             continue
         added[path] = text
         used += len(text)
+    explorer.finish()
+    if research:
+        research.finish()
     evidence = explorer.evidence()
     evidence['stop'] = out['stop_reason']
     if research:
