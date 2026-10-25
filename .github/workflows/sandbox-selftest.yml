@@ -17,6 +17,8 @@ on:
     - tests/test_execution_recovery.py
     - tests/test_infrastructure.py
     - tests/test_phase1_acceptance.py
+    - tests/test_phase2_exploration_repair.py
+    - engine/exploration.py
     - tests/fixtures/sandbox/**
     - tools/sandbox_selftest.py
     - .github/workflows/sandbox-selftest.yml
@@ -63,6 +65,14 @@ jobs:
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
         python -m unittest tests.test_phase1_acceptance -v
+      shell: bash
+    - name: Phase 2 exploration inside sandbox repair on the shop fixture
+      env:
+        KAPPA_SANDBOX_INTEGRATION: '1'
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest tests.test_phase2_exploration_repair -v
       shell: bash
     - name: KappaForge's own suites inside the sandbox
       run: |-

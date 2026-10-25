@@ -60,7 +60,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
       answer is persisted, the task resumes from its checkpoint and revalidates affected assumptions. Built on the
       existing guidance, retry and resume paths. No questions for trivial, convention-resolvable decisions; approval
       is never fabricated or inferred from silence.
-- [ ] **7. Exploration inside sandbox execution**: one persisted task alternates investigation, planning, editing and
+- [x] **7. Exploration inside sandbox execution** ([investigate, plan, edit, test](../phase2/sandbox-exploration.md)): one persisted task alternates investigation, planning, editing and
       testing. For example, a test reveals a missing export; the agent searches for it, reads the defining module,
       follows the import chain, updates its plan, patches the right place and reruns the focused test.
 - [ ] **8. Regression tests and acceptance**: automated proof of every Phase 2 requirement (below), including an

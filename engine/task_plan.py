@@ -218,6 +218,22 @@ def load(journal, repo, sha, task):
     return TaskPlan.from_dict(record['plan'])
 
 
+def update(progress, method, reason, trigger, *entries, **changes):
+    """Revise the running task's plan (TaskPlan.revise/add/done/resolve), say why in the feed, and save it.
+    Does nothing when no plan is running (a fix run, a test)."""
+    plan = CURRENT.get()
+    if plan is None:
+        return None
+    revision = getattr(plan, method)(reason, trigger, *entries, **changes)
+    if revision:
+        if progress:
+            progress.act("plan", "Plan revised: " + reason[:200], say=True)
+        storage = getattr(plan, "storage", None)
+        if storage:
+            save(storage[0], plan, *storage[1:])
+    return revision
+
+
 def scoped(function):
     """The plan belongs to one task run; it is cleared when the run returns or raises."""
     @functools.wraps(function)

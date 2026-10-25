@@ -528,17 +528,8 @@ def build_repo_map(repo, sha, files, token, sources=None):
 
 
 def plan_update(progress, method, reason, trigger, *entries, **changes):
-    """Revise the running task's plan (TaskPlan.revise/add/done), announce why in the feed, and save it."""
-    plan = task_plan.CURRENT.get()
-    if plan is None:
-        return None
-    revision = getattr(plan, method)(reason, trigger, *entries, **changes)
-    if revision:
-        progress.act("plan", "Plan revised: " + reason[:200], say=True)
-        storage = getattr(plan, "storage", None)
-        if storage:
-            task_plan.save(storage[0], plan, *storage[1:])
-    return revision
+    """Revise the running task's plan, announce why in the feed, and save it (task_plan.update)."""
+    return task_plan.update(progress, method, reason, trigger, *entries, **changes)
 
 
 def research_notes(progress, researcher, needed):

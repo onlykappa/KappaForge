@@ -280,6 +280,44 @@ class Explorer:
         return {'read': merged, 'calls': self.calls, 'exhausted': self.exhausted, 'budget': asdict(self.budget)}
 
 
+# Failure messages that name what is missing: a symbol, a module, or both (Python and JavaScript runtimes).
+LEAD_PATTERNS = (
+    (re.compile(r"cannot import name '([A-Za-z_]\w*)' from '([\w.]+)'"), ('symbol', 'module')),
+    (re.compile(r"No module named '([\w.]+)'"), ('module',)),
+    (re.compile(r"\bmodule '([\w.]+)' has no attribute '([A-Za-z_]\w*)'"), ('module', 'symbol')),
+    (re.compile(r"NameError: name '([A-Za-z_]\w*)' is not defined"), ('symbol',)),
+    (re.compile(r"'([A-Za-z_]\w*)' object has no attribute '([A-Za-z_]\w*)'"), ('owner', 'symbol')),
+    (re.compile(r"requested module '([^']+)' does not provide an export named '([A-Za-z_$][\w$]*)'"), ('module', 'symbol')),
+    (re.compile(r"Cannot find module '([^']+)'"), ('module',)),
+    (re.compile(r"ReferenceError: ([A-Za-z_$][\w$]*) is not defined"), ('symbol',)),
+    (re.compile(r"TypeError: (?:[\w$]+\.)*([A-Za-z_$][\w$]*) is not a function"), ('symbol',)),
+)
+
+
+def leads(text, limit=4):
+    """What a failure says is missing, as [{symbol?, module?, owner?}], most specific first and deduplicated."""
+    found, seen = [], set()
+    for pattern, names in LEAD_PATTERNS:
+        for match in pattern.finditer(text or ''):
+            lead = dict(zip(names, match.groups()))
+            key = tuple(sorted(lead.items()))
+            if key not in seen:
+                seen.add(key)
+                found.append(lead)
+    return found[:limit]
+
+
+def module_paths(module, files):
+    """Repository files a module name may refer to: pkg.mod -> pkg/mod.py or pkg/mod/__init__.py; ./x -> x.js ..."""
+    module = module.strip()
+    if module.startswith(('.', '/')):
+        stem = module.lstrip('./')
+        candidates = [stem, stem + '.js', stem + '.mjs', stem + '.ts', stem + '/index.js']
+        return [p for p in files if any(p == c or p.endswith('/' + c) for c in candidates)][:3]
+    base = module.replace('.', '/')
+    return [p for p in (base + '.py', base + '/__init__.py', base + '.js', base + '/index.js') if p in files]
+
+
 def investigate(run_model, api_key, task, repository, sources, questions, allowed=None, budget=None, report=None,
                 add_limit=None, research=None):
     """Answer the planner's open questions with the exploration tools, then add the files read to the sources.
