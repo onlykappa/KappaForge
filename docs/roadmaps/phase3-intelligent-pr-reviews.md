@@ -1,7 +1,7 @@
 # Phase 3 roadmap: intelligent PR reviews, visual testing and owner approval
 
 **Repository:** `onlykappa/KappaForge`  
-**Tracking:** one draft PR for all of Phase 3, associated with task #273.  
+**Tracking:** one draft PR for all of Phase 3, associated with task #274 and draft PR #275.  
 **Starting point:** latest `main` verified at `ce7a5645cee806ddc4d0df523cbcb68f4be1117f` (2026-10-25).  
 **Dependencies:** merged Phase 1 sandbox/execution and Phase 2 dynamic exploration, task planning, classification, research and clarification.  
 **Owner boundary:** no automatic merge, release, deployment, access change, branch-protection change or production configuration change. A successful test, positive review or readiness recommendation is never merge authorization. Only the authenticated owner may perform an explicit merge action.
