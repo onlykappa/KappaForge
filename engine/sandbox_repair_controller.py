@@ -58,11 +58,11 @@ class SandboxRepairController:
                                          + " Their answer is in the task under OWNER ANSWERS."])[-10:]
                 self.state["question"] = None
                 self.execution._save()
+            if self.session.test_definition_changed():
+                return self._result("failed", "test_definition_changed", "Candidate changes the test command")
             if self.state["phase"] == "complete":
                 return self._result(self.state["status"], self.state["stop_reason"], self.state["last_summary"],
                                     self.state["last_diff"], self.state.get("test_results"))
-            if self.session.test_definition_changed():
-                return self._result("failed", "test_definition_changed", "Candidate changes the test command")
             self.execution.transition("dependencies", message="Restore isolated dependencies; previous runner volumes cannot be reused")
             installs = self.session.install()
             bad_installs = [item for item in installs if not item.ok and item.status != "skipped"]
@@ -72,6 +72,8 @@ class SandboxRepairController:
                                     self._format_runs(bad_installs))
 
             while True:
+                if self.session.test_definition_changed():
+                    return self._result("failed", "test_definition_changed", "Candidate changes the test command")
                 phase = self.state["phase"]
                 self.execution.transition(phase)
                 if phase in ("candidate", "final"):

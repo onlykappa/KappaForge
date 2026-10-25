@@ -82,3 +82,30 @@ environments. Neither total means all integration tests ran in ordinary unittest
    Record actual task/run evidence, failures and costs rather than extrapolating from the scripted fixtures.
 4. Keep the journal/task identity, authorization guard, bounded exploration and literal research provenance intact
    when extending behavior. Nothing in this report authorizes Phase 3 implementation, merge, deployment or release.
+
+## Post-acceptance audit repairs
+
+After section 8, a code/behavior audit identified four publication, privacy and clarification gaps that the earlier
+acceptance tests did not cover. The owner requested these fixes in #264. [Audit repairs](audit-hardening.md) records
+the root causes, implementation boundaries, regression mapping and remaining audit follow-ups.
+
+Local checks actually run during hardening:
+
+| Check | Result |
+| --- | --- |
+| Full Python suite | 982 discovered: 949 passed, 33 skipped; zero failures/errors |
+| Full Python suite with all four HTTP(S) proxy variables set to `http://127.0.0.1:9` | 982 discovered: 949 passed, 33 skipped; zero failures/errors |
+| `npm test` | 857 passed; zero failures/skips |
+| New `test_phase2_audit_repairs` module | 12 tests; included in full discovery, including the production repair-controller/journal question round trip |
+| Dependency map generation and check; execution policy; whitespace | Passed |
+
+The additional local skip is the new real-Docker npm script-substitution regression. It is in the existing Phase 1
+acceptance module exercised by `Sandbox self-test`, not counted as locally executed. Docker and iOS were unavailable
+locally. The hardening commit's `sandbox`, `research`, ordinary test and native jobs require fresh post-push results;
+earlier CI run links above prove the earlier implementation, not these repairs. Final post-push evidence is recorded
+in PR #264's description. No tests were removed, disabled or relaxed; the resume fixture now includes the review's
+candidate digest and still requires completed unchanged work not to repeat.
+
+The other audit observations remain open and are listed in `audit-hardening.md`. These repairs establish regression
+coverage for the four requested issues; they are not a claim that unattended production task quality, all toolchain
+configurations, or every exploration edge case has been demonstrated.

@@ -154,7 +154,7 @@ GitHub-hosted runners for private repositories have 2 vCPUs, 7 GB RAM and 14 GB 
 | `Session.run(command, profile)` | Policy check, then a fresh tmpfs copy of the candidate in a networkless container; returns status, exit code, real UTC timestamps, duration and bounded, redacted output |
 | `Session.run_tests()` | Validation commands from the base revision: `KAPPA.md` `Test command:`, then `package.json` `test`, then the Python test layout (unittest, or pytest when required) |
 | `Policy` + `Python` / `Node` adapters | One program per command, no shell operators; allowed: `python -m unittest/pytest/compileall/py_compile`, repository `.py` scripts, `node --test/--check`, repository JS scripts, `npm test`, `npm run <package.json script>`. Everything else is `rejected` without starting a container |
-| `test_definition_changed()` | Flags a candidate that edits its own test command (`KAPPA.md` or `package.json` `scripts.test`) |
+| `test_definition_changed()` | Refuses a candidate that edits its base test command (`KAPPA.md`) or npm script map, including hooks/delegates; rechecked after every repair and by the test runner |
 | `SandboxUnavailable` | Terminal: no Docker, an image pull failure (Docker Hub 429 named) or a failed image build; nothing runs |
 
 New toolchains are a `Toolchain` subclass (`detect`, `install`, `tests`, `allows`) added to `TOOLCHAINS`.

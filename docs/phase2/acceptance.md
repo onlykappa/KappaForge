@@ -41,3 +41,10 @@ The clarification pipeline uses a stateful GitHub test boundary, not a live phon
 Architecture, boundaries and policy: [Phase 1 reuse](phase1-verification.md), [exploration](exploration.md),
 [task plan](task-plan.md), [requirements](requirements.md), [research allowlist and data rules](research.md),
 [clarification](clarification.md), and [sandbox investigation](sandbox-exploration.md).
+
+## Audit regression coverage
+
+[Audit repairs](audit-hardening.md) adds `tests/test_phase2_audit_repairs.py` to the ordinary `unit` suite: immutable
+npm validation scripts, final-candidate requirement/flag checks, live source registration for research, encoded URL
+refusals and Fix it owner clarification/resume. The additional real-Docker npm bypass regression in
+`tests/test_phase1_acceptance.py` runs in the existing `sandbox` job. No earlier acceptance check was removed or disabled.

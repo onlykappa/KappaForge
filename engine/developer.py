@@ -2327,7 +2327,7 @@ MAX_CHECK_ROUNDS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
-                   receipt=None, defer_lifecycle=False):
+                   receipt=None, defer_lifecycle=False, review_only=False):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
 
     `receipt` is GitHub's record of this task's draft PR (verify.pr_receipt); it alone decides PR lifecycle asks.
@@ -2415,6 +2415,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             problems.append("No test proves the change works yet: add or update a regression test")
         problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
         task_state.review(reqs, problems)
+        if review_only:
+            break  # The sandbox receipt belongs to this exact candidate; a final review must never edit it.
         # After the last free round, one premium rescue of this step may follow: only when the free review itself ran
         # (an unavailable review is a capacity problem, not proof the free models cannot do it) and the step has not had
         # one. The re-check after it is free again.
@@ -2532,6 +2534,29 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     if problems and not verdict:
         verdict = "\n".join("- Problem: " + p[:300] for p in problems)
     return changes, verdict, problems
+
+
+def review_sandbox_candidate(api_key, task, repo, sha, token, sources, changes, body, allowed, progress,
+                             guide='', design='', require_test=False, receipt=None, defer_lifecycle=False):
+    """Recheck the exact tested patch. New files, requirements and sensitive changes cannot bypass publication gates."""
+    from engine import execution
+    goal = task_goal.CURRENT.get()
+    if goal:
+        goal.validate(changes)
+    existing, _ = list_tree(repo, sha, token)
+    baseline = dict(sources)
+    for path in changes:
+        if path not in baseline and path in existing:
+            baseline[path] = read_source(repo, path, sha, token)
+    flags = change_flags(repo, baseline, changes, body)
+    if flags:
+        raise PermissionError('Sandbox repair introduced flagged changes: ' + '; '.join(flags))
+    expected = execution.digest(changes)
+    reviewed, verdict, problems = check_the_work(api_key, task, repo, sha, token, baseline, existing, dict(changes),
+        guide, allowed, design, require_test, progress, receipt=receipt, defer_lifecycle=defer_lifecycle, review_only=True)
+    if execution.digest(reviewed) != expected:
+        raise execution.CheckpointMismatch('Final review changed the sandbox-validated candidate')
+    return verdict, problems
 
 
 @task_goal.owner_task
@@ -2751,10 +2776,12 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         stop_for_flags(repo, number, flags, token)
         return None
     progress.now("Running the candidate in the isolated sandbox")
+    reviewed_candidate = resumed['context'].get('reviewed_candidate') if resumed else execution.digest(changes)
     validation_result = run_sandbox_repair(repo, saved["sha"], repo_token, changes, task, api_key, allowed,
                                            base_sources=sources, context=dict(kind="develop", base=base, model=model,
                                            summary=summary, explanation=explanation, stages=[str(s) for s in stages],
                                            design=design, open_problems=open_problems,
+                                           reviewed_candidate=reviewed_candidate,
                                            clarifications=[{"id": r["id"]} for r in asked], publication=dict(
                                            title=f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
                                            body=workflow_notice(sources, changes) + review_body(number, model, explanation,
@@ -2780,6 +2807,19 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     plan_update(progress, "add", "The candidate passed the full sandbox regression before its first commit", "test",
                 completed=["Sandbox: full test suite passed on the uncommitted candidate"])
     changes = validation_result["candidate_changes"]
+    if execution.digest(changes) != reviewed_candidate or (resumed and answered):
+        classify_task(progress, journal, repo, request)
+        verdict, open_problems = review_sandbox_candidate(api_key, task, repo, saved['sha'], repo_token, sources,
+            changes, body, allowed, progress, guide='' if resumed else guide, design=design,
+            require_test=tests_required(existing), receipt=verify.pr_receipt(saved['pr'], repo, branch) if saved['pr'] else None,
+            defer_lifecycle=not saved['pr'])
+        if open_problems:
+            progress.ok('Final sandbox candidate did not pass requirement review; saved for review without publication',
+                        phase=True, status='blocked')
+            gh(f'repos/{ROOT}/issues/{number}/comments', token,
+               {'body': '### Final candidate review stopped\n\n' + verdict + '\n\n' + review_record(open_problems)})
+            return None
+        explanation = summary = verdict
     summary = (summary + "\n\nSandbox validation: " + validation_result["summary"] +
                "\n\nRepair attempts:\n" + repair_history(validation_result))[:8000]
     task_state.checkpoint(saved["sha"], changes)
@@ -3027,6 +3067,18 @@ def files_named_in(log, existing, changed):
     return [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
 
 
+def anchor_pr_goal(goal, pr, repo, token, head):
+    """A resumed fix retains the same immutable baseline as a freshly generated fix."""
+    if not goal.paths:
+        return
+    base = (pr.get('base') or {}).get('sha')
+    if not base:
+        raise ValueError('Owner goal: original PR base is unavailable; no repair was written')
+    comparison = gh(f'repos/{repo}/compare/{base}...{head}', token)
+    original = comparison['merge_base_commit']['sha']
+    goal.anchor(lambda path: read_target(repo, path, original, token))
+
+
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
@@ -3042,14 +3094,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
     task_state.observe_pr(pr, repo, branch)
-    if goal.paths:
-        base_sha = (pr.get('base') or {}).get('sha')
-        if not base_sha:
-            raise ValueError('Owner goal: original PR base is unavailable; no repair was written')
-        comparison = gh(f'repos/{repo}/compare/{base_sha}...{head_sha}', repo_token)
-        original = comparison['merge_base_commit']['sha']
-        # As when the task started: a target missing at the base releases the narrow goal before paths are checked.
-        goal.anchor(lambda path: read_target(repo, path, original, repo_token))
+    anchor_pr_goal(goal, pr, repo, repo_token, head_sha)
     goal.validate_paths(changed)
     existing, modes = list_tree(repo, head_sha, repo_token)
     guide = project_guide(repo, head_sha, existing, repo_token)
@@ -3278,6 +3323,10 @@ def report_stuck(repo, number, pr, fixes, failed, token, repo_token, comments):
 
 
 @task_goal.owner_task
+@exploration.scoped
+@task_plan.scoped
+@requirements.scoped
+@research.scoped
 def fix_pull_request(issue, api_key, token):
     """Owner-requested fix for a development PR whose sandbox tests failed on its latest commit."""
     if (issue.get("user") or {}).get("login", "").lower() != OWNER:
@@ -3286,6 +3335,15 @@ def fix_pull_request(issue, api_key, token):
     repo_token = token_for(repo, token)
     number = int(issue["number"])
     branch = f"kappa/dev-{number}"
+    journal = recovery.CURRENT.get()
+    request = task_goal.CURRENT.get().original
+    # Check the saved question before check polling, proposal generation or sandbox execution. A duplicate wake
+    # cannot consume a repair cycle while the owner has not answered.
+    try:
+        asked, answered = clarification.resume(journal, repo, request,
+            question_replies(number, token, journal, repo, request), OWNER)
+    except clarification.NeedsClarification:
+        return None
     prs = [p for p in gh(f"repos/{repo}/pulls?state=open&head={OWNER}:{branch}", repo_token)
            if p.get("head", {}).get("ref") == branch and (p.get("head", {}).get("repo") or {}).get("full_name") == repo]
     if len(prs) != 1:
@@ -3321,7 +3379,9 @@ def fix_pull_request(issue, api_key, token):
     run = failures[0] if failures else {"id": "requirements-review"}
     comments = gh(f"repos/{repo}/issues/{pr['number']}/comments?per_page=100", repo_token)
     fixes = sum(FIX_MARKER in (c.get("body") or "") for c in comments)
-    guidance = owner_guidance(number, token)
+    guidance = [g for g in owner_guidance(number, token) if " ".join(g.split()) not in answered]
+    review_guidance = guidance + ['Answer to KappaForge\'s question: ' + a for a in answered]
+    task_goal.CURRENT.get().guidance(review_guidance)
     failed = [j for r in failures for j in gh(f"repos/{ROOT}/actions/runs/{int(r['id'])}/jobs?per_page=30", token).get("jobs", [])
               if j.get("conclusion") == "failure"]
     native_history = native_build.summary(native_build.history(branch, token)) if native else ""
@@ -3339,6 +3399,7 @@ def fix_pull_request(issue, api_key, token):
         changes = resumed["changes"]
         cycle, cycle_limit = context["cycle"], context["cycle_limit"]
         _, modes = list_tree(repo, head, repo_token)
+        anchor_pr_goal(task_goal.CURRENT.get(), pr, repo, repo_token, head)
         saved = {"sha": head, "changes": {}}
         allowed = code_providers(is_private(repo, repo_token))
         progress = Progress(number, token, ahead=["Resume sandbox validation", "Push it and rerun the tests"])
@@ -3360,7 +3421,7 @@ def fix_pull_request(issue, api_key, token):
                           next_action='Read failed assertions and preserve original requirements')
         for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
             try:
-                model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, guidance,
+                model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, review_guidance,
                                                                             native_history, allowed=allowed)
                 break
             except GenerationFailure as exc:
@@ -3398,25 +3459,43 @@ def fix_pull_request(issue, api_key, token):
         stop_for_flags(repo, number, flags, token)
         return None
     progress.now("Applying the repair in the isolated sandbox and rerunning the full test suite")
-    sandbox_task = (issue.get("title", "") + "\n" + (issue.get("body") or "") +
-                    ("\n\nOwner guidance:\n" + "\n".join(guidance) if guidance else ""))
+    sandbox_task = clarification.with_answers(issue.get("title", "") + "\n" + (issue.get("body") or "") +
+                    ("\n\nOwner guidance:\n" + "\n".join(guidance) if guidance else ""), asked)
     repair_sources = {}
     for path in changes:
         try:
             repair_sources[path] = read_source(repo, path, head, repo_token)
         except (ValueError, UnicodeDecodeError, urllib.error.HTTPError):
             continue  # A new candidate file has no base text.
+    reviewed_candidate = resumed['context'].get('reviewed_candidate') if resumed else execution.digest(changes)
     validation = run_sandbox_repair(repo, head, repo_token, changes, sandbox_task, api_key, allowed,
                                     base_sources=repair_sources, context=dict(kind="fix", model=model,
                                     summary=summary, explanation=explanation, cycle=cycle, cycle_limit=cycle_limit,
+                                    reviewed_candidate=reviewed_candidate,
+                                    clarifications=[{'id': r['id']} for r in asked],
                                     publication=dict(body=re.split(r"\n\n## Latest fix\n", re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get('body') or ''))[0]
                                     + '\n\n## Latest fix\n' + (explanation or summary))))
+    if validation['status'] == 'needs_clarification' and journal:
+        clarification.ask(journal, repo, request, asked, validation['question'], 'repair', progress=progress,
+            post=lambda text: gh(f'repos/{ROOT}/issues/{number}/comments', token, {'body': text}))
+        return None
     if validation["status"] != "success":
         report_sandbox_failure(number, validation, token)
         progress.ok("Repair was retained as local evidence; no PR commit was made because sandbox validation stopped: "
                     + validation["stop_reason"], phase=True, status="blocked")
         return None
     changes = validation["candidate_changes"]
+    if execution.digest(changes) != reviewed_candidate or (resumed and answered):
+        classify_task(progress, journal, repo, request)
+        verdict, problems = review_sandbox_candidate(api_key, sandbox_task, repo, head, repo_token, repair_sources,
+            changes, issue.get('body') or '', allowed, progress, receipt=verify.pr_receipt(pr, repo, branch))
+        if problems:
+            progress.ok('Final sandbox repair did not pass requirement review; no commit was made', phase=True, status='blocked')
+            gh(f'repos/{ROOT}/issues/{number}/comments', token,
+               {'body': '### Final candidate review stopped\n\n' + verdict + '\n\n' + review_record(problems)})
+            return None
+        summary = verdict
+        explanation = verdict + '\n\n' + review_record([])
     summary = (summary + "\n\nSandbox validation: " + validation["summary"] +
                "\n\nRepair attempts:\n" + repair_history(validation))[:8000]
     if not changes:

@@ -346,7 +346,19 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
     def narrate(tool, args, reason):
         if report and isinstance(reason, str) and reason.strip():
             report('plan', reason.strip()[:240], say=True)
-    tools = dict(explorer.tools(), **(research.tools() if research else {}))
+    tools = explorer.tools()
+    if research:
+        def observed(tool):
+            def call(**args):
+                try:
+                    return tool(**args)
+                finally:
+                    # Searches and symbol inspection can expose source too. Register every loaded file, before
+                    # control returns to the model and it can issue a documentation request.
+                    research.register_private(repository._text)
+            return call
+        tools = {name: observed(tool) for name, tool in tools.items()}
+        tools.update(research.tools())
     steps = explorer.budget.calls + 1 + (research.limits['fetches'] + 4 if research else 0)  # Citing costs no fetch.
     out = tool_loop.run_tool_loop(run_model, api_key, brief, tools, max_steps=steps, allowed=allowed, on_call=narrate)
     for step in out['steps']:

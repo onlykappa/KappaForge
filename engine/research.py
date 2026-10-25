@@ -133,8 +133,9 @@ class Research:
                  clock=time.time, monotonic=time.monotonic):
         self.settings = settings or config()
         self.limits = self.settings['limits']
-        self.private = [t for t in (private_sources or {}).values() if isinstance(t, str)]
-        self.private_paths = {p for p in private_paths if isinstance(p, str) and len(p) >= 6}
+        self.private = []
+        self.private_paths = {p for p in private_paths if isinstance(p, str) and p}
+        self.register_private(private_sources or {})
         self.opener, self.clock, self.monotonic = opener or default_opener, clock, monotonic
         self.started = monotonic()
         self.sources = []   # Provenance of every attempt.
@@ -144,6 +145,16 @@ class Research:
         self._versions = {}  # (ecosystem, name) -> (versions, latest, source id)
         self.documents = {}  # url (requested and final) -> (source record, text, code blocks): fetched once per task
 
+    def register_private(self, sources):
+        """Newly explored source participates in outbound checks before the next research call."""
+        known = set(self.private)
+        for path, text in sources.items():
+            if isinstance(path, str) and path:
+                self.private_paths.add(path)
+            if isinstance(text, str) and text not in known:
+                self.private.append(text)
+                known.add(text)
+
     # ---- rules --------------------------------------------------------------------------------------------------
 
     def allowed_host(self, host):
@@ -152,9 +163,8 @@ class Research:
                    for entry in self.settings['hosts'])
 
     def outbound_problem(self, text, limit, free_text=True):
-        """Why this text may not leave KappaForge, or ''. Free text (a query, a URL's query string) is also checked
-        for repository paths and verbatim source excerpts; a documentation URL's path may repeat a public link the
-        code itself contains, and its host is already restricted to the allowlist."""
+        """Why this text may not leave KappaForge, or ''. All outbound URL components and free text are checked
+        for repository paths and verbatim source excerpts; a trusted host is not an exemption for private text."""
         from engine import execution
         if not isinstance(text, str) or not text.strip():
             return 'empty'
@@ -183,23 +193,63 @@ class Research:
     def url_problem(self, url):
         if not isinstance(url, str):
             return 'not a URL'
-        parts = urllib.parse.urlsplit(url)
+        try:
+            parts = urllib.parse.urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return 'malformed URL'
         if parts.scheme != 'https':
             return 'only https is allowed'
-        if parts.username or parts.password or parts.port not in (None, 443):
+        if parts.username or parts.password or port not in (None, 443):
             return 'credentials and ports are not allowed'
         if not self.allowed_host(parts.hostname):
             return 'host is not on the research allowlist: ' + str(parts.hostname)
-        problem = self.outbound_problem(url, self.limits['url_chars'], free_text=False)
-        if not problem and parts.query:
-            problem = self.outbound_problem(urllib.parse.unquote_plus(parts.query), self.limits['url_chars'])
+        problem = self.outbound_problem(url, self.limits['url_chars'])
+        decoded = url
+        # Check every encoding layer, including paths, queries, fragments and redirect targets. Reject excessive
+        # nesting rather than allowing another decoder at the destination to reveal private text.
+        for _ in range(6):
+            if problem:
+                break
+            next_text = urllib.parse.unquote_plus(decoded)
+            if next_text == decoded:
+                break
+            decoded = next_text
+            problem = self.outbound_problem(decoded, self.limits['url_chars'])
+        else:
+            problem = 'URL encoding is too deeply nested'
         return problem
 
     # ---- fetching -----------------------------------------------------------------------------------------------
 
     def _record(self, tool, url, status, **extra):
-        source = dict(id='S' + str(len(self.sources) + 1), tool=tool, url=url, host=urllib.parse.urlsplit(url).hostname
-                      if isinstance(url, str) else None, status=status, retrieved_at=now_iso(self.clock), **extra)
+        sensitive = any(word in extra.get('reason', '') for word in ('credentials', 'deeply nested'))
+        for attempted in (url, extra.get('final_url')):
+            decoded = attempted or ''
+            for _ in range(6):
+                problem = self.outbound_problem(decoded, max(len(decoded), self.limits['url_chars'])) if decoded else ''
+                sensitive |= any(word in problem for word in ('secret', 'credential', 'repository', 'excerpt', 'email', 'IP address'))
+                following = urllib.parse.unquote_plus(decoded)
+                if following == decoded:
+                    break
+                decoded = following
+        if sensitive:
+            # A refused URL can itself contain confidential source. Keep an audit digest, never echo its payload
+            # into workflow logs or the public task's research report.
+            extra['url_sha256'] = hashlib.sha256(str(url).encode()).hexdigest()
+            if extra.get('final_url'):
+                extra['final_url_sha256'] = hashlib.sha256(str(extra['final_url']).encode()).hexdigest()
+            extra.pop('final_url', None)
+            reason = extra.get('reason', '')
+            if reason and self.outbound_problem(reason, max(len(reason), self.limits['url_chars'])):
+                extra['reason'] = 'request contained private or credential data'
+            url = None
+        try:
+            host = urllib.parse.urlsplit(url).hostname if isinstance(url, str) else None
+        except ValueError:
+            host = None
+        source = dict(id='S' + str(len(self.sources) + 1), tool=tool, url=url, host=host,
+                      status=status, retrieved_at=now_iso(self.clock), **extra)
         self.sources.append(source)
         print('Research ' + json.dumps({k: source[k] for k in ('id', 'tool', 'url', 'status', 'retrieved_at')}), flush=True)
         return source

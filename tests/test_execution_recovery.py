@@ -243,7 +243,8 @@ class ExecutionRecoveryTests(unittest.TestCase):
         handle = recovery.CURRENT.set(self.journal)
         self.addCleanup(recovery.CURRENT.reset, handle)
         original_task = self.world.issue['title'] + '\n' + self.world.issue['body']
-        execution.seed(self.journal, recovery.ROOT, 'a' * 40, {'app.py': 'value=2\n'}, original_task, CONTEXT)
+        execution.seed(self.journal, recovery.ROOT, 'a' * 40, {'app.py': 'value=2\n'}, original_task,
+                       dict(CONTEXT, reviewed_candidate=execution.digest({'app.py': 'value=2\n'})))
         def gh(path, token, payload=None, method=None):
             if payload is not None and path.endswith('/pulls'):
                 return dict(number=133, html_url=self.world.prs[0]['html_url'], head=dict(sha='c' * 40, ref='kappa/dev-130',

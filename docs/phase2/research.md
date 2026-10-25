@@ -69,7 +69,7 @@ tasks then report it as unavailable.
 
 ## Data rules: what may leave KappaForge
 
-A search query, a symbol, a package name and a URL's query string are free text, and each is refused when it:
+A search query, a symbol, a package name and every URL component (decoded too) are checked, and refused when any:
 - is longer than 120 characters (400 for a URL), or contains a line break;
 - contains a secret or credential, using the same redaction rules as checkpoints and logs;
 - contains an email address or IP address;
@@ -77,11 +77,12 @@ A search query, a symbol, a package name and a URL's query string are free text,
 - repeats 24 or more characters verbatim from the source files the task has read;
 - for queries, uses anything but plain identifier-like text: letters, digits, spaces and `.:/@#()[]<>+=,'"-`.
 
-A documentation URL's path is not checked for excerpts, because it may repeat a public link the code itself contains,
-and its host is already restricted.
+Source protection includes newly explored files before any subsequent research call. Paths, queries, fragments and
+redirects receive the same checks; an allowlisted host does not exempt a private excerpt. Excessive encoding layers
+are refused. A documentation URL that overlaps source text can therefore be conservatively refused.
 
 A package name is sent to its public registry, as `pip` or `npm` would send it. A refused request never reaches the
-network, and it is still recorded.
+network, and it is still recorded. Sensitive refused URLs are recorded by digest without their private payload.
 
 ## Provenance and audit
 

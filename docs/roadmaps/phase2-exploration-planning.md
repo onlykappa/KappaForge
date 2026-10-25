@@ -95,3 +95,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 - [x] Testing report (ran vs. inspected), unresolved issues and Phase 3 prerequisites ([report](../phase2/testing-report.md))
 
 Phase 3 is out of scope, apart from minimal reusable interfaces Phase 2 needs.
+
+Post-acceptance audit: the owner-requested fixes for test-command substitution, final-candidate review, private research
+data and Fix it clarification are documented in [audit repairs](../phase2/audit-hardening.md), with regression tests
+and verification evidence in [the testing report](../phase2/testing-report.md#post-acceptance-audit-repairs).

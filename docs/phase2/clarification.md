@@ -78,6 +78,10 @@ The answer is saved in the journal (`status: answered`, `answer`, `answerComment
   the answer in its prompt. The earlier attempt still counts, and the candidate is not regenerated.
 - **Requirement review:** it receives the answer as owner guidance.
 
+The same protocol applies to **Fix it** on an existing draft PR: questions are posted rather than reported as failed
+sandbox runs; no check polling, proposal or sandbox work occurs while waiting. The owner's answer resumes the saved
+fix candidate and history. A final review checks any changed patch and the answered assumptions before publication.
+
 **An answer grants nothing.** The authorization guard decides every write exactly as before. "Yes, merge it" in an
 answer is guidance text, and API merges stay refused.
 
