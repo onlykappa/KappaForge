@@ -45,6 +45,12 @@ class WholeDefinitionTests(unittest.TestCase):
 
 
 class BaseBranchTests(unittest.TestCase):
+    def tearDown(self):
+        # produce_development_pr starts a progress checklist and task scope; later test modules must not inherit them.
+        from engine import intent_guard
+        developer.Progress.latest = None
+        intent_guard.ACTIVE.set(None)
+
     def issue(self, body):
         return {'number': 9, 'title': 't', 'user': {'login': 'onlykappa'},
                 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n' + body}
