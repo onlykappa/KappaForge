@@ -82,8 +82,10 @@ final review before publication. The ordinary no-change PR re-check regression r
 ## Remaining audit follow-ups
 
 These requested four repairs do not close the other audit observations: semantic overreach in the trivial-question
-filter, interruption within a long/regex exploration call, persistence of all exploration budget counters, and
-structured truncation of large model-facing tool results. Fixed-excerpt read-only analysis, dependency-update
-coverage, optional schema validation in CI and live model/phone demonstrations also remain documented limits.
-They should inform the separately authorized Phase 3 scope; this document does not claim production autonomy is
-fully proven. Test execution counts and local-versus-CI evidence are kept in [testing-report.md](testing-report.md).
+filter, fixed-excerpt read-only analysis, dependency-update coverage, optional schema validation in CI and live
+model/phone demonstrations. PR #272 carries exploration and research budget totals across resumes, preserves
+structure in large tool results, and adds cooperative deadline checks inside repository scans and reads. It rejects
+regex forms with unbounded backtracking risk and discards partial results when a tool call reaches its time limit.
+Regression tests cover a timed-out read and scan and ambiguous repeated alternatives. These remaining items should
+inform the separately authorized Phase 3 scope; this document does not claim production autonomy is fully proven.
+Test execution counts and local-versus-CI evidence are kept in [testing-report.md](testing-report.md).

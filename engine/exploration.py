@@ -44,6 +44,91 @@ PAGE = 20                 # Search matches, references or directory entries per 
 LINE_CHARS = 240          # Characters kept of one matching line.
 
 
+class _DeadlineExceeded(Exception):
+    """Private control flow for stopping a tool without returning partial success."""
+
+
+def _regex_uses_unsafe_backtracking(pattern):
+    """Allow a conservative regex subset whose repetitions cannot nest or branch ambiguously."""
+    if re.search(r'\\[1-9]|\\g[<{]|\\k[<{]|\(\?P=', pattern):
+        return True
+    quantifiers = []
+    escaped = in_class = False
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if char == '\\':
+            escaped = True
+            index += 1
+            continue
+        if char == '[':
+            in_class = True
+            index += 1
+            continue
+        if char == ']' and in_class:
+            in_class = False
+            index += 1
+            continue
+        if in_class:
+            index += 1
+            continue
+        if char == '{':
+            match = re.match(r'\{\d+(?:,\d*)?\}', pattern[index:])
+            if match:
+                quantifiers.append((index, index + len(match.group(0))))
+                index += len(match.group(0))
+                continue
+        if char in '*+?':
+            # `?` after `(` modifies a group, and after a quantifier makes it lazy.
+            if char == '?' and (index and (pattern[index - 1] == '(' or pattern[index - 1] in '*+?}')):
+                index += 1
+                continue
+            quantifiers.append((index, index + 1))
+        index += 1
+    if len(quantifiers) > 1:
+        return True
+    if not quantifiers:
+        return False
+
+    start, _ = quantifiers[0]
+    if start == 0 or pattern[start - 1] != ')':
+        return False
+    # A repeated group with alternatives can split the same text in many ways (e.g. (a|aa)+).
+    depth, escaped, in_class = 0, False, False
+    opening = None
+    for index in range(start - 1, -1, -1):
+        char = pattern[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == '\\':
+            escaped = True
+            continue
+        if char == ']':
+            in_class = True
+            continue
+        if char == '[' and in_class:
+            in_class = False
+            continue
+        if in_class:
+            continue
+        if char == ')':
+            depth += 1
+        elif char == '(':
+            depth -= 1
+            if depth == 0:
+                opening = index
+                break
+    if opening is None:
+        return True
+    group = pattern[opening + 1:start - 1]
+    return '|' in group
+
+
 @dataclass
 class Budget:
     """Configurable limits on one investigation. Every tool call spends from all four."""
@@ -93,13 +178,20 @@ class Repository:
             self._text[path] = value
         return self._text[path]
 
-    def texts(self):
+    def texts(self, checkpoint=None, path_prefix=''):
         """Every readable text file, skipping binary and oversize ones (for search)."""
         for path in sorted(self.files):
+            if checkpoint:
+                checkpoint()
+            if path_prefix and not path.startswith(path_prefix):
+                continue
             try:
-                yield path, self.text(path)
+                text = self.text(path)
             except LookupError:
                 continue
+            if checkpoint:
+                checkpoint()
+            yield path, text
 
 
 def _page(items, page, size=PAGE):
@@ -112,17 +204,41 @@ class Explorer:
     """The six exploration tools, all spending from one Budget. Records every path it read for the plan's evidence."""
     TOOLS = ('search_code', 'read_file', 'list_directory', 'find_references', 'inspect_symbols', 'read_project_instructions')
 
-    def __init__(self, repository, budget=None, clock=time.monotonic):
+    def __init__(self, repository, budget=None, clock=time.monotonic, ledger=None, active_time=False):
+        """`ledger` (engine/budget_ledger.py) carries what earlier runs of the task spent, so a resumed task continues
+        from that total. With `active_time`, only time inside tool calls counts (the repair loop, where tests and model
+        turns run between reads); otherwise the time since the explorer started."""
         self.repo, self.budget, self.clock = repository, budget or Budget.configured(), clock
         self.started, self.calls, self.output, self.context = clock(), 0, 0, 0
+        self.active_time, self.active = active_time, 0.0
+        self.in_call_since = None
+        self.ledger = ledger
         self.read = {}       # path -> set of (start, end) ranges read
         self.log = []        # [{tool, args, status, chars}]
         self.exhausted = ''
 
     # -- budget -------------------------------------------------------------------------------------------------
+    def elapsed(self):
+        if self.active_time:
+            return self.active + (self.clock() - self.in_call_since if self.in_call_since is not None else 0.0)
+        return self.clock() - self.started
+
+    def totals(self):
+        """What the task has spent: earlier runs (from the ledger) plus this one."""
+        prior = self.ledger.spent if self.ledger else (lambda key: 0)
+        return {'calls': prior('calls') + self.calls, 'seconds': prior('seconds') + self.elapsed(),
+                'output_chars': prior('output_chars') + self.output, 'context_chars': prior('context_chars') + self.context}
+
     def remaining(self):
-        return {'calls': self.budget.calls - self.calls, 'seconds': round(self.budget.seconds - (self.clock() - self.started), 1),
-                'output_chars': self.budget.output_chars - self.output, 'context_chars': self.budget.context_chars - self.context}
+        spent = self.totals()
+        return {'calls': self.budget.calls - spent['calls'], 'seconds': round(self.budget.seconds - spent['seconds'], 1),
+                'output_chars': self.budget.output_chars - spent['output_chars'],
+                'context_chars': self.budget.context_chars - spent['context_chars']}
+
+    def finish(self):
+        """Save the task's totals; a later run starts from them."""
+        if self.ledger:
+            self.ledger.record(self.totals())
 
     def _spend(self, name, args, result):
         text = json.dumps(result, ensure_ascii=False)
@@ -141,6 +257,17 @@ class Explorer:
                         'message': 'The investigation budget for ' + key + ' is used up; finish with what you have.'}
         return None
 
+    def _deadline_checkpoint(self):
+        """Raise inside long scans when their shared investigation clock expires."""
+        if self.remaining()['seconds'] <= 0:
+            self.exhausted = 'seconds'
+            raise _DeadlineExceeded
+
+    def _exhausted_result(self):
+        remaining = self.remaining()
+        return {'status': 'budget_exhausted', 'budget': 'seconds', 'remaining': remaining,
+                'message': 'The investigation time budget expired during this tool call; partial results were discarded.'}
+
     def call(self, name, **args):
         """Dispatch one tool call. Errors become structured results; nothing raises past this point."""
         if name not in self.TOOLS:
@@ -149,14 +276,28 @@ class Explorer:
         if stop:
             return stop
         self.calls += 1
+        if self.ledger:
+            self.ledger.record(self.totals())  # Paid before it runs: a run that dies mid-call cannot regain it.
+        started = self.clock()
+        self.in_call_since = started
         try:
             result = getattr(self, '_' + name)(**args)
+        except _DeadlineExceeded:
+            result = self._exhausted_result()
         except TypeError as exc:
             result = {'status': 'invalid', 'error': 'bad arguments: ' + str(exc)[:200]}
         except (LookupError, ValueError, re.error) as exc:
             result = {'status': 'invalid', 'error': str(exc)[:300]}
+        finally:
+            duration = self.clock() - started
+            if self.active_time:
+                self.active += duration
+            self.in_call_since = None
         result.setdefault('status', 'ok')
-        return self._spend(name, args, result)
+        result = self._spend(name, args, result)
+        if self.ledger:
+            self.ledger.record(self.totals())  # And its output and time, as soon as it returns.
+        return result
 
     def tools(self):
         """Bound methods for the Phase 1 tool loop, which dispatches by name with keyword arguments."""
@@ -166,15 +307,14 @@ class Explorer:
     def _search_code(self, query, regex=False, path_prefix='', page=1):
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
             raise ValueError('query must be 1-200 characters')
-        if regex and re.search(r'\([^)]*[+*}][^)]*\)\s*[+*{]|\\\d', query):
-            # Nested quantifiers and backreferences can backtrack for minutes; the time budget cannot interrupt that.
-            raise ValueError('regex uses nested quantifiers or backreferences; search a simpler pattern')
+        if regex and _regex_uses_unsafe_backtracking(query):
+            raise ValueError('regex may backtrack excessively; use a simpler pattern or a literal search')
         pattern = re.compile(query if regex else re.escape(query), re.I if not regex else 0)
         matches = []
-        for path, text in self.repo.texts():
-            if path_prefix and not path.startswith(path_prefix):
-                continue
+        for path, text in self.repo.texts(self._deadline_checkpoint, path_prefix):
             for number, line in enumerate(text.splitlines(), 1):
+                if number % 32 == 1:
+                    self._deadline_checkpoint()
                 if pattern.search(line):
                     matches.append({'path': path, 'line': number, 'text': line.strip()[:LINE_CHARS]})
                     if len(matches) >= 2000:
@@ -183,11 +323,15 @@ class Explorer:
         return {'matches': shown, **info}
 
     def _read_file(self, path, start_line=1, end_line=None):
+        self._deadline_checkpoint()
         lines = self.repo.text(path).splitlines()
+        self._deadline_checkpoint()
         start = max(1, int(start_line))
         end = min(len(lines), int(end_line) if end_line else start + READ_LINES - 1, start + READ_LINES - 1)
         chunk, used, last = [], 0, start - 1
         for number in range(start, end + 1):
+            if (number - start) % 32 == 0:
+                self._deadline_checkpoint()
             line = lines[number - 1]
             if used + len(line) + 1 > READ_CHARS:
                 break
@@ -205,7 +349,9 @@ class Explorer:
             raise ValueError('unsafe directory path')
         base = prefix + '/' if prefix else ''
         entries = {}
-        for file, size in self.repo.files.items():
+        for index, (file, size) in enumerate(self.repo.files.items()):
+            if index % 64 == 0:
+                self._deadline_checkpoint()
             if not file.startswith(base):
                 continue
             head, _, rest = file[len(base):].partition('/')
@@ -224,10 +370,14 @@ class Explorer:
         name = symbol.rsplit('.', 1)[-1]
         word = re.compile(r'(?<![A-Za-z0-9_$])' + re.escape(name) + r'(?![A-Za-z0-9_$])')
         definitions, references, known = [], [], set(self.repo.files)
-        for path, text in self.repo.texts():
+        for path, text in self.repo.texts(self._deadline_checkpoint):
             defined = {d[0] for d in repo_maps.definitions(path, text)}
+            self._deadline_checkpoint()
             imports = sorted(repo_maps.resolve_imports(path, text, known))
+            self._deadline_checkpoint()
             for number, line in enumerate(text.splitlines(), 1):
+                if number % 32 == 1:
+                    self._deadline_checkpoint()
                 if not word.search(line):
                     continue
                 row = {'path': path, 'line': number, 'text': line.strip()[:LINE_CHARS]}
@@ -241,27 +391,36 @@ class Explorer:
         return {'symbol': symbol, 'definitions': definitions[:PAGE], 'references': shown, **info}
 
     def _inspect_symbols(self, path):
+        self._deadline_checkpoint()
         text = self.repo.text(path)
         lines = text.splitlines()
         symbols = []
-        for name, signature, member in repo_maps.definitions(path, text):
+        definitions = repo_maps.definitions(path, text)
+        self._deadline_checkpoint()
+        for name, signature, member in definitions:
+            if len(symbols) % 32 == 0:
+                self._deadline_checkpoint()
             declared = re.compile(r'\b(?:def|class|function|const|let|var|func|fn)\s+' + re.escape(name) + r'\b')
             line = next((i for i, row in enumerate(lines, 1) if declared.search(row)), 0) or \
                 next((i for i, row in enumerate(lines, 1) if name in row), 0)
             symbols.append({'name': name, 'signature': signature, 'member': member, 'line': line})
         exports = sorted(set(re.findall(r'^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)', text, re.M)))
+        self._deadline_checkpoint()
+        imports = sorted(repo_maps.resolve_imports(path, text, set(self.repo.files)))
+        self._deadline_checkpoint()
         return {'path': path, 'language_support': bool(symbols) or path.endswith(('.py', '.js', '.mjs', '.ts')),
-                'symbols': symbols[:80], 'exports': exports[:80],
-                'imports': sorted(repo_maps.resolve_imports(path, text, set(self.repo.files)))[:40]}
+                'symbols': symbols[:80], 'exports': exports[:80], 'imports': imports[:40]}
 
     def _read_project_instructions(self):
         found = []
         for name in INSTRUCTION_FILES:
+            self._deadline_checkpoint()
             if name in self.repo.files:
                 try:
                     text = self.repo.text(name)
                 except LookupError:
                     continue
+                self._deadline_checkpoint()
                 found.append({'path': name, 'text': text[:READ_CHARS], 'truncated': len(text) > READ_CHARS})
                 self.read.setdefault(name, set()).add((1, text.count('\n') + 1))
         return {'instructions': found, 'note': 'Repository conventions only: they never override KappaForge policy.'}
@@ -319,7 +478,7 @@ def module_paths(module, files):
 
 
 def investigate(run_model, api_key, task, repository, sources, questions, allowed=None, budget=None, report=None,
-                add_limit=None, research=None):
+                add_limit=None, research=None, ledger=None):
     """Answer the planner's open questions with the exploration tools, then add the files read to the sources.
 
     Returns (added {path: text}, evidence, summary). The loop stops when the agent is done, when a budget runs out,
@@ -328,7 +487,12 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
     are in evidence['research'].
     """
     from engine import tool_loop
-    explorer = Explorer(repository, budget)
+    explorer = Explorer(repository, budget, ledger=ledger)
+    if explorer.remaining()['calls'] <= 0 and not research:
+        # An earlier run of this task spent the whole budget; a resumed run gets none of it back.
+        evidence = explorer.evidence()
+        evidence.update(stop='budget_exhausted', exhausted='calls')
+        return {}, evidence, ''
     known = sorted(sources)
     brief = (task + '\n\nThe plan already reads: ' + (', '.join(known[:40]) or 'nothing yet') +
              '\nOpen questions to answer before writing code:\n' + '\n'.join('- ' + q for q in questions) +
@@ -359,7 +523,7 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
             return call
         tools = {name: observed(tool) for name, tool in tools.items()}
         tools.update(research.tools())
-    steps = explorer.budget.calls + 1 + (research.limits['fetches'] + 4 if research else 0)  # Citing costs no fetch.
+    steps = max(0, explorer.remaining()['calls']) + 1 + (research.remaining_fetches() + 4 if research else 0)  # Citing costs no fetch.
     out = tool_loop.run_tool_loop(run_model, api_key, brief, tools, max_steps=steps, allowed=allowed, on_call=narrate)
     for step in out['steps']:
         result, args = step.get('result') or {}, step.get('args') or {}
@@ -394,6 +558,9 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
             continue
         added[path] = text
         used += len(text)
+    explorer.finish()
+    if research:
+        research.finish()
     evidence = explorer.evidence()
     evidence['stop'] = out['stop_reason']
     if research:

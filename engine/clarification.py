@@ -28,7 +28,7 @@ MARKER = 'kappa-clarification'
 ANSWERS_HEADING = "\n\nOWNER ANSWERS TO KAPPAFORGE'S QUESTIONS (authoritative for these points):\n"
 REQUEST = ContextVar('clarification_request', default=None)  # The planner's proposed question, if any.
 TRIVIAL_RE = re.compile(r"\b(?:name|naming|rename|call(?:ed)?\s+it|variable|format(?:ting)?|indent\w*|style|lint\w*|"
-                        r"tabs?\s+or\s+spaces|quotes?|semicolons?|colou?r|font|spacing|order\s+of|which\s+(?:file|folder|"
+                        r"tabs?\s+or\s+spaces|quotes?|semicolons?|colou?r|font|spacing|which\s+(?:file|folder|"
                         r"directory)|file\s*name|folder|where\s+(?:to\s+)?put|comment\s+wording|wording|capitali[sz]\w*|"
                         r"camel\s*case|snake\s*case|alphabetical)\b", re.I)
 

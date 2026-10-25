@@ -18,6 +18,15 @@ class Clock:
         return self.now
 
 
+class AdvancingClock:
+    def __init__(self, step=0.1):
+        self.now, self.step = 0.0, step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+
 class ExplorationToolTests(unittest.TestCase):
     def setUp(self):
         self.sources = {
@@ -41,7 +50,7 @@ class ExplorationToolTests(unittest.TestCase):
         self.assertEqual(explorer.call('search_code', query='hello', page=4)['matches'][-1]['line'], 60)
         self.assertEqual(explorer.call('search_code', query='hello', path_prefix='app')['total'], 1)
         self.assertEqual(explorer.call('search_code', query=r'def \w+\(', regex=True)['total'], 3)
-        for pattern in ('(a+)+b', r'(\w*)*x', r'(a)\1'):
+        for pattern in ('(a+)+b', r'(\w*)*x', r'(a)\1', r'(a|aa)+$'):
             with self.subTest(pattern=pattern):
                 self.assertEqual(explorer.call('search_code', query=pattern, regex=True)['status'], 'invalid')
         self.assertNotIn('logo.png', [m['path'] for m in explorer.call('search_code', query='PNG')['matches']])
@@ -142,6 +151,30 @@ class BudgetTests(unittest.TestCase):
                 calls = explorer.calls
                 self.assertEqual(explorer.call('search_code', query='x')['status'], 'budget_exhausted')
                 self.assertEqual(explorer.calls, calls, 'no further tool runs once a budget is spent')
+
+    def test_slow_file_read_exhausts_the_in_call_deadline_without_partial_success(self):
+        clock = Clock()
+        def slow_read(path):
+            clock.now += 2
+            return 'x = 1\n'
+        repo = Repository({'a.py': 6}, slow_read)
+        explorer = Explorer(repo, Budget(seconds=1), clock=clock, active_time=True)
+        result = explorer.call('read_file', path='a.py')
+        self.assertEqual((result['status'], result['budget'], explorer.exhausted),
+                         ('budget_exhausted', 'seconds', 'seconds'))
+        self.assertIn('partial results were discarded', result['message'])
+        self.assertEqual(explorer.evidence()['read'], {}, 'an interrupted read must not count as usable evidence')
+        self.assertEqual(explorer.totals()['seconds'], 2)
+
+    def test_search_checks_deadline_during_a_large_scan_and_discards_partial_matches(self):
+        clock = AdvancingClock()
+        text = '\n'.join('target' if n % 2 == 0 else 'other' for n in range(1000))
+        repo = Repository({'a.py': len(text)}, lambda path: text)
+        explorer = Explorer(repo, Budget(seconds=0.6), clock=clock)
+        result = explorer.call('search_code', query='target')
+        self.assertEqual((result['status'], result['budget'], explorer.exhausted),
+                         ('budget_exhausted', 'seconds', 'seconds'))
+        self.assertNotIn('matches', result, 'partial search results cannot be presented as a complete page')
 
     def test_the_tool_loop_stops_safely_when_a_budget_is_spent(self):
         explorer = Explorer(self.repo, Budget(calls=3))

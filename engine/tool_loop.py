@@ -31,7 +31,7 @@ TOOL_CATALOG = {
 
 
 def _bounded_result(result):
-    """Keep a JSON object and its status while bounding its serialized size."""
+    """Keep tool output structured while bounding the model-facing result size."""
     if not isinstance(result, dict):
         return {'status': 'error', 'error': 'Tool result must be an object'}
     try:
@@ -40,17 +40,59 @@ def _bounded_result(result):
         return {'status': 'error', 'error': 'Tool result must be JSON serializable'}
     if len(text) <= 3000:
         return result
-    clipped = {'status': str(result.get('status', 'error'))[:100], 'truncated': True, 'output': ''}
-    low, high = 0, min(len(text), 3000)
-    while low < high:
-        size = (low + high + 1) // 2
-        clipped['output'] = text[-size:]
-        if len(json.dumps(clipped, ensure_ascii=False)) <= 3000:
-            low = size
-        else:
-            high = size - 1
-    clipped['output'] = text[-low:] if low else ''
-    return clipped
+
+    def compact(value, string_prefix, array_items, path, stats):
+        if isinstance(value, str):
+            if len(value) <= string_prefix:
+                return value
+            omitted = len(value) - string_prefix
+            marker = f'[… {omitted} characters omitted by tool-loop limit …]'
+            keep = max(0, string_prefix - len(marker))
+            omitted = len(value) - keep
+            marker = f'[… {omitted} characters omitted by tool-loop limit …]'
+            stats['omitted_chars'] += omitted
+            stats['locations'].append(path[:120])
+            return value[:keep] + marker
+        if isinstance(value, dict):
+            return {key: compact(child, string_prefix, array_items,
+                                  f'{path}.{key}' if path else str(key), stats)
+                    for key, child in value.items()}
+        if isinstance(value, list):
+            kept = value[:array_items]
+            if len(value) > len(kept):
+                stats['omitted_items'] += len(value) - len(kept)
+                stats['locations'].append(f'{path}: {len(value) - len(kept)} items omitted'[:120])
+            stats['retained_items'] += len(kept)
+            return [compact(child, string_prefix, array_items, f'{path}[{i}]', stats)
+                    for i, child in enumerate(kept)]
+        return value
+
+    # Try progressively smaller prefixes and list pages. Choose the fitting form
+    # that retains the most source text, with list entries as a tie-breaker.
+    best, best_score = None, -1
+    for array_items in (20, 10, 5, 2, 1, 0):
+        for string_prefix in (2400, 1200, 600, 300, 150, 75, 30, 0):
+            stats = {'omitted_chars': 0, 'omitted_items': 0, 'retained_items': 0, 'locations': []}
+            clipped = compact(result, string_prefix, array_items, '', stats)
+            clipped['_tool_loop_truncation'] = {
+                'truncated': True,
+                'omitted_chars': stats['omitted_chars'],
+                'omitted_items': stats['omitted_items'],
+                'locations': stats['locations'][:12],
+                'additional_locations': max(0, len(stats['locations']) - 12),
+            }
+            serialized = json.dumps(clipped, ensure_ascii=False)
+            if len(serialized) <= 3000:
+                score = len(text) - stats['omitted_chars'] + stats['retained_items'] * 120
+                if score > best_score:
+                    best, best_score = clipped, score
+    if best is not None:
+        return best
+
+    # Tool implementations return bounded schemas; if one violates that contract
+    # through an enormous object shape, fail clearly instead of corrupting JSON.
+    return {'status': 'error', 'error': 'Structured tool result exceeded the model-facing size limit',
+            '_tool_loop_truncation': {'truncated': True, 'structure_too_large': True}}
 
 
 def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, on_call=None):

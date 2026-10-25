@@ -86,7 +86,7 @@
   historyText=historyText.replace(/\s+(before|after) (\d{4}-\d{2}-\d{2})(?=\s|$)/gi,(_,key,value)=>{filters[key.toLowerCase()]=value;return ''});
   historyText=historyText.replace(/\s+(?:with ids?|task ids?) ((?:#?\d+)(?:\s*,\s*#?\d+)*)$/i,(_,ids)=>{filters.tasks=ids.split(',').map(n=>Number(n.trim().replace('#','')));return ''});
   const byId=historyText.match(/^(clear|delete|remove|archive|hide) (?:task\s*)?#(\d+)$/i);if(byId){filters.tasks=[Number(byId[2])];historyText=byId[1]+' old tasks'}
-  const clear=historyText.match(/^(?:clear(?: out)?|delete|remove|archive|hide|clean\s*up)\s+(?:(?:all|every|my|the)\s+)*(?:(old|completed|finished|failed|closed|cancelled)\s+)?(?:tasks?|task history)(?:\s+(?:in|from|on)\s+(?:kappaforge|this (?:app|device)))?$/i);
+  const clear=historyText.match(/^(?:clear(?: out)?|delete|remove|archive|hide|clean\s*up)\s+(?:(?:all|every|my|the)\s+)*(?:(old|completed|finished|failed|closed|cancelled)\s+)?(?:tasks?|task history)(?:\s+(?:in|from|on)\s+(?:(?:the|this)\s+)?(?:kappaforge|app|device))?$/i);
   if(clear){const s=(clear[1]||'old').toLowerCase();return resolved(/^archive\b/i.test(historyText)?'tasks.archive-history':/^hide\b/i.test(historyText)?'tasks.hide-history':'tasks.clear-history',{status:s==='old'?'inactive':s==='finished'?'completed':s,...filters})}
   if(/^close (?:github )?(?:task|issue)\s*#?\d+$/i.test(t))return operationResult('unsupported-operation',restrictions,{message:'Closing a GitHub issue is separate from clearing history and cancelling execution. Open the issue on GitHub to close it; no history was cleared and runner termination is not confirmed.'});
   const task=t.match(/^(retry|try again(?: on)?|cancel|stop)\s+(?:task\s*)?#?(\d+)$/i);

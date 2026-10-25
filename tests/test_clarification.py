@@ -36,6 +36,13 @@ class ValidationTests(unittest.TestCase):
                 self.assertIsNone(record)
                 self.assertIn('convention', why)
 
+    def test_business_behavior_questions_about_order_are_not_mistaken_for_conventions(self):
+        question = dict(QUESTION, kind='expected_behavior',
+                        question='Should order of refunds follow oldest or newest purchases?')
+        record, why = clarification.validate(question)
+        self.assertIsNotNone(record, why)
+        self.assertEqual(record['question'], question['question'])
+
     def test_owner_only_actions_and_malformed_questions_are_refused(self):
         for raw in (dict(QUESTION, kind='authorization', question='May I merge the PR once tests pass?'),
                     dict(QUESTION, kind='authorization', question='Should I deploy this to production after merging?'),

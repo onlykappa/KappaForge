@@ -229,6 +229,52 @@ class ToolLoopReviewerTests(unittest.TestCase):
         self.assertLessEqual(len(json.dumps(bounded, ensure_ascii=False)), 3000)
         json.dumps(result)
 
+    def test_large_file_result_keeps_path_ranges_and_the_start_of_source(self):
+        model = GatewayScript([tool_reply('read_file'), {'done': True, 'summary': 'read'}])
+        source = 'def calculate_total():\n' + ('    return 42  # source evidence\n' * 1000) + 'UNIQUE_TAIL_SENTINEL'
+        result = run_tool_loop(model, 'review-key', 'inspect the implementation', {
+            'read_file': lambda **args: {
+                'status': 'ok', 'path': 'src/checkout.py', 'start_line': 41,
+                'end_line': 1041, 'total_lines': 2000, 'text': source, 'more': True,
+            },
+        })
+        bounded = result['steps'][0]['result']
+        self.assertEqual(bounded['status'], 'ok')
+        self.assertEqual(bounded['path'], 'src/checkout.py')
+        self.assertEqual((bounded['start_line'], bounded['end_line'], bounded['total_lines']), (41, 1041, 2000))
+        self.assertTrue(bounded['text'].startswith('def calculate_total():'))
+        self.assertIn('characters omitted by tool-loop limit', bounded['text'])
+        self.assertNotIn('UNIQUE_TAIL_SENTINEL', bounded['text'])
+        self.assertTrue(bounded['_tool_loop_truncation']['truncated'])
+        self.assertGreater(bounded['_tool_loop_truncation']['omitted_chars'], 0)
+        self.assertLessEqual(len(json.dumps(bounded, ensure_ascii=False)), 3000)
+        self.assertIn('"path": "src/checkout.py"', model.prompts[1])
+        self.assertIn('"start_line": 41', model.prompts[1])
+
+    def test_large_search_result_keeps_paging_and_match_records_structured(self):
+        model = GatewayScript([tool_reply('search_code'), {'done': True, 'summary': 'read'}])
+        matches = [
+            {'path': f'src/module_{i:02}.py', 'line': i + 1, 'text': f'FIRST_MATCH_{i:02} ' + ('context ' * 35)}
+            for i in range(20)
+        ]
+        result = run_tool_loop(model, 'review-key', 'find the definition', {
+            'search_code': lambda **args: {
+                'status': 'ok', 'query': 'calculate_total', 'page': 2, 'pages': 4,
+                'total': 80, 'matches': matches,
+            },
+        })
+        bounded = result['steps'][0]['result']
+        self.assertEqual((bounded['status'], bounded['page'], bounded['pages'], bounded['total']), ('ok', 2, 4, 80))
+        self.assertTrue(bounded['matches'])
+        self.assertEqual(bounded['matches'][0]['path'], 'src/module_00.py')
+        self.assertEqual(bounded['matches'][0]['line'], 1)
+        self.assertTrue(bounded['matches'][0]['text'].startswith('FIRST_MATCH_00'))
+        self.assertTrue(bounded['_tool_loop_truncation']['truncated'])
+        self.assertGreater(bounded['_tool_loop_truncation']['omitted_items'], 0)
+        self.assertLessEqual(len(json.dumps(bounded, ensure_ascii=False)), 3000)
+        self.assertIn('"page": 2', model.prompts[1])
+        self.assertIn('"path": "src/module_00.py"', model.prompts[1])
+
     def test_a_sandbox_tools_instance_is_usable_without_exposing_its_session(self):
         from engine import sandbox
         from engine.sandbox_tools import SandboxTools
