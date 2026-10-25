@@ -146,7 +146,6 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10), "App enters the normal background lifecycle")
         _ = XCTWaiter.wait(for: [XCTestExpectation(description: "WebKit completes background storage flush")], timeout: 5)
         app.terminate()
-        app.terminate()
         app.launch()
         XCTAssertTrue(web.waitForExistence(timeout: 60))
         XCTAssertTrue(status("RECOVERY REQUESTED").waitForExistence(timeout: 60), "Persisted acknowledgement survives a full app restart")
