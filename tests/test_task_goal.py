@@ -69,6 +69,29 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_scope_review_keeps_current_evidence_for_every_file_when_gateway_shrinks_context(self):
+        from engine import gateway
+        goal = task_goal.from_request('Audit the existing implementation and fix confirmed regressions')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            changes = {path: f'# Current evidence for {path}\n' + 'x = 1\n' * 20000
+                       for path in ('engine/large.py', 'engine/later.py', 'tests/test_later.py',
+                                    'ios/KappaForge/Web/later.js')}
+            def model(key, prompt, **kwargs):
+                for path in changes:
+                    self.assertIn(f'# Current evidence for {path}', prompt)
+                return 'reviewer', json.dumps({'requirements': [], 'problems': [], 'file_scope': [
+                    {'path': path, 'necessary': True, 'reason': 'Audit regression evidence',
+                     'quote': f'# Current evidence for {path}'} for path in changes]})
+            with patch.dict('os.environ', {'KAPPA_ROUTER_REQUIRED': 'true'}), \
+                    patch.object(gateway, 'prompt_fits', side_effect=lambda prompt: len(prompt) < 16000):
+                result = verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(result[1], [])
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_an_undecided_scope_review_is_retried_on_a_different_model(self):
         goal = task_goal.from_request('Make add accept numeric strings')
         token = task_goal.CURRENT.set(goal)

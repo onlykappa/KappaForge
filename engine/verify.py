@@ -433,17 +433,21 @@ def diff_text(read, changes, limit=40000):
     return "\n\n".join(parts)[:limit]
 
 
-def review_sources(read, changes, paths, requested=(), limit=220000, complete=None):
+def review_sources(read, changes, paths, requested=(), limit=220000, complete=None, balance=False):
     """Bounded current-source evidence, including classic-script globals and imports.
 
     A diff omits unchanged definitions, and may cut a minified line in half.
     Labels explicitly disclose every omitted section; a reviewer can request it.
     """
     known = set(paths) | set(changes)
-    queue = list(requested) + [p for p in changes if not TEST_RE.search(p) and not p.startswith('ios/KappaForge/Web/')]
+    queue = list(requested) + [p for p in changes if not TEST_RE.search(p)
+                               and (balance or not p.startswith('ios/KappaForge/Web/'))]
     if any(p.startswith('preview/') for p in changes):
         queue += ['KAPPA.md', 'preview/index.html', 'preview/settings.js', 'preview/app-state.js', 'preview/core.js']
     queue += [p for p in changes if TEST_RE.search(p)]
+    # A scope review must assess every changed path. Reserve current-source space for each before a large early
+    # file can exhaust the gateway's reduced budget. Dependencies follow the directly reviewed files.
+    reserved = set(queue) & known if balance else set()
     seen, blocks, used = set(), [], 0
     while queue and len(seen) < 40:
         path = queue.pop(0)
@@ -457,6 +461,9 @@ def review_sources(read, changes, paths, requested=(), limit=220000, complete=No
             if dependency in known and dependency not in seen:
                 queue.append(dependency)
         available = max(0, limit - used - len(path) - 90)
+        if balance and path in reserved:
+            remaining = reserved - seen
+            available = max(0, (available - sum(len(p) + 140 for p in remaining)) // (len(remaining) + 1))
         take = min(len(text), limit if path in requested else 90000, available)
         if complete is not None and text and take == len(text):
             complete.add(path)
@@ -685,7 +692,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
             source_limit, diff_limit = 220000, 40000
             while True:
                 complete = set()
-                context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit, complete=complete)
+                context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit,
+                                               complete=complete, balance=scope_required)
                 prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context)
                 if classified:
                     from engine import requirements

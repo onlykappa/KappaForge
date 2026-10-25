@@ -25,3 +25,5 @@ Only add lessons supported by reproducible evidence and reviewed code changes.
 - navigator.geolocation.getCurrentPosition takes callbacks; wrap it in a Promise that resolves with coordinates and rejects on denial, and handle the denial path.
 - A test must import or load the real code it checks; a test of a mock defined inside the test file proves nothing.
 - Describe what the change verifiably does, not what it was meant to do.
+- For a pre-merge engine retry, verify the workflow's engine checkout SHA as well as the candidate SHA. Adopting candidate commits does not replace an engine already running from main; use only an explicitly owner-authorized task branch for the engine trial.
+- When a scope reviewer must assess every changed file, reserve current-source context for every file before a large earlier file consumes the budget. Keep partial-source labels and literal evidence checks; an omitted source or invalid model quote is a review gap, not permission to repair code.
