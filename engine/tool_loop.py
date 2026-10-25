@@ -36,12 +36,13 @@ def _bounded_result(result):
     return clipped
 
 
-def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None):
+def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, on_call=None):
     """Call the engine model protocol and execute only whitelisted sandbox methods.
 
     ``tools`` is a SandboxTools instance or a mapping of its names to bound methods.
     ``allowed`` retains the engine's provider-allowlist meaning. Model failures propagate
     to the existing recovery controller; tool failures become structured error results.
+    ``on_call(tool, args, reason)`` sees each valid call just before it runs (the live transcript).
     """
     supplied = tools if isinstance(tools, dict) else {name: getattr(tools, name, None) for name in TOOL_CATALOG}
     available = {name: supplied[name] for name in TOOL_CATALOG if callable(supplied.get(name))}
@@ -97,6 +98,8 @@ def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None):
             continue
 
         invalid_streak = 0
+        if on_call:
+            on_call(tool, args, reply.get('reason', ''))
         try:
             result = available[tool](**args)
         except Exception as exc:

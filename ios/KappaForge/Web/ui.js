@@ -199,7 +199,7 @@ const ACTIVITY_KINDS=[['error',/\bfailed\b|\bcould not\b|\bproblems? (?:still )?
 const ACTIVITY_ICONS={more:'more',read:'file',plan:'tasks',code:'code',check:'check',fix:'retry',test:'flask',build:'hammer',git:'commit',model:'spark',error:'warn',work:'terminal'};
 function activityKind(text){return (ACTIVITY_KINDS.find(([,re])=>re.test(String(text||'')))||['work'])[0]}
 function feedItems(p,validation=[]){
- let items=(p.activity||[]).filter(a=>a&&typeof a.text==='string').map(a=>({kind:ACTIVITY_ICONS[a.kind]?a.kind:'work',text:a.text,at:a.at}));
+ let items=(p.activity||[]).filter(a=>a&&typeof a.text==='string').map(a=>({...a,kind:ACTIVITY_ICONS[a.kind]?a.kind:'work'}));
  // Model attempts that were passed over collapse into the one that answered (or is being asked).
  items=items.filter((a,i)=>!(/^Asking /.test(a.text)&&/^Asking /.test(items[i+1]?.text||'')));
  if(!items.length)items=(p.steps||[]).filter(r=>r.status!=='queued').map(r=>({kind:r.status==='failed'||r.status==='blocked'?'error':activityKind(r.title),text:r.title+(r.detail?': '+r.detail:'')}));
@@ -211,12 +211,56 @@ function feedItems(p,validation=[]){
 function activityFeed(items,live,id=''){
  const shown=items.filter(a=>a.state!=='upcoming');
  if(!shown.length)return '';
+ if(shown.some(a=>a.say||a.tool))return transcript(shown,live,id);
  const last=shown.at(-1),now=live&&last.kind!=='error'&&last.state!=='done';
  const line=a=>'<li class="feed-item '+esc(a.kind)+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(a.text),200))+'</span></li>';
  return '<details class="task-feed" data-progress-detail="'+esc(id)+':feed"><summary class="feed-item '+esc(last.kind)+(now?' live':'')+'" aria-live="polite">'+
   '<span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[last.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(last.text),140))+'</span>'+
   '<span class="feed-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span><span class="sr-only">'+(now?'in progress. ':'')+'Show all '+shown.length+' actions</span></summary>'+
   (shown.length>1?'<ol class="activity-feed">'+shown.slice(0,-1).map(line).join('')+'</ol>':'')+'</details>';
+}
+
+// The transcript, the way a coding assistant shows its work: the agent's narration as short paragraphs, and the
+// actions between them folded into one row each ("Read 4 files, ran 2 commands  +90 −4") that opens to every
+// command with the tail of its output. The latest blocks stay in view; earlier ones fold into "N earlier".
+const TRANSCRIPT_RECENT=6;
+const TOOL_NOUNS=[['read','Read','file'],['create','Created','file'],['edit','Edited','file'],['run','Ran','command']];
+function toolSummary(items){
+ const totals={};
+ for(const a of items){const t=a.tool==='test'?'run':a.tool;totals[t]=(totals[t]||0)+(t==='run'?1:Math.max(1,a.count||1))}
+ const text=TOOL_NOUNS.filter(([t])=>totals[t]).map(([t,verb,noun])=>verb.toLowerCase()+' '+(totals[t]===1?'a '+noun:totals[t]+' '+noun+'s')).join(', ');
+ return text.charAt(0).toUpperCase()+text.slice(1);
+}
+function lineDelta(items){
+ const counted=items.filter(a=>Number.isSafeInteger(a.added)||Number.isSafeInteger(a.removed));
+ if(!counted.length)return '';
+ const add=counted.reduce((n,a)=>n+(a.added||0),0),del=counted.reduce((n,a)=>n+(a.removed||0),0);
+ return '<span class="feed-delta" aria-label="'+add+' lines added, '+del+' removed"><span class="add">+'+add+'</span><span class="del">−'+del+'</span></span>';
+}
+function transcriptTool(a){
+ const command=a.tool==='run'||a.tool==='test';
+ return '<li class="feed-tool '+esc(a.tool)+(a.status?' '+esc(a.status):'')+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[a.status==='failed'||a.status==='blocked'?'error':a.kind]||'terminal')+'</span><div class="feed-body">'+
+  // With the paths listed underneath, the line itself only says what happened ("Edited 2 files").
+  (command&&a.detail?'<code class="feed-cmd">'+esc(a.detail)+'</code>':'<span class="feed-text">'+esc(clip(plain(a.detail?a.text.split(': ')[0]:a.text),200))+'</span>')+
+  (!command&&a.detail?'<span class="feed-paths">'+esc(a.detail)+'</span>':'')+lineDelta([a])+
+  (a.output?'<pre class="feed-out">'+esc(a.output)+'</pre>':'')+'</div></li>';
+}
+function transcript(items,live,id){
+ const blocks=[];
+ for(const a of items){const last=blocks.at(-1);if(a.tool&&last?.group)last.items.push(a);else blocks.push(a.tool?{group:true,items:[a]}:a)}
+ const end=blocks.length-1;
+ const block=(b,i)=>{
+  const current=live&&i===end;
+  if(!b.group)return b.say?'<p class="feed-say'+(current&&b.kind!=='error'?' live':'')+'">'+esc(clip(plain(b.text),240))+'</p>':
+   '<p class="feed-item '+esc(b.kind)+(current&&b.kind!=='error'&&b.state!=='done'?' live':'')+'"><span class="feed-icon" aria-hidden="true">'+uiIcon(ACTIVITY_ICONS[b.kind]||'terminal')+'</span><span class="feed-text">'+esc(clip(plain(b.text),200))+'</span></p>';
+  // Red only when the group ended on a failure; a failure the agent then fixed stays visible inside.
+  const failed=['failed','blocked'].includes(b.items.at(-1).status),running=current&&b.items.at(-1).status==='running';
+  return '<details class="feed-group'+(failed?' error':'')+'" data-progress-detail="'+esc(id)+':g'+i+'"><summary class="feed-item'+(running?' live':'')+'">'+
+   '<span class="feed-icon" aria-hidden="true">'+uiIcon('list')+'</span><span class="feed-text">'+esc(running?clip(plain(b.items.at(-1).text),140):toolSummary(b.items))+'</span>'+lineDelta(b.items)+
+   '<span class="feed-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><ol class="feed-tools">'+b.items.map(transcriptTool).join('')+'</ol></details>';
+ };
+ const html=blocks.map(block),split=Math.max(0,blocks.length-TRANSCRIPT_RECENT);
+ return '<div class="task-transcript" aria-live="polite">'+(split?'<details class="feed-earlier" data-progress-detail="'+esc(id)+':earlier"><summary>'+split+' earlier</summary>'+html.slice(0,split).join('')+'</details>':'')+html.slice(split).join('')+'</div>';
 }
 
 // The task card's large ring: steps done out of all known steps; a dashed track while the total is unknown.

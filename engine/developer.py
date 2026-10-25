@@ -1319,7 +1319,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 raise ValueError("Import cycle would fail at import time: " + cycle +
                                  ". Import inside the function that needs it, or move the shared helper.")
             text = lambda key: proposal.get(key) if isinstance(proposal.get(key), str) else ""
-            note("code", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}: " + ", ".join(list(changes)[:4]))
+            note_changes(model, changes, {p: t for p, t in shown_sources.items() if p not in partial_sources}, existing)
             return model, text("summary")[:3000], changes, text("explanation")[:2000]
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             if isinstance(exc, task_state.CandidateChanged):
@@ -1512,6 +1512,64 @@ def took(seconds):
 ACTIVITY_LINES = 60
 ACTIVITY_HEAD = 8
 ACTIVITY_WRITE_SECONDS = 4
+# Command output kept on only the latest lines, so the feed stays well inside one GitHub comment.
+ACTIVITY_OUTPUTS = 10
+# Optional structure on a feed line, which the app shows the way a coding assistant's transcript does:
+# say=True is the agent's own narration between actions; tool groups consecutive actions ("Ran 3 commands");
+# detail is the command or paths, output the tail of what it printed, added/removed changed lines.
+FEED_TOOLS = ("read", "edit", "create", "run", "test")
+FEED_STATUSES = ("running", "passed", "failed", "blocked")
+
+
+def feed_fields(say=False, tool="", detail="", output="", added=None, removed=None, count=None, status=""):
+    fields = {"say": True} if say is True else {}
+    if tool in FEED_TOOLS:
+        fields["tool"] = tool
+    if isinstance(detail, str) and detail.strip():
+        fields["detail"] = detail.strip()[:300]
+    if isinstance(output, str) and output.strip():
+        fields["output"] = output.strip()[-400:]
+    for name, value in (("added", added), ("removed", removed), ("count", count)):
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            fields[name] = min(value, 1_000_000)
+    if status in FEED_STATUSES:
+        fields["status"] = status
+    return fields
+
+
+def line_delta(before, after):
+    """Lines added and removed going from before to after, the way a diff stat counts them."""
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, (before or "").splitlines(), after.splitlines(),
+                                                        autojunk=False).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed
+
+
+def note_changes(model, changes, sources, existing):
+    """Feed lines for a model's written files: created and edited ones separately, with changed-line counts
+    where the previous text was read (a file shown only as excerpts gets no count)."""
+    created = [p for p in changes if p not in sources and p not in existing]
+    edited = [p for p in changes if p not in created]
+    for tool, paths in (("create", created), ("edit", edited)):
+        if not paths:
+            continue
+        added = removed = 0
+        counted = True
+        for path in paths:
+            before = "" if tool == "create" else sources.get(path)
+            if not isinstance(before, str):
+                counted = False
+                continue
+            a, r = line_delta(before, changes[path])
+            added, removed = added + a, removed + r
+        verb = "Created" if tool == "create" else "Edited"
+        note("code", f"{verb} {len(paths)} file{'s' if len(paths) != 1 else ''} with {model}: " + ", ".join(paths[:4]),
+             tool=tool, detail="\n".join(paths[:12]), count=len(paths),
+             **({"added": added, "removed": removed} if counted else {}))
 # Word boundaries matter: "preview/core.js" is not a review, "explanation" is not a plan.
 ACTIVITY_KINDS = (("error", r"\bfailed\b|\bcould not\b|\bproblems? (?:still )?open|^found \d+ problems?|\brejected\b"),
                   ("read", r"^read|\bchoos|\blook"), ("plan", r"\bplan|\bdesign"), ("check", r"^check|\breview|\bverif"),
@@ -1524,13 +1582,13 @@ def activity_kind(text):
     return next((kind for kind, pattern in ACTIVITY_KINDS if re.search(pattern, text, re.I)), "work")
 
 
-def note(kind, text):
+def note(kind, text, **feed):
     """Add a line to the running task's live activity feed, if there is one."""
     if Progress.latest:
         if kind == 'fix' and recovery.CURRENT.get():
             Progress.latest.recovery('recovering', text)
         else:
-            Progress.latest.act(kind, text)
+            Progress.latest.act(kind, text, **feed)
 
 
 # The step a parallel stage worker is building, so its feed lines say which worker they come from.
@@ -1682,10 +1740,11 @@ class Progress:
         self._record(text, "running")
         self.current = text
         self._advance(phase)
-        self.act(activity_kind(text), text, write=False)
+        # A step's start is what the agent says it is about to do; the actions that follow group under it.
+        self.act(activity_kind(text), text, write=False, say=True)
         self._write()
 
-    def ok(self, text, phase=False, status=None, warn=False):
+    def ok(self, text, phase=False, status=None, warn=False, **feed):
         """Record a finished step with its result, replacing the step in progress. warn=True marks a step that
         ended without doing its job (a step that could not be written, problems found): the card shows it as
         needing attention, not with a green check."""
@@ -1702,7 +1761,7 @@ class Progress:
             self.status = status
         self.current = ""
         self._advance(phase)
-        self.act("error" if status == "blocked" or warn else activity_kind(text), text, write=False)
+        self.act("error" if status == "blocked" or warn else activity_kind(text), text, write=False, **feed)
         self._write()
 
     def fail(self, reason):
@@ -1727,14 +1786,20 @@ class Progress:
         self.act('fix', text, write=False)
         self._write()
 
-    def act(self, kind, text, write=True):
+    def act(self, kind, text, write=True, **feed):
         """One line of the live activity feed the app shows ("Writing code with deepseek-v4-pro"). Writes at most
-        every few seconds; the next step change carries anything held back."""
-        if self.activity and self.activity[-1]["text"] == text[:240]:
+        every few seconds; the next step change carries anything held back. feed: see feed_fields."""
+        fields = feed_fields(**feed)
+        last = self.activity[-1] if self.activity else None
+        # A command's result replaces its own "running" line instead of adding a second one.
+        if (last and fields.get("tool") and last.get("status") == "running" and last.get("tool") == fields["tool"]
+                and last.get("detail") == fields.get("detail")):
+            self.activity = self.activity[:-1]
+        elif last and last["text"] == text[:240]:
             return
         if write:
             self.updated = max(self.updated, Progress.clock())
-        line = {"kind": kind, "text": text[:240], "at": int(getattr(self, "updated", time.time()) * 1000)}
+        line = {"kind": kind, "text": text[:240], "at": int(getattr(self, "updated", time.time()) * 1000), **fields}
         # Models asked one after another collapse into the latest, so a busy task doesn't push its first lines
         # ("Read 10 files", "Planned 3 steps") out of the feed.
         # A parallel worker's line replaces only that same worker's.
@@ -1748,6 +1813,10 @@ class Progress:
             marker = head[-1] if head[-1]["kind"] == "more" else None
             head = head if marker else head[:-1] + [{"kind": "more", "text": "…", "at": head[-1]["at"]}]
             self.activity = head + self.activity[-(ACTIVITY_LINES - ACTIVITY_HEAD):]
+        with_output = [i for i, row in enumerate(self.activity) if "output" in row]
+        if len(with_output) > ACTIVITY_OUTPUTS:
+            self.activity = [{k: v for k, v in row.items() if k != "output"} if i in with_output[:-ACTIVITY_OUTPUTS] else row
+                             for i, row in enumerate(self.activity)]
         if write and time.monotonic() - self.written >= ACTIVITY_WRITE_SECONDS:
             self._write()
 
@@ -2386,7 +2455,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             raise execution.CheckpointMismatch('Saved generation sources changed at their authorized base revision')
         execution.save_plan(journal, repo, sha, task, dict(base=base, paths=list(sources), design=design,
             stages=[dict(text=str(s), files=list(getattr(s, 'files', ())), independent=getattr(s, 'independent', False)) for s in stages]), sources)
-        progress.ok(f"Read {len(sources)} files: {short_list(sources)}")
+        progress.ok(f"Read {len(sources)} files: {short_list(sources)}", tool="read", count=len(sources),
+                    detail="\n".join(list(sources)[:12]))
         if design:
             progress.ok("Recorded the implementation plan")
         require_test = tests_required(existing)

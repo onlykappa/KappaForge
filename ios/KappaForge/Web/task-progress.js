@@ -49,6 +49,19 @@ function recoveryDisplay(job,now=Date.now()){
  if(p?.status==='queued'&&r?.executionState==='dispatch_requested')return {label:'DISPATCH REQUESTED',text:'Dispatch requested. Waiting for GitHub Actions and runner acknowledgement.'};
  return null;
 }
+// One feed line. Optional structure (engine 3.x): say marks the agent's narration; tool groups actions
+// (read/edit/create/run/test) with the command or paths, an output tail, changed-line counts and a status.
+const FEED_TOOLS=new Set(['read','edit','create','run','test']),FEED_STATUSES=new Set(['running','passed','failed','blocked']);
+function feedLine(a){
+ const line={kind:a.kind.slice(0,12),text:text(a.text).slice(0,240),at:at(a.at)};
+ if(a.say===true)line.say=true;
+ if(FEED_TOOLS.has(a.tool))line.tool=a.tool;
+ if(text(a.detail))line.detail=text(a.detail).slice(0,300);
+ if(text(a.output))line.output=text(a.output).slice(-400);
+ for(const k of ['added','removed','count'])if(Number.isSafeInteger(a[k])&&a[k]>=0)line[k]=Math.min(a[k],1000000);
+ if(FEED_STATUSES.has(a.status))line.status=a.status;
+ return line;
+}
 function normalize(value,number){
  if(!value||value.version!==1||value.taskId!==String(number)||!states.has(value.status)||!at(value.updatedAt)||!at(value.attemptAt)||!Number.isSafeInteger(value.revision)||value.revision<0||!Array.isArray(value.steps)||value.steps.length>200)return null;
  const seen=new Set(),steps=[];
@@ -56,7 +69,7 @@ function normalize(value,number){
  const units=value.units&&Number.isSafeInteger(value.units.total)&&value.units.total>0&&Number.isSafeInteger(value.units.done)&&value.units.done>=0&&value.units.done<=value.units.total?{done:value.units.done,total:value.units.total,label:text(value.units.label)||'units'}:null;
  return {version:1,taskId:String(number),attemptId:text(value.attemptId),attemptAt:at(value.attemptAt),revision:value.revision,status:value.status,updatedAt:at(value.updatedAt),startedAt:at(value.startedAt),finishedAt:at(value.finishedAt),steps,units,recovery:value.recovery&&typeof value.recovery==='object'?{executionState:text(value.recovery.executionState),lastTransitionAt:at(value.recovery.lastTransitionAt),candidate:/^[a-f0-9]{40}$/.test(value.recovery.candidate)?value.recovery.candidate:'',scanIntervalSeconds:Number.isSafeInteger(value.recovery.scanIntervalSeconds)&&value.recovery.scanIntervalSeconds>0?value.recovery.scanIntervalSeconds:0,nextAt:at(value.recovery.nextAt),expiresAt:at(value.recovery.expiresAt),continuations:Number.isSafeInteger(value.recovery.continuations)?value.recovery.continuations:0,last:{kind:text(value.recovery.last?.kind),error:text(value.recovery.last?.error),model:text(value.recovery.last?.model),strategy:text(value.recovery.last?.strategy),next:text(value.recovery.last?.next)}}:null,execution:executionSnapshot(value.execution),findings:Array.isArray(value.findings)?value.findings.filter(f=>f&&['high','medium','low'].includes(f.level)&&typeof f.text==='string').slice(0,40).map(f=>({level:f.level,text:text(f.text),resolved:f.resolved===true})):[],
   // The live activity feed (3.0+): what the agent did, one short line each.
-  activity:Array.isArray(value.activity)?value.activity.filter(a=>a&&typeof a.kind==='string'&&text(a.text)).slice(-60).map(a=>({kind:a.kind.slice(0,12),text:text(a.text).slice(0,240),at:at(a.at)})):[]};
+  activity:Array.isArray(value.activity)?value.activity.filter(a=>a&&typeof a.kind==='string'&&text(a.text)).slice(-60).map(feedLine):[]};
 }
 function decode(body,number){const match=String(body||'').match(/<!-- KAPPA_PROGRESS_V1 (\{[^]*?\}) -->/);if(!match)return null;try{return normalize(JSON.parse(match[1]),number)}catch{return null}}
 function reconcileProgress(previous,next,resumedAt=0){

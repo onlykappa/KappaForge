@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import time
 
 from engine import recovery, sandbox
@@ -315,6 +316,17 @@ class Execution:
         self.data['commands'].append(row)
         self.data['diagnostics']['currentCommand'] = row.copy()
         self._save()
+        self._feed(argv, profile, source, 'running')
+
+    def _feed(self, argv, profile, source, status, output=''):
+        """The command as a line of the task's live transcript: running, then its result and output tail."""
+        if not self.progress or not argv or status not in ('running', 'passed', 'failed', 'blocked'):
+            return  # A skipped toolchain ran nothing.
+        command = clean(' '.join(shlex.quote(str(a)) for a in argv), 300)
+        tool = 'test' if source != 'model' and profile == 'test' else 'run'
+        text = ('Running ' if status == 'running' else 'Ran ') + command + ('' if status in ('running', 'passed') else ' (' + status + ')')
+        self.progress.act('error' if status in ('failed', 'blocked') else 'test' if tool == 'test' else 'work', text,
+                          tool=tool, detail=command, output=clean(output, 400) if output else '', status=status)
 
     def finished(self, result, reused=False):
         run = result.to_dict()
@@ -336,6 +348,8 @@ class Execution:
             self.data['commands'][-1].update(result=run, status=row['status'], finishedAt=row['finishedAt'])
         info['currentCommand'] = row
         info['commands'] = (info['commands'] + [row])[-12:]
+        self._feed(result.argv, result.profile, result.source, row['status'],
+                   (result.stdout + '\n' + result.stderr).strip()[-400:])
         if category:
             info.update(errorCategory=category, evidence=row['evidence'])
         self._save()
