@@ -98,6 +98,27 @@ class RealSandboxAcceptance(unittest.TestCase):
     def tearDown(self):
         intent_guard.ACTIVE.set(None)
 
+    def test_a_repair_cannot_swap_the_failing_npm_script_for_a_passing_one(self):
+        for attack in ('script', 'npmrc'):
+            with self.subTest(attack=attack):
+                scripts = {'test':'node --test failing.cjs'} if attack == 'script' else {
+                    'pretest':'node --test failing.cjs', 'test':'node --test passing.cjs'}
+                files = {'package.json': json.dumps({'scripts':scripts}).encode(),
+                         'failing.cjs': b"require('node:test')('broken behavior',()=>{throw Error('still broken')});\n",
+                         'passing.cjs': b"require('node:test')('unrelated smoke',()=>{});\n"}
+                session = sandbox.Session(sandbox.Tree(recovery.ROOT, 'a' * 40, files))
+                edit = {'path':'package.json','find':'node --test failing.cjs','replace':'node --test passing.cjs'} if attack == 'script' else {
+                    'path':'.npmrc','find':'','replace':'ignore-scripts=true\n'}
+                def model(*args, **kwargs):
+                    return 'fixture', json.dumps({'tool':'apply_patch', 'reason':'Replace the failing test command', 'args':{'edits':[edit]}})
+                controller = sandbox_repair_controller.SandboxRepairController(session)
+                result = controller.run_repair('Fix the broken behavior', model, 'fixture')
+                self.assertEqual((result['status'], result['stop_reason']), ('failed', 'test_definition_changed'))
+                self.assertEqual(len(session.results), 1, 'only the original failing suite ran')
+                self.assertEqual(session.results[0].status, 'failed')
+                self.assertIn('still broken', session.results[0].stdout + session.results[0].stderr)
+                self.assertNotEqual(controller.execution.data['diagnostics']['finalValidation'], 'passed')
+
     def test_the_fixture_fails_initially_and_passes_only_after_an_agent_driven_repair(self):
         unrepaired = Scenario(Agent(lambda failing, call: None))
         self.assertEqual(unrepaired.result['status'], 'failed', 'claiming done does not make failing code pass')

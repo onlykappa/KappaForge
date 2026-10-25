@@ -160,5 +160,5 @@ class RecoveryCoordinator:
     def state(status, error=''):
         if status in RecoveryCoordinator.STATES: return status
         return {'testing':'validating','ready':'completed','waiting':'waiting_for_provider',
-                'dispatching':'queued','blocked':'blocked_authorization' if 'authorization' in str(error).lower()
+                'dispatching':'queued','needs_clarification':'paused','blocked':'blocked_authorization' if 'authorization' in str(error).lower()
                 else 'paused','failed':'failed_terminal'}.get(status)

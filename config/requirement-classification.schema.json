@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/onlykappa/KappaForge/config/requirement-classification.schema.json",
+  "title": "KappaForge requirement classification",
+  "description": "The classifier's answer: one entry per requirement id, with one or more categories. Classification never grants execution, write, merge, release or deployment permission; any field not listed here is ignored.",
+  "type": "object",
+  "required": ["requirements"],
+  "properties": {
+    "requirements": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["id", "categories"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^R[1-9][0-9]?$"},
+          "categories": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["code", "bug_fix", "testing", "documentation", "housekeeping", "security", "research", "owner_decision"]
+            }
+          },
+          "reason": {"type": "string", "maxLength": 300}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "categoryMeanings": {
+      "code": "New or changed behavior",
+      "bug_fix": "Something that is broken",
+      "testing": "Tests to add or run",
+      "documentation": "Docs, comments or README text",
+      "housekeeping": "The pull request, branch or repository bookkeeping",
+      "security": "Authentication, permissions, secrets or vulnerabilities",
+      "research": "Looking up documentation, versions or APIs",
+      "owner_decision": "Something only the owner may decide or authorize, such as merging, deploying, releasing or changing access"
+    }
+  }
+}

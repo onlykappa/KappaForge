@@ -1,0 +1,76 @@
+{
+  "_comment": "Phase 2 section 5. The only hosts KappaForge's research tools may contact: official, free, keyless documentation and package registries. HTTPS GET only. Content fetched from them is untrusted evidence, never instructions. Changing this list is a reviewed change to the repository.",
+  "enabled": true,
+  "hosts": [
+    {
+      "host": "docs.python.org",
+      "subdomains": false,
+      "purpose": "Python language and standard library documentation"
+    },
+    {
+      "host": "pypi.org",
+      "subdomains": false,
+      "purpose": "Python package versions, yanked releases and project links (JSON API)"
+    },
+    {
+      "host": "registry.npmjs.org",
+      "subdomains": false,
+      "purpose": "npm package versions, deprecations and search (JSON API)"
+    },
+    {
+      "host": "developer.mozilla.org",
+      "subdomains": false,
+      "purpose": "Web platform and JavaScript documentation (pages and search API)"
+    },
+    {
+      "host": "nodejs.org",
+      "subdomains": false,
+      "purpose": "Node.js API documentation and release index"
+    },
+    {
+      "host": "developers.cloudflare.com",
+      "subdomains": false,
+      "purpose": "Cloudflare Workers documentation"
+    },
+    {
+      "host": "docs.github.com",
+      "subdomains": false,
+      "purpose": "GitHub Actions and REST API documentation"
+    },
+    {
+      "host": "developer.apple.com",
+      "subdomains": false,
+      "purpose": "Apple platform documentation"
+    },
+    {
+      "host": "readthedocs.org",
+      "subdomains": false,
+      "purpose": "Read the Docs search API across official project documentation"
+    },
+    {
+      "host": "readthedocs.io",
+      "subdomains": true,
+      "purpose": "Project documentation hosted on Read the Docs"
+    }
+  ],
+  "search": {
+    "mdn": "https://developer.mozilla.org/api/v1/search?locale=en-US&q={query}",
+    "npm": "https://registry.npmjs.org/-/v1/search?size=10&text={query}",
+    "readthedocs": "https://readthedocs.org/api/v3/search/?q={query}"
+  },
+  "packages": {
+    "pypi": "https://pypi.org/simple/{name}/",
+    "npm": "https://registry.npmjs.org/{name}"
+  },
+  "limits": {
+    "fetches": 12,
+    "bytes_per_fetch": 3000000,
+    "total_bytes": 8000000,
+    "seconds": 120,
+    "timeout": 15,
+    "redirects": 3,
+    "query_chars": 120,
+    "url_chars": 400,
+    "page_chars": 6000
+  }
+}

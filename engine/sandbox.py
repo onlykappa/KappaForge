@@ -526,11 +526,16 @@ class Session:
 
     def test_definition_changed(self):
         """True when the candidate edits the commands that decide whether it passes (they are read from the base)."""
+        if any(path == '.npmrc' or path.endswith('/.npmrc') for path in self.changes):
+            return True  # npm config can disable lifecycle checks or select another workspace with identical scripts.
         if 'KAPPA.md' in self.changes and kappa_test_command(self.base) != kappa_test_command(self.candidate()):
             return True
         if 'package.json' in self.changes:
             node = Node()
-            return node.scripts(self.base).get('test') != node.scripts(self.candidate()).get('test')
+            before, after = node.scripts(self.base), node.scripts(self.candidate())
+            # npm resolves hooks and arbitrarily delegated scripts from the candidate, even when argv came from
+            # the base. Freeze its script map: shell indirection cannot be safely inferred from just "test".
+            return before != after
         return False
 
     def test_commands(self):
@@ -718,6 +723,11 @@ class Session:
         return run
 
     def run_tests(self, profile='test'):
+        if self.test_definition_changed():
+            run = RunResult([], PROFILES[profile].name, 'rejected', started_at=now(), finished_at=now(),
+                            reason='Candidate changes the test command', source='policy')
+            self.results.append(run)
+            return [run]
         commands = self.test_commands()
         if not commands:
             run = RunResult([], PROFILES[profile].name, 'skipped', started_at=now(), finished_at=now(),

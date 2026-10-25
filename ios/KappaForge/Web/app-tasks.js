@@ -664,6 +664,7 @@ async function checkJobResult(){
     changed=jobChatUpdate(job,report.id,text)||changed;
     if(job.progress?.status==="queued"&&report.status!=="progress"){job.progress=null;job.startedAt=Date.parse(comment.created_at||comment.updated_at)||Date.now()}
     job.message=report.status;taskCheckpoint(job,report.status,"issue-comment:"+comment.id);job.lastReportId=Number(comment.id);job.lastReportAt=Date.parse(comment.updated_at||comment.created_at)||Date.now();
+    if(report.status==="question")toast("? Task #"+job.number+" has a question for you");
     if(["tests-passed","tests-failed"].includes(report.status))toast((report.status==="tests-passed"?"✓ Task #"+job.number+": tests passed":"✕ Task #"+job.number+": tests failed"));
     // A development PR keeps being followed (fixes, requests for help) until it is merged or closed.
     if(KappaJobs.finishes(job,report.status))job.finished=true;

@@ -436,6 +436,7 @@ function taskStatusText(issue){
  const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
  if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
+ if(job.message==="question")return "Paused · answer its question with Send guidance";
  if(KappaJobs.verifiedTask(job))return "Current commit verified · ready for review";
  if(job.message==="tests-passed"||job.message==="native-passed")return "Checks reported · verifying current commit";
  if(job.message==="tests-incomplete")return "Checks passed · work remains incomplete";

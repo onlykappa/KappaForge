@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "budget": {
+    "calls": 40,
+    "seconds": 240,
+    "output_chars": 120000,
+    "context_chars": 200000
+  }
+}

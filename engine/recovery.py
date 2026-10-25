@@ -543,7 +543,7 @@ class Journal:
         at = int(self.clock() * 1000)
         last = self.state['events'][-1] if self.state['events'] else {}
         execution = self.state.get('executionState', status)
-        status = {'paused':'blocked','blocked_authorization':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
+        status = {'paused':'blocked','blocked_authorization':'blocked','needs_clarification':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
         finished = at if status == 'ready' else 0
         snapshot = dict(version=1, taskId=str(self.scope.number), attemptId=f"recovery:{self.state['continuations']}:{at}",
                         attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,

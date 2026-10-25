@@ -11,6 +11,8 @@ from tests.repair_fixtures import response_or
 SOURCES = {"app/main.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n"}
 ADD_SCOPE = [{"path": "app/main.py", "necessary": True, "reason": "Convert the inputs at the requested add boundary", "quote": "return int(a) + int(b)"}]
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
+ADD_TEST = "from app.main import add\n\n\ndef test_add_accepts_numeric_strings():\n    assert add('1', '2') == 3\n"
+TEST_SCOPE = {"path": "tests/test_main.py", "necessary": True, "reason": "Tests the requested add fix", "quote": "assert add('1', '2') == 3"}
 
 
 def recorded_head(calls, branch='kappa/dev-9'):
@@ -867,11 +869,14 @@ class OtherRepositoryTests(unittest.TestCase):
             prompts.append(prompt)
             allowances.append(allowed)
             if "You are reviewing a change" in prompt:
-                return "flash", json.dumps({"file_scope": ADD_SCOPE, "requirements":[{"text":"Fix adding","met":True,
-                    "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})
+                # The bug fix is a behavioral requirement: the review links it by id to the test that exercises it.
+                return "flash", json.dumps({"file_scope": ADD_SCOPE + [TEST_SCOPE], "requirements":[{"id":"R1","text":"Fix adding","met":True,
+                    "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"},
+                    "test":{"path":"tests/test_main.py","quote":"assert add('1', '2') == 3"}}],"problems":[]})
             if len(prompts) == 1:
                 return "flash", json.dumps({"read": ["app/main.py"]})
-            return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
+            return "flash", json.dumps({"summary": "Cast", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [{"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+                                                                      {"path": "tests/test_main.py", "reason": "Prove the requested add fix", "content": ADD_TEST}]})
         issue = {"number": 9, "title": "Fix", "user": {"login": "onlykappa"}, "body": "Repository: onlykappa/OmniPC\nMode: develop\n\nFix adding"}
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "owner-pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=model):

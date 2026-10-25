@@ -39,6 +39,13 @@ def clean(value, limit=4000):
     return text[-limit:]
 
 
+def task_digest(task):
+    """The task's checkpoint identity. The owner's answers to KappaForge's questions (engine/clarification.py) are
+    left out: answering resumes the same saved plan, candidate and sandbox state instead of invalidating them."""
+    from engine.clarification import ANSWERS_HEADING
+    return digest(str(task).split(ANSWERS_HEADING)[0])
+
+
 def sanitized(value):
     if isinstance(value, str):
         return clean(value, len(value))
@@ -160,12 +167,12 @@ def seed(journal, repo, sha, changes, task, context=None):
     require_storage(journal, repo)
     saved = pending(journal)
     if saved:
-        if (saved['identity']['repo'], saved['identity']['base'], saved['identity']['taskHash']) != (repo, sha, digest(task)):
+        if (saved['identity']['repo'], saved['identity']['base'], saved['identity']['taskHash']) != (repo, sha, task_digest(task)):
             raise CheckpointMismatch('Saved execution task or base revision changed; retained the original patch')
         return
     if sanitized(changes) != changes:
         raise CheckpointMismatch('Candidate contains credentials or private environment values; execution blocked')
-    data = initial_data(dict(repo=repo, base=sha, tree=None, versions=None, commands=None, taskHash=digest(task),
+    data = initial_data(dict(repo=repo, base=sha, tree=None, versions=None, commands=None, taskHash=task_digest(task),
                              task=journal.scope.number, scope=journal.scope.digest), task, {}, journal, context)
     data['patchRef'] = _write_blob(journal, changes)
     receipt = _write_blob(journal, sanitized(data))
@@ -191,7 +198,7 @@ def generation_plan(journal, repo, task):
         return None
     plan = _read_blob(journal, journal.state['generationPlan'])
     if (plan.get('task') != journal.scope.number or plan.get('repo') != repo
-            or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != digest(task)):
+            or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != task_digest(task)):
         raise CheckpointMismatch('Saved generation plan belongs to different task authority')
     return plan
 
@@ -201,7 +208,7 @@ def save_plan(journal, repo, sha, task, context, sources):
         return
     require_storage(journal, repo)
     plan = dict(task=journal.scope.number, repo=repo, scope=journal.scope.digest, base=sha,
-                taskHash=digest(task), sourceHash=digest(sources), context=context)
+                taskHash=task_digest(task), sourceHash=digest(sources), context=context)
     journal.state['generationPlan'] = _write_blob(journal, sanitized(plan), journal.state.get('generationPlan'))
     journal.persist()
 
@@ -222,7 +229,7 @@ class Execution:
         self.state, self.error = state, None
         saved = pending(journal)
         identity = dict(repo=session.base.repo, base=session.base.sha, tree=tree_digest(session.base),
-                        versions=list(session.versions), commands=session.test_commands(), taskHash=digest(task),
+                        versions=list(session.versions), commands=session.test_commands(), taskHash=task_digest(task),
                         task=journal.scope.number if journal else 0, scope=journal.scope.digest if journal else '')
         # JSON normalizes tuples to lists. Compare that canonical form on every restart.
         identity = json.loads(json.dumps(identity))
