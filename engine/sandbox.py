@@ -526,6 +526,8 @@ class Session:
 
     def test_definition_changed(self):
         """True when the candidate edits the commands that decide whether it passes (they are read from the base)."""
+        if any(path == '.npmrc' or path.endswith('/.npmrc') for path in self.changes):
+            return True  # npm config can disable lifecycle checks or select another workspace with identical scripts.
         if 'KAPPA.md' in self.changes and kappa_test_command(self.base) != kappa_test_command(self.candidate()):
             return True
         if 'package.json' in self.changes:

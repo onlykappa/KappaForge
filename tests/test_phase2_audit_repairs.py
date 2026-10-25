@@ -14,6 +14,14 @@ SHA = 'a' * 40
 
 
 class TestCommandTests(unittest.TestCase):
+    def test_a_repair_cannot_disable_lifecycle_checks_through_npmrc(self):
+        session = repair_tests.fixture_tree(files={'package.json': b'{"scripts":{"pretest":"node failing.cjs","test":"node passing.cjs"}}'})
+        reply = repair_tests.model_reply({'tool':'apply_patch', 'reason':'Disable the failing pretest',
+            'args':{'edits':[{'path':'.npmrc','find':'','replace':'ignore-scripts=true\n'}]}})
+        result = repair_tests.sandbox_repair_controller.SandboxRepairController(session).run_repair('Fix the behavior', reply, 'fixture')
+        self.assertEqual((result['status'], result['stop_reason']), ('failed', 'test_definition_changed'))
+        self.assertEqual(session.run_tests()[0].status, 'rejected')
+
     def test_a_repair_cannot_change_npm_test_or_its_hooks_or_delegates(self):
         for script in ('test', 'pretest', 'posttest', 'unit'):
             with self.subTest(script=script):

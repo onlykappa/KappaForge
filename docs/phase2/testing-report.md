@@ -93,10 +93,10 @@ Local checks actually run during hardening:
 
 | Check | Result |
 | --- | --- |
-| Full Python suite | 982 discovered: 949 passed, 33 skipped; zero failures/errors |
-| Full Python suite with all four HTTP(S) proxy variables set to `http://127.0.0.1:9` | 982 discovered: 949 passed, 33 skipped; zero failures/errors |
+| Full Python suite | 983 discovered: 950 passed, 33 skipped; zero failures/errors |
+| Full Python suite with all four HTTP(S) proxy variables set to `http://127.0.0.1:9` | 983 discovered: 950 passed, 33 skipped; zero failures/errors |
 | `npm test` | 857 passed; zero failures/skips |
-| New `test_phase2_audit_repairs` module | 12 tests; included in full discovery, including the production repair-controller/journal question round trip |
+| New `test_phase2_audit_repairs` module | 13 tests; included in full discovery, including the production repair-controller/journal question round trip |
 | Dependency map generation and check; execution policy; whitespace | Passed |
 
 The additional local skip is the new real-Docker npm script-substitution regression. It is in the existing Phase 1
@@ -105,6 +105,11 @@ locally. The hardening commit's `sandbox`, `research`, ordinary test and native 
 earlier CI run links above prove the earlier implementation, not these repairs. Final post-push evidence is recorded
 in PR #264's description. No tests were removed, disabled or relaxed; the resume fixture now includes the review's
 candidate digest and still requires completed unchanged work not to repeat.
+
+Before the final push, an additional local npm reproduction showed that `.npmrc` can disable a failing lifecycle
+hook with no script change. The follow-up protects npm configuration too and adds that second attack to the Docker
+regression. The counts above include this follow-up. The first audit repair commit `c7c53b2` passed all CI jobs;
+the final follow-up needs its own CI evidence and does not inherit that green status.
 
 The other audit observations remain open and are listed in `audit-hardening.md`. These repairs establish regression
 coverage for the four requested issues; they are not a claim that unattended production task quality, all toolchain

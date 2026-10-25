@@ -5,10 +5,14 @@ No new workflow, paid service, model route, merge or release is enabled.
 
 ## Test validation remains fixed during repair
 
-`Session.test_definition_changed()` protects the base KAPPA.md test command and the entire npm script map.
+`Session.test_definition_changed()` protects the base KAPPA.md test command, the entire npm script map and `.npmrc`
+configuration (including nested copies).
 The latter includes lifecycle hooks and scripts reached through shell/npm indirection; comparing only `scripts.test`
 does not freeze what `npm test` executes. Changes to the npm script map are conservatively unsupported in this
-validation path, including additions. Dependency metadata can still change, subject to existing installation limits.
+validation path, including additions. `.npmrc` changes are also refused: `ignore-scripts=true` can disable a failing
+pretest/posttest hook without changing a single script. A local npm reproduction confirmed the base exits 1 and the
+configuration-only change exits 0; both forms now have regression coverage. Dependency metadata can still change,
+subject to existing installation limits.
 
 The repair controller checks this invariant before restoring a completed receipt and at every iteration, so an
 agent patch cannot weaken the command before candidate or final regression. `Session.run_tests()` also refuses a
@@ -16,10 +20,11 @@ changed definition when invoked directly. The stop is `test_definition_changed`,
 
 Regression coverage:
 
-- `tests/test_phase2_audit_repairs.py`: test script, pretest, posttest and delegated-script changes; direct test-tool refusal.
+- `tests/test_phase2_audit_repairs.py`: test script, pretest, posttest, delegated scripts and npm configuration changes; direct test-tool refusal.
 - `tests/test_phase1_acceptance.py`: `RealSandboxAcceptance.test_a_repair_cannot_swap_the_failing_npm_script_for_a_passing_one`.
   Real Docker runs the original failing npm suite. The repair tries to substitute a different passing suite and
-  stops before that weaker suite can run. CI runs this in the existing `sandbox` job.
+  stops before that weaker suite can run. A second case tries to disable the failing pretest through `.npmrc`.
+  CI runs both cases in the existing `sandbox` job.
 
 ## Publication reviews the exact tested candidate
 
