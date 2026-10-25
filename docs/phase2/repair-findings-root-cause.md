@@ -51,7 +51,7 @@ and the task stopped.
 
 ## Tests
 
-`tests/test_repair_root_causes.py` (11) covers:
+`tests/test_repair_root_causes.py` (12) covers:
 - **Prompt shape:** line numbers and numbered owner requirements are shown, and the engine's copy is not sent.
 - **Line citations:** a finding cited by lines is confirmed, while the #232 paraphrase is still refused; a copied
   prefix is tolerated; out-of-range citations and unknown owner references are refused.
@@ -60,3 +60,6 @@ and the task stopped.
 - **Process notes:** every engine note is classified apart from real defects; a fresh clean review clears the notes
   with no verifier call and no code; a process note from a review never reaches the verifier.
 - **Fix rounds:** a fix round with only process notes re-checks and writes no code.
+- **PR re-check publication:** `fix_pull_request` refreshes the existing draft's title and review record and comments
+  "Re-checked the requirements" without a sandbox run, commit or test dispatch. Both a clean review and a review
+  with a remaining problem are covered; the latter keeps the draft incomplete.

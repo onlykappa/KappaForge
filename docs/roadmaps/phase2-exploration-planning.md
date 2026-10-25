@@ -63,7 +63,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 - [x] **7. Exploration inside sandbox execution** ([investigate, plan, edit, test](../phase2/sandbox-exploration.md)): one persisted task alternates investigation, planning, editing and
       testing. For example, a test reveals a missing export; the agent searches for it, reads the defining module,
       follows the import chain, updates its plan, patches the right place and reruns the focused test.
-- [ ] **8. Regression tests and acceptance**: automated proof of every Phase 2 requirement (below), including an
+- [x] **8. Regression tests and acceptance** ([requirement-to-test matrix](../phase2/acceptance.md), [testing report](../phase2/testing-report.md)): automated proof of every Phase 2 requirement (below), including an
       end-to-end fixture whose failing behavior depends on a file the initial plan does not know about; testing
       report that separates checks that ran from checks that were only inspected.
 
@@ -87,11 +87,11 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 
 ## Deliverables (end of Phase 2)
 
-- [ ] Implementation and regression tests
+- [x] Implementation and regression tests ([acceptance coverage](../phase2/acceptance.md))
 - [x] Exploration and research tool schemas ([exploration](../phase2/exploration.md), [research](../phase2/research.md))
 - [x] Requirement-classification schema (`config/requirement-classification.schema.json`)
 - [x] Clarification and resume demonstration (end-to-end tests in `tests/test_clarification.py`)
-- [ ] Architecture and policy documentation, including the research host allowlist and data rules
-- [ ] Testing report (ran vs. inspected), unresolved issues and Phase 3 prerequisites
+- [x] Architecture and policy documentation, including the research host allowlist and data rules ([architecture and policy links](../phase2/acceptance.md), [research rules](../phase2/research.md))
+- [x] Testing report (ran vs. inspected), unresolved issues and Phase 3 prerequisites ([report](../phase2/testing-report.md))
 
 Phase 3 is out of scope, apart from minimal reusable interfaces Phase 2 needs.

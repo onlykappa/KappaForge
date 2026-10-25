@@ -159,6 +159,67 @@ class ProcessProblemTests(Base):
 class ReverifyTests(Base):
     """A fix round whose only open problems are review-process notes re-checks the source and writes no code."""
 
+    def test_fix_pull_request_publishes_the_fresh_review_without_code_or_test_dispatch(self):
+        from engine import native_build
+        old_problem = 'Repair checkpoint awaiting full requirement review and independent tests'
+        issue = dict(number=9, title='Cast', user={'login': developer.OWNER},
+                     body='Repository: onlykappa/KappaForge\nMode: develop\n\nMake add accept numeric strings')
+        for problems in ([], ['Requirement verification is incomplete']):
+            with self.subTest(problems=problems):
+                pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50',
+                          state='open', draft=True, title='Draft (incomplete): Cast', base={'sha': SHA},
+                          head={'sha': SHA, 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}},
+                          body='Original plan\n\n' + verify.review_record([old_problem]) +
+                               '\n\n## Latest fix\nStale review')
+                fresh = 'Fresh requirement review.\n\n' + verify.review_record(problems)
+                writes = []
+
+                def gh(path, token, payload=None, method=None):
+                    if payload is not None:
+                        writes.append((path, payload, method))
+                        return {}
+                    if path.endswith('/pulls?state=open&head=onlykappa:kappa/dev-9'):
+                        return [pr]
+                    if '/comments?' in path:
+                        return []
+                    self.fail('Unexpected GitHub read: ' + path)
+
+                with patch.object(developer, 'gh', side_effect=gh), \
+                        patch.object(developer, 'token_for', return_value='token'), \
+                        patch.object(developer, 'sandbox_result', return_value={'status': 'completed', 'conclusion': 'success'}), \
+                        patch.object(native_build, 'result', return_value=None), \
+                        patch.object(developer, 'owner_guidance', return_value=[]), \
+                        patch.object(developer, 'is_private', return_value=False), \
+                        patch.object(developer, 'code_providers', return_value={'free'}), \
+                        patch.object(developer, 'Progress') as progress, \
+                        patch.object(developer, 'revise_branch', return_value=('reviewer', 'Re-checked', {}, fresh, {})) as revise, \
+                        patch.object(developer, 'run_sandbox_repair') as sandbox_run, \
+                        patch.object(developer, 'publish_candidate') as publish, \
+                        patch.object(developer, 'commit_changes') as commit, \
+                        patch.object(developer, 'dispatch_tests') as dispatch:
+                    url = developer.fix_pull_request(issue, 'key', 'token')
+
+                self.assertEqual(url, pr['html_url'])
+                revise.assert_called_once()
+                sandbox_run.assert_not_called()
+                publish.assert_not_called()
+                commit.assert_not_called()
+                dispatch.assert_not_called()
+                self.assertEqual(len(writes), 2, 'only the existing PR and task comment are updated')
+                path, payload, method = writes[0]
+                self.assertEqual((path, method), (f'repos/{developer.ROOT}/pulls/50', 'PATCH'))
+                self.assertEqual(payload['title'], 'Draft' + (' (incomplete)' if problems else '') + ': Cast')
+                previous, latest = payload['body'].split('\n\n## Latest fix\n')
+                self.assertEqual(previous.strip(), 'Original plan')
+                self.assertEqual(latest, fresh)
+                self.assertEqual(verify.open_problems(payload), problems)
+                path, payload, _ = writes[1]
+                self.assertEqual(path, f'repos/{developer.ROOT}/issues/9/comments')
+                self.assertIn('Re-checked the requirements against the current source:', payload['body'])
+                self.assertIn(pr['html_url'], payload['body'])
+                self.assertIn('1 problem(s) still open' if problems else 'every requirement is met; no code change was needed', payload['body'])
+                self.assertEqual(progress.return_value.ok.call_args.kwargs['status'], 'blocked' if problems else 'testing')
+
     def test_a_process_only_fix_round_reviews_again_without_verifier_or_generation(self):
         pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50', base={'sha': SHA},
                   head={'sha': SHA, 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}},
