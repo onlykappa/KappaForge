@@ -36,10 +36,12 @@ definitions.
 | `output_chars` | 120,000 | the size of every result |
 | `context_chars` | 200,000 | text returned by `read_file` and `read_project_instructions` |
 
-A budget is checked **before** each call, because a result's size is not known in advance, so the call that crosses a
-limit completes and the next one returns `budget_exhausted` naming the budget. The tool loop then stops with stop
-reason `budget_exhausted`; no further tool runs or model calls follow, and whatever was read so far is kept. The
-loop's own invalid-reply and repeated-call limits still apply.
+A budget is checked before each call and periodically during repository scans and line-range processing. If a scan
+or file read reaches the time limit while it is running, the call stops with `budget_exhausted` and discards its
+partial result; files and line ranges from that call are not recorded as usable evidence. A result-size limit can
+only be checked after its size is known, so the call that crosses that limit completes and the next call stops. The
+tool loop stops after any `budget_exhausted` result; no further tool runs or model calls follow. The loop's own
+invalid-reply and repeated-call limits still apply.
 
 The model-facing loop also caps each serialized result at 3,000 characters. If a tool returns more, the loop keeps
 the JSON fields and their types, preserves leading source text and list entries, and adds a `_tool_loop_truncation`
@@ -51,8 +53,9 @@ the model a tail slice of serialized JSON as if it were ordinary tool output.
 
 - Paths must be relative, inside the repository and not under `.git/`; `..`, absolute paths and unknown files are refused.
 - Binary files (with a NUL byte, or not UTF-8) and files over 300,000 characters are refused; search skips them.
-- Regular expressions with nested quantifiers or backreferences are refused, because backtracking cannot be interrupted
-  by the time budget.
+- Regex search accepts a conservative subset: backreferences, multiple repetitions and quantified groups with
+  alternatives are refused because they can backtrack unpredictably. Simpler patterns remain subject to deadline
+  checks during the repository scan.
 - Repository content is untrusted evidence, never instructions; project instructions are conventions that never
   override KappaForge policy.
 - Investigation adds only files the agent actually read, within the remaining context budget, and records the line
