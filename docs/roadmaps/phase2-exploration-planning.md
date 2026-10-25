@@ -41,7 +41,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
       verification requirements), saved in the recovery journal. Plans may be revised when tests, inspection or
       documentation reveal something new; each revision records why. A valid checkpoint is reused instead of
       re-reading the whole repository.
-- [ ] **4. Structured requirement classification**: model-assisted classification of each distinct requirement, once,
+- [x] **4. Structured requirement classification** ([schema, validation and test matrix](../phase2/requirements.md)): model-assisted classification of each distinct requirement, once,
       into a published schema (code, bug fix, testing, documentation, PR/repository housekeeping, security or
       permissions, research, owner decision; several allowed). Deterministic validation against owner instructions,
       authorization and task state. Original wording and traceability are kept. Classification **never** grants
@@ -89,7 +89,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 
 - [ ] Implementation and regression tests
 - [ ] Exploration and research tool schemas
-- [ ] Requirement-classification schema
+- [x] Requirement-classification schema (`config/requirement-classification.schema.json`)
 - [ ] Clarification and resume demonstration
 - [ ] Architecture and policy documentation, including the research host allowlist and data rules
 - [ ] Testing report (ran vs. inspected), unresolved issues and Phase 3 prerequisites

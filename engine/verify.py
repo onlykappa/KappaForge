@@ -633,8 +633,9 @@ class ScopeReviewUnavailable(ValueError):
 
 @task_state.role('reviewer', 'Review the current candidate against the owner goal',
                  'Current-source evidence covers each goal; model findings remain hypotheses until verified')
-def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
-    """The model's bounded source-backed verdict; None leaves verification incomplete."""
+def model_review(run_model, api_key, task, read, changes, paths, allowed=None, classified=None):
+    """The model's bounded source-backed verdict; None leaves verification incomplete. `classified` (section 4
+    requirements) asks the review to report them by id with any test that exercises them."""
     REVIEW_FAILURE.set('')
     SCOPE_UNDECIDED.set(False)
     try:
@@ -668,6 +669,9 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None):
                 complete = set()
                 context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit, complete=complete)
                 prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context)
+                if classified:
+                    from engine import requirements
+                    prompt += requirements.review_instructions(classified)
                 if scope_required:
                     prompt += ('\n\nFILE SCOPE CHECK: Include "file_scope" in the JSON: one object for EVERY changed file '
                                'with path, necessary (boolean), reason (why the original owner request requires this change), '
