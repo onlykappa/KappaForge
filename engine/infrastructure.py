@@ -4,6 +4,7 @@ Public standard Actions jobs are unmetered; private allowances and custom runner
 cannot prove a zero-cost reservation, so this policy does not select them.
 """
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,10 +15,11 @@ import urllib.parse
 import urllib.request
 
 ROOT = 'onlykappa/KappaForge'
-WORKFLOWS = frozenset(('agent.yml', 'sandbox-tests.yml', 'project-tests.yml', 'review-graph.yml', 'ios-build.yml'))
+WORKFLOWS = frozenset(('agent.yml', 'sandbox-tests.yml', 'project-tests.yml', 'review-graph.yml', 'ios-build.yml', 'recovery.yml', 'continuous.yml'))
 RUNNERS = frozenset(('ubuntu-latest', 'macos-15'))
 LINUX_RUNNERS = frozenset(('ubuntu-latest',))
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / '.github' / 'workflows'
+POLICY = json.loads((WORKFLOW_DIR.parents[1] / 'config/execution-infrastructure.json').read_text(encoding='utf-8'))
 MIB = 1024 ** 2
 
 
@@ -131,7 +133,9 @@ def authorize_dispatch(url, payload, token=None, get=None):
         reviewed = (WORKFLOW_DIR / workflow).read_text(encoding='utf-8')
     except (ValueError, KeyError, OSError, UnicodeError):
         raise blocked('the workflow source could not be checked against this reviewed engine.') from None
-    if text != reviewed:
+    if (POLICY.get('version') != 1 or POLICY.get('repository') != ROOT or set(POLICY.get('runners', [])) != RUNNERS
+            or set(POLICY.get('workflows', {})) != WORKFLOWS
+            or hashlib.sha256(text.encode()).hexdigest() != POLICY['workflows'].get(workflow) or text != reviewed):
         raise blocked('the workflow changed since this engine started; restart from the reviewed main revision.')
     runners = workflow_runners(text)
     if get(f'repos/{ROOT}/git/ref/heads/{ref}').get('object', {}).get('sha') != sha:

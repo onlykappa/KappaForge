@@ -29,6 +29,9 @@ jobs:
       # A warning, not a failure: agent-written PRs cannot run the generator themselves.
       run: python3 scripts/dependency-map.py --check || echo "::warning title=dependency map::dependency_map.json is stale; run python3 scripts/dependency-map.py"
       shell: bash
+    - name: Verify the reviewed free execution workflow manifest
+      run: python3 scripts/execution-policy.py --check
+      shell: bash
   structure:
     runs-on: ubuntu-latest
     steps:
