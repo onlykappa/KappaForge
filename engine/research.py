@@ -142,6 +142,7 @@ class Research:
         self.pages = {}     # Source id -> fetched text, for citation checks.
         self.fetches = self.bytes = 0
         self._versions = {}  # (ecosystem, name) -> (versions, latest, source id)
+        self.documents = {}  # url (requested and final) -> (source record, text, code blocks): fetched once per task
 
     # ---- rules --------------------------------------------------------------------------------------------------
 
@@ -289,13 +290,26 @@ class Research:
                     for r in data.get('results', [])[:10]]
         return {'status': 'ok', 'source': source['id'], 'untrusted': UNTRUSTED, 'results': rows}
 
+    def _document(self, tool, url):
+        """(source, text, code blocks) of a documentation page. A page is fetched once per task: reading its next
+        page, its examples or one of its APIs reuses the same retrieval and source id instead of downloading it
+        again (a long page re-fetched per page ran out of byte budget on docs.github.com)."""
+        if isinstance(url, str) and url in self.documents:
+            return self.documents[url]
+        source, text, content_type = self.fetch(tool, url)
+        if source['status'] != 'ok':
+            return source, None, None
+        body, code = page_text(text, content_type)
+        self.pages[source['id']] = body
+        for key in {url, source.get('final_url', url)}:
+            self.documents[key] = (source, body, code)
+        return source, body, code
+
     def read_doc(self, url, page=1):
         """Read a documentation page (version-specific URLs welcome), in pages of plain text."""
-        source, text, content_type = self.fetch('read_doc', url)
-        if source['status'] != 'ok':
+        source, body, _ = self._document('read_doc', url)
+        if body is None:
             return self._failure(source)
-        body, _ = page_text(text, content_type)
-        self.pages[source['id']] = body
         size = self.limits['page_chars']
         pages = max(1, -(-len(body) // size))
         page = min(max(int(page), 1), pages)
@@ -308,11 +322,9 @@ class Research:
         problem = self.query_problem(symbol)
         if problem:
             return {'status': 'invalid', 'error': 'symbol ' + problem}
-        source, text, content_type = self.fetch('find_examples', url)
-        if source['status'] != 'ok':
+        source, body, code = self._document('find_examples', url)
+        if body is None:
             return self._failure(source)
-        body, code = page_text(text, content_type)
-        self.pages[source['id']] = body
         examples = [block[:1500] for block in code if symbol in block][:5]
         return {'status': 'ok', 'source': source['id'], 'untrusted': UNTRUSTED, 'examples': examples,
                 'found': len(examples)}
@@ -373,11 +385,9 @@ class Research:
         problem = self.query_problem(symbol)
         if problem:
             return {'status': 'invalid', 'error': 'symbol ' + problem}
-        source, text, content_type = self.fetch('check_api', url)
-        if source['status'] != 'ok':
+        source, body, _ = self._document('check_api', url)
+        if body is None:
             return self._failure(source)
-        body, _ = page_text(text, content_type)
-        self.pages[source['id']] = body
         hits = [m.start() for m in re.finditer(re.escape(symbol), body)][:50]
         if not hits:
             return {'status': 'ok', 'source': source['id'], 'verdict': 'not_documented',

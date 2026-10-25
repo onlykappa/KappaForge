@@ -174,11 +174,24 @@ class BudgetTests(unittest.TestCase):
     def test_fetches_and_bytes_are_bounded(self):
         settings = copy.deepcopy(research.config())
         settings['limits'].update(fetches=2, bytes_per_fetch=50)
-        r, web = researcher({FS: FS_PAGE, FS + '?v=1': 'small page'}, settings=settings)
+        r, web = researcher({FS: FS_PAGE, FS + '?v=1': 'small page', FS + '?v=2': 'other page'}, settings=settings)
         self.assertEqual(r.read_doc(FS)['cause'], 'too_large')
         self.assertEqual(r.read_doc(FS + '?v=1')['status'], 'ok')
-        self.assertEqual(r.read_doc(FS + '?v=1')['cause'], 'budget_exhausted')
+        self.assertEqual(r.read_doc(FS + '?v=1')['status'], 'ok', 'an already fetched page costs nothing')
+        self.assertEqual(r.read_doc(FS + '?v=2')['cause'], 'budget_exhausted')
         self.assertEqual(len(web.sent), 2)
+
+    def test_a_page_is_fetched_once_however_it_is_read(self):
+        settings = copy.deepcopy(research.config())
+        settings['limits']['page_chars'] = 100
+        r, web = researcher({FS: FS_PAGE}, settings=settings)
+        first = r.read_doc(FS)
+        later = [r.read_doc(FS, n) for n in range(2, first['pages'] + 1)]
+        r.find_examples(FS, 'readFile')
+        r.check_api(FS, 'fs.exists')
+        self.assertEqual(len(web.sent), 1, 'paging, examples and API checks reuse the one retrieval')
+        self.assertEqual({p['source'] for p in [first] + later}, {first['source']})
+        self.assertEqual(''.join(p['text'] for p in [first] + later), r.pages[first['source']])
 
 
 class PackageTests(unittest.TestCase):
