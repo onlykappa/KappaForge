@@ -24,6 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from engine import recovery
 from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 from engine import repo_map as repo_maps
@@ -246,10 +247,34 @@ def gh(path, token, payload=None, method=None):
     return request("https://api.github.com/" + path, payload, token, method)
 
 
-def snapshot(repo, token):
+BASE_RE = re.compile(r"^Base:\s*([A-Za-z0-9][A-Za-z0-9._/-]{0,120})\s*$", re.M | re.I)
+
+
+def task_base(issue):
+    """The owner's "Base: <branch>" line, or None for the default branch.
+
+    A development task can build on an owner branch (a multi-step feature PR, for example) instead of only the
+    default branch; its draft PR then targets that branch. Only the base changes: the task's own branch, scope,
+    validation and review are the same, and merging stays the owner's.
+    """
+    found = BASE_RE.findall((issue or {}).get("body") or "")
+    if not found:
+        return None
+    branch = found[0]
+    if len(found) != 1 or ".." in branch or "//" in branch or branch.endswith(("/", ".", ".lock")) or branch.startswith("kappa/"):
+        raise ValueError("Base must name one existing owner branch (not an agent kappa/ branch)")
+    return branch
+
+
+def snapshot(repo, token, base=None):
     info = gh(f"repos/{repo}", token)
-    base = info["default_branch"]
-    sha = gh(f"repos/{repo}/git/ref/heads/{urllib.parse.quote(base, safe='')}", token)["object"]["sha"]
+    named, base = base, base or info["default_branch"]
+    try:
+        sha = gh(f"repos/{repo}/git/ref/heads/{urllib.parse.quote(base, safe='')}", token)["object"]["sha"]
+    except urllib.error.HTTPError as exc:
+        if named and exc.code == 404:
+            raise ValueError(f"Base branch {base} does not exist in {repo}; name an existing branch") from None
+        raise
     files, modes = list_tree(repo, sha, token)
     return base, sha, files, modes
 
@@ -753,6 +778,30 @@ def import_cycle(changes, read, limit=60):
 
 # Lines kept on each side of a traceback frame's line in an excerpt.
 EXCERPT_FRAME_LINES = 6
+
+
+def named_definitions(text, task):
+    """(first, last) 0-based line spans of the Python functions and methods the task names, smallest first.
+
+    A large file is shown as excerpts. Without the whole function, from its decorators and def line to its last
+    line, models edited bodies they had only half seen and invented their signatures: tasks #232 and #235 lost
+    dozens of rounds to "Edit text must match exactly once ... (matched 0 times)".
+    """
+    names = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", task or ""))
+    if not names:
+        return []
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    spans = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names and node.end_lineno:
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list]) - 1
+            spans.append((node.end_lineno - first, first, node.end_lineno - 1))
+    return [(first, last) for _, first, last in sorted(set(spans))]
 STOP_WORDS = {"this", "that", "with", "from", "into", "when", "what", "should", "would", "could", "make",
               "please", "add", "the", "and", "for", "repository", "mode", "develop", "onlykappa", "kappaforge"}
 
@@ -806,6 +855,15 @@ def excerpt(text, task, budget=MAX_FILE_CHARS, lines_near=()):
                 selected = candidate
         if line in selected:
             anchors.append(line)
+    # Functions the task names come whole, within half the budget, so their exact lines can anchor edits.
+    whole = 0
+    for first, last in named_definitions(text, task):
+        span = set(range(first, last + 1)) - selected
+        cost = sum(len(lines[i]) + 1 for i in span)
+        candidate = selected | span
+        if whole + cost <= budget // 2 and len(render(candidate)) <= budget:
+            selected, whole = candidate, whole + cost
+            anchors.append(first)
     for i in ranked:
         candidate = selected | {i}
         if len(render(candidate)) <= budget:
@@ -2437,7 +2495,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         sha, base = planned['base'], planned['context']['base']
         existing, modes = list_tree(repo, sha, repo_token)
     else:
-        base, sha, existing, modes = snapshot(repo, repo_token)
+        base, sha, existing, modes = snapshot(repo, repo_token, task_base(issue))
     goal = task_goal.CURRENT.get()
     goal.anchor(lambda path: read_target(repo, path, sha, repo_token))
     if goal.satisfied():
