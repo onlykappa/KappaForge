@@ -9,6 +9,9 @@ from engine import sandbox, sandbox_repair_controller, sandbox_tools
 
 class FakeDocker(sandbox.Docker):
     """Recording Docker boundary; reads candidate tarballs but never executes repository code."""
+    def authorize(self, profile, preparing=False):
+        return {'free': True, 'simulated': True}
+
     def __init__(self, always_fail=False, zero_tests=False, vary_failure=False, skipped_tests=False):
         self.calls = []
         self.always_fail = always_fail

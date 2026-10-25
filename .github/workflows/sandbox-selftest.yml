@@ -7,6 +7,7 @@ on:
     - engine/sandbox.py
     - engine/sandbox_repair_controller.py
     - engine/execution.py
+    - engine/infrastructure.py
     - engine/generation_checkpoint.py
     - engine/sandbox_tools.py
     - engine/tool_loop.py
@@ -14,16 +15,20 @@ on:
     - tests/test_sandbox_repair_controller.py
     - tests/test_sandbox_repair_integration.py
     - tests/test_execution_recovery.py
+    - tests/test_infrastructure.py
     - tests/fixtures/sandbox/**
     - tools/sandbox_selftest.py
     - .github/workflows/sandbox-selftest.yml
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   sandbox:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -31,6 +36,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
+    - name: Verify free execution permissions and resource availability
+      run: python -m engine.infrastructure
     - name: Real-Docker sandbox tests
       env:
         KAPPA_SANDBOX_INTEGRATION: '1'

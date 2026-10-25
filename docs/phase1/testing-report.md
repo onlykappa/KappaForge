@@ -159,3 +159,32 @@ fixed by recording branch movement and PR heads in those fixtures; publication g
 - Live provider quota exhaustion, real runner termination and GitHub mutation outages are failure-injected locally;
   no live inference or production task dispatch was used to implement these steps.
 - The browser/iOS shared JavaScript renderer and escaping are automated; native iOS simulator screenshots were not run locally.
+
+## Step 7: cost and resource enforcement
+
+The execution path now admits only the reviewed standard public Actions workflows and runner-local Docker, verifies
+live repository/job/daemon metadata and current host headroom, and preserves the checkpoint when admission stops.
+See [cost and resource policy](cost-and-resources.md) for permissions, operating limits and scope.
+
+### Ran locally
+
+| Check | Measured result |
+| --- | --- |
+| Full Python discovery | 827 tests ran, OK with 13 skipped |
+| `npm test` | 840 passed |
+| Focused admission tests | 18 passed: private/unknown metadata, unavailable permissions, actual runner identity, paid/dynamic/indirect workflows, changed/moving refs, resource shortages, missing isolation controls, remote Docker, empty CLI configuration, cached-image rechecks, terminal checkpoint retention and the real module entrypoint |
+| Dependency map and whitespace checks | Regenerated map check and `git diff --check` passed |
+| Public GitHub API metadata read | Existing sandbox job reports literal `ubuntu-latest`, the runner identity and run ID used by admission |
+
+Repository growth exposed a brittle dependency-map test budget below the space needed for the file names alone.
+The test now selects a feasible lower bound while retaining every module, omission reporting, the rejection of an
+impossible budget and the separate strict 6,000-character production-consumer limit.
+
+### CI and failure injection
+
+The real-Docker self-test workflow runs the same non-allocating preflight, isolation tests, faulty-project repair and
+outage recovery, full Python/Node sandbox suites and cleanup. Its read-only GitHub token permits metadata inspection
+on the host and is excluded from Docker and container environments. Current CI results are recorded on the delivery PR.
+
+Paid capacity, private billing, actual quota exhaustion and remote builders are rejected through injected boundaries;
+none were activated for testing. Existing zero-dollar provider enforcement was covered by the full regression suites.

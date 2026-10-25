@@ -87,6 +87,8 @@ def diagnose(error):
     from engine.reliability import RecoveryBudgetExceeded, ProviderResponseError
     if getattr(error, 'category', '') == 'execution_infrastructure':
         return 'infrastructure', 'wait_for_infrastructure'
+    if getattr(error, 'category', '') == 'execution_resource':
+        return 'infrastructure_policy', 'stop'
     if isinstance(error, RecoveryBudgetExceeded):
         return 'recovery_budget', 'stop' if error.terminal else 'checkpoint_and_continue'
     if isinstance(error, ProviderResponseError):

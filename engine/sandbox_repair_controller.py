@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-from . import sandbox, sandbox_tools, tool_loop, execution, recovery
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure
 
 
 MAX_ATTEMPTS = 5
@@ -71,6 +71,8 @@ class SandboxRepairController:
                     if self.execution.error:
                         raise self.execution.error
                     if test_result.get("status") == "unavailable":
+                        if test_result.get('category') == 'execution_resource':
+                            raise infrastructure.InfrastructureBlocked(test_result['error'])
                         return self._result("unavailable", "unavailable", test_result.get("error", "Sandbox unavailable"))
                     if any(row.get("status") == "error" for row in test_result.get("results", [])):
                         return self._result("unavailable", "unavailable", self._diagnostics(test_result))
@@ -125,6 +127,10 @@ class SandboxRepairController:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
                 if response.get("stop_reason") == "unavailable":
+                    for step in response.get('steps', []):
+                        result = step.get('result', {})
+                        if result.get('category') == 'execution_resource':
+                            raise infrastructure.InfrastructureBlocked(result['error'])
                     return self._result("unavailable", "unavailable", "Sandbox tool unavailable")
                 if response.get("stop_reason") == "done":
                     self.state["phase"] = "candidate"
@@ -152,6 +158,11 @@ class SandboxRepairController:
                 if self._diff_fingerprint() != self.state["fingerprint"]:
                     self.state["phase"] = "candidate"
                 self.execution._save()
+        except infrastructure.InfrastructureBlocked as exc:
+            if self.execution:
+                self.execution.data['diagnostics'].update(errorCategory=exc.category, evidence=execution.clean(exc), finalValidation='blocked')
+                self.execution.transition('infrastructure', 'blocked', str(exc))
+            raise
         except (execution.CheckpointMismatch, execution.CheckpointUnavailable):
             raise
         except sandbox.SandboxUnavailable as exc:

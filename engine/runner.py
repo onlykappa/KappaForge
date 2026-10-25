@@ -69,6 +69,9 @@ def request(url, payload=None, token=None, method=None):
         with urllib.request.urlopen(current, timeout=35) as response:
             return json.load(response)
     guard_request(url, payload, method or ("POST" if payload is not None else "GET"), read_current)
+    if (method or ("POST" if payload is not None else "GET")) == 'POST':
+        from engine.infrastructure import authorize_dispatch
+        authorize_dispatch(url, payload, token)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=35) as response:
         body = response.read()

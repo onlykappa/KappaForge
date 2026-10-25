@@ -65,6 +65,9 @@ class FakeDocker(sandbox.Docker):
     def available(self):
         return self._available
 
+    def authorize(self, profile, preparing=False):
+        return {'free': True, 'simulated': True}
+
     def runs(self):
         return [c for c in self.calls if c[:1] == ['run'] and 'kappaforge-sandbox' in c]
 
@@ -113,7 +116,7 @@ class ContainerIsolationTests(unittest.TestCase):
                 patch.object(sandbox.subprocess, 'Popen', side_effect=popen):
             sandbox.Docker().call(['info'])
         self.assertNotIn('GITHUB_TOKEN', seen)
-        self.assertEqual(seen.get('DOCKER_HOST'), 'unix:///run/docker.sock')
+        self.assertNotIn('DOCKER_HOST', seen)
 
     def test_each_command_gets_a_fresh_copy_of_the_uncommitted_candidate(self):
         s = session(fixture(FAULTY))
