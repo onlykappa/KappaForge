@@ -30,17 +30,17 @@ tests and documentation are on its delivery branch. Merges, deployments and rele
 - [x] **7. Cost and resource enforcement**: free-first only; check permissions and free capacity before choosing
       infrastructure; stop with an actionable explanation instead of falling back to unsafe or billable execution.
       [Admission policy, operating limits and failure behavior](../phase1/cost-and-resources.md).
-- [ ] **8. Tests and acceptance**: automated proof of every Phase 1 acceptance requirement, including a realistic faulty
+- [x] **8. Tests and acceptance**: automated proof of every Phase 1 acceptance requirement, including a realistic faulty
       fixture that passes only after an agent-driven repair; testing report that separates checks that ran from checks
-      that were only inspected.
+      that were only inspected. [Requirements and their tests](../phase1/acceptance.md).
 
 ## Deliverables (end of Phase 1)
 
-- [ ] Implementation and regression tests
+- [x] Implementation and regression tests
 - [x] Execution architecture documentation and diagram
 - [x] Sandbox threat model
 - [x] Operating limits (step 2 profiles and step 7 live resource admission)
-- [ ] Testing report (ran vs. inspected), [kept per step](../phase1/testing-report.md)
+- [x] Testing report (ran vs. inspected), [kept per step](../phase1/testing-report.md)
 - [ ] Readiness criteria for Phase 2
 
 Phase 2 and Phase 3 are out of scope, apart from minimal reusable interfaces Phase 1 needs.
