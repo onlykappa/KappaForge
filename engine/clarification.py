@@ -13,7 +13,8 @@ checkpoint identity leaves out, so the saved plan, candidate, sandbox state and 
 
 Questions are refused when a convention or the repository can settle them (naming, formatting, style, file layout),
 when they ask for an owner-only action (KappaForge never merges, deploys or releases), when they repeat an answered
-question, and after MAX_QUESTIONS per task. An answer grants nothing: the authorization guard decides as before.
+question. There is no limit on how many questions a task may ask over its life: each one is asked only when it is
+needed, one at a time, and waits for the owner. An answer grants nothing: the authorization guard decides as before.
 """
 from contextvars import ContextVar
 import hashlib
@@ -21,7 +22,6 @@ import re
 import time
 
 KINDS = ('implementation', 'authorization', 'expected_behavior', 'safety')
-MAX_QUESTIONS = 3
 HEADING = '### KappaForge has a question'
 MARKER = 'kappa-clarification'
 # Answers ride in this section of the task text; execution.task_digest() leaves it out of every checkpoint identity.
@@ -66,8 +66,6 @@ def validate(raw, asked=()):
     qid = question_id(question)
     if any(r.get('id') == qid for r in asked):
         return None, 'this question was already asked; use its answer'
-    if len(asked) >= MAX_QUESTIONS:
-        return None, f'this task already asked {MAX_QUESTIONS} questions; proceed with the most conservative choice'
     return dict(id=qid, kind=kind, question=question, why=why, evidence=evidence, status='waiting'), ''
 
 

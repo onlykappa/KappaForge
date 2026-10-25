@@ -23,7 +23,10 @@ A question can come from two places:
 - is not exactly one concise question (10–300 characters, one question mark), or does not say why it blocks a correct change;
 - is an implementation or expected-behavior question about something a convention or the repository settles: naming, formatting, style, tabs or spaces, colours, file or folder placement, case styles and similar;
 - asks permission for an owner-only action (merge, deploy, release, change access). KappaForge never does these, so there is nothing to ask;
-- repeats a question this task already asked, or would exceed 3 questions for the task.
+- repeats a question this task already asked.
+
+There is no cap on the number of questions: a task asks as many as it genuinely needs over its life, one
+at a time, and each waits for the owner's answer before the next can be asked.
 
 A refused question becomes a decision: the planner proceeds and the feed says "Decided without asking the owner: …".
 In repair, the tool returns `invalid` and the loop continues. Without a recovery journal there is nothing to resume

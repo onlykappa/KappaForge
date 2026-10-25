@@ -19,13 +19,13 @@ def owner(cid, text):
 
 
 class ValidationTests(unittest.TestCase):
-    def test_a_material_question_is_accepted_once(self):
+    def test_a_material_question_is_accepted_once_and_never_capped(self):
         record, why = clarification.validate(QUESTION)
         self.assertEqual(why, '')
         self.assertEqual((record['kind'], record['status'], len(record['evidence'])), ('expected_behavior', 'waiting', 2))
         self.assertEqual(clarification.validate(QUESTION, [record])[0], None, 'never asked twice')
-        many = [dict(id=str(i)) for i in range(clarification.MAX_QUESTIONS)]
-        self.assertIn('already asked', clarification.validate(QUESTION, many)[1])
+        many = [dict(id=str(i)) for i in range(50)]
+        self.assertIsNotNone(clarification.validate(QUESTION, many)[0], 'no cap: a task asks as many questions as it needs')
 
     def test_convention_resolvable_questions_are_decided_not_asked(self):
         for question in ('What should I name the new helper function?', 'Should I use tabs or spaces here?',
