@@ -1023,6 +1023,12 @@ def mirror_ios_copies(repo, changes, existing):
 # A genuinely different route after large answers fail: smaller context and output
 # let more approved providers participate, without changing validation or authority.
 COMPACT = SMALL._replace(file_chars=24000, context_chars=80000, output_tokens=8192)
+FOCUSED_REPAIR = contextvars.ContextVar('focused_repair', default=False)
+
+
+def repair_budget(budget):
+    return budget._replace(file_chars=min(budget.file_chars, 6000), context_chars=min(budget.context_chars, 20000),
+                           output_tokens=min(budget.output_tokens, 4096)) if FOCUSED_REPAIR.get() else budget
 
 
 def generate(api_key, task, repo, sources, existing, guide="", allowed=None, design="", require_test=False, allow_empty=False):
@@ -1031,6 +1037,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
     journal = recovery.CURRENT.get()
     initial_budget = (PINNED if getattr(getattr(journal, 'scope', None), 'inference_route', None) else
                       COMPACT if journal and journal.state.get('repairStrategy') == 'compact' else LARGE)
+    initial_budget = repair_budget(initial_budget)
     try:
         model, summary, changes, explanation = generate_with(api_key, task, repo, sources, existing, guide, allowed, initial_budget, design,
                                                              require_test, allow_empty, max_attempts=3)
@@ -1045,6 +1052,7 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
         remaining_attempts = 5 - attempts_used
         budget = (COMPACT._replace(file_chars=12000, context_chars=40000, output_tokens=4096) if initial_budget == COMPACT
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
+        budget = repair_budget(budget)
         if not remaining_attempts:
             raise GenerationFailure("No validated proposal after 5 distinct attempts. " + reason, attempts=attempts_used) from exc
         note("fix", "Large proposal could not be validated; reducing context and output for the remaining distinct attempts")
@@ -2325,6 +2333,7 @@ def build_in_stages(api_key, task, repo, sources, existing, guide, allowed, stag
 
 
 MAX_CHECK_ROUNDS = 3
+MAX_REPAIR_TARGETS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
@@ -2355,6 +2364,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     rescued = None
     loop = repair_guard.RepairLoop() if repair_guard.enabled() else None
     finding_feedback, recheck_only_used = [], False
+    deferred_repairs = set()
     for round_ in range(MAX_CHECK_ROUNDS + 2):
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
                      if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
@@ -2414,7 +2424,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
-        problems = list(dict.fromkeys(outstanding + previous_review_problems + problems))
+        problems = list(dict.fromkeys(outstanding + previous_review_problems + problems + sorted(deferred_repairs)))
         task_state.review(reqs, problems)
         if review_only:
             break  # The sandbox receipt belongs to this exact candidate; a final review must never edit it.
@@ -2449,6 +2459,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 task_state.review(reqs, problems)
                 break
             repair_targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
+            deferred_repairs.difference_update(row['claim'] for row in findings if row['verdict'] == 'rejected')
             if not repair_targets:
                 if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
                     finding_feedback = [{k: row[k] for k in ('id', 'verdict', 'reason')} for row in findings]
@@ -2463,6 +2474,17 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 problems = [str(error)] + problems
                 task_state.review(reqs, problems)
                 break
+            deferred_repairs.update(repair_targets)
+            repair_targets = repair_targets[:MAX_REPAIR_TARGETS]
+            pending = len(deferred_repairs - set(repair_targets))
+            if pending:
+                progress.ok(f'Repair batch: {len(repair_targets)} confirmed targets; {pending} deferred targets remain open', warn=True)
+            if journal:
+                journal.state['repairBatch'] = dict(candidate=task_state.current()[1].identity['candidate'],
+                    selected=[repair_guard.digest(c) for c in repair_targets],
+                    deferred=[repair_guard.digest(c) for c in sorted(deferred_repairs - set(repair_targets))],
+                    evidence='diagnostic queue only; reverify current source before any later repair')
+                journal.persist()
         progress.ok(f"Found {len(problems)} problem{'s' if len(problems) != 1 else ''}: " + "; ".join(p[:90] for p in problems[:3]), warn=True)
         progress.now("Free fix rounds used up: checking whether a premium rescue is allowed" if rescue_round
                      else f"Fixing what the check found (round {round_ + 1} of {MAX_CHECK_ROUNDS})")
@@ -2479,10 +2501,12 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         if edit_path and edit_path not in existing:
             sizes.pop(edit_path, None)
         fix_task = ((canonical_task if loop is not None else task) + "\n\nSELF-REVIEW: the change below is already applied to the files shown, but checking it "
-                    "against the task found these problems. Fix every one of them now, editing the real code paths they "
+                    "against the task found these problems. Fix this selected batch now, editing the real code paths they "
                     "name; keep everything that already works.\n" + "\n".join("- " + p for p in repair_targets[:20])
-                    + "\n\nREQUIREMENT CHECKLIST (retain every item in all subsequent reviews):\n"
-                    + "\n".join('- ' + text for text in (repair_targets if loop is not None else requirement_catalog) if not verify.lifecycle_requirement(text))
+                    + ("\n\nThe complete original owner request above remains required. Other findings remain open for later batches; "
+                       "this batch cannot mark the entire task complete.\n" if loop is not None else
+                       "\n\nREQUIREMENT CHECKLIST (retain every item in all subsequent reviews):\n" +
+                       "\n".join('- ' + text for text in requirement_catalog if not verify.lifecycle_requirement(text)))
                     + "\n\nKappaForge itself opens and updates this task's draft PR and reports progress: never add code, "
                     "scripts or workflows that open PRs or send notifications.\n"
                     + ("\n\nPREVIOUS REPAIR COULD NOT BE APPLIED. Use a different source-exact edit based on the "
@@ -2503,6 +2527,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             if checkpoint:
                 checkpoint(changes)
             continue
+        focused_token = FOCUSED_REPAIR.set(loop is not None)
         try:
             # Existing candidate tests are still reviewed and independently run.
             # Do not force every follow-up repair to add a redundant test file.
@@ -2518,6 +2543,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             progress.ok(f"Repair round {round_ + 1} could not be applied; preserving the candidate and trying the next bounded round",
                         warn=True)
             continue
+        finally:
+            FOCUSED_REPAIR.reset(focused_token)
+        deferred_repairs.difference_update(repair_targets)
         changes = {path: text for path, text in {**changes, **more}.items() if text != (sources.get(path) if path in sources else read(path))}
         if checkpoint:
             checkpoint(changes)

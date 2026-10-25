@@ -11,6 +11,8 @@ from engine import recovery, task_state
 FINDING_MARKER = 'KAPPA_FINDING_VERIFICATION_V1'
 LOOP_MARKER = 'KAPPA_REPAIR_LOOP_REVIEW_V1'
 MAX_FINDINGS = 12
+FINDING_BATCH_SIZE = 4
+MAX_TOTAL_FINDINGS = MAX_FINDINGS * 8
 MAX_SOURCE_CHARS = 14000
 MAX_REASON_CHARS = 180
 IDENTIFIER_RE = re.compile(r'[A-Za-z_][\w./:-]{0,79}')
@@ -332,7 +334,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
     stamp = capture(sources)
     from engine import gateway
     resources = gateway.ReviewResources()
-    source_limit = MAX_SOURCE_CHARS
+    source_limit = min(MAX_SOURCE_CHARS, 3000 + 1500 * len(claims))
 
     def build():
         nonlocal source_limit
@@ -380,7 +382,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
             fresh(stamp, sources)
             data, owner_rows, prompt = build()
             try:
-                route, output = run_model(api_key, prompt, max_output_tokens=3500, allowed=allowed, json_mode=True,
+                route, output = run_model(api_key, prompt, max_output_tokens=min(3500, 400 + 300 * len(claims)), allowed=allowed, json_mode=True,
                                           **({'skip': tuple(tried)} if tried else {}))
             except Exception as error:
                 fresh(stamp, sources)
@@ -441,14 +443,14 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
 def verify_all_findings(run_model, api_key, task, claims, sources, allowed=None):
     """Verify a larger task in bounded passes; no partial result can authorize a repair."""
     claims = list(dict.fromkeys(claims))
-    if len(claims) <= MAX_FINDINGS:
+    if len(claims) <= FINDING_BATCH_SIZE:
         return verify_findings(run_model, api_key, task, claims, sources, allowed)
-    if len(claims) > MAX_FINDINGS * 8:
-        raise RepairReviewRequired('Repair findings exceed the bounded eight-pass review budget; no edits authorized')
+    if len(claims) > MAX_TOTAL_FINDINGS:
+        raise RepairReviewRequired('Repair findings exceed the bounded total review budget; no edits authorized')
     stamp, result = capture(sources), []
-    for offset in range(0, len(claims), MAX_FINDINGS):
+    for offset in range(0, len(claims), FINDING_BATCH_SIZE):
         fresh(stamp, sources)
-        result.extend(verify_findings(run_model, api_key, task, claims[offset:offset + MAX_FINDINGS], sources, allowed))
+        result.extend(verify_findings(run_model, api_key, task, claims[offset:offset + FINDING_BATCH_SIZE], sources, allowed))
         fresh(stamp, sources)
     save(stamp, result)
     return result

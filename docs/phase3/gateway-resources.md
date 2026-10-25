@@ -7,7 +7,7 @@ The confirmed controller defect was that only code generation handled the existi
 ## Recovery contract
 
 - Name the error `worker_resource_limit`; do not report it as exhausted provider quota.
-- Save a task-local prompt envelope at two thirds of the failed request's UTF-16 character count, including the task-state/role envelope. Persist it in the existing journal; every later prompt fit check observes it.
+- Save a task-local, routing-role-specific prompt envelope at two thirds of the failed request's UTF-16 character count, including the task-state/role envelope. Persist it in the existing journal; later fit checks for that role observe it. An observed verifier envelope is not a proven coding limit.
 - Rebuild scope, requirement and finding prompts by reducing source/diff context. Never cut the completed prompt, owner request or findings list. Partial evidence stays partial and all existing literal-evidence and owner-goal checks remain required.
 - Allow at most three resource reductions per review controller. Calls still cross the existing model-call, identity and deadline boundaries; this grants no additional inference budget or provider access.
 - Fail closed if the fixed instructions cannot fit or bounded adaptation is exhausted. Report the review as unverified and stop identical automatic continuations. Further gateway diagnostics or a separately authorized infrastructure correction may be necessary.
@@ -18,3 +18,26 @@ The confirmed controller defect was that only code generation handled the existi
 The new regression module tests recovery in each review path, durable envelope selection, bounded exhaustion, exact owner/finding retention, insufficient fixed context, ordinary outages, pinned terminal errors, invented evidence and candidate movement. The original source/finding-count/shape gates remain in place. Counts and commands are recorded in the [issue ledger](issue-log.md).
 
 No Worker deployment, paid hosting, paid inference or plan change is included. No production CPU/memory measurement or permanently eliminated platform error is claimed. The live retry must establish whether this adaptation clears the observed blocker. Phase 3.1 remains incomplete until its actual audit evidence is saved, validated and reviewed.
+
+## Smaller-load trial — P3-015
+
+Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.
+
+The owner requested smaller batches and a measured trial before choosing a sweet spot:
+
+| Allocation | Previous | Trial |
+| --- | --- | --- |
+| Findings per orchestrated verification call | Up to 12 | Up to 4 |
+| Output tokens for four-finding verification | 3,500 ceiling | 1,600 ceiling |
+| Source characters for four-finding verification | 14,000 ceiling | 9,000 ceiling, reduced further if necessary |
+| Confirmed targets per repair round | Entire confirmed list | Up to 3 |
+| Focused repair source/file characters | General generation allocation | 20,000 / 6,000 ceilings |
+| Focused repair output tokens | General generation allocation | 4,096 ceiling, including fallback |
+
+Fixed owner/project instructions remain verbatim; source allocation is not total request length. All 96 permitted findings can still be assessed in at most 24 four-finding calls instead of eight twelve-finding calls. Existing total model-call budgets and deadlines still apply. A failed/stale verification batch cannot return partial repair authorization.
+
+Deferred repair claims remain in the open-problem list even when a reviewer omits them. The next repair must reverify current evidence. Successful source proposals pass through the existing checkpoint callback and final validation/publication gates. Queue IDs are diagnostic, not reusable edit permission. This does not claim unvalidated interrupted proposals were published or all findings fit the remaining durable budget.
+
+Legacy global envelopes migrate only when recorded 1102 evidence identifies their role; migration is saved before history eviction. Without provenance the old restriction stays conservative. No hard request/context, platform or provider limit is raised.
+
+Compare actual calls, token usage, elapsed execution, resource errors, request sizes and saved/validated progress on the next run. Smaller requests may increase total calls. No sweet spot or overall usage reduction is proven yet. Model settings remain as selected by the owner; a concurrent model change also prevents attributing differences solely to batching.

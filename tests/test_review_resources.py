@@ -4,7 +4,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from engine import gateway, recovery, repair_guard, task_goal, task_state, verify
+from engine import developer, gateway, recovery, repair_guard, task_goal, task_state, verify
 
 
 def resource_error():
@@ -46,9 +46,13 @@ class ReviewResourceTests(unittest.TestCase):
         self.assertEqual([r['verdict'] for r in result], ['confirmed', 'confirmed'])
         self.assertEqual(len(prompts), 2)
         self.assertLess(len(prompts[1]), len(prompts[0]))
-        self.assertIn('gatewayResourcePromptChars', self.journal.state)
+        self.assertIn('verify', self.journal.state['gatewayResourceBudgets'])
         self.journal.persist.assert_called()
-        self.assertFalse(gateway.prompt_fits(prompts[0]), 'recovery must retain the smaller envelope')
+        token = task_state.ROUTING_ROLE.set('verify')
+        try:
+            self.assertFalse(gateway.prompt_fits(prompts[0]), 'recovery must retain the smaller verifier envelope')
+        finally:
+            task_state.ROUTING_ROLE.reset(token)
 
     def test_scope_review_rebuilds_without_losing_any_path(self):
         changes = {f'file{n}.py': 'return int(a) + int(b)\n' + '# filler\n' * 1800 for n in range(3)}
@@ -137,3 +141,118 @@ class ReviewResourceTests(unittest.TestCase):
         with self.assertRaises(task_state.CandidateChanged):
             repair_guard.verify_findings(model, 'key', self.goal.request, ['Fix add'], {'app.py': 'return a + b\n'})
         self.assertEqual(model.call_count, 1)
+
+    def test_legacy_verify_limit_is_migrated_and_does_not_cap_coding(self):
+        self.journal.state.update(gatewayResourcePromptChars=25000, gatewayEvidence=[{
+            'role': 'verify', 'code': 'worker_resource_limit', 'platformError': {'errorCode': 1102}}])
+        with task_state.action('reviewer', 'Verify', '', ''):
+            token = task_state.ROUTING_ROLE.set('verify')
+            try:
+                self.assertEqual(gateway.resource_ceiling(), 25000)
+            finally:
+                task_state.ROUTING_ROLE.reset(token)
+        # History eviction after handoff must not turn the verified hint back into a global ceiling.
+        self.journal.state['gatewayEvidence'] = []
+        with task_state.action('coder', 'Repair', '', ''):
+            self.assertIsNone(gateway.resource_ceiling())
+            self.assertTrue(gateway.prompt_fits('fixed owner/project rules\n' + 'x' * 27000))
+        self.assertEqual(self.journal.state['gatewayResourceBudgets']['verify'], 25000)
+
+    def test_role_budgets_survive_new_controller_and_never_raise_other_roles(self):
+        for role, size in (('review', 18000), ('code', 30000)):
+            token = task_state.ROUTING_ROLE.set(role)
+            try:
+                gateway.remember_resource_limit('x' * size)
+            finally:
+                task_state.ROUTING_ROLE.reset(token)
+        budgets = json.loads(json.dumps(self.journal.state['gatewayResourceBudgets']))
+        self.journal.state = {'gatewayResourceBudgets': budgets}
+        token = task_state.ROUTING_ROLE.set('review')
+        try:
+            self.assertEqual(gateway.ReviewResources().ceiling, budgets['review'])
+            self.assertLess(budgets['review'], budgets['code'])
+        finally:
+            task_state.ROUTING_ROLE.reset(token)
+
+    def test_unattributed_legacy_limit_is_preserved_conservatively(self):
+        self.journal.state['gatewayResourcePromptChars'] = 25000
+        with task_state.action('coder', 'Repair', '', ''):
+            self.assertEqual(gateway.resource_ceiling(), 25000)
+
+    def test_orchestrator_splits_even_small_lists_and_preserves_every_decision(self):
+        sizes, outputs = [], []
+        def model(key, prompt, **kw):
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            sizes.append(len(data['findings']))
+            outputs.append(kw['max_output_tokens'])
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='Numeric strings concatenate', owner_ref='R1', evidence=[dict(path='app.py', lines=[1, 1])])
+                for r in data['findings']]})
+        claims = ['Fix numeric string case ' + str(n) for n in range(11)]
+        rows = repair_guard.verify_all_findings(model, 'key', self.goal.request, claims, {'app.py': 'return a + b\n'})
+        self.assertEqual(sizes, [4, 4, 3])
+        self.assertTrue(all(n <= 1600 for n in outputs))
+        self.assertEqual([r['id'] for r in rows], [repair_guard.digest(c) for c in claims])
+
+    def test_repair_round_focuses_three_targets_and_keeps_deferred_findings_open(self):
+        handle = recovery.CURRENT.set(None)
+        developer.UNFINISHED.clear()
+        claims = ['app.py: numeric case ' + str(n) for n in range(7)]
+        findings = [dict(id=repair_guard.digest(c), claim=c, verdict='confirmed') for c in claims]
+        first = ([dict(text='Numeric strings', met=True)], claims, [])
+        final = ([dict(text='Numeric strings', met=True)], [], [])
+        progress = SimpleNamespace(now=Mock(), ok=Mock())
+        try:
+            with patch.object(verify, 'model_review', side_effect=[first, final]), \
+                    patch.object(verify, 'wiring_problems', return_value=[]), \
+                    patch.object(repair_guard, 'verify_all_findings', return_value=findings), \
+                    patch.object(repair_guard.RepairLoop, 'before_repair', return_value=''), \
+                    patch.object(developer, 'MAX_CHECK_ROUNDS', 1), \
+                    patch.object(developer, 'generate', return_value=('fixture', '', {'app.py': 'return int(a) + int(b)\n'}, '')) as coder:
+                _, _, problems = developer.check_the_work('key', self.goal.request, developer.ROOT, 'a' * 40, 'token',
+                    {'app.py': 'return a + b\n'}, {'app.py': 13}, {}, '', None, '', False, progress)
+            prompt = coder.call_args.args[1]
+            self.assertIn(self.goal.request, prompt)
+            for claim in claims[:3]:
+                self.assertIn(claim, prompt)
+            for claim in claims[3:]:
+                self.assertNotIn(claim, prompt)
+                self.assertIn(claim, problems, 'deferred work cannot disappear when the reviewer omits it')
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_generation_preserves_large_owner_rules_after_legacy_verification_hint(self):
+        self.journal.state.update(events=[], gatewayResourcePromptChars=25000, gatewayEvidence=[{
+            'role': 'verify', 'platformError': {'errorCode': 1102}}])
+        self.journal.avoid_models = Mock(return_value=set())
+        self.journal.rejected = Mock(return_value=False)
+        guide = 'Keep these exact owner project rules.\n' * 850
+        proposal = json.dumps({'files': [{'path': 'app.py', 'reason': 'Convert numeric inputs',
+            'edits': [{'find': 'return a + b', 'replace': 'return int(a) + int(b)'}]}]})
+        with patch.object(developer, 'run_model', return_value=('fixture', proposal)) as model:
+            result = developer.generate('key', self.goal.request, developer.ROOT,
+                {'app.py': 'return a + b\n'}, {'app.py': 13}, guide)
+        self.assertIn('int(a)', result[2]['app.py'])
+        self.assertIn(guide, model.call_args.args[1])
+        self.assertIn(self.goal.request, model.call_args.args[1])
+
+    def test_focused_repair_fallback_never_grows_source_or_output_load(self):
+        self.journal.state['events'] = []
+        self.journal.project = {}
+        budgets = []
+        def generate(*args, **kwargs):
+            budgets.append(args[7])
+            if len(budgets) == 1:
+                raise developer.GenerationFailure('split proposal', compact=True, attempts=1)
+            return 'fixture', '', {'app.py': 'return int(a) + int(b)\n'}, ''
+        token = developer.FOCUSED_REPAIR.set(True)
+        try:
+            with patch.object(developer, 'generate_with', side_effect=generate):
+                developer.generate('key', self.goal.request, developer.ROOT, {'app.py': 'return a + b\n'}, {'app.py': 13})
+        finally:
+            developer.FOCUSED_REPAIR.reset(token)
+        self.assertEqual(len(budgets), 2)
+        for budget in budgets:
+            self.assertLessEqual(budget.context_chars, 20000)
+            self.assertLessEqual(budget.file_chars, 6000)
+            self.assertLessEqual(budget.output_tokens, 4096)

@@ -11,6 +11,13 @@ PINNED_OUTPUT_TOKENS = 768
 PINNED_PROMPT_CHARS = 26000
 PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
+RESOURCE_ROLES = ('verify', 'review', 'diagnose', 'code', 'light')
+
+
+def resource_role():
+    from engine import task_state
+    role = task_state.ROUTING_ROLE.get()
+    return role if role in RESOURCE_ROLES else 'light'
 
 
 class GatewayRequestTooLarge(RuntimeError):
@@ -25,8 +32,27 @@ def resource_ceiling():
     if not isinstance(getattr(journal, 'state', None), dict):
         return None
     task_state.require_journal_identity(journal)
-    value = getattr(journal, 'state', {}).get('gatewayResourcePromptChars')
-    return value if type(value) is int and 1024 <= value <= 1000000 else None
+    state = journal.state
+    valid = lambda value: type(value) is int and 1024 <= value <= 1000000
+    saved = state.get('gatewayResourceBudgets', {})
+    budgets = {role: value for role, value in saved.items() if role in RESOURCE_ROLES and valid(value)} if isinstance(saved, dict) else {}
+    legacy = state.get('gatewayResourcePromptChars')
+    if valid(legacy):
+        # Only recorded platform evidence can attribute an old global hint. Persist
+        # migration before the bounded history can evict that evidence on handoff.
+        evidence = state.get('gatewayEvidence', [])
+        origin = next((row.get('role') for row in reversed(evidence) if isinstance(row, dict)
+                       and row.get('role') in RESOURCE_ROLES and
+                       (row.get('code') == 'worker_resource_limit' or
+                        isinstance(row.get('platformError'), dict) and row['platformError'].get('errorCode') == 1102)), None) if isinstance(evidence, list) else None
+        if origin:
+            budgets[origin] = min(budgets.get(origin, legacy), legacy)
+            state['gatewayResourceBudgets'] = budgets
+            state.pop('gatewayResourcePromptChars')
+            journal.persist()
+        else:
+            return min(budgets.get(resource_role(), legacy), legacy)  # Unknown provenance stays conservative.
+    return budgets.get(resource_role())
 
 
 def prompt_fits(prompt, reserve=0):
@@ -74,7 +100,11 @@ def remember_resource_limit(prompt):
     chars = len(task_state.add_to_prompt(prompt, journal).encode('utf-16-le')) // 2
     ceiling = max(1024, min(resource_ceiling() or chars, chars * 2 // 3))
     if journal:
-        journal.state['gatewayResourcePromptChars'] = ceiling
+        saved = journal.state.get('gatewayResourceBudgets', {})
+        budgets = {role: value for role, value in saved.items() if role in RESOURCE_ROLES and
+                   type(value) is int and 1024 <= value <= 1000000} if isinstance(saved, dict) else {}
+        budgets[resource_role()] = ceiling
+        journal.state['gatewayResourceBudgets'] = budgets
         journal.persist()
     return ceiling
 
