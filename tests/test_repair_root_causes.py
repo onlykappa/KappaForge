@@ -221,9 +221,12 @@ class ReverifyTests(Base):
                 self.assertEqual(progress.return_value.ok.call_args.kwargs['status'], 'blocked' if problems else 'testing')
 
     def test_a_process_only_fix_round_reviews_again_without_verifier_or_generation(self):
+        fallback = 'The previous attempt reported unfinished requirements; recheck the original task'
+        self.assertTrue(verify.process_problem(fallback))
+        self.assertFalse(verify.process_problem('Requirement not met: Add numeric-string support'))
         pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50', base={'sha': SHA},
                   head={'sha': SHA, 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}},
-                  body='Plan\n\n' + verify.review_record(['Repair checkpoint awaiting full requirement review and independent tests']))
+                  title='Draft (incomplete): Cast', body='Plan')
         def gh(path, token, payload=None, method=None):
             if path.endswith('/files?per_page=100'):
                 return [{'filename': 'app.py', 'status': 'modified', 'patch': '@@ -1 +1 @@'}]
@@ -245,7 +248,7 @@ class ReverifyTests(Base):
             model, summary, changes, explanation, _ = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key')
         self.assertEqual(changes, {})
         self.assertEqual(seen['changes'], {}, 'the PR as it stands is reviewed')
-        self.assertEqual(seen['unfinished'], ['Repair checkpoint awaiting full requirement review and independent tests'])
+        self.assertEqual(seen['unfinished'], [fallback])
         self.assertEqual(summary, 'Re-checked the requirements against the current source')
         self.assertEqual(verify.open_problems({'body': explanation}), [], 'a clean review closes the old note')
 

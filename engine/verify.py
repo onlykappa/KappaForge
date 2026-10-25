@@ -536,6 +536,7 @@ def resolve_lifecycle(reqs, receipt):
 # its own inputs, e.g. #256's "Repair checkpoint awaiting full requirement review"); a fresh review resolves them.
 PROCESS_PROBLEM_RE = re.compile(
     r"^(?:Requirement review (?:unavailable|returned no requirements)|Requirement verification is incomplete|"
+    r"The previous attempt reported unfinished requirements; recheck the original task|"
     r"Invalid requirement verification record|Requirement evidence (?:does not match executable current source|"
     r"is still incomplete)|A (?:previously reviewed )?requirement disappeared|Review requested unavailable source|"
     r"Source inspection exceeds|Repair findings need validation|No repair finding was confirmed|Finding (?:verification|"
