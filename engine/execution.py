@@ -75,7 +75,10 @@ def _read_blob(journal, receipt):
     pieces = []
     for index, number in enumerate(receipt['parts']):
         row = rows.get(number, {})
-        match = re.fullmatch(re.escape(HEADING) + r'\n\n<!-- ' + MARKER + r' (.*?) -->', row.get('body', ''), re.S)
+        # Every comment the engine posts on its task issue gains one lifecycle trailer (intent_guard.report_provenance).
+        # Only that exact trailer may follow the fragment; the fragment's JSON escapes < and >, so it cannot hide one.
+        match = re.fullmatch(re.escape(HEADING) + r'\n\n<!-- ' + MARKER + r' (\{[^\n]*?\}) -->'
+                             r'(?:\n<!-- kappa-lifecycle:\{[^\n<>]*\} -->)?', row.get('body', ''))
         try:
             part = json.loads(match[1]) if match else {}
         except ValueError:

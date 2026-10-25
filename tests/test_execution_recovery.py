@@ -317,3 +317,33 @@ class ExecutionRecoveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CheckpointTrailerTests(unittest.TestCase):
+    """Task #269: every comment the engine posts on its task issue gains a lifecycle trailer, and the checkpoint
+    reader rejected its own fragments because of it, stopping the task before its sandbox run."""
+    def journal(self, trailer):
+        from types import SimpleNamespace
+        rows = []
+        def write(path, payload, method):
+            rows.append({'id': len(rows) + 1, 'user': {'login': recovery.BOT}, 'body': payload['body'] + trailer})
+            return rows[-1]
+        def read(path):
+            return list(rows) if 'page=1' in path else []
+        scope = SimpleNamespace(number=269, repo=recovery.ROOT)
+        return SimpleNamespace(read=read, write=write, scope=scope, wire=recovery.Journal.wire)
+
+    def test_a_fragment_with_the_lifecycle_trailer_reads_back(self):
+        trailer = '\n<!-- kappa-lifecycle:{"authorizationId":"github-task:269","state":"executing","expiresAt":1792988013000} -->'
+        journal = self.journal(trailer)
+        value = {'changes': {'tests/test_x.py': 'print("<b> --> x")\n'}, 'n': list(range(5000))}
+        receipt = execution._write_blob(journal, value)
+        self.assertGreater(len(receipt['parts']), 0)
+        self.assertEqual(execution._read_blob(journal, receipt), value)
+
+    def test_any_other_trailer_is_still_untrusted(self):
+        for trailer in ('\n<!-- injected -->', '\nextra text', '\n<!-- kappa-lifecycle:{"a":1} -->\n<!-- kappa-lifecycle:{"b":2} -->'):
+            journal = self.journal(trailer)
+            receipt = execution._write_blob(journal, {'v': 1})
+            with self.subTest(trailer=trailer), self.assertRaisesRegex(execution.CheckpointMismatch, 'fragment missing or untrusted'):
+                execution._read_blob(journal, receipt)
