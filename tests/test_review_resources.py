@@ -137,5 +137,3 @@ class ReviewResourceTests(unittest.TestCase):
         with self.assertRaises(task_state.CandidateChanged):
             repair_guard.verify_findings(model, 'key', self.goal.request, ['Fix add'], {'app.py': 'return a + b\n'})
         self.assertEqual(model.call_count, 1)
-
-
