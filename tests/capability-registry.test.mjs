@@ -31,6 +31,12 @@ test('cleanup variations and owner restrictions resolve to the same registered o
  assert.equal(I.requestLimits('Fix the literal "do not create a PR" message').restrictions.noPR,false);
 });
 
+test('failed-task cleanup accepts ordinary app wording and stays a local history operation',()=>{
+ for(const text of ['delete failed tasks in app','delete failed tasks in the app','clear failed tasks on this device']){
+  const op=C.resolve(text);assert.equal(op?.kind,'operation',text);assert.equal(op.id,'tasks.clear-history',text);assert.equal(op.params.status,'failed',text);
+ }
+});
+
 test('unresolved and unsupported operations cannot fall through to software execution',()=>{
  for(const text of ['clear out some old tasks','delete tasks older than last month','cancel running tasks','rename this chat','change settings','disable authentication','delete old tasks and add automatic cleanup','delete old tasks on GitHub']){
   const op=C.resolve(text);assert.ok(op,text);assert.notEqual(op.kind,'operation',text);assert.equal(I.permits(text,'develop'),false);
