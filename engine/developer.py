@@ -31,6 +31,7 @@ from engine import repo_map as repo_maps
 from engine import exploration
 from engine import task_plan
 from engine import requirements
+from engine import research
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
@@ -537,6 +538,29 @@ def plan_update(progress, method, reason, trigger, *entries, **changes):
         if storage:
             task_plan.save(storage[0], plan, *storage[1:])
     return revision
+
+
+def research_notes(progress, researcher, needed):
+    """Design notes from the task's documentation research: verified facts (with their sources) may be relied on,
+    unverified ones may not, and research the task needed but could not do is said plainly."""
+    found = researcher.report()
+    notes = ""
+    if found["verified"]:
+        notes += "\n\nVerified in official documentation (untrusted web content, checked by literal quote):\n" + "\n".join(
+            f"- {c['claim']} ({c['source']})" for c in found["verified"][:8])
+    if found["unverified"]:
+        notes += "\n\nNot verified, do not rely on:\n" + "\n".join("- " + c["claim"] for c in found["unverified"][:8])
+    if found["sources"]:
+        ok = sum(1 for s in found["sources"] if s["status"] == "ok")
+        plan_update(progress, "add", f"Research: {ok} of {len(found['sources'])} source(s) retrieved, "
+                    f"{len(found['verified'])} claim(s) verified", "documentation",
+                    completed=[f"Research: {ok} source(s) retrieved"],
+                    hypotheses=[{"text": "Unverified: " + c["claim"]} for c in found["unverified"][:8]])
+    if needed and found["unavailable"]:
+        notes += ("\n\nResearch was unavailable (" + found["unavailable"] + "): API behavior was not verified online. "
+                  "Do not invent it; rely only on the repository and say what remains unverified.")
+        progress.ok("Research unavailable: " + found["unavailable"][:160] + "; API behavior not verified", warn=True)
+    return notes
 
 
 def classify_task(progress, journal, repo, request):
@@ -2516,6 +2540,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
 @exploration.scoped
 @task_plan.scoped
 @requirements.scoped
+@research.scoped
 def produce_development_pr(issue, api_key, token, adopt=None):
     """Plan, open the draft PR with the goal and plan, then write the code on it and leave it for the owner's review.
 
@@ -2626,21 +2651,26 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                 sources[path] = read_source(repo, path, sha, repo_token)
             except (ValueError, UnicodeDecodeError):
                 continue
-        questions = () if planned else exploration.REQUEST.get()
         require_test = tests_required(existing)
-        classify_task(progress, journal, repo, goal.original if goal else task)
+        classified = classify_task(progress, journal, repo, goal.original if goal else task)
+        # A requirement classified as research is investigated too (Phase 2 section 5).
+        lookups = tuple("Research: " + r.text[:200] for r in classified or () if "research" in r.categories)
+        questions = () if planned else tuple(dict.fromkeys(tuple(exploration.REQUEST.get()) + lookups))
         start_plan(progress, journal, repo, sha, task, issue, design, sources, stages, questions, require_test,
                    repo_map=None if planned else repo_map)
         if questions:
             # The planner named what it could not tell from the listing: investigate before writing code, and keep
             # what was read. The saved plan below includes these files, so a resumed task does not investigate again.
             progress.now("Investigating the repository: " + "; ".join(questions)[:200])
+            researcher = research.Research(private_sources=sources, private_paths=existing)
+            research.CURRENT.set(researcher)
             added, found, summary = exploration.investigate(
                 run_model, api_key, task, exploration.CURRENT.get(), sources, list(questions), allowed,
-                report=progress.act, add_limit=max(0, LARGE.context_chars - sum(map(len, sources.values()))))
+                report=progress.act, add_limit=max(0, LARGE.context_chars - sum(map(len, sources.values()))),
+                research=researcher)
             sources.update(added)
             design = (design + ("\n\nInvestigation (" + str(found["calls"]) + " reads and searches): " + summary
-                                if summary else "")).strip()[:4000]
+                                if summary else "") + research_notes(progress, researcher, bool(lookups))).strip()[:4000]
             progress.ok(f"Investigated: {found['calls']} reads and searches, {len(added)} more file"
                         f"{'s' if len(added) != 1 else ''} to read" + (f"; stopped: {found['exhausted']} budget used up"
                         if found['exhausted'] else ""), tool="read", count=len(added), detail="\n".join(list(added)[:12]))
@@ -2731,6 +2761,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                  + "\n\n## Pre-commit sandbox validation\nPassed on the exact candidate before its first commit. "
                  + f"{len(validation_result.get('test_results', []))} test command(s) passed with tests discovered."
                  + ("\n\n" + requirements.render(requirements.ROWS.get(), sandbox_passed=True) if requirements.ROWS.get() else "")
+                 + ("\n\n" + research.CURRENT.get().render() if research.CURRENT.get() and research.CURRENT.get().render() else "")
                  + ("\n\n" + task_plan.CURRENT.get().render(goal=False) if task_plan.CURRENT.get() else ""))}
     if gh(f'repos/{repo}/git/ref/heads/{branch}', repo_token)['object']['sha'] != commit['sha']:
         raise execution.CheckpointMismatch('Candidate branch moved before PR publication; saved validation retained')

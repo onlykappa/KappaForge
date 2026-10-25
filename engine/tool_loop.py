@@ -17,6 +17,14 @@ TOOL_CATALOG = {
     'find_references': 'find_references(symbol, page=1)',
     'inspect_symbols': 'inspect_symbols(path)',
     'read_project_instructions': 'read_project_instructions()',
+    # Read-only documentation research (engine/research.py): trusted documentation hosts only, when supplied.
+    'search_docs': 'search_docs(query, site="mdn" | "npm" | "readthedocs")',
+    'read_doc': 'read_doc(url, page=1)',
+    'find_examples': 'find_examples(url, symbol)',
+    'package_versions': 'package_versions(ecosystem="pypi" | "npm", name)',
+    'compare_version': 'compare_version(ecosystem, name, installed)',
+    'check_api': 'check_api(url, symbol)',
+    'cite_source': 'cite_source(claim, source, quote)',
 }
 
 

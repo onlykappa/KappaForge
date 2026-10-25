@@ -47,7 +47,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
       authorization and task state. Original wording and traceability are kept. Classification **never** grants
       execution, write, merge, release or deployment permission. A requirement-to-test matrix shows what was
       implemented and verified, and a task is not complete while a behavioral requirement is untested.
-- [ ] **5. Documentation and web research**: an approved, read-only research interface that is network-restricted
+- [x] **5. Documentation and web research** ([tools, host allowlist and data rules](../phase2/research.md)): an approved, read-only research interface that is network-restricted
       to trusted documentation hosts and audited. It can search official API and library documentation, read
       version-specific pages, find usage examples, compare installed versions with documented ones and flag
       deprecated or unsupported APIs. Every fetch records its source and retrieval time. Online content is
@@ -88,7 +88,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 ## Deliverables (end of Phase 2)
 
 - [ ] Implementation and regression tests
-- [ ] Exploration and research tool schemas
+- [x] Exploration and research tool schemas ([exploration](../phase2/exploration.md), [research](../phase2/research.md))
 - [x] Requirement-classification schema (`config/requirement-classification.schema.json`)
 - [ ] Clarification and resume demonstration
 - [ ] Architecture and policy documentation, including the research host allowlist and data rules
