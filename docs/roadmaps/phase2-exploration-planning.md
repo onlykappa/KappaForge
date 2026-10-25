@@ -36,7 +36,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
       existing tool loop. Configurable budgets for calls, time, output size and context use replace the one-time file
       selection. Paginated, bounded and structured results; repository boundaries, binary-file rules and existing
       access permissions are respected.
-- [ ] **3. Evidence-driven plans**: a persistent task plan (objective and expected behavior, acceptance criteria,
+- [x] **3. Evidence-driven plans** ([plan, revisions and resume](../phase2/task-plan.md)): a persistent task plan (objective and expected behavior, acceptance criteria,
       relevant files and evidence, dependencies, open questions, hypotheses, completed and remaining work,
       verification requirements), saved in the recovery journal. Plans may be revised when tests, inspection or
       documentation reveal something new; each revision records why. A valid checkpoint is reused instead of

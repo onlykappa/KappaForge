@@ -29,6 +29,7 @@ from engine import recovery
 from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 from engine import repo_map as repo_maps
 from engine import exploration
+from engine import task_plan
 from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
@@ -521,6 +522,43 @@ def build_repo_map(repo, sha, files, token, sources=None):
         print("Repository map unavailable, planning from paths only", flush=True)
         return None
     return repo_maps.RepoMap(sources)
+
+
+def plan_update(progress, method, reason, trigger, *entries, **changes):
+    """Revise the running task's plan (TaskPlan.revise/add/done), announce why in the feed, and save it."""
+    plan = task_plan.CURRENT.get()
+    if plan is None:
+        return None
+    revision = getattr(plan, method)(reason, trigger, *entries, **changes)
+    if revision:
+        progress.act("plan", "Plan revised: " + reason[:200], say=True)
+        storage = getattr(plan, "storage", None)
+        if storage:
+            task_plan.save(storage[0], plan, *storage[1:])
+    return revision
+
+
+def start_plan(progress, journal, repo, sha, task, issue, design, sources, stages, questions, require_test, repo_map=None):
+    """The task's plan: the saved one when this exact task resumes, otherwise a new one from the planner's choices."""
+    plan = task_plan.load(journal, repo, sha, task)
+    if plan:
+        progress.act("plan", "Resumed the saved plan (" + str(len(plan.revisions)) + " revisions); no re-planning", say=True)
+    else:
+        imports = sorted({d for p in sources for d in (repo_map.imports.get(p, ()) if repo_map else ()) if d not in sources})
+        request = task_goal.CURRENT.get().original if task_goal.CURRENT.get() else task
+        plan = task_plan.TaskPlan.initial(
+            (issue.get("title") or request.splitlines()[0] if request else "")[:300],
+            expected_behavior=request[:600], acceptance_criteria=task_plan.acceptance_criteria(request),
+            files=[{"path": p, "why": "chosen by the planner"} for p in sources], dependencies=imports[:40],
+            open_questions=list(questions), remaining=[str(st) for st in stages] or ["Write the change"],
+            verification=["Run the project's full test suite on the uncommitted candidate in the sandbox"] +
+                         (["Add or update a test that fails without the change and passes with it"] if require_test else []) +
+                         ["Review every acceptance criterion against the changed source"])
+    if journal:
+        plan.storage = (journal, repo, sha, task)
+        task_plan.save(journal, plan, repo, sha, task)
+    task_plan.CURRENT.set(plan)
+    return plan
 
 
 def exploration_repository(repo, sha, existing, token, archive):
@@ -2441,6 +2479,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
 
 @task_goal.owner_task
 @exploration.scoped
+@task_plan.scoped
 def produce_development_pr(issue, api_key, token, adopt=None):
     """Plan, open the draft PR with the goal and plan, then write the code on it and leave it for the owner's review.
 
@@ -2552,6 +2591,9 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             except (ValueError, UnicodeDecodeError):
                 continue
         questions = () if planned else exploration.REQUEST.get()
+        require_test = tests_required(existing)
+        start_plan(progress, journal, repo, sha, task, issue, design, sources, stages, questions, require_test,
+                   repo_map=None if planned else repo_map)
         if questions:
             # The planner named what it could not tell from the listing: investigate before writing code, and keep
             # what was read. The saved plan below includes these files, so a resumed task does not investigate again.
@@ -2565,6 +2607,12 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             progress.ok(f"Investigated: {found['calls']} reads and searches, {len(added)} more file"
                         f"{'s' if len(added) != 1 else ''} to read" + (f"; stopped: {found['exhausted']} budget used up"
                         if found['exhausted'] else ""), tool="read", count=len(added), detail="\n".join(list(added)[:12]))
+            plan = task_plan.CURRENT.get()
+            plan_update(progress, "revise", "Investigation answered the open questions" + (": " + summary[:200] if summary else ""),
+                        "inspection", open_questions=[],
+                        files=plan.files + [{"path": p, "why": "found by investigation",
+                                             "evidence": found["read"].get(p, [])} for p in added],
+                        completed=plan.completed + ["Investigated: " + "; ".join(questions)[:250]])
         if planned and execution.digest(sources) != planned['sourceHash']:
             raise execution.CheckpointMismatch('Saved generation sources changed at their authorized base revision')
         execution.save_plan(journal, repo, sha, task, dict(base=base, paths=list(sources), design=design,
@@ -2573,7 +2621,6 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                     detail="\n".join(list(sources)[:12]))
         if design:
             progress.ok("Recorded the implementation plan")
-        require_test = tests_required(existing)
         if stages:
             progress.ok(f"Planned {len(stages)} steps: " + " ".join(f"{i}) {st[:100]}" for i, st in enumerate(stages, 1)), phase=True)
         else:
@@ -2589,11 +2636,17 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         if stages:
             progress.now("Saving the change")  # Marks the last step done before it is replaced.
         progress.ok(f"Wrote the change with {model}: {len(changes)} file{'s' if len(changes) != 1 else ''} {short_list(changes)}")
+        plan_update(progress, "done", f"{model} wrote {len(changes)} file{'s' if len(changes) != 1 else ''}", "progress",
+                    *(task_plan.CURRENT.get().remaining if task_plan.CURRENT.get() else ()))
         changes, verdict, open_problems = check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide,
                                                          allowed, design, require_test, progress,
                                                          receipt=verify.pr_receipt(saved["pr"], repo, branch) if saved["pr"] else None,
                                                          defer_lifecycle=not saved["pr"])
         explanation = explanation or summary
+        if open_problems:
+            plan_update(progress, "add", f"Requirement review found {len(open_problems)} unmet requirement"
+                        f"{'s' if len(open_problems) != 1 else ''}", "inspection",
+                        remaining=["Resolve: " + str(problem) for problem in open_problems])
         if verdict and open_problems and explanation:
             # The model describes what it meant to build; with problems open that description is not a fact.
             explanation = (verdict + "\n\nWhat the agent says it did (not verified): " + explanation)[:2000]
@@ -2613,10 +2666,16 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                                            body=workflow_notice(sources, changes) + review_body(number, model, explanation,
                                            summary, changes, design, open_problems, layout))))
     if validation_result["status"] != "success":
+        plan_update(progress, "add", "Sandbox validation stopped: " + validation_result["stop_reason"], "test",
+                    hypotheses=[{"text": "The candidate fails the project's tests: " +
+                                 str(validation_result.get("summary") or validation_result["stop_reason"])[:200]}],
+                    remaining=["Pass the sandbox test suite"])
         report_sandbox_failure(number, validation_result, token)
         progress.ok("Sandbox validation stopped before publishing: " + validation_result["stop_reason"],
                     phase=True, status="blocked")
         return None
+    plan_update(progress, "add", "The candidate passed the full sandbox regression before its first commit", "test",
+                completed=["Sandbox: full test suite passed on the uncommitted candidate"])
     changes = validation_result["candidate_changes"]
     summary = (summary + "\n\nSandbox validation: " + validation_result["summary"] +
                "\n\nRepair attempts:\n" + repair_history(validation_result))[:8000]
@@ -2633,7 +2692,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         "title": f"Draft{' (incomplete)' if open_problems else ''}: {(issue.get('title') or 'KappaForge task')[:90]}",
         "body": (workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)
                  + "\n\n## Pre-commit sandbox validation\nPassed on the exact candidate before its first commit. "
-                 + f"{len(validation_result.get('test_results', []))} test command(s) passed with tests discovered.")}
+                 + f"{len(validation_result.get('test_results', []))} test command(s) passed with tests discovered."
+                 + ("\n\n" + task_plan.CURRENT.get().render(goal=False) if task_plan.CURRENT.get() else ""))}
     if gh(f'repos/{repo}/git/ref/heads/{branch}', repo_token)['object']['sha'] != commit['sha']:
         raise execution.CheckpointMismatch('Candidate branch moved before PR publication; saved validation retained')
     if saved["pr"]:
