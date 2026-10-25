@@ -22,7 +22,7 @@ None yet.
 
 ## Findings
 
-None recorded yet. Add each finding to the shared ledger before patching.
+- **P3-001 — task/PR setup prevented KappaForge from starting:** the first draft PR converted issue #273 into a PR, which task selection correctly excludes. Workflow run [#264](https://github.com/onlykappa/KappaForge/actions/runs/40221871561) completed classify but skipped analyze and code. This was an orchestration setup error, not a product-code defect. Corrected by separating task #274 from draft PR #275; rerun is pending. See the [issue ledger](issue-log.md).
 
 ## Checks that ran
 
