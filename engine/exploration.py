@@ -48,85 +48,99 @@ class _DeadlineExceeded(Exception):
     """Private control flow for stopping a tool without returning partial success."""
 
 
-def _regex_uses_unsafe_backtracking(pattern):
-    """Allow a conservative regex subset whose repetitions cannot nest or branch ambiguously."""
-    if re.search(r'\\[1-9]|\\g[<{]|\\k[<{]|\(\?P=', pattern):
-        return True
-    quantifiers = []
-    escaped = in_class = False
-    index = 0
-    while index < len(pattern):
-        char = pattern[index]
-        if escaped:
-            escaped = False
-            index += 1
-            continue
-        if char == '\\':
-            escaped = True
-            index += 1
-            continue
-        if char == '[':
-            in_class = True
-            index += 1
-            continue
-        if char == ']' and in_class:
-            in_class = False
-            index += 1
-            continue
-        if in_class:
-            index += 1
-            continue
-        if char == '{':
-            match = re.match(r'\{\d+(?:,\d*)?\}', pattern[index:])
-            if match:
-                quantifiers.append((index, index + len(match.group(0))))
-                index += len(match.group(0))
-                continue
-        if char in '*+?':
-            # `?` after `(` modifies a group, and after a quantifier makes it lazy.
-            if char == '?' and (index and (pattern[index - 1] == '(' or pattern[index - 1] in '*+?}')):
-                index += 1
-                continue
-            quantifiers.append((index, index + 1))
-        index += 1
-    if len(quantifiers) > 1:
-        return True
-    if not quantifiers:
-        return False
+def _escaped(pattern, index):
+    """Whether the character at `index` is escaped: an odd number of backslashes directly before it."""
+    count = 0
+    while index - count - 1 >= 0 and pattern[index - count - 1] == '\\':
+        count += 1
+    return count % 2 == 1
 
-    start, _ = quantifiers[0]
-    if start == 0 or pattern[start - 1] != ')':
-        return False
-    # A repeated group with alternatives can split the same text in many ways (e.g. (a|aa)+).
-    depth, escaped, in_class = 0, False, False
-    opening = None
-    for index in range(start - 1, -1, -1):
+
+def _group_start(pattern, close):
+    """Index of the "(" that matches the ")" at `close`, or None."""
+    depth, in_class = 0, False
+    for index in range(close, -1, -1):
         char = pattern[index]
-        if escaped:
-            escaped = False
-            continue
-        if char == '\\':
-            escaped = True
+        if _escaped(pattern, index):
             continue
         if char == ']':
             in_class = True
-            continue
-        if char == '[' and in_class:
+        elif char == '[' and in_class:
             in_class = False
+        elif in_class:
             continue
-        if in_class:
-            continue
-        if char == ')':
+        elif char == ')':
             depth += 1
         elif char == '(':
             depth -= 1
             if depth == 0:
-                opening = index
-                break
-    if opening is None:
+                return index
+    return None
+
+
+def _regex_uses_unsafe_backtracking(pattern):
+    """The regex shapes known to backtrack catastrophically: backreferences, and a repeated group that itself contains
+    a repetition or alternatives ((a+)+, (\\w*)*, (a|aa)+). Ordinary patterns with several repetitions, such as
+    def\\s+\\w+, are allowed; every regex search also runs in a child process with a hard timeout
+    (`_regex_search`), so a pattern this check misses is stopped, not left to run."""
+    if re.search(r'\\[1-9]|\\g[<{]|\\k[<{]|\(\?P=', pattern):
         return True
-    group = pattern[opening + 1:start - 1]
-    return '|' in group
+    quantifiers, escaped, in_class = [], False, False
+    for index, char in enumerate(pattern):
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == '[':
+            in_class = True
+        elif char == ']' and in_class:
+            in_class = False
+        elif not in_class and (char in '*+' or char == '{' and re.match(r'\{\d+(?:,\d*)?\}', pattern[index:])
+                               or char == '?' and index and pattern[index - 1] not in '(*+?}'):
+            quantifiers.append(index)
+    for position in quantifiers:
+        if position and pattern[position - 1] == ')' and not _escaped(pattern, position - 1):
+            opening = _group_start(pattern, position - 1)
+            if opening is None:
+                return True
+            body = pattern[opening + 1:position - 1]
+            if '|' in body or any(opening < inner < position - 1 for inner in quantifiers):
+                return True
+    return False
+
+
+REGEX_SECONDS = 10.0  # Wall-clock limit for one regex search, enforced by killing its child process.
+REGEX_WORKER = r"""
+import json, re, sys
+job = json.load(sys.stdin)
+pattern, found = re.compile(job['pattern']), []
+for path, text in job['files']:
+    for number, line in enumerate(text.splitlines(), 1):
+        if pattern.search(line):
+            found.append([path, number, line.strip()[:job['line_chars']]])
+            if len(found) >= job['limit']:
+                break
+    if len(found) >= job['limit']:
+        break
+json.dump(found, sys.stdout)
+"""
+
+
+def _regex_search(pattern, files, timeout, limit=2000):
+    """Matches of a regex over [(path, text)], computed in an isolated child Python with no environment, which is
+    killed after `timeout` seconds: Python cannot interrupt a regex mid-match, a process can be stopped."""
+    import subprocess
+    import sys
+    job = json.dumps({'pattern': pattern, 'files': files, 'limit': limit, 'line_chars': LINE_CHARS})
+    try:
+        done = subprocess.run([sys.executable, '-I', '-S', '-c', REGEX_WORKER], input=job, capture_output=True,
+                              text=True, timeout=timeout, env={}, check=False)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f'regex search took longer than {timeout:.0f}s and was stopped; use a simpler pattern '
+                         'or a literal search') from None
+    if done.returncode != 0:
+        raise ValueError('regex search failed: ' + (done.stderr.strip().splitlines() or ['unknown error'])[-1][:200])
+    return [{'path': path, 'line': number, 'text': text} for path, number, text in json.loads(done.stdout)]
 
 
 @dataclass
@@ -310,6 +324,13 @@ class Explorer:
         if regex and _regex_uses_unsafe_backtracking(query):
             raise ValueError('regex may backtrack excessively; use a simpler pattern or a literal search')
         pattern = re.compile(query if regex else re.escape(query), re.I if not regex else 0)
+        if regex:
+            files = list(self.repo.texts(self._deadline_checkpoint, path_prefix))
+            timeout = max(0.5, min(REGEX_SECONDS, self.remaining()['seconds']))
+            matches = _regex_search(query, files, timeout)
+            self._deadline_checkpoint()
+            shown, info = _page(matches, page)
+            return {'matches': shown, **info}
         matches = []
         for path, text in self.repo.texts(self._deadline_checkpoint, path_prefix):
             for number, line in enumerate(text.splitlines(), 1):

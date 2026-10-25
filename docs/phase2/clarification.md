@@ -25,7 +25,9 @@ A question can come from two places:
 - asks permission for an owner-only action (merge, deploy, release, change access). KappaForge never does these, so there is nothing to ask;
 - repeats a question this task already asked.
 
-The convention filter uses specific convention cues; a broad word such as “order” does not make a question trivial.
+The convention filter uses specific convention cues; a broad word such as “order” or “quote” does not make a question
+trivial. “Should the invoice quote include tax?” is asked, while “single or double quotes?” or “which quote style?” is
+decided by convention.
 For example, refund allocation order is business behavior and remains an owner question when the task leaves it open.
 
 There is no cap on the number of questions: a task asks as many as it genuinely needs over its life, one

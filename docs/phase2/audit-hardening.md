@@ -85,7 +85,7 @@ These requested four repairs do not close the other audit observations: semantic
 filter, fixed-excerpt read-only analysis, dependency-update coverage, optional schema validation in CI and live
 model/phone demonstrations. PR #272 carries exploration and research budget totals across resumes, preserves
 structure in large tool results, and adds cooperative deadline checks inside repository scans and reads. It rejects
-regex forms with unbounded backtracking risk and discards partial results when a tool call reaches its time limit.
+the regex shapes known to backtrack catastrophically (other regex searches run in a child process with a hard timeout) and discards partial results when a tool call reaches its time limit.
 Regression tests cover a timed-out read and scan and ambiguous repeated alternatives. These remaining items should
 inform the separately authorized Phase 3 scope; this document does not claim production autonomy is fully proven.
 Test execution counts and local-versus-CI evidence are kept in [testing-report.md](testing-report.md).
