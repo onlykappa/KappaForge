@@ -105,6 +105,39 @@ class RepairGuardTests(unittest.TestCase):
             repair_guard.verify_findings(model, 'key', self.goal.request, too_many, SOURCES)
         model.assert_not_called()
 
+    def test_large_finding_sets_use_bounded_batches_without_losing_decisions(self):
+        claims = [f'app.py: numeric string failure {n}' for n in range(39)]
+        seen = []
+        def model(key, prompt, **kwargs):
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            seen.extend(row['id'] for row in data['findings'])
+            self.assertLessEqual(len(data['findings']), repair_guard.MAX_FINDINGS)
+            return finding_response(prompt)
+        rows = repair_guard.verify_all_findings(model, 'key', self.goal.request, claims + claims[:1], SOURCES)
+        self.assertEqual(seen, [repair_guard.digest(c) for c in claims])
+        self.assertEqual(len(rows), 39)
+        self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
+
+    def test_late_failed_or_over_budget_finding_batches_cannot_return_partial_authorization(self):
+        claims = [f'failure {n}' for n in range(13)]
+        for failure in ('stale', 'unavailable'):
+            calls = []
+            def model(key, prompt, **kwargs):
+                calls.append(prompt)
+                if len(calls) == 2:
+                    if failure == 'stale':
+                        task_state.checkpoint(NEXT)
+                    else:
+                        raise repair_guard.RepairReviewRequired('unavailable')
+                return finding_response(prompt)
+            with self.subTest(failure=failure), self.assertRaises((task_state.CandidateChanged, repair_guard.RepairReviewRequired)):
+                repair_guard.verify_all_findings(model, 'key', self.goal.request, claims, SOURCES)
+            task_state.checkpoint(SHA)
+        model = Mock()
+        with self.assertRaises(repair_guard.RepairReviewRequired):
+            repair_guard.verify_all_findings(model, 'key', self.goal.request, [str(i) for i in range(97)], SOURCES)
+        model.assert_not_called()
+
     def test_late_results_for_a_different_candidate_or_goal_are_rejected(self):
         for move in (lambda: task_state.checkpoint(NEXT), lambda: setattr(self.goal, 'request', 'Different owner goal')):
             def respond(prompt):

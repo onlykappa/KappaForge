@@ -40,7 +40,18 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Permanent patch: PRs over four files use scope-only batches of at most three paths, each with two bounded attempts. Valid decisions are retained only within this candidate snapshot; retries include only unresolved paths. Missing, duplicate, foreign-path, malformed and invented evidence cannot complete a batch. The reviewer sees current-source excerpts near PR hunks. Requirement review remains separate, retains the balanced source budget and carries every unrelated-change finding forward. A scope failure still prevents generation.
 - Immediate rerun: 78 related tests passed after the patch; after adding current-hunk evidence coverage, 79 related tests passed.
 - Broader checks actually run on the final source: Python online — 1,011 tests run, OK, 33 skipped, 56.586 seconds; proxy-blocked repeat — 1,011 tests run, OK, 33 skipped, 61.059 seconds. `npm test` — 858 passed; baseline Node — 273 passed. Dependency map generation/check, execution-policy check, Windows-adapted web syntax/configuration/bundle check and `git diff --check` passed. Native and Docker checks have not run locally for this patch. Live retry pending.
-- Status: PATCHED — deterministic regression proof only; live progress remains unverified.
+- Live rerun: [40232694430](https://github.com/onlykappa/KappaForge/actions/runs/40232694430) completed five scope-only calls, then two requirement-review calls. The missing-scope-response failure did not recur. It produced substantive review findings but made no audit edits because the next guard rejected the 39-finding list; see P3-012. Audit completion is not claimed.
+- Status: PATCHED — regression and live scope traversal verified; the audit is still incomplete.
+
+## P3-012 — whole-task repair findings exceed the single-pass verifier cap
+
+- Evidence: live run [40232694430](https://github.com/onlykappa/KappaForge/actions/runs/40232694430), engine `3b68836`, completed all five scope batches and two requirement-review calls. It then returned `Too many repair findings to verify in one bounded pass; no edits authorized` for 39 findings. No audit edits were saved. P3-011 cleared the missing-scope-response blocker, but Phase 3.1 remains incomplete.
+- Root cause: both developer repair paths pass the entire findings list directly to a verifier intentionally limited to 12 findings per call. A legitimate large task cannot reach generation through this path.
+- Plan: retain the 12-finding per-call limit and every evidence gate; orchestrate bounded batches over one immutable candidate/source/owner snapshot, preserving every decision and stopping if any batch fails or becomes stale.
+- Permanent patch: `verify_all_findings` orchestrates at most eight existing 12-finding verifier passes. Both developer repair entry points use it. Every pass keeps the existing evidence validation, and the owner, candidate and source snapshot are rechecked before/after every batch. A failed or stale batch raises instead of returning partial repair authorization. The existing test that rejects 13 findings sent directly to a single pass is unchanged.
+- Immediate rerun: 103 repair-guard, root-cause, task-goal and review tests passed, including 39 findings across four batches, duplicate input de-duplication, late candidate movement, late verifier failure, and total-budget exhaustion.
+- Broader checks actually run: Python online — 1,013 run, OK, 33 skipped, 57.212 seconds; proxy-blocked repeat — 1,013 run, OK, 33 skipped, 61.569 seconds. npm — 858 passed; baseline Node — 273 passed. Dependency map generation/check, execution-policy check, Windows-adapted web/configuration/bundle check and `git diff --check` passed. Native and Docker have not run locally for this patch. Live retry pending.
+- Status: PATCHED — local regression proof only; live progress pending.
 
 ## Finding template
 

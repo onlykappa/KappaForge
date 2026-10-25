@@ -2443,7 +2443,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             if not claims:
                 break  # Only review-process gaps are open: they stay on the draft; a source repair cannot close them.
             try:
-                findings = repair_guard.verify_findings(run_model, api_key, canonical_task, claims, current_evidence, allowed)
+                findings = repair_guard.verify_all_findings(run_model, api_key, canonical_task, claims, current_evidence, allowed)
             except repair_guard.RepairReviewRequired as error:
                 problems = [str(error)] + problems
                 task_state.review(reqs, problems)
@@ -3188,7 +3188,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         claims = [p for p in pending if not verify.process_problem(p)] + (
             ["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
         original_goal = goal.title + '\n' + goal.request
-        findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
+        findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed)
         # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
         # evidence, so it is a repair target without a model opinion; tests the PR itself adds still need the verifier.
         base_sha = (pr.get('base') or {}).get('sha')
