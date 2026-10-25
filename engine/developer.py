@@ -2436,8 +2436,11 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             progress.ok(f'Found {len(problems)} finding(s); verifying evidence before any repair', warn=True, status='blocked')
             current_evidence = {path: read(path) for path in dict.fromkeys(list(changes) + list(sources) + files_needed) if path in existing or path in changes}
             current_evidence.update(changes)
+            claims = [p for p in problems if not verify.process_problem(p)]
+            if not claims:
+                break  # Only review-process gaps are open: they stay on the draft; a source repair cannot close them.
             try:
-                findings = repair_guard.verify_findings(run_model, api_key, canonical_task, problems, current_evidence, allowed)
+                findings = repair_guard.verify_findings(run_model, api_key, canonical_task, claims, current_evidence, allowed)
             except repair_guard.RepairReviewRequired as error:
                 problems = [str(error)] + problems
                 task_state.review(reqs, problems)
@@ -3131,8 +3134,12 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         if len(files) != 1 or files[0]['filename'] != edit_path or files[0]['status'] != 'added':
             raise PermissionError('Bounded repair requires only the task-owned new document')
         existing = {path: size for path, size in existing.items() if path != edit_path}
-    if repair_guard.enabled() and (pending or failed_jobs):
-        claims = pending + (["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
+    # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
+    # by a repair: with nothing else open, this round re-checks the current source and writes no code.
+    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
+    if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
+        claims = [p for p in pending if not verify.process_problem(p)] + (
+            ["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
         original_goal = goal.title + '\n' + goal.request
         findings = repair_guard.verify_findings(run_model, api_key, original_goal, claims, sources, allowed)
         # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
@@ -3156,9 +3163,12 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
         # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
         task += lifecycle_note
-    model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
-    if checkpoint:
-        checkpoint(changes, modes)
+    if reverify:
+        model, summary, changes, explanation = "", "Re-checked the requirements against the current source", {}, ""
+    else:
+        model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
+        if checkpoint:
+            checkpoint(changes, modes)
     if pending:
         prior = list(UNFINISHED)
         UNFINISHED[:] = pending
@@ -3361,6 +3371,21 @@ def fix_pull_request(issue, api_key, token):
                 journal.event(exc, strategy='retry_now', next_action='Start another repair round immediately with other free models')
                 cycle, cycle_limit = RecoveryCoordinator.start_fix(journal, fixes)
                 progress.now(f"Previous round was rejected; writing {fix_label(cycle, cycle_limit)} immediately", phase=True)
+    if not changes:
+        # A re-check, not a repair: only review-process problems were open, and the fresh review wrote no code. Record
+        # what it found on the draft; there is nothing to validate, commit or test.
+        still_open = requirements_open({"body": explanation})
+        previous = re.split(r"\n\n## Latest fix\n", re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get("body") or ""), maxsplit=1)[0]
+        title = re.sub(r"^Draft(?: \(incomplete\))?:\s*", "", pr.get("title") or issue.get("title") or "Task")
+        gh(f"repos/{repo}/pulls/{pr['number']}", repo_token, {"title": "Draft" + (" (incomplete)" if still_open else "") + ": " + title,
+                                                             "body": previous + "\n\n## Latest fix\n" + explanation}, method="PATCH")
+        message = ("Re-checked the requirements against the current source: " +
+                   (f"{len(still_open)} problem(s) still open (listed on the PR)." if still_open else "every requirement is met; no code change was needed."))
+        gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": "### KappaForge fix ready\n\n" + message + "\n\n" + pr['html_url']})
+        progress.ok(message, phase=True, status="blocked" if still_open else "testing")
+        if journal:
+            note_progress(journal, complete=not still_open, status=message)
+        return pr["html_url"]
     flags, before = {}, {}
     if (repo != ROOT and not flags_allowed(issue.get("body"))) or any(WORKFLOW_PATH.match(p) for p in changes):
         for path in changes:

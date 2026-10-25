@@ -1,0 +1,33 @@
+name: Research live check
+# Phase 2 section 5 on a GitHub-hosted runner: every host on the research allowlist answers the real, read-only
+# research tools (docs.python.org, MDN, Node.js, PyPI, npm, GitHub Docs, Cloudflare, Apple, Read the Docs).
+# No secrets; the token stays read-only and nothing is written anywhere.
+on:
+  pull_request:
+    paths:
+    - engine/research.py
+    - config/research-hosts.json
+    - tests/test_research_live.py
+    - .github/workflows/research-live.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Live research against every allowlisted host
+      env:
+        KAPPA_RESEARCH_LIVE: '1'
+      run: |-
+        set -Eeuo pipefail
+        trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+        python -m unittest tests.test_research_live -v
+      shell: bash

@@ -8,9 +8,10 @@ class RealSourceExcerptReviewTests(unittest.TestCase):
     def test_actual_precommit_sandbox_gate_reaches_the_repair_payload(self):
         source = inspect.getsource(developer)
         claim = ('engine/developer.py produce_development_pr run_sandbox_repair before commit_changes')
-        shown = repair_guard.payload({'engine/developer.py': source}, [claim])['sources']['engine/developer.py']
+        data = repair_guard.payload({'engine/developer.py': source}, [claim])
+        shown = data['sources']['engine/developer.py']
         self.assertFalse(shown['complete'])
-        self.assertLessEqual(len(shown['text']), 3000)
+        self.assertLessEqual(len(data['shown']['engine/developer.py']), 3000, 'the budget bounds the excerpt; line numbers are extra')
         self.assertIn('run_sandbox_repair(', shown['text'])
         produce = inspect.getsource(developer.produce_development_pr)
         self.assertLess(produce.index('run_sandbox_repair('), produce.index('publish_candidate('))

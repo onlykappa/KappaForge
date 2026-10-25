@@ -1,0 +1,193 @@
+"""The three root causes behind "No repair finding was confirmed" (tasks #232, #235, #237, #256), each fixed at source.
+
+1. A true finding was downgraded because a free model could not copy a source quote exactly: evidence is now cited by
+   the line numbers the verifier is shown, and the owner request by requirement id; the engine copies the text.
+2. One skipped or malformed decision voided the whole verification: it now counts only as "not answered".
+3. The engine's own review-process notes were sent to the verifier as source defects (#256 "Repair checkpoint
+   awaiting full requirement review"): they are now resolved by a fresh review, never by a repair.
+"""
+import json
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from engine import developer, recovery, repair_guard, task_goal, task_state, verify
+
+SHA = 'a' * 40
+SOURCES = {'app.py': 'def add(a, b):\n    return a + b\n'}
+
+
+def review_input(prompt):
+    return json.JSONDecoder().raw_decode(prompt.split('REVIEW_INPUT\n', 1)[1])[0]
+
+
+def answer(prompt, **fields):
+    rows = [dict(id=row['id'], verdict='confirmed', in_goal=True, reason='add concatenates numeric strings', **fields)
+            for row in review_input(prompt)['findings']]
+    return 'verifier', json.dumps({'findings': rows})
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        developer.Progress.latest = None
+        self.goal = task_goal.from_request('Make add accept numeric strings')
+        self.addCleanup(task_goal.CURRENT.reset, task_goal.CURRENT.set(self.goal))
+        self.addCleanup(recovery.CURRENT.reset, recovery.CURRENT.set(None))
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', SHA)
+
+    def verify(self, respond, claims=('app.py: add concatenates strings',), sources=SOURCES):
+        model = Mock(side_effect=lambda key, prompt, **kw: respond(prompt))
+        return repair_guard.verify_findings(model, 'key', self.goal.request, list(claims), sources), model
+
+
+class LineCitationTests(Base):
+    def test_the_verifier_sees_line_numbers_and_numbered_owner_requirements(self):
+        seen = {}
+        def respond(prompt):
+            seen.update(review_input(prompt))
+            return answer(prompt, owner_ref='R1', evidence=[dict(path='app.py', lines=[2, 2])])
+        self.verify(respond)
+        self.assertEqual(seen['sources']['app.py']['text'], '1| def add(a, b):\n2|     return a + b\n3| ')
+        self.assertEqual(seen['owner_requirements'], [{'id': 'R1', 'text': 'Make add accept numeric strings'}])
+        self.assertNotIn('shown', seen, 'the engine keeps its own copy for checking evidence')
+
+    def test_a_true_finding_cited_by_line_is_confirmed_where_a_paraphrase_is_not(self):
+        rows, _ = self.verify(lambda p: answer(p, owner_ref='R1', evidence=[dict(path='app.py', lines=[1, 2])]))
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+        self.assertEqual(rows[0]['evidence'], [{'path': 'app.py', 'quote': 'def add(a, b):\n    return a + b', 'lines': [1, 2]}])
+        # The #232 shape stays refused: an abbreviated or reworded quote is still not evidence.
+        rows, _ = self.verify(lambda p: answer(p, owner_ref='R1', evidence=[dict(path='app.py', quote='return a+b ... numbers')]))
+        self.assertEqual(rows[0]['verdict'], 'needs_validation')
+        self.assertIn('no_literal_source_evidence', rows[0]['gate'])
+
+    def test_a_copied_line_number_prefix_is_not_held_against_the_quote(self):
+        rows, _ = self.verify(lambda p: answer(p, owner_quote='numeric strings', evidence=[dict(path='app.py', quote='2|     return a + b')]))
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+
+    def test_cited_lines_must_be_shown_few_and_in_order(self):
+        long_source = {'app.py': '\n'.join(f'line_{n} = {n}' for n in range(1, 400))}
+        for lines in ([2, 1], [1, 9], [900, 900], ['1', '2'], [1, 2, 3]):
+            with self.subTest(lines=lines):
+                rows, _ = self.verify(lambda p: answer(p, owner_ref='R1', evidence=[dict(path='app.py', lines=lines)]), sources=long_source)
+                self.assertEqual(rows[0]['verdict'], 'needs_validation')
+                self.assertIn('evidence:lines_not_shown' if lines != [1, 2, 3] else 'no_literal_source_evidence', rows[0]['gate'])
+
+    def test_an_unknown_owner_reference_proves_nothing(self):
+        rows, _ = self.verify(lambda p: answer(p, owner_ref='R9', evidence=[dict(path='app.py', lines=[2, 2])]))
+        self.assertEqual(rows[0]['verdict'], 'needs_validation')
+        self.assertIn('owner_quote_not_literal', rows[0]['gate'])
+
+
+class PartialAnswerTests(Base):
+    CLAIMS = ('app.py: add concatenates strings', 'app.py: add ignores floats')
+
+    def test_a_skipped_decision_no_longer_voids_the_ones_made(self):
+        def respond(prompt):
+            first = review_input(prompt)['findings'][0]['id']
+            return 'verifier', json.dumps({'findings': [dict(id=first, verdict='confirmed', in_goal=True, reason='concatenates',
+                                                             owner_ref='R1', evidence=[dict(path='app.py', lines=[2, 2])]),
+                                                        dict(id='foreign', verdict='confirmed', in_goal=True, reason='x')]})
+        rows, model = self.verify(respond, self.CLAIMS)
+        self.assertEqual(model.call_count, 1)
+        verdicts = {row['claim']: (row['verdict'], row['gate']) for row in rows}
+        self.assertEqual(verdicts[self.CLAIMS[0]], ('confirmed', []))
+        self.assertEqual(verdicts[self.CLAIMS[1]], ('needs_validation', ['not_answered']), 'unanswered authorizes nothing')
+        self.assertEqual(len(rows), 2, 'a foreign id is ignored')
+
+    def test_duplicates_or_no_usable_decision_are_still_invalid(self):
+        def duplicate(prompt):
+            first = review_input(prompt)['findings'][0]['id']
+            row = dict(id=first, verdict='confirmed', in_goal=True, reason='x')
+            return 'verifier', json.dumps({'findings': [row, row]})
+        for respond in (duplicate, lambda p: ('verifier', '{"findings":[{"id":"foreign"}]}'),
+                        lambda p: ('verifier', json.dumps({'findings': [dict(id=review_input(p)['findings'][0]['id'], verdict='maybe')]}))):
+            with self.subTest(respond=respond), self.assertRaises(repair_guard.RepairReviewRequired):
+                self.verify(respond)
+
+
+class ProcessProblemTests(Base):
+    PROCESS = ['Requirement review unavailable; task completion is not verified: TimeoutError',
+               'Requirement review returned no requirements; verification is incomplete',
+               'Requirement verification is incomplete', 'Invalid requirement verification record',
+               'Requirement evidence does not match executable current source: Cast inputs',
+               'Requirement evidence is still incomplete after source inspection: app.py',
+               'A previously reviewed requirement disappeared from the follow-up: Cast inputs',
+               'A requirement disappeared between repair rounds: Cast inputs',
+               'Review requested unavailable source; verification is incomplete: x.py',
+               'Source inspection exceeds the bounded file budget; verification is incomplete',
+               'Repair findings need validation; no speculative source edits were authorized',
+               'File scope review is incomplete; no source repair is authorized by a missing review decision',
+               'Repair checkpoint awaiting full requirement review and independent tests']
+    SOURCE = ['Requirement not met: Cast inputs', 'No test proves the change works yet: add or update a regression test',
+              'Unrelated change outside the owner goal: README.md: not requested',
+              'Requirement untested: R1 Cast inputs (add or cite a test that exercises it)',
+              'app.py: add concatenates numeric strings']
+
+    def test_review_process_notes_are_told_apart_from_source_defects(self):
+        for problem in self.PROCESS:
+            self.assertTrue(verify.process_problem(problem), problem)
+        for problem in self.SOURCE:
+            self.assertFalse(verify.process_problem(problem), problem)
+
+    def progress(self):
+        return SimpleNamespace(now=lambda *a, **k: None, ok=lambda *a, **k: None, act=lambda *a, **k: None)
+
+    def test_a_fresh_complete_review_clears_process_notes_without_the_verifier_or_code(self):
+        developer.UNFINISHED[:] = ['Repair checkpoint awaiting full requirement review and independent tests']
+        self.addCleanup(developer.UNFINISHED.clear)
+        review = ([dict(text='Make add accept numeric strings', met=True, evidence={'path': 'app.py', 'quote': 'return a + b'})], [], [])
+        with patch.object(verify, 'model_review', return_value=review), patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(repair_guard, 'verify_findings', side_effect=AssertionError('no verifier')), \
+                patch.object(developer, 'generate', side_effect=AssertionError('no code')):
+            changes, _, problems = developer.check_the_work('key', self.goal.request, developer.ROOT, SHA, 'token', SOURCES,
+                                                            {'app.py': 50}, {}, '', None, '', False, self.progress())
+        self.assertEqual((changes, problems), ({}, []))
+
+    def test_process_notes_from_a_review_never_reach_the_verifier(self):
+        developer.UNFINISHED.clear()
+        review = ([dict(text='Make add accept numeric strings', met=True, evidence={'path': 'app.py', 'quote': 'return a + b'})],
+                  ['Review requested unavailable source; verification is incomplete: lib/missing.py'], [])
+        with patch.object(verify, 'model_review', return_value=review), patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(repair_guard, 'verify_findings', side_effect=AssertionError('no verifier')), \
+                patch.object(developer, 'generate', side_effect=AssertionError('no code')):
+            _, _, problems = developer.check_the_work('key', self.goal.request, developer.ROOT, SHA, 'token', SOURCES,
+                                                      {'app.py': 50}, {}, '', None, '', False, self.progress())
+        self.assertEqual(problems, ['Review requested unavailable source; verification is incomplete: lib/missing.py'],
+                         'it stays open on the draft instead of starting a repair it cannot complete')
+
+
+class ReverifyTests(Base):
+    """A fix round whose only open problems are review-process notes re-checks the source and writes no code."""
+
+    def test_a_process_only_fix_round_reviews_again_without_verifier_or_generation(self):
+        pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50', base={'sha': SHA},
+                  head={'sha': SHA, 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}},
+                  body='Plan\n\n' + verify.review_record(['Repair checkpoint awaiting full requirement review and independent tests']))
+        def gh(path, token, payload=None, method=None):
+            if path.endswith('/files?per_page=100'):
+                return [{'filename': 'app.py', 'status': 'modified', 'patch': '@@ -1 +1 @@'}]
+            if path == f'repos/{developer.ROOT}':
+                return {'private': False}
+            return []
+        seen = {}
+        def review(api_key, task, repo, sha, token, sources, existing, changes, *args, **kwargs):
+            seen['changes'], seen['unfinished'] = dict(changes), list(developer.UNFINISHED)
+            return changes, 'All requirements met.', []
+        issue = {'number': 9, 'title': 'Cast', 'body': 'Repository: onlykappa/KappaForge\nMode: develop\n\nMake add accept numeric strings'}
+        with patch.object(developer, 'gh', side_effect=gh), patch.object(developer, 'list_tree', return_value=({'app.py': 40}, {})), \
+                patch.object(developer, 'project_guide', return_value=''), patch.object(developer, 'read_source', return_value=SOURCES['app.py']), \
+                patch.object(developer, '_add_engine_developer_source', side_effect=lambda sources, *a: sources), \
+                patch.object(repair_guard, 'enabled', return_value=True), \
+                patch.object(repair_guard, 'verify_findings', side_effect=AssertionError('no verifier')), \
+                patch.object(developer, 'generate', side_effect=AssertionError('no code')), \
+                patch.object(developer, 'check_the_work', side_effect=review):
+            model, summary, changes, explanation, _ = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key')
+        self.assertEqual(changes, {})
+        self.assertEqual(seen['changes'], {}, 'the PR as it stands is reviewed')
+        self.assertEqual(seen['unfinished'], ['Repair checkpoint awaiting full requirement review and independent tests'])
+        self.assertEqual(summary, 'Re-checked the requirements against the current source')
+        self.assertEqual(verify.open_problems({'body': explanation}), [], 'a clean review closes the old note')
+
+
+if __name__ == '__main__':
+    unittest.main()

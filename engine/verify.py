@@ -531,6 +531,23 @@ def resolve_lifecycle(reqs, receipt):
     return reqs
 
 
+# Notes the engine itself records when a review or verification could not finish. They describe the review, not the
+# source: no code edit can fix them, so they are never sent to the repair verifier as findings (they made it reject
+# its own inputs, e.g. #256's "Repair checkpoint awaiting full requirement review"); a fresh review resolves them.
+PROCESS_PROBLEM_RE = re.compile(
+    r"^(?:Requirement review (?:unavailable|returned no requirements)|Requirement verification is incomplete|"
+    r"Invalid requirement verification record|Requirement evidence (?:does not match executable current source|"
+    r"is still incomplete)|A (?:previously reviewed )?requirement disappeared|Review requested unavailable source|"
+    r"Source inspection exceeds|Repair findings need validation|No repair finding was confirmed|Finding (?:verification|"
+    r"evidence)|Current (?:PR )?source (?:evidence )?is unavailable|Too many repair findings|File scope (?:review|reviewer|"
+    r"evidence)|Repair checkpoint awaiting|Repair (?:loop|verification)|Requirement not reviewed)", re.I)
+
+
+def process_problem(problem):
+    """Whether an open problem is about the review itself rather than the source."""
+    return bool(PROCESS_PROBLEM_RE.match(str(problem or '').strip()))
+
+
 def lifecycle_problem(problem):
     """A stored "Requirement not met: ..." entry for a lifecycle ask, which no code repair can satisfy."""
     return problem.startswith("Requirement not met: ") and lifecycle_requirement(problem[len("Requirement not met: "):].split(" ({")[0])

@@ -130,5 +130,16 @@ per request. Past a limit, the tools return `research_unavailable`.
 - **Investigation:** an investigation that researches, cites and keeps reading code after a refused fetch.
 - **Pipeline:** design notes, and a development run where a research requirement is investigated and its sources reach the draft PR.
 
-The tools were also run once against the live npm, PyPI and Node.js hosts while building this section. That run is
-not part of CI.
+**Live check on GitHub's runner.** `tests/test_research_live.py` runs in `.github/workflows/research-live.yml` whenever
+research code or the allowlist changes, and on demand. It covers every allowlisted host, end to end, from a
+GitHub-hosted runner:
+- docs.python.org: a quote is verified, and `datetime.utcnow` is flagged deprecated;
+- MDN: search, then the page;
+- Node.js: `fs.exists` is deprecated and `fs.readFile` is not;
+- PyPI: yanked releases;
+- npm: deprecated versions and search;
+- GitHub Docs, Cloudflare Workers, Apple developer documentation;
+- Read the Docs: search and a project page.
+
+Each check also verifies the provenance record and that nothing left the allowlist. A host that stops answering or
+changes format fails there instead of quietly degrading research.

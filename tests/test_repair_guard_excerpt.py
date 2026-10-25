@@ -34,7 +34,8 @@ class TestRepairGuardExcerpt(unittest.TestCase):
         # Provide a clue that does not exist; excerpt should fall back to a prefix.
         result = payload(self.sources, ["nonexistent_function"])
         file_info = result["sources"][self.path]
-        excerpt_text = file_info["text"]
+        excerpt_text = result["shown"][self.path]  # The raw excerpt; the verifier sees it with line numbers.
+        self.assertTrue(file_info["text"].startswith("1| "))
         # Should start with the beginning of the source.
         self.assertTrue(self.source.startswith(excerpt_text.split("... omitted ...", 1)[0]))
         self.assertIn("... omitted ...", excerpt_text)
