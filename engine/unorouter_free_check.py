@@ -1,4 +1,4 @@
-"""One-off: ask every UnoRouter chat model whose ID says "free" for one word, one request per model, three at a time.
+"""One-off: ask every UnoRouter chat model whose ID says "free" for one word, one request per model, strictly one at a time after a 10-minute cooldown.
 
 Temporary branch only (not merged). Uses the UNOROUTER_API_KEY secret; the key is never printed.
 """
@@ -63,8 +63,8 @@ def main():
     models, skipped = free_models()
     # Let the per-model one-minute windows from earlier runs expire, then go a few at a time: UnoRouter also limits
     # concurrent requests per account, which made the all-at-once run report rate limits instead of real results.
-    time.sleep(120)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    time.sleep(600)
+    with ThreadPoolExecutor(max_workers=1) as pool:
         rows = [(model, *result) for model, result in zip(models, pool.map(ask, models))]
     ok = sum(1 for row in rows if row[1] == "ok")
     lines = [f"## UnoRouter free chat models: {ok} of {len(rows)} answered", "",
