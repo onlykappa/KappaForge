@@ -4,8 +4,7 @@ Goal: KappaForge stops choosing every file it may read in one pass at the start 
 works: it searches, reads, follows references, looks up official documentation and asks the owner one question when a
 material ambiguity blocks it. Its plan changes as evidence arrives, and the reason for every change is recorded.
 
-**Dependency.** Phase 1 is still in draft pull requests (#262 Step 7, #263 Step 8). This branch is based on the latest
-Phase 1 branch (`claude/phase1-step8`) and is not merged into it. When Phase 1 merges, this PR retargets `main`.
+**Dependency.** Phase 1 is merged into `main` (#262, #263, and the #265 workflow fix); this branch is based on it.
 Phase 2 reuses Phase 1's sandbox, tool loop, checkpoints, authorization guard, free-execution admission and progress
 transcript. It does not build a second set of them.
 
@@ -29,7 +28,7 @@ and releases require owner authorization; nothing in Phase 2 merges, deploys or 
 
 ## Progress
 
-- [ ] **1. Verify Phase 1**: inspect the Phase 1 branches and latest `main`; confirm the sandbox, tool schemas,
+- [x] **1. Verify Phase 1** ([verification and findings](../phase2/phase1-verification.md)): inspect the Phase 1 branches and latest `main`; confirm the sandbox, tool schemas,
       checkpoints, guard, admission and transcript that Phase 2 builds on; record the dependency and any Phase 1 gap
       that Phase 2 needs. No duplicate tool infrastructure.
 - [ ] **2. Dynamic repository exploration**: read-only `search_code`, `read_file` (line ranges), `list_directory`,

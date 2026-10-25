@@ -1,6 +1,6 @@
 # KappaForge
 
-> **The iPhone app is now the only interface.** The GitHub Pages website is retired: it is no longer built or deployed, and browser regression tests no longer run. The app's screens live in `preview/` and are bundled into the IPA (`ios/KappaForge/Web/`); the Cloudflare chat backend is unchanged.
+> **The iPhone app is now the only interface.** The GitHub Pages website is retired: it is no longer built or deployed. The app's screens live in `preview/` and are bundled into the IPA (`ios/KappaForge/Web/`), so their browser regression tests (`npm run test:web`, the tests workflow's `web` job) still run on every PR; the Cloudflare chat backend is unchanged.
 
 A $0-first GitHub Actions AI development assistant controlled from iPad/GitHub.
 
