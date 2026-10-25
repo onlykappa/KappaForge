@@ -229,7 +229,7 @@ test('recovery snapshots render waiting and recovering with the actual error and
  const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date:clock,Math,Number,String,Object,Array,
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
- vm.createContext(box);vm.runInContext(slice(source,'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
+ vm.createContext(box);vm.runInContext(slice(source,'function executionDiagnostics(','\nconst ACTIVITY_KINDS'),box);
  for(const [status,label] of [['waiting','WAITING FOR COOLDOWN'],['recovering','RECOVERING'],['blocked','BLOCKED']]){
   const p=P.normalize({version:1,taskId:'130',attemptId:'recovery:1',attemptAt:1000,revision:1,updatedAt:2000,
    status,startedAt:1000,steps:[{id:'r',title:'Preserve candidate and retry',status,startedAt:1000}],
@@ -261,7 +261,7 @@ test('a recovery-eligible card offers explicit retry and the local timer reveals
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[],render(){renders++},
   fetch(){throw Error('A display timer must not dispatch or infer')}};
  vm.createContext(box);vm.runInContext(read('task-progress.js'),box);
- vm.runInContext(slice(read('ui.js'),'function renderExecutionActivity(','\nconst ACTIVITY_KINDS'),box);
+ vm.runInContext(slice(read('ui.js'),'function executionDiagnostics(','\nconst ACTIVITY_KINDS'),box);
  const p=box.KappaProgress.normalize({version:1,taskId:'171',attemptId:'r',attemptAt:1000,revision:1,updatedAt:1000,
   status:'waiting',startedAt:1000,steps:[],recovery:{candidate:'b'.repeat(40),nextAt:100000,expiresAt:500000,
   scanIntervalSeconds:300,last:{error:'upstream HTTP 503',next:'Scan every 15 minutes'}}},171);

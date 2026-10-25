@@ -252,6 +252,36 @@ def failure(error, model=''):
             record.revision += 1
 
 
+def provider_usage(route, usage=None, failed=False):
+    """Preserve measured provider usage; missing token counts stay unknown."""
+    from engine import recovery
+    journal = recovery.CURRENT.get()
+    if not isinstance(getattr(journal, 'state', None), dict):
+        return
+    routes = journal.state.setdefault('providerUsage', {})
+    route = clean(route, 120)
+    if route not in routes and len(routes) >= 32:
+        route = 'other routes'
+    row = routes.setdefault(route, dict(responses=0, failures=0, measuredResponses=0, tokens={}))
+    row['failures' if failed else 'responses'] += 1
+    aliases = {'promptTokenCount': 'input', 'prompt_tokens': 'input', 'input_tokens': 'input',
+               'candidatesTokenCount': 'output', 'completion_tokens': 'output', 'output_tokens': 'output',
+               'totalTokenCount': 'total', 'total_tokens': 'total'}
+    measured = {}
+    for key, value in (usage or {}).items():
+        if key in aliases and type(value) is int and 0 <= value <= 10**12:
+            measured[aliases[key]] = value
+    if measured:
+        row['measuredResponses'] += 1
+        for key, value in measured.items():
+            row['tokens'][key] = row['tokens'].get(key, 0) + value
+    try:
+        journal.persist()
+    except Exception as exc:
+        from engine.execution import CheckpointUnavailable
+        raise CheckpointUnavailable('Provider usage checkpoint unavailable: ' + clean(type(exc).__name__, 100)) from exc
+
+
 def review(requirements, problems):
     _, record = current()
     if record:

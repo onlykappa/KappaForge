@@ -75,8 +75,10 @@ def redact(text):
     """Remove secret-shaped strings and the runner's secret environment values from untrusted output."""
     text = SECRET_PATTERNS.sub('[redacted]', text)
     for name, value in os.environ.items():
-        if len(value) >= 8 and re.search(r'TOKEN|SECRET|PASSWORD|API_KEY|WEBHOOK', name, re.I):
+        if len(value) >= 4 and re.search(r'TOKEN|SECRET|PASSWORD|API_?KEY|WEBHOOK|CREDENTIAL|PRIVATE|AUTH|DSN|DATABASE_URL', name, re.I):
             text = text.replace(value, '[redacted]')
+    text = re.sub(r'(?i)(https?://)[^/\s:@]+:[^/\s@]+@', r'\1[redacted]@', text)
+    text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)\S+', r'\1[redacted]', text)
     return text
 
 
@@ -103,6 +105,7 @@ class RunResult:
     image: str = ''
     reason: str = ''
     source: str = 'engine'
+    test_counts: dict = field(default_factory=dict)
 
     @property
     def ok(self):
@@ -440,6 +443,7 @@ class Session:
     image: str = ''
     volumes: dict = field(default_factory=dict)
     closed: bool = False
+    observer: object = field(default=None, repr=False)
 
     def __post_init__(self):
         self.versions = self.versions or image_versions(self.base)
@@ -466,10 +470,14 @@ class Session:
                 self.changes.pop(path, None)
             else:
                 self.changes[path] = data
+        if self.observer:
+            self.observer.changed()
 
     def revert(self, paths=None):
         for path in list(self.changes) if paths is None else paths:
             self.changes.pop(path, None)
+        if self.observer:
+            self.observer.changed()
 
     def current(self):
         files = dict(self.base.files)
@@ -614,9 +622,13 @@ class Session:
             if plan is None:
                 continue
             if isinstance(plan, str):
+                if self.observer:
+                    self.observer.started([], profile.name, toolchain.name, reusable=False)
                 run = RunResult([], profile.name, 'skipped', reason=plan, started_at=now(), finished_at=now(), source=toolchain.name)
                 self.results.append(run)
                 results.append(run)
+                if self.observer:
+                    self.observer.finished(run)
                 continue
             argv, manifests, target = plan
             volume = f'kfsb-{self.id}-{toolchain.name}'
@@ -633,6 +645,8 @@ class Session:
                     '--mount', f'type=volume,src={volume},dst={target}', '-w', workdir, self.image,
                     'sh', '-c', f'tar -x -f - -C {workdir} && exec "$@"', 'kappaforge-sandbox', *argv]
             started, clock = now(), time.monotonic()
+            if self.observer:
+                self.observer.started(argv, profile.name, toolchain.name, reusable=False)
             result = self.docker.call(args, stdin=stdin, timeout=profile.timeout, limit=profile.output_bytes,
                                       on_timeout=lambda name=name: self.docker.call(['rm', '-f', name], timeout=30))
             run = self._outcome(argv, profile, result, started, round(time.monotonic() - clock, 3), toolchain.name)
@@ -646,6 +660,8 @@ class Session:
             if run.ok:
                 self.volumes[target] = volume
             results.append(run)
+            if self.observer:
+                self.observer.finished(run)
         return results
 
     def run(self, command, profile='test', source='model'):
@@ -656,16 +672,30 @@ class Session:
         try:
             argv = self.policy.check(command, self.candidate())
         except CommandRejected as exc:
+            if self.observer:
+                self.observer.started(command if isinstance(command, list) else [str(command)[:400]], profile.name, source)
             run = RunResult(command if isinstance(command, list) else [str(command)[:400]], profile.name, 'rejected',
                             started_at=now(), finished_at=now(), reason=str(exc), source=source)
             self.results.append(run)
+            if self.observer:
+                self.observer.finished(run)
             return run
+        if self.observer:
+            cached = self.observer.cached(argv, profile.name, source)
+            if cached:
+                self.results.append(cached)
+                self.observer.finished(cached, reused=True)
+                return cached
+            self.observer.started(argv, profile.name, source)
         self.prepare()
         files = {p: d for p, d in self.current().items() if not p.startswith('node_modules/')}
         mounts = [(volume, '/work/node_modules' if target == '/deps/node_modules' else target, True)
                   for target, volume in self.volumes.items()]
         result, started, duration = self._container(self._name(), profile, argv, self._tar(files), mounts=mounts)
-        return self._outcome(argv, profile, result, started, duration, source)
+        run = self._outcome(argv, profile, result, started, duration, source)
+        if self.observer:
+            self.observer.finished(run)
+        return run
 
     def run_tests(self, profile='test'):
         commands = self.test_commands()

@@ -13,6 +13,19 @@ ADD_SCOPE = [{"path": "app/main.py", "necessary": True, "reason": "Convert the i
 EXISTING = {"app/main.py": 60, "app/other.py": 10}
 
 
+def recorded_head(calls, branch='kappa/dev-9'):
+    for path, body, *_ in reversed(calls):
+        if isinstance(body, dict) and ((path.endswith('/git/refs') and body.get('ref') == 'refs/heads/' + branch)
+                or path.endswith('/git/refs/heads/' + branch)):
+            return body.get('sha')
+    return None
+
+
+def pr_receipt(repo, number, sha):
+    return dict(html_url=f'https://github.com/{repo}/pull/{number}', number=number,
+                head=dict(sha=sha, ref='kappa/dev-9', repo=dict(full_name=repo)))
+
+
 def setUpModule():
     # These tests fake GitHub's JSON API; the repository map's archive download stays offline (planning from paths).
     global _no_archive, _sandbox_validation
@@ -481,14 +494,16 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             if dispatch_error and path.endswith("/dispatches"):
                 raise urllib.error.HTTPError(path, 403, "refused", {}, None)
             if path.endswith("/git/ref/heads/kappa/dev-9"):
+                if recorded_head(calls):
+                    return {'object': {'sha': recorded_head(calls)}}
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             responses = {
                 "repos/onlykappa/KappaForge": {"default_branch": "main"},
                 "repos/onlykappa/KappaForge/git/ref/heads/main": {"object": {"sha": "b" * 40}},
                 "repos/onlykappa/KappaForge/git/trees": {"sha": "t" * 40},
                 "repos/onlykappa/KappaForge/git/commits": {"sha": "c" * 40},
-                "repos/onlykappa/KappaForge/pulls": {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50},
-                "repos/onlykappa/KappaForge/pulls/50": {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50},
+                "repos/onlykappa/KappaForge/pulls": pr_receipt('onlykappa/KappaForge', 50, recorded_head(calls)),
+                "repos/onlykappa/KappaForge/pulls/50": pr_receipt('onlykappa/KappaForge', 50, recorded_head(calls)),
             }
             if path.startswith("repos/onlykappa/KappaForge/git/trees/"):
                 return {"tree": [{"path": "app/main.py", "type": "blob", "size": 60, "mode": "100755"}]}
@@ -648,7 +663,7 @@ class PrFirstTests(unittest.TestCase):
                 return {'encoding': 'base64', 'content': base64.b64encode(before.encode()).decode()}
             result = world(endpoint, token, payload, method)
             if endpoint == self.ROOT_ + '/pulls' and payload:
-                result.update(state='open', draft=True, head={'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}})
+                result.update(state='open', draft=True, head={**result['head'], 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}})
             return result
         answers = [('m', json.dumps({'read': [path], 'stages': ['Add comment']})),
                    ('m', json.dumps({'files': [{'path': path, 'edits': [{'find': before, 'replace': comment + '\n' + before}]}]})),
@@ -681,6 +696,8 @@ class PrFirstTests(unittest.TestCase):
         def fake_gh(path, token, payload=None, method=None):
             calls.append((path, payload, method))
             if path.endswith("/git/ref/heads/kappa/dev-9"):
+                if recorded_head(calls):
+                    return {'object': {'sha': recorded_head(calls)}}
                 if branch_exists:
                     return {"object": {"sha": "e" * 40}}
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
@@ -698,11 +715,11 @@ class PrFirstTests(unittest.TestCase):
             if path == self.ROOT_ + "/pulls" and payload is not None:
                 if pr_status != 201:
                     raise urllib.error.HTTPError(path, pr_status, "refused", {}, None)
-                return {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50}
+                return pr_receipt('onlykappa/KappaForge', 50, recorded_head(calls))
             if path == self.ROOT_ + "/pulls/50/files":
                 return list(pr_files)
             if path == self.ROOT_ + "/pulls/50":
-                return {"html_url": "https://github.com/onlykappa/KappaForge/pull/50", "number": 50}
+                return pr_receipt('onlykappa/KappaForge', 50, recorded_head(calls))
             if path.endswith("/git/commits") or path.endswith("/git/trees"):
                 return {"sha": ("t" if path.endswith("trees") else "c") * 40}
             return {}
@@ -826,6 +843,8 @@ class OtherRepositoryTests(unittest.TestCase):
         def fake_gh(path, token, payload=None, method=None):
             calls.append((path, payload, token))
             if path.endswith("/git/ref/heads/kappa/dev-9"):
+                if recorded_head(calls):
+                    return {'object': {'sha': recorded_head(calls)}}
                 raise urllib.error.HTTPError(path, 404, "missing", {}, None)
             if path == "repos/onlykappa/OmniPC":
                 return {"default_branch": "master", "private": True}
@@ -840,7 +859,7 @@ class OtherRepositoryTests(unittest.TestCase):
             if path.startswith("repos/onlykappa/OmniPC/git/commits/"):
                 return {"tree": {"sha": "r" * 40}}
             if path in ("repos/onlykappa/OmniPC/pulls", "repos/onlykappa/OmniPC/pulls/3"):
-                return {"html_url": "https://github.com/onlykappa/OmniPC/pull/3", "number": 3}
+                return pr_receipt('onlykappa/OmniPC', 3, recorded_head(calls))
             if path.startswith("repos/onlykappa/KappaForge/issues/9/comments?"):
                 return []
             return {"sha": "c" * 40}

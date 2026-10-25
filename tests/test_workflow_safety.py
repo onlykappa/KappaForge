@@ -41,7 +41,9 @@ class TaskScopeTests(unittest.TestCase):
         script = workflow.split('// Finalize the live card', 1)[1].split('if (comments.some', 1)[0]
         script = '// Finalize the live card' + script
         state = {'taskId':'23', 'attemptId':'100:2:123', 'status':'running', 'revision':4,
-                 'steps':[{'status':'running'}, {'status':'queued'}], 'activity':[]}
+                 'steps':[{'status':'running'}, {'status':'queued'}], 'activity':[],
+                 'execution': {'status': 'running', 'finalValidation': 'running',
+                               'currentCommand': {'status': 'running', 'startedAt': 123}}}
         def comment(id, state, bot=True):
             return {'id':id,'user':{'type':'Bot' if bot else 'User'},
                     'body':'<!-- KAPPA_PROGRESS_V1 '+json.dumps(state)+' -->'}
@@ -64,6 +66,11 @@ class TaskScopeTests(unittest.TestCase):
           assert.equal(state.steps[0].status,'failed');
           assert.equal(state.revision,5);
           assert.ok(state.finishedAt>0);
+          assert.equal(state.execution.status,'blocked');
+          assert.equal(state.execution.finalValidation,'blocked');
+          assert.equal(state.execution.currentCommand.status,'blocked');
+          assert.ok(state.execution.currentCommand.finishedAt>0);
+          assert.equal(state.execution.errorCategory,'interruption');
         })().catch(e=>{console.error(e);process.exitCode=1});
         """.replace('COMMENTS', json.dumps(comments)).replace('SCRIPT', script)
         subprocess.run(['node','-'],input=harness,text=True,capture_output=True,check=True)

@@ -111,6 +111,8 @@ class SimGitHub:
         issue = f"repos/{ROOT}/issues/{self.number}"
         if route == repo and method == "GET":
             return {"full_name": self.repo, "default_branch": "main", "private": True}
+        if route == f'repos/{ROOT}' and method == 'GET':
+            return {'full_name': ROOT, 'private': True}  # The isolated fixture's task tracker can hold its private code.
         m = re.fullmatch(re.escape(repo) + r"/git/ref/heads/(.+)", route)
         if m and method == "GET":
             if m.group(1) not in self.refs:

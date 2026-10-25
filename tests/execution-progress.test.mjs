@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import '../preview/task-progress.js';
+import '../preview/actions-core.js';
+
+test('real repair progress survives the backend-to-task-interface boundary',()=>{
+ const python=process.platform==='win32'?'py':'python3';
+ const run=spawnSync(python,['tests/fixtures/execution-progress-events.py'],{encoding:'utf8',env:{...process.env,PYTHONUTF8:'1'}});
+ assert.equal(run.status,0,run.stderr);
+ const data=JSON.parse(run.stdout),P=globalThis.KappaProgress;
+ const running=P.normalize(data.running,130),completed=P.normalize(data.completed,130);
+ assert.ok(running);assert.ok(completed);
+ assert.equal(running.execution.currentCommand.status,'running');
+ assert.ok(running.execution.currentCommand.startedAt>0);
+ assert.equal(completed.execution.finalValidation,'passed');
+ assert.equal(completed.execution.commands.at(-1).counts.ran,1);
+ assert.equal(completed.execution.attempts[0].status,'passed');
+ const source=readFileSync(new URL('../preview/ui.js',import.meta.url),'utf8');
+ const box={KappaActions:globalThis.KappaActions,Date,esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))};
+ vm.createContext(box);
+ vm.runInContext(source.slice(source.indexOf('function executionDiagnostics('),source.indexOf('// Structured snapshots')),box);
+ assert.match(box.executionDiagnostics(running.execution,Date.now()),/Current command · Running[^]*data-since=/);
+ const html=box.executionDiagnostics(completed.execution,Date.now());
+ assert.match(html,/Final regression: <strong>Passed/);
+ assert.match(html,/Attempt 1 · Passed/);
+ assert.match(html,/Tests: 1 ran/);
+ assert.doesNotMatch(html,/data-since=|fixture-no-credentials/);
+});

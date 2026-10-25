@@ -125,6 +125,22 @@ class TestSandboxRepairController(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["stop_reason"], "no_tests_discovered")
 
+    def test_edits_beyond_the_display_diff_limit_still_count_as_distinct_attempts(self):
+        work = fixture_tree(FakeDocker(always_fail=True, vary_failure=True))
+        controller = sandbox_repair_controller.SandboxRepairController(work)
+        count = 0
+        def next_patch(*args, **kwargs):
+            nonlocal count
+            previous = 3 + count
+            count += 1
+            return 'free:repair', json.dumps(dict(tool='apply_patch', reason='Change the failing value', args=dict(edits=[
+                dict(path='app.py', find='value=' + str(previous), replace='value=' + str(previous + 1))])))
+        result = controller.run_repair('repair', next_patch, 'key', {'app.py': '#' + 'x' * 25000 + '\nvalue=3\n'})
+        self.assertEqual(result['stop_reason'], 'attempt_limit')
+        self.assertEqual(len(result['attempts']), 5)
+        self.assertEqual(count, 4, 'the generated candidate plus four different repair candidates use the five attempts')
+        self.assertEqual(len({a['fingerprint'] for a in result['attempts']}), 5)
+
     def test_all_skipped_tests_do_not_establish_success(self):
         session = fixture_tree(FakeDocker(skipped_tests=True))
         controller = sandbox_repair_controller.SandboxRepairController(session)

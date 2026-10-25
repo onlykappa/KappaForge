@@ -158,6 +158,24 @@ test('structured planned stages read as one Writing the change phase with the cu
   assert.doesNotMatch(html,/data-task-retry|data-task-guide/,'a finished task only offers copy');
  }finally{delete ctx.trackedJobs;delete ctx.taskValidation}
 });
+test('execution diagnostics render live command timing, attempts and escaped bounded validation logs',()=>{
+ const now=Date.now(),progress=globalThis.KappaProgress.normalize({version:1,taskId:'205',attemptId:'runner',attemptAt:now,revision:2,status:'running',updatedAt:now,startedAt:now,steps:[],
+  execution:{stage:'test-driven repair',status:'running',startedAt:now-3000,updatedAt:now,attempt:2,finalValidation:'pending',
+   currentCommand:{argv:['python','-m','unittest'],source:'final regression',status:'running',startedAt:now-1000},
+   attempts:[{index:1,changed_paths:['src/<widget>.js'],rationale:'Correct the failing edge case',why_different:'Changed the comparison instead of the expected fixture',status:'failed',diagnostics:'AssertionError: 1 != 2'}],
+   commands:[{source:'pytest',status:'failed',argv:['pytest','-q'],startedAt:now-2000,finishedAt:now-1000,errorCategory:'assertion',evidence:'<script> rejected',counts:{ran:3,failures:1,errors:0,skipped:0},log:'FAIL test_price\nAssertionError'}],
+   errorCategory:'assertion',evidence:'Regression failed: <script>'}},205);
+ ctx.trackedJobs=[{number:205,queuedAt:now-5000,progress,message:'progress'}];
+ try{
+  const html=ctx.renderTaskActivity({progressKey:'progress:205:live'});
+  assert.match(html,/Execution · test-driven repair · Running/);assert.match(html,/Current command · Running[^]*data-since=/);
+  assert.match(html,/Attempt 1 · Failed[^]*Changed: src\/&lt;widget&gt;.js/);
+  assert.match(html,/Why this differs from the previous attempt: Changed the comparison instead of the expected fixture/);
+  assert.match(html,/Final regression: <strong>Pending<\/strong>/);
+  assert.match(html,/Tests: 3 ran · 1 failed · 0 errors · 0 skipped/);
+  assert.match(html,/&lt;script&gt; rejected/);assert.doesNotMatch(html,/<script>/);
+ }finally{delete ctx.trackedJobs}
+});
 test('the live feed shows the agent\'s own activity, collapses passed-over models and ends on the current action',()=>{
  const p={activity:[{kind:'read',text:'Read 10 files: preview/app-main.js'},{kind:'code',text:'Writing code'},
   {kind:'model',text:'Asking gemini-3.8-flash'},{kind:'model',text:'Asking ollama:deepseek-v4-pro'}],steps:[]};

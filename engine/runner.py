@@ -400,6 +400,8 @@ def health_save(route, record):
 
 
 def provider_failure(pid, model='', code=None, error=None, key=None, headers=None):
+    from engine.task_state import provider_usage
+    provider_usage(pid + (':' + model if model else ''), failed=True)
     identity = provider_identity(pid, key)
     category = classify(code, error)
     # Discovery, authentication and payment/access failures apply to the key;
@@ -530,6 +532,8 @@ def run_fallback_providers(prompt, max_output_tokens, errors, allowed=None, tier
                     with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                         data = response_json(response)
                     output, _ = completion(data)
+                    from engine.task_state import provider_usage
+                    provider_usage(name, data.get('usage') if isinstance(data.get('usage'), dict) else {})
                     provider_success(pid, model)
                     if output.strip():
                         return name, output.strip()
@@ -833,6 +837,7 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     raw_usage = data.get('usage') if isinstance(data.get('usage'), dict) else {}
     usage = {key: value for key, value in raw_usage.items() if key in ('promptTokenCount', 'candidatesTokenCount', 'totalTokenCount')
              and type(value) is int and value >= 0}
+    task_state.provider_usage(model, usage)
     gateway.record(journal, {'requestId': payload['requestId'], 'route': model, 'status': status,
                              'promptChars': len(prompt), 'maxTokens': payload['maxTokens'], 'usage': usage or None,
                              'role': payload['role'], 'rank': data.get('routing', {}).get('rank') if isinstance(data.get('routing'), dict) else None,
@@ -910,6 +915,8 @@ def ask_gemini(api_key, model, prompt, max_output_tokens, json_mode, errors):
             with urllib.request.urlopen(req, timeout=model_timeout()) as response:
                 data = response_json(response)
             output, finish_reason = completion(data, gemini=True)
+            from engine.task_state import provider_usage
+            provider_usage('gemini:' + model, data.get('usageMetadata') if isinstance(data.get('usageMetadata'), dict) else {})
             provider_success('gemini', model, api_key)
             candidates_out = data.get('candidates') or []
             # Thinking counts against the limit, so a long answer can stop mid-way; ask once more with room to finish.
@@ -1020,7 +1027,7 @@ def main():
             fixing = action == 'fix'
             adopt = None
             if action.startswith('resume:'):
-                from engine.developer import gh, token_for, review_record
+                from engine.developer import gh, token_for, review_record, verify_publication, publication_metadata
                 repo = journal.scope.repo
                 rt = token_for(repo, token)
                 branch = f"kappa/dev-{issue['number']}"
@@ -1039,11 +1046,32 @@ def main():
                     closed = gh(f'repos/{repo}/pulls?state=closed&head=onlykappa:{branch}', rt)
                     if closed:
                         raise PermissionError('A task PR was closed; automatic continuation will not reopen it')
-                    gh(f'repos/{repo}/pulls', rt, {'title': 'Draft (incomplete): ' + issue.get('title', 'Task')[:90],
+                    if gh(f'repos/{repo}/git/ref/heads/{branch}', rt)['object']['sha'] != journal.state['candidate']:
+                        raise PermissionError('Candidate branch moved before restoring its PR')
+                    metadata = publication_metadata(journal)
+                    restored = gh(f'repos/{repo}/pulls', rt, {'title': 'Draft (incomplete): ' + issue.get('title', 'Task')[:90],
                        'head': branch, 'base': journal.state['base'], 'draft': True,
                        'body': 'Resumed validated implementation checkpoint.\n' + review_record(
-                           journal.state['requirements'] or ['Verify every original requirement and run independent tests'])})
+                           journal.state['requirements'] or ['Verify every original requirement and run independent tests']), **metadata})
+                    verify_publication(restored, repo, branch, journal.state['candidate'])
+                    pulls = [restored]
+                    journal.state['phase'] = 'tests'
+                    from engine.developer import publication_finished
+                    publication_finished(journal)
+                    journal.checkpoint(journal.state['candidate'], pr=restored['html_url'])
                     fixing = True
+                if pulls and journal.state.get('phase') == 'publication':
+                    receipt = journal.state.get('executionPublication', {})
+                    if pulls[0].get('head', {}).get('sha') != receipt.get('sha'):
+                        raise PermissionError('Published candidate revision changed; recovery stopped')
+                    metadata = publication_metadata(journal)
+                    if metadata:
+                        pulls[0] = gh(f"repos/{repo}/pulls/{pulls[0]['number']}", rt, metadata, method='PATCH')
+                        verify_publication(pulls[0], repo, branch, receipt['sha'])
+                    from engine.developer import publication_finished
+                    publication_finished(journal)
+                    journal.state['phase'] = 'tests'
+                    journal.checkpoint(receipt['sha'], pr=pulls[0]['html_url'])
             if action == 'verify':
                 verified = recovery.verify_saved_candidate(journal, token)
                 url = journal.state['pr'] if verified != 'blocked' else None
