@@ -14,6 +14,46 @@ def resource_error():
 
 
 class ReviewResourceTests(unittest.TestCase):
+    def test_resource_reduction_with_receipts_rebuilds_and_splits_without_generic_review_failure(self):
+        from copy import deepcopy
+        task = '\n'.join('- Owner condition ' + str(i) + ': preserve the exact requested behavior.' for i in range(23))
+        goal = task_goal.from_request(task)
+        handle = task_goal.CURRENT.set(goal)
+        self.journal.state.update(gatewayResourceBudgets={'verify': 12720},
+                                  budgets={'modelCalls': 156, 'edits': 1, 'fixCycles': 16})
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        for kind in ('sandbox', 'native'):
+            task_state.observe_validation(kind, 'a' * 40,
+                {'id': 10, 'status': 'completed', 'conclusion': 'success'})
+        goal.record.repair = {'assessment': 'controller evidence ' * 22}
+        before = deepcopy((goal.record.checks, self.journal.state['budgets']))
+        sizes, batches = [], []
+        def model(key, prompt, **kwargs):
+            wire = task_state.add_to_prompt(prompt, self.journal)
+            sizes.append(len(wire.encode('utf-16-le')) // 2)
+            self.assertTrue(gateway.prompt_fits(prompt))
+            if len(sizes) == 1:
+                raise resource_error()
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            batches.append(len(data['findings']))
+            self.assertEqual(data['owner_goal'], task)
+            self.assertIn('app.py', data['sources'])
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='Literal source shows the requested conversion is absent', owner_ref='R1',
+                evidence=[dict(path='app.py', lines=[1, 1])]) for r in data['findings']]})
+        try:
+            claims = ['app.py: finding ' + str(i) + ' ' + 'x' * 600 for i in range(4)]
+            rows = repair_guard.verify_all_findings(model, 'key', task, claims,
+                {'app.py': 'return a + b\n' + '# filler\n' * 900})
+            self.assertEqual([r['claim'] for r in rows], claims)
+            self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
+            self.assertGreater(len(sizes), 1)
+            self.assertTrue(all(size < sizes[0] for size in sizes[1:]))
+            self.assertLessEqual(max(batches), 2)
+            self.assertEqual((goal.record.checks, self.journal.state['budgets']), before)
+        finally:
+            task_goal.CURRENT.reset(handle)
+
     def test_long_owner_request_fits_learned_envelope_without_duplicate_requirement_text(self):
         from engine import requirements
         task = '\n'.join('- Requirement café ' + str(i) + ': keep this owner condition ' + 'precise ' * 75

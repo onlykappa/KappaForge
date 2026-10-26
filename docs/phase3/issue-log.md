@@ -132,6 +132,16 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Final validation actually RUN: Python online — 1,052 run, OK, 33 skipped, 58.707s; proxy-blocked repeat — 1,052 run, OK, 33 skipped, 62.577s. npm — 858 passed. Dependency-map generation/check, execution-policy check and whitespace check passed. No local Docker/native result or live audit success is claimed.
 - Status: PATCHED — local regressions verified; current-head live retry pending. Retain P3-018's incomplete live status until independent execution produces evidence.
 
+## P3-020 — required task facts exceed the history allocation after resource reduction
+
+- Checkpoint: Phase 3.1a, 2026-10-26 UTC. [Run 40270014306](https://github.com/onlykappa/KappaForge/actions/runs/40270014306), engine `05e33a7`, crossed P3-019's former local block: five verifier requests succeeded (12,191–12,462 characters). A subsequent 12,502-character request received Cloudflare 1102. The checkpoint retained an 8,334-character verifier limit, then reported generic `RepairReviewRequired` without another provider call. No audit commit was saved.
+- Reproduction: new `TaskStateTests.test_small_allocation_preserves_required_receipts_and_reports_hard_overflow` failed before the patch with `ValueError: Task state cannot fit its bounded context`. Required PR/test receipts, budgets and next action can exceed one quarter of the reduced envelope even after optional history is removed. The old renderer treated that allocation as an absolute cap; finding review hid the ValueError as invalid verification.
+- Permanent correction: trim optional history using the existing order, but preserve irreducible structured facts up to the unchanged 6,000-character state cap. The assembled request must still fit the learned envelope and 20,000-character engine cap. Absolute state overflow raises the existing typed local request-size error for bounded subdivision or a precise fail-closed stop. No durable history, budget or authority is discarded or fabricated.
+- Immediate rerun actually RUN: task-state/resource/root-cause/repair-guard suites — 96 passed. Two new regressions cover required receipts beyond a small allocation, immutable observations/budgets, absolute overflow, and a simulated resource rejection followed by smaller source-bearing batches with literal verdict checks. Simulation is not live provider proof.
+- Broader validation actually RUN: Python online — 1,054 run, OK, 33 skipped, 61.867s; proxy-blocked repeat — 1,054 run, OK, 33 skipped, 64.922s. npm — 858 passed. Dependency-map generation/check, execution-policy check and whitespace check passed. The first dependency-map invocation lacked Windows UTF-8 mode and failed decoding; rerunning with `PYTHONUTF8=1` passed. No Docker/native execution or deployed Worker optimization is claimed.
+- Unresolved: Cloudflare exhaustion still occurred below 20,000 characters. One Worker request may walk multiple providers, but logs do not establish its exact CPU hot spot. Existing `fallback:false` selects before exclusions, so that flag alone would discard usable routes; it was not used as a workaround. Production settings and free-only policy are unchanged.
+- Status: PATCHED locally; independent live retry pending. Phase 3.1a and overall Phase 3.1 remain incomplete.
+
 ## Finding template
 
 ### P3-NNN — short defect title

@@ -14,6 +14,34 @@ PR = {'html_url': f'https://github.com/{REPO}/pull/222', 'state': 'open', 'draft
 
 
 class TaskStateTests(unittest.TestCase):
+    def test_small_allocation_preserves_required_receipts_and_reports_hard_overflow(self):
+        from copy import deepcopy
+        task_state.observe_pr(PR, REPO, BRANCH)
+        for kind in ('sandbox', 'native'):
+            task_state.observe_validation(kind, SHA, {'id': 10, 'status': 'completed', 'conclusion': 'success'})
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 8334},
+                                         'budgets': {'modelCalls': 156, 'edits': 1, 'fixCycles': 16}})
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with task_state.action('reviewer', 'Verify the exact current source ' * 6,
+                                   'Preserve owner requirements ' * 6, 'Require literal evidence ' * 6):
+                before = deepcopy(task_state.snapshot(journal))
+                prompt = task_state.add_to_prompt('Complete owner request', journal)
+                shown = task_state.decode_prompt(prompt)
+                for field in ('identity', 'facts', 'budgets', 'nextAction', 'ownerReviewRequired'):
+                    self.assertEqual(shown[field], before[field])
+                self.assertGreater(len(task_state.wire(shown)), 2083)
+                self.assertLessEqual(len(task_state.wire(shown)), task_state.MAX_CONTEXT)
+                self.assertEqual(task_state.snapshot(journal), before)
+                self.assertTrue(gateway.prompt_fits('Complete owner request'))
+                # A mandatory receipt cannot fit the absolute state cap. Do not hide
+                # this as malformed verification or send an oversized inference.
+                self.goal.record.checks['sandbox']['evidence'] = 'x' * 6500
+                with self.assertRaises(gateway.GatewayRequestTooLarge):
+                    task_state.add_to_prompt('Complete owner request', journal)
+        finally:
+            recovery.CURRENT.reset(handle)
+
     def test_learned_role_budget_compacts_history_and_invalidates_render_cache_without_mutation(self):
         from copy import deepcopy
         self.goal.record.files = ['path_' + str(i) + '_' + 'x' * 80 + '.py' for i in range(24)]

@@ -457,7 +457,7 @@ def wire(data):
 
 
 def render(data, text, max_context=None):
-    """The state block trimmed to MAX_CONTEXT, oldest and least essential evidence first, and its fingerprint."""
+    """Trim optional history to its allocation; required facts retain the absolute cap."""
     limit = MAX_CONTEXT if max_context is None else min(MAX_CONTEXT, max_context)
     while len(text.encode('utf-16-le')) // 2 > limit:
         if data['recentAttempts']:
@@ -476,10 +476,16 @@ def render(data, text, max_context=None):
             data['review']['problems'].pop()
         elif data['review'].get('pending'):
             data['review']['pending'].pop()
-        else:
+        elif data['goal']['text']:
             data['goal']['text'] = data['goal']['text'][:len(data['goal']['text']) // 2]
-            if not data['goal']['text']:
-                raise ValueError('Task state cannot fit its bounded context; no inference was sent')
+        else:
+            # The fraction of a learned envelope is an allocation for history,
+            # not permission to discard identity, receipts, budgets or nextAction.
+            # The enclosing prompt must still fit the learned request limit.
+            if len(text.encode('utf-16-le')) // 2 > MAX_CONTEXT:
+                from engine.gateway import GatewayRequestTooLarge
+                raise GatewayRequestTooLarge('Required task state exceeds its absolute context cap; no inference was sent')
+            break
         data['omitted'] += 1
         text = wire(data)
     return text, hashlib.sha256(text.encode()).hexdigest()

@@ -43,6 +43,12 @@ P3-018's live retry stopped locally before inference. Its owner/source payload r
 
 The existing trim order removes historical prompt-copy details; task identity, owner-goal digest, facts, next action, budgets and owner-review flag remain structured. The live task record and saved failure history are unchanged. Regression coverage exercises populated history, changed envelope/cache reuse, exact retained facts/authority, and a complete owner/finding/source review within the retained envelope. This does not claim that the independent live retry has passed.
 
+## Required state after a smaller envelope — P3-020
+
+The P3-019 retry [40270014306](https://github.com/onlykappa/KappaForge/actions/runs/40270014306) sent five successful verifier requests, then Cloudflare rejected a 12,502-character request with 1102. The learned limit became 8,334 characters. A reproduction with PR/test receipts showed that the one-quarter history allocation could be smaller than mandatory facts alone, causing an untyped rendering error before another inference.
+
+The history allocation is now soft only for irreducible required fields: retain those fields within the unchanged 6,000-character absolute state cap, then enforce the complete learned request envelope. Absolute state overflow is a typed local request-size failure, never a fabricated verdict. Regressions exercise smaller retries, source-bearing subdivision, preserved receipts/budgets and precise stopping. This fixes the local adaptation crash; the Worker's CPU hot spot and live provider success remain unproven.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.
