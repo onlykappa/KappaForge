@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {fingerprint,readSettings,chatPermissionAudit,expectedChatRepair,main} from "../chat-backend/tools/verify-settings.mjs";
+import {fingerprint,readSettings,chatPermissionAudit,resourceAudit,verifyResources,expectedChatRepair,main} from "../chat-backend/tools/verify-settings.mjs";
 import {mkdtemp,readFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -8,6 +8,53 @@ import {tmpdir} from "node:os";
 const bindings=[{name:"MEMORY",type:"durable_object_namespace",namespace_id:"persistent-fixture"},
  {name:"GROQ_API_KEY",type:"secret_text",text:"never-log-this"},
  {name:"KAPPA_CHAT_PROVIDERS",type:"plain_text",text:"groq"}];
+
+const resourceBindings=()=>Object.entries({KAPPA_ROUTER_MAX_DAILY_REQUESTS:"0",KAPPA_ROUTER_MAX_PER_MINUTE:"0"}).map(([name,text])=>({name,type:"plain_text",text}));
+const resourceFixture=()=>({bindings:[...bindings,...resourceBindings()],limits:{cpu_ms:300000,subrequests:10000000}});
+test("deployed resource verification refuses missing, stale and invalid limits without exposing settings",()=>{
+ const expected={cpuMs:300000,subrequests:10000000,dailyRequests:0,minuteRequests:0},settings=resourceFixture();
+ assert.deepEqual(verifyResources(settings,expected),{worker:"kappaforge-chat",...expected});
+ for(const name of ["cpu_ms","subrequests"])for(const value of [undefined,null,"300000",10,0,-1,NaN]){
+  const changed=structuredClone(settings);changed.limits[name]=value;
+  assert.throws(()=>verifyResources(changed,expected),/was not confirmed/);
+ }
+ for(const name of Object.keys(expected))assert.throws(()=>verifyResources(settings,{...expected,[name]:"0"}),/Invalid expected/);
+ const stale=resourceFixture();stale.bindings.find(b=>b.name==="KAPPA_ROUTER_MAX_DAILY_REQUESTS").text="100";
+ assert.throws(()=>verifyResources(stale,expected),/dailyRequests was not confirmed/);
+ assert.ok(!JSON.stringify(resourceAudit(settings)).includes("never-log-this"));
+});
+test("resource CLI reads back Cloudflare settings and checks the actual Wrangler configuration",async()=>{
+ const previous=globalThis.fetch,log=console.log,logs=[];
+ const env={CLOUDFLARE_ACCOUNT_ID:"a".repeat(32),CLOUDFLARE_API_TOKEN:"private-fixture"},settings=resourceFixture();
+ globalThis.fetch=async(url,init)=>{
+  assert.equal(init.method,undefined,"resource check must be read-only");
+  return Response.json({success:true,result:settings});
+ };console.log=message=>logs.push(message);
+ try{
+  await main(["verify-resources"],env);
+  assert.ok(logs.some(line=>line.includes("Worker resources verified from Cloudflare settings:")));
+  settings.limits.cpu_ms=10;await assert.rejects(()=>main(["verify-resources"],env),/expected 300000, reported 10/);
+  assert.ok(!logs.join("\n").includes("never-log-this"));assert.ok(!logs.join("\n").includes("private-fixture"));
+ }finally{globalThis.fetch=previous;console.log=log;}
+});
+test("resource deployment plans only approved throttle changes and retains the original concurrency fingerprint",async()=>{
+ const previous=globalThis.fetch,log=console.log,folder=await mkdtemp(join(tmpdir(),"kappa-resource-test-")),path=join(folder,"snapshot.json");
+ const env={CLOUDFLARE_ACCOUNT_ID:"a".repeat(32),CLOUDFLARE_API_TOKEN:"private-fixture"};
+ let current=resourceFixture();current.bindings.find(b=>b.name==="KAPPA_ROUTER_MAX_DAILY_REQUESTS").text="100";
+ current.bindings.find(b=>b.name==="KAPPA_ROUTER_MAX_PER_MINUTE").text="20";
+ const original=structuredClone(current);
+ globalThis.fetch=async()=>Response.json({success:true,result:current});console.log=()=>{};
+ try{
+  await main(["snapshot",path],env);const plan=JSON.parse(await readFile(path,"utf8"));
+  assert.equal(plan.hash,fingerprint(original).hash);assert.notEqual(plan.expectedHash,plan.hash);
+  await main(["assert-unchanged",path],env);
+  await assert.rejects(()=>main(["verify",path],env),/bindings changed/);
+  current=resourceFixture();await main(["verify",path],env);
+  current.bindings.find(b=>b.name==="MEMORY").namespace_id="unapproved";
+  await assert.rejects(()=>main(["verify",path],env),/bindings changed/);
+ }finally{globalThis.fetch=previous;console.log=log;await rm(folder,{recursive:true,force:true})}
+});
+
 test("settings fingerprints preserve variables and persistent namespaces without retaining secrets",()=>{
  const snapshot=fingerprint({bindings});
  assert.deepEqual(fingerprint({bindings:[...bindings].reverse()}),snapshot);
@@ -30,7 +77,7 @@ test("settings reads use the fixed read-only API and suppress private API error 
  await assert.rejects(()=>readSettings(env,async()=>new Response("private API detail",{status:403})),{message:"Worker settings read failed (HTTP 403)"});
 });
 
-const repairFixture=chat=>({bindings:structuredClone([...bindings.filter(b=>b.name!=="KAPPA_CHAT_PROVIDERS"),
+const repairFixture=chat=>({bindings:structuredClone([...resourceBindings(),...bindings.filter(b=>b.name!=="KAPPA_CHAT_PROVIDERS"),
  {name:"CHAT_ACCESS_TOKEN",type:"secret_text"},{name:"KAPPA_FREE_PROVIDERS",type:"plain_text",text:"groq"},
  {name:"KAPPA_CODE_PROVIDERS",type:"plain_text",text:"groq"},{name:"ROUTING_POLICY_VERSION",type:"plain_text",text:"v1"},
  ...(chat===undefined?[]:[{name:"KAPPA_CHAT_PROVIDERS",type:"plain_text",text:chat}])])});
