@@ -120,6 +120,12 @@ def frame_lines(claims, path):
     return list(dict.fromkeys(lines))
 
 
+def reference_lines(claims, path):
+    """Repository path:line citations are read leads, never evidence or scope grants."""
+    pattern = r'(?<![\w/.-])' + re.escape(path) + r':([1-9][0-9]{0,6})(?![0-9])'
+    return list(dict.fromkeys(int(n) - 1 for n in re.findall(pattern, '\n'.join(claims))))[-2:]
+
+
 NUMBER_PREFIX_RE = re.compile(r'^[ \t]*\d+\| ?', re.M)
 MAX_CITED_LINES = 8
 
@@ -157,7 +163,7 @@ def payload(sources, claims, max_chars=MAX_SOURCE_CHARS, requested_lines=None):
             break
         file_budget = min(3000, remaining)
         frames = frame_lines(claims, path)[-2:]
-        anchors = list(dict.fromkeys(list(requested_lines.get(path, ())) + frames))
+        anchors = list(dict.fromkeys(list(requested_lines.get(path, ())) + frames + reference_lines(claims, path)))
         shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget, lines_near=anchors)
         text, lines = numbered(shown, source)
         files[path] = dict(text=text, complete=shown == source)
@@ -340,6 +346,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
 
     def build():
         nonlocal source_limit
+        lower, upper, best = 0, source_limit, None
         while True:
             data = payload(sources, claims, source_limit, _requested_lines)
             from engine import requirements
@@ -367,16 +374,24 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                                       candidate=stamp['identity']['candidate'], **public(data)),
                                  ensure_ascii=True, separators=(',', ':')))
             if resources.fits(prompt):
-                if sources and not data['sources']:
+                if not sources or any(data['shown_lines'].values()):
+                    best = data, owner_rows, prompt
+                    lower = source_limit + 1
+                else:
                     # A fitting envelope with all available source omitted is not
                     # a useful review batch. Subdivide instead of asking without evidence.
-                    if resources.ceiling is not None:
-                        raise gateway.GatewayResourceExhausted()
-                    raise gateway.GatewayRequestTooLarge('Finding batch leaves no room for available source evidence')
-                return data, owner_rows, prompt
-            if source_limit == 0:
-                resources.require(prompt)
-            source_limit //= 2
+                    lower = source_limit + 1
+            else:
+                upper = source_limit - 1
+            if lower > upper:
+                if best is not None:
+                    return best
+                if resources.ceiling is not None:
+                    raise gateway.GatewayResourceExhausted()
+                raise gateway.GatewayRequestTooLarge('Finding batch leaves no room for available source evidence')
+            # Find the largest fitting source allocation rather than jumping
+            # from slightly too large to an excerpt with its useful line gone.
+            source_limit = (lower + upper) // 2
     try:
         # A malformed answer is one free model's failure, not a verdict: ask a different free model (the routes that
         # already answered badly are skipped), up to VERIFIER_ATTEMPTS. Every answer must still pass the full shape check.

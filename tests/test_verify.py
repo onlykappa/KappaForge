@@ -262,6 +262,14 @@ class DeliveryQualityRegressions(unittest.TestCase):
 
 
 class BoundedDocumentRecovery(unittest.TestCase):
+    def setUp(self):
+        # These controller fixtures supply their own progress object and a
+        # deliberately minimal journal. A previous test's live Progress must
+        # not publish snapshots against this unrelated journal.
+        self.progress_patch = patch.object(developer.Progress, 'latest', None)
+        self.progress_patch.start()
+        self.addCleanup(self.progress_patch.stop)
+
     def test_complete_source_rerequest_does_not_consume_another_model_call(self):
         path, source = 'docs/integration/NOTE.md', '# Note\n- Cloud work\n'
         from unittest.mock import Mock

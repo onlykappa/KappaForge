@@ -14,6 +14,22 @@ def resource_error():
 
 
 class ReviewResourceTests(unittest.TestCase):
+    def test_fitting_search_keeps_a_line_between_halved_source_allocations(self):
+        source = '\n'.join(['# common context ' + str(i) for i in range(400)] + ['return wrong_value'])
+        def fits(resources, prompt):
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            return sum(len(item['text']) for item in data['sources'].values()) <= 180
+        def model(key, prompt, **kwargs):
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            self.assertIn('401| return wrong_value', data['sources']['app.py']['text'])
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='The return value violates the requested behavior', owner_ref='R1',
+                evidence=[dict(path='app.py', lines=[401, 401])]) for r in data['findings']]})
+        with patch.object(gateway.ReviewResources, 'fits', fits):
+            rows = repair_guard.verify_findings(model, 'key', self.goal.request,
+                                               ['app.py:401 returns the wrong value'], {'app.py': source})
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+
     def test_long_single_finding_retains_source_with_a_full_owner_request(self):
         task = '\n'.join('- Owner condition ' + str(i) + ': ' + 'preserve required behavior ' * 6 for i in range(18))
         goal = task_goal.from_request(task)

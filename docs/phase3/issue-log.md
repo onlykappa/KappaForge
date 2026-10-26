@@ -256,6 +256,26 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Correction: preserve up to eight literal confirmed evidence lines per source file as coding excerpt anchors. Only current-source evidence from confirmed findings supplies anchors; unverified claims and invented text do not. The context resets after this generation and confers no edit permission.
 - Regression: helper refusal test and the long coding test with a late evidence line and old file priorities. Final offline replay reaches one scripted request at 18,872 complete characters with the actual audit row visible and an in-memory edit only. Status: PATCHED locally, included in P3-030 validation; live retry pending.
 
+## P3-033 — explicit source line leads are lost during review excerpt selection
+
+- Evidence: [40335656995](https://github.com/onlykappa/KappaForge/actions/runs/40335656995), engine `2426ec7`, completed one verifier request at 8,308 characters, HTTP 200, then stopped with `RepairReviewRequired`: both findings remained unverified because the audit content was omitted. No audit edit was saved. P3-030–P3-032 coding corrections were not reached by this run; prior confirmation from another candidate is not reused as authority.
+- Reproducer actually RUN: a finding names an existing repository file and exact late line. The pre-fix payload shows only the opening generic line; the new regression fails. After correction, the cited literal line is shown within the same bounded source allocation and all three excerpt tests pass.
+- Permanent correction: recognize at most two repository-relative `path:line` read leads for each source file and reserve those lines before general keywords. Existing excerpt budgets, full-source membership, numbered literal evidence gates and owner/candidate checks remain. Read leads are not marked as traceback reproduction evidence and cannot authorize edits. Absolute-path lookalikes and zero line numbers do not become matching leads.
+- The next focused PR finding will name the inspected audit checkpoint line explicitly, while every older finding stays open. No audit source or checkbox is written by this operator fix.
+- Status: PATCHED locally; full regression and exact-engine retry pending. No Docker/native or audit completion claimed.
+
+## P3-034 — document recovery test inherits unrelated progress publisher
+
+- Full regression for P3-033 initially ran 1,080 tests and failed one fixture with `KeyError: candidate`. `BoundedDocumentRecovery` supplies a minimal journal without a candidate while an earlier test can leave `Progress.latest` set; its snapshot publication then uses the unrelated fixture journal. This is test isolation, not evidence of a live missing candidate.
+- Correction: patch `Progress.latest` to null within that test class, restoring it afterward. Its explicit progress object, coding behavior and assertions are unchanged. Immediate rerun: all 41 verification tests passed. Status: PATCHED locally; final full-suite reruns pending.
+
+## P3-035 — halving source allocation skips a usable evidence excerpt
+
+- Independently reproduced during P3-033's saved-task construction replay: a source allocation slightly above the retained limit is halved; the resulting fitting excerpt loses the required literal checkpoint row. Merely passing the exact line lead therefore did not guarantee the row survived. No live redispatch was made with that known failure.
+- Correction: perform a bounded binary search for the largest fitting source allocation, retaining only a fitting excerpt with actual numbered source lines. If none fits, stop without inference. The complete owner request, learned limit, candidate identity and proof rules remain unchanged. This searches local prompt sizes, not model calls.
+- Regression: a small fitting allowance between the former halved allocations must retain the late explicit source line and confirm it only through shown literal evidence. All 26 resource tests pass. The saved-task replay now asserts the real audit row is visible in the first focused request and constructs two source-bearing calls within 8,334 characters. It uses scripted unverified verdicts, not live audit acceptance. Status: PATCHED locally; final validation pending.
+- Final combined validation for P3-033–P3-035 actually RUN: Python online — 1,081 run, OK, 33 skipped, 64.067s; proxy-blocked — 1,081 run, OK, 33 skipped, 68.137s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. The earlier failed fixture run remains above; no assertion/test was removed. Status: PATCHED and regression-tested; exact-engine live retry pending. The owner stopped the hourly app automation; any continuation is manual within the existing task scope.
+
 ## Finding template
 
 ### P3-NNN — short defect title
