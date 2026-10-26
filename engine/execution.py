@@ -7,7 +7,6 @@ import base64
 import copy
 import hashlib
 import json
-import os
 import re
 import shlex
 import time
@@ -31,9 +30,6 @@ class CheckpointUnavailable(RuntimeError):
 
 def clean(value, limit=4000):
     text = sandbox.redact(str(value))
-    for name, secret in os.environ.items():
-        if len(secret) >= 4 and re.search(r'TOKEN|SECRET|PASSWORD|API_?KEY|CREDENTIAL|PRIVATE|AUTH|WEBHOOK|DSN|DATABASE_URL', name, re.I):
-            text = text.replace(secret, '[redacted]')
     text = re.sub(r'(?i)(https?://)[^/\s:@]+:[^/\s@]+@', r'\1[redacted]@', text)
     text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)\S+', r'\1[redacted]', text)
     return text[-limit:]

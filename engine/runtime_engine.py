@@ -56,7 +56,15 @@ def attest(scope, read, previous=None, env=None, checkout=None):
             merged = read(f"repos/{ROOT}/compare/{previous['sha']}...{current}")
             if (merged.get('status') not in ('ahead', 'identical')
                     or (merged.get('merge_base_commit') or {}).get('sha') != previous['sha']):
-                raise PermissionError('Main does not include the authorized engine revision; recovery cannot downgrade')
+                # A fresh owner Fix on reviewed main explicitly chooses that engine.
+                # Squash merges and reviewed main updates need not retain the trial's
+                # ancestry. Automatic continuations cannot acquire this authority.
+                owner_fix = (env.get('INPUT_ACTION') == 'fix'
+                             and run.get('display_title') == f'Agent task #{scope.number} fix'
+                             and (run.get('actor') or {}).get('login') == 'onlykappa'
+                             and (run.get('triggering_actor') or {}).get('login') == 'onlykappa')
+                if not owner_fix:
+                    raise PermissionError('Main does not include the authorized engine revision; recovery cannot downgrade')
         return None
     if ref == f'kappa/dev-{scope.number}' and env.get('INPUT_ACTION', '') in ('fix', '', 'verify'):
         receipt = dict(task=scope.number, digest=scope.digest, ref=ref, sha=sha, originRun=run_id)

@@ -656,6 +656,7 @@ class Journal:
         """Consume a dispatch exactly once, on the same authorization and candidate."""
         if self.state.get('engine') or os.getenv('KAPPA_ENGINE_CHECK') == 'true':
             from engine.runtime_engine import attest
+            previous_engine = self.state.get('engine')
             try:
                 engine = attest(self.scope, self.read, self.state.get('engine'))
             except (urllib.error.URLError, KeyError, TypeError) as error:
@@ -664,6 +665,10 @@ class Journal:
                 self.state['engine'] = engine
             else:
                 self.state.pop('engine', None)
+                if previous_engine:
+                    self.event(f"Engine migrated from {previous_engine['sha']} to reviewed main "
+                               f"{os.getenv('GITHUB_SHA', '')} in run {os.getenv('GITHUB_RUN_ID', '')}",
+                               strategy='reviewed_main_engine_migration', outcome=self.state['status'])
             print('Engine verified before task work: ' + os.getenv('GITHUB_SHA', ''), flush=True)
         if action.startswith('resume:'):
             expected = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"

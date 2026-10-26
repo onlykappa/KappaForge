@@ -76,6 +76,10 @@ def redact(text):
     """Remove secret-shaped strings and the runner's secret environment values from untrusted output."""
     text = SECRET_PATTERNS.sub('[redacted]', text)
     for name, value in os.environ.items():
+        # This executor transport toggle is public configuration, not a private
+        # credential. Redacting its boolean value corrupts ordinary source/JSON.
+        if name == 'CODEX_EXEC_SERVER_PROXY_PRIVATE_IPS_VIA_UPSTREAM' and value in ('true', 'false'):
+            continue
         if len(value) >= 4 and re.search(r'TOKEN|SECRET|PASSWORD|API_?KEY|WEBHOOK|CREDENTIAL|PRIVATE|AUTH|DSN|DATABASE_URL', name, re.I):
             text = text.replace(value, '[redacted]')
     text = re.sub(r'(?i)(https?://)[^/\s:@]+:[^/\s@]+@', r'\1[redacted]@', text)
