@@ -1116,6 +1116,7 @@ COMPACT = SMALL._replace(file_chars=24000, context_chars=80000, output_tokens=81
 FOCUSED_REPAIR = contextvars.ContextVar('focused_repair', default=False)
 REPAIR_SOURCE_TARGETS = contextvars.ContextVar('repair_source_targets', default=())
 REPAIR_SOURCE_LINES = contextvars.ContextVar('repair_source_lines', default={})
+REPAIR_ADVISORY = contextvars.ContextVar('repair_advisory', default='')
 
 
 def repair_budget(budget):
@@ -1438,16 +1439,20 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                        '"files":[{"path":"' + edit_path + '","reason":"how this file fulfills the owner request","content":"complete Markdown"}]}.\n'
                        'PROJECT INSTRUCTIONS:\n' + guide + '\nTASK:\n' + task + '\nSOURCE FILES:\n' + context)
     instruction_head = instruction[:-len(context)] if context else instruction
+    advisory = REPAIR_ADVISORY.get()
     history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
     from engine import gateway
     resource_retry_target = None
     def fit_instruction(suffix=""):
-        nonlocal budget, context, shown_sources, partial_sources, history, resource_retry_target
+        nonlocal budget, context, shown_sources, partial_sources, history, resource_retry_target, advisory
         # The immutable owner brief, project rules and scope always remain verbatim.
         # Retry diagnostics and source excerpts are advisory; the assembled prompt is
         # never sliced. Recheck every attempt, because retry evidence can grow.
         gateway.require_prompt_fits(instruction_head)
-        if not gateway.prompt_fits(instruction_head + history + suffix):
+        while advisory and not gateway.prompt_fits(instruction_head + advisory + suffix, reserve=1024):
+            size = len(advisory) // 2
+            advisory = advisory[:size] + '\n(Advisory repair history omitted.)\n' if size >= 256 else ''
+        if not gateway.prompt_fits(instruction_head + advisory + history + suffix, reserve=1024):
             history = ''
         if not gateway.prompt_fits(instruction_head + suffix):
             suffix = "\nPrevious proposal rejected. Regenerate within the unchanged owner scope."
@@ -1461,7 +1466,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                                      file_chars=max(1000, budget.file_chars // 2))
             context, shown_sources, partial_sources = source_context()
         while True:
-            candidate = instruction_head + context + history + suffix
+            candidate = instruction_head + advisory + context + history + suffix
             fits = gateway.prompt_fits(candidate)
             shrank_after_resource_failure = (resource_retry_target is None or len(candidate) < resource_retry_target)
             if fits and shrank_after_resource_failure:
@@ -3407,6 +3412,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
     generation_targets = ()
     generation_lines = {}
+    generation_advisory = ''
     if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
         # Verify only this batch's edit targets. Deferred findings remain in
         # pending/UNFINISHED and the final whole-task review below; they are
@@ -3434,8 +3440,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
         task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
                  'do not edit for unverified findings or claim the task complete from this batch.')
-        task += ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
-                 verified_history(design, tried, notes, native_history, diff, limit=3000))
+        generation_advisory = ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
+                               verified_history(design, tried, notes, native_history, diff, limit=3000))
         if loop_approach:
             task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
         # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
@@ -3445,12 +3451,14 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     else:
         target_token = REPAIR_SOURCE_TARGETS.set(generation_targets)
         lines_token = REPAIR_SOURCE_LINES.set(generation_lines)
+        advisory_token = REPAIR_ADVISORY.set(generation_advisory)
         focused_token = FOCUSED_REPAIR.set(bool(generation_targets) or FOCUSED_REPAIR.get())
         try:
             model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
         finally:
             FOCUSED_REPAIR.reset(focused_token)
             REPAIR_SOURCE_LINES.reset(lines_token)
+            REPAIR_ADVISORY.reset(advisory_token)
             REPAIR_SOURCE_TARGETS.reset(target_token)
         if checkpoint:
             checkpoint(changes, modes)

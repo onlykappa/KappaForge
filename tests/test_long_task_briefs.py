@@ -81,6 +81,10 @@ class ResumedBriefTests(unittest.TestCase):
         current = recovery.CURRENT.set(journal)
         self.addCleanup(recovery.CURRENT.reset, current)
         github = lambda path, _token: [{'filename': 'app/main.py', 'status': 'modified', 'patch': 'fixture'}] if '/files?' in path else []
+        coding_inputs = []
+        def capture_generation(*args, **kwargs):
+            coding_inputs.append(args[1] + developer.REPAIR_ADVISORY.get())
+            return 'fixture', 'done', {'app/main.py': 'x'}, ''
         with patch.object(developer, 'gh', side_effect=github), \
                 patch.object(developer, 'list_tree', return_value=(EXISTING, {})), \
                 patch.object(developer, 'project_guide', return_value=''), \
@@ -91,10 +95,10 @@ class ResumedBriefTests(unittest.TestCase):
                 patch.object(developer, 'check_the_work', return_value=({'app/main.py': 'x'}, '', [])), \
                 patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('m', '{}'))), \
                 patch.object(journal, 'persist', lambda: None, create=True), \
-                patch.object(developer, 'generate', return_value=('fixture', 'done', {'app/main.py': 'x'}, '')) as generate:
+                patch.object(developer, 'generate', side_effect=capture_generation) as generate:
             developer.revise_branch({'number': 1, 'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
                                     'kappa/dev-1', 'a' * 40, [], 'fixture', 'fixture')
-        prompt = generate.call_args.args[1]
+        prompt = coding_inputs[0]
         self.assertIn('SAVED PROGRESS', prompt)
         self.assertIn('1. [done] Change the return value', prompt)
         self.assertIn('2. [not done] Add a test', prompt)

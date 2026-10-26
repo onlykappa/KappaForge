@@ -51,6 +51,8 @@ class FocusedRevisionTests(unittest.TestCase):
         def generate(*args, **kwargs):
             self.assertEqual(developer.REPAIR_SOURCE_TARGETS.get(), ('docs/audit.md',))
             self.assertTrue(developer.FOCUSED_REPAIR.get())
+            self.assertNotIn('Existing design and attempt history', args[1])
+            self.assertIn('Existing design and attempt history', developer.REPAIR_ADVISORY.get())
             return 'fixture', 'Audit', {'docs/audit.md': '# Evidence'}, ''
         handle = recovery.CURRENT.set(None)
         self.addCleanup(recovery.CURRENT.reset, handle)
@@ -73,4 +75,5 @@ class FocusedRevisionTests(unittest.TestCase):
         self.assertEqual(final, problems, 'deferred work must not disappear or become complete')
         self.assertIn('Other findings remain open', generate_mock.call_args.args[1])
         self.assertEqual(developer.REPAIR_SOURCE_TARGETS.get(), ())
+        self.assertEqual(developer.REPAIR_ADVISORY.get(), '')
         self.assertEqual(verify.open_problems({'body': result[3]}), problems[2:])

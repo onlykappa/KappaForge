@@ -52,6 +52,8 @@ class CodegenContextTests(unittest.TestCase):
         self.addCleanup(developer.REPAIR_SOURCE_TARGETS.reset, developer.REPAIR_SOURCE_TARGETS.set(('app.py',)))
         self.addCleanup(developer.REPAIR_SOURCE_LINES.reset, developer.REPAIR_SOURCE_LINES.set(anchors))
         self.addCleanup(developer.FOCUSED_REPAIR.reset, developer.FOCUSED_REPAIR.set(True))
+        advisory = 'Existing design and attempt history (unverified):\n' + 'old advisory context ' * 1500
+        self.addCleanup(developer.REPAIR_ADVISORY.reset, developer.REPAIR_ADVISORY.set(advisory))
         self.assertEqual(developer.source_priorities(sources, existing, task='app.py', journal=journal), ['app.py'])
         task = request + '\nVerified repair targets only: app.py\n' + developer.verified_history(
             'Reviewer-inspected facts\n' + 'd' * 2000, ['t' * 600] * 3, 'n' * 5000, 'b' * 5000, '+' * 30000, limit=3000)
@@ -61,6 +63,7 @@ class CodegenContextTests(unittest.TestCase):
             self.assertLessEqual(len(wire.encode('utf-16-le')) // 2, gateway.ENGINE_PROMPT_CHARS)
             self.assertEqual(prompt.count(request), 1)
             self.assertIn('return a + b', prompt)
+            self.assertIn('(Advisory repair history omitted.)', prompt)
             seen.append(prompt)
             return 'fixture', json.dumps({'files': [{'path': 'app.py', 'reason': 'Convert requested numeric inputs',
                 'edits': [{'find': 'return a + b', 'replace': 'return int(a) + int(b)'}]}]})
