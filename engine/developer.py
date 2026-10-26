@@ -2513,7 +2513,10 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                             'do not invent replacement work):\n' + json.dumps(finding_feedback))
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
-                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
+                           'Copy exact requirement text; concatenate parts in order. span=[start,end) means a Unicode character range in ORIGINAL TASK below; '
+                           'unmatched text remains in full.\n' +
+                           json.dumps(verify.requirement_references(canonical_task, requirement_catalog)) +
+                           '\n\nORIGINAL TASK:\n' + canonical_task)
         classified = requirements.CURRENT.get()
         review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
         files_needed = []
