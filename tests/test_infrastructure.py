@@ -10,7 +10,7 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 
-from engine import infrastructure as infra, execution, intent_guard, recovery, runner, sandbox, sandbox_tools, sandbox_repair_controller, task_goal
+from engine import infrastructure as infra, execution, intent_guard, recovery, runner, runtime_engine, sandbox, sandbox_tools, sandbox_repair_controller, task_goal
 from tests.test_sandbox import FakeDocker
 from tests.test_recovery_journal import GitHub
 
@@ -27,6 +27,30 @@ URL = 'https://api.github.com/repos/' + infra.ROOT + '/actions/workflows/agent.y
 
 
 class AdmissionTests(unittest.TestCase):
+    def test_trial_engine_dispatch_needs_task_receipt_and_exact_reviewed_revision(self):
+        world = GitHub()
+        scope = intent_guard.ACTIVE.get()
+        ref = f'kappa/recovery-130-{scope.digest[:12]}-1'
+        payload = dict(ref=ref, inputs=dict(issue_number='130', action=f'resume:1:{scope.digest[:12]}'))
+        try:
+            with self.assertRaises(PermissionError):
+                scope.permit(URL, payload, 'POST')
+            receipt = dict(task=130, digest=scope.digest, ref=ref, sha='b' * 40)
+            handle = runtime_engine.DISPATCH.set(receipt)
+            try:
+                scope.permit(URL, payload, 'POST')
+                def get(path):
+                    return dict(object=dict(sha='b' * 40)) if '/git/ref/' in path else self.get(path)
+                self.assertEqual(infra.authorize_dispatch(URL, payload, get=get)['revision'], 'b' * 40)
+                with self.assertRaises(infra.InfrastructureBlocked):
+                    infra.authorize_dispatch(URL, payload, get=self.get)
+                with self.assertRaises(PermissionError):
+                    scope.permit(URL, dict(payload, ref='kappa/dev-130'), 'POST')
+            finally:
+                runtime_engine.DISPATCH.reset(handle)
+        finally:
+            intent_guard.ACTIVE.set(None)
+
     def get(self, path):
         if path == 'repos/' + infra.ROOT:
             return copy.deepcopy(PUBLIC)

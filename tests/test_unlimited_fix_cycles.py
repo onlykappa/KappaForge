@@ -1,4 +1,4 @@
-"""An explicit null fixCycles budget removes only that cap; every other recovery budget stays enforced."""
+"""Explicit null count budgets retain durable usage; finite and absent budgets remain enforced."""
 import json
 import re
 import tempfile
@@ -27,26 +27,47 @@ class ProjectBudgetValidationTests(unittest.TestCase):
             with patch.object(projects, 'CONFIG', config):
                 return projects.registered('owner/repo')
 
-    def test_null_is_accepted_only_for_fix_cycles(self):
-        self.assertIsNone(self.register({'fixCycles': None})['budgets']['fixCycles'])
-        for budgets in ({'edits': None}, {'modelCalls': None}, {'fixCycles': 0}, {'fixCycles': 1001}, {'fixCycles': -1},
-                        {'fixCycles': '12'}, {'fixCycles': 12.0}, {'fixCycles': True}, {'fixCycles': 'unlimited'},
-                        {'unknown': None}):
-            with self.subTest(budgets=budgets), self.assertRaisesRegex(ValueError, 'recovery budget'):
-                self.register(budgets)
+    def test_null_is_accepted_for_each_known_count_but_invalid_budgets_are_rejected(self):
+        for kind in ('edits', 'modelCalls', 'fixCycles'):
+            self.assertIsNone(self.register({kind: None})['budgets'][kind])
+            for value in (0, 1001, -1, '12', 12.0, True, 'unlimited'):
+                with self.subTest(kind=kind, value=value), self.assertRaisesRegex(ValueError, 'recovery budget'):
+                    self.register({kind: value})
+        with self.assertRaisesRegex(ValueError, 'recovery budget'):
+            self.register({'unknown': None})
 
     def test_only_kappaforge_is_unlimited_in_the_shipped_config(self):
         config = json.loads(projects.CONFIG.read_text())['projects']
         self.assertIsNone(projects.registered('onlykappa/KappaForge')['budgets']['fixCycles'])
         for repo, entry in config.items():
             with self.subTest(repo=repo):
-                self.assertEqual(entry['budgets']['edits'], 120)
-                self.assertEqual(entry['budgets']['modelCalls'], 160)
-                if repo != 'onlykappa/KappaForge':
+                if repo == 'onlykappa/KappaForge':
+                    self.assertEqual(entry['budgets'], {'edits': None, 'modelCalls': None, 'fixCycles': None})
+                else:
+                    self.assertEqual(entry['budgets']['edits'], 120)
+                    self.assertEqual(entry['budgets']['modelCalls'], 160)
                     self.assertEqual(entry['budgets']['fixCycles'], 12)
 
 
 class FixCycleChargeTests(unittest.TestCase):
+    def test_authorized_project_unlimited_counts_preserve_usage_beyond_prior_caps(self):
+        saved = journal(used={'modelCalls': 1000, 'edits': 120, 'fixCycles': 18})
+        saved.project = projects.registered('onlykappa/KappaForge')
+        saved.state['events'] = [{'kind': 'recovery_budget', 'outcome': 'blocked'}]
+        for kind in ('modelCalls', 'edits', 'fixCycles'):
+            self.assertIsNone(RecoveryCoordinator.limit(saved.project, kind))
+            for _ in range(5):
+                RecoveryCoordinator.charge(saved, kind)
+        self.assertEqual(saved.state['budgets'], {'modelCalls': 1005, 'edits': 125, 'fixCycles': 23})
+        self.assertEqual(saved.state['events'], [{'kind': 'recovery_budget', 'outcome': 'blocked'}])
+        self.assertEqual(saved.persist.call_count, 15)
+        # Restore a fresh controller over the durable state; unlimited is policy,
+        # not permission to clear consumed work on handoff.
+        restored = journal(used=saved.state['budgets'])
+        restored.project = projects.registered('onlykappa/KappaForge')
+        RecoveryCoordinator.charge(restored, 'modelCalls')
+        self.assertEqual(restored.state['budgets'], {'modelCalls': 1006, 'edits': 125, 'fixCycles': 23})
+
     def test_null_permits_fix_cycles_beyond_twelve(self):
         saved = journal({'fixCycles': None}, {'fixCycles': 12})
         for expected in range(13, 31):
@@ -73,7 +94,7 @@ class FixCycleChargeTests(unittest.TestCase):
         with self.assertRaises(RecoveryBudgetExceeded):
             RecoveryCoordinator.start_fix(saved)
 
-    def test_edits_and_model_calls_stay_capped_when_fix_cycles_are_unlimited(self):
+    def test_finite_or_absent_model_edit_budgets_stay_capped_with_unlimited_fix_cycles(self):
         for kind, cap in (('edits', 120), ('modelCalls', 160)):
             with self.subTest(kind=kind):
                 saved = journal({'fixCycles': None}, {kind: cap})
@@ -82,14 +103,26 @@ class FixCycleChargeTests(unittest.TestCase):
                 configured = journal({'fixCycles': None, kind: 2}, {kind: 2})
                 with self.assertRaises(RecoveryBudgetExceeded):
                     RecoveryCoordinator.charge(configured, kind)
-                # A null that bypassed registration still cannot lift these caps.
-                forged = journal({kind: None}, {kind: cap})
-                self.assertEqual(RecoveryCoordinator.limit(forged.project, kind), cap)
-                with self.assertRaises(RecoveryBudgetExceeded):
-                    RecoveryCoordinator.charge(forged, kind)
+                for invalid in (True, 0, -1, 'unlimited', 12.0):
+                    forged = journal({kind: invalid}, {kind: cap})
+                    self.assertEqual(RecoveryCoordinator.limit(forged.project, kind), cap)
+                    with self.assertRaises(RecoveryBudgetExceeded):
+                        RecoveryCoordinator.charge(forged, kind)
 
 
 class FixCycleFormattingTests(unittest.TestCase):
+    def test_all_unlimited_counts_report_used_values_and_no_fake_remaining_number(self):
+        journal_handle, goal_handle = recovery.CURRENT.set(None), task_goal.CURRENT.set(task_goal.from_request('Resume task.'))
+        self.addCleanup(recovery.CURRENT.reset, journal_handle)
+        self.addCleanup(task_goal.CURRENT.reset, goal_handle)
+        task_state.bind('onlykappa/KappaForge', 232, 'kappa/dev-232', 'c' * 40)
+        saved = journal(used={'modelCalls': 1006, 'edits': 125, 'fixCycles': 23})
+        saved.project = projects.registered('onlykappa/KappaForge')
+        budgets = task_state.snapshot(saved)['budgets']
+        for kind, used in saved.state['budgets'].items():
+            self.assertEqual(budgets[kind], {'used': used, 'limit': None, 'remaining': None, 'unlimited': True})
+        json.dumps(budgets, allow_nan=False)
+
     def test_progress_label_never_prints_none(self):
         self.assertEqual(developer.fix_label(13, None), 'fix 13')
         self.assertEqual(developer.fix_label(4, 12), 'fix 4 of 12')

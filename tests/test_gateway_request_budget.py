@@ -6,6 +6,14 @@ from engine import developer, gateway, recovery, runner, verify
 
 
 class GatewayRequestBudgetTests(unittest.TestCase):
+    def test_engine_enforces_the_20k_character_cap_before_any_route(self):
+        self.assertTrue(gateway.prompt_fits('x' * gateway.ENGINE_PROMPT_CHARS))
+        self.assertFalse(gateway.prompt_fits('x' * (gateway.ENGINE_PROMPT_CHARS + 1)))
+        with patch.object(runner, '_run_model') as provider:
+            with self.assertRaises(gateway.GatewayRequestTooLarge):
+                runner.run_model('key', 'x' * (gateway.ENGINE_PROMPT_CHARS + 1))
+        provider.assert_not_called()
+
     def test_runner_posts_complete_fitting_prompt_within_shared_byte_limit(self):
         prompt = 'Exact task and code\n' + '😀' * 8000 + '\nFINAL REQUIREMENT'
         class Response:
@@ -20,31 +28,45 @@ class GatewayRequestBudgetTests(unittest.TestCase):
         self.assertLessEqual(len(request.data), runner.PROVIDERS['routing']['defaults']['maxRequestBytes'])
         self.assertEqual(json.loads(request.data)['messages'][0]['content'], prompt)
 
-    def test_task_169_sized_source_context_fits_without_dropping_the_task_tail(self):
+    def test_owner_brief_that_cannot_fit_hard_cap_stops_before_inference(self):
         task = 'Implement approved weather behavior.\n' + 'x' * 19800 + '\nFINAL: preserve manual entry and authorization.'
         sources = {'large.js': '// source evidence\n' * 19000, 'app.py': 'value = 1\n'}
         existing = {path: len(text) for path, text in sources.items()}
         proposal = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
         with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
                 patch.object(developer, 'run_model', return_value=('fixture', proposal)) as model:
-            _, _, changes, _ = developer.generate('fixture', task, developer.ROOT, sources, existing, guide='EXACT GUIDE\n' * 500)
-        prompt = model.call_args.args[1]
-        self.assertTrue(gateway.prompt_fits(prompt))
-        self.assertIn(task, prompt)
-        self.assertIn('EXACT GUIDE\n' * 500, prompt)
-        self.assertIn('showing relevant excerpts', prompt)
-        self.assertEqual(changes['app.py'], 'value = 2\n')
+            with self.assertRaises(gateway.GatewayRequestTooLarge):
+                developer.generate('fixture', task, developer.ROOT, sources, existing, guide='EXACT GUIDE\n' * 500)
+        model.assert_not_called()
 
-    def test_review_selects_bounded_source_without_claiming_missing_evidence(self):
+    def test_large_code_context_is_reduced_until_each_request_fits_cap(self):
+        task = 'Change app.py value and preserve owner approval. Do not merge.'
+        guide = ('SOURCE: KAPPA.md\\n1. Autonomous Development Authority\\nDo not merge or deploy.\\n'
+                 '6. Owner-Controlled Merge Authorization\\nOnly the owner can merge.\\n'
+                 '11. Security & Credential Management\\nNever expose credentials.\\n' + 'rule\\n' * 5000)
+        source = 'value = 1\n' + '# source evidence\n' * 15000
+        proposal = json.dumps({'files': [{'path': 'app.py', 'reason': 'Change the requested value',
+            'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
+        with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
+                patch.object(developer, 'run_model', return_value=('fixture', proposal)) as model:
+            _, _, changes, _ = developer.generate_with('fixture', task, 'example/app', {'app.py': source},
+                {'app.py': len(source)}, guide, None, developer.LARGE, max_attempts=1)
+        prompts = [call.args[1] for call in model.call_args_list]
+        self.assertTrue(prompts)
+        self.assertTrue(all(len(prompt) <= gateway.ENGINE_PROMPT_CHARS for prompt in prompts))
+        self.assertIn('Only the owner can merge', prompts[0])
+        self.assertIn('showing relevant excerpts', prompts[0])
+        self.assertEqual(changes['app.py'], source.replace('value = 1', 'value = 2', 1))
+
+    def test_review_refuses_owner_brief_that_cannot_fit_hard_cap(self):
         task = 'Keep the complete task: ' + 'x' * 19900 + ' TAIL REQUIREMENT'
         sources = {'app.py': 'value = 1\n', 'large.py': '# source evidence\n' * 20000}
         verdict = json.dumps({'requirements': [{'text': 'Change value', 'met': True, 'evidence': {'path': 'app.py', 'quote': 'value = 2'}}], 'problems': [], 'files_needed': [], 'files_to_inspect': []})
         with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
                 patch.object(developer, 'run_model', return_value=('fixture', verdict)) as model:
-            result = verify.model_review(model, 'fixture', task, sources.get, {'app.py': 'value = 2\n'}, list(sources))
-        self.assertIsNotNone(result)
-        self.assertTrue(gateway.prompt_fits(model.call_args.args[1]))
-        self.assertIn(task, model.call_args.args[1])
+            with self.assertRaises(gateway.GatewayRequestTooLarge):
+                verify.model_review(model, 'fixture', task, sources.get, {'app.py': 'value = 2\n'}, list(sources))
+        model.assert_not_called()
 
     def test_oversized_and_unicode_serialized_requests_stop_before_network(self):
         for prompt in ('x' * 357645, '😀' * 40000):

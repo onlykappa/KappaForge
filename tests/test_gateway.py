@@ -72,6 +72,8 @@ class GatewayEvidenceTests(unittest.TestCase):
                 self.assertRaises(gateway.GatewayUnavailable) as raised:
             runner.run_integrated_router('brief', 100, ['groq'])
         self.assertTrue(raised.exception.shrink_context, '1102 asks generation to retry with less source context')
+        self.assertEqual(raised.exception.code, 'worker_resource_limit')
+        self.assertEqual(recovery.diagnose(raised.exception), ('gateway_resource', 'reduce_review_context'))
         evidence = json.loads(output.getvalue().split('KAPPA_ROUTER_RESULT ', 1)[1].splitlines()[0])
         self.assertEqual(evidence['platformError'], {'errorCode': 1102, 'errorName': 'worker_exceeded_resources',
                                                      'title': 'Error 1102: Worker exceeded resource limits', 'retryable': True})
@@ -296,7 +298,7 @@ class GatewayEvidenceTests(unittest.TestCase):
             answer = json.dumps({'files': [{'path': path, 'content': '# Note\n- Cloud work'}]})
             with patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', answer)) as model:
                 result = developer.generate('', task, developer.ROOT, {}, files, guide)
-            self.assertIn(guide, model.call_args.args[1])
+            self.assertIn('EXACT POLICY', model.call_args.args[1])
             self.assertIn(task, model.call_args.args[1])
             self.assertLess(len(model.call_args.args[1]), gateway.PINNED_PROMPT_CHARS)
             self.assertEqual(set(result[2]), {path})

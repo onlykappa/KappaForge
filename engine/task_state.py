@@ -427,15 +427,19 @@ def add_to_prompt(prompt, journal=None):
     data = snapshot(journal)
     if not data:
         return prompt.base if isinstance(prompt, StatePrompt) else prompt
+    from engine import gateway
+    ceiling = gateway.resource_ceiling()
+    context_limit = min(MAX_CONTEXT, max(2048, ceiling // 4)) if ceiling is not None else MAX_CONTEXT
     data['omitted'] = 0
     initial = wire(data)
+    cache_key = (context_limit, initial)
     cached = RENDERED.get()
-    if cached and cached[0] == initial:
+    if cached and cached[0] == cache_key:
         # prompt_fits and run_model ask for the same state in every context-shrinking round.
         rendered, fingerprint = cached[1:]
     else:
-        rendered, fingerprint = render(data, initial)
-        RENDERED.set((initial, rendered, fingerprint))
+        rendered, fingerprint = render(data, initial, max_context=context_limit)
+        RENDERED.set((cache_key, rendered, fingerprint))
     if isinstance(prompt, StatePrompt):
         if prompt.fingerprint == fingerprint:
             return prompt
@@ -452,9 +456,10 @@ def wire(data):
     return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
 
-def render(data, text):
-    """The state block trimmed to MAX_CONTEXT, oldest and least essential evidence first, and its fingerprint."""
-    while len(text.encode('utf-16-le')) // 2 > MAX_CONTEXT:
+def render(data, text, max_context=None):
+    """Trim optional history to its allocation; required facts retain the absolute cap."""
+    limit = MAX_CONTEXT if max_context is None else min(MAX_CONTEXT, max_context)
+    while len(text.encode('utf-16-le')) // 2 > limit:
         if data['recentAttempts']:
             data['recentAttempts'].pop(0)
         elif data['touchedFiles']:
@@ -471,10 +476,24 @@ def render(data, text):
             data['review']['problems'].pop()
         elif data['review'].get('pending'):
             data['review']['pending'].pop()
-        else:
+        elif data['repairAssessment'].get('findings'):
+            # Prior assessments are diagnostics, not required receipts or edit
+            # permission. Keep the live decisions; omit only the prompt copy.
+            data['repairAssessment']['findings'].pop(0)
+            data['repairAssessment']['omittedFindings'] = data['repairAssessment'].get('omittedFindings', 0) + 1
+        elif set(data['repairAssessment']) - {'evidence', 'omittedFindings'}:
+            data['repairAssessment'] = dict(evidence='historical diagnostic details omitted; reverify before editing',
+                                           omittedFindings=data['repairAssessment'].get('omittedFindings', 0))
+        elif data['goal']['text']:
             data['goal']['text'] = data['goal']['text'][:len(data['goal']['text']) // 2]
-            if not data['goal']['text']:
-                raise ValueError('Task state cannot fit its bounded context; no inference was sent')
+        else:
+            # The fraction of a learned envelope is an allocation for history,
+            # not permission to discard identity, receipts, budgets or nextAction.
+            # The enclosing prompt must still fit the learned request limit.
+            if len(text.encode('utf-16-le')) // 2 > MAX_CONTEXT:
+                from engine.gateway import GatewayRequestTooLarge
+                raise GatewayRequestTooLarge('Required task state exceeds its absolute context cap; no inference was sent')
+            break
         data['omitted'] += 1
         text = wire(data)
     return text, hashlib.sha256(text.encode()).hexdigest()

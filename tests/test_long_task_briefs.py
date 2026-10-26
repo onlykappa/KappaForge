@@ -1,14 +1,14 @@
-"""The owner brief must reach every coding consumer without silent truncation."""
+"""Fitting owner briefs reach each consumer; oversized briefs stop before inference."""
 from tests.repair_fixtures import response_or
 import json
 import unittest
 from unittest.mock import patch
 
-from engine import coder, developer, recovery, verify
+from engine import coder, developer, gateway, recovery, verify
 
 
 TAIL = '\nFinal requirement: retain manual location entry and never broaden authorization.'
-TASK = 'Implement the authorized change.\n' + 'x' * (20000 - len(TAIL) - len('Implement the authorized change.\n')) + TAIL
+TASK = 'Implement the authorized change.\n' + 'x' * (1200 - len(TAIL) - len('Implement the authorized change.\n')) + TAIL
 SOURCES = {'app/main.py': 'def main():\n    return 1\n'}
 EXISTING = {path: len(source) for path, source in SOURCES.items()}
 PROPOSAL = json.dumps({'summary': 'Change return value', 'files': [
@@ -23,11 +23,18 @@ class LongTaskBriefTests(unittest.TestCase):
         self.assertIn(TASK, model.call_args.args[1])
         self.assertEqual(files, [('projects/demo/main.py', 'print(2)\n')])
 
-    def test_file_selection_receives_all_20000_characters(self):
+    def test_file_selection_receives_the_complete_fitting_brief(self):
         with patch.object(developer, 'run_model', return_value=('fixture', '{"read":["app/main.py"]}')) as model:
             chosen = developer.select_files('fixture', TASK, EXISTING)
         self.assertEqual(chosen, ['app/main.py'])
         self.assertIn(TASK, model.call_args.args[1])
+
+    def test_brief_that_cannot_fit_the_request_cap_fails_before_inference(self):
+        too_long = 'x' * 20000
+        with patch.object(developer, 'run_model') as model:
+            with self.assertRaises(gateway.GatewayRequestTooLarge):
+                developer.generate('fixture', too_long, 'onlykappa/KappaForge', SOURCES, EXISTING)
+        model.assert_not_called()
 
     def test_generation_receives_the_tail_requirement_and_applies_validated_edits(self):
         with patch.object(developer, 'run_model', return_value=('fixture', PROPOSAL)) as model:
@@ -74,6 +81,10 @@ class ResumedBriefTests(unittest.TestCase):
         current = recovery.CURRENT.set(journal)
         self.addCleanup(recovery.CURRENT.reset, current)
         github = lambda path, _token: [{'filename': 'app/main.py', 'status': 'modified', 'patch': 'fixture'}] if '/files?' in path else []
+        coding_inputs = []
+        def capture_generation(*args, **kwargs):
+            coding_inputs.append(args[1] + developer.REPAIR_ADVISORY.get())
+            return 'fixture', 'done', {'app/main.py': 'x'}, ''
         with patch.object(developer, 'gh', side_effect=github), \
                 patch.object(developer, 'list_tree', return_value=(EXISTING, {})), \
                 patch.object(developer, 'project_guide', return_value=''), \
@@ -84,10 +95,10 @@ class ResumedBriefTests(unittest.TestCase):
                 patch.object(developer, 'check_the_work', return_value=({'app/main.py': 'x'}, '', [])), \
                 patch.object(developer, 'run_model', side_effect=lambda key, prompt, **kw: response_or(prompt, ('m', '{}'))), \
                 patch.object(journal, 'persist', lambda: None, create=True), \
-                patch.object(developer, 'generate', return_value=('fixture', 'done', {'app/main.py': 'x'}, '')) as generate:
+                patch.object(developer, 'generate', side_effect=capture_generation) as generate:
             developer.revise_branch({'number': 1, 'title': 'Authorized task', 'body': TASK}, {'number': 1, 'body': '', 'html_url': 'pr'},
                                     'kappa/dev-1', 'a' * 40, [], 'fixture', 'fixture')
-        prompt = generate.call_args.args[1]
+        prompt = coding_inputs[0]
         self.assertIn('SAVED PROGRESS', prompt)
         self.assertIn('1. [done] Change the return value', prompt)
         self.assertIn('2. [not done] Add a test', prompt)

@@ -149,7 +149,8 @@ class ExecutionScope:
             # trusted workflow on main. It cannot change action scope or ref.
             if p == "/repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches" and method == "POST":
                 inputs = (payload or {}).get("inputs", {})
-                if (set(payload or {}) == {"ref", "inputs"} and payload["ref"] == "main"
+                from engine.runtime_engine import permits
+                if (set(payload or {}) == {"ref", "inputs"} and (payload["ref"] == "main" or permits(payload["ref"], self))
                         and set(inputs) == {"issue_number", "action"} and inputs["issue_number"] == str(self.number)
                         and re.fullmatch(r"resume:" + RESUME_NUMBER + ":" + self.digest[:12], inputs.get("action", ""))):
                     return

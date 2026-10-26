@@ -8,15 +8,52 @@ import urllib.request
 from engine.reliability import ProviderRoutesUnavailable, retry_after
 
 PINNED_OUTPUT_TOKENS = 768
-PINNED_PROMPT_CHARS = 26000
+PINNED_PROMPT_CHARS = 18000
+ENGINE_PROMPT_CHARS = 20000
 PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
+RESOURCE_ROLES = ('verify', 'review', 'diagnose', 'code', 'light')
+
+
+def resource_role():
+    from engine import task_state
+    role = task_state.ROUTING_ROLE.get()
+    return role if role in RESOURCE_ROLES else 'light'
 
 
 class GatewayRequestTooLarge(RuntimeError):
     """Local request construction failure, never a provider capacity failure."""
     terminal = True
     gateway_failure = True
+
+
+def resource_ceiling():
+    from engine import recovery, task_state
+    journal = recovery.CURRENT.get()
+    if not isinstance(getattr(journal, 'state', None), dict):
+        return None
+    task_state.require_journal_identity(journal)
+    state = journal.state
+    valid = lambda value: type(value) is int and 1024 <= value <= 1000000
+    saved = state.get('gatewayResourceBudgets', {})
+    budgets = {role: value for role, value in saved.items() if role in RESOURCE_ROLES and valid(value)} if isinstance(saved, dict) else {}
+    legacy = state.get('gatewayResourcePromptChars')
+    if valid(legacy):
+        # Only recorded platform evidence can attribute an old global hint. Persist
+        # migration before the bounded history can evict that evidence on handoff.
+        evidence = state.get('gatewayEvidence', [])
+        origin = next((row.get('role') for row in reversed(evidence) if isinstance(row, dict)
+                       and row.get('role') in RESOURCE_ROLES and
+                       (row.get('code') == 'worker_resource_limit' or
+                        isinstance(row.get('platformError'), dict) and row['platformError'].get('errorCode') == 1102)), None) if isinstance(evidence, list) else None
+        if origin:
+            budgets[origin] = min(budgets.get(origin, legacy), legacy)
+            state['gatewayResourceBudgets'] = budgets
+            state.pop('gatewayResourcePromptChars')
+            journal.persist()
+        else:
+            return min(budgets.get(resource_role(), legacy), legacy)  # Unknown provenance stays conservative.
+    return budgets.get(resource_role())
 
 
 def prompt_fits(prompt, reserve=0):
@@ -26,7 +63,11 @@ def prompt_fits(prompt, reserve=0):
     limits = PROVIDERS['routing']['defaults']
     # Match JS UTF-16 length and the conservative context estimate used by the router.
     chars = len(prompt.encode('utf-16-le')) // 2
-    maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    maximum = min(ENGINE_PROMPT_CHARS, limits['maxPromptChars'],
+                  int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    ceiling = resource_ceiling()
+    if ceiling is not None:
+        maximum = min(maximum, ceiling)
     # run_model refuses any pinned-route prompt over this cap, with or without a task record.
     if getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
         maximum = min(maximum, PINNED_PROMPT_CHARS)
@@ -42,6 +83,85 @@ def require_prompt_fits(prompt):
 
 class GatewayUnavailable(ProviderRoutesUnavailable):
     gateway_failure = True
+
+
+class GatewayResourceExhausted(GatewayUnavailable):
+    """No more identical task continuations after bounded resource adaptation fails."""
+    terminal = True
+    category = 'gateway_resource'
+
+    def __init__(self):
+        super().__init__('Gateway resource adaptation exhausted; review remains unverified. '
+                         'Inspect gateway CPU/memory diagnostics before another retry.', terminal=True)
+
+
+def remember_resource_limit(prompt):
+    from engine import recovery, task_state
+    journal = recovery.CURRENT.get()
+    task_state.require_journal_identity(journal)
+    chars = len(task_state.add_to_prompt(prompt, journal).encode('utf-16-le')) // 2
+    ceiling = max(1024, min(resource_ceiling() or chars, chars * 2 // 3))
+    if journal:
+        saved = journal.state.get('gatewayResourceBudgets', {})
+        budgets = {role: value for role, value in saved.items() if role in RESOURCE_ROLES and
+                   type(value) is int and 1024 <= value <= 1000000} if isinstance(saved, dict) else {}
+        budgets[resource_role()] = ceiling
+        journal.state['gatewayResourceBudgets'] = budgets
+        journal.persist()
+    return ceiling
+
+
+class ReviewResources:
+    """Rebuild source evidence, never truncate an assembled prompt or relax review gates."""
+    def __init__(self):
+        self.ceiling, self.reductions = resource_ceiling(), 0
+
+    def fits(self, prompt):
+        from engine import recovery, task_state
+        return prompt_fits(prompt) and (self.ceiling is None or
+            len(task_state.add_to_prompt(prompt, recovery.CURRENT.get()).encode('utf-16-le')) // 2 <= self.ceiling)
+
+    def require(self, prompt):
+        if not self.fits(prompt):
+            if self.ceiling is not None:
+                raise GatewayResourceExhausted()
+            require_prompt_fits(prompt)
+
+    def retry(self, error, prompt):
+        if not getattr(error, 'shrink_context', False) or getattr(error, 'terminal', False):
+            return False
+        self.reductions += 1
+        # Include the same identity/role envelope sent by run_model. Keep the learned
+        # limit across worker handoff, so another attempt cannot recreate this request.
+        self.ceiling = min(self.ceiling or 1000000, remember_resource_limit(prompt))
+        if self.reductions > 3:
+            raise GatewayResourceExhausted()
+        print('Gateway resource limit: rebuilding review with less source evidence; all verdict gates remain required.', flush=True)
+        return True
+
+    def call(self, run_model, api_key, build, **kwargs):
+        local_reductions = 0
+        while True:
+            prompt = build()
+            if self.ceiling is not None or os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true':
+                try:
+                    self.require(prompt)
+                except GatewayRequestTooLarge:
+                    # A local hard-cap rejection is safe to fix by rebuilding less source/diff
+                    # context. Keep this in memory only: it is not evidence of a Cloudflare limit.
+                    if local_reductions >= 3:
+                        raise
+                    chars = len(prompt.encode('utf-16-le')) // 2
+                    cap = max(1024, min(ENGINE_PROMPT_CHARS - 1024, chars * 2 // 3))
+                    self.ceiling = min(self.ceiling or cap, cap)
+                    local_reductions += 1
+                    print('Gateway request exceeds the engine prompt cap; rebuilding with less review evidence.', flush=True)
+                    continue
+            try:
+                return run_model(api_key, prompt, **kwargs)
+            except Exception as error:
+                if not self.retry(error, prompt):
+                    raise
 
 
 def response_provenance(raw, headers):

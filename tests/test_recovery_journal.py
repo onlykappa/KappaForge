@@ -464,6 +464,47 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertIn('Adopted 1 owner-reviewed commit', json.dumps(self.journal.state['events']))
         self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40, 'the branch itself is never moved')
 
+    def test_explicit_fix_adopts_reviewed_commits_after_terminal_budget_stop(self):
+        from engine.reliability import RecoveryBudgetExceeded
+        self.review()
+        self.journal.state['budgets'] = {'modelCalls': 160, 'edits': 1, 'fixCycles': 18}
+        self.journal.event(RecoveryBudgetExceeded('Task modelCalls budget exhausted', terminal=True),
+                           outcome='blocked', strategy='stop')
+        resumed = self.world.journal()
+        self.assertEqual(resumed.state['executionState'], 'failed_terminal')
+        history = copy.deepcopy(resumed.state['events'])
+        self.assertTrue(resumed.begin('fix'))
+        self.assertEqual(resumed.state['candidate'], 'd' * 40)
+        self.assertEqual(resumed.state['executionState'], 'running')
+        self.assertEqual(resumed.state['budgets'], {'modelCalls': 160, 'edits': 1, 'fixCycles': 18})
+        self.assertEqual(resumed.state['events'][:len(history)], history)
+        self.assertFalse(resumed._resuming)
+        self.assertEqual(self.world.journal().state['candidate'], 'd' * 40)
+
+    def test_terminal_adoption_does_not_get_manual_fix_authority_from_other_actions(self):
+        from engine.reliability import RecoveryBudgetExceeded
+        self.review()
+        self.journal.event(RecoveryBudgetExceeded('Task modelCalls budget exhausted', terminal=True),
+                           outcome='blocked', strategy='stop')
+        for action in ('', 'verify'):
+            with self.subTest(action=action):
+                resumed = self.world.journal()
+                with self.assertRaises(RecoveryBudgetExceeded):
+                    resumed.begin(action)
+                self.assertEqual(self.world.journal().state['candidate'], 'b' * 40)
+                self.assertEqual(self.world.journal().state['executionState'], 'failed_terminal')
+
+    def test_terminal_fix_still_requires_post_commit_owner_guidance(self):
+        from engine.reliability import RecoveryBudgetExceeded
+        self.review(guidance_delay=None)
+        self.journal.event(RecoveryBudgetExceeded('Task modelCalls budget exhausted', terminal=True),
+                           outcome='blocked', strategy='stop')
+        resumed = self.world.journal()
+        with self.assertRaises(RecoveryBudgetExceeded):
+            resumed.begin('fix')
+        self.assertEqual(self.world.journal().state['candidate'], 'b' * 40)
+        self.assertEqual(self.world.journal().state['executionState'], 'failed_terminal')
+
     def test_other_branch_moves_stay_blocked(self):
         for kwargs in ({'guidance_delay': None}, {'guidance_delay': -30}, {'author': 'someone-else'},
                        {'body': 'Looks fine to me'}, {'commits': recovery.MAX_ADOPTED_COMMITS + 1}):
@@ -474,6 +515,35 @@ class RecoveryJournalTests(unittest.TestCase):
                 self.assertFalse(self.journal.begin('fix'))
                 self.assertEqual(self.journal.state['status'], 'blocked')
                 self.assertEqual(self.journal.state['candidate'], 'b' * 40)
+
+    def test_scheduled_recovery_resumes_candidate_drift_only_after_owner_guidance(self):
+        self.review(guidance_delay=None)
+        self.assertFalse(self.journal.begin('fix'))
+        self.assertEqual(self.world.journal().state['status'], 'blocked')
+        stamp = datetime.fromtimestamp(self.world.now, timezone.utc).isoformat().replace('+00:00', 'Z')
+        self.world.rows.append(dict(id=len(self.world.rows) + 1, body='Guidance: continue the reviewed task',
+                                    user={'login': 'onlykappa'}, created_at=stamp))
+
+        results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now)
+
+        self.assertIn((130, 'queued'), results)
+        resumed = self.world.journal()
+        self.assertEqual(resumed.state['candidate'], 'd' * 40)
+        self.assertEqual(resumed.state['status'], 'dispatching')
+        self.assertEqual(resumed.state['continuations'], 1)
+        self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40, 'automatic recovery never moves the candidate branch')
+        self.assertEqual(len([call for call in self.world.calls if call[0].endswith('/dispatches')]), 1)
+
+    def test_scheduled_recovery_does_not_resume_candidate_drift_without_owner_guidance(self):
+        self.review(guidance_delay=None)
+        self.assertFalse(self.journal.begin('fix'))
+
+        results = recovery.scan(self.world.read, self.world.write, lambda: self.world.now)
+
+        self.assertIn((130, 'blocked'), results)
+        self.assertEqual(self.world.journal().state['candidate'], 'b' * 40)
+        self.assertEqual(self.world.journal().state['continuations'], 0)
+        self.assertFalse(any(call[0].endswith('/dispatches') for call in self.world.calls))
 
     def test_changed_task_cancellation_and_expiry_revoke_continuation(self):
         self.journal.defer(RuntimeError('offline'))

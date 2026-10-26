@@ -24,6 +24,16 @@ def issue(mode):
     return {'state':'open','user':{'login':'onlykappa'},'created_at':'2099-01-01T00:00:00Z','number': 23, 'body': 'Repository: onlykappa/KappaForge\nMode: ' + mode}
 
 class TaskScopeTests(unittest.TestCase):
+    def test_diagnostic_actions_cannot_enter_task_classification(self):
+        text = (ROOT / '.github/workflows/agent.yml').read_text()
+        guard = text.split('  classify:\n', 1)[1].split('    if: ', 1)[1].splitlines()[0]
+        harness = '''const assert = require('node:assert/strict');
+        const allowed = new Function('inputs', 'return (' + GUARD + ')');
+        for (const action of ['router-check', 'prompt-probe']) assert.equal(allowed({action}), false);
+        for (const action of ['', 'fix', 'verify', 'resume:2:fixture']) assert.equal(allowed({action}), true);
+        '''.replace('GUARD', json.dumps(guard))
+        subprocess.run(['node', '-'], input=harness, text=True, capture_output=True, check=True)
+
     def test_task_run_names_are_complete_yaml_strings_and_keep_task_identity(self):
         # A '#' inside an unquoted YAML scalar starts a comment even when it
         # appears inside a GitHub expression's single-quoted format string.

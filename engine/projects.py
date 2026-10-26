@@ -15,8 +15,8 @@ def registered(repo):
         raise ValueError('Invalid registered project branch or waiting policy')
     re.compile(entry['branches'])
     for name, value in entry.get('budgets', {}).items():
-        # Only fix cycles may be explicitly unlimited (null); edits and model calls always keep a cap.
-        if name == 'fixCycles' and value is None:
+        # Explicit null removes only the selected internal count ceiling.
+        if name in ('edits', 'modelCalls', 'fixCycles') and value is None:
             continue
         if name not in ('edits','modelCalls','fixCycles') or type(value) is not int or not 1 <= value <= 1000:
             raise ValueError('Invalid registered project recovery budget')

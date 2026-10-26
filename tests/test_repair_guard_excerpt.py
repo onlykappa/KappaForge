@@ -1,7 +1,15 @@
 import unittest
-from engine.repair_guard import payload
+from engine.repair_guard import payload, reference_lines
 
 class TestRepairGuardExcerpt(unittest.TestCase):
+    def test_explicit_repository_line_reference_survives_keyword_compaction(self):
+        source = '\n'.join(['# generic audit verification context'] * 300 + ['| 3.1a | NOT RUN | |'] + ['# more context'] * 50)
+        data = payload({'docs/audit.md': source}, ['Unmet requirement: docs/audit.md:301 records NOT RUN'], 180)
+        self.assertIn('301| | 3.1a | NOT RUN | |', data['sources']['docs/audit.md']['text'])
+        self.assertIn(301, data['shown_lines']['docs/audit.md'])
+        self.assertNotIn('traceback_lines', data['sources']['docs/audit.md'])
+        self.assertEqual(reference_lines(['/tmp/docs/audit.md:301; docs/audit.md:0; docs/audit.md:301'], 'docs/audit.md'), [300])
+
     def setUp(self):
         # Build a synthetic source with many common early lines, a huge opening, and two late unique functions.
         common_block = "\n".join(["import os", "import sys", "# common comment"] * 100)

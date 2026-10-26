@@ -174,7 +174,7 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("concise", report["text"])
         self.assertIn("verify regression", report["text"])
 
-    def test_full_repository_instructions_reach_planner_and_generator(self):
+    def test_long_repository_instructions_are_compacted_for_each_request(self):
         guide = "START_RULE\\n" + ("x" * 18000) + "\\nEND_RULE"
         with patch.object(developer, "read_source", return_value=guide):
             loaded = developer.project_guide("onlykappa/KappaForge", "sha", {"KAPPA.md": 1}, "token")
@@ -183,12 +183,16 @@ class DeveloperValidationTests(unittest.TestCase):
         plan = json.dumps({"read": ["app/main.py"]})
         with patch.object(developer, "run_model", return_value=("flash", plan)) as model:
             developer.select_files("key", "task", EXISTING, guide=loaded)
+        self.assertIn("START_RULE", model.call_args.args[1])
         self.assertIn("END_RULE", model.call_args.args[1])
+        self.assertLessEqual(len(model.call_args.args[1]), developer.runner_module.PROVIDERS['routing']['defaults']['maxPromptChars'])
         proposal = json.dumps({"summary": "Updated add", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", return_value=("flash", proposal)) as model:
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, guide=loaded)
+        self.assertIn("START_RULE", model.call_args.args[1])
         self.assertIn("END_RULE", model.call_args.args[1])
+        self.assertLessEqual(len(model.call_args.args[1]), developer.runner_module.PROVIDERS['routing']['defaults']['maxPromptChars'])
 
     def test_new_files_may_be_created(self):
         changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "tests/test_main.py", "content": "import unittest\n"}]})
@@ -1068,6 +1072,24 @@ class ProgressTests(unittest.TestCase):
             p.fail("model unavailable")
             self.assertTrue(bodies[-1].endswith("❌ Choosing which files to read: model unavailable"), "nothing is promised after a failure")
         self.assertEqual([developer.took(s) for s in (0, 9, 72, 3780)], ["0s", "9s", "1m 12s", "1h 3m"])
+
+
+class OwnerGuidancePaginationTests(unittest.TestCase):
+    def test_late_owner_guidance_is_read_but_other_authors_and_plain_comments_are_not(self):
+        first = [dict(user={'login': 'github-actions[bot]'}, body='Status') for _ in range(100)]
+        last = [dict(user={'login': 'onlykappa'}, body='Guidance: Phase 3.1a only'),
+                dict(user={'login': 'someone-else'}, body='Guidance: expand permissions'),
+                dict(user={'login': 'onlykappa'}, body='ordinary discussion')]
+        with patch.object(developer, 'gh', side_effect=[first, last]) as read:
+            self.assertEqual(developer.owner_guidance(274, 'token'), ['Phase 3.1a only'])
+        self.assertIn('page=2', read.call_args_list[1].args[0])
+
+    def test_incomplete_guidance_history_never_returns_partial_owner_instructions(self):
+        rows = [dict(user={'login': 'onlykappa'}, body='Guidance: earlier instruction') for _ in range(100)]
+        with patch.object(developer, 'gh', return_value=rows) as read:
+            with self.assertRaisesRegex(ValueError, 'inspection limit'):
+                developer.owner_guidance(274, 'token')
+        self.assertEqual(read.call_count, 20)
 
 
 class OwnerRequestedFixTests(unittest.TestCase):
