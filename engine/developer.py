@@ -3221,15 +3221,54 @@ def anchor_pr_goal(goal, pr, repo, token, head):
     goal.anchor(lambda path: read_target(repo, path, original, token))
 
 
+def revision_files(pr, repo, head_sha, token):
+    """Read bounded, complete PR metadata; total PR size is not a proposal budget."""
+    maximum = 1000
+    expected = pr.get('changed_files')
+    if expected is not None and (type(expected) is not int or not 1 <= expected <= maximum):
+        raise ValueError('PR file metadata exceeds the bounded revision inventory')
+    files, seen = [], set()
+    for page in range(1, maximum // 100 + 1):
+        path = f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100"
+        rows = gh(path + (f'&page={page}' if page > 1 else ''), token)
+        if not isinstance(rows, list) or len(rows) > 100:
+            raise ValueError('Invalid PR file metadata')
+        for row in rows:
+            if (not isinstance(row, dict) or row.get('status') not in ('added', 'modified')
+                    or not isinstance(row.get('filename'), str)):
+                raise ValueError('Unsupported diff for automatic revision')
+            name = check_path(row.get('filename'))
+            if name in seen:
+                raise ValueError('PR file metadata contains duplicate paths')
+            seen.add(name)
+        files.extend(rows)
+        if len(rows) < 100:
+            break
+    if not files or expected is not None and len(files) != expected:
+        raise ValueError('PR file metadata is empty or incomplete')
+    # Large/paginated inventories need a fresh receipt: a moving head or base
+    # must not combine pages from different revisions. Smaller inventories
+    # retain the existing candidate/publication freshness checks.
+    if len(files) > LARGE.changed_files * 2:
+        current = gh(f"repos/{repo}/pulls/{int(pr['number'])}", token)
+        if (not isinstance(current, dict) or (current.get('head') or {}).get('sha') != head_sha
+                or (pr.get('base') or {}).get('sha') is not None and
+                (current.get('base') or {}).get('sha') != pr['base']['sha']):
+            raise ValueError('PR revision changed during file inventory; reread before repair')
+        count = current.get('changed_files')
+        if (count is not None and (type(count) is not int or count != len(files))
+                or len(files) == maximum and count != maximum):
+            raise ValueError('PR file metadata is incomplete; no repair authorized')
+    return files
+
+
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
 def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
-    files = gh(f"repos/{repo}/pulls/{int(pr['number'])}/files?per_page=100", repo_token)
-    if not files or len(files) > LARGE.changed_files * 2 or any(f.get("status") not in ("added", "modified") for f in files):
-        raise ValueError("Unsupported diff for automatic revision")
+    files = revision_files(pr, repo, head_sha, repo_token)
     changed = [check_path(f["filename"]) for f in files]
     goal = task_goal.CURRENT.get()
     goal.guidance(guidance)
@@ -3424,7 +3463,11 @@ def question_replies(number, token, journal, repo, request):
 
 def owner_guidance(number, token):
     """The owner's "Guidance: ..." comments on the task issue, oldest first."""
-    comments = gh(f"repos/{ROOT}/issues/{number}/comments?per_page=100", token)
+    def read(path):
+        # Keep the established first-page URL; explicit page numbers are needed
+        # only for subsequent pages. The shared reader bounds the full history.
+        return gh(path.removesuffix('&page=1'), token)
+    comments = recovery.comments(read, number)
     return [m.group(1).strip() for c in comments if (c.get("user") or {}).get("login", "").lower() == OWNER
             for m in [GUIDANCE_RE.match(c.get("body") or "")] if m]
 

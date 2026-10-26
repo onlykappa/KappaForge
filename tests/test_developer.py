@@ -1074,6 +1074,24 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual([developer.took(s) for s in (0, 9, 72, 3780)], ["0s", "9s", "1m 12s", "1h 3m"])
 
 
+class OwnerGuidancePaginationTests(unittest.TestCase):
+    def test_late_owner_guidance_is_read_but_other_authors_and_plain_comments_are_not(self):
+        first = [dict(user={'login': 'github-actions[bot]'}, body='Status') for _ in range(100)]
+        last = [dict(user={'login': 'onlykappa'}, body='Guidance: Phase 3.1a only'),
+                dict(user={'login': 'someone-else'}, body='Guidance: expand permissions'),
+                dict(user={'login': 'onlykappa'}, body='ordinary discussion')]
+        with patch.object(developer, 'gh', side_effect=[first, last]) as read:
+            self.assertEqual(developer.owner_guidance(274, 'token'), ['Phase 3.1a only'])
+        self.assertIn('page=2', read.call_args_list[1].args[0])
+
+    def test_incomplete_guidance_history_never_returns_partial_owner_instructions(self):
+        rows = [dict(user={'login': 'onlykappa'}, body='Guidance: earlier instruction') for _ in range(100)]
+        with patch.object(developer, 'gh', return_value=rows) as read:
+            with self.assertRaisesRegex(ValueError, 'inspection limit'):
+                developer.owner_guidance(274, 'token')
+        self.assertEqual(read.call_count, 20)
+
+
 class OwnerRequestedFixTests(unittest.TestCase):
     ISSUE = {"number": 9, "title": "Add feature", "user": {"login": "onlykappa"},
              "body": "Repository: onlykappa/KappaForge\nMode: develop\n\nAdd a feature"}

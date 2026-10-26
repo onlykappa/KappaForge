@@ -179,6 +179,22 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Broader checks actually RUN: runtime-engine provenance — 9 passed; Python online — 1,060 run, OK, 33 skipped, 78.114s; proxy-blocked — 1,060 run, OK, 33 skipped, 82.105s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. No Docker/native execution is claimed.
 - Status: PATCHED locally; Phase 3.1a remains incomplete. The cap is configured at 1,000, but the failed attempt did not reach inference under it; live remaining budget must be verified on the next corrected run.
 
+## P3-024 — cumulative PR file count blocks otherwise bounded repairs
+
+- Evidence: [40319040590](https://github.com/onlykappa/KappaForge/actions/runs/40319040590), exact engine `d48e59c`, successfully adopted reviewed commits after P3-023, preserving 160 consumed calls. It then stopped before inference with `Unsupported diff for automatic revision`. PR #275 contained 42 added/modified files; `revise_branch` rejected any cumulative PR above twice the 20-file proposal budget. A long-lived single PR can cross that count even when each repair is small.
+- Reproducer: a real `revise_branch` test with 42 files failed at the old guard before investigation. No model or edit was needed to reproduce it.
+- Correction: separate complete PR metadata inventory from per-proposal limits. Read metadata in 100-file pages with a 1,000-file total bound; reject duplicates, missing counts/pages, unsafe paths and unsupported statuses. Re-observe the head/base and file count for large inventories so pages cannot silently combine revisions. Existing 30-source initial read and 20-file proposal ceilings remain; complete PR paths still enter the existing batched scope-review/final validation flow. No finding, file kind, permission or evidence gate is silently accepted.
+- Immediate rerun actually RUN: 94 revision/developer/root-cause tests passed, covering 42-file investigation without a larger proposal, complete 101-file pagination, duplicate/incomplete/racing/unsafe/unsupported metadata rejection, and inventory overflow before inference. Overall regression and live retry results follow below.
+- Status: PATCHED locally; audit remains incomplete. No candidate edits were produced by the failed live run.
+
+## P3-025 — Fix drops owner guidance after the first 100 issue comments
+
+- Evidence: issue #274 had 110 comments after run 40319040590. The supported cap/continuation guidance comments were at positions 103 and 106; `developer.owner_guidance` fetched only `per_page=100`. Commit adoption used the paginated recovery reader and could see the instruction, while the repair goal could not. This mismatch is independently observable, without treating arbitrary comments as authority.
+- Reproducer: two new tests failed before the patch: later authenticated owner guidance was absent, and an inspection-limit overflow returned partial instructions rather than stopping.
+- Correction: reuse `recovery.comments` and its 20-page fail-closed inspection bound. Preserve the established first-page URL, chronological order, exact owner author filter and `Guidance:` prefix; other authors and ordinary discussion remain excluded. Existing recent-guidance prompt compaction is unchanged.
+- Immediate rerun: included in the 94 passing tests above; both new guidance tests pass. No security check or old assertion was removed. Status: PATCHED locally; full validation/live retry pending.
+- Combined final checks actually RUN for P3-024/P3-025: Python online — 1,066 run, OK, 33 skipped, 78.405s; proxy-blocked — 1,066 run, OK, 33 skipped, 82.806s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. Live retry remains independent acceptance evidence; no audit completion or Docker/native result claimed.
+
 ## Finding template
 
 ### P3-NNN — short defect title
