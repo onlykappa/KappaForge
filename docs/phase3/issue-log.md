@@ -87,6 +87,18 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Broader checks actually run: Python online — 1,039 run, OK, 33 skipped, 58.827 seconds; proxy-blocked repeat — 1,039 run, OK, 33 skipped, 62.987 seconds. npm — 858 passed; baseline Node — 273 passed. Dependency-map generation/check, execution-policy check, Windows-adapted web/configuration/bundle validation and whitespace check passed. No local Docker/native run is claimed. Independent CI and a live retry on this patch remain pending.
 - Status: PATCHED — local regression verified; live load/progress comparison pending. No model/provider setting or production infrastructure changed.
 
+## P3-016 — oversized requests and an inconclusive capacity probe
+
+- Owner direction: enforce a 20,000-character engine request cap and measure 20,000 through 50,000 characters in 5,000-character steps without paid capacity or deployment.
+- Patch `50bd96b`: enforces the engine cap across direct/integrated routes, compacts advisory context while retaining owner instructions, and adds a manually dispatched free-route probe. Local Python: 1,044 run, OK, 33 skipped, online and proxy-blocked; npm: 858 passed. Dependency-map, execution-policy and whitespace checks passed.
+- Live evidence: [40264719610](https://github.com/onlykappa/KappaForge/actions/runs/40264719610), exact engine `50bd96b`, passed 20,000 characters; 25,000 returned HTTP 503 `free_route_unavailable`. This is inconclusive and does not prove a CPU or character ceiling. Later sizes did not run. Cloudflare account metrics separately showed six CPU-limit errors and zero memory-limit errors; these are aggregate observations, not a per-request profile.
+- Probe defects discovered: the diagnostic dispatch also entered read-only task classification (downstream task jobs were skipped); requests had no pacing between sizes, and the probe discarded sanitized failure details needed to distinguish cooldown, output truncation and context rejection. Four output tokens also make truncation a possible confounder; its involvement in this run is not established.
+- Plan: isolate diagnostics from classification, pace requests 65 seconds apart, permit a small 64-token response, and retain only allowlisted failure metadata. Add regressions before patching and rerun the probe. Keep the engine cap at 20,000 regardless of the diagnostic result.
+- Before correction: three focused regressions failed (one assertion failure, two errors), exposing insufficient output allocation, missing sanitized failure details and diagnostic task-classification admission.
+- Permanent correction: diagnostic actions skip classification; samples wait 65 seconds between sizes, permit 64 output tokens, and retain only allowlisted source/category/status/attempted metadata. The engine cap remains 20,000. Relevant configured free-token constraints and the limits of synthetic samples are documented in `gateway-resources.md`.
+- Immediate rerun: `py -3 -m unittest tests.test_prompt_cap_probe tests.test_workflow_safety` — 21 passed. Broader validation actually RUN: full Python online — 1,045 run, OK, 33 skipped, 58.504s; proxy-blocked repeat — 1,045 run, OK, 33 skipped, 63.023s; npm — 858 passed. Dependency-map generation/check, execution-policy check and whitespace check passed. No local Docker/native test result is claimed for this diagnostic patch.
+- Status: PATCHED — local regressions verified; corrective live retry pending. Phase 3.1 remains incomplete.
+
 ## Finding template
 
 ### P3-NNN — short defect title

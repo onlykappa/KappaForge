@@ -19,6 +19,16 @@ The new regression module tests recovery in each review path, durable envelope s
 
 No Worker deployment, paid hosting, paid inference or plan change is included. No production CPU/memory measurement or permanently eliminated platform error is claimed. The live retry must establish whether this adaptation clears the observed blocker. Phase 3.1 remains incomplete until its actual audit evidence is saved, validated and reviewed.
 
+## Hard request cap and capacity diagnostic — P3-016
+
+The engine now enforces 20,000 UTF-16 characters per complete request, including added task-state context, on integrated and direct routes. Advisory project guidance and source context are reduced before this boundary; fixed owner instructions that cannot fit cause a local refusal without inference. Production requests keep this cap regardless of diagnostic outcomes.
+
+The manual `prompt-probe` action uses the existing authenticated gateway, the approved free Groq provider, and synthetic prompts from 20,000 through 50,000 characters in 5,000-character steps. It isolates diagnostic execution from task classification and leaves 65 seconds between samples. It stops on the first failure, retaining allowlisted failure metadata; other sizes are NOT RUN. Generated text, credentials and route identifiers are omitted. Its process-local engine-cap override is restored after execution and does not alter deployed policy.
+
+Successful samples establish only that those particular requests passed. They do not establish a universal character maximum, a stable route, or representative source-code token density. A non-resource failure is inconclusive about Cloudflare CPU. The existing Groq free-request envelope is 8,000 estimated tokens; with a 64-token response and 256-token guard reserve, the router estimate can admit up to 26,880 prompt characters before this configured budget rejects larger samples. Per-model limits can tighten this further. The probe does not raise or bypass those limits.
+
+Initial live [run 40264719610](https://github.com/onlykappa/KappaForge/actions/runs/40264719610) on `50bd96b`: 20,000 passed, 25,000 returned `free_route_unavailable`, and later samples did not run. That version lacked detailed failure output, so cooldown, truncation or another upstream failure cannot be distinguished retrospectively. Follow-up results belong in the issue ledger.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.

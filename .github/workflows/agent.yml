@@ -45,7 +45,7 @@ jobs:
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
       run: python -m engine.gateway
   classify:
-    if: inputs.action != 'router-check'
+    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe'
     runs-on: ubuntu-latest
     permissions:
       contents: read

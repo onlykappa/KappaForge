@@ -4,6 +4,7 @@ import io
 import json
 import os
 import sys
+import time
 from types import SimpleNamespace
 
 from engine import gateway, recovery, runner, task_state
@@ -28,18 +29,25 @@ def main():
     original_cap = gateway.ENGINE_PROMPT_CHARS
     results = []
     try:
-        for size in SIZES:
+        for index, size in enumerate(SIZES):
+            if index:
+                print(json.dumps({'nextChars': size, 'waitSeconds': gateway.PINNED_INTERVAL}), flush=True)
+                time.sleep(gateway.PINNED_INTERVAL)
             prompt = PREFIX + ("x" * (size - len(PREFIX)))
             gateway.ENGINE_PROMPT_CHARS = size
             try:
                 # Keep provider route and generated text out of Actions logs; only the
                 # tested size and sanitized outcome are relevant to this measurement.
                 with contextlib.redirect_stdout(io.StringIO()):
-                    runner.run_integrated_router(prompt, max_output_tokens=4, allowed=["groq"])
+                    runner.run_integrated_router(prompt, max_output_tokens=64, allowed=["groq"])
             except Exception as exc:
                 category = getattr(exc, "code", "request_failed")
                 status = getattr(exc, "status", None)
-                results.append({"chars": size, "result": "failed", "category": str(category)[:48], "status": status})
+                details = gateway.error(status or 503, {'failure': getattr(exc, 'details', {})}).details
+                failure = {key: details[key] for key in ('source', 'category', 'upstreamStatus', 'attempted')
+                           if key in details}
+                results.append({"chars": size, "result": "failed", "category": str(category)[:48],
+                                "status": status, "failure": failure})
                 print(json.dumps({"tested": results, "highestSuccessfulChars": max(
                     (row["chars"] for row in results if row["result"] == "passed"), default=None),
                     "conclusion": "resource_limit" if category == "worker_resource_limit" else "inconclusive"},

@@ -9,6 +9,11 @@ from scripts import prompt_cap_probe
 
 
 class PromptCapProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.sleep_patch = patch('time.sleep')
+        self.sleep = self.sleep_patch.start()
+        self.addCleanup(self.sleep_patch.stop)
+
     def test_steps_up_by_five_thousand_and_stops_at_worker_resource_limit(self):
         calls = []
 
@@ -29,7 +34,9 @@ class PromptCapProbeTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual([chars for chars, _ in calls], [20000, 25000, 30000, 35000])
-        self.assertTrue(all(kwargs == {"max_output_tokens": 4, "allowed": ["groq"]} for _, kwargs in calls))
+        self.assertTrue(all(kwargs == {"max_output_tokens": 64, "allowed": ["groq"]} for _, kwargs in calls))
+        self.assertEqual(self.sleep.call_count, 3)
+        self.assertTrue(all(call.args == (65,) for call in self.sleep.call_args_list))
         report = json.loads(output.getvalue().splitlines()[-1])
         self.assertEqual(report["highestSuccessfulChars"], 30000)
         self.assertEqual(report["conclusion"], "resource_limit")
@@ -38,6 +45,8 @@ class PromptCapProbeTests(unittest.TestCase):
         calls = []
         error = RuntimeError("quota")
         error.code = "provider_quota"
+        error.details = {"source": "normalization", "category": "output_limit", "upstreamStatus": 200,
+                         "model": "private-route", "message": "secret", "attempted": True}
         output = io.StringIO()
         with patch.dict("os.environ", {"KAPPA_ROUTER_REQUIRED": "true", "KAPPA_ROUTER_URL": "https://router.example",
                                         "KAPPA_ROUTER_TOKEN": "t" * 40}), \
@@ -46,7 +55,12 @@ class PromptCapProbeTests(unittest.TestCase):
             result = prompt_cap_probe.main()
         self.assertEqual(result, 1)
         self.assertEqual(calls, [1])
-        self.assertEqual(json.loads(output.getvalue())["conclusion"], "inconclusive")
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["conclusion"], "inconclusive")
+        self.assertEqual(report['tested'][0]['failure'], {
+            'source': 'normalization', 'category': 'output_limit', 'upstreamStatus': 200, 'attempted': True})
+        self.assertNotIn('secret', output.getvalue())
+        self.assertNotIn('private-route', output.getvalue())
 
 
 if __name__ == "__main__":
