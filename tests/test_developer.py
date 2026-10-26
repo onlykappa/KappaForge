@@ -174,7 +174,7 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("concise", report["text"])
         self.assertIn("verify regression", report["text"])
 
-    def test_full_repository_instructions_reach_planner_and_generator(self):
+    def test_long_repository_instructions_are_compacted_for_each_request(self):
         guide = "START_RULE\\n" + ("x" * 18000) + "\\nEND_RULE"
         with patch.object(developer, "read_source", return_value=guide):
             loaded = developer.project_guide("onlykappa/KappaForge", "sha", {"KAPPA.md": 1}, "token")
@@ -183,12 +183,16 @@ class DeveloperValidationTests(unittest.TestCase):
         plan = json.dumps({"read": ["app/main.py"]})
         with patch.object(developer, "run_model", return_value=("flash", plan)) as model:
             developer.select_files("key", "task", EXISTING, guide=loaded)
+        self.assertIn("START_RULE", model.call_args.args[1])
         self.assertIn("END_RULE", model.call_args.args[1])
+        self.assertLessEqual(len(model.call_args.args[1]), developer.runner_module.PROVIDERS['routing']['defaults']['maxPromptChars'])
         proposal = json.dumps({"summary": "Updated add", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
             {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]})
         with patch.object(developer, "run_model", return_value=("flash", proposal)) as model:
             developer.generate("key", "task", "onlykappa/KappaForge", SOURCES, EXISTING, guide=loaded)
+        self.assertIn("START_RULE", model.call_args.args[1])
         self.assertIn("END_RULE", model.call_args.args[1])
+        self.assertLessEqual(len(model.call_args.args[1]), developer.runner_module.PROVIDERS['routing']['defaults']['maxPromptChars'])
 
     def test_new_files_may_be_created(self):
         changes = apply_changes(SOURCES, EXISTING, {"files": [{"path": "tests/test_main.py", "content": "import unittest\n"}]})

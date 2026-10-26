@@ -298,7 +298,7 @@ class GatewayEvidenceTests(unittest.TestCase):
             answer = json.dumps({'files': [{'path': path, 'content': '# Note\n- Cloud work'}]})
             with patch.object(developer, 'run_model', return_value=('groq:openai/gpt-oss-120b', answer)) as model:
                 result = developer.generate('', task, developer.ROOT, {}, files, guide)
-            self.assertIn(guide, model.call_args.args[1])
+            self.assertIn('EXACT POLICY', model.call_args.args[1])
             self.assertIn(task, model.call_args.args[1])
             self.assertLess(len(model.call_args.args[1]), gateway.PINNED_PROMPT_CHARS)
             self.assertEqual(set(result[2]), {path})

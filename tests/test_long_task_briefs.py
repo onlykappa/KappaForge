@@ -1,14 +1,14 @@
-"""The owner brief must reach every coding consumer without silent truncation."""
+"""Fitting owner briefs reach each consumer; oversized briefs stop before inference."""
 from tests.repair_fixtures import response_or
 import json
 import unittest
 from unittest.mock import patch
 
-from engine import coder, developer, recovery, verify
+from engine import coder, developer, gateway, recovery, verify
 
 
 TAIL = '\nFinal requirement: retain manual location entry and never broaden authorization.'
-TASK = 'Implement the authorized change.\n' + 'x' * (20000 - len(TAIL) - len('Implement the authorized change.\n')) + TAIL
+TASK = 'Implement the authorized change.\n' + 'x' * (1200 - len(TAIL) - len('Implement the authorized change.\n')) + TAIL
 SOURCES = {'app/main.py': 'def main():\n    return 1\n'}
 EXISTING = {path: len(source) for path, source in SOURCES.items()}
 PROPOSAL = json.dumps({'summary': 'Change return value', 'files': [
@@ -23,11 +23,18 @@ class LongTaskBriefTests(unittest.TestCase):
         self.assertIn(TASK, model.call_args.args[1])
         self.assertEqual(files, [('projects/demo/main.py', 'print(2)\n')])
 
-    def test_file_selection_receives_all_20000_characters(self):
+    def test_file_selection_receives_the_complete_fitting_brief(self):
         with patch.object(developer, 'run_model', return_value=('fixture', '{"read":["app/main.py"]}')) as model:
             chosen = developer.select_files('fixture', TASK, EXISTING)
         self.assertEqual(chosen, ['app/main.py'])
         self.assertIn(TASK, model.call_args.args[1])
+
+    def test_brief_that_cannot_fit_the_request_cap_fails_before_inference(self):
+        too_long = 'x' * 20000
+        with patch.object(developer, 'run_model') as model:
+            with self.assertRaises(gateway.GatewayRequestTooLarge):
+                developer.generate('fixture', too_long, 'onlykappa/KappaForge', SOURCES, EXISTING)
+        model.assert_not_called()
 
     def test_generation_receives_the_tail_requirement_and_applies_validated_edits(self):
         with patch.object(developer, 'run_model', return_value=('fixture', PROPOSAL)) as model:

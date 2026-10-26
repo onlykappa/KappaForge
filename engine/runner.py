@@ -680,6 +680,11 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     if journal:
         RecoveryCoordinator.charge(journal, 'modelCalls')
     prompt = task_state.add_to_prompt(prompt, journal)
+    # The client enforces the task-level cap for both integrated and direct routes.
+    # Builders that can reduce advisory context do so before reaching this boundary;
+    # immutable owner scope that cannot fit stops without sending an oversized call.
+    from engine import gateway
+    gateway.require_prompt_fits(prompt)
     previous = MODEL_DEADLINE
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:

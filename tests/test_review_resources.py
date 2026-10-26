@@ -98,7 +98,7 @@ class ReviewResourceTests(unittest.TestCase):
             raise resource_error()
         with self.assertRaises(gateway.GatewayResourceExhausted) as raised:
             resources.call(model, 'key', build)
-        self.assertEqual(len(prompts), 4)
+        self.assertEqual(len(prompts), 3)
         self.assertTrue(all(len(b) < len(a) for a, b in zip(prompts, prompts[1:])))
         self.assertTrue(raised.exception.terminal)
         self.assertEqual(recovery.diagnose(raised.exception), ('gateway_resource', 'stop'))
@@ -155,7 +155,7 @@ class ReviewResourceTests(unittest.TestCase):
         self.journal.state['gatewayEvidence'] = []
         with task_state.action('coder', 'Repair', '', ''):
             self.assertIsNone(gateway.resource_ceiling())
-            self.assertTrue(gateway.prompt_fits('fixed owner/project rules\n' + 'x' * 27000))
+            self.assertTrue(gateway.prompt_fits('fixed owner/project rules\n' + 'x' * 18000))
         self.assertEqual(self.journal.state['gatewayResourceBudgets']['verify'], 25000)
 
     def test_role_budgets_survive_new_controller_and_never_raise_other_roles(self):
@@ -233,7 +233,8 @@ class ReviewResourceTests(unittest.TestCase):
             result = developer.generate('key', self.goal.request, developer.ROOT,
                 {'app.py': 'return a + b\n'}, {'app.py': 13}, guide)
         self.assertIn('int(a)', result[2]['app.py'])
-        self.assertIn(guide, model.call_args.args[1])
+        self.assertIn('Keep these exact owner project rules.', model.call_args.args[1])
+        self.assertLessEqual(len(model.call_args.args[1]), gateway.ENGINE_PROMPT_CHARS)
         self.assertIn(self.goal.request, model.call_args.args[1])
 
     def test_focused_repair_fallback_never_grows_source_or_output_load(self):

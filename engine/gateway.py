@@ -8,7 +8,8 @@ import urllib.request
 from engine.reliability import ProviderRoutesUnavailable, retry_after
 
 PINNED_OUTPUT_TOKENS = 768
-PINNED_PROMPT_CHARS = 26000
+PINNED_PROMPT_CHARS = 18000
+ENGINE_PROMPT_CHARS = 20000
 PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
 RESOURCE_ROLES = ('verify', 'review', 'diagnose', 'code', 'light')
@@ -62,7 +63,8 @@ def prompt_fits(prompt, reserve=0):
     limits = PROVIDERS['routing']['defaults']
     # Match JS UTF-16 length and the conservative context estimate used by the router.
     chars = len(prompt.encode('utf-16-le')) // 2
-    maximum = min(limits['maxPromptChars'], int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    maximum = min(ENGINE_PROMPT_CHARS, limits['maxPromptChars'],
+                  int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
     ceiling = resource_ceiling()
     if ceiling is not None:
         maximum = min(maximum, ceiling)
@@ -138,10 +140,23 @@ class ReviewResources:
         return True
 
     def call(self, run_model, api_key, build, **kwargs):
+        local_reductions = 0
         while True:
             prompt = build()
             if self.ceiling is not None or os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true':
-                self.require(prompt)
+                try:
+                    self.require(prompt)
+                except GatewayRequestTooLarge:
+                    # A local hard-cap rejection is safe to fix by rebuilding less source/diff
+                    # context. Keep this in memory only: it is not evidence of a Cloudflare limit.
+                    if local_reductions >= 3:
+                        raise
+                    chars = len(prompt.encode('utf-16-le')) // 2
+                    cap = max(1024, min(ENGINE_PROMPT_CHARS - 1024, chars * 2 // 3))
+                    self.ceiling = min(self.ceiling or cap, cap)
+                    local_reductions += 1
+                    print('Gateway request exceeds the engine prompt cap; rebuilding with less review evidence.', flush=True)
+                    continue
             try:
                 return run_model(api_key, prompt, **kwargs)
             except Exception as error:
