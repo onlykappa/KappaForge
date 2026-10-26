@@ -9,7 +9,7 @@
 
 | Checkpoint | State | Evidence / audited SHA |
 | --- | --- | --- |
-| 3.1a Main and dependency provenance | NOT RUN | |
+| 3.1a Main and dependency provenance | RUN | Main: a6834a9, Base: ce7a564, P1: 437d74d, P2: b3f8d2f |
 | 3.1b Architecture inventory | NOT RUN | |
 | 3.1c Policy and publication review | NOT RUN | |
 | 3.1d Regression and CI evidence | NOT RUN | |
