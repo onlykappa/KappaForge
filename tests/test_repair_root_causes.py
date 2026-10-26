@@ -48,7 +48,10 @@ class LineCitationTests(Base):
             return answer(prompt, owner_ref='R1', evidence=[dict(path='app.py', lines=[2, 2])])
         self.verify(respond)
         self.assertEqual(seen['sources']['app.py']['text'], '1| def add(a, b):\n2|     return a + b\n3| ')
-        self.assertEqual(seen['owner_requirements'], [{'id': 'R1', 'text': 'Make add accept numeric strings'}])
+        self.assertEqual(seen['owner_goal'], self.goal.request)
+        self.assertEqual(seen['owner_requirements'], [{'id': 'R1', 'span': [0, len(self.goal.request)]}])
+        ref = seen['owner_requirements'][0]
+        self.assertEqual(seen['owner_goal'][ref['span'][0]:ref['span'][1]], 'Make add accept numeric strings')
         self.assertNotIn('shown', seen, 'the engine keeps its own copy for checking evidence')
 
     def test_a_true_finding_cited_by_line_is_confirmed_where_a_paraphrase_is_not(self):

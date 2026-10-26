@@ -31,6 +31,12 @@ Initial live [run 40264719610](https://github.com/onlykappa/KappaForge/actions/r
 
 Corrective [run 40265304398](https://github.com/onlykappa/KappaForge/actions/runs/40265304398) at `9490364`: 20,000 and 25,000 passed; 30,000 was refused by the gateway's configured context guard (HTTP 413, attempted=false). The job stopped with exit 1. Larger sizes did not run because the same free-token budget excludes them. All task jobs were skipped. This supports the existing 20,000 engine cap for the tested sample and confirms isolation; it does not prove future task success or a Cloudflare CPU maximum.
 
+## Fitting structured finding reviews — P3-018
+
+Live run `40266931947` showed that a request below the 20,000-character cap can still receive 1102. Its learned 12,720-character verifier envelope could not fit the original fixed payload, which duplicated owner text in a requirement list. The verifier now carries the complete owner request once and maps requirement IDs to exact Unicode-character spans. Full engine-side owner/source proof checks remain unchanged; request references do not grant authority.
+
+The orchestrator subdivides a resource-blocked four-finding batch into two, then one, over the same owner/candidate/source snapshot. It never raises the saved envelope, discards a finding, returns partial authorization after a later failure, or sends an available-source-free batch to manufacture a fit. A single finding that cannot fit still stops. The existing direct-pass 12-finding limit, 96-finding total limit, durable model-call budget and freshness checks remain. This controller correction does not establish the production Worker's CPU hot spot or guarantee that subsequent requests will pass.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.

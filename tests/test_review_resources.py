@@ -14,6 +14,84 @@ def resource_error():
 
 
 class ReviewResourceTests(unittest.TestCase):
+    def test_long_owner_request_fits_learned_envelope_without_duplicate_requirement_text(self):
+        from engine import requirements
+        task = '\n'.join('- Requirement café ' + str(i) + ': keep this owner condition ' + 'precise ' * 75
+                         for i in range(10))
+        goal = task_goal.from_request(task)
+        handle = task_goal.CURRENT.set(goal)
+        self.journal.state['gatewayResourceBudgets'] = {'verify': 12720}
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            self.assertEqual(data['owner_goal'], task)
+            expected = requirements.split(task)
+            self.assertEqual(len(data['owner_requirements']), len(expected))
+            for row, original in zip(data['owner_requirements'], expected):
+                self.assertEqual(row['id'], original['id'])
+                self.assertEqual(task[row['span'][0]:row['span'][1]], original['text'])
+                self.assertNotIn('text', row)
+            self.assertLessEqual(len(prompt), 12720)
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='The requested conversion is absent', owner_ref='R1',
+                evidence=[dict(path='app.py', lines=[1, 1])]) for r in data['findings']]})
+        try:
+            rows = repair_guard.verify_findings(model, 'key', task, ['Fix numeric strings'],
+                                               {'app.py': 'return a + b\n'})
+            self.assertEqual(rows[0]['verdict'], 'confirmed')
+            self.assertEqual(len(calls), 1)
+        finally:
+            task_goal.CURRENT.reset(handle)
+
+    def test_resource_blocked_batches_split_without_losing_findings(self):
+        batches = []
+        claims = ['claim ' + str(i) for i in range(7)]
+        def review(model, key, task, items, sources, allowed=None):
+            batches.append(list(items))
+            if len(items) > 1:
+                raise gateway.GatewayResourceExhausted()
+            return [dict(id=repair_guard.digest(items[0]), claim=items[0], verdict='needs_validation')]
+        with patch.object(repair_guard, 'verify_findings', side_effect=review):
+            rows = repair_guard.verify_all_findings(Mock(), 'key', self.goal.request, claims,
+                                                    {'app.py': 'return a + b\n'})
+        self.assertEqual([r['claim'] for r in rows], claims)
+        self.assertEqual(len(batches), 12)
+        self.assertEqual(max(map(len, batches)), 4)
+
+    def test_available_source_cannot_be_entirely_dropped_to_fit_a_review(self):
+        self.journal.state['gatewayResourceBudgets'] = {'verify': 12720}
+        model = Mock()
+        with patch.object(repair_guard, 'MAX_SOURCE_CHARS', 0), \
+                self.assertRaises(gateway.GatewayResourceExhausted):
+            repair_guard.verify_findings(model, 'key', self.goal.request, ['Fix numeric strings'],
+                                         {'app.py': 'return a + b\n'})
+        model.assert_not_called()
+
+    def test_single_finding_resource_failure_stops_without_partial_authorization(self):
+        calls = []
+        def review(model, key, task, items, sources, allowed=None):
+            calls.append(list(items))
+            if len(items) > 1 or items == ['second']:
+                raise gateway.GatewayResourceExhausted()
+            return [dict(id=repair_guard.digest(items[0]), claim=items[0], verdict='confirmed')]
+        with patch.object(repair_guard, 'verify_findings', side_effect=review), \
+                self.assertRaises(gateway.GatewayResourceExhausted):
+            repair_guard.verify_all_findings(Mock(), 'key', self.goal.request, ['first', 'second'],
+                                            {'app.py': 'return a + b\n'})
+        self.assertEqual(calls, [['first', 'second'], ['first'], ['second']])
+
+    def test_candidate_movement_blocks_subdivision_after_resource_failure(self):
+        def review(*args, **kwargs):
+            task_state.checkpoint('b' * 40)
+            raise gateway.GatewayResourceExhausted()
+        with patch.object(repair_guard, 'verify_findings', side_effect=review) as model, \
+                self.assertRaises(task_state.CandidateChanged):
+            repair_guard.verify_all_findings(Mock(), 'key', self.goal.request, ['first', 'second'],
+                                            {'app.py': 'return a + b\n'})
+        self.assertEqual(model.call_count, 1)
+
     def setUp(self):
         self.goal = task_goal.from_request('Make add accept numeric strings. Never merge or deploy.')
         self.goal_token = task_goal.CURRENT.set(self.goal)
