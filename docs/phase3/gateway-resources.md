@@ -29,6 +29,8 @@ Successful samples establish only that those particular requests passed. They do
 
 Initial live [run 40264719610](https://github.com/onlykappa/KappaForge/actions/runs/40264719610) on `50bd96b`: 20,000 passed, 25,000 returned `free_route_unavailable`, and later samples did not run. That version lacked detailed failure output, so cooldown, truncation or another upstream failure cannot be distinguished retrospectively. Follow-up results belong in the issue ledger.
 
+Corrective [run 40265304398](https://github.com/onlykappa/KappaForge/actions/runs/40265304398) at `9490364`: 20,000 and 25,000 passed; 30,000 was refused by the gateway's configured context guard (HTTP 413, attempted=false). The job stopped with exit 1. Larger sizes did not run because the same free-token budget excludes them. All task jobs were skipped. This supports the existing 20,000 engine cap for the tested sample and confirms isolation; it does not prove future task success or a Cloudflare CPU maximum.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.

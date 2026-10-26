@@ -11,6 +11,7 @@ Only add lessons supported by reproducible evidence and reviewed code changes.
 - When a failure repeats, inspect the new log and test actual root causes instead of weakening assertions.
 
 ## Autonomous recovery checklist
+- When relaying an authorized owner follow-up on a task issue, use the supported `Guidance:` prefix and verify it reaches the repair prompt. `engine/developer.py::owner_guidance` deliberately excludes ordinary comments and other authors; a posted note alone is not evidence that the engine consumed it. Preserve those author/scope gates.
 - For source-edit failures, compare the proposed anchor with the actual file content; never invent class declarations or accept no-op edits.
 - For CI failures, inspect the exact failing checks before deciding what to change; a failed step name is not a proven root cause.
 - An auto-repair is only verified once its new commit's independent checks pass. Do not count queued or skipped checks as success.
