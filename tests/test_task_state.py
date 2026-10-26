@@ -14,6 +14,25 @@ PR = {'html_url': f'https://github.com/{REPO}/pull/222', 'state': 'open', 'draft
 
 
 class TaskStateTests(unittest.TestCase):
+    def test_old_repair_assessments_are_omitted_only_from_small_prompt_copy(self):
+        from copy import deepcopy
+        self.goal.record.repair = dict(candidate=SHA, source='c' * 64,
+            evidence='Historical diagnostic decisions; reverify before editing',
+            findings=[dict(id=str(i), verdict='needs_validation', reason='x' * 180) for i in range(4)],
+            omittedFindings=2)
+        before = deepcopy(self.goal.record.repair)
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 8334}})
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with task_state.action('reviewer', 'Verify', 'Preserve scope', 'Literal evidence'):
+                data = task_state.decode_prompt(task_state.add_to_prompt('Owner request', journal))
+                self.assertGreater(data['repairAssessment']['omittedFindings'], 2)
+                self.assertEqual(self.goal.record.repair, before)
+                self.assertEqual(data['identity'], self.goal.record.identity)
+                self.assertTrue(data['ownerReviewRequired'])
+        finally:
+            recovery.CURRENT.reset(handle)
+
     def test_small_allocation_preserves_required_receipts_and_reports_hard_overflow(self):
         from copy import deepcopy
         task_state.observe_pr(PR, REPO, BRANCH)

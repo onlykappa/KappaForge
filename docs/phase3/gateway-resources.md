@@ -49,6 +49,12 @@ The P3-019 retry [40270014306](https://github.com/onlykappa/KappaForge/actions/r
 
 The history allocation is now soft only for irreducible required fields: retain those fields within the unchanged 6,000-character absolute state cap, then enforce the complete learned request envelope. Absolute state overflow is a typed local request-size failure, never a fabricated verdict. Regressions exercise smaller retries, source-bearing subdivision, preserved receipts/budgets and precise stopping. This fixes the local adaptation crash; the Worker's CPU hot spot and live provider success remain unproven.
 
+## Fixed wire overhead — P3-021
+
+The corrected renderer stopped precisely on [40284235999](https://github.com/onlykappa/KappaForge/actions/runs/40284235999) before another model request. A local replay of the owner request and current guidance needed 8,803 characters without any source, beyond the retained 8,334-character envelope. The verifier now uses compact JSON and `owner_requirements` as an ID-to-`[start,end]` map, preserving exact Unicode spans and full owner text. Its wire candidate is the SHA; the complete owner/identity/source stamp remains local for freshness checks. Repeated prose is shorter; the literal source/owner gates are unchanged.
+
+Old repair assessments can also consume this fixed budget. Their prompt-copy history now carries an omission count when trimmed; live decisions and saved history remain. An after-patch owner-shape fixture fits two findings and a small source in 7,736 characters and returns unverified decisions honestly. This is not live CPU validation or audit completion. A resource-rejection regression uses a complete near-3,000-character source fixture to preserve the intended initial load despite smaller protocol overhead.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.

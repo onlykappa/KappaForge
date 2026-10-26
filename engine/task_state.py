@@ -476,6 +476,14 @@ def render(data, text, max_context=None):
             data['review']['problems'].pop()
         elif data['review'].get('pending'):
             data['review']['pending'].pop()
+        elif data['repairAssessment'].get('findings'):
+            # Prior assessments are diagnostics, not required receipts or edit
+            # permission. Keep the live decisions; omit only the prompt copy.
+            data['repairAssessment']['findings'].pop(0)
+            data['repairAssessment']['omittedFindings'] = data['repairAssessment'].get('omittedFindings', 0) + 1
+        elif set(data['repairAssessment']) - {'evidence', 'omittedFindings'}:
+            data['repairAssessment'] = dict(evidence='historical diagnostic details omitted; reverify before editing',
+                                           omittedFindings=data['repairAssessment'].get('omittedFindings', 0))
         elif data['goal']['text']:
             data['goal']['text'] = data['goal']['text'][:len(data['goal']['text']) // 2]
         else:

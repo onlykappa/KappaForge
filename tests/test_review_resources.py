@@ -14,6 +14,36 @@ def resource_error():
 
 
 class ReviewResourceTests(unittest.TestCase):
+    def test_single_finding_with_full_owner_scope_and_pr_receipt_fits_retained_envelope(self):
+        task = '\n'.join('- Owner condition ' + str(i) + ': ' + 'preserve exact behavior ' * 5 for i in range(23))
+        goal = task_goal.from_request(task)
+        handle = task_goal.CURRENT.set(goal)
+        self.journal.state.update(gatewayResourceBudgets={'verify': 8334},
+                                  budgets={'modelCalls': 156, 'edits': 1, 'fixCycles': 16})
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        task_state.observe_pr({'html_url': 'https://github.com/onlykappa/KappaForge/pull/10',
+            'state': 'open', 'draft': True, 'head': {'sha': 'a' * 40, 'ref': 'kappa/dev-9',
+            'repo': {'full_name': 'onlykappa/KappaForge'}}}, 'onlykappa/KappaForge', 'kappa/dev-9')
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            self.assertTrue(gateway.prompt_fits(prompt))
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            self.assertEqual(data['owner_goal'], task)
+            self.assertIn('app.py', data['sources'])
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='Source lacks the requested conversion', owner_ref='R1',
+                evidence=[dict(path='app.py', lines=[1, 1])]) for r in data['findings']]})
+        try:
+            claims = ['app.py: preserve owner condition ' + str(i) + ' x' * 100 for i in range(4)]
+            rows = repair_guard.verify_all_findings(model, 'key', task, claims, {'app.py': 'return a + b\n'})
+            self.assertEqual([r['claim'] for r in rows], claims)
+            self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
+            self.assertGreater(len(calls), 1)
+            self.assertEqual(self.journal.state['gatewayResourceBudgets']['verify'], 8334)
+        finally:
+            task_goal.CURRENT.reset(handle)
+
     def test_resource_reduction_with_receipts_rebuilds_and_splits_without_generic_review_failure(self):
         from copy import deepcopy
         task = '\n'.join('- Owner condition ' + str(i) + ': preserve the exact requested behavior.' for i in range(23))
@@ -44,7 +74,7 @@ class ReviewResourceTests(unittest.TestCase):
         try:
             claims = ['app.py: finding ' + str(i) + ' ' + 'x' * 600 for i in range(4)]
             rows = repair_guard.verify_all_findings(model, 'key', task, claims,
-                {'app.py': 'return a + b\n' + '# filler\n' * 900})
+                {'app.py': 'return a + b\n# filler ' + 'x' * 2900 + '\n'})
             self.assertEqual([r['claim'] for r in rows], claims)
             self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
             self.assertGreater(len(sizes), 1)
@@ -69,10 +99,9 @@ class ReviewResourceTests(unittest.TestCase):
             self.assertEqual(data['owner_goal'], task)
             expected = requirements.split(task)
             self.assertEqual(len(data['owner_requirements']), len(expected))
-            for row, original in zip(data['owner_requirements'], expected):
-                self.assertEqual(row['id'], original['id'])
-                self.assertEqual(task[row['span'][0]:row['span'][1]], original['text'])
-                self.assertNotIn('text', row)
+            for original in expected:
+                span = data['owner_requirements'][original['id']]
+                self.assertEqual(task[span[0]:span[1]], original['text'])
             self.assertLessEqual(len(prompt), 12720)
             return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
                 reason='The requested conversion is absent', owner_ref='R1',
