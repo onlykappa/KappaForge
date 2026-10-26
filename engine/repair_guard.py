@@ -402,7 +402,9 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                 if best is not None:
                     return best
                 if resources.ceiling is not None:
-                    raise gateway.GatewayResourceExhausted()
+                    raise gateway.GatewayResourceExhausted(
+                        f'Local verification cannot fit source evidence under the saved {resources.ceiling}-character cap; '
+                        'this rejection occurred locally before sending a request')
                 raise gateway.GatewayRequestTooLarge('Finding batch leaves no room for available source evidence')
             # Find the largest fitting source allocation rather than jumping
             # from slightly too large to an excerpt with its useful line gone.

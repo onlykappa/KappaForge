@@ -109,8 +109,8 @@ class GatewayResourceExhausted(GatewayUnavailable):
     terminal = True
     category = 'gateway_resource'
 
-    def __init__(self):
-        super().__init__('Gateway resource adaptation exhausted; review remains unverified. '
+    def __init__(self, message=None):
+        super().__init__(message or 'Gateway resource adaptation exhausted; review remains unverified. '
                          'Inspect gateway CPU/memory diagnostics before another retry.', terminal=True)
 
 
