@@ -427,15 +427,19 @@ def add_to_prompt(prompt, journal=None):
     data = snapshot(journal)
     if not data:
         return prompt.base if isinstance(prompt, StatePrompt) else prompt
+    from engine import gateway
+    ceiling = gateway.resource_ceiling()
+    context_limit = min(MAX_CONTEXT, max(2048, ceiling // 4)) if ceiling is not None else MAX_CONTEXT
     data['omitted'] = 0
     initial = wire(data)
+    cache_key = (context_limit, initial)
     cached = RENDERED.get()
-    if cached and cached[0] == initial:
+    if cached and cached[0] == cache_key:
         # prompt_fits and run_model ask for the same state in every context-shrinking round.
         rendered, fingerprint = cached[1:]
     else:
-        rendered, fingerprint = render(data, initial)
-        RENDERED.set((initial, rendered, fingerprint))
+        rendered, fingerprint = render(data, initial, max_context=context_limit)
+        RENDERED.set((cache_key, rendered, fingerprint))
     if isinstance(prompt, StatePrompt):
         if prompt.fingerprint == fingerprint:
             return prompt
@@ -452,9 +456,10 @@ def wire(data):
     return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
 
-def render(data, text):
+def render(data, text, max_context=None):
     """The state block trimmed to MAX_CONTEXT, oldest and least essential evidence first, and its fingerprint."""
-    while len(text.encode('utf-16-le')) // 2 > MAX_CONTEXT:
+    limit = MAX_CONTEXT if max_context is None else min(MAX_CONTEXT, max_context)
+    while len(text.encode('utf-16-le')) // 2 > limit:
         if data['recentAttempts']:
             data['recentAttempts'].pop(0)
         elif data['touchedFiles']:

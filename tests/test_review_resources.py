@@ -60,6 +60,37 @@ class ReviewResourceTests(unittest.TestCase):
         self.assertEqual(len(batches), 12)
         self.assertEqual(max(map(len, batches)), 4)
 
+    def test_populated_recovery_history_leaves_room_for_owner_findings_and_literal_source(self):
+        from copy import deepcopy
+        task = '\n'.join('- Condition ' + str(i) + ': ' + 'keep scope ' * 12 for i in range(30))
+        goal = task_goal.from_request(task)
+        handle = task_goal.CURRENT.set(goal)
+        self.journal.state['gatewayResourceBudgets'] = {'verify': 12720}
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        goal.record.files = ['path_' + str(i) + '_' + 'x' * 80 + '.py' for i in range(24)]
+        goal.record.attempts = [dict(kind='validation', error='x' * 600, candidate='a' * 40) for _ in range(4)]
+        before = deepcopy((goal.record.files, goal.record.attempts))
+        sizes = []
+        def model(key, prompt, **kwargs):
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            self.assertEqual(data['owner_goal'], task)
+            self.assertIn('app.py', data['sources'])
+            sizes.append(len(task_state.add_to_prompt(prompt, self.journal).encode('utf-16-le')) // 2)
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='confirmed', in_goal=True,
+                reason='The requested conversion is absent', owner_ref='R1',
+                evidence=[dict(path='app.py', lines=[1, 1])]) for r in data['findings']]})
+        try:
+            claims = ['app.py: finding ' + str(i) + ' ' + 'x' * 700 for i in range(4)]
+            rows = repair_guard.verify_all_findings(model, 'key', task, claims, {'app.py': 'return a + b\n'})
+            self.assertEqual([r['claim'] for r in rows], claims)
+            self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
+            self.assertTrue(all(size <= 12720 for size in sizes))
+            self.assertGreaterEqual(len(sizes), 2)
+            self.assertEqual((goal.record.files, goal.record.attempts), before)
+            self.assertEqual(self.journal.state['gatewayResourceBudgets']['verify'], 12720)
+        finally:
+            task_goal.CURRENT.reset(handle)
+
     def test_available_source_cannot_be_entirely_dropped_to_fit_a_review(self):
         self.journal.state['gatewayResourceBudgets'] = {'verify': 12720}
         model = Mock()

@@ -11,6 +11,7 @@ Only add lessons supported by reproducible evidence and reviewed code changes.
 - When a failure repeats, inspect the new log and test actual root causes instead of weakening assertions.
 
 ## Autonomous recovery checklist
+- Include populated task/recovery history in request-budget regressions. A fixed state-context allowance can consume most of a learned role envelope even after source compaction. Shrink only diagnostic prompt copies, preserve identity/facts/actions/budgets and the full live record, and include effective allocation in rendering cache keys so smaller retries cannot reuse oversized context.
 - For finding verification, serialize the complete owner request once and use exact, engine-resolved requirement spans. When a retained resource envelope cannot fit a batch with available source evidence, subdivide it over the same snapshot; never drop findings, send an available-source-free batch to obtain a fitting request, or reuse partial results as edit authorization. Stop if one finding cannot fit.
 - When relaying an authorized owner follow-up on a task issue, use the supported `Guidance:` prefix and verify it reaches the repair prompt. `engine/developer.py::owner_guidance` deliberately excludes ordinary comments and other authors; a posted note alone is not evidence that the engine consumed it. Preserve those author/scope gates.
 - For source-edit failures, compare the proposed anchor with the actual file content; never invent class declarations or accept no-op edits.

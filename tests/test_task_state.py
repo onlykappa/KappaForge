@@ -14,6 +14,38 @@ PR = {'html_url': f'https://github.com/{REPO}/pull/222', 'state': 'open', 'draft
 
 
 class TaskStateTests(unittest.TestCase):
+    def test_learned_role_budget_compacts_history_and_invalidates_render_cache_without_mutation(self):
+        from copy import deepcopy
+        self.goal.record.files = ['path_' + str(i) + '_' + 'x' * 80 + '.py' for i in range(24)]
+        self.goal.record.attempts = [dict(kind='validation', error='x' * 600, candidate=SHA) for _ in range(4)]
+        task_state.observe_pr(PR, REPO, BRANCH)
+        task_state.observe_validation('sandbox', SHA, {'id': 10, 'status': 'completed', 'conclusion': 'success'})
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 18000},
+                                         'budgets': {'modelCalls': 3}}, project={'budgets': {'modelCalls': 5}})
+        handle = recovery.CURRENT.set(journal)
+        role = task_state.ROUTING_ROLE.set('review')
+        try:
+            with task_state.action('reviewer', 'Verify one finding', 'Preserve scope', 'Literal evidence'), \
+                    task_state.inference('owner scope', 'gateway') as call:
+                before = deepcopy(task_state.snapshot(journal))
+                first = task_state.decode_prompt(task_state.add_to_prompt('owner scope', journal))
+                self.assertLessEqual(len(task_state.wire(first)), 4500)
+                journal.state['gatewayResourceBudgets']['review'] = 12000
+                second = task_state.decode_prompt(task_state.add_to_prompt('owner scope', journal))
+                self.assertLessEqual(len(task_state.wire(second)), 3000)
+                self.assertLess(len(task_state.wire(second)), len(task_state.wire(first)))
+                self.assertEqual(second['identity'], before['identity'])
+                self.assertEqual(second['goal']['digest'], before['goal']['digest'])
+                self.assertEqual(second['facts'], before['facts'])
+                self.assertEqual(second['budgets'], before['budgets'])
+                self.assertEqual(second['nextAction'], before['nextAction'])
+                self.assertTrue(second['ownerReviewRequired'])
+                self.assertEqual(task_state.snapshot(journal), before)
+                call.check()
+        finally:
+            task_state.ROUTING_ROLE.reset(role)
+            recovery.CURRENT.reset(handle)
+
     def setUp(self):
         self.journal_handle = recovery.CURRENT.set(None)
         self.goal = task_goal.from_request('Fix the requested task behavior.')

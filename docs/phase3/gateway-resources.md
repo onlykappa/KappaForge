@@ -37,6 +37,12 @@ Live run `40266931947` showed that a request below the 20,000-character cap can 
 
 The orchestrator subdivides a resource-blocked four-finding batch into two, then one, over the same owner/candidate/source snapshot. It never raises the saved envelope, discards a finding, returns partial authorization after a later failure, or sends an available-source-free batch to manufacture a fit. A single finding that cannot fit still stops. The existing direct-pass 12-finding limit, 96-finding total limit, durable model-call budget and freshness checks remain. This controller correction does not establish the production Worker's CPU hot spot or guarantee that subsequent requests will pass.
 
+## Resumed task-history allocation — P3-019
+
+P3-018's live retry stopped locally before inference. Its owner/source payload reduction was insufficient when the saved task-state block could still occupy 6,000 characters. Task-state rendering now limits its diagnostic prompt copy to one quarter of a learned role envelope, with a 2,048-character floor and the existing 6,000-character maximum. An envelope too small for mandatory context still stops through the existing request checks. The rendering cache includes that allocation so a reduced limit cannot reuse an oversized block.
+
+The existing trim order removes historical prompt-copy details; task identity, owner-goal digest, facts, next action, budgets and owner-review flag remain structured. The live task record and saved failure history are unchanged. Regression coverage exercises populated history, changed envelope/cache reuse, exact retained facts/authority, and a complete owner/finding/source review within the retained envelope. This does not claim that the independent live retry has passed.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.
