@@ -1336,6 +1336,8 @@ def source_priorities(sources, existing, task, journal=None):
                  'Edits match current source, preserve scope and pass syntax; independent validation is still required')
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     goal = task_goal.CURRENT.get()
+    validation_budget = budget  # Prompt compaction must not redefine allowed output growth.
+    retry_lines = {p: list(lines) for p, lines in REPAIR_SOURCE_LINES.get().items()}
     guide = compact_project_guidance(guide, task, sources.keys(), limit=3000)
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
@@ -1369,7 +1371,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 continue
             if len(text) > cap:
                 block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
-                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap, lines_near=REPAIR_SOURCE_LINES.get().get(path, ()))[:cap]}\n")
+                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap, lines_near=retry_lines.get(path, ()))[:cap]}\n")
                 is_partial = True
             else:
                 block = f"\n===== FILE {path} =====\n{text}\n"
@@ -1484,6 +1486,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     rejected_proposals = list(prior_proposals)
     attempts_made = 0
     evidence = ""
+    anchor_retry = False
+    anchor_count = 0
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
     context_key = hashlib.sha256((json.dumps(shown_sources, sort_keys=True) + str(budget)).encode()).hexdigest()
@@ -1510,12 +1514,17 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
                   "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
-                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], sources) if errors else
+                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], working_sources) if errors else
                   "The previous pass failed before producing a validated proposal. Use its error evidence above.") +
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt_number else ""
+        if anchor_retry:
+            retry = (f'\nAUTONOMOUS REPAIR — CURRENT-SOURCE RETRY: The last anchor matched {anchor_count} times. '
+                     'Previously rejected proposals omitted; discard removed diff lines. '
+                     'Required distinct repair approach: ' + repair_methods[attempt_number] +
+                     '\nUse a short unique literal from current source; return the smallest exact edit.\n' + evidence)
         if resource_retry:
             # A gateway resource failure is not a code-proposal rejection. Keep the next
             # request smaller by omitting the diagnostic boilerplate and reducing sources.
@@ -1609,7 +1618,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
                     for entry in proposal['files']):
                 raise ValueError('Large file was shown as excerpts; change it with edits, not content')
-            changes = apply_changes(shown_sources, existing, proposal, budget)
+            changes = apply_changes(shown_sources, existing, proposal, validation_budget)
             task_state.before_edit(changes)  # Also validates the owner goal.
             if goal:
                 goal.file_reasons(proposal, changes)
@@ -1660,9 +1669,27 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                         if journal:
                             journal.state['sourcePriority'] = priority[:20]
                             journal.persist()
+                        if isinstance(exc, EditMismatch):
+                            match = difflib.SequenceMatcher(None, exc.find, loaded, autojunk=False).find_longest_match()
+                            line = loaded.count('\n', 0, match.b)
+                            retry_lines[path] = list(range(max(0, line - 2), min(len(loaded.split('\n')), line + 4)))
+                            evidence = repair_evidence(EditMismatch(path, exc.find, loaded, loaded.count(exc.find)))
                         context, shown_sources, partial_sources = source_context()
                         evidence += "\nReread immutable candidate source: " + path
                         note("read", "Read " + path + ", which the change turned out to need", tool="read", detail=path)
+            if isinstance(exc, EditMismatch):
+                anchor_retry = True
+                anchor_count = exc.count
+                advisory, history = '', ''  # Stale proposals are not current source evidence.
+                if exc.path not in retry_lines and exc.path in working_sources:
+                    current = working_sources[exc.path]
+                    match = difflib.SequenceMatcher(None, exc.find, current, autojunk=False).find_longest_match()
+                    line = current.count('\n', 0, match.b)
+                    retry_lines[exc.path] = list(range(max(0, line - 2), min(len(current.split('\n')), line + 4)))
+                    priority = [exc.path] + [p for p in priority if p != exc.path]
+                    context, shown_sources, partial_sources = source_context()
+            else:
+                anchor_retry = False
             if isinstance(exc, json.JSONDecodeError) and output.strip():
                 malformed = output
             if signature:
