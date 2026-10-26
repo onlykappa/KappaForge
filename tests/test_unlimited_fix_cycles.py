@@ -41,12 +41,25 @@ class ProjectBudgetValidationTests(unittest.TestCase):
         for repo, entry in config.items():
             with self.subTest(repo=repo):
                 self.assertEqual(entry['budgets']['edits'], 120)
-                self.assertEqual(entry['budgets']['modelCalls'], 160)
+                self.assertEqual(entry['budgets']['modelCalls'], 1000 if repo == 'onlykappa/KappaForge' else 160)
                 if repo != 'onlykappa/KappaForge':
                     self.assertEqual(entry['budgets']['fixCycles'], 12)
 
 
 class FixCycleChargeTests(unittest.TestCase):
+    def test_authorized_project_cap_continues_existing_usage_without_reset(self):
+        saved = journal(used={'modelCalls': 160, 'edits': 1, 'fixCycles': 18})
+        saved.project = projects.registered('onlykappa/KappaForge')
+        saved.state['events'] = [{'kind': 'recovery_budget', 'outcome': 'blocked'}]
+        for expected in range(161, 1001):
+            RecoveryCoordinator.charge(saved, 'modelCalls')
+            self.assertEqual(saved.state['budgets']['modelCalls'], expected)
+        with self.assertRaisesRegex(RecoveryBudgetExceeded, 'modelCalls budget exhausted'):
+            RecoveryCoordinator.charge(saved, 'modelCalls')
+        self.assertEqual(saved.state['budgets'], {'modelCalls': 1000, 'edits': 1, 'fixCycles': 18})
+        self.assertEqual(saved.state['events'], [{'kind': 'recovery_budget', 'outcome': 'blocked'}])
+        self.assertEqual(saved.persist.call_count, 840)
+
     def test_null_permits_fix_cycles_beyond_twelve(self):
         saved = journal({'fixCycles': None}, {'fixCycles': 12})
         for expected in range(13, 31):
