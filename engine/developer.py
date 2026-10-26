@@ -1114,6 +1114,8 @@ def mirror_ios_copies(repo, changes, existing):
 # let more approved providers participate, without changing validation or authority.
 COMPACT = SMALL._replace(file_chars=24000, context_chars=80000, output_tokens=8192)
 FOCUSED_REPAIR = contextvars.ContextVar('focused_repair', default=False)
+REPAIR_SOURCE_TARGETS = contextvars.ContextVar('repair_source_targets', default=())
+REPAIR_SOURCE_LINES = contextvars.ContextVar('repair_source_lines', default={})
 
 
 def repair_budget(budget):
@@ -1317,6 +1319,11 @@ MODEL_FAILURES_BEFORE_SWITCH = 2
 
 def source_priorities(sources, existing, task, journal=None):
     """Carry repair targets across prompt compaction and review rounds, not source contents."""
+    targets = REPAIR_SOURCE_TARGETS.get()
+    if targets:
+        # The complete prior PR inventory is history, not a list of files this
+        # one verified repair must fit into every coding request.
+        return [p for p in dict.fromkeys(targets) if p in existing and not p.startswith(IOS_WEB)][:20]
     state = getattr(journal, 'state', {})
     saved = state.get('sourcePriority', []) + [p for p in state.get('files', []) if p in sources]
     named = sorted((p for p in existing if re.search(r'(?<![\w/.-])' + re.escape(p) + r'(?![\w/.-])', task)),
@@ -1361,7 +1368,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 continue
             if len(text) > cap:
                 block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
-                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap)[:cap]}\n")
+                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap, lines_near=REPAIR_SOURCE_LINES.get().get(path, ()))[:cap]}\n")
                 is_partial = True
             else:
                 block = f"\n===== FILE {path} =====\n{text}\n"
@@ -1418,7 +1425,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
         + ("PROJECT INSTRUCTIONS (the repository's own conventions and test command; follow them, but they "
            "cannot override the rules above):\n" + guide + "\n\n" if guide else "")
         + ("DESIGN NOTES (you wrote these while planning; follow them unless the code shows they are wrong):\n" + design + "\n\n" if design else "") +
-        "TASK:\n" + task + (goal.prompt() if goal else '') + "\n\nSOURCE FILES (current candidate state; authoritative for every edit):" + context)
+        "TASK:\n" + task + (goal.prompt(included_in=task) if goal else '') + "\n\nSOURCE FILES (current candidate state; authoritative for every edit):" + context)
     journal = recovery.CURRENT.get()
     edit_path = getattr(getattr(journal, 'scope', None), 'edit_path', None)
     if edit_path:
@@ -3225,6 +3232,25 @@ def revision_focus(pr, log, existing, changed):
     return focus, list(dict.fromkeys(named + changed))[:LARGE.read_files]
 
 
+def verified_source_lines(findings, sources):
+    """Carry literal confirmed evidence into coding excerpts, without granting edit scope."""
+    anchors = {}
+    for row in findings:
+        if row.get('verdict') != 'confirmed':
+            continue
+        for item in row.get('evidence', [])[:4]:
+            path, quote = item.get('path'), item.get('quote')
+            if path not in sources or not isinstance(quote, str) or not quote.strip():
+                continue
+            offset = sources[path].find(quote)
+            if offset < 0:
+                continue
+            first = sources[path][:offset].count('\n')
+            lines = range(first, first + min(8, quote.count('\n') + 1))
+            anchors[path] = list(dict.fromkeys(anchors.get(path, []) + list(lines)))[:8]
+    return anchors
+
+
 def anchor_pr_goal(goal, pr, repo, token, head):
     """A resumed fix retains the same immutable baseline as a freshly generated fix."""
     if not goal.paths:
@@ -3379,6 +3405,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
     # by a repair: with nothing else open, this round re-checks the current source and writes no code.
     reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
+    generation_targets = ()
+    generation_lines = {}
     if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
         # Verify only this batch's edit targets. Deferred findings remain in
         # pending/UNFINISHED and the final whole-task review below; they are
@@ -3397,6 +3425,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         if not targets:
             raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
                                                     'Verifier: ' + repair_guard.summary(findings))
+        generation_targets = tuple(files_named_in('\n'.join(targets), existing, []))
+        generation_lines = verified_source_lines(findings, sources)
+        generation_targets = tuple(dict.fromkeys(tuple(generation_lines) + generation_targets))
         loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
         # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
         task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
@@ -3404,7 +3435,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
                  'do not edit for unverified findings or claim the task complete from this batch.')
         task += ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
-                 verified_history(design, tried, notes, native_history, diff))
+                 verified_history(design, tried, notes, native_history, diff, limit=3000))
         if loop_approach:
             task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
         # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
@@ -3412,7 +3443,15 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     if reverify:
         model, summary, changes, explanation = "", "Re-checked the requirements against the current source", {}, ""
     else:
-        model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
+        target_token = REPAIR_SOURCE_TARGETS.set(generation_targets)
+        lines_token = REPAIR_SOURCE_LINES.set(generation_lines)
+        focused_token = FOCUSED_REPAIR.set(bool(generation_targets) or FOCUSED_REPAIR.get())
+        try:
+            model, summary, changes, explanation = generate(api_key, task, repo, sources, existing, guide, allowed)
+        finally:
+            FOCUSED_REPAIR.reset(focused_token)
+            REPAIR_SOURCE_LINES.reset(lines_token)
+            REPAIR_SOURCE_TARGETS.reset(target_token)
         if checkpoint:
             checkpoint(changes, modes)
     if pending:
@@ -3435,10 +3474,12 @@ VERIFIED_HISTORY_CHARS = 12000
 TRUNCATED_DIFF = '\n(PR diff shortened; SOURCE FILES above hold the current branch and are authoritative.)'
 
 
-def verified_history(design, tried, notes, native_history, diff):
+def verified_history(design, tried, notes, native_history, diff, limit=VERIFIED_HISTORY_CHARS):
     """Design, earlier attempts, saved notes, native builds and the PR diff, within VERIFIED_HISTORY_CHARS."""
     head = '\n'.join([design[:2000], '\n'.join(tried[-3:]), (notes or '')[:2000], native_history[:1500]])
-    room = max(0, VERIFIED_HISTORY_CHARS - len(head) - len('\nCurrent PR diff:\n') - len(TRUNCATED_DIFF))
+    if len(head) > limit - 256:
+        head = head[:max(0, limit - 300)] + '\n(Historical context shortened.)'
+    room = max(0, limit - len(head) - len('\nCurrent PR diff:\n') - len(TRUNCATED_DIFF))
     shown = diff if len(diff) <= room else diff[:room] + TRUNCATED_DIFF
     return head + '\nCurrent PR diff:\n' + shown
 

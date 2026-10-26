@@ -48,6 +48,10 @@ class FocusedRevisionTests(unittest.TestCase):
         def check(*args, **kwargs):
             final.extend(developer.UNFINISHED)
             return args[8], 'Remaining findings need validation', problems[2:]
+        def generate(*args, **kwargs):
+            self.assertEqual(developer.REPAIR_SOURCE_TARGETS.get(), ('docs/audit.md',))
+            self.assertTrue(developer.FOCUSED_REPAIR.get())
+            return 'fixture', 'Audit', {'docs/audit.md': '# Evidence'}, ''
         handle = recovery.CURRENT.set(None)
         self.addCleanup(recovery.CURRENT.reset, handle)
         self.addCleanup(developer.UNFINISHED.clear)
@@ -61,11 +65,12 @@ class FocusedRevisionTests(unittest.TestCase):
                 patch.object(repair_guard, 'enabled', return_value=True), \
                 patch.object(repair_guard, 'verify_all_findings', side_effect=assess) as assess_mock, \
                 patch.object(repair_guard.RepairLoop, 'before_repair', return_value=''), \
-                patch.object(developer, 'generate', return_value=('fixture', 'Audit', {'docs/audit.md': '# Evidence'}, '')) as generate, \
+                patch.object(developer, 'generate', side_effect=generate) as generate_mock, \
                 patch.object(developer, 'check_the_work', side_effect=check):
             result = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
         self.assertEqual(reads[0], 'docs/audit.md')
         assess_mock.assert_called_once()
         self.assertEqual(final, problems, 'deferred work must not disappear or become complete')
-        self.assertIn('Other findings remain open', generate.call_args.args[1])
+        self.assertIn('Other findings remain open', generate_mock.call_args.args[1])
+        self.assertEqual(developer.REPAIR_SOURCE_TARGETS.get(), ())
         self.assertEqual(verify.open_problems({'body': result[3]}), problems[2:])
