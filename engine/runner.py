@@ -54,6 +54,25 @@ TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M |
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.1",
            "X-GitHub-Api-Version": "2022-11-28"}
 
+def github_response(req):
+    """Retry transient read failures only; ambiguous writes must never be replayed."""
+    method = req.get_method()
+    host = urllib.parse.urlsplit(req.full_url).hostname
+    attempts = 3 if method == 'GET' and host == 'api.github.com' else 1
+    for attempt in range(attempts):
+        try:
+            return urllib.request.urlopen(req, timeout=35)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (502, 503, 504) and attempt + 1 < attempts:
+                exc.close()
+                time.sleep(attempt + 1)
+                continue
+            # Keep the HTTP type/status for existing policy checks. Never include
+            # query parameters, credentials, response bodies or untrusted messages.
+            exc.msg = f'{method} {host}: upstream HTTP {exc.code} after {attempt + 1} attempt(s)'
+            raise
+
+
 def request(url, payload=None, token=None, method=None):
     from engine.intent_guard import report_provenance, record_success
     payload = report_provenance(url, payload)
@@ -66,14 +85,14 @@ def request(url, payload=None, token=None, method=None):
     from engine.intent_guard import guard_request
     def read_current(number):
         current = urllib.request.Request(f"https://api.github.com/repos/{ROOT}/issues/{number}", headers=headers)
-        with urllib.request.urlopen(current, timeout=35) as response:
+        with github_response(current) as response:
             return json.load(response)
     guard_request(url, payload, method or ("POST" if payload is not None else "GET"), read_current)
     if (method or ("POST" if payload is not None else "GET")) == 'POST':
         from engine.infrastructure import authorize_dispatch
         authorize_dispatch(url, payload, token)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=35) as response:
+    with github_response(req) as response:
         body = response.read()
         if not body.strip():
             record_success(url, payload, {})
