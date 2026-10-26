@@ -683,10 +683,20 @@ class Journal:
                 if [p.get('sha') for p in commit.get('parents', [])] != [self.state['candidate']]:
                     raise PermissionError('Saved publication commit has a different parent; recovery stopped')
                 self.state.update(candidate=head, phase='publication')
-            if head != self.state['candidate'] and not self.adopt_reviewed_commits(head):
-                self.event('Candidate branch moved since the checkpoint; concurrent work is preserved', outcome='blocked', strategy='stop')
-                self.publish('blocked', 'Candidate changed. Review newer work before resuming.')
-                return False
+            if head != self.state['candidate']:
+                # Adoption persists its recovery event before begin's final running
+                # transition. An explicit Fix must carry the same resumption intent
+                # across that write; automatic/verification paths cannot acquire it.
+                previous_resuming = getattr(self, '_resuming', False)
+                self._resuming = action == 'fix'
+                try:
+                    adopted = self.adopt_reviewed_commits(head)
+                finally:
+                    self._resuming = previous_resuming
+                if not adopted:
+                    self.event('Candidate branch moved since the checkpoint; concurrent work is preserved', outcome='blocked', strategy='stop')
+                    self.publish('blocked', 'Candidate changed. Review newer work before resuming.')
+                    return False
         if not action and self.comment and self.state['status'] in ('waiting', 'dispatching', 'running', 'recovering'):
             # Old/duplicate blank dispatches must not bypass the continuation
             # token, cooldown or recovery budget. Explicit Retry joins the queue.

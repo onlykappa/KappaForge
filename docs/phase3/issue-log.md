@@ -170,6 +170,15 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - The interim 200-cap full suites each ran 1,056 tests and failed one shipped-configuration assertion expecting 160 for every project (33 skipped). That assertion now strictly expects the explicitly authorized 1,000 for KappaForge and still 160 for the other projects. Default/forged-null budget enforcement tests retain their original caps. No check was removed or converted into an unbounded allowance.
 - Broader checks actually RUN at the final 1,000 cap: Python online — 1,057 run, OK, 33 skipped, 79.963s; proxy-blocked — 1,057 run, OK, 33 skipped, 83.974s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. Fresh continuation is pending dispatch from the reviewed head; the prior blocked run is historical evidence, not a completed audit.
 
+## P3-023 — manual Fix loses resumption intent during reviewed-commit adoption
+
+- Evidence: [40318198964](https://github.com/onlykappa/KappaForge/actions/runs/40318198964), exact engine `2c3ff6c`, failed before inference with `Terminal task state cannot restart without explicit authorized resumption`. The previous budget stop is persisted as `failed_terminal`. `Journal.begin('fix')` verifies the engine and reviewed branch first, but adoption persists its recovery event before `begin` enables its existing manual-resumption flag. The early write therefore rejects the legitimate terminal-to-recovering transition. Counters remained 160 calls, one edit, 18 fix cycles.
+- Reproducer: new real-journal terminal-budget/adoption regression failed before the patch with that exact transition error. The missing-guidance control also stopped, as required; its expected exception is retained as fail-closed behavior.
+- Permanent fix: pass explicit Fix resumption intent only across the adoption call after existing provenance/project checks, and restore the previous flag in `finally`. Existing fast-forward, commit-count and post-commit authenticated owner-guidance requirements are unchanged. Blank/verification/automatic paths do not gain the flag. The final running transition retains its existing behavior. No counters, history, branch refs or authorization expiry are rewritten.
+- Immediate rerun actually RUN: 66 recovery-journal tests passed, including three new tests for terminal manual adoption with unchanged history/counters, rejection of blank/verify actions, and rejection without post-commit owner guidance. Full checks and live retry are pending.
+- Broader checks actually RUN: runtime-engine provenance — 9 passed; Python online — 1,060 run, OK, 33 skipped, 78.114s; proxy-blocked — 1,060 run, OK, 33 skipped, 82.105s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. No Docker/native execution is claimed.
+- Status: PATCHED locally; Phase 3.1a remains incomplete. The cap is configured at 1,000, but the failed attempt did not reach inference under it; live remaining budget must be verified on the next corrected run.
+
 ## Finding template
 
 ### P3-NNN — short defect title
