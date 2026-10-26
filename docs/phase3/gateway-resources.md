@@ -55,6 +55,10 @@ The corrected renderer stopped precisely on [40284235999](https://github.com/onl
 
 Old repair assessments can also consume this fixed budget. Their prompt-copy history now carries an omission count when trimmed; live decisions and saved history remain. An after-patch owner-shape fixture fits two findings and a small source in 7,736 characters and returns unverified decisions honestly. This is not live CPU validation or audit completion. A resource-rejection regression uses a complete near-3,000-character source fixture to preserve the intended initial load despite smaller protocol overhead.
 
+## Live correction result and budget stop — P3-022
+
+[40285570950](https://github.com/onlykappa/KappaForge/actions/runs/40285570950), engine `4cf49de`, completed four requests of 8,228 / 8,195 / 8,295 / 8,295 characters with HTTP 200 and no observed 1102, then correctly stopped at the durable 160-call cap. Reported successful-route usage totals 12,829 tokens (10,413 input; 2,416 output), excluding incomplete fallback usage. No audit edit was saved. Saved resource limits and consumed counters remain unchanged. Further work needs an explicit owner budget decision; another unchanged dispatch cannot make progress. This result does not prove a universal CPU threshold or overall workflow improvement.
+
 ## Smaller-load trial — P3-015
 
 Run [40238533997](https://github.com/onlykappa/KappaForge/actions/runs/40238533997) recovered from 1102: its finding request shrank from 37,671 to 24,708 characters, and four subsequent verifier requests succeeded. The next repair stopped before inference because the task-global hint incorrectly capped its fixed project/owner instructions. No audit commit was saved.

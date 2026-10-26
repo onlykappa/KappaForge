@@ -152,6 +152,15 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Broader checks actually RUN: Python online — 1,056 run, OK, 33 skipped, 61.377s; proxy-blocked repeat — 1,056 run, OK, 33 skipped, 65.299s. npm — 858 passed. Dependency-map generation/check, execution-policy check and whitespace check passed. Worker CPU cause remains unproven; no production Worker deployment, paid inference, Docker/native result or completed Phase 3.1a is claimed.
 - Status: PATCHED locally; independent live retry pending.
 
+## P3-022 — retained task model-call budget is exhausted
+
+- Checkpoint: Phase 3.1a, 2026-10-26 UTC. [Run 40285570950](https://github.com/onlykappa/KappaForge/actions/runs/40285570950) verified engine `4cf49de`, crossed the previous construction failure and completed four gateway requests successfully: 8,228 / 8,195 / 8,295 / 8,295 characters, all HTTP 200. No 1102 occurred in these four calls. This does not establish a universal safe size or resolve the Worker's underlying CPU cause.
+- Actual stop: `RecoveryBudgetExceeded: Task modelCalls budget exhausted; saved evidence requires review`. The durable checkpoint contains `modelCalls=160`, `edits=1`, `fixCycles=18`; verifier limit remains 8,334 and review limit 13,040. `config/projects.json` caps this project's calls at 160; `RecoveryCoordinator.charge` debits before work and correctly refuses the next call. This is an enforced policy boundary, not a counter-reset defect.
+- Measurements: four successful responses reported 10,413 input tokens and 2,416 output tokens, total 12,829. These are reported usage for the final successful routes only; failed fallback attempts are not a complete measured usage sample. No throughput or end-to-end improvement benchmark is claimed.
+- Outcome: no audit edit or candidate commit was saved; Phase 3.1a remains incomplete. P3-020/P3-021 local corrections are validated by their regressions and the new live requests; audit acceptance is separate.
+- Documentation-closeout validation actually RUN: Python online — 1,056 run, OK, 33 skipped, 78.706s; proxy-blocked — 1,056 run, OK, 33 skipped, 82.768s. npm — 858 passed; dependency-map generation/check, execution-policy and whitespace checks passed. Both Python suites ran concurrently for this documentation-only closeout; durations are not an improvement benchmark.
+- Status: BLOCKED — owner decision required before another run. Proposed bounded decision: raise this project's configured model-call cap from 160 to 200, preserving all 160 consumed calls and failure history; this would also affect future KappaForge tasks. No cap, checkpoint, issue body, authorization, provider policy or production setting was changed. Do not dispatch an unchanged exhausted task.
+
 ## Finding template
 
 ### P3-NNN — short defect title
