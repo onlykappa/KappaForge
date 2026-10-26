@@ -9,7 +9,7 @@
 
 | Checkpoint | State | Evidence / audited SHA |
 | --- | --- | --- |
-| 3.1a Main and dependency provenance | INSPECTED | Main: a6834a92f89a720fce177e1dd02c13dffd47111c, Base: ce7a5645cee806ddc4d0df523cbcb68f4be1117f, P1: 437d74d1826b022b7f6aef05e1cb8e71f5d54ded, P2: b3f8d2f32262a2ae45f23f027712e40cfc70faac |
+| 3.1a Main and dependency provenance | INSPECTED | Main: 3a70287aae34248429862396917e90bad60b2f83, Base: ce7a5645cee806ddc4d0df523cbcb68f4be1117f, P1: 437d74d1826b022b7f6aef05e1cb8e71f5d54ded, P2: b3f8d2f32262a2ae45f23f027712e40cfc70faac |
 | 3.1b Architecture inventory | NOT RUN | |
 | 3.1c Policy and publication review | NOT RUN | |
 | 3.1d Regression and CI evidence | NOT RUN | |
