@@ -139,9 +139,12 @@ final class LaunchTests: XCTestCase {
         image.name = "Recovery eligibility (fixture; no inference or task dispatch)"
         image.lifetime = .keepAlways
         add(image)
-        // WebKit writes localStorage to disk on a short delay; terminating at once can drop the saved acknowledgement
-        // (the test then failed intermittently on identical code). Give it time, as a person closing the app would.
-        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "WebKit persists localStorage")], timeout: 3)
+        // WebKit persists localStorage asynchronously. Force-terminating a foreground app bypasses the normal
+        // background lifecycle and can kill the WebContent process before its storage transaction reaches disk.
+        // Exercise a real app suspension first, then relaunch to verify durable state rather than an in-memory card.
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10), "App enters the normal background lifecycle")
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "WebKit completes background storage flush")], timeout: 5)
         app.terminate()
         app.launch()
         XCTAssertTrue(web.waitForExistence(timeout: 60))

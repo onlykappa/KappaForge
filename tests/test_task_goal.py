@@ -69,6 +69,112 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_scope_review_keeps_current_evidence_for_every_file_when_gateway_shrinks_context(self):
+        from engine import gateway
+        goal = task_goal.from_request('Audit the existing implementation and fix confirmed regressions')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            changes = {path: f'# Current evidence for {path}\n' + 'x = 1\n' * 20000
+                       for path in ('engine/large.py', 'engine/later.py', 'tests/test_later.py',
+                                    'ios/KappaForge/Web/later.js')}
+            def model(key, prompt, **kwargs):
+                for path in changes:
+                    self.assertIn(f'# Current evidence for {path}', prompt)
+                return 'reviewer', json.dumps({'requirements': [], 'problems': [], 'file_scope': [
+                    {'path': path, 'necessary': True, 'reason': 'Audit regression evidence',
+                     'quote': f'# Current evidence for {path}'} for path in changes]})
+            with patch.dict('os.environ', {'KAPPA_ROUTER_REQUIRED': 'true'}), \
+                    patch.object(gateway, 'prompt_fits', side_effect=lambda prompt: len(prompt) < 16000):
+                result = verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(result[1], [])
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_large_scope_review_retains_valid_rows_and_retries_only_missing_files(self):
+        goal = task_goal.from_request('Audit the implementation and document confirmed defects')
+        token = task_goal.CURRENT.set(goal)
+        changes = {f'file{i}.py': f'value = {i}\n' for i in range(7)}
+        calls = []
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            def model(key, prompt, **kwargs):
+                if 'SCOPE-ONLY BATCH' in prompt:
+                    paths = json.loads(prompt.split('BATCH PATHS: ')[1].split('\n')[0])
+                    calls.append(paths)
+                    self.assertLessEqual(len(paths), 3)
+                    rows = [{'path': path, 'necessary': path != 'file6.py', 'reason': 'Audit evidence',
+                             'quote': changes[path].strip()} for path in paths]
+                    if len(calls) == 1:
+                        rows = rows[:1]
+                    return 'reviewer', json.dumps({'file_scope': rows})
+                self.assertNotIn('FILE SCOPE CHECK', prompt)
+                return 'reviewer', json.dumps({'requirements': [{'text': 'Document defects', 'met': False}],
+                                              'problems': [], 'files_needed': ['report.md']})
+            result = verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes)
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(calls, [['file0.py', 'file1.py', 'file2.py'], ['file1.py', 'file2.py'],
+                                     ['file3.py', 'file4.py', 'file5.py'], ['file6.py']])
+            self.assertEqual(result[0][0]['met'], False)
+            self.assertEqual(result[2], ['report.md'])
+            self.assertIn('Unrelated change outside the owner goal: file6.py', result[1][0])
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_large_scope_review_never_accepts_missing_invented_or_duplicate_evidence(self):
+        goal = task_goal.from_request('Audit the implementation and document confirmed defects')
+        token = task_goal.CURRENT.set(goal)
+        changes = {f'file{i}.py': f'value = {i}\n' for i in range(5)}
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            for defect in ('missing', 'invented', 'duplicate', 'foreign'):
+                calls = []
+                def model(key, prompt, **kwargs):
+                    self.assertIn('SCOPE-ONLY BATCH', prompt, 'requirements cannot be accepted before scope')
+                    calls.append(kwargs)
+                    paths = json.loads(prompt.split('BATCH PATHS: ')[1].split('\n')[0])
+                    rows = [{'path': path, 'necessary': True, 'reason': 'Audit evidence',
+                             'quote': changes[path].strip()} for path in paths]
+                    if defect == 'missing':
+                        rows = []
+                    elif defect == 'invented':
+                        rows[0]['quote'] = 'invented source'
+                    elif defect == 'duplicate':
+                        rows.append(rows[0])
+                    else:
+                        rows[0]['path'] = 'foreign.py'
+                    return 'reviewer', json.dumps({'file_scope': rows})
+                with self.subTest(defect=defect):
+                    self.assertIsNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes))
+                    self.assertTrue(verify.SCOPE_UNDECIDED.get())
+                    self.assertEqual(len(calls), 2)
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_scope_batches_show_current_lines_near_pr_hunks_in_large_files(self):
+        goal = task_goal.from_request('Audit the implementation and document confirmed defects')
+        token = task_goal.CURRENT.set(goal)
+        changes = {f'file{i}.py': '# unrelated header\n' * 600 + f'fixed_{i} = True\n' for i in range(5)}
+        goal.review_diff = ''.join(f'diff --git a/{path} b/{path}\n@@ -601 +601 @@\n-old\n+fixed_{i} = True\n'
+                                  for i, path in enumerate(changes))
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            def model(key, prompt, **kwargs):
+                if 'SCOPE-ONLY BATCH' in prompt:
+                    paths = json.loads(prompt.split('BATCH PATHS: ')[1].split('\n')[0])
+                    for path in paths:
+                        self.assertIn('excerpt starting at line 593:', prompt)
+                        self.assertIn(changes[path].splitlines()[-1], prompt.split('PR DIFF')[0] if path == paths[0] else prompt)
+                    return 'reviewer', json.dumps({'file_scope': [
+                        {'path': path, 'necessary': True, 'reason': 'Current audit repair',
+                         'quote': changes[path].splitlines()[-1]} for path in paths]})
+                return 'reviewer', json.dumps({'requirements': [{'text': 'Document defects', 'met': False}], 'problems': []})
+            self.assertIsNotNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes),
+                                 verify.REVIEW_FAILURE.get())
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_an_undecided_scope_review_is_retried_on_a_different_model(self):
         goal = task_goal.from_request('Make add accept numeric strings')
         token = task_goal.CURRENT.set(goal)

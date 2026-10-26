@@ -126,12 +126,12 @@ class RecoveryCoordinator:
 
     @staticmethod
     def limit(project, kind):
-        """The cap for one counter; None only when the project explicitly sets fixCycles to null."""
+        """A trusted count cap; None only for an explicitly unlimited known counter."""
         budgets = (project or {}).get('budgets', {})
         if kind not in budgets:
             return RecoveryCoordinator.LIMITS[kind]
         value = budgets[kind]
-        if value is None and kind == 'fixCycles':
+        if value is None and kind in RecoveryCoordinator.LIMITS:
             return None
         # Anything else that is not a valid cap fails closed to the default.
         return value if type(value) is int and value >= 1 else RecoveryCoordinator.LIMITS[kind]

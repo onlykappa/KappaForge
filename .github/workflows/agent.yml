@@ -7,6 +7,25 @@ concurrency:
   group: kappaforge-agent-${{ inputs.issue_number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
+  prompt-cap-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'prompt-probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Probe bounded free-route prompt sizes
+      env:
+        KAPPA_ROUTER_REQUIRED: 'true'
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+      run: PYTHONUNBUFFERED=1 python -m scripts.prompt_cap_probe
   router-check:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'router-check'
     runs-on: ubuntu-latest
@@ -26,7 +45,7 @@ jobs:
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
       run: python -m engine.gateway
   classify:
-    if: inputs.action != 'router-check'
+    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -172,6 +191,7 @@ jobs:
         KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
         INPUT_ISSUE_NUMBER: ${{ needs.classify.outputs.issue }}
         INPUT_ACTION: ${{ inputs.action }}
+        KAPPA_ENGINE_CHECK: 'true'
         KAPPA_TASK_SCOPE: write
       run: |-
         set -Eeuo pipefail
@@ -254,7 +274,7 @@ jobs:
         required: false
         type: string
       action:
-        description: Blank to run; fix to repair; verify for saved-candidate checks only; router-check for diagnostics only
+        description: Blank to run; fix to repair; verify saved candidate; router-check diagnostics; prompt-probe free-route request sizes
         required: false
         type: string
   schedule:

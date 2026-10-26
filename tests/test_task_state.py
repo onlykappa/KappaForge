@@ -14,6 +14,85 @@ PR = {'html_url': f'https://github.com/{REPO}/pull/222', 'state': 'open', 'draft
 
 
 class TaskStateTests(unittest.TestCase):
+    def test_old_repair_assessments_are_omitted_only_from_small_prompt_copy(self):
+        from copy import deepcopy
+        self.goal.record.repair = dict(candidate=SHA, source='c' * 64,
+            evidence='Historical diagnostic decisions; reverify before editing',
+            findings=[dict(id=str(i), verdict='needs_validation', reason='x' * 180) for i in range(4)],
+            omittedFindings=2)
+        before = deepcopy(self.goal.record.repair)
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 8334}})
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with task_state.action('reviewer', 'Verify', 'Preserve scope', 'Literal evidence'):
+                data = task_state.decode_prompt(task_state.add_to_prompt('Owner request', journal))
+                self.assertGreater(data['repairAssessment']['omittedFindings'], 2)
+                self.assertEqual(self.goal.record.repair, before)
+                self.assertEqual(data['identity'], self.goal.record.identity)
+                self.assertTrue(data['ownerReviewRequired'])
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_small_allocation_preserves_required_receipts_and_reports_hard_overflow(self):
+        from copy import deepcopy
+        task_state.observe_pr(PR, REPO, BRANCH)
+        for kind in ('sandbox', 'native'):
+            task_state.observe_validation(kind, SHA, {'id': 10, 'status': 'completed', 'conclusion': 'success'})
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 8334},
+                                         'budgets': {'modelCalls': 156, 'edits': 1, 'fixCycles': 16}})
+        handle = recovery.CURRENT.set(journal)
+        try:
+            with task_state.action('reviewer', 'Verify the exact current source ' * 6,
+                                   'Preserve owner requirements ' * 6, 'Require literal evidence ' * 6):
+                before = deepcopy(task_state.snapshot(journal))
+                prompt = task_state.add_to_prompt('Complete owner request', journal)
+                shown = task_state.decode_prompt(prompt)
+                for field in ('identity', 'facts', 'budgets', 'nextAction', 'ownerReviewRequired'):
+                    self.assertEqual(shown[field], before[field])
+                self.assertGreater(len(task_state.wire(shown)), 2083)
+                self.assertLessEqual(len(task_state.wire(shown)), task_state.MAX_CONTEXT)
+                self.assertEqual(task_state.snapshot(journal), before)
+                self.assertTrue(gateway.prompt_fits('Complete owner request'))
+                # A mandatory receipt cannot fit the absolute state cap. Do not hide
+                # this as malformed verification or send an oversized inference.
+                self.goal.record.checks['sandbox']['evidence'] = 'x' * 6500
+                with self.assertRaises(gateway.GatewayRequestTooLarge):
+                    task_state.add_to_prompt('Complete owner request', journal)
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_learned_role_budget_compacts_history_and_invalidates_render_cache_without_mutation(self):
+        from copy import deepcopy
+        self.goal.record.files = ['path_' + str(i) + '_' + 'x' * 80 + '.py' for i in range(24)]
+        self.goal.record.attempts = [dict(kind='validation', error='x' * 600, candidate=SHA) for _ in range(4)]
+        task_state.observe_pr(PR, REPO, BRANCH)
+        task_state.observe_validation('sandbox', SHA, {'id': 10, 'status': 'completed', 'conclusion': 'success'})
+        journal = SimpleNamespace(state={'gatewayResourceBudgets': {'review': 18000},
+                                         'budgets': {'modelCalls': 3}}, project={'budgets': {'modelCalls': 5}})
+        handle = recovery.CURRENT.set(journal)
+        role = task_state.ROUTING_ROLE.set('review')
+        try:
+            with task_state.action('reviewer', 'Verify one finding', 'Preserve scope', 'Literal evidence'), \
+                    task_state.inference('owner scope', 'gateway') as call:
+                before = deepcopy(task_state.snapshot(journal))
+                first = task_state.decode_prompt(task_state.add_to_prompt('owner scope', journal))
+                self.assertLessEqual(len(task_state.wire(first)), 4500)
+                journal.state['gatewayResourceBudgets']['review'] = 12000
+                second = task_state.decode_prompt(task_state.add_to_prompt('owner scope', journal))
+                self.assertLessEqual(len(task_state.wire(second)), 3000)
+                self.assertLess(len(task_state.wire(second)), len(task_state.wire(first)))
+                self.assertEqual(second['identity'], before['identity'])
+                self.assertEqual(second['goal']['digest'], before['goal']['digest'])
+                self.assertEqual(second['facts'], before['facts'])
+                self.assertEqual(second['budgets'], before['budgets'])
+                self.assertEqual(second['nextAction'], before['nextAction'])
+                self.assertTrue(second['ownerReviewRequired'])
+                self.assertEqual(task_state.snapshot(journal), before)
+                call.check()
+        finally:
+            task_state.ROUTING_ROLE.reset(role)
+            recovery.CURRENT.reset(handle)
+
     def setUp(self):
         self.journal_handle = recovery.CURRENT.set(None)
         self.goal = task_goal.from_request('Fix the requested task behavior.')

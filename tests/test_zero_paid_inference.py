@@ -93,11 +93,12 @@ class CodingOutputCeilingTests(unittest.TestCase):
         source = Path(runner.__file__).read_text()
         self.assertRegex(source, r'max_output_tokens = min\(max_output_tokens, gateway\.PINNED_OUTPUT_TOKENS\)')
 
-    def test_the_prompt_budget_still_reserves_the_8k_default(self):
+    def test_the_prompt_budget_enforces_the_engine_request_cap(self):
         limits = runner.PROVIDERS['routing']['defaults']
         self.assertEqual(limits['maxOutputTokens'], 8192)
-        self.assertTrue(gateway.prompt_fits('x' * 80000))
-        self.assertFalse(gateway.prompt_fits('x' * 90000))
+        self.assertTrue(gateway.prompt_fits('x' * 20000))
+        self.assertFalse(gateway.prompt_fits('x' * 20001))
+        self.assertFalse(gateway.prompt_fits('x' * 80000))
 
 
 class PaidInferenceSwitchTests(unittest.TestCase):

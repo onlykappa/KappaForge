@@ -48,7 +48,10 @@ class LineCitationTests(Base):
             return answer(prompt, owner_ref='R1', evidence=[dict(path='app.py', lines=[2, 2])])
         self.verify(respond)
         self.assertEqual(seen['sources']['app.py']['text'], '1| def add(a, b):\n2|     return a + b\n3| ')
-        self.assertEqual(seen['owner_requirements'], [{'id': 'R1', 'text': 'Make add accept numeric strings'}])
+        self.assertEqual(seen['owner_goal'], self.goal.request)
+        self.assertEqual(seen['owner_requirements'], {'R1': [0, len(self.goal.request)]})
+        span = seen['owner_requirements']['R1']
+        self.assertEqual(seen['owner_goal'][span[0]:span[1]], 'Make add accept numeric strings')
         self.assertNotIn('shown', seen, 'the engine keeps its own copy for checking evidence')
 
     def test_a_true_finding_cited_by_line_is_confirmed_where_a_paraphrase_is_not(self):
@@ -221,9 +224,12 @@ class ReverifyTests(Base):
                 self.assertEqual(progress.return_value.ok.call_args.kwargs['status'], 'blocked' if problems else 'testing')
 
     def test_a_process_only_fix_round_reviews_again_without_verifier_or_generation(self):
+        fallback = 'The previous attempt reported unfinished requirements; recheck the original task'
+        self.assertTrue(verify.process_problem(fallback))
+        self.assertFalse(verify.process_problem('Requirement not met: Add numeric-string support'))
         pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50', base={'sha': SHA},
                   head={'sha': SHA, 'ref': 'kappa/dev-9', 'repo': {'full_name': developer.ROOT}},
-                  body='Plan\n\n' + verify.review_record(['Repair checkpoint awaiting full requirement review and independent tests']))
+                  title='Draft (incomplete): Cast', body='Plan')
         def gh(path, token, payload=None, method=None):
             if path.endswith('/files?per_page=100'):
                 return [{'filename': 'app.py', 'status': 'modified', 'patch': '@@ -1 +1 @@'}]
@@ -245,7 +251,7 @@ class ReverifyTests(Base):
             model, summary, changes, explanation, _ = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key')
         self.assertEqual(changes, {})
         self.assertEqual(seen['changes'], {}, 'the PR as it stands is reviewed')
-        self.assertEqual(seen['unfinished'], ['Repair checkpoint awaiting full requirement review and independent tests'])
+        self.assertEqual(seen['unfinished'], [fallback])
         self.assertEqual(summary, 'Re-checked the requirements against the current source')
         self.assertEqual(verify.open_problems({'body': explanation}), [], 'a clean review closes the old note')
 
