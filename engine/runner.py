@@ -788,7 +788,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     payload.pop("premium", None)
     encoded = json.dumps(payload).encode('utf-8')
     if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
-        raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
+        cap = PROVIDERS['routing']['defaults']['maxRequestBytes']
+        print('KAPPA_PROMPT_BUDGET ' + json.dumps(dict(requestBytes=len(encoded), requestByteCap=cap,
+              failedChecks=['serializedRequestBytes'], role=payload['role'], sent=False)), flush=True)
+        raise gateway.GatewayRequestTooLarge(f'Serialized coding request exceeds the gateway byte limit: '
+                                            f'{len(encoded)}/{cap} bytes; no inference was sent')
     request = urllib.request.Request(endpoint + "/router/infer", encoded, {
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",

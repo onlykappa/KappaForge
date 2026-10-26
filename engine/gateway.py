@@ -56,7 +56,8 @@ def resource_ceiling():
     return budgets.get(resource_role())
 
 
-def prompt_fits(prompt, reserve=0):
+def prompt_budget(prompt, reserve=0):
+    """Measure the exact sizing envelope without retaining any prompt content."""
     from engine import recovery, task_state
     prompt = task_state.add_to_prompt(prompt, recovery.CURRENT.get())
     from engine.runner import PROVIDERS
@@ -72,13 +73,31 @@ def prompt_fits(prompt, reserve=0):
     if getattr(getattr(recovery.CURRENT.get(), 'scope', None), 'inference_route', None):
         maximum = min(maximum, PINNED_PROMPT_CHARS)
     wire = len(json.dumps(prompt).encode('utf-8'))
-    return chars + reserve <= maximum and wire + reserve + 4096 <= limits['maxRequestBytes']
+    failed = []
+    if chars + reserve > maximum:
+        failed.append('promptChars')
+    if wire + reserve + 4096 > limits['maxRequestBytes']:
+        failed.append('requestBytes')
+    return dict(promptChars=chars, promptCharCap=maximum, promptJsonBytes=wire,
+                reserve=reserve, requestOverheadBytes=4096, requestByteCap=limits['maxRequestBytes'],
+                engineCharCap=ENGINE_PROMPT_CHARS, gatewayCharCap=limits['maxPromptChars'],
+                contextTokenCap=limits['maxContextTokens'], outputTokenReserve=limits['maxOutputTokens'],
+                resourceCharCap=ceiling, failedChecks=failed)
+
+
+def prompt_fits(prompt, reserve=0):
+    return not prompt_budget(prompt, reserve)['failedChecks']
 
 
 def require_prompt_fits(prompt):
-    if not prompt_fits(prompt):
+    budget = prompt_budget(prompt)
+    if budget['failedChecks']:
+        print('KAPPA_PROMPT_BUDGET ' + json.dumps(dict(budget, role=resource_role(), sent=False), sort_keys=True), flush=True)
         raise GatewayRequestTooLarge('Coding prompt exceeds the gateway request/context budget; '
-                                   'reduce source context while preserving the owner brief; no inference was sent')
+                                    f"prompt characters {budget['promptChars']}/{budget['promptCharCap']}; "
+                                    f"request estimate {budget['promptJsonBytes'] + budget['requestOverheadBytes']}/{budget['requestByteCap']} bytes; "
+                                    f"failed {','.join(budget['failedChecks'])}; "
+                                    'reduce source context while preserving the owner brief; no inference was sent')
 
 
 class GatewayUnavailable(ProviderRoutesUnavailable):
