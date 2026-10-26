@@ -221,6 +221,16 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Full checks actually RUN: Python online — 1,071 run, OK, 33 skipped, 57.859s; proxy-blocked — 1,071 run, OK, 33 skipped, 62.811s. npm — 858 passed. Dependency-map generation/check, execution-policy check and whitespace check passed. The initial full run caught a removed prompt instruction asserted by the incomplete-excerpt regression; the instruction was restored and both full suites rerun successfully. No test or evidence gate was weakened.
 - Status: PATCHED and regression-tested; exact-engine live retry pending. No Docker/native execution claimed.
 
+## P3-029 — valid unseen citations stop review without investigating the cited lines
+
+- Evidence: [40330437627](https://github.com/onlykappa/KappaForge/actions/runs/40330437627), exact engine `5f323bc`, reached two verifier requests (8,306 / 8,250 characters, HTTP 200) and stopped with `RepairReviewRequired`. The first finding was downgraded by `no_literal_source_evidence, evidence:lines_not_shown`; the second had no sufficient proof. No audit edit was saved. Used counts ended at 235 calls, one edit and 23 fix cycles. The previous 23-request backlog/resource failure did not recur; final audit progress remains unproven.
+- Independently reproduced: a current file contains a relevant line outside the first excerpt. A verifier cites that existing line, but the engine previously stopped after downgrading it rather than investigating the citation. Four new tests against the pre-fix implementation: three fail, one passes. This is a deterministic reproduction of the failure class, not a reconstruction of undisclosed live response text.
+- Permanent correction: treat a well-formed unseen citation as a bounded investigation lead only when the current finding has valid owner proof and is in scope. Rebuild one excerpt around at most eight cited lines per existing source path, then obtain a fresh verdict against that same candidate/source snapshot. Preserve the complete owner goal, learned size limit and all literal proof checks. A cited line is never accepted solely because it exists outside the original excerpt.
+- Refuse invented paths, invalid/out-of-range/reversed/oversized spans, invalid owner proof and recursive rereading. An unsuccessful second citation remains unverified. A candidate or owner/source change discards the follow-up. No new external source or permission is admitted.
+- Immediate rerun actually RUN: reread 4, repair guard 24, repair root causes 12 and resource 25 tests passed. The positive test requires the previously unseen line to be present in the second prompt before confirmation; refusal, one-follow-up bound and stale-candidate tests remain strict.
+- Full checks actually RUN: Python online — 1,075 run, OK, 33 skipped, 59.294s; proxy-blocked — 1,075 run, OK, 33 skipped, 62.503s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. No Docker/native execution is claimed.
+- Status: PATCHED and regression-tested; exact-engine live retry pending. Phase 3.1a remains incomplete; P3-026 model decision quality remains open.
+
 ## Finding template
 
 ### P3-NNN — short defect title

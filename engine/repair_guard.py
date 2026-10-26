@@ -144,19 +144,21 @@ def public(data):
     return {k: v for k, v in data.items() if k not in ('shown', 'shown_lines')}
 
 
-def payload(sources, claims, max_chars=MAX_SOURCE_CHARS):
+def payload(sources, claims, max_chars=MAX_SOURCE_CHARS, requested_lines=None):
     # Full contents of small files; large files are explicitly partial, never claimed fully inspected.
     used, files, raw, shown_lines = 0, {}, {}, {}
     from engine.developer import excerpt
     clues = '\n'.join(claims)
-    for path in sorted(sources, key=lambda path: (path not in clues, path)):
+    requested_lines = requested_lines or {}
+    for path in sorted(sources, key=lambda path: (path not in requested_lines, path not in clues, path)):
         source = sources[path]
         remaining = max_chars - used - len(path) - 80
         if remaining <= 0:
             break
         file_budget = min(3000, remaining)
         frames = frame_lines(claims, path)[-2:]
-        shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget, lines_near=frames)
+        anchors = list(dict.fromkeys(list(requested_lines.get(path, ())) + frames))
+        shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget, lines_near=anchors)
         text, lines = numbered(shown, source)
         files[path] = dict(text=text, complete=shown == source)
         raw[path], shown_lines[path] = shown, sorted(lines)
@@ -322,7 +324,7 @@ def parse(output):
 
 @task_state.role('reviewer', 'Try to disprove proposed repair findings before authorizing source work',
                  'Every repair target is relevant to the original goal and has current-source evidence', routing_role='verify')
-def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
+def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _requested_lines=None):
     if (not isinstance(sources, dict) or any(not isinstance(path, str) or not isinstance(text, str)
                                            for path, text in sources.items())):
         raise RepairReviewRequired('Current source evidence is unavailable; no speculative edits authorized')
@@ -339,7 +341,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
     def build():
         nonlocal source_limit
         while True:
-            data = payload(sources, claims, source_limit)
+            data = payload(sources, claims, source_limit, _requested_lines)
             from engine import requirements
             requirements_rows = requirements.split(task)
             owner_rows = [{'id': r['id'], 'text': r['text']} for r in requirements_rows]
@@ -400,7 +402,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
                 if len(tried) >= VERIFIER_ATTEMPTS:
                     raise RepairReviewRequired('Finding verification was invalid from ' + str(len(tried)) + ' free models ('
                                                + '; '.join(problems) + '); no speculative edits authorized') from bad
-        result = []
+        result, reread, rereview = [], {}, []
         shown_claims = {row['id']: row['claim'] for row in data['findings']}
         for row in decisions:
             verdict, reason = row.get('verdict'), row.get('reason')
@@ -426,10 +428,34 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None):
             if gate:
                 verdict = 'needs_validation'
                 gate = gate + ['evidence:' + issue for issue in quote_issues if 'no_literal_source_evidence' in gate]
+            # An unseen citation is a lead, never proof. Rebuild one fresh
+            # excerpt from this immutable source snapshot, then reverify once.
+            # Do not chase invented paths, invalid/huge spans or owner exclusions.
+            if (_requested_lines is None and row['verdict'] == 'confirmed' and row['in_goal']
+                    and owner_proof and 'evidence:lines_not_shown' in gate):
+                for item in raw[:4]:
+                    if not isinstance(item, dict):
+                        continue
+                    path, span = item.get('path'), item.get('lines')
+                    if (isinstance(path, str) and path in sources and isinstance(span, list)
+                            and 1 <= len(span) <= 2 and all(type(n) is int for n in span)
+                            and 1 <= span[0] <= span[-1] <= len(sources[path].split('\n'))
+                            and span[-1] - span[0] < MAX_CITED_LINES
+                            and any(n not in data['shown_lines'].get(path, ()) for n in range(span[0], span[-1] + 1))):
+                        reread[path] = list(dict.fromkeys(reread.get(path, []) + list(range(span[0] - 1, span[-1]))))[:MAX_CITED_LINES]
+                        rereview.append(row['id'])
             # Missing verification is never converted into a coding request.
             result.append(dict(id=row['id'], claim=shown_claims[row['id']], verdict=verdict, reason=reason[:600],
                                evidence=evidence, in_goal=row['in_goal'], gate=gate,
                                safe_reason=safe_reason(row, sources)))
+        if reread:
+            fresh(stamp, sources)
+            followup = verify_findings(run_model, api_key, task,
+                                      [claim for claim in claims if digest(claim) in rereview],
+                                      sources, allowed, _requested_lines=reread)
+            fresh(stamp, sources)
+            replacements = {row['id']: row for row in followup}
+            result = [replacements.get(row['id'], row) for row in result]
         save(stamp, result)
         return result
     except (task_state.CandidateChanged, RepairReviewRequired):
