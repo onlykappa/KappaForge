@@ -14,6 +14,32 @@ def resource_error():
 
 
 class ReviewResourceTests(unittest.TestCase):
+    def test_long_single_finding_retains_source_with_a_full_owner_request(self):
+        task = '\n'.join('- Owner condition ' + str(i) + ': ' + 'preserve required behavior ' * 6 for i in range(18))
+        goal = task_goal.from_request(task)
+        handle = task_goal.CURRENT.set(goal)
+        self.journal.state.update(gatewayResourceBudgets={'verify': 8334},
+                                  budgets={'modelCalls': 233, 'edits': 1, 'fixCycles': 22})
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        calls = []
+        def model(key, prompt, **kwargs):
+            size = len(task_state.add_to_prompt(prompt, self.journal).encode('utf-16-le')) // 2
+            self.assertLessEqual(size, 8334)
+            data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
+            self.assertEqual(data['owner_goal'], task)
+            self.assertIn('app.py', data['sources'])
+            calls.append(size)
+            return 'fixture', json.dumps({'findings': [dict(id=r['id'], verdict='needs_validation',
+                in_goal=True, reason='Behavior still requires investigation') for r in data['findings']]})
+        try:
+            claim = 'app.py: ' + 'Unverified owner condition; inspect the implementation. ' * 15
+            rows = repair_guard.verify_findings(model, 'key', task, [claim], {'app.py': 'return a + b\n'})
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(rows[0]['verdict'], 'needs_validation')
+            self.assertEqual(self.journal.state['gatewayResourceBudgets']['verify'], 8334)
+        finally:
+            task_goal.CURRENT.reset(handle)
+
     def test_single_finding_with_full_owner_scope_and_pr_receipt_fits_retained_envelope(self):
         task = '\n'.join('- Owner condition ' + str(i) + ': ' + 'preserve exact behavior ' * 5 for i in range(23))
         goal = task_goal.from_request(task)

@@ -3209,6 +3209,22 @@ def files_named_in(log, existing, changed):
     return [p for p in existing if p not in changed and re.search(r"(?<![\w/.-])" + re.escape(p) + r"(?![\w/-])", log)]
 
 
+REPAIR_REVIEW_TARGETS = 2
+
+
+def revision_focus(pr, log, existing, changed):
+    """Investigate one small repair batch; keep the complete PR review open for final validation."""
+    claims = [p for p in requirements_open(pr)
+              if not verify.lifecycle_problem(p) and not verify.process_problem(p)]
+    if log:
+        claims.insert(0, 'Independent check failure (sandbox tests and/or native iOS build): ' + log[:2400])
+    focus = list(dict.fromkeys(claims))[:REPAIR_REVIEW_TARGETS]
+    # A named file may already be changed, or appear after the initial PR read
+    # limit. Both cases must beat unrelated cumulative PR files in the read queue.
+    named = files_named_in('\n'.join(focus) + '\n' + log, existing, [])
+    return focus, list(dict.fromkeys(named + changed))[:LARGE.read_files]
+
+
 def anchor_pr_goal(goal, pr, repo, token, head):
     """A resumed fix retains the same immutable baseline as a freshly generated fix."""
     if not goal.paths:
@@ -3286,9 +3302,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         journal.loader = lambda path: read_source(repo, path, journal.state['candidate'], repo_token)
     log = "\n".join(job_log(job["id"], token) for job in failed_jobs[:2])
     # Also read existing files the failure output names, such as the failing test module.
-    named = files_named_in(log, existing, changed)
+    focus, read_paths = revision_focus(pr, log, existing, changed)
     sources = {}
-    for path in (changed + named)[:LARGE.read_files]:
+    for path in read_paths:
         if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS:
             try:
                 sources[path] = read_source(repo, path, head_sha, repo_token)
@@ -3364,8 +3380,10 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     # by a repair: with nothing else open, this round re-checks the current source and writes no code.
     reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
     if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
-        claims = [p for p in pending if not verify.process_problem(p)] + (
-            ["Independent check failure (sandbox tests and/or native iOS build): " + log[:2400]] if failed_jobs else [])
+        # Verify only this batch's edit targets. Deferred findings remain in
+        # pending/UNFINISHED and the final whole-task review below; they are
+        # neither resolved nor permission to edit additional files.
+        claims = focus
         original_goal = goal.title + '\n' + goal.request
         findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed)
         # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
@@ -3383,6 +3401,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
         task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
         task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
+        task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
+                 'do not edit for unverified findings or claim the task complete from this batch.')
         task += ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
                  verified_history(design, tried, notes, native_history, diff))
         if loop_approach:
