@@ -52,6 +52,13 @@ class RuntimeEngineTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             runtime_engine.attest(self.journal.scope, self.world.read, receipt, env, 'b' * 40)
 
+    def test_branch_trial_cannot_run_engine_code_the_candidate_changed(self):
+        self.world.refs['main'] = 'a' * 40
+        self.world.comparisons['a' * 40 + '...' + 'b' * 40] = dict(
+            status='ahead', merge_base_commit={'sha': 'a' * 40}, files=[{'filename': 'engine/runner.py'}])
+        with self.assertRaisesRegex(PermissionError, 'reviewed main'):
+            runtime_engine.attest(self.journal.scope, self.world.read, None, self.env, 'b' * 40)
+
     def test_main_and_stale_checkouts_stop_before_task_work(self):
         self.runs['32'] = dict(self.origin, head_branch='main', head_sha='a' * 40)
         env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='a' * 40)

@@ -7,6 +7,7 @@ import subprocess
 
 ROOT = 'onlykappa/KappaForge'
 SHA = re.compile(r'^[a-f0-9]{40}$')
+ENGINE_PATHS = ('engine/', 'scripts/', '.github/', 'config/')  # Code that runs with secrets; candidate edits cannot supply it.
 DISPATCH = ContextVar('verified_engine_dispatch', default=None)
 
 
@@ -62,6 +63,10 @@ def attest(scope, read, previous=None, env=None, checkout=None):
         verify_receipt(receipt, scope, read)
         if read(f'repos/{ROOT}/git/ref/heads/{ref}')['object']['sha'] != sha:
             raise PermissionError('Owner-started engine branch moved; verify its current revision before task work')
+        main = read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
+        changed = read(f'repos/{ROOT}/compare/{main}...{sha}').get('files') or []
+        if any(f.get('filename', '').startswith(ENGINE_PATHS) for f in changed):
+            raise PermissionError('Branch engine changes the engine; trial engines must come from reviewed main')
         return receipt
     receipt = verify_receipt(previous, scope, read)
     expected = f'kappa/recovery-{scope.number}-{scope.digest[:12]}-'
