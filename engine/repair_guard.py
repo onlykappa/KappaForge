@@ -396,6 +396,13 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
         # A malformed answer is one free model's failure, not a verdict: ask a different free model (the routes that
         # already answered badly are skipped), up to VERIFIER_ATTEMPTS. Every answer must still pass the full shape check.
         tried, problems = [], []
+        original_claims = {digest(claim): claim for claim in claims}
+        answered, decision_contexts = {}, {}
+        attempts = 0
+        def collected():
+            return [answered.get(key, dict(id=key, verdict='needs_validation', in_goal=True,
+                        reason='The verifier gave no usable decision after bounded retries', unanswered=True))
+                    for key in original_claims]
         while True:
             fresh(stamp, sources)
             data, owner_rows, prompt = build()
@@ -408,18 +415,35 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                     continue
                 raise
             fresh(stamp, sources)
+            attempts += 1
             try:
-                decisions = review_shape(output, {row['id'] for row in data['findings']})
-                break
+                rows = review_shape(output, {row['id'] for row in data['findings']})
+                for row in rows:
+                    if not row.get('unanswered'):
+                        answered[row['id']] = row
+                        decision_contexts[row['id']] = data, owner_rows
+                missing = [key for key in original_claims if key not in answered]
+                if not missing or attempts >= VERIFIER_ATTEMPTS:
+                    decisions = collected()
+                    break
+                # Preserve usable decisions and ask only for unanswered findings.
+                # Each answer retains its own shown-source snapshot for literal checks.
+                claims = [original_claims[key] for key in missing]
+                source_limit = min(MAX_SOURCE_CHARS, 3000 + 1500 * len(claims))
+                tried.append(route)
             except ValueError as bad:
                 problems.append(f'{route}: {invalid_code(bad)}')
                 tried.append(route)
-                if len(tried) >= VERIFIER_ATTEMPTS:
+                if attempts >= VERIFIER_ATTEMPTS:
+                    if answered:
+                        decisions = collected()
+                        break
                     raise RepairReviewRequired('Finding verification was invalid from ' + str(len(tried)) + ' free models ('
                                                + '; '.join(problems) + '); no speculative edits authorized') from bad
         result, reread, rereview = [], {}, []
-        shown_claims = {row['id']: row['claim'] for row in data['findings']}
+        shown_claims = {key: shown_claim(claim) for key, claim in original_claims.items()}
         for row in decisions:
+            data, owner_rows = decision_contexts.get(row['id'], (data, owner_rows))
             verdict, reason = row.get('verdict'), row.get('reason')
             # An inexact extra quote is dropped rather than voiding a literal one; at least one must be literal.
             evidence = literal_evidence(row.get('evidence'), data, sources)
@@ -466,7 +490,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
         if reread:
             fresh(stamp, sources)
             followup = verify_findings(run_model, api_key, task,
-                                      [claim for claim in claims if digest(claim) in rereview],
+                                      [claim for claim in original_claims.values() if digest(claim) in rereview],
                                       sources, allowed, _requested_lines=reread)
             fresh(stamp, sources)
             replacements = {row['id']: row for row in followup}
