@@ -656,12 +656,15 @@ class ScopeReviewUnavailable(ValueError):
     """The scope review could not decide; the candidate stays saved and the review is marked incomplete."""
 
 
+MAX_SCOPE_REVIEW_FILES = 1000  # Same complete inventory bound as revision_files; individual batches remain three.
+
+
 def scope_batches(run_model, api_key, task, changes, goal, allowed, pinned=False):
     """Bounded scope-only reviews for large PRs. Valid decisions survive a partial response within this snapshot."""
     from engine import gateway
     paths, problems = sorted(changes), []
-    if len(paths) > 40:
-        raise ScopeReviewUnavailable('File scope exceeds the bounded 40-file review budget')
+    if len(paths) > MAX_SCOPE_REVIEW_FILES:
+        raise ScopeReviewUnavailable('File scope exceeds the bounded total review inventory')
     chunks = re.split(r'(?=^diff --git )', goal.review_diff, flags=re.M)
     for offset in range(0, len(paths), 3):
         pending, avoid = paths[offset:offset + 3], ()

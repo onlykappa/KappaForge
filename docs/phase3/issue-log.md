@@ -287,6 +287,20 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Final checks actually RUN: Python online — 1,081 run, OK, 33 skipped, 63.027s; proxy-blocked — 1,081 run, OK, 33 skipped, 68.410s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace checks passed. No Docker/native execution claimed.
 - Status: PATCHED and regression-tested; corrected exact-engine live retry pending. Phase 3.1a remains incomplete.
 
+## P3-037 — final scope review rejects a cumulative PR before small batches run
+
+- Live progress: [40346826216](https://github.com/onlykappa/KappaForge/actions/runs/40346826216), engine `4f7c193`, completed one verifier request (8,330 characters) and one coding request (19,273 characters), both HTTP 200. KappaForge saved candidate `8f80347b54422830e5a26692ba243a966c4b5420`, changing only the provenance row in the existing audit. Independent [sandbox validation 40348017685](https://github.com/onlykappa/KappaForge/actions/runs/40348017685) passed for that exact candidate. These are actual run results; they do not prove audit completion.
+- Blocker: the PR's fresh Latest fix review includes `ScopeReviewUnavailable: File scope exceeds the bounded 40-file review budget`. PR metadata reports 52 cumulative changed files. Although revision metadata now admits a complete bounded inventory, `verify.scope_batches` still refuses totals above 40 before its three-file review batches can run. The candidate stays an incomplete draft.
+- Reproducer actually RUN: new 43-file complete-scope and late-missing-decision regressions fail under the old total guard; the 1,001-file refusal regression passes. A fixture missing the active task record was corrected before rerunning the new tests; this was test setup, not a product failure.
+- Permanent correction: align the total scope inventory bound with the existing 1,000-file revision inventory, while retaining three files per model request, two attempts for missing decisions, current-source proof and full coverage. Every path must receive a valid decision; a missing late file still blocks and an unrelated late file remains an open finding. No path or test is dropped to obtain a pass.
+- Immediate rerun actually RUN: all three large-scope tests passed; owner goal 26 and resource 26 tests also passed in focused runs. Status: PATCHED locally; final checks and live continuation pending.
+- Final checks actually RUN: Python online — 1,084 run, OK, 33 skipped, 63.400s; proxy-blocked — 1,084 run, OK, 33 skipped, 66.338s. npm — 858 passed. Dependency-map generation/check, execution-policy and whitespace passed. Status: PATCHED and regression-tested; corrected continuation pending. Native/device acceptance and complete Phase 3.1 acceptance are not claimed.
+
+## P3-038 — generated provenance row overstates inspected evidence and omits full SHAs
+
+- Reviewed candidate `8f80347` records abbreviated main/base/Phase 1/2 hashes and labels checkpoint 3.1a `RUN`. The audit header still says NOT STARTED, its verified-claims section says none, and the ledger has no completed provenance entry. Existing evidence was reviewer-inspected GitHub/git metadata, not KappaForge running a full dependency audit.
+- Status: OPEN — require KappaForge to record exact full SHAs, source links, main/base difference and INSPECTED labeling, reconcile report/ledger/status without marking later checkpoints complete. Do not turn successful generation or passing sandbox tests into acceptance of inaccurate documentation. The operator has not directly rewritten the project audit.
+
 ## Finding template
 
 ### P3-NNN — short defect title
