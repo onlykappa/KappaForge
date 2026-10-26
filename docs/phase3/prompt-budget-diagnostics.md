@@ -9,3 +9,9 @@ Local sizing accounts for JSON-escaped prompt bytes plus 4,096 bytes of request-
 Future rejected prompts emit `KAPPA_PROMPT_BUDGET` JSON to the workflow log. Fields identify measured prompt characters, effective character cap, escaped JSON bytes, byte allowance, request-byte cap, role, resource cap and failed checks. `sent:false` means the rejected request was not sent; it does not imply no earlier requests ran. A rejection at the final serialization boundary reports exact `requestBytes` and `requestByteCap` instead of an estimate.
 
 The exception message includes actual/cap counts and failed checks, so existing failure reports and recovery events retain the numbers too. Prompt text, source, response bodies and credentials are excluded. This diagnostic change does not increase any limit or truncate owner instructions.
+
+## Reviewer file-index allocation
+
+The old verifier included up to 400 repository filenames even after reducing its source and diff allocations to zero. Reconstructing the tracked repository at the task's revision produces a 13,026-character filename list alone. This is a reproducible fixed-overhead risk, not a recovered measurement of the original rejected prompt.
+
+The review index now has a 4,000-character allocation and shrinks alongside the source allocation when the complete prompt does not fit. Omitted paths are explicitly labeled; the reviewer may request exact missing paths, and the existing full repository-path validation remains in force. The owner brief, review rules, requirement tracking and source-evidence validation are preserved. A 500-file regression with a 6,000-character task-state envelope verifies that the documentation review can reach the model below the cap. Live task completion remains a separate check.
