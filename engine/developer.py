@@ -179,6 +179,9 @@ def repair_history(result):
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
     from engine import execution
+    from engine import commit_provenance
+    # This runs even when reusing a publication receipt after interruption.
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, writer))
     journal = recovery.CURRENT.get()
     key = execution.digest(dict(repo=repo, parent=parent, changes=changes,
                                 modes={p: modes.get(p, '100644') for p in changes}, branch=branch))
@@ -2520,6 +2523,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
                      if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
+        from engine import commit_provenance
+        problems += commit_provenance.problems(repo, changes, lambda path: gh(path, repo_token))
         goal = task_goal.CURRENT.get()
         if goal:
             try:
@@ -2988,6 +2993,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     plan_update(progress, "add", "The candidate passed the full sandbox regression before its first commit", "test",
                 completed=["Sandbox: full test suite passed on the uncommitted candidate"])
     changes = validation_result["candidate_changes"]
+    from engine import commit_provenance
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, repo_token))
     if execution.digest(changes) != reviewed_candidate or (resumed and answered):
         classify_task(progress, journal, repo, request)
         verdict, open_problems = review_sandbox_candidate(api_key, task, repo, saved['sha'], repo_token, sources,
@@ -3784,6 +3791,8 @@ def fix_pull_request(issue, api_key, token):
                     + validation["stop_reason"], phase=True, status="blocked")
         return None
     changes = validation["candidate_changes"]
+    from engine import commit_provenance
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, repo_token))
     if execution.digest(changes) != reviewed_candidate or (resumed and answered):
         classify_task(progress, journal, repo, request)
         verdict, problems = review_sandbox_candidate(api_key, sandbox_task, repo, head, repo_token, repair_sources,

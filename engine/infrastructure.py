@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = 'onlykappa/KappaForge'
-WORKFLOWS = frozenset(('agent.yml', 'sandbox-tests.yml', 'project-tests.yml', 'review-graph.yml', 'ios-build.yml', 'recovery.yml', 'continuous.yml'))
+WORKFLOWS = frozenset(('agent.yml', 'sandbox-tests.yml', 'project-tests.yml', 'review-graph.yml', 'ios-build.yml', 'recovery.yml', 'continuous.yml', 'task282-progress.yml'))
 RUNNERS = frozenset(('ubuntu-latest', 'macos-15'))
 LINUX_RUNNERS = frozenset(('ubuntu-latest',))
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / '.github' / 'workflows'
