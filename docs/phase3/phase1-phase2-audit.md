@@ -1,9 +1,7 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
 **Status:** PARTIAL. Only checkpoint 3.1a has been inspected. Checkpoints 3.1b–3.1f have not run, and no audit completion is claimed.
-
-**3.1a provenance:** Main commit [5a5bea2](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042). *Evidence inspected manually; no automated checks were run.*
-**3.1a observed main:** [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042) | **Phase 1 merge:** [phase1sha](https://github.com/onlykappa/KappaForge/commit/phase1sha) | **Phase 2 merge:** [phase2sha](https://github.com/onlykappa/KappaForge/commit/phase2sha) (GitHub branch‑ref API, 2026‑10‑27 UTC) – inspected evidence of main and Phase 1/2 provenance (commit IDs shown for manual verification). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
+**3.1a observed main:** [ca85674837098d9a27979248fbe87456de2bc29c](https://github.com/onlykappa/KappaForge/commit/ca85674837098d9a27979248fbe87456de2bc29c) (GitHub branch-ref API, 2026-10-27 UTC). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
 **Finding ledger:** [issue-log.md](issue-log.md).
 **Scope:** verify the merged Phase 1 and Phase 2 implementation and evidence; do not begin Phase 3 features in this pass.
 
@@ -11,7 +9,7 @@
 
 | Checkpoint | State | Evidence / audited SHA |
 | --- | --- | --- |
-| 3.1a Main and dependency provenance | INSPECTED | Main: [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042), Base: [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042), P1: [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded), P2: [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). GitHub metadata inspected; no Phase 1/2 audit test execution is claimed. |
+| 3.1a Main and dependency provenance | INSPECTED | Main: [ca85674837098d9a27979248fbe87456de2bc29c](https://github.com/onlykappa/KappaForge/commit/ca85674837098d9a27979248fbe87456de2bc29c), Base: [ca85674837098d9a27979248fbe87456de2bc29c](https://github.com/onlykappa/KappaForge/commit/ca85674837098d9a27979248fbe87456de2bc29c), P1: [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded), P2: [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). GitHub metadata inspected; no Phase 1/2 audit test execution is claimed. |
 | 3.1b Architecture inventory | NOT RUN | |
 | 3.1c Policy and publication review | NOT RUN | |
 | 3.1d Regression and CI evidence | NOT RUN | |
@@ -20,7 +18,7 @@
 
 ## Claims verified
 
-- 3.1a: The GitHub branch-ref API identified main as [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042). Merged PR [#263](https://github.com/onlykappa/KappaForge/pull/263) records Phase 1 merge [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded); merged PR [#264](https://github.com/onlykappa/KappaForge/pull/264) records Phase 2 merge [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). Each referenced commit was independently resolved through the GitHub commit API. These are inspected repository records, not a manual git-log inspection or completed cross-phase audit.
+- 3.1a: The GitHub branch-ref API identified main as [ca85674837098d9a27979248fbe87456de2bc29c](https://github.com/onlykappa/KappaForge/commit/ca85674837098d9a27979248fbe87456de2bc29c). Merged PR [#263](https://github.com/onlykappa/KappaForge/pull/263) records Phase 1 merge [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded); merged PR [#264](https://github.com/onlykappa/KappaForge/pull/264) records Phase 2 merge [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). Each referenced commit was independently resolved through the GitHub commit API. These are inspected repository records, not a manual git-log inspection or completed cross-phase audit.
 
 ## Findings
 
@@ -33,6 +31,8 @@
 
 No Phase 1/2 audit checks have run. Workflow runs #264, #265 and #276 are inspected orchestration evidence only; they are not completed audit checks.
 
+- 3.1a documentation validation: commit URLs were resolved against GitHub and Phase 1/2 merge IDs checked against PRs #263/#264. The final-reference gate rejected the earlier placeholders. Project regression results are recorded on the PR; they do not complete the cross-phase audit.
+
 ## Evidence inspected
 
 - Workflow [#264](https://github.com/onlykappa/KappaForge/actions/runs/40221871561): classify completed; analyze/code skipped.
@@ -43,7 +43,7 @@ No Phase 1/2 audit checks have run. Workflow runs #264, #265 and #276 are inspec
 
 ## Checks not run
 
-Phase 1/2 source review, audit tests, full local tests, dependency/policy scans and cross-phase acceptance checks have not run in this audit.
+Phase 1/2 source review, audit-specific tests, dependency/policy scans and cross-phase acceptance checks have not run. Project regression tests for the documentation correction are separate from that audit.
 
 
 ## Remaining issues and Phase 3 prerequisites

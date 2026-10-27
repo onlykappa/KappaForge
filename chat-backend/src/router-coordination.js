@@ -26,11 +26,12 @@ export async function accountPoolFor(env,provider,config){
  return (config?.accountPool||provider)+":"+fingerprint;
 }
 
-// KappaForge's own request caps from KAPPA_ROUTER_MAX_DAILY_REQUESTS / _PER_MINUTE, held to what shared
-// routing storage accepts (1–10,000 per UTC day, 1–120 per minute) so an oversized setting cannot stop inference.
+// KappaForge's global throttles, distinct from Cloudflare billing and provider quotas.
+// Explicit zero disables a throttle; absent settings retain the conservative defaults.
 export function routerCaps(env){
- const cap=(value,fallback,max)=>Math.min(max,Math.max(1,Math.floor(Number(value))||fallback));
- return {daily:cap(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS,100,10000),minute:cap(env.KAPPA_ROUTER_MAX_PER_MINUTE,20,120)};
+ const cap=(value,fallback)=>value===0||typeof value==="string"&&value.trim()==="0"?0:
+  Number.isFinite(Number(value))&&Number(value)>0?Math.min(10000000,Math.max(1,Math.floor(Number(value)))):fallback;
+ return {daily:cap(env.KAPPA_ROUTER_MAX_DAILY_REQUESTS,100),minute:cap(env.KAPPA_ROUTER_MAX_PER_MINUTE,20)};
 }
 
 export async function reserveRouterRequest(env,requestId,limit=100,minuteLimit=20){

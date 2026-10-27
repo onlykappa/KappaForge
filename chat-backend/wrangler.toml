@@ -5,12 +5,21 @@ workers_dev = true
 # Keep owner-managed routing variables configured in the Cloudflare dashboard when deploying.
 keep_vars = true
 
+# Owner-requested Workers Paid maximums. Network waiting is excluded from CPU.
+# The platform's 128 MB isolate memory limit and provider quotas still apply.
+[limits]
+cpu_ms = 300000
+subrequests = 10000000
+
 # Phase 3 routing is deliberately fail-closed. Owner-managed provider and per-channel
-# permissions, full-catalog opt-ins and request caps (KAPPA_ROUTER_MAX_DAILY_REQUESTS /
-# _PER_MINUTE, which default to 100 and 20 in code) are dashboard-managed variables; keep
-# them out of this config so deployment cannot replace the owner's values.
+# permissions and full-catalog opt-ins are dashboard-managed variables. Only the
+# owner-requested global gateway throttles below are managed by this config.
 [vars]
 ROUTING_POLICY_VERSION = "v1"
+# Zero disables KappaForge's global day/minute throttles for Workers Paid.
+# Cloudflare's 10M included requests/month is billing, not a per-day hard cap.
+KAPPA_ROUTER_MAX_DAILY_REQUESTS = "0"
+KAPPA_ROUTER_MAX_PER_MINUTE = "0"
 
 [[durable_objects.bindings]]
 name = "MEMORY"

@@ -150,6 +150,18 @@ test("daily request reservations enforce limits and reject replay",async()=>{
  assert.equal(exhausted.status,429);assert.equal((await exhausted.json()).allowed,false);
 });
 
+test("explicit zero disables global throttles while counters and replay protection survive old state",async()=>{
+ const store=storage(),day=new Date().toISOString().slice(0,10),minute=Math.floor(Date.now()/60000);
+ await invoke(store,"/router/request-reserve",{requestId:"seed",limit:100,minuteLimit:20});
+ const prior=await store.get("routing:v1");prior.dailyRequests[day]=10001;prior.minuteRequests[minute]=121;
+ await store.put("routing:v1",prior);
+ const allowed=await invoke(store,"/router/request-reserve",{requestId:"paid-zero",limit:0,minuteLimit:0});
+ assert.equal(allowed.status,200);const body=await allowed.json();assert.equal(body.used,10002);assert.equal(body.minuteUsed,122);
+ assert.equal((await invoke(store,"/router/request-reserve",{requestId:"paid-zero",limit:0,minuteLimit:0})).status,429);
+ assert.equal((await invoke(store,"/router/request-reserve",{requestId:"paid-capped",limit:10002,minuteLimit:0})).status,429);
+ for(const value of [-1,10000001,"0"])assert.equal((await invoke(store,"/router/request-reserve",{requestId:"invalid",limit:value,minuteLimit:0})).status,400);
+});
+
 test("shared per-minute request ceiling applies across both entry points",async()=>{
  const store=storage();
  assert.equal((await (await invoke(store,"/router/request-reserve",{requestId:"minute-1",limit:100,minuteLimit:1})).json()).allowed,true);

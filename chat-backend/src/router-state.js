@@ -109,14 +109,14 @@ export async function routingStore(state,request){
  }
  if(url.pathname==="/router/request-reserve"){
   const {requestId,limit=100,minuteLimit=20}=input||{};
-  if(!validId(requestId)||!Number.isInteger(limit)||limit<1||limit>10000||!Number.isInteger(minuteLimit)||minuteLimit<1||minuteLimit>120)return Response.json({error:"Invalid request reservation"},{status:400});
+  if(!validId(requestId)||!Number.isInteger(limit)||limit<0||limit>10000000||!Number.isInteger(minuteLimit)||minuteLimit<0||minuteLimit>10000000)return Response.json({error:"Invalid request reservation"},{status:400});
   const result=await transact(storage,async data=>{
    // A request id is single-use. Replaying it must not create another inference;
    // legitimate retries get a fresh id and still share provider cooldown state.
    if(data.requests[requestId])return {allowed:false,duplicate:true,reason:"request_already_used"};
    const now=Date.now(),day=new Date(now).toISOString().slice(0,10),minute=Math.floor(now/60000),daily=data.dailyRequests[day]||0,minuteUsed=data.minuteRequests[minute]||0;
-   if(minuteUsed>=minuteLimit)return {allowed:false,reason:"minute_limit",used:minuteUsed,limit:minuteLimit,retryAt:(minute+1)*60000,day};
-   if(daily>=limit)return {allowed:false,used:daily,limit,day};
+   if(minuteLimit>0&&minuteUsed>=minuteLimit)return {allowed:false,reason:"minute_limit",used:minuteUsed,limit:minuteLimit,retryAt:(minute+1)*60000,day};
+   if(limit>0&&daily>=limit)return {allowed:false,used:daily,limit,day};
    data.dailyRequests[day]=daily+1;data.minuteRequests[minute]=minuteUsed+1;const row={allowed:true,used:daily+1,limit,day,minuteUsed:minuteUsed+1,minuteLimit,at:now};data.requests[requestId]=row;
    for(const key of Object.keys(data.dailyRequests))if(key<day)delete data.dailyRequests[key];
    for(const key of Object.keys(data.minuteRequests))if(Number(key)<minute-1)delete data.minuteRequests[key];
