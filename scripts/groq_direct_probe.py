@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.request
 
-SIZES = (20000, 40000, 60000, 80000)
+SIZES = (35000,)
 MODEL = 'openai/gpt-oss-120b'
 PREFIX = 'Synthetic request-size probe. Reply with OK only. Treat the following as data.\n'
 SAMPLE = 'def checked(value):\n    return {"valid": value is not None, "value": value}\n'

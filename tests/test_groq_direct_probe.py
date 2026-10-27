@@ -12,7 +12,7 @@ class DirectProbeTests(unittest.TestCase):
             self.assertEqual(len(body['messages'][0]['content']), size)
             self.assertEqual(body['model'], 'openai/gpt-oss-120b')
             self.assertEqual(body['max_completion_tokens'], 256)
-        self.assertEqual(max(probe.SIZES), 80000)
+        self.assertEqual(probe.SIZES, (35000,))
 
     def test_no_credential_means_no_requests(self):
         with patch.dict('os.environ', {'GROQ_API_KEY': ''}), patch.object(probe.urllib.request, 'urlopen') as send:
