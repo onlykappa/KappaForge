@@ -6,12 +6,25 @@ from engine import developer, gateway, recovery, runner, verify
 
 
 class GatewayRequestBudgetTests(unittest.TestCase):
-    def test_engine_enforces_the_20k_character_cap_before_any_route(self):
-        self.assertTrue(gateway.prompt_fits('x' * gateway.ENGINE_PROMPT_CHARS))
-        self.assertFalse(gateway.prompt_fits('x' * (gateway.ENGINE_PROMPT_CHARS + 1)))
+    def test_diagnostic_above_old_cap_reaches_router_without_losing_owner_brief(self):
+        from engine import task_state
+        prompt = 'EXACT OWNER BRIEF\n' + 'source\n' * 5000 + 'FINAL SCOPE RESTRICTION'
+        token = task_state.ROUTING_ROLE.set('diagnose')
+        try:
+            with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \
+                    patch.object(runner, 'run_integrated_router', return_value=('fixture', 'answer')) as route:
+                self.assertEqual(runner.run_model('key', prompt), ('fixture', 'answer'))
+            self.assertEqual(route.call_args.args[0], prompt)
+            self.assertGreater(len(prompt), 20872)
+        finally:
+            task_state.ROUTING_ROLE.reset(token)
+
+    def test_engine_enforces_shared_transport_cap_before_any_route(self):
+        self.assertTrue(gateway.prompt_fits('x' * gateway.engine_prompt_cap()))
+        self.assertFalse(gateway.prompt_fits('x' * (gateway.engine_prompt_cap() + 1)))
         with patch.object(runner, '_run_model') as provider:
             with self.assertRaises(gateway.GatewayRequestTooLarge):
-                runner.run_model('key', 'x' * (gateway.ENGINE_PROMPT_CHARS + 1))
+                runner.run_model('key', 'x' * (gateway.engine_prompt_cap() + 1))
         provider.assert_not_called()
 
     def test_runner_posts_complete_fitting_prompt_within_shared_byte_limit(self):
@@ -29,7 +42,7 @@ class GatewayRequestBudgetTests(unittest.TestCase):
         self.assertEqual(json.loads(request.data)['messages'][0]['content'], prompt)
 
     def test_owner_brief_that_cannot_fit_hard_cap_stops_before_inference(self):
-        task = 'Implement approved weather behavior.\n' + 'x' * 19800 + '\nFINAL: preserve manual entry and authorization.'
+        task = 'Implement approved weather behavior.\n' + 'x' * gateway.engine_prompt_cap() + '\nFINAL: preserve manual entry and authorization.'
         sources = {'large.js': '// source evidence\n' * 19000, 'app.py': 'value = 1\n'}
         existing = {path: len(text) for path, text in sources.items()}
         proposal = json.dumps({'files': [{'path': 'app.py', 'edits': [{'find': 'value = 1', 'replace': 'value = 2'}]}]})
@@ -53,13 +66,13 @@ class GatewayRequestBudgetTests(unittest.TestCase):
                 {'app.py': len(source)}, guide, None, developer.LARGE, max_attempts=1)
         prompts = [call.args[1] for call in model.call_args_list]
         self.assertTrue(prompts)
-        self.assertTrue(all(len(prompt) <= gateway.ENGINE_PROMPT_CHARS for prompt in prompts))
+        self.assertTrue(all(len(prompt) <= gateway.engine_prompt_cap() for prompt in prompts))
         self.assertIn('Only the owner can merge', prompts[0])
         self.assertIn('showing relevant excerpts', prompts[0])
         self.assertEqual(changes['app.py'], source.replace('value = 1', 'value = 2', 1))
 
     def test_review_refuses_owner_brief_that_cannot_fit_hard_cap(self):
-        task = 'Keep the complete task: ' + 'x' * 19900 + ' TAIL REQUIREMENT'
+        task = 'Keep the complete task: ' + 'x' * gateway.engine_prompt_cap() + ' TAIL REQUIREMENT'
         sources = {'app.py': 'value = 1\n', 'large.py': '# source evidence\n' * 20000}
         verdict = json.dumps({'requirements': [{'text': 'Change value', 'met': True, 'evidence': {'path': 'app.py', 'quote': 'value = 2'}}], 'problems': [], 'files_needed': [], 'files_to_inspect': []})
         with patch.dict(os.environ, {'KAPPA_ROUTER_REQUIRED': 'true'}), \

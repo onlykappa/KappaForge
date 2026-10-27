@@ -133,7 +133,7 @@ class OperationalReviewTests(unittest.TestCase):
                 verify.resolve_controller([row], {'engine/runner.py': 'changed'}); self.assertFalse(row['met'])
             row = dict(text='Add a setting for provider limits.', met=True, kind='controller')
             verify.resolve_controller([row], {DOC: SOURCE}); self.assertNotIn('kind', row)
-            journal.state['boundedRequests']['maxChars'] = 50000
+            journal.state['boundedRequests']['maxChars'] = 200001
             operational_review.bounded_request(dict(failedChecks=[], promptChars=1000))
             row = dict(text=ASKS[4], met=True)
             verify.resolve_controller([row], {DOC: SOURCE}); self.assertFalse(row['met'])
@@ -164,7 +164,7 @@ class OperationalReviewTests(unittest.TestCase):
             router = stack.enter_context(patch.object(runner, 'run_integrated_router', side_effect=AssertionError('Oversized request')))
             from engine import gateway
             with self.assertRaises(gateway.GatewayRequestTooLarge):
-                runner.run_model('key', 'x' * 25000)
+                runner.run_model('key', 'x' * (gateway.engine_prompt_cap() + 1))
             router.assert_not_called()
             self.assertEqual(journal.state['budgets']['modelCalls'], 15)
             row = dict(text=ASKS[4], met=True)

@@ -16,7 +16,8 @@ class PromptBudgetDiagnosticsTests(unittest.TestCase):
 
     def test_exact_boundary_and_private_content_never_logged(self):
         with patch.object(task_state, 'add_to_prompt', side_effect=lambda p, j: p), \
-                patch.object(gateway, 'resource_ceiling', return_value=None):
+                patch.object(gateway, 'resource_ceiling', return_value=None), \
+                patch.dict(runner.PROVIDERS['routing']['defaults'], {'maxPromptChars': 20000}):
             self.assertTrue(gateway.prompt_fits('x' * 20000))
             private = 'PRIVATE_SOURCE_' + 'x' * (20001 - len('PRIVATE_SOURCE_'))
             log, error = self.capture_rejection(private)
