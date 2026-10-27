@@ -464,6 +464,43 @@ class RecoveryJournalTests(unittest.TestCase):
         self.assertIn('Adopted 1 owner-reviewed commit', json.dumps(self.journal.state['events']))
         self.assertEqual(self.world.refs['kappa/dev-130'], 'd' * 40, 'the branch itself is never moved')
 
+    def test_reviewed_head_supersedes_and_archives_old_unpublished_fix_without_claiming_publication(self):
+        from engine import execution
+        self.review()
+        patch = {'value.py': 'value = 999  # rejected proposal\n'}
+        execution.seed(self.journal, recovery.ROOT, 'a' * 40, patch, 'Fix value', {'kind': 'fix'})
+        receipt = copy.deepcopy(self.journal.state['executionCheckpoint'])
+        published = self.journal.state.get('executionPublished')
+        self.world.comparisons['a' * 40 + '...' + 'd' * 40] = {'status': 'ahead'}
+        self.assertTrue(self.journal.begin('fix'))
+        self.assertEqual(self.journal.state['candidate'], 'd' * 40)
+        self.assertIsNone(execution.pending(self.world.journal(), 'fix'))
+        self.assertEqual(self.journal.state.get('executionPublished'), published)
+        archives = [row['body'] for row in self.world.rows if '"kind":"supersededExecution"' in row['body']]
+        self.assertEqual(len(archives), 1)
+        self.assertIn('rejected proposal', archives[0])
+        self.assertEqual(self.journal.state['executionCheckpoint'], receipt)
+        execution.seed(self.journal, recovery.ROOT, 'd' * 40, {'value.py': 'value = 2\n'}, 'Fix value', {'kind': 'fix'})
+        self.assertEqual(execution.pending(self.journal, 'fix')['changes'], {'value.py': 'value = 2\n'})
+
+    def test_missing_owner_guidance_does_not_retire_pending_fix(self):
+        from engine import execution
+        self.review(guidance_delay=None)
+        execution.seed(self.journal, recovery.ROOT, 'b' * 40, {'value.py': 'value = 2\n'}, 'Fix value', {'kind': 'fix'})
+        self.assertFalse(self.journal.begin('fix'))
+        self.assertNotIn('supersededExecution', self.journal.state)
+        self.assertIsNotNone(execution.pending(self.journal, 'fix'))
+
+    def test_diverged_proposal_base_blocks_reviewed_adoption_and_keeps_evidence(self):
+        from engine import execution
+        self.review()
+        execution.seed(self.journal, recovery.ROOT, 'a' * 40, {'value.py': 'value = 2\n'}, 'Fix value', {'kind': 'fix'})
+        with self.assertRaises(execution.CheckpointMismatch):
+            self.journal.begin('fix')
+        self.assertNotIn('supersededExecution', self.journal.state)
+        self.assertEqual(self.journal.state['candidate'], 'b' * 40)
+        self.assertIsNotNone(execution.pending(self.journal, 'fix'))
+
     def test_explicit_fix_adopts_reviewed_commits_after_terminal_budget_stop(self):
         from engine.reliability import RecoveryBudgetExceeded
         self.review()

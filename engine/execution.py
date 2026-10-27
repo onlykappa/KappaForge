@@ -152,8 +152,33 @@ def pending(journal, kind=None):
         raise CheckpointMismatch('Execution checkpoint belongs to different task authority')
     if kind and data.get('context', {}).get('kind') != kind:
         raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
+    superseded = journal.state.get('supersededExecution') or {}
+    if (superseded.get('hash') == journal.state['executionCheckpoint']['hash']
+            and superseded.get('reason') == 'owner_reviewed_fast_forward'
+            and re.fullmatch(r'[a-f0-9]{40}', str(superseded.get('replacement', '')))):
+        return None  # Archived proposal, never a published or validated candidate.
     data['changes'] = _read_blob(journal, data['patchRef'])
     return data
+
+
+def supersede_reviewed_proposal(journal, head):
+    """Called only after recovery verifies owner guidance for a newer branch head."""
+    data = pending(journal)
+    if not data or data.get('context', {}).get('kind') != 'fix':
+        return
+    base = data['identity'].get('base')
+    if base == head:
+        return  # A proposal on the adopted head still needs its original validation.
+    if not re.fullmatch(r'[a-f0-9]{40}', str(base)):
+        raise CheckpointMismatch('Saved proposal base is unavailable; cannot retire it')
+    comparison = journal.target_read(f'repos/{journal.scope.repo}/compare/{base}...{head}')
+    if comparison.get('status') != 'ahead':
+        raise CheckpointMismatch('Saved proposal is not an ancestor of the reviewed head')
+    receipt = copy.deepcopy(journal.state['executionCheckpoint'])
+    # Preserve complete rejected work before reusable fragment slots can rotate.
+    journal.archive([dict(checkpoint=receipt, proposal=data, superseded_by=head)], 'supersededExecution')
+    journal.state['supersededExecution'] = dict(hash=receipt['hash'], base=base, replacement=head,
+                                               reason='owner_reviewed_fast_forward')
 
 
 def seed(journal, repo, sha, changes, task, context=None):

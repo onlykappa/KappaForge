@@ -628,6 +628,8 @@ class Journal:
                   and (_time(c.get('created_at')) or 0) >= newest]
         if not guided:
             return False
+        from engine import execution
+        execution.supersede_reviewed_proposal(self, head)
         files = [f.get('filename') for f in comparison.get('files') or [] if isinstance(f, dict) and isinstance(f.get('filename'), str)]
         self.event(f'Adopted {len(added)} owner-reviewed commit(s) on top of the checkpoint', outcome='recovering',
                    strategy='continue_from_reviewed_commits')
