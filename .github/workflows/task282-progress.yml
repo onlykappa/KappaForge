@@ -1,0 +1,28 @@
+name: Monitor authorized task 282
+permissions:
+  contents: read
+  issues: write
+  actions: write
+concurrency:
+  group: task282-progress-monitor
+  cancel-in-progress: false
+on:
+  schedule:
+    - cron: '7-57/10 * * * *'
+  workflow_dispatch:
+jobs:
+  progress:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Check progress and dispatch only changed authorized work
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/monitor-task282.py
