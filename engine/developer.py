@@ -182,6 +182,8 @@ def repair_history(result):
 
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
+    if not changes:
+        raise ValueError('Empty publication requires a nonempty candidate patch')
     from engine import execution
     from engine import commit_provenance
     # This runs even when reusing a publication receipt after interruption.

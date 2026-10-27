@@ -200,6 +200,72 @@ class ExecutionRecoveryTests(unittest.TestCase):
             execution.seed(journal, 'owner/private', 'a' * 40, {'private.py': 'private code'}, TASK)
         journal.write.assert_not_called()
 
+    def test_empty_publication_has_no_effects_even_on_repeated_receipt_reuse(self):
+        from engine import operational_review
+        for saved in (None, dict(key='existing', sha='c' * 40, branch='existing')):
+            with self.subTest(saved=saved):
+                if saved:
+                    self.journal.state['executionPublication'] = saved
+                self.journal.persist()
+                before = copy.deepcopy(self.journal.state)
+                handle = recovery.CURRENT.set(self.journal)
+                try:
+                    with patch.object(developer, 'gh') as api, \
+                            patch.object(developer, 'commit_changes') as commit, \
+                            patch.object(developer, 'move_branch') as move, \
+                            patch.object(operational_review, 'published') as published, \
+                            patch.object(self.journal, 'persist') as persist, \
+                            patch.object(self.journal, 'checkpoint') as checkpoint:
+                        for _ in range(2):
+                            with self.assertRaisesRegex(ValueError, '[Ee]mpty publication'):
+                                developer.publish_candidate(recovery.ROOT, 'b' * 40, {}, {},
+                                                            'empty', 'fixture', 'kappa/dev-130')
+                        for effect in (api, commit, move, published, persist, checkpoint):
+                            effect.assert_not_called()
+                    self.assertEqual(self.journal.state, before)
+                    self.assertEqual(self.reload().state, before)
+                finally:
+                    recovery.CURRENT.reset(handle)
+
+    def test_empty_commit_changes_returns_parent_without_api_calls(self):
+        with patch.object(developer, 'gh') as api:
+            self.assertEqual(developer.commit_changes(recovery.ROOT, 'b' * 40, {}, {}, 'empty', 'fixture'),
+                             {'sha': 'b' * 40})
+        api.assert_not_called()
+
+    def test_empty_publication_without_journal_is_refused_before_api(self):
+        handle = recovery.CURRENT.set(None)
+        try:
+            with patch.object(developer, 'gh') as api:
+                with self.assertRaisesRegex(ValueError, 'Empty publication'):
+                    developer.publish_candidate(recovery.ROOT, 'b' * 40, {}, {},
+                                                'empty', 'fixture', 'kappa/dev-130')
+            api.assert_not_called()
+        finally:
+            recovery.CURRENT.reset(handle)
+
+    def test_saved_nonempty_publication_allows_expected_parent_but_refuses_drift(self):
+        parent, child, branch = 'b' * 40, 'c' * 40, 'kappa/dev-130'
+        self.world.parents[child] = parent
+        changes = {'value.py': 'value = 2\n'}
+        key = execution.digest(dict(repo=recovery.ROOT, parent=parent, changes=changes,
+                                    modes={'value.py': '100644'}, branch=branch))
+        self.journal.state['executionPublication'] = dict(key=key, sha=child, branch=branch)
+        handle = recovery.CURRENT.set(self.journal)
+        self.addCleanup(recovery.CURRENT.reset, handle)
+        def gh(path, token, payload=None, method=None):
+            if '/git/commits/' in path:
+                return {'sha': child, 'parents': [{'sha': parent}]}
+            return self.world.read(path) if payload is None else self.world.write(path, payload, method or 'POST')
+        with patch.object(developer, 'gh', side_effect=gh):
+            self.assertEqual(developer.publish_candidate(recovery.ROOT, parent, changes, {},
+                             'change', 'fixture', branch), {'sha': child})
+            self.assertEqual(self.world.refs[branch], child)
+            self.world.refs[branch] = 'd' * 40
+            with self.assertRaisesRegex(execution.CheckpointMismatch, 'concurrent work retained'):
+                developer.publish_candidate(recovery.ROOT, parent, changes, {}, 'change', 'fixture', branch)
+            self.assertEqual(self.world.refs[branch], 'd' * 40)
+
     def test_publication_reuses_saved_commit_after_lost_branch_update_acknowledgement(self):
         handle = recovery.CURRENT.set(self.journal)
         self.addCleanup(recovery.CURRENT.reset, handle)
