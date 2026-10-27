@@ -40,6 +40,7 @@ class Record:
     files: list = field(default_factory=list)
     stages: list = field(default_factory=list)
     inference_events: list = field(default_factory=list)
+    control: dict = field(default_factory=dict, repr=False)
     lock: object = field(default_factory=threading.RLock, repr=False)
 
 

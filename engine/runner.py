@@ -705,6 +705,8 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     # immutable owner scope that cannot fit stops without sending an oversized call.
     from engine import gateway
     gateway.require_prompt_fits(prompt)
+    from engine import operational_review
+    operational_review.bounded_request(gateway.prompt_budget(prompt))
     previous = MODEL_DEADLINE
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:
