@@ -231,6 +231,66 @@ class VerifierFallbackTests(GuardCase):
         self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
         self.assertNotIn('foreign', message.replace('missing_or_foreign_ids', ''), 'answer text is never echoed')
 
+    def test_branch_observation_is_separate_from_historical_document_text(self):
+        observation = dict(ref='main', sha='b' * 40, candidate=SHA, source='github_branch_ref')
+        seen = []
+        def model(key, prompt, **kw):
+            data = review_input(prompt);seen.append(data['branch_observation'])
+            self.assertEqual(data['candidate'], SHA)
+            return 'verifier', self.good(prompt)
+        rows = repair_guard.verify_all_findings(model, 'key', self.goal.request,
+            ['Plan PR opens before validation'], self.SOURCE, branch_observation=observation)
+        self.assertEqual(seen, [observation]);self.assertEqual(rows[0]['verdict'], 'confirmed')
+        bad = dict(observation, candidate='c' * 40)
+        mocked = Mock()
+        with self.assertRaises(repair_guard.RepairReviewRequired):
+            repair_guard.verify_findings(mocked, 'key', self.goal.request,
+                ['Plan PR opens before validation'], self.SOURCE, branch_observation=bad)
+        mocked.assert_not_called()
+
+    def test_live_branch_ref_beats_stale_pr_base_and_never_falls_back_to_it(self):
+        pr = dict(base=dict(ref='feature/base', sha='c' * 40))
+        with patch.object(developer, 'gh', return_value={'object':{'type':'commit','sha':'b' * 40}}) as read:
+            observed = developer.repair_branch_observation('owner/repo', pr, SHA, 'token')
+        read.assert_called_once_with('repos/owner/repo/git/ref/heads/feature%2Fbase', 'token')
+        self.assertEqual(observed['sha'], 'b' * 40)
+        for response in ({}, {'object':{'type':'tag','sha':'b' * 40}}, {'object':{'type':'commit','sha':'invalid'}}):
+            with patch.object(developer, 'gh', return_value=response):
+                self.assertIsNone(developer.repair_branch_observation('owner/repo', pr, SHA, 'token'))
+        with patch.object(developer, 'gh', side_effect=urllib.error.HTTPError('url',503,'unavailable',{},None)):
+            self.assertIsNone(developer.repair_branch_observation('owner/repo', pr, SHA, 'token'))
+
+    def test_malformed_citation_retries_only_failed_finding_and_keeps_uncertainty(self):
+        calls = []
+        claims = ['Plan PR opens before validation', 'Live checkout provenance unavailable']
+        def model(key, prompt, **kw):
+            data = review_input(prompt)
+            calls.append((data['findings'], kw.get('skip', ())))
+            result = json.loads(self.good(prompt))
+            if len(calls) == 1:
+                result['findings'][0]['evidence'] = ['task state says current candidate']
+                result['findings'].append(dict(id=data['findings'][1]['id'], verdict='needs_validation',
+                                              in_goal=True, reason='Live checkout evidence unavailable'))
+            return 'bad' if len(calls) == 1 else 'good', json.dumps(result)
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, self.SOURCE)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([r['id'] for r in calls[1][0]], [repair_guard.digest(claims[0])])
+        self.assertEqual(calls[1][1], ('bad',))
+        self.assertEqual([r['verdict'] for r in rows], ['confirmed', 'needs_validation'])
+
+    def test_malformed_evidence_exhaustion_keeps_gate_and_never_authorizes(self):
+        for malformed in (None, [], 'source text', [dict(path='engine/developer.py')]):
+            with self.subTest(evidence=malformed):
+                def model(key, prompt, **kw):
+                    data = json.loads(self.good(prompt));data['findings'][0]['evidence'] = malformed
+                    return 'bad', json.dumps(data)
+                mocked = Mock(side_effect=model)
+                rows = repair_guard.verify_findings(mocked, 'key', self.goal.request,
+                                                    ['Plan PR opens before validation'], self.SOURCE)
+                self.assertEqual(mocked.call_count, repair_guard.VERIFIER_ATTEMPTS)
+                self.assertEqual(rows[0]['verdict'], 'needs_validation')
+                self.assertIn('no_literal_source_evidence', rows[0]['gate'])
+
     def test_a_valid_but_unconvinced_answer_is_not_retried(self):
         model = Mock(side_effect=lambda key, prompt, **kw: ('ollama:gpt-oss:120b', json.dumps({'findings': [dict(
             id=review_input(prompt)['findings'][0]['id'], verdict='needs_validation', in_goal=True, reason='Omitted code matters')]})))
@@ -240,6 +300,19 @@ class VerifierFallbackTests(GuardCase):
 
 class TracebackExcerptTests(unittest.TestCase):
     SOURCE = ''.join(f'total += step()  # r{n}\n' for n in range(600))
+
+    def test_complete_short_document_retains_omission_evidence_within_total_budget(self):
+        source = '# Historical baseline\n' + 'Earlier inspected evidence.\n' * 130 + '| 3.1a | INSPECTED | Phase 1: abc; Phase 2: def |\n'
+        self.assertGreater(len(source), 3000)
+        data = repair_guard.payload({'docs/audit.md':source, 'engine/large.py':'x\n' * 50000},
+                                    ['docs/audit.md is missing the required commit links'], max_chars=6000)
+        self.assertTrue(data['sources']['docs/audit.md']['complete'])
+        self.assertEqual(data['shown']['docs/audit.md'], source)
+        line = len(source.rstrip('\n').split('\n'))
+        self.assertEqual(repair_guard.quote_issue(dict(path='docs/audit.md', lines=[line]),data,{'docs/audit.md':source}), '')
+        small = repair_guard.payload({'docs/audit.md':source}, ['missing links'], max_chars=1500)
+        self.assertFalse(small['sources']['docs/audit.md']['complete'])
+        self.assertLessEqual(len(small['shown']['docs/audit.md']),1500)
 
     def test_frame_window_is_shown_when_its_code_has_no_distinctive_words(self):
         claim = ('Traceback (most recent call last):\n'

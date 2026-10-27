@@ -105,6 +105,46 @@ class RepairGuardTests(unittest.TestCase):
             repair_guard.verify_findings(model, 'key', self.goal.request, too_many, SOURCES)
         model.assert_not_called()
 
+    def test_partial_verifier_answer_retries_only_the_missing_finding(self):
+        claims = ['app.py: numeric string failure one', 'app.py: numeric string failure two']
+        calls = []
+        def model(key, prompt, **kwargs):
+            data = json.JSONDecoder().raw_decode(prompt.split('REVIEW_INPUT\n', 1)[1])[0]
+            calls.append(([r['id'] for r in data['findings']], kwargs))
+            _, output = finding_response(prompt)
+            result = json.loads(output)
+            if len(calls) == 1:
+                result['findings'] = result['findings'][:1]
+            return 'first' if len(calls) == 1 else 'second', json.dumps(result)
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, SOURCES)
+        self.assertEqual(calls[1][0], [repair_guard.digest(claims[1])])
+        self.assertEqual(calls[1][1]['skip'], ('first',))
+        self.assertEqual([r['verdict'] for r in rows], ['confirmed', 'confirmed'])
+
+    def test_missing_answers_stop_after_bounded_small_retries_without_inventing_verdict(self):
+        claims = ['app.py: numeric string failure one', 'app.py: numeric string failure two']
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            if len(calls) == 1:
+                _, output = finding_response(prompt)
+                return 'first', json.dumps({'findings': json.loads(output)['findings'][:1]})
+            return 'other', '{"findings":[]}'
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, SOURCES)
+        self.assertEqual(len(calls), repair_guard.VERIFIER_ATTEMPTS)
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+        self.assertEqual(rows[1]['verdict'], 'needs_validation')
+        self.assertEqual(rows[1]['gate'], ['not_answered'])
+
+    def test_explicit_needs_validation_is_a_decision_and_is_not_retried(self):
+        model = Mock(return_value=('verifier', json.dumps({'findings': [dict(
+            id=repair_guard.digest('missing workflow provenance'), verdict='needs_validation', in_goal=True,
+            reason='A document cannot prove the workflow checkout; controller evidence is required', evidence=[])]})))
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['missing workflow provenance'], SOURCES)
+        model.assert_called_once()
+        self.assertEqual(rows[0]['verdict'], 'needs_validation')
+        self.assertNotIn('not_answered', rows[0]['gate'])
+
     def test_large_finding_sets_use_bounded_batches_without_losing_decisions(self):
         claims = [f'app.py: numeric string failure {n}' for n in range(39)]
         seen = []
