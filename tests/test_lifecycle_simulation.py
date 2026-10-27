@@ -293,7 +293,9 @@ class ScriptedScenarioTests(unittest.TestCase):
         with patch.object(developer, "run_model", side_effect=self.flaky(fail_on)), \
                 patch.object(developer, "review_stage", return_value=(True, "")), \
                 patch.object(developer, "run_sandbox_repair", side_effect=self.sandbox_success), \
-                patch.object(sim.time, "sleep") as sleep:
+                patch.object(sim, "time", wraps=sim.time) as clock:
+            sleep = clock.sleep
+            sleep.return_value = None
             outcome = sim.run_scenario(easy, [], docker=False, minutes=5)
         return outcome, sleep
 

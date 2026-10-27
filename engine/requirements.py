@@ -51,13 +51,20 @@ AUTHORITY_RE = re.compile(r"\b(?:merge|deploy\w*|release|publish|ship|go\s+live|
 NEGATION_RE = re.compile(r"(?:\b(?:do\s+not|don't|dont|never|without|no|not|nor|hold\s+off\s+on|avoid)\s+(?:\w+\s+){0,2})$", re.I)
 FRESH_BRANCH_RE = re.compile(r'^\s*Start (?:fresh|a fresh branch) from (?:the )?current (?:main|default branch)[.!]?\s*$', re.I)
 SCOPE_ACTION = (r'(?:repair code|broaden the audit|edit their audit report|reuse their branch/checkpoint|'
-                r'merge|deploy|release|proceed to \d+(?:\.\d+)*[a-z]?)')
+                r'merge|deploy|release|proceed to \d+(?:\.\d+)*[a-z]?|continue to \d+(?:\.\d+)*[a-z]? or any later job)')
 SCOPE_RESTRICTION_RE = re.compile(r"^\s*(?:Do not|Don't|Never)\s+" + SCOPE_ACTION +
                                 r'(?:(?:,\s*(?:or\s+)?|\s+or\s+)' + SCOPE_ACTION + r')*[.!]?\s*$', re.I)
 BULLET_RE = re.compile(r'^\s*(?:[-*•]|\d+[.)])\s+')
 # A sentence ends at . ! or ? followed by whitespace or the end, so file names and versions (a.yml, 1.2) stay whole.
 SENTENCE_RE = re.compile(r'\S.*?(?:[.!?]+(?=\s|$)|$)')
 FILLER_RE = re.compile(r"^\W*(?:thanks?(?:\s+you)?|thx|ty|please|pls|ok(?:ay)?|cool|lmk|hi|hey|hello)\W*$", re.I)
+
+
+def canonical_text(text, originals):
+    """Map typography-only review rewrites back to the exact owner text; never paraphrases."""
+    key = lambda value: ' '.join(re.sub('[\u2010\u2011\u2012\u2013\u2212]', '-', value).split())
+    matches = [original for original in originals if key(original) == key(text)]
+    return matches[0] if len(matches) == 1 else text
 
 
 @dataclass(frozen=True)

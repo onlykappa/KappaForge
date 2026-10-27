@@ -2525,7 +2525,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     outstanding = list(UNFINISHED)
     previous_review_problems = []
     journal = recovery.CURRENT.get()
-    requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']
+    original_texts = [row['text'] for row in requirements.split(task_goal.CURRENT.get().request)] if task_goal.CURRENT.get() else []
+    canonical = lambda text: requirements.canonical_text(text, original_texts)
+    requirement_catalog = {canonical(text): {'text': canonical(text), 'met': False} for text in journal.state['requirements']
                            if not (defer_lifecycle and verify.lifecycle_requirement(text))} if journal else {}
     repair_failures = []
     rescued = None
@@ -2838,6 +2840,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     progress.now(f"Reading the {repo} code")
     from engine import execution
     journal = recovery.CURRENT.get()
+    execution.refresh_unpublished_main(journal)
     resumed = execution.pending(journal, "develop")
     planned = execution.generation_plan(journal, repo, task) if not resumed else None
     if resumed:

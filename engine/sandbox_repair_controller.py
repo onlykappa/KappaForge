@@ -315,6 +315,12 @@ class SandboxRepairController:
             excerpt = self._explore("read_file", path=path, start_line=max(1, start), end_line=end)
             if excerpt.get("status") == "ok":
                 notes.append(f"--- {path} lines {excerpt['start_line']}-{excerpt['end_line']} ---\n" + excerpt["text"][:2500])
+                return True
+            return False
+        frames = exploration.traceback_files(diagnostics, self.explorer.repo.files)
+        for path, line in frames:
+            if read(path, line - 12, line + 12):
+                files.append(path)
         for lead in found:
             symbol, module = lead.get("symbol"), lead.get("module")
             if symbol:
@@ -342,10 +348,10 @@ class SandboxRepairController:
                             if nested.get("status") == "ok":
                                 files.append(imported)
                                 notes.append(f"{imported} (imported by {path}) defines {[s['name'] for s in nested['symbols'][:20]]}")
-        if not found:
+        if not found and not frames:
             notes.append("The failure names no missing symbol or module: read the failing test and the code it calls.")
         files = list(dict.fromkeys(files))
-        names = ", ".join(lead.get("symbol") or lead.get("module") for lead in found) or "the failing test"
+        names = ", ".join(lead.get("symbol") or lead.get("module") for lead in found) or ", ".join(p for p, _ in frames) or "the failing test"
         self.state["investigation"] = {"leads": found, "files": files, "evidence": execution.clean("\n".join(notes), 6000)}
         self.state["history"] = (self.state["history"] + ["Investigated the new failure (" + names + "): read "
                                  + (", ".join(files) or "nothing new")])[-10:]

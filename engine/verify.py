@@ -630,7 +630,8 @@ def inventory_sources(task, changes, paths):
 
     Current source can assess present descriptions, not historical commit contents.
     """
-    if not re.search(r'\b(?:architecture|repository|source) inventory\b', task, re.I):
+    from engine import inventory
+    if not re.search(r'\b(?:architecture|repository|source) inventory\b', task, re.I) and not inventory.source_review(task):
         return {}, []
     _, record = task_state.current()
     if not record:
@@ -647,7 +648,7 @@ def inventory_sources(task, changes, paths):
     known = set(paths) | set(changes)
     requested = list(dict.fromkeys(p for refs in links.values() for p in refs if p in known))
     # Dashboard/settings citations alone cannot establish startup or central config.
-    if links:
+    if links and not inventory.source_review(task):
         requested += [p for p in ('preview/index.html', 'config/app.json', 'chat-backend/wrangler.toml')
                       if p in known and p not in requested]
     return links, requested[:8]
@@ -700,6 +701,8 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000):
     listing = ', '.join(inventory)
     if omitted:
         listing += f'\n{omitted} repository paths omitted for size; request exact paths with files_to_inspect if evidence is missing.'
+    from engine import inventory
+    source_inspection = inventory.source_review(task)
     inventory_instructions = (
         "For inventories, distinguish HTML/script startup from dashboard helpers, central configuration from settings UI, "
         "and real workflow entry files from directory names. Enumerate requested files that are available; calling them unknown "
@@ -709,7 +712,12 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000):
         "supports or contradicts the document. Set supports:false for contradictions; true only when the quote proves the claim. "
         "Missing/partial context stays "
         "unverified; use files_to_inspect. These checks do not establish historical commit contents. "
-    ) if re.search(r'\b(?:architecture|repository|source) inventory\b', task, re.I) else ''
+    ) if re.search(r'\b(?:architecture|repository|source) inventory\b', task, re.I) or source_inspection else ''
+    if source_inspection:
+        inventory_instructions += ('This is a source-inspection document, not a request to implement behavior. '
+            'Every function explicitly named by the owner must be inspected and explained from its actual definition. '
+            'Claiming it was not inspected does not fulfill that requirement. Reject descriptions contradicted by source '
+            'and policy misattributions. Distinguish source inspection from tests actually run; do not invent test receipts. ')
     return (
         "You are reviewing a change another engineer wrote for this task. Be strict: the owner will test it on a phone. "
         "List the task's requirements one entry per distinct ask: every numbered or bulleted item and every sentence that "
@@ -996,6 +1004,11 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
+            if goal:
+                from engine import requirements
+                owner_texts = [row['text'] for row in requirements.split(goal.request)]
+                for row in reqs:
+                    row['text'] = requirements.canonical_text(row['text'], owner_texts)
             problems += scope_problems
             # Decide the scope answer first: a rejected answer's requirements must not bind the retry.
             wire = re.sub(r'^```(?:json)?\s*|\s*```$', '', output.strip())
