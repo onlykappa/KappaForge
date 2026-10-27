@@ -35,6 +35,8 @@ class Record:
     attempts: list = field(default_factory=list)
     review: dict = field(default_factory=dict)
     repair: dict = field(default_factory=dict)
+    finding_cache: dict = field(default_factory=dict, repr=False)
+    effort: dict = field(default_factory=dict)
     files: list = field(default_factory=list)
     stages: list = field(default_factory=list)
     inference_events: list = field(default_factory=list)
@@ -57,6 +59,27 @@ def current():
     from engine.task_goal import CURRENT
     goal = CURRENT.get()
     return goal, getattr(goal, 'record', None)
+
+
+def begin_effort(limit):
+    """A runtime proposal bound for a small document repair, independent of lifetime accounting."""
+    _, record = current()
+    if record:
+        with record.lock:
+            if not record.effort:
+                record.effort = dict(limit=limit, used=0)
+
+
+def charge_effort():
+    _, record = current()
+    if record:
+        with record.lock:
+            if record.effort:
+                from engine.reliability import RecoveryBudgetExceeded
+                if record.effort['used'] >= record.effort['limit']:
+                    raise RecoveryBudgetExceeded('Small-document repair reached its ' + str(record.effort['limit']) +
+                                                '-proposal effort budget; saved draft needs review', terminal=True)
+                record.effort['used'] += 1
 
 
 def digest(goal):
@@ -379,7 +402,7 @@ def snapshot(journal=None):
         return {}
     with record.lock:
         facts = dict(candidate=dict(sha=record.identity['candidate'], evidence='controller source/checkpoint observation'),
-                     checks=list(record.checks.values()))
+                     checks=deepcopy(list(record.checks.values())))
         if goal.receipt:
             facts['pr'] = {**goal.receipt, 'evidence': 'GitHub PR receipt observed in this execution; no claim about current checkout'}
         state = getattr(journal, 'state', {}) or {}
@@ -427,6 +450,14 @@ def add_to_prompt(prompt, journal=None):
     data = snapshot(journal)
     if not data:
         return prompt.base if isinstance(prompt, StatePrompt) else prompt
+    # Hashes identify diagnostics internally; they are not GitHub commit evidence.
+    # Keep them out of coding context, preserving the authoritative candidate facts.
+    if data['nextAction']['role'] in ('coder', 'repair'):
+        assessment = data['repairAssessment']
+        data['repairAssessment'] = dict(evidence='Historical diagnostic decisions, not commit references or edit authority',
+            findings=[dict(reference=f'finding_{n}', **{k: row[k] for k in ('verdict', 'reason', 'gate') if k in row})
+                      for n, row in enumerate(assessment.get('findings', ()), 1)],
+            omittedFindings=assessment.get('omittedFindings', 0))
     from engine import gateway
     ceiling = gateway.resource_ceiling()
     if ceiling is not None and ceiling <= 5000:

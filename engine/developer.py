@@ -2545,7 +2545,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                             'do not invent replacement work):\n' + json.dumps(finding_feedback))
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
-                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
+                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + review_task)
         classified = requirements.CURRENT.get()
         review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
         files_needed = []
@@ -2618,7 +2618,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             deferred_repairs.difference_update(row['claim'] for row in findings if row['verdict'] == 'rejected')
             if not repair_targets:
                 if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
-                    finding_feedback = [{k: row[k] for k in ('id', 'verdict', 'reason')} for row in findings]
+                    finding_feedback = [{k: row[k] for k in ('verdict', 'safe_reason')} for row in findings]
                     recheck_only_used = True
                     continue  # Re-review once; a rejected finding is not itself proof the task is complete.
                 problems = ['Repair findings need validation; no speculative source edits were authorized'] + problems
@@ -3371,6 +3371,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     goal.guidance(guidance)
     task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
+    if 0 < len(changed) <= 2 and all(path.endswith(('.md', '.rst', '.txt')) for path in changed):
+        task_state.begin_effort(12)
     task_state.observe_pr(pr, repo, branch)
     anchor_pr_goal(goal, pr, repo, repo_token, head_sha)
     goal.validate_paths(changed)

@@ -501,11 +501,13 @@ def lifecycle_requirement(text):
     text = str(text or "").replace("\u2019", "'")
     # "for this change" refers to the existing task; it does not ask for another source edit (#221).
     text = re.sub(r"\b(?:for|with)\s+(?:this\s+change|these\s+changes)\b", "", text, flags=re.I)
+    text = re.sub(r'\bfor this (?:small )?documentation update\b', '', text, flags=re.I)
+    text = re.sub(r',\s*report what you verified\b', '', text, flags=re.I)
     # Compound lifecycle wording must not absorb a substantive second ask: every "and"/"then" clause must itself be
     # a lifecycle ask ("and let me know"), a merge hold ("and don't merge it") or keep/leave the PR as it is.
     for clause in re.split(r"\b(?:and|then)\b", text, flags=re.I)[1:]:
         clause = clause.strip(" ,;")
-        if clause and not (LIFECYCLE_CONTINUATION_RE.match(clause)
+        if clause and not (re.fullmatch(r'stop[.!]?', clause, re.I) or LIFECYCLE_CONTINUATION_RE.match(clause)
                            or LIFECYCLE_ASK_RE.search(clause) and LIFECYCLE_OBJECT_RE.search(clause)):
             return False
     return bool(LIFECYCLE_ASK_RE.search(text) and LIFECYCLE_OBJECT_RE.search(text) and not CODE_WORK_RE.search(text))
@@ -558,6 +560,8 @@ def process_problem(problem):
 
 def lifecycle_problem(problem):
     """A stored "Requirement not met: ..." entry for a lifecycle ask, which no code repair can satisfy."""
+    if re.fullmatch(r'R\d+: No evidence that a draft PR was opened for this documentation change[.]?', problem):
+        return True
     return problem.startswith("Requirement not met: ") and lifecycle_requirement(problem[len("Requirement not met: "):].split(" ({")[0])
 
 

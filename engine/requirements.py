@@ -49,6 +49,7 @@ SIGNALS = {
 AUTHORITY_RE = re.compile(r"\b(?:merge|deploy\w*|release|publish|ship|go\s+live|grant|revoke|make\s+(?:it\s+)?public|"
                           r"delete\s+(?:the\s+)?(?:repo|repository|branch)|force[- ]push|change\s+(?:the\s+)?permissions?)\b", re.I)
 NEGATION_RE = re.compile(r"(?:\b(?:do\s+not|don't|dont|never|without|no|not|nor|hold\s+off\s+on|avoid)\s+(?:\w+\s+){0,2})$", re.I)
+FRESH_BRANCH_RE = re.compile(r'^\s*Start fresh from (?:the )?current (?:main|default branch)[.!]?\s*$', re.I)
 BULLET_RE = re.compile(r'^\s*(?:[-*•]|\d+[.)])\s+')
 # A sentence ends at . ! or ? followed by whitespace or the end, so file names and versions (a.yml, 1.2) stay whole.
 SENTENCE_RE = re.compile(r'\S.*?(?:[.!?]+(?=\s|$)|$)')
@@ -105,7 +106,10 @@ def split(request):
 
 def authority_ask(text):
     """Whether the text asks for an owner-only action, rather than forbidding one."""
-    return any(not NEGATION_RE.search(text[:m.start()]) for m in AUTHORITY_RE.finditer(text))
+    return any(not NEGATION_RE.search(text[:m.start()])
+               and not (m.group().lower() == 'merge' and re.search(r'\b(?:the|these|those)\s+$', text[:m.start()], re.I)
+                        and re.match(r'\s+commits?\b', text[m.end():], re.I))
+               for m in AUTHORITY_RE.finditer(text))
 
 
 def rule_categories(text):
@@ -115,6 +119,12 @@ def rule_categories(text):
         found = [c for c in found if c not in WORK] + ['housekeeping']
     elif verify.CODE_WORK_RE.search(text) and not WORK & set(found):
         found.append('code')
+    if re.match(r'^\s*Do not continue to\s+\d+(?:\.\d+)*[a-z]?\b', text, re.I) and not verify.CODE_WORK_RE.search(text):
+        found.append('housekeeping')
+    if FRESH_BRANCH_RE.fullmatch(text):
+        found.append('housekeeping')
+    if re.search(r'\bverify\b.*\b(?:commits?|provenance)\b', text, re.I):
+        found.append('research')
     if authority_ask(text):
         found.append('owner_decision')
     if not found:
@@ -140,6 +150,16 @@ def validate(items, request, scope=None):
         text = item['text']
         rules = set(rule_categories(text))
         chosen = set(item.get('categories') or ()) & set(CATEGORIES) or set(rules)
+        # Saved labels are revalidated too: old behavioral/owner-action labels
+        # must not keep orchestration and inspection stuck in source-repair loops.
+        phase_stop = re.match(r'^\s*Do not continue to\s+\d+(?:\.\d+)*[a-z]?\b', text, re.I)
+        inspected_commits = rules == {'research'} and re.search(r'\bverify\b.*\bcommits?\b', text, re.I)
+        if verify.lifecycle_requirement(text) or FRESH_BRANCH_RE.fullmatch(text) or (phase_stop and not verify.CODE_WORK_RE.search(text)):
+            chosen -= WORK
+            chosen.add('housekeeping')
+        if inspected_commits and not verify.CODE_WORK_RE.search(text) and not authority_ask(text):
+            chosen -= WORK | {'owner_decision'}
+            chosen.add('research')
         chosen |= rules & {'owner_decision', 'security'}
         if not chosen & WORK and rules & WORK and not verify.lifecycle_requirement(text):
             chosen |= rules & WORK  # The model may not hide named work behind a non-work label.
