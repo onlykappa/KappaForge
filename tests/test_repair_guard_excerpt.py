@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from engine.repair_guard import payload, reference_lines
 
 class TestRepairGuardExcerpt(unittest.TestCase):
@@ -9,6 +10,45 @@ class TestRepairGuardExcerpt(unittest.TestCase):
         self.assertIn(301, data['shown_lines']['docs/audit.md'])
         self.assertNotIn('traceback_lines', data['sources']['docs/audit.md'])
         self.assertEqual(reference_lines(['/tmp/docs/audit.md:301; docs/audit.md:0; docs/audit.md:301'], 'docs/audit.md'), [300])
+
+    def test_actual_force_finding_includes_predicate_not_only_document_claim(self):
+        # Run 40550305377 rejected this finding while the decisive predicate was omitted.
+        claims = [
+            'docs/phase3/policy-publication-review.md: the owner requires commit-pinned links, '
+            'but the document cites mutable main links. Replace them with real inspected commit pins; omit invented line ranges.',
+            'docs/phase3/policy-publication-review.md: "It does not allow reading arbitrary files via the GitHub Contents API" '
+            'is false. engine/intent_guard.py guard_request returns early for GET/HEAD. Correct this documentation claim, not the code.',
+            'docs/phase3/policy-publication-review.md: "does not check the force flag" is false for ref updates: '
+            'permit requires not (payload or {}).get("force"). Correct the audit text; do not change the guard.',
+            'docs/phase3/policy-publication-review.md: distinguish task-only documentation restrictions from owner-preferences.md '
+            'policy, and record actual test evidence separately from source inspection. Remove unsupported global logging '
+            'or intentional-design-as-bug claims.',
+        ]
+        path = 'engine/intent_guard.py'
+        source = Path(path).read_text()
+        data = payload({path: source}, claims)
+        predicate = 'not (payload or {}).get("force")'
+        self.assertIn(predicate, data['shown'][path])
+        self.assertIn('method in {"GET", "HEAD"}', data['shown'][path])
+        number = next(i for i, line in enumerate(source.splitlines(), 1) if predicate in line)
+        self.assertIn(number, data['shown_lines'][path])
+        self.assertIn(f'{number}| ', data['sources'][path]['text'])
+        self.assertFalse(data['sources'][path]['complete'])
+        self.assertLessEqual(len(data['shown'][path]), 3000)
+
+    def test_literal_anchors_are_exact_bounded_read_leads(self):
+        from engine.repair_guard import literal_lines
+        source = '\n'.join(['forceful = True'] * 100 + ['if payload.get("force"):', '    return "évidence"'])
+        self.assertEqual(literal_lines(['requires "force"'], source), [100])
+        self.assertEqual(literal_lines(['requires `return "évidence"`'], source), [101])
+        self.assertEqual(literal_lines(['invented `missing predicate` and "forcefulX"'], source), [])
+        many = '\n'.join(f'value_{i} = "literal_{i}"' for i in range(50))
+        anchors = literal_lines([' '.join(f'`literal_{i}`' for i in range(50))], many)
+        self.assertLessEqual(len(anchors), 4)
+        # Literal fragments prioritize actual source, never insert claim text into it.
+        data = payload({'a.py': source}, ['invented `missing predicate`'], 180)
+        self.assertNotIn('missing predicate', data['shown']['a.py'])
+        self.assertLessEqual(len(data['shown']['a.py']), 180)
 
     def setUp(self):
         # Build a synthetic source with many common early lines, a huge opening, and two late unique functions.
