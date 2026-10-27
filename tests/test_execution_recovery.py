@@ -316,8 +316,22 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(self.journal.state['phase'], 'publication')
 
     def test_publish_candidate_rejects_empty_changes(self):
+        writer = Mock()
         with self.assertRaises(developer.EmptyPublicationError):
-            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', Mock(), 'branch')
+            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', writer, 'branch')
+        writer.assert_not_called()
+
+    def test_publish_candidate_with_existing_receipt_rejects_empty_changes(self):
+        from engine import recovery
+        self.journal.state['executionPublication'] = {'key': 'k', 'sha': 's'}
+        recovery.CURRENT = self.journal
+        writer = Mock()
+        with self.assertRaises(developer.EmptyPublicationError):
+            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', writer, 'branch')
+        with self.assertRaises(developer.EmptyPublicationError):
+            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', writer, 'branch')
+        self.assertEqual(self.journal.state['executionPublication'], {'key': 'k', 'sha': 's'})
+        writer.assert_not_called()
 
     def test_publish_candidate_with_existing_receipt_rejects_empty_changes(self):
         self.journal.state['executionPublication'] = {'key': 'k', 'sha': 's'}
