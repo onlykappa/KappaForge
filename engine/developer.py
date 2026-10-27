@@ -2930,7 +2930,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         # A requirement classified as research is investigated too (Phase 2 section 5).
         lookups = tuple("Research: " + r.text[:200] for r in classified or () if "research" in r.categories)
         questions = () if planned else tuple(dict.fromkeys(tuple(exploration.REQUEST.get()) + lookups))
-        start_plan(progress, journal, repo, sha, task, issue, design, sources, stages, questions, require_test,
+        start_plan(progress, journal, repo, sha, identity_task, issue, design, sources, stages, questions, require_test,
                    repo_map=None if planned else repo_map)
         if answered:
             plan = task_plan.CURRENT.get()

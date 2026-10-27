@@ -240,10 +240,14 @@ class PipelineTests(unittest.TestCase):
         return [c for c in self.world.calls if c[0].endswith('/pulls')]
 
     def test_saved_plan_survives_owner_guidance_without_losing_it_from_generation(self):
+        from engine import task_plan
+        self.addCleanup(task_plan.CURRENT.reset, task_plan.CURRENT.set(None))
         original = self.world.issue['title'] + '\n' + self.world.issue['body']
         execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, original,
                             dict(base='main', paths=['app.py'], stages=[], design='Change the value.'),
                             {'app.py': 'value=1\n'})
+        developer.start_plan(None, self.journal, recovery.ROOT, 'a' * 40, original,
+                             self.world.issue, 'Change the value.', {'app.py': 'value=1\n'}, [], [], True)
         self.world.rows.append(owner(len(self.world.rows) + 1, 'Guidance: Preserve the existing helper.'))
         def write(api_key, task, *args, **kwargs):
             self.assertIn('Preserve the existing helper.', task)

@@ -301,6 +301,37 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Reviewed candidate `8f80347` records abbreviated main/base/Phase 1/2 hashes and labels checkpoint 3.1a `RUN`. The audit header still says NOT STARTED, its verified-claims section says none, and the ledger has no completed provenance entry. Existing evidence was reviewer-inspected GitHub/git metadata, not KappaForge running a full dependency audit.
 - Status: OPEN — require KappaForge to record exact full SHAs, source links, main/base difference and INSPECTED labeling, reconcile report/ledger/status without marking later checkpoints complete. Do not turn successful generation or passing sandbox tests into acceptance of inaccurate documentation. The operator has not directly rewritten the project audit.
 
+## P3-039 — empty publication records the existing parent as a child
+
+- Evidence: task #307's independently reproduced helper edge; task #308 specifies the bounded repair. Direct empty `publish_candidate` attempts a same-SHA ref update; `commit_changes` intentionally returns its parent for empty changes.
+- Reproducer: `tests.test_execution_recovery.ExecutionRecoveryTests.test_empty_publication_has_no_effects_even_on_repeated_receipt_reuse` failed before repair with a missing refusal without a receipt and a mismatched-receipt error with one.
+- Patch: PR #309, `3c9199a774a9f347eb3155931ae0446c24b9b811`, rejects empty publication before API/journal effects; preserves the low-level commit no-op. Repeated calls preserve existing receipts. Nonempty expected-parent resume and concurrent drift remain covered.
+- Immediate rerun: execution recovery, operational review and commit provenance, 51 tests passed. Initial full discovery overlapped a test-fixture correction and failed that fixture; final corrected focused run passed. Later full discovery at the cumulative repair state passed 1,143 tests, 35 skipped.
+- Status: PATCHED and locally verified; not a claim of supported-flow unsafe commits or Phase 3.1 acceptance. #279 remains untouched.
+
+## P3-040 — credential-output fixture triggers source sanitization
+
+- Evidence: task #308 first attempt stopped before sandbox/publication. The owner's guidance identifies unchanged test source whose Authorization/Bearer string is treated as credential-bearing source.
+- Patch: PR #309, `816842dbbe6eb781e5fe257adc5ebac280379db5`, splits the fixture's string concatenation without changing runtime output or redaction assertions. The actual credential detector is unchanged.
+- Immediate rerun: the full recovery test source now equals `execution.sanitized(source)`; the credential-output regression remains in the passing focused suite (84 tests). Full Python discovery passed 1,143 tests, 35 skipped. No new live candidate pass is inferred from these checks.
+- Status: PATCHED locally. The runner still reads the original candidate at its recorded base; generation must apply the owner's source correction to that candidate.
+
+## P3-041 — owner guidance changes saved-plan identity on retry
+
+- Evidence: run [40568688584 attempt 2](https://github.com/onlykappa/KappaForge/actions/runs/40568688584/attempts/2) rejects the generation plan. Independent decoding verifies its task/repository/scope and original issue hash match; only the guidance-augmented retry text differs. Trial [40578884006](https://github.com/onlykappa/KappaForge/actions/runs/40578884006), engine `816842d`, passed this corrected check and then exposed the identical error in `task_plan.load`.
+- Reproducer: `tests.test_clarification.PipelineTests.test_saved_plan_survives_owner_guidance_without_losing_it_from_generation` first failed at the generation-plan check. Extending it to include the real saved task plan reproduced the second live failure.
+- Patch: both development call sites use the original issue title/body as checkpoint identity. Owner guidance remains in generation input; task/repository/scope/base/source checks and all cumulative counters remain intact. Neither saved records nor recovery history are deleted or rewritten to bypass a mismatch.
+- Immediate rerun: generation-plan-only regression passed with the first repair. After the task-plan call-site correction, focused clarification/task-plan/generation-checkpoint/execution-recovery/runtime-engine/operational-review/commit-provenance suites passed 100 tests. Full discovery with ast-grep on PATH passed 1,143 tests, 32 skipped; structural scan, dependency-map, execution-policy and whitespace checks also passed.
+- Status: PATCHED and locally verified at both call sites; live retry pending. No successful task completion claimed.
+
+## P3-042 — validate the repair engine before merging it
+
+- Context: owner requested one open repair PR, updated-engine trials and a single later merge. Existing engine provenance intentionally admits reviewed main and task branches without engine changes; a manual dispatch alone did not admit this repair engine.
+- Change: PR #309 adds authenticated owner-started trials from `fix/<task>-*`, with a same-repository owner-authored open draft PR at the exact checkout/head, current-main ancestry, complete bounded changed-file metadata and unchanged workflow/scripts/configuration. Candidate branches do not gain engine authority. Continuations remain pinned to the original attested SHA. No workflow or permission changes.
+- Verification: real provenance tests admit this case and reject foreign actors, stale/foreign/closed PRs, workflow/configuration changes and unreceipted automatic entry. Focused cumulative suites: 84 passed; structural rules: 10 passed; structural scan, dependency-map, execution-policy and whitespace checks passed. Full discovery: 1,143 passed, 35 skipped. `engine/validate_change.py` referenced by KAPPA.md is absent; available project validation was used.
+- Actual trial: [40578884006](https://github.com/onlykappa/KappaForge/actions/runs/40578884006) attested engine `816842dbbe6eb781e5fe257adc5ebac280379db5`, retained candidate `c6258f2` and cumulative model calls, then stopped on P3-041's second check before generation/publication.
+- Status: trial capability verified; task retry remains pending P3-041. Phase 3.1 stays incomplete and later phases are not advanced.
+
 ## Finding template
 
 ### P3-NNN — short defect title
