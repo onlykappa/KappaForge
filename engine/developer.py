@@ -1456,6 +1456,12 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                        '{"explanation":"short plain explanation","summary":"short technical summary",'
                        '"files":[{"path":"' + edit_path + '","reason":"how this file fulfills the owner request","content":"complete Markdown"}]}.\n'
                        'PROJECT INSTRUCTIONS:\n' + guide + '\nTASK:\n' + task + '\nSOURCE FILES:\n' + context)
+    from engine import inventory
+    if inventory.source_review(task):
+        snapshot = (getattr(journal, 'state', None) or {}).get('candidate', '')
+        if re.fullmatch('[a-f0-9]{40}', snapshot):
+            instruction = ('Controller source snapshot SHA: ' + snapshot + '. Use immutable GitHub /blob/' + snapshot
+                           + '/path citations, never /blob/main/. Do not invent line numbers.\n' + instruction)
     instruction_head = instruction[:-len(context)] if context else instruction
     advisory = REPAIR_ADVISORY.get()
     history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
