@@ -2850,7 +2850,9 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     journal = recovery.CURRENT.get()
     execution.refresh_unpublished_main(journal)
     resumed = execution.pending(journal, "develop")
-    planned = execution.generation_plan(journal, repo, task) if not resumed else None
+    # Guidance remains generation input, not a replacement for the issue's task identity.
+    identity_task = (issue.get('title') or '') + '\n' + body
+    planned = execution.generation_plan(journal, repo, identity_task) if not resumed else None
     if resumed:
         sha, base = resumed["identity"]["base"], resumed["context"]["base"]
         existing, modes = list_tree(repo, sha, repo_token)
@@ -2972,7 +2974,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                         completed=plan.completed + ["Investigated: " + "; ".join(questions)[:250]])
         if planned and execution.digest(sources) != planned['sourceHash']:
             raise execution.CheckpointMismatch('Saved generation sources changed at their authorized base revision')
-        execution.save_plan(journal, repo, sha, task, dict(base=base, paths=list(sources), design=design,
+        execution.save_plan(journal, repo, sha, identity_task, dict(base=base, paths=list(sources), design=design,
             stages=[dict(text=str(s), files=list(getattr(s, 'files', ())), independent=getattr(s, 'independent', False)) for s in stages]), sources)
         progress.ok(f"Read {len(sources)} files: {short_list(sources)}", tool="read", count=len(sources),
                     detail="\n".join(list(sources)[:12]))

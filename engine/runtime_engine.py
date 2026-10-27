@@ -11,13 +11,31 @@ ENGINE_PATHS = ('engine/', 'scripts/', '.github/', 'config/')  # Code that runs 
 DISPATCH = ContextVar('verified_engine_dispatch', default=None)
 
 
+def trial_pr(receipt, scope, read, current=False):
+    """An owner dispatch may select an open same-repository engine PR, never a task candidate."""
+    if (type(receipt.get('trialPR')) is not int or receipt['trialPR'] <= 0
+            or not re.fullmatch(r'fix/' + str(scope.number) + r'-[a-z0-9-]+', receipt.get('ref', ''))):
+        raise PermissionError('Engine trial requires a task-bound repair branch and PR')
+    pr = read(f"repos/{ROOT}/pulls/{receipt['trialPR']}")
+    if ((current and (pr.get('state') != 'open' or pr.get('draft') is not True))
+            or (pr.get('user') or {}).get('login') != 'onlykappa'
+            or (pr.get('base') or {}).get('ref') != 'main'
+            or ((pr.get('base') or {}).get('repo') or {}).get('full_name') != ROOT
+            or (pr.get('head') or {}).get('ref') != receipt['ref']
+            or ((pr.get('head') or {}).get('repo') or {}).get('full_name') != ROOT
+            or (current and (pr.get('head') or {}).get('sha') != receipt['sha'])):
+        raise PermissionError('Engine trial PR is closed, foreign, stale or outside the owner repair branch')
+    return pr
+
+
 class EngineRefreshRequired(RuntimeError):
     category = 'engine_revision'
 
 
 def verify_receipt(receipt, scope, read):
     if (not isinstance(receipt, dict) or receipt.get('task') != scope.number
-            or receipt.get('digest') != scope.digest or receipt.get('ref') != f'kappa/dev-{scope.number}'
+            or receipt.get('digest') != scope.digest
+            or (receipt.get('ref') != f'kappa/dev-{scope.number}' and 'trialPR' not in receipt)
             or scope.repo != ROOT or not SHA.fullmatch(str(receipt.get('sha', '')))
             or not re.fullmatch(r'[1-9][0-9]*', str(receipt.get('originRun', '')))):
         raise PermissionError('Engine receipt is invalid for this task')
@@ -29,6 +47,10 @@ def verify_receipt(receipt, scope, read):
             or (run.get('actor') or {}).get('login') != 'onlykappa'
             or (run.get('triggering_actor') or {}).get('login') != 'onlykappa'):
         raise PermissionError('Engine revision lacks an authenticated owner-started workflow receipt')
+    if 'trialPR' in receipt:
+        if run.get('display_title') not in (f'Agent task #{scope.number} ', f'Agent task #{scope.number} fix'):
+            raise PermissionError('Engine trial requires an explicit owner task dispatch')
+        trial_pr(receipt, scope, read)
     return receipt
 
 
@@ -66,6 +88,29 @@ def attest(scope, read, previous=None, env=None, checkout=None):
                 if not owner_fix:
                     raise PermissionError('Main does not include the authorized engine revision; recovery cannot downgrade')
         return None
+    if re.fullmatch(r'fix/' + str(scope.number) + r'-[a-z0-9-]+', ref) and env.get('INPUT_ACTION', '') in ('', 'fix'):
+        if previous:
+            verify_receipt(previous, scope, read)
+        prs = read(f'repos/{ROOT}/pulls?state=open&head=onlykappa:{ref}&per_page=2')
+        if not isinstance(prs, list) or len(prs) != 1:
+            raise PermissionError('Engine trial requires exactly one open repair PR')
+        receipt = dict(task=scope.number, digest=scope.digest, ref=ref, sha=sha,
+                       originRun=run_id, trialPR=prs[0]['number'])
+        verify_receipt(receipt, scope, read)
+        pr = trial_pr(receipt, scope, read, current=True)
+        if read(f'repos/{ROOT}/git/ref/heads/{ref}')['object']['sha'] != sha:
+            raise PermissionError('Engine trial branch moved before task work')
+        main = read(f'repos/{ROOT}/git/ref/heads/main')['object']['sha']
+        comparison = read(f'repos/{ROOT}/compare/{main}...{sha}')
+        files = comparison.get('files')
+        if (comparison.get('status') != 'ahead' or (comparison.get('merge_base_commit') or {}).get('sha') != main
+                or not isinstance(files, list) or not 0 < len(files) < 300
+                or pr.get('changed_files') != len(files)
+                or any(not isinstance(f.get('filename'), str)
+                       or f['filename'].startswith(('.github/', 'scripts/', 'config/'))
+                       or str(f.get('previous_filename', '')).startswith(('.github/', 'scripts/', 'config/')) for f in files)):
+            raise PermissionError('Engine trial requires current main ancestry and unchanged workflow, scripts and configuration')
+        return receipt
     if ref == f'kappa/dev-{scope.number}' and env.get('INPUT_ACTION', '') in ('fix', '', 'verify'):
         receipt = dict(task=scope.number, digest=scope.digest, ref=ref, sha=sha, originRun=run_id)
         verify_receipt(receipt, scope, read)

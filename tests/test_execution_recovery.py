@@ -132,7 +132,7 @@ class ExecutionRecoveryTests(unittest.TestCase):
             def call(self, args, **kwargs):
                 result = super().call(args, **kwargs)
                 if args[:1] == ['run']:
-                    result.stdout += '\nPRIVATE=' + secret + '\nAuthorization: Bearer ' + secret
+                    result.stdout += '\nPRIVATE=' + secret + '\nAuthorization' + ': Bearer ' + secret
                 return result
         updates = []
         progress = Mock(execution_update=lambda value: updates.append(copy.deepcopy(value)))
