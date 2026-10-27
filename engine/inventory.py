@@ -52,6 +52,14 @@ def read_plan(task, files, limit):
 MAX_REVIEW_SOURCES = 32  # Within the existing forty-file source-context bound.
 
 
+class EvidenceContext(str):
+    """Only the controller renderer can attach which path supplied each excerpt."""
+    def __new__(cls, text, shown):
+        value = super().__new__(cls, text)
+        value.shown = dict(shown)
+        return value
+
+
 def excerpt(text, budget):
     if len(text) <= budget:
         return text
@@ -78,7 +86,7 @@ def review_context(read, changes, links, requested, limit, complete, known):
     requested = [p for p in requested if p in known]
     queue = list(changes) + list(dict.fromkeys(list(requested) + targets))
     queue = list(dict.fromkeys(queue))[:40]
-    blocks, seen, used = [], set(), 0
+    blocks, seen, shown, used = [], set(), {}, 0
     for index, path in enumerate(queue):
         text = changes[path] if path in changes else read(path) or ''
         header = '\n===== CURRENT SOURCE ' + path + ' ('
@@ -97,6 +105,7 @@ def review_context(read, changes, links, requested, limit, complete, known):
         if full:
             complete.add(path)
         seen.add(path)
+        shown[path] = sample
         blocks.append(block)
         used += len(block)
-    return ''.join(blocks), seen
+    return EvidenceContext(''.join(blocks), shown), seen

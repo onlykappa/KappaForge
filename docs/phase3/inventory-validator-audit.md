@@ -133,3 +133,7 @@ tests passed. Web, execution-policy, structural and whitespace checks passed. A
 separate pinned-source check resolved all 11 blob/tree links, enumerated the 22
 workflow filenames and rechecked paid Worker limit declarations. GitHub CI is
 reported on the PR against its exact head; no live task was launched.
+
+Source excerpts also carry renderer-owned path metadata. Literal source headers
+inside an untrusted document cannot impersonate a supplied source block; a
+regression covers that forged-header case.

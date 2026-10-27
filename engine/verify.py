@@ -656,7 +656,7 @@ def inventory_sources(task, changes, paths):
 def inventory_evidence_problems(links, checks, read, changes, known, context):
     """An inventory cannot prove its own descriptions by quoting itself."""
     problems = []
-    from engine.inventory import MAX_REVIEW_SOURCES
+    from engine.inventory import MAX_REVIEW_SOURCES, EvidenceContext
     if len({p for refs in links.values() for p in refs}) > MAX_REVIEW_SOURCES:
         return ['Inventory source verification incomplete: exceeds bounded total source inventory']
     rows = checks if isinstance(checks, list) else []
@@ -669,12 +669,12 @@ def inventory_evidence_problems(links, checks, read, changes, known, context):
                 problems.append('Inventory cites unavailable repository source: ' + document + ': ' + path)
                 continue
             source = changes.get(path) if path in changes else read(path)
-            block = re.search(r'\n===== CURRENT SOURCE ' + re.escape(path) +
-                              r' \([^\n]*\) =====\n(.*?)(?=\n===== |\Z)', context, re.S)
+            # Do not parse headers out of source text: a document can contain fake ones.
+            shown = context.shown.get(path, '') if isinstance(context, EvidenceContext) else ''
             matching = [row for row in rows if isinstance(row, dict) and row.get('document') == document and row.get('path') == path]
             supported = [row for row in matching
                             if isinstance(row.get('quote'), str) and row['quote'].strip()
-                            and source and row['quote'] in source and block and row['quote'] in block[1]
+                            and source and row['quote'] in source and row['quote'] in shown
                             and isinstance(row.get('reason'), str) and row['reason'].strip()
                             and type(row.get('supports')) is bool]
             if len(matching) != 1 or len(supported) != 1:
