@@ -2564,6 +2564,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     if not verify.lifecycle_requirement(text):
                         found.append('A requirement disappeared between repair rounds: ' + text)
             verify.resolve_lifecycle(reqs, receipt)
+            verify.resolve_controller(reqs)
             # Lifecycle asks are KappaForge's own actions, not code work for a repair round.
             previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
                                        for r in reqs if r.get("met") is not True and r.get("kind") != "lifecycle"] + found
@@ -2605,7 +2606,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             progress.ok(f'Found {len(problems)} finding(s); verifying evidence before any repair', warn=True, status='blocked')
             current_evidence = {path: read(path) for path in dict.fromkeys(list(changes) + list(sources) + files_needed) if path in existing or path in changes}
             current_evidence.update(changes)
-            claims = [p for p in problems if not verify.process_problem(p)]
+            claims = [p for p in problems if not verify.process_problem(p) and not verify.controller_problem(p)]
             if not claims:
                 break  # Only review-process gaps are open: they stay on the draft; a source repair cannot close them.
             try:
@@ -3277,7 +3278,7 @@ def repair_branch_observation(repo, pr, candidate, token):
 def revision_focus(pr, log, existing, changed):
     """Investigate one small repair batch; keep the complete PR review open for final validation."""
     claims = [p for p in requirements_open(pr)
-              if not verify.lifecycle_problem(p) and not verify.process_problem(p)]
+              if not verify.lifecycle_problem(p) and not verify.process_problem(p) and not verify.controller_problem(p)]
     if log:
         claims.insert(0, 'Independent check failure (sandbox tests and/or native iOS build): ' + log[:2400])
     focus = list(dict.fromkeys(claims))[:REPAIR_REVIEW_TARGETS]
@@ -3461,7 +3462,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         existing = {path: size for path, size in existing.items() if path != edit_path}
     # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
     # by a repair: with nothing else open, this round re-checks the current source and writes no code.
-    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
+    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) or verify.controller_problem(p) for p in pending)
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''

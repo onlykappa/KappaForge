@@ -540,6 +540,60 @@ def resolve_lifecycle(reqs, receipt):
     return reqs
 
 
+TASK_EXCLUSION_RE = re.compile(r'^Do not resume task #([1-9][0-9]*) or reuse its branch/checkpoint[.]?$', re.I)
+
+
+def controller_requirement(text):
+    """A task/checkpoint identity restriction, not a property of repository source."""
+    return TASK_EXCLUSION_RE.fullmatch(' '.join(str(text or '').split()))
+
+
+def resolve_controller(reqs):
+    from engine import recovery, requirements
+    goal, record = task_state.current()
+    journal = recovery.CURRENT.get()
+    scope = getattr(journal, 'scope', None)
+    state = getattr(journal, 'state', {})
+    identity = record.identity if record else {}
+    owner_sentences = {' '.join(row['text'].split()).rstrip('.')
+                       for row in requirements.split(getattr(goal, 'request', ''))}
+    bound = bool(goal and record and scope
+                 and identity.get('task') == getattr(scope, 'number', None) == state.get('task')
+                 and identity.get('repository') == getattr(scope, 'repo', None) == state.get('repo')
+                 and identity.get('candidate') == state.get('candidate')
+                 and identity.get('branch') == f"kappa/dev-{identity.get('task')}"
+                 and re.fullmatch(r'[a-f0-9]{40}', str(identity.get('candidate', ''))))
+    for req in reqs:
+        if req.get('kind') == 'controller':
+            req.pop('kind')  # Never accept a model-supplied proof exemption.
+        match = controller_requirement(req.get('text'))
+        if not match:
+            continue
+        # A model cannot introduce a new exclusion or substitute a different task.
+        owned = ' '.join(req['text'].split()).rstrip('.') in owner_sentences
+        req['kind'] = 'controller'
+        req['met'] = bool(bound and owned and identity['task'] != int(match[1]))
+        req['evidence'] = ({'controller_receipt': dict(identity), 'source': 'bound_task_and_checkpoint_identity'}
+                           if req['met'] else {'missing': 'Matching current task, branch and checkpoint authority required'})
+    return reqs
+
+
+def controller_problem(problem, resolved=None):
+    text = str(problem or '')
+    target = None
+    if text.startswith('Requirement not met: '):
+        match = controller_requirement(text[len('Requirement not met: '):].split(' ({')[0])
+        target = int(match[1]) if match else None
+    else:
+        match = re.fullmatch(r'R\d+: No evidence that task #([1-9][0-9]*) was not resumed or its branch reused[.]?', text)
+        target = int(match[1]) if match else None
+    if resolved is None:
+        return target is not None
+    return target is not None and any(req.get('kind') == 'controller' and req.get('met') is True
+                                     and (match := controller_requirement(req.get('text'))) and int(match[1]) == target
+                                     for req in resolved)
+
+
 # Notes the engine itself records when a review or verification could not finish. They describe the review, not the
 # source: no code edit can fix them, so they are never sent to the repair verifier as findings (they made it reject
 # its own inputs, e.g. #256's "Repair checkpoint awaiting full requirement review"); a fresh review resolves them.
@@ -882,9 +936,11 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             scope_retry_hint = 'one or more necessary decisions lacked a literal quote from the current source'
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
+            resolve_controller(reqs)
+            problems = [p for p in problems if not controller_problem(p, reqs)]
             for requirement in reqs:
                 original_requirements.setdefault(requirement['text'], dict(requirement))
-                if requirement['met'] and not lifecycle_requirement(requirement['text']):
+                if requirement['met'] and requirement.get('kind') != 'controller' and not lifecycle_requirement(requirement['text']):
                     evidence = requirement['evidence']
                     path = evidence['path']
                     source = changes[path] if path in changes else read(path) if path in known else ''
