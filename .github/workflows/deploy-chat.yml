@@ -147,6 +147,11 @@ jobs:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       run: node chat-backend/tools/verify-settings.mjs verify "$RUNNER_TEMP/kappa-worker-bindings.json"
+    - name: Verify Cloudflare applied the configured paid Worker limits
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      run: node chat-backend/tools/verify-settings.mjs verify-resources
     - name: Verify runner inference authentication without calling a provider
       env:
         WORKER_URL: ${{ steps.deploy.outputs.url }}

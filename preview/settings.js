@@ -92,6 +92,7 @@ function untilReset(at){const ms=Math.max(0,at-Date.now()),d=Math.floor(ms/86400
 function uMeter(percent,color){const p=Math.max(0,Number(percent)||0);return '<div class="u-meter" role="img" aria-label="'+p+'% used"><i style="width:'+Math.min(100,p)+'%;'+(p>0?'min-width:3px;':'')+'background:'+(p>100?'#ff453a':p>=80?'#ff9f0a':color)+'"></i></div>';}
 const PROVIDER_MARKS={groq:'Q','workers-ai':'C',openrouter:'O'};
 function uBarCard(title,right,used,limit,unit,color,note=''){const p=pct(used,limit);return '<div class="u-card"><div class="u-ttl"><strong>'+title+'</strong><span>'+right+'</span></div>'+uMeter(p,color)+'<div class="u-lim"><span><b>'+compact(used)+'</b> of '+compact(limit)+' '+unit+'</span><span>'+(p??0)+'%</span></div>'+(note?'<p class="u-note">'+note+'</p>':'')+'</div>';}
+function uRequestCard(title,right,used,limit,color){return limit===0?'<div class="u-card"><div class="u-ttl"><strong>'+title+'</strong><span>No global limit</span></div><div class="u-lim"><span><b>'+compact(used)+'</b> requests used</span></div></div>':uBarCard(title,right,used,limit,'requests',color);}
 function usageModel(){
  const L=globalThis.KappaLimits,list=capabilities?.providers||[];
  if(!L||!capabilities?.limits||!list.length)return null;
@@ -238,8 +239,8 @@ function usageHome(){
    '<div class="u-card"><p class="u-note">'+(known?'From Ollama’s own plan balance (included monthly credit, refreshed every minute).'+(plan.purchasedUsd>0?' Purchased credit left: $'+plan.purchasedUsd.toFixed(2)+'.':''):esc(plan?.error||'Ollama is not enabled on this backend.'))+'</p></div>'+one('ollama');}
  const minute=state.minuteRequests?.used||0;
  // Requests only here; Tokens has its own view.
- return uHero(uRing(p,'of today used'),'<b>'+compact(used)+'</b> / '+compact(cap)+' requests',[[compact(attemptsToday),'chat &amp; task requests'],[compact(minute),'this minute'],[success,'succeeded']])+
-  uBarCard('Daily requests',resets,used,cap,'requests used','#0a84ff')+providers+uBarCard('Per minute','Right now',minute,state.minutePolicyLimit,'requests','#30d158')+premiumCard();
+ return uHero(uRing(p,cap===0?'requests today':'of today used'),'<b>'+compact(used)+'</b>'+ (cap===0?' requests':' / '+compact(cap)+' requests'),[[compact(attemptsToday),'chat &amp; task requests'],[compact(minute),'this minute'],[success,'succeeded']])+
+  uRequestCard('Daily requests',resets,used,cap,'#0a84ff')+providers+uRequestCard('Per minute','Right now',minute,state.minutePolicyLimit,'#30d158')+premiumCard();
 }
 // A request that got no reply (hung, refused, rate-limited) still reached the provider: say how many, in Requests.
 function failures(u){const failed=Math.max(0,u.requests-u.ok-u.cancelled);

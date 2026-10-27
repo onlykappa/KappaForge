@@ -204,7 +204,7 @@ const workerImplementation = {
         const lastFailure=[poolState,routeState].filter(Boolean).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
         const dailyUsed=snapshot?.dailyRequests?.used??null,minuteUsed=snapshot?.minuteRequests?.used??null;
         const {daily:dailyLimit,minute:minuteLimit}=routerCaps(env);
-        const dailyAvailable=dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteUsed===null?null:minuteUsed<minuteLimit;
+        const dailyAvailable=dailyLimit===0?true:dailyUsed===null?null:dailyUsed<dailyLimit,minuteAvailable=minuteLimit===0?true:minuteUsed===null?null:minuteUsed<minuteLimit;
         let failedCondition="eligible";
         if(!secretPresent)failedCondition="secret_binding_missing";
         else if(!freeAllowed)failedCondition="free_provider_allowlist";

@@ -1,5 +1,62 @@
 # Gateway resource recovery — P3-014
 
+## Workers Paid CPU configuration — 2026-10-26
+
+The owner confirmed **Exceeded CPU Time Limits** in Cloudflare for task #282's
+[run 40419239017](https://github.com/onlykappa/KappaForge/actions/runs/40419239017)
+and requested configuration for a Workers plan upgrade. The run received two
+1102 responses during review: at 18,113 and 10,201 prompt characters. A review
+at 10,156 characters succeeded between them. These observations establish no
+universal character threshold or measured CPU consumption.
+
+The owner requested all applicable Workers Paid limits, including the higher
+subrequest ceiling. `chat-backend/wrangler.toml` explicitly sets:
+
+| Setting | Value | Meaning |
+| --- | ---: | --- |
+| `limits.cpu_ms` | 300,000 | Paid maximum CPU milliseconds per HTTP invocation |
+| `limits.subrequests` | 10,000,000 | Paid configurable fetch subrequest maximum per invocation; default is 10,000 |
+| `KAPPA_ROUTER_MAX_DAILY_REQUESTS` | 0 | Disable the application's global daily throttle |
+| `KAPPA_ROUTER_MAX_PER_MINUTE` | 0 | Disable the application's global minute throttle |
+
+Sources: [CPU and subrequest limits](https://developers.cloudflare.com/workers/platform/limits/)
+and [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
+Workers Paid includes **10 million incoming requests per month**, with additional
+requests billed. That allowance is separate from the per-invocation subrequest
+setting and is not a daily or monthly hard rejection boundary. These settings do
+not claim to meter Cloudflare's complete account-level billing usage.
+
+The two global gateway throttle variables are now explicitly managed by Wrangler
+under the owner's request; provider permissions, credentials and unrelated
+settings remain dashboard-managed. Existing counters and duplicate-request
+protection remain active. Optional positive global caps support up to 10 million;
+missing variables retain the conservative 100/day and 20/minute defaults.
+Provider-specific daily/minute/token and concurrency quotas still apply.
+
+CPU measures execution time, excluding network waiting. Memory remains **128 MB**
+per isolate; outgoing connections remain **6** per request. The variable quota
+rises automatically with the plan (64 to 128); no local variable-count clamp
+exists. HTTP duration has no platform hard limit while the client stays connected;
+application attempt timeouts continue to bound stalled provider calls. Request
+body limits depend on the Cloudflare zone plan, rather than Workers Paid. Source,
+request-byte, model context and output-token guards describe application/provider
+contracts and are not raised to Cloudflare's much larger transport ceilings.
+
+After deployment, the workflow reads Cloudflare's Worker settings and requires
+CPU, subrequests and both throttle variables to match the checked-in configuration.
+Missing or different metadata fails the check; a successful health probe alone
+is insufficient. The read-only `inspect` operation reports the same non-secret
+resource fields. This check does not prove live task completion.
+
+Task #282 retains learned local envelopes of 4,074 characters for `verify` and
+6,510 for `review`. They are heuristics learned under the earlier CPU conditions,
+not Cloudflare limits. **Only after the upgraded deployment and resource read-back
+pass**, reset those two saved CPU-derived hints for the authorized retry while
+preserving owner scope, candidate, draft PR, evidence, validation receipts and
+recovery history. Do not remove hard request/token limits or unrelated budgets.
+The ordinary engine prompt cap remains 20,000 characters; new resource failures
+must still stop or adapt within the existing bounded controller.
+
 Run [40236351384](https://github.com/onlykappa/KappaForge/actions/runs/40236351384) received platform error 1102 during finding verification. [Cloudflare documents](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1102/) this as Worker CPU/memory exhaustion. The response has no profile identifying the expensive operation. A smaller request may reduce work; it is not proof of an optimized Worker or a guarantee against platform failures.
 
 The confirmed controller defect was that only code generation handled the existing `shrink_context` signal. Verification treated it as a provider outage, handed off the task, and could reconstruct the same expensive request. The handoff itself now uses the correctly pinned engine, as demonstrated by run [40237385743](https://github.com/onlykappa/KappaForge/actions/runs/40237385743).
