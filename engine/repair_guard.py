@@ -458,7 +458,11 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
             fresh(stamp, sources)
             data, owner_rows, prompt = build()
             try:
-                route, output = run_model(api_key, prompt, max_output_tokens=min(3500, 400 + 300 * len(claims)), allowed=allowed, json_mode=True,
+                # Literal evidence can include long provenance rows, and some
+                # providers also spend output tokens before emitting JSON. The
+                # old 700/1000-token batches repeatedly truncated valid replies.
+                # Stay under the existing 3500 ceiling and gateway context reserve.
+                route, output = run_model(api_key, prompt, max_output_tokens=min(3500, 2048 + 256 * len(claims)), allowed=allowed, json_mode=True,
                                           **({'skip': tuple(tried)} if tried else {}))
             except Exception as error:
                 fresh(stamp, sources)
