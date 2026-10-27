@@ -1,79 +1,30 @@
-# Phase 3.1c – Job 1: Mutation Authorization Gate Review
+# Phase 3.1c, job 1: pre-mutation authorization gate
 
-**Source inspection – partial 3.1c**
+**Partial source inspection only.** Inspected main snapshot: [3263e4306ff4f0618e0e4e42fddb0259928d617b](https://github.com/onlykappa/KappaForge/commit/3263e4306ff4f0618e0e4e42fddb0259928d617b). This job traces the Python GitHub request helper and its execution scope. It does not complete the audit of all publication, backend, workflow or native paths.
 
----
+## Source trace and enforced checks
 
-## Overview
-This document records the inspection of the *pre‑mutation authorization gate* that protects every privileged GitHub operation performed by KappaForge. The gate is implemented in the Python engine and is exercised by the `request()` helper in `engine/runner.py`.
+1. [engine/runner.py](https://github.com/onlykappa/KappaForge/blob/3263e4306ff4f0618e0e4e42fddb0259928d617b/engine/runner.py), `request()`, first decorates task reports with `report_provenance()`, builds headers and serialized data, then calls `guard_request()` before constructing and sending the outgoing request. The effective method defaults to POST with a payload and GET without one. For POST it also calls the separate `authorize_dispatch()` infrastructure check. After a successful response it calls `record_success()`; HTTP 204 is handled as an empty result. Provenance decoration is not an authorization grant.
+2. [engine/intent_guard.py](https://github.com/onlykappa/KappaForge/blob/3263e4306ff4f0618e0e4e42fddb0259928d617b/engine/intent_guard.py), `guard_request()`, returns immediately for non-GitHub hosts and for GET/HEAD. It therefore does **not** restrict GitHub Contents API reads. For other requests to `api.github.com`, it requires an active execution scope, rereads the owner task through the supplied callback, calls `check_current()` and `permit()`, then transitions planning to executing. Non-GitHub destinations need their own controls; this function does not authorize them.
+3. `ExecutionScope.__init__()` requires an open task authored by `onlykappa`, one supported mode and one repository declaration. Write modes require a registered project. A pinned inference route and bounded integration edit path have explicit allowlists. Chat-origin tasks require a matching authorization marker, repository/mode and conversation/request identifiers. Marker restrictions accept only boolean `noPR`, `noTests`, `noCode`, `noMerge` fields; a write task with any of the first three restrictions is rejected at admission. Ordinary owner-created GitHub tasks use their own bounded lifetime. These checks validate the represented provenance; this review does not independently audit the marker's producer.
+4. `check_current()` rejects expired or terminal scopes. It checks that the reread task is still open, owner-authored and has the original SHA-256 body digest. A changed/closed task cancels the scope before the mutation. Refusing a changed body is deliberate scope protection, not evidence of a digest race bug. Fetch failure propagates rather than permitting the write.
+5. `permit()` checks the API host and uses a default-deny mutation allowlist. It blocks REST merge endpoints and GraphQL `mergePullRequest`. Reports are restricted to the task and learned own comments/PRs; report payloads cannot impersonate `Guidance:`. Read modes can report and use their narrowly defined continuation path, but do not receive ordinary development-write permission.
+6. In write modes, `permit()` allows Git object creation, task-branch refs, draft PR creation, authorized own-PR description/title updates and content writes on task branches. `branch()` combines registered-project branch policy with task-number-specific `kappa/dev-`, `issue-`, `repair-` or numbered `cont-` names. Ref updates require `not (payload or {}).get("force")`: the claim that the force flag is unchecked was false. This predicate rejects truthy force values; it is not a complete schema or concurrency proof.
+7. `test_dispatch()` permits only enumerated validation/review workflows on the supported trusted refs, for the task branch and repository, with bounded input keys, optional full candidate SHA and `automatic_fixes` false. Deployment workflows and extra inputs do not satisfy this helper. Develop-mode continuation dispatches have a separate task/digest/action and trusted-runtime check.
 
-## Traced Execution Path
-1. **`engine/runner.py` – `request()`**
-   - Calls `guard_request()` (imported from `engine/intent_guard`).
-   - Wraps the payload with `report_provenance` and then invokes the HTTP request.
-   - After the request returns, `record_success` is called to update the task state.
-   - **Source line:** https://github.com/onlykappa/KappaForge/blob/main/engine/runner.py#L71‑L92
+## Policy comparison
 
-2. **`engine/intent_guard.py` – `guard_request()`**
-   - Verifies the URL is for `api.github.com` and that the method is not a safe read‑only (`GET`/`HEAD`).
-   - Retrieves the current `ExecutionScope` from the context variable `ACTIVE`.
-   - Calls `scope.check_current(read_current(scope.number))` to ensure the task is still valid.
-   - Calls `scope.permit(url, payload, method)` to enforce fine‑grained permissions.
-   - If the scope is still in *planning* it transitions to *executing*.
-   - **Source line:** https://github.com/onlykappa/KappaForge/blob/main/engine/intent_guard.py#L115‑L131
+[KAPPA.md](https://github.com/onlykappa/KappaForge/blob/3263e4306ff4f0618e0e4e42fddb0259928d617b/KAPPA.md) requires current-task authority, sandbox validation, preservation of data and credentials, and explicit owner lifecycle authorization. The request gate supports task cancellation, scoped mutations, draft-only creation and refusal of engine-driven merge requests. This helper alone does not prove sandbox execution, content-level path restrictions, safe secret handling or every backend lifecycle control; those require their respective implementation and acceptance evidence.
 
-3. **`ExecutionScope.check_current()`**
-   - Fails if the task has expired, been cancelled, or the issue body hash no longer matches the stored digest.
-   - Cancels the scope (`self.state = "cancelled"`) and raises `PermissionError` on mismatch.
-   - **Source line:** https://github.com/onlykappa/KappaForge/blob/main/engine/intent_guard.py#L138‑L150
+[.kappaforge/owner-preferences.md](https://github.com/onlykappa/KappaForge/blob/3263e4306ff4f0618e0e4e42fddb0259928d617b/.kappaforge/owner-preferences.md) records concise reporting, evidence-backed debugging and protection of user data. It also records an owner exception for tested execution/verifier/provenance/recovery repair PRs. That preference does not make `permit()` accept a merge request: the Python execution gate still refuses it. This audit task's documentation-only scope, excluded tasks and stop at partial 3.1c come from task #301, not from a general preference forbidding code changes.
 
-4. **`ExecutionScope.permit()`**
-   - Parses the request URL and validates the host is `api.github.com`.
-   - Blocks any merge‑related endpoints (`/merge` or GraphQL `mergePullRequest`).
-   - Allows only actions that are explicitly permitted for the task mode (e.g., comment creation, branch creation under the `kappa/…` naming scheme, test workflow dispatches).
-   - Enforces owner‑provided restrictions (`noPR`, `noTests`, `noCode`, `noMerge`).
-   - **Source line:** https://github.com/onlykappa/KappaForge/blob/main/engine/intent_guard.py#L152‑L226
+## Remaining inspection boundaries
 
-## Checks Required by Policy (KAPPA.md)
-- **Authorization existence** – `ExecutionScope` raises `PermissionError` if the issue is not an open owner‑authored task. (Line 31‑38)
-- **Mode & repository validation** – The task must specify a single `Mode:` and `Repository:` line; only the defined `READ_MODES` or `WRITE_MODES` are accepted. (Line 45‑55)
-- **Expiration handling** – `self.expires` is computed from the issue creation time or a marker in a chat‑task; any request after expiration raises `PermissionError`. (Line 84‑92)
-- **Digest verification** – The SHA‑256 digest of the issue body is stored and re‑checked on every request (`check_current`). (Line 124‑131)
-- **Owner‑only merge** – `permit` explicitly blocks any `/merge` endpoint and requires the owner to press the Merge button. (Line 166‑170)
-- **Branch naming constraints** – Only branches matching `kappa/(dev|issue|repair)-<num>` or `kappa/cont-<num>-<seq>` are allowed. (Method `branch`).
-- **Test workflow whitelist** – `test_dispatch` limits dispatches to a known set of workflow files. (Top of file).
+- Only calls routed through `runner.request()` receive this gate. Direct HTTP clients, backend routes, workflow entry points and other publication paths remain to be audited in later 3.1c jobs. No global enforcement claim is made.
+- Rechecking the owner body before a write narrows cancellation risk, but does not make the external task read and later GitHub mutation atomic. No exploitable race is established by this source inspection.
+- Branch naming and rejection of force updates do not by themselves prove expected-parent/expected-head publication. Review the publishing caller and GitHub responses separately.
+- The fixed inference-route allowlist and cancellation-on-body-change are observed design choices, not confirmed defects. Denial exceptions are visible to callers; this job did not trace every reporting handler and makes no global claim about missing denial logs.
 
-## Owner Preferences (`.kappaforge/owner-preferences.md`)
-- Keep explanations concise (30‑100 words). The inspection follows this style.
-- Do not perform any code changes; the task is a documentation‑only audit.
-- Record uncertainties rather than guess missing behaviour.
+## Evidence versus execution
 
-## Proven Checks (What the gate *does* enforce)
-| Check | Where enforced | Evidence |
-|-------|----------------|----------|
-| Open owner‑authored issue | `ExecutionScope.__init__` | `if issue.get("state") != "open" … raise PermissionError` |
-| Single unambiguous mode/repo | `ExecutionScope.__init__` | regex extraction and length checks |
-| Expiration time | `ExecutionScope.__init__` & `check_current` | `self.expires` calculation and comparison |
-| Body digest consistency | `ExecutionScope.__init__` (store) and `check_current` (compare) |
-| No merge without owner | `ExecutionScope.permit` | explicit `if p.endswith('/merge') … raise PermissionError` |
-| Branch naming policy | `ExecutionScope.branch` | regex `kappa/(?:dev|issue|repair)-…` |
-| Test workflow whitelist | `test_dispatch` helper | `TEST_WORKFLOWS` set |
-| Owner‑provided restrictions | `ExecutionScope.__init__` parses marker JSON and `permit` checks `self.restrictions` |
-
-## Concrete Gaps / Open Questions
-1. **Dynamic route pinning** – The guard only validates a hard‑coded list of pinned inference routes (`PINNED_INFERENCE_ROUTES`). If a new route is added to the policy, the code must be updated manually; there is no data‑driven source of truth.
-2. **Granular read‑only audit mode** – In `READ_MODES`, the guard permits only a very limited set of actions (essentially re‑dispatching the same task). It does not allow reading arbitrary files via the GitHub Contents API, which could be useful for audit tasks.
-3. **Missing audit of `git/refs` force‑push** – The guard allows creating a ref under the allowed naming scheme but does not check the `force` flag for non‑fast‑forward updates; a malicious payload could rewrite history on an allowed branch.
-4. **No explicit logging of denial reasons** – When a request is blocked, the `PermissionError` message is raised but not logged to the task comments; owners must rely on CI output to see the reason.
-5. **Potential race on `self.digest`** – The digest is computed from the issue body at activation time. If the issue body is edited *after* activation but before a request, `check_current` will cancel the task, but the change is not reflected in the stored `self.body`. This is intentional but could cause confusing cancellations.
-
-## References
-- `engine/runner.py` – request handling (https://github.com/onlykappa/KappaForge/blob/main/engine/runner.py)
-- `engine/intent_guard.py` – guard logic (https://github.com/onlykappa/KappaForge/blob/main/engine/intent_guard.py)
-- `KAPPA.md` – policy definitions (https://github.com/onlykappa/KappaForge/blob/main/KAPPA.md)
-- `.kappaforge/owner-preferences.md` – owner style preferences (https://github.com/onlykappa/KappaForge/blob/main/.kappaforge/owner-preferences.md)
-
-**Main SHA (current main branch):** `731431e4bb1cf0cd92866d6942060f832022da1f`
-
----
-*This source inspection is labelled *partial 3.1c* and is intended for the owner’s review. No code changes were made.*
+The statements above are source inspection of the linked snapshot. No live API mutation, deployment, release, native-device test or complete Phase 1/2 audit was performed to establish them. Local regression and CI results for this correction belong in the PR report, with their exact candidate SHA; passing those tests cannot substitute for factual review of this document. No code repair is included. Stop at this partial 3.1c job.

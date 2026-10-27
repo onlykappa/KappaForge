@@ -14,9 +14,22 @@ def problems(repo, changes, read):
     pattern = re.compile(r'https://github\.com/' + re.escape(repo) + r'/commit/([^\s)#?<>/]+)')
     refs = sorted({ref for path, text in changes.items() if path.endswith(('.md', '.rst', '.txt'))
                    and isinstance(text, str) for ref in pattern.findall(text)})
+    from engine import inventory, task_goal
+    goal = task_goal.CURRENT.get()
+    task = getattr(goal, 'request', '')
+    failures = []
+    if isinstance(task, str) and inventory.source_review(task) and re.search(r'\bcite file paths/commit-pinned GitHub links\b', task, re.I):
+        blobs = re.compile(r'https://github\.com/' + re.escape(repo) + r'/blob/([^/\s)#?<>]+)/')
+        for path, text in changes.items():
+            if path.endswith(('.md', '.rst', '.txt')) and isinstance(text, str):
+                for ref in set(blobs.findall(text)):
+                    if not re.fullmatch('[a-fA-F0-9]{40}', ref):
+                        failures.append(path + ': source inspection link must use a full commit SHA, not ' + ref[:80])
+                    else:
+                        refs.append(ref)
+        refs = sorted(set(refs))
     if len(refs) > MAX_REFERENCES:
         return ['Too many commit references to validate; split the documentation change']
-    failures = []
     for ref in refs:
         if not re.fullmatch(r'[a-fA-F0-9]{7,40}', ref):
             failures.append('Invalid repository commit reference: ' + ref[:80])
