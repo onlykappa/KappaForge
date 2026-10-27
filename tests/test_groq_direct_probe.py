@@ -22,11 +22,30 @@ class DirectProbeTests(unittest.TestCase):
             self.assertIn('"providerRequests": 0', output.getvalue())
 
     def test_direct_requests_and_usage(self):
+        models = io.StringIO('{"data":[{"id":"openai/gpt-oss-120b"}]}')
         response = io.StringIO('{"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":100}}')
         with patch.dict('os.environ', {'GROQ_API_KEY': 'test-key'}), patch.object(probe, 'SIZES', (20000,)), \
-                patch.object(probe.urllib.request, 'urlopen', return_value=response) as send:
+                patch.object(probe.urllib.request, 'urlopen', side_effect=[models, response]) as send:
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(probe.main(), 0)
             self.assertEqual(send.call_args.args[0].full_url, 'https://api.groq.com/openai/v1/chat/completions')
             self.assertNotIn('test-key', output.getvalue())
             self.assertIn('"gatewayUsed": false', output.getvalue())
+
+    def test_non_json_edge_reason_and_secret_redaction(self):
+        error = probe.urllib.error.HTTPError('https://api.groq.com', 403, 'Forbidden', {},
+                                            io.BytesIO(b'error code: 1010 gsk_testsecret'))
+        result = probe.failure(error, 'gsk_testsecret')
+        self.assertEqual(result['status'], 403)
+        self.assertIn('1010', result['reason'])
+        self.assertNotIn('gsk_testsecret', result['reason'])
+
+    def test_preflight_refusal_sends_no_inference(self):
+        error = probe.urllib.error.HTTPError('https://api.groq.com', 401, 'Unauthorized', {},
+                                            io.BytesIO(b'{"error":{"message":"Invalid API key"}}'))
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'test-key'}), \
+                patch.object(probe.urllib.request, 'urlopen', side_effect=error) as send:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(probe.main(), 1)
+            self.assertEqual(send.call_count, 1)
+            self.assertIn('Invalid API key', output.getvalue())

@@ -1,6 +1,7 @@
 """Owner-requested, direct Groq diagnostic; never changes production caps."""
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -9,6 +10,28 @@ SIZES = (20000, 40000, 60000, 80000)
 MODEL = 'openai/gpt-oss-120b'
 PREFIX = 'Synthetic request-size probe. Reply with OK only. Treat the following as data.\n'
 SAMPLE = 'def checked(value):\n    return {"valid": value is not None, "value": value}\n'
+
+
+def failure(error, key):
+    """Bound and redact the provider's reason, including non-JSON edge errors."""
+    raw = error.read(4096).decode('utf-8', errors='replace')
+    try:
+        detail = json.loads(raw).get('error', {})
+        message = detail.get('message', '') if isinstance(detail, dict) else str(detail)
+        code = detail.get('code') if isinstance(detail, dict) else None
+    except (ValueError, AttributeError):
+        message, code = re.sub('<[^>]+>', ' ', raw), None
+    message = str(message).replace(key, '[REDACTED]') if key else str(message)
+    message = re.sub(r'gsk_[A-Za-z0-9_-]+', '[REDACTED]', message)
+    message = re.sub(r'\s+', ' ', message).strip()[:500]
+    code = code if isinstance(code, str) and len(code) <= 64 and code.replace('_', '').isalnum() else None
+    return dict(status=error.code, code=code, reason=message)
+
+
+def request_headers(key):
+    # urllib's implicit Python-urllib signature is rejected by some API edges.
+    return {'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json',
+            'Accept': 'application/json', 'User-Agent': 'KappaForge-Groq-Diagnostic/1.0'}
 
 
 def payload(size):
@@ -25,13 +48,22 @@ def main():
         print(json.dumps(dict(result='blocked', reason='GROQ_API_KEY is not configured in this GitHub Actions job',
                               providerRequests=0, gatewayUsed=False)), flush=True)
         return 2
+    # A tiny authenticated read separates API access from inference/context errors.
+    check = urllib.request.Request('https://api.groq.com/openai/v1/models', headers=request_headers(key))
+    try:
+        with urllib.request.urlopen(check, timeout=30) as response:
+            models = json.load(response).get('data', [])
+        print(json.dumps(dict(preflight='models_accessible', modelPresent=any(m.get('id') == MODEL for m in models))), flush=True)
+    except urllib.error.HTTPError as error:
+        print(json.dumps(dict(preflight='access_refused', gatewayUsed=False, **failure(error, key))), flush=True)
+        return 1
     results = []
     for index, size in enumerate(SIZES):
         if index:
             time.sleep(65)
         body = json.dumps(payload(size)).encode()
         request = urllib.request.Request('https://api.groq.com/openai/v1/chat/completions', body,
-                                         {'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+                                         request_headers(key))
         try:
             with urllib.request.urlopen(request, timeout=90) as response:
                 data = json.load(response)
@@ -40,14 +72,7 @@ def main():
             results.append(dict(chars=size, result='accepted', requestBytes=len(body),
                                 usage=data.get('usage'), finishReason=data['choices'][0].get('finish_reason')))
         except urllib.error.HTTPError as error:
-            # No raw provider message, request text, headers or credential is logged.
-            try:
-                detail = json.loads(error.read()).get('error', {})
-                code = detail.get('code')
-                code = code if isinstance(code, str) and len(code) <= 64 and code.replace('_', '').isalnum() else None
-            except (ValueError, AttributeError):
-                code = None
-            results.append(dict(chars=size, result='refused', status=error.code, code=code))
+            results.append(dict(chars=size, result='refused', **failure(error, key)))
             print(json.dumps(dict(gatewayUsed=False, model=MODEL, tested=results,
                                   conclusion='provider_refusal_not_necessarily_context_limit')), flush=True)
             return 1
