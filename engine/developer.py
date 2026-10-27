@@ -3251,6 +3251,22 @@ def files_named_in(log, existing, changed):
 REPAIR_REVIEW_TARGETS = 2
 
 
+def repair_branch_observation(repo, pr, candidate, token):
+    """Observe the branch ref itself; PR base.sha can be a stale snapshot."""
+    ref = (pr.get('base') or {}).get('ref')
+    if not isinstance(ref, str) or not ref:
+        return None
+    try:
+        row = gh(f'repos/{repo}/git/ref/heads/{urllib.parse.quote(ref, safe="")}', token)
+    except (urllib.error.URLError, ValueError, TimeoutError):
+        return None
+    obj = row.get('object') if isinstance(row, dict) else None
+    sha = obj.get('sha') if isinstance(obj, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{40}', sha) or obj.get('type') != 'commit':
+        return None
+    return dict(ref=ref, sha=sha, candidate=candidate, source='github_branch_ref')
+
+
 def revision_focus(pr, log, existing, changed):
     """Investigate one small repair batch; keep the complete PR review open for final validation."""
     claims = [p for p in requirements_open(pr)
@@ -3446,7 +3462,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         # neither resolved nor permission to edit additional files.
         claims = focus
         original_goal = goal.title + '\n' + goal.request
-        findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed)
+        branch_observation = repair_branch_observation(repo, pr, head_sha, repo_token)
+        findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed,
+                                                   **({'branch_observation': branch_observation} if branch_observation else {}))
         # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
         # evidence, so it is a repair target without a model opinion; tests the PR itself adds still need the verifier.
         base_sha = (pr.get('base') or {}).get('sha')
