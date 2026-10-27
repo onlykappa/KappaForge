@@ -127,6 +127,39 @@ def reference_lines(claims, path):
     return list(dict.fromkeys(int(n) - 1 for n in re.findall(pattern, '\n'.join(claims))))[-2:]
 
 
+def literal_lines(claims, source):
+    """Bounded read leads from exact quoted fragments, never proof or edit authority.
+
+    Keyword ranking can omit the predicate a finding disputes. Prefer a few
+    discriminating literal matches while retaining the existing excerpt budgets.
+    Unmatched model text contributes no source; common prose cannot consume all
+    anchors. Work only from the bounded claims actually shown to the verifier.
+    """
+    fragments = []
+    for claim in claims[:MAX_FINDINGS]:
+        for match in re.finditer(r'`([^`\n]{4,160})`|"([^"\n]{4,160})"|\'([^\'\n]{4,160})\'', shown_claim(claim)):
+            fragment = next(part for part in match.groups() if part is not None)
+            if fragment not in fragments:
+                fragments.append(fragment)
+            if len(fragments) >= 32:
+                break
+        if len(fragments) >= 32:
+            break
+    lines, matches = source.split('\n'), []
+    for fragment in fragments:
+        # A quoted identifier is a token, not a prefix of a different symbol.
+        pattern = re.compile(r'(?<!\w)' + re.escape(fragment) + r'(?!\w)')
+        hits = [i for i, line in enumerate(lines) if pattern.search(line)]
+        if 0 < len(hits) <= 4:
+            matches.append((len(hits), -len(fragment), hits))
+    anchors = []
+    for _, _, hits in sorted(matches):
+        anchors = list(dict.fromkeys(anchors + hits))[:4]
+        if len(anchors) == 4:
+            break
+    return anchors
+
+
 NUMBER_PREFIX_RE = re.compile(r'^[ \t]*\d+\| ?', re.M)
 MAX_CITED_LINES = 8
 
@@ -167,7 +200,7 @@ def payload(sources, claims, max_chars=MAX_SOURCE_CHARS, requested_lines=None):
         # existing total source budget permits it; never raise that budget.
         file_budget = remaining if path.endswith(('.md', '.rst', '.txt')) and len(source) <= min(8000, remaining) else min(3000, remaining)
         frames = frame_lines(claims, path)[-2:]
-        anchors = list(dict.fromkeys(list(requested_lines.get(path, ())) + frames + reference_lines(claims, path)))
+        anchors = list(dict.fromkeys(list(requested_lines.get(path, ())) + frames + reference_lines(claims, path) + literal_lines(claims, source)))
         shown = source if len(source) <= file_budget else excerpt(source, clues, file_budget, lines_near=anchors)
         text, lines = numbered(shown, source)
         files[path] = dict(text=text, complete=shown == source)
