@@ -34,13 +34,15 @@ class FindingRereadTests(unittest.TestCase):
         self.assertEqual(rows[0]['verdict'], 'confirmed')
         self.assertEqual(rows[0]['evidence'][0]['quote'], 'return wrong_value')
 
-    def test_bad_paths_spans_and_owner_proof_cannot_request_more_inference(self):
+    def test_bad_citations_allow_only_protocol_retries_and_never_source_followup(self):
         for fields in (dict(path='../private.txt'), dict(span=[9999, 9999]), dict(span=[400, 390]),
                        dict(span=[1, 20]), dict(span=[True]), dict(owner='R99')):
             with self.subTest(fields=fields):
+                self.inputs.clear()
                 model = Mock(side_effect=lambda key, prompt, **kw: self.response(prompt, **fields))
                 rows = self.assess(model)
-                self.assertEqual(model.call_count, 1)
+                self.assertEqual(model.call_count, 1 if fields.get("owner") else repair_guard.VERIFIER_ATTEMPTS)
+                self.assertTrue(all(data["sources"] == self.inputs[-1]["sources"] for data in self.inputs))
                 self.assertEqual(rows[0]['verdict'], 'needs_validation')
 
     def test_followup_cannot_loop_or_convert_another_unseen_citation_into_proof(self):

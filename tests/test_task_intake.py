@@ -1,5 +1,6 @@
 """Tests for one-time auto-start of direct owner-created development issues."""
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 from scripts import task_intake
 
@@ -18,6 +19,16 @@ def issue(**changes):
 
 
 class TaskIntakeTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime.fromisoformat(issue()['created_at'].replace('Z', '+00:00')).timestamp() + 60
+        clock = patch('engine.intent_guard.time.time', return_value=self.now)
+        clock.start()
+        self.addCleanup(clock.stop)
+
+    def test_expired_owner_issue_is_not_auto_dispatched(self):
+        with patch('engine.intent_guard.time.time', return_value=self.now + 86400):
+            self.assertFalse(task_intake.eligible(issue(), 'opened'))
+
     def test_direct_owner_development_task_is_eligible_on_open_or_task_label(self):
         self.assertTrue(task_intake.eligible(issue(), "opened"))
         self.assertTrue(task_intake.eligible(issue(labels=[]), "labeled", "kappa-task"))

@@ -1,12 +1,12 @@
 # Phase 3 roadmap: intelligent PR reviews, visual testing and owner approval
 
 **Repository:** `onlykappa/KappaForge`
-**Tracking:** one draft PR for all of Phase 3, associated with task #274 and draft PR #275.
+**Tracking:** PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
 **Starting point:** latest `main` verified at `ce7a5645cee806ddc4d0df523cbcb68f4be1117f` (2026-10-25).
 **Dependencies:** merged Phase 1 sandbox/execution and Phase 2 dynamic exploration, task planning, classification, research and clarification.
 **Owner boundary:** no automatic merge, release, deployment, access change, branch-protection change or production configuration change. A successful test, positive review or readiness recommendation is never merge authorization. Only the authenticated owner may perform an explicit merge action.
 
-This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in this PR. A code-generation claim alone does not close an item. Keep Phase 3 in this single draft PR; do not merge, release, deploy or mark ready for review.
+This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in the relevant delivery PR. A code-generation claim alone does not close an item. Keep each authorized slice in its tracked draft PR; do not merge, release, deploy or mark ready for review.
 
 ## Progress and run discipline
 

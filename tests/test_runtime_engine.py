@@ -61,7 +61,8 @@ class RuntimeEngineTests(unittest.TestCase):
 
     def test_main_and_stale_checkouts_stop_before_task_work(self):
         self.runs['32'] = dict(self.origin, head_branch='main', head_sha='a' * 40)
-        env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='a' * 40)
+        env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='a' * 40,
+                   INPUT_ACTION='verify')
         with self.assertRaises(PermissionError):
             runtime_engine.attest(self.journal.scope, self.world.read, self.journal.state['engine'], env, 'a' * 40)
         self.world.refs['main'] = 'c' * 40
@@ -96,6 +97,46 @@ class RuntimeEngineTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(PermissionError):
                 runtime_engine.verify_receipt(receipt, self.journal.scope, self.world.read)
         self.runs['31'] = self.origin
+
+    def test_owner_fix_on_current_main_migrates_divergent_engine_and_preserves_candidate(self):
+        self.world.refs['main'] = 'c' * 40
+        self.runs['32'] = dict(self.origin, head_branch='main', head_sha='c' * 40)
+        self.world.comparisons['b' * 40 + '...' + 'c' * 40] = dict(
+            status='diverged', merge_base_commit={'sha': 'a' * 40})
+        before = self.journal.state['candidate']
+        with patch.dict(os.environ, dict(GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='c' * 40)), \
+                patch.object(subprocess, 'check_output', return_value='c' * 40 + '\n'):
+            self.journal.begin('fix')
+        self.assertEqual(self.journal.state['candidate'], before)
+        self.assertNotIn('engine', self.journal.state)
+        migration = self.journal.state['events'][-1]
+        self.assertEqual(migration['strategy'], 'reviewed_main_engine_migration')
+        self.assertIn('b' * 40, migration['error'])
+        self.assertIn('c' * 40, migration['error'])
+        self.assertIn('32', migration['error'])
+
+    def test_divergent_engine_migration_requires_explicit_owner_fix(self):
+        self.world.refs['main'] = 'c' * 40
+        run = dict(self.origin, head_branch='main', head_sha='c' * 40)
+        self.world.comparisons['b' * 40 + '...' + 'c' * 40] = dict(
+            status='diverged', merge_base_commit={'sha': 'a' * 40})
+        env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='c' * 40)
+        for changes, action in [({}, 'resume:1:fixture'), ({}, 'verify'), ({}, ''),
+                                ({'actor': {'login': 'github-actions[bot]'}}, 'fix'),
+                                ({'triggering_actor': {'login': 'reviewer'}}, 'fix'),
+                                ({'display_title': 'Agent task #131 fix'}, 'fix')]:
+            self.runs['32'] = dict(run, **changes)
+            with self.subTest(changes=changes, action=action), self.assertRaises(PermissionError):
+                runtime_engine.attest(self.journal.scope, self.world.read, self.journal.state['engine'],
+                                      dict(env, INPUT_ACTION=action), 'c' * 40)
+
+    def test_owner_migration_still_rejects_forged_previous_receipt(self):
+        self.world.refs['main'] = 'c' * 40
+        self.runs['32'] = dict(self.origin, head_branch='main', head_sha='c' * 40)
+        env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='c' * 40)
+        receipt = dict(self.journal.state['engine'], digest='forged')
+        with self.assertRaises(PermissionError):
+            runtime_engine.attest(self.journal.scope, self.world.read, receipt, env, 'c' * 40)
 
     def test_legacy_scanner_cannot_interpret_trial_as_main_recovery(self):
         self.journal.defer(RuntimeError('offline'))

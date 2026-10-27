@@ -67,7 +67,9 @@ test('routing skips models whose account shows no quota at all',async()=>{
 test('caps above what routing storage accepts are held to the maximum instead of stopping inference',async()=>{
  const {routerCaps}=await import('../chat-backend/src/router-coordination.js');
  assert.deepEqual(routerCaps({}),{daily:100,minute:20});
- assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'50000',KAPPA_ROUTER_MAX_PER_MINUTE:'500'}),{daily:10000,minute:120});
+ assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'20000000',KAPPA_ROUTER_MAX_PER_MINUTE:'20000000'}),{daily:10000000,minute:10000000});
+ assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'0',KAPPA_ROUTER_MAX_PER_MINUTE:'0'}),{daily:0,minute:0});
+ assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'50000',KAPPA_ROUTER_MAX_PER_MINUTE:'500'}),{daily:50000,minute:500});
  assert.deepEqual(routerCaps({KAPPA_ROUTER_MAX_DAILY_REQUESTS:'2500.7',KAPPA_ROUTER_MAX_PER_MINUTE:'60'}),{daily:2500,minute:60});
 });
 

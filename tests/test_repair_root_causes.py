@@ -41,6 +41,37 @@ class Base(unittest.TestCase):
 
 
 class LineCitationTests(Base):
+    def test_bad_span_retries_protocol_on_another_route_without_accepting_it(self):
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(kwargs)
+            span = [1, 999] if len(calls) == 1 else [2]
+            return answer(prompt, owner_ref='R1', evidence=[dict(path='app.py', lines=span)])
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['Fix app.py'], SOURCES)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]['skip'], ('verifier',))
+        self.assertEqual(rows[0]['verdict'], 'confirmed')
+        self.assertEqual(rows[0]['evidence'][0]['lines'], [2, 2])
+
+    def test_rejected_finding_can_reread_a_real_omitted_span_once(self):
+        sources = {'app.py': '\n'.join(f'value_{n} = {n}' for n in range(600))}
+        calls = []
+        def model(key, prompt, **kwargs):
+            data = review_input(prompt)
+            calls.append(data)
+            if len(calls) == 1:
+                self.assertNotIn('501| ', data['sources']['app.py']['text'])
+            else:
+                self.assertIn('501| ', data['sources']['app.py']['text'])
+            route, output = answer(prompt, owner_ref='R1', evidence=[dict(path='app.py', lines=[501])])
+            output = json.loads(output)
+            output['findings'][0]['verdict'] = 'rejected'
+            return route, json.dumps(output)
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, ['Fix app.py'], sources)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(rows[0]['verdict'], 'rejected')
+        self.assertEqual(rows[0]['evidence'][0]['quote'], 'value_500 = 500')
+
     def test_the_verifier_sees_line_numbers_and_numbered_owner_requirements(self):
         seen = {}
         def respond(prompt):
@@ -86,12 +117,15 @@ class PartialAnswerTests(Base):
 
     def test_a_skipped_decision_no_longer_voids_the_ones_made(self):
         def respond(prompt):
-            first = review_input(prompt)['findings'][0]['id']
+            first = repair_guard.digest(self.CLAIMS[0])
             return 'verifier', json.dumps({'findings': [dict(id=first, verdict='confirmed', in_goal=True, reason='concatenates',
                                                              owner_ref='R1', evidence=[dict(path='app.py', lines=[2, 2])]),
                                                         dict(id='foreign', verdict='confirmed', in_goal=True, reason='x')]})
         rows, model = self.verify(respond, self.CLAIMS)
-        self.assertEqual(model.call_count, 1)
+        self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
+        for call in model.call_args_list[1:]:
+            self.assertEqual([row['id'] for row in review_input(call.args[1])['findings']],
+                             [repair_guard.digest(self.CLAIMS[1])])
         verdicts = {row['claim']: (row['verdict'], row['gate']) for row in rows}
         self.assertEqual(verdicts[self.CLAIMS[0]], ('confirmed', []))
         self.assertEqual(verdicts[self.CLAIMS[1]], ('needs_validation', ['not_answered']), 'unanswered authorizes nothing')
@@ -161,6 +195,37 @@ class ProcessProblemTests(Base):
 
 class ReverifyTests(Base):
     """A fix round whose only open problems are review-process notes re-checks the source and writes no code."""
+
+    def test_disproved_findings_review_unchanged_source_but_uncertainty_still_blocks(self):
+        pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50',
+                  base={'sha': SHA}, head={'sha': SHA, 'ref': 'kappa/dev-9',
+                  'repo': {'full_name': developer.ROOT}}, title='Draft: Cast', body='Plan')
+        issue = dict(number=9, title='Cast', body='Make add accept numeric strings')
+        for verdict in ('rejected', 'needs_validation'):
+            with self.subTest(verdict=verdict), \
+                    patch.object(developer, 'revision_files', return_value=[dict(filename='app.py', status='modified')]), \
+                    patch.object(developer, 'list_tree', return_value=({'app.py': 40}, {})), \
+                    patch.object(developer, 'project_guide', return_value=''), \
+                    patch.object(developer, 'read_source', return_value=SOURCES['app.py']), \
+                    patch.object(developer, '_add_engine_developer_source', side_effect=lambda sources, *a: sources), \
+                    patch.object(developer, 'gh', return_value=[]), \
+                    patch.object(developer, 'anchor_pr_goal'), \
+                    patch.object(developer, 'requirements_open', return_value=['app.py lacks numeric string support']), \
+                    patch.object(developer, 'repair_branch_observation', return_value=None), \
+                    patch.object(repair_guard, 'enabled', return_value=True), \
+                    patch.object(repair_guard, 'verify_all_findings', return_value=[dict(verdict=verdict)]), \
+                    patch.object(developer, 'generate', side_effect=AssertionError('no speculative generation')), \
+                    patch.object(developer, 'check_the_work', return_value=({}, 'Still incomplete', ['Actual unmet requirement'])) as review:
+                if verdict == 'needs_validation':
+                    with self.assertRaises(repair_guard.RepairReviewRequired):
+                        developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
+                    review.assert_not_called()
+                else:
+                    result = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
+                    review.assert_called_once()
+                    self.assertEqual(review.call_args.args[7], {})
+                    self.assertEqual(result[2], {})
+                    self.assertIn('Actual unmet requirement', result[3])
 
     def test_fix_pull_request_publishes_the_fresh_review_without_code_or_test_dispatch(self):
         from engine import native_build

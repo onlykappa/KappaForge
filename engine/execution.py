@@ -31,9 +31,6 @@ class CheckpointUnavailable(RuntimeError):
 
 def clean(value, limit=4000):
     text = sandbox.redact(str(value))
-    for name, secret in os.environ.items():
-        if len(secret) >= 4 and re.search(r'TOKEN|SECRET|PASSWORD|API_?KEY|CREDENTIAL|PRIVATE|AUTH|WEBHOOK|DSN|DATABASE_URL', name, re.I):
-            text = text.replace(secret, '[redacted]')
     text = re.sub(r'(?i)(https?://)[^/\s:@]+:[^/\s@]+@', r'\1[redacted]@', text)
     text = re.sub(r'(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)\S+', r'\1[redacted]', text)
     return text[-limit:]
@@ -156,8 +153,33 @@ def pending(journal, kind=None):
         raise CheckpointMismatch('Execution checkpoint belongs to different task authority')
     if kind and data.get('context', {}).get('kind') != kind:
         raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
+    superseded = journal.state.get('supersededExecution') or {}
+    if (superseded.get('hash') == journal.state['executionCheckpoint']['hash']
+            and superseded.get('reason') == 'owner_reviewed_fast_forward'
+            and re.fullmatch(r'[a-f0-9]{40}', str(superseded.get('replacement', '')))):
+        return None  # Archived proposal, never a published or validated candidate.
     data['changes'] = _read_blob(journal, data['patchRef'])
     return data
+
+
+def supersede_reviewed_proposal(journal, head):
+    """Called only after recovery verifies owner guidance for a newer branch head."""
+    data = pending(journal)
+    if not data or data.get('context', {}).get('kind') != 'fix':
+        return
+    base = data['identity'].get('base')
+    if base == head:
+        return  # A proposal on the adopted head still needs its original validation.
+    if not re.fullmatch(r'[a-f0-9]{40}', str(base)):
+        raise CheckpointMismatch('Saved proposal base is unavailable; cannot retire it')
+    comparison = journal.target_read(f'repos/{journal.scope.repo}/compare/{base}...{head}')
+    if comparison.get('status') != 'ahead':
+        raise CheckpointMismatch('Saved proposal is not an ancestor of the reviewed head')
+    receipt = copy.deepcopy(journal.state['executionCheckpoint'])
+    # Preserve complete rejected work before reusable fragment slots can rotate.
+    journal.archive([dict(checkpoint=receipt, proposal=data, superseded_by=head)], 'supersededExecution')
+    journal.state['supersededExecution'] = dict(hash=receipt['hash'], base=base, replacement=head,
+                                               reason='owner_reviewed_fast_forward')
 
 
 def seed(journal, repo, sha, changes, task, context=None):
@@ -201,6 +223,75 @@ def generation_plan(journal, repo, task):
             or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != task_digest(task)):
         raise CheckpointMismatch('Saved generation plan belongs to different task authority')
     return plan
+
+
+def refresh_unpublished_main(journal):
+    """Owner-receipted refresh of a never-published document task; preserve all spend/history."""
+    if not journal or not journal.state.get('generationPlan'):
+        return False
+    scope, state = journal.scope, journal.state
+    if (scope.repo != recovery.ROOT or getattr(scope, 'mode', None) != 'develop' or state.get('files') or state.get('pr')
+            or state.get('executionPublication') or state.get('executionPublished')
+            or state.get('authorization') != scope.identity or state.get('digest') != scope.digest):
+        return False
+    head = os.getenv('GITHUB_SHA', '')
+    if not re.fullmatch('[a-f0-9]{40}', head) or head == state.get('candidate'):
+        return False
+    text = f'Refresh unpublished task #{scope.number} from reviewed main {head}; preserve cumulative budgets and archive saved work.'
+    receipts = [row for row in recovery.comments(journal.read, scope.number)
+                if row.get('user', {}).get('login', '').lower() == 'onlykappa' and row.get('body', '').strip() == text]
+    if not receipts:
+        return False
+    from engine import inventory
+    output = inventory.target(journal.issue.get('body', ''))
+    if not output:
+        raise CheckpointMismatch('Reviewed refresh requires one explicit new documentation output')
+    main = journal.target_read(f'repos/{scope.repo}/git/ref/heads/main')['object']['sha']
+    if main != head:
+        raise CheckpointMismatch('Reviewed refresh must execute the exact current main engine')
+    comparison = journal.target_read(f'repos/{scope.repo}/compare/{state["candidate"]}...{head}')
+    added = comparison.get('commits') or []
+    dates = [recovery._time(row.get('commit', {}).get('committer', {}).get('date')) for row in added]
+    if (comparison.get('status') != 'ahead' or not 0 < len(added) <= recovery.MAX_ADOPTED_COMMITS
+            or comparison.get('ahead_by') != len(added) or None in dates
+            or not any((recovery._time(row.get('created_at')) or 0) >= max(dates) for row in receipts)):
+        raise CheckpointMismatch('Reviewed refresh lacks a fresh owner receipt for a bounded fast-forward')
+    from urllib.error import HTTPError
+    for path in (f'repos/{scope.repo}/git/ref/heads/kappa/dev-{scope.number}',
+                 f'repos/{scope.repo}/contents/{output}?ref={head}'):
+        try:
+            journal.target_read(path)
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            raise CheckpointMismatch('Reviewed refresh cannot replace an existing branch or document')
+    if journal.target_read(f'repos/{scope.repo}/pulls?state=all&head=onlykappa:kappa/dev-{scope.number}&per_page=2'):
+        raise CheckpointMismatch('Reviewed refresh cannot replace an existing task PR')
+    proposal = pending(journal, 'develop')
+    if proposal and (proposal['identity'].get('base') != state['candidate'] or set(proposal['changes']) != {output}):
+        raise CheckpointMismatch('Saved proposal is outside the unpublished document refresh')
+    keys = ('executionCheckpoint', 'executionDiagnostics', 'generationCheckpoint', 'generationPlan',
+            'taskPlan', 'requirementClassification', 'branchOrigin', 'repairBatch')
+    saved = {key: copy.deepcopy(state[key]) for key in keys if key in state}
+    material = {key: _read_blob(journal, value) for key, value in saved.items()
+                if isinstance(value, dict) and 'hash' in value and 'parts' in value}
+    plan = material.get('generationPlan', {})
+    if (plan.get('task') != scope.number or plan.get('repo') != scope.repo
+            or plan.get('scope') != scope.digest or plan.get('base') != state['candidate']):
+        raise CheckpointMismatch('Saved plan is not bound to the current task and candidate')
+    if proposal:
+        material['proposal'] = proposal
+    # A failed archive leaves every live checkpoint intact. No counters or ledger are reset.
+    journal.archive([dict(base=state['candidate'], replacement=head, receipts=saved, material=material)], 'reviewedUnpublished')
+    previous = state['candidate']
+    for key in keys:
+        state.pop(key, None)
+    state.update(candidate=head, unpublishedRefresh=dict(base=previous, replacement=head,
+                 ownerReceipt=receipts[-1]['id'], archived=list(saved)))
+    journal.event('Archived unpublished preparation for owner-reviewed main refresh',
+                  strategy='refresh_unpublished_from_reviewed_main', outcome='recovering')
+    return True
 
 
 def save_plan(journal, repo, sha, task, context, sources):

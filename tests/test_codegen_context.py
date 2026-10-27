@@ -60,14 +60,15 @@ class CodegenContextTests(unittest.TestCase):
         seen = []
         def model(key, prompt, **kwargs):
             wire = task_state.add_to_prompt(prompt, journal)
-            self.assertLessEqual(len(wire.encode('utf-16-le')) // 2, gateway.ENGINE_PROMPT_CHARS)
+            self.assertLessEqual(len(wire.encode('utf-16-le')) // 2, gateway.engine_prompt_cap())
             self.assertEqual(prompt.count(request), 1)
             self.assertIn('return a + b', prompt)
             self.assertIn('(Advisory repair history omitted.)', prompt)
             seen.append(prompt)
             return 'fixture', json.dumps({'files': [{'path': 'app.py', 'reason': 'Convert requested numeric inputs',
                 'edits': [{'find': 'return a + b', 'replace': 'return int(a) + int(b)'}]}]})
-        with patch.object(developer, 'run_model', side_effect=model):
+        with patch.object(gateway, 'engine_prompt_cap', return_value=20000), \
+                patch.object(developer, 'run_model', side_effect=model):
             result = developer.generate('key', task, developer.ROOT,
                                         sources, existing)
         self.assertEqual(len(seen), 1)

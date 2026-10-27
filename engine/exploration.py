@@ -487,6 +487,19 @@ def leads(text, limit=4):
     return found[:limit]
 
 
+def traceback_files(text, files, limit=3):
+    """Resolve traceback frames only to exact known workspace paths, never host files."""
+    found = []
+    for path, line in re.findall(r'''File \\?["']([^"'\\\r\n]+)\\?["'], line (\d+)''', text or ''):
+        if path.startswith('/work/'):
+            path = path[len('/work/'):]
+        if path in files and '..' not in path.split('/') and not path.startswith('/'):
+            row = (path, int(line))
+            if row not in found:
+                found.append(row)
+    return found[-limit:]
+
+
 def module_paths(module, files):
     """Repository files a module name may refer to: pkg.mod -> pkg/mod.py or pkg/mod/__init__.py; ./x -> x.js ..."""
     module = module.strip()

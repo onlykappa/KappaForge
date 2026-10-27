@@ -49,10 +49,22 @@ SIGNALS = {
 AUTHORITY_RE = re.compile(r"\b(?:merge|deploy\w*|release|publish|ship|go\s+live|grant|revoke|make\s+(?:it\s+)?public|"
                           r"delete\s+(?:the\s+)?(?:repo|repository|branch)|force[- ]push|change\s+(?:the\s+)?permissions?)\b", re.I)
 NEGATION_RE = re.compile(r"(?:\b(?:do\s+not|don't|dont|never|without|no|not|nor|hold\s+off\s+on|avoid)\s+(?:\w+\s+){0,2})$", re.I)
+FRESH_BRANCH_RE = re.compile(r'^\s*Start (?:fresh|a fresh branch) from (?:the )?current (?:main|default branch)[.!]?\s*$', re.I)
+SCOPE_ACTION = (r'(?:repair code|broaden the audit|edit their audit report|reuse their branch/checkpoint|'
+                r'merge|deploy|release|proceed to \d+(?:\.\d+)*[a-z]?|continue to \d+(?:\.\d+)*[a-z]? or any later job)')
+SCOPE_RESTRICTION_RE = re.compile(r"^\s*(?:Do not|Don't|Never)\s+" + SCOPE_ACTION +
+                                r'(?:(?:,\s*(?:or\s+)?|\s+or\s+)' + SCOPE_ACTION + r')*[.!]?\s*$', re.I)
 BULLET_RE = re.compile(r'^\s*(?:[-*•]|\d+[.)])\s+')
 # A sentence ends at . ! or ? followed by whitespace or the end, so file names and versions (a.yml, 1.2) stay whole.
 SENTENCE_RE = re.compile(r'\S.*?(?:[.!?]+(?=\s|$)|$)')
 FILLER_RE = re.compile(r"^\W*(?:thanks?(?:\s+you)?|thx|ty|please|pls|ok(?:ay)?|cool|lmk|hi|hey|hello)\W*$", re.I)
+
+
+def canonical_text(text, originals):
+    """Map typography-only review rewrites back to the exact owner text; never paraphrases."""
+    key = lambda value: ' '.join(re.sub('[\u2010\u2011\u2012\u2013\u2212]', '-', value).split())
+    matches = [original for original in originals if key(original) == key(text)]
+    return matches[0] if len(matches) == 1 else text
 
 
 @dataclass(frozen=True)
@@ -105,16 +117,45 @@ def split(request):
 
 def authority_ask(text):
     """Whether the text asks for an owner-only action, rather than forbidding one."""
-    return any(not NEGATION_RE.search(text[:m.start()]) for m in AUTHORITY_RE.finditer(text))
+    return any(not negated_action(text, m.start())
+               and not (m.group().lower() == 'merge' and re.search(r'\b(?:the|these|those)\s+$', text[:m.start()], re.I)
+                        and re.match(r'\s+commits?\b', text[m.end():], re.I))
+               for m in AUTHORITY_RE.finditer(text))
+
+
+def negated_action(text, position):
+    """Carry an initial prohibition through a comma list, never across a new clause.
+
+    This only classifies requests; the execution authority guard is unchanged.
+    Conjunctions other than the list's final 'or' deliberately end this narrow rule.
+    """
+    prefix = text[:position].replace('\u2019', "'")
+    clause = re.split(r'[;.!?\n]|\b(?:but|then|however|and)\b', prefix, flags=re.I)[-1]
+    if NEGATION_RE.search(clause):
+        return True
+    tail = re.split(r'[;.!?\n]|\b(?:but|then|however|and)\b', text[position:], flags=re.I)[0]
+    return bool(re.match(r"^\s*(?:please\s+)?(?:do not|don't|dont|never|avoid)\s+", clause, re.I)
+                and ',' in clause and re.search(r'\bor\b', clause + tail, re.I)
+                and not re.search(r'\b(?:instead|rather)\b', clause + tail, re.I))
 
 
 def rule_categories(text):
     from engine import verify
+    from engine import operational_review
+    from engine import inventory
     found = [name for name, pattern in SIGNALS.items() if pattern.search(text)]
-    if verify.lifecycle_requirement(text):
+    if inventory.evidence_ask(text):
+        found = [c for c in found if c not in WORK] + ['documentation']
+    elif verify.lifecycle_requirement(text) or operational_review.kind(text):
         found = [c for c in found if c not in WORK] + ['housekeeping']
     elif verify.CODE_WORK_RE.search(text) and not WORK & set(found):
         found.append('code')
+    if re.match(r'^\s*Do not continue to\s+\d+(?:\.\d+)*[a-z]?\b', text, re.I) and not verify.CODE_WORK_RE.search(text):
+        found.append('housekeeping')
+    if FRESH_BRANCH_RE.fullmatch(text):
+        found.append('housekeeping')
+    if re.search(r'\bverify\b.*\b(?:commits?|provenance)\b', text, re.I):
+        found.append('research')
     if authority_ask(text):
         found.append('owner_decision')
     if not found:
@@ -131,6 +172,8 @@ def validate(items, request, scope=None):
     - Authorization: a read-only task records work it may not do; an owner-only action is never done by KappaForge.
     None of this grants or widens anything; the execution scope alone decides what runs."""
     from engine import verify
+    from engine import operational_review
+    from engine import inventory
     holds = bool(verify.MERGE_HOLD_RE.search((request or '').replace('’', "'")))
     restrictions = dict(getattr(scope, 'restrictions', None) or {})
     mode = getattr(scope, 'mode', None)
@@ -140,6 +183,22 @@ def validate(items, request, scope=None):
         text = item['text']
         rules = set(rule_categories(text))
         chosen = set(item.get('categories') or ()) & set(CATEGORIES) or set(rules)
+        if inventory.evidence_ask(text):
+            chosen -= WORK
+            chosen.add('documentation')
+        # Saved labels are revalidated too: old behavioral/owner-action labels
+        # must not keep orchestration and inspection stuck in source-repair loops.
+        phase_stop = re.match(r'^\s*Do not continue to\s+\d+(?:\.\d+)*[a-z]?\b', text, re.I)
+        inspected_commits = rules == {'research'} and re.search(r'\bverify\b.*\bcommits?\b', text, re.I)
+        if (verify.lifecycle_requirement(text) or operational_review.kind(text)
+                or FRESH_BRANCH_RE.fullmatch(text) or (phase_stop and not verify.CODE_WORK_RE.search(text))):
+            chosen -= WORK
+            chosen.add('housekeeping')
+        if inspected_commits and not verify.CODE_WORK_RE.search(text) and not authority_ask(text):
+            chosen -= WORK | {'owner_decision'}
+            chosen.add('research')
+        if AUTHORITY_RE.search(text) and not authority_ask(text):
+            chosen.discard('owner_decision')  # Revalidate saved/model labels on prohibited action lists too.
         chosen |= rules & {'owner_decision', 'security'}
         if not chosen & WORK and rules & WORK and not verify.lifecycle_requirement(text):
             chosen |= rules & WORK  # The model may not hide named work behind a non-work label.

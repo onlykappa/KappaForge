@@ -350,3 +350,14 @@ export function chunkNormalizer(route){
   return {candidates:choice?[{content:{parts:[{text:visible(choice.delta?.content||"")}]},finishReason:finish(choice.finish_reason)}]:[],usageMetadata:usage(raw?.usage),error:raw?.error};
  };
 }
+
+// A byte-based upper bound avoids treating chars/3.5 as an exact tokenizer.
+// Reserve framing and output before touching provider quota or inference APIs.
+export function codingRequestBudget(input,provider,route,defaults){
+ const inputTokens=input.messages.reduce((n,m)=>n+new TextEncoder().encode(m.content).length+16,64);
+ const outputTokens=Math.min(input.maxTokens||defaults.maxOutputTokens,provider.maxOutput||defaults.maxOutputTokens,route.maxOutput||Infinity);
+ const context=Math.min(provider.context||route.context||defaults.maxContextTokens,route.context||Infinity);
+ const requiredTokens=inputTokens+outputTokens+256;
+ const fits=requiredTokens<=context&&(!provider.freeRequestTokenBudget||requiredTokens<=provider.freeRequestTokenBudget);
+ return {inputTokens,outputTokens,requiredTokens,context,fits};
+}

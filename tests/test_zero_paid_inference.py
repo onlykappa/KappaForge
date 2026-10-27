@@ -96,9 +96,9 @@ class CodingOutputCeilingTests(unittest.TestCase):
     def test_the_prompt_budget_enforces_the_engine_request_cap(self):
         limits = runner.PROVIDERS['routing']['defaults']
         self.assertEqual(limits['maxOutputTokens'], 8192)
-        self.assertTrue(gateway.prompt_fits('x' * 20000))
-        self.assertFalse(gateway.prompt_fits('x' * 20001))
-        self.assertFalse(gateway.prompt_fits('x' * 80000))
+        self.assertTrue(gateway.prompt_fits('x' * gateway.engine_prompt_cap()))
+        self.assertFalse(gateway.prompt_fits('x' * (gateway.engine_prompt_cap() + 1)))
+        self.assertTrue(gateway.prompt_fits('x' * 35000))
 
 
 class PaidInferenceSwitchTests(unittest.TestCase):

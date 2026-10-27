@@ -1,14 +1,14 @@
 import registry from "../../config/providers.json" with {type:"json"};
 import {discover,telemetry} from "./intelligence.js";
 import "../../preview/stream.js";
-import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,chunkNormalizer} from "./providers.js";
-import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,estimateTokens,providerKeyRejected} from "./router-coordination.js";
+import {fallbackRoutes,callProvider,normalizeResult,validateProviderResponse,chunkNormalizer,codingRequestBudget} from "./providers.js";
+import {reserveProvider,reportProviderOutcome,reserveRouterRequest,routerCaps,providerKeyRejected} from "./router-coordination.js";
 import {providerAllowed} from "./routing-policy.js";
 import {premiumRescue,premiumAvailable,recordFreeAnswer,validRescue} from "./premium.js";
 import {retryDeadline} from "./retry-deadline.js";
 import {OutputLimitError} from "./output-limit.js";
 
-const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars,MAX_CONTEXT=registry.routing.defaults.maxContextTokens;
+const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars;
 // Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
 // keeps writing may finish (it is cut off only after IDLE_MS of silence, or at the attempt's overall limit).
 const FIRST_BYTE_MS=20000,IDLE_MS=30000;
@@ -126,7 +126,6 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
  const routes=discoveredRoutes.filter(route=>!excluded.has(route.provider+":"+route.model));
  const system=input.messages.filter(m=>m.role==="system").map(m=>m.content).join("\n");
  const messages=input.messages.filter(m=>m.role!=="system").map(m=>({role:m.role,content:m.content}));
- const promptTokens=estimateTokens(input.messages.map(m=>m.content).join("\n"));
  let pricing={};try{pricing=JSON.parse(env.MODEL_PRICING_JSON||"{}")}catch{}
  if(!routes.length)return new Response(JSON.stringify({error:"No enabled provider route is currently available",code:"free_route_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
  let lastStatus=0,lastRetryAt=null,attempts=0;
@@ -158,17 +157,15 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
   lastRoute=route;attempt={provider:route.provider,model:route.model,role,rank:i+1,attempted:false,status:null};history.push(attempt);
   const p=route.provider==="gemini"?registry.routing.primary:registry.providers[route.provider];
   // A route's own limits (a model's published context and output) only ever tighten the provider's.
-  let maxTokens=Math.min(input.maxTokens||registry.routing.defaults.maxOutputTokens,p.maxOutput||registry.routing.defaults.maxOutputTokens,route.provider!=="gemini"&&route.maxOutput||Infinity);
-  const context=Math.min(p.context||MAX_CONTEXT,route.provider!=="gemini"&&route.context||Infinity),estimatedInput=Math.ceil(input.messages.reduce((n,m)=>n+m.content.length,0)/3.5);
-  // Conservative free-plan per-request envelope, distinct from context size or
-  // remaining quota. Never truncate the request or raise a configured limit.
-  if(p.freeRequestTokenBudget)maxTokens=Math.min(maxTokens,p.freeRequestTokenBudget-estimatedInput-256);
-  if(estimatedInput+maxTokens>context||maxTokens<Math.min(512,input.maxTokens||registry.routing.defaults.maxOutputTokens)){
+  const budget=codingRequestBudget(input,p,route,registry.routing.defaults),maxTokens=budget.outputTokens,context=budget.context;
+  // Skip a route that cannot reserve both input and its answer. Never silently
+  // shrink the answer to squeeze into a smaller account's token allowance.
+  if(!budget.fits){
    lastStatus=413;setFailure({source:"gateway_guard",category:"context_limit",upstreamStatus:null});continue;
   }
   const reservationId=baseId.slice(0,31)+"-"+String(attempts).padStart(4,"0");attempts++;
   let reserved;
-  try{reserved=await reserveProvider(env,route,reservationId,{tokens:promptTokens})}catch{return new Response(JSON.stringify({error:"Shared route reservation failed; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
+  try{reserved=await reserveProvider(env,route,reservationId,{tokens:budget.requiredTokens})}catch{return new Response(JSON.stringify({error:"Shared route reservation failed; inference was not sent",code:"routing_state_unavailable"}),{status:503,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}
   if(!reserved.allowed){
    // The whole account is cooling down or busy: skip its other models now (NVIDIA alone lists dozens), and do not
    // count the refusal as a try, so the request reaches providers that can answer.

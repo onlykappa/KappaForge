@@ -121,7 +121,8 @@ class ReviewResourceTests(unittest.TestCase):
             self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
             self.assertGreater(len(sizes), 1)
             self.assertTrue(all(size < sizes[0] for size in sizes[1:]))
-            self.assertLessEqual(max(batches), 2)
+            # Compact protocol can retain a complete batch; every decision still needs proof.
+            self.assertLessEqual(max(batches), 4)
             self.assertEqual((goal.record.checks, self.journal.state['budgets']), before)
         finally:
             task_goal.CURRENT.reset(handle)
@@ -318,7 +319,7 @@ class ReviewResourceTests(unittest.TestCase):
             raise resource_error()
         with self.assertRaises(gateway.GatewayResourceExhausted) as raised:
             resources.call(model, 'key', build)
-        self.assertEqual(len(prompts), 3)
+        self.assertEqual(len(prompts), 4)
         self.assertTrue(all(len(b) < len(a) for a, b in zip(prompts, prompts[1:])))
         self.assertTrue(raised.exception.terminal)
         self.assertEqual(recovery.diagnose(raised.exception), ('gateway_resource', 'stop'))
@@ -411,7 +412,7 @@ class ReviewResourceTests(unittest.TestCase):
         claims = ['Fix numeric string case ' + str(n) for n in range(11)]
         rows = repair_guard.verify_all_findings(model, 'key', self.goal.request, claims, {'app.py': 'return a + b\n'})
         self.assertEqual(sizes, [4, 4, 3])
-        self.assertTrue(all(n <= 1600 for n in outputs))
+        self.assertEqual(outputs, [3072, 3072, 2816])
         self.assertEqual([r['id'] for r in rows], [repair_guard.digest(c) for c in claims])
 
     def test_repair_round_focuses_three_targets_and_keeps_deferred_findings_open(self):
@@ -454,7 +455,7 @@ class ReviewResourceTests(unittest.TestCase):
                 {'app.py': 'return a + b\n'}, {'app.py': 13}, guide)
         self.assertIn('int(a)', result[2]['app.py'])
         self.assertIn('Keep these exact owner project rules.', model.call_args.args[1])
-        self.assertLessEqual(len(model.call_args.args[1]), gateway.ENGINE_PROMPT_CHARS)
+        self.assertLessEqual(len(model.call_args.args[1]), gateway.engine_prompt_cap())
         self.assertIn(self.goal.request, model.call_args.args[1])
 
     def test_focused_repair_fallback_never_grows_source_or_output_load(self):

@@ -10,7 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'config' / 'execution-infrastructure.json'
-WORKFLOWS = ('agent.yml', 'continuous.yml', 'ios-build.yml', 'project-tests.yml', 'recovery.yml', 'review-graph.yml', 'sandbox-tests.yml')
+WORKFLOWS = ('agent.yml', 'continuous.yml', 'ios-build.yml', 'project-tests.yml', 'recovery.yml', 'review-graph.yml', 'sandbox-tests.yml', 'task282-progress.yml')
 # GitHub's standard hosted labels, unmetered for public repositories. Larger runners (custom names, *-large,
 # *-xlarge) are billed even for public repositories. Same pattern as chat-backend/src/free-execution.js.
 STANDARD_RUNNER = re.compile(r'(?:ubuntu-(?:latest|2[24]\.04)(?:-arm)?|windows-(?:latest|202[25]|11-arm)|macos-(?:latest|1[3-5]|26)(?:-intel)?)')

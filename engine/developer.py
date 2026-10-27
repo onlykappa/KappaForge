@@ -56,6 +56,10 @@ def _add_engine_developer_source(sources, existing, repo, sha, token):
     """
     if repo != ROOT:
         return sources
+    from engine import inventory
+    goal = task_goal.CURRENT.get()
+    if goal and inventory.target(goal.original):
+        return sources  # A documentation inventory needs its described source, not this large controller.
     path = 'engine/developer.py'
     if path in sources:
         return sources
@@ -179,6 +183,9 @@ def repair_history(result):
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
     from engine import execution
+    from engine import commit_provenance
+    # This runs even when reusing a publication receipt after interruption.
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, writer))
     journal = recovery.CURRENT.get()
     key = execution.digest(dict(repo=repo, parent=parent, changes=changes,
                                 modes={p: modes.get(p, '100644') for p in changes}, branch=branch))
@@ -208,6 +215,8 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
             move_branch(repo, writer, branch, commit['sha'], create=create)
     else:
         move_branch(repo, writer, branch, commit['sha'], create=create)
+    from engine import operational_review
+    operational_review.published(parent, commit['sha'])
     if journal:
         journal.state['phase'] = 'publication'
         journal.checkpoint(commit['sha'], base=base, files=changes)
@@ -710,6 +719,13 @@ def plan_change(api_key, task, files, guide="", allowed=None, limit=LARGE.read_f
             references = [p for p in files if p in task and p.endswith('.md')]
             return references[:PINNED.read_files], [], 'Create only the owner-scoped documentation file; retain all existing files.'
         limit = PINNED.read_files
+    from engine import inventory
+    direct = inventory.read_plan(task, files, limit)
+    if direct:
+        exploration.REQUEST.set(())
+        clarification.REQUEST.set(None)
+        requirements.ANSWER.set(None)
+        return direct
     return select_files(api_key, task, files, guide, allowed, limit, with_stages=True, repo_map=repo_map)
 
 
@@ -1336,6 +1352,8 @@ def source_priorities(sources, existing, task, journal=None):
                  'Edits match current source, preserve scope and pass syntax; independent validation is still required')
 def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
     goal = task_goal.CURRENT.get()
+    validation_budget = budget  # Prompt compaction must not redefine allowed output growth.
+    retry_lines = {p: list(lines) for p, lines in REPAIR_SOURCE_LINES.get().items()}
     guide = compact_project_guidance(guide, task, sources.keys(), limit=3000)
     working_sources = dict(sources)
     journal = recovery.CURRENT.get()
@@ -1369,7 +1387,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 continue
             if len(text) > cap:
                 block = (f"\n===== FILE {path} (LARGE: {len(text)} chars, showing relevant excerpts; use edits only, "
-                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap, lines_near=REPAIR_SOURCE_LINES.get().get(path, ()))[:cap]}\n")
+                         f"copying find text from the lines shown) =====\n{excerpt(text, task, cap, lines_near=retry_lines.get(path, ()))[:cap]}\n")
                 is_partial = True
             else:
                 block = f"\n===== FILE {path} =====\n{text}\n"
@@ -1438,6 +1456,12 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                        '{"explanation":"short plain explanation","summary":"short technical summary",'
                        '"files":[{"path":"' + edit_path + '","reason":"how this file fulfills the owner request","content":"complete Markdown"}]}.\n'
                        'PROJECT INSTRUCTIONS:\n' + guide + '\nTASK:\n' + task + '\nSOURCE FILES:\n' + context)
+    from engine import inventory
+    if inventory.source_review(task):
+        snapshot = (getattr(journal, 'state', None) or {}).get('candidate', '')
+        if re.fullmatch('[a-f0-9]{40}', snapshot):
+            instruction = ('Controller source snapshot SHA: ' + snapshot + '. Use immutable GitHub /blob/' + snapshot
+                           + '/path citations, never /blob/main/. Do not invent line numbers.\n' + instruction)
     instruction_head = instruction[:-len(context)] if context else instruction
     advisory = REPAIR_ADVISORY.get()
     history = ("\nRECOVERY HISTORY (avoid these failed strategies):\n" + json.dumps(journal.state['events'][-5:])) if journal else ''
@@ -1484,6 +1508,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     rejected_proposals = list(prior_proposals)
     attempts_made = 0
     evidence = ""
+    anchor_retry = False
+    anchor_count = 0
     rejected_signatures = set()
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
     context_key = hashlib.sha256((json.dumps(shown_sources, sort_keys=True) + str(budget)).encode()).hexdigest()
@@ -1510,12 +1536,17 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                  ("\nPreviously rejected proposals (do not repeat or lightly paraphrase):\n" +
                   "\n".join(rejected_proposals[-4:]) if rejected_proposals else "") +
                  "\nValidator history: " + "; ".join(errors[-3:]) +
-                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], sources) if errors else
+                 "\nRoot-cause guidance: " + (diagnose_generation_failure(errors[-1], working_sources) if errors else
                   "The previous pass failed before producing a validated proposal. Use its error evidence above.") +
                  ("\nRepair evidence: " + evidence if evidence else "") +
                  "\nAnalyze why the last proposal failed, choose a different valid edit, and "
                  "check that each path changes exactly once. Do not ask the owner for guidance "
                  "during this bounded attempt. Never weaken safety checks or invent source lines.") if attempt_number else ""
+        if anchor_retry:
+            retry = (f'\nAUTONOMOUS REPAIR — CURRENT-SOURCE RETRY: The last anchor matched {anchor_count} times. '
+                     'Previously rejected proposals omitted; discard removed diff lines. '
+                     'Required distinct repair approach: ' + repair_methods[attempt_number] +
+                     '\nUse a short unique literal from current source; return the smallest exact edit.\n' + evidence)
         if resource_retry:
             # A gateway resource failure is not a code-proposal rejection. Keep the next
             # request smaller by omitting the diagnostic boilerplate and reducing sources.
@@ -1609,7 +1640,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                     isinstance(entry, dict) and entry.get('path') in partial_sources and 'content' in entry
                     for entry in proposal['files']):
                 raise ValueError('Large file was shown as excerpts; change it with edits, not content')
-            changes = apply_changes(shown_sources, existing, proposal, budget)
+            changes = apply_changes(shown_sources, existing, proposal, validation_budget)
             task_state.before_edit(changes)  # Also validates the owner goal.
             if goal:
                 goal.file_reasons(proposal, changes)
@@ -1660,9 +1691,27 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                         if journal:
                             journal.state['sourcePriority'] = priority[:20]
                             journal.persist()
+                        if isinstance(exc, EditMismatch):
+                            match = difflib.SequenceMatcher(None, exc.find, loaded, autojunk=False).find_longest_match()
+                            line = loaded.count('\n', 0, match.b)
+                            retry_lines[path] = list(range(max(0, line - 2), min(len(loaded.split('\n')), line + 4)))
+                            evidence = repair_evidence(EditMismatch(path, exc.find, loaded, loaded.count(exc.find)))
                         context, shown_sources, partial_sources = source_context()
                         evidence += "\nReread immutable candidate source: " + path
                         note("read", "Read " + path + ", which the change turned out to need", tool="read", detail=path)
+            if isinstance(exc, EditMismatch):
+                anchor_retry = True
+                anchor_count = exc.count
+                advisory, history = '', ''  # Stale proposals are not current source evidence.
+                if exc.path not in retry_lines and exc.path in working_sources:
+                    current = working_sources[exc.path]
+                    match = difflib.SequenceMatcher(None, exc.find, current, autojunk=False).find_longest_match()
+                    line = current.count('\n', 0, match.b)
+                    retry_lines[exc.path] = list(range(max(0, line - 2), min(len(current.split('\n')), line + 4)))
+                    priority = [exc.path] + [p for p in priority if p != exc.path]
+                    context, shown_sources, partial_sources = source_context()
+            else:
+                anchor_retry = False
             if isinstance(exc, json.JSONDecodeError) and output.strip():
                 malformed = output
             if signature:
@@ -2461,7 +2510,7 @@ MAX_REPAIR_TARGETS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
-                   receipt=None, defer_lifecycle=False, review_only=False):
+                   receipt=None, defer_lifecycle=False, review_only=False, prior_assessments=None):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
 
     `receipt` is GitHub's record of this task's draft PR (verify.pr_receipt); it alone decides PR lifecycle asks.
@@ -2482,17 +2531,32 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     outstanding = list(UNFINISHED)
     previous_review_problems = []
     journal = recovery.CURRENT.get()
-    requirement_catalog = {text: {'text': text, 'met': False} for text in journal.state['requirements']
+    original_texts = [row['text'] for row in requirements.split(task_goal.CURRENT.get().request)] if task_goal.CURRENT.get() else []
+    canonical = lambda text: requirements.canonical_text(text, original_texts)
+    requirement_catalog = {canonical(text): {'text': canonical(text), 'met': False} for text in journal.state['requirements']
                            if not (defer_lifecycle and verify.lifecycle_requirement(text))} if journal else {}
     repair_failures = []
     rescued = None
     loop = repair_guard.RepairLoop() if repair_guard.enabled() else None
     finding_feedback, recheck_only_used = [], False
+    retired, retired_source = set(), None
+    if prior_assessments and not changes:
+        stamp, prior_findings = prior_assessments
+        repair_guard.fresh(stamp, sources)
+        retired = {row.get('id') for row in prior_findings if row.get('verdict') == 'rejected' and not row.get('gate')}
+        retired_source = repair_guard.digest(sources)
+        finding_feedback = [{k: row[k] for k in ('verdict', 'safe_reason') if k in row}
+                            for row in prior_findings if row.get('verdict') == 'rejected']
     deferred_repairs = set()
     for round_ in range(MAX_CHECK_ROUNDS + 2):
+        if retired_source != repair_guard.digest({**cache, **changes}):
+            retired.clear()
+            finding_feedback = []
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
                      if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
+        from engine import commit_provenance
+        problems += commit_provenance.problems(repo, changes, lambda path: gh(path, repo_token))
         goal = task_goal.CURRENT.get()
         if goal:
             try:
@@ -2513,7 +2577,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                             'do not invent replacement work):\n' + json.dumps(finding_feedback))
         if requirement_catalog:
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
-                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + canonical_task)
+                           + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + review_task)
         classified = requirements.CURRENT.get()
         review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
         files_needed = []
@@ -2532,6 +2596,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     if not verify.lifecycle_requirement(text):
                         found.append('A requirement disappeared between repair rounds: ' + text)
             verify.resolve_lifecycle(reqs, receipt)
+            verify.resolve_controller(reqs, changes)
             # Lifecycle asks are KappaForge's own actions, not code work for a repair round.
             previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
                                        for r in reqs if r.get("met") is not True and r.get("kind") != "lifecycle"] + found
@@ -2548,7 +2613,12 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
-        problems = list(dict.fromkeys(outstanding + previous_review_problems + problems + sorted(deferred_repairs)))
+        if retired_source != repair_guard.digest({**cache, **changes}):
+            retired.clear()  # New source/dependencies require fresh finding decisions.
+        stale = [p for p in outstanding if repair_guard.digest(p) not in retired or repair_guard.shown_claim(p) != p]
+        current_problems = previous_review_problems + problems + sorted(deferred_repairs)
+        current_problem_ids = {repair_guard.digest(p) for p in current_problems}
+        problems = list(dict.fromkeys(stale + current_problems))
         task_state.review(reqs, problems)
         if review_only:
             break  # The sandbox receipt belongs to this exact candidate; a final review must never edit it.
@@ -2573,7 +2643,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             progress.ok(f'Found {len(problems)} finding(s); verifying evidence before any repair', warn=True, status='blocked')
             current_evidence = {path: read(path) for path in dict.fromkeys(list(changes) + list(sources) + files_needed) if path in existing or path in changes}
             current_evidence.update(changes)
-            claims = [p for p in problems if not verify.process_problem(p)]
+            claims = [p for p in problems if not verify.process_problem(p) and not verify.controller_problem(p)]
             if not claims:
                 break  # Only review-process gaps are open: they stay on the draft; a source repair cannot close them.
             try:
@@ -2583,10 +2653,14 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 task_state.review(reqs, problems)
                 break
             repair_targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
+            retired.update(row['id'] for row in findings if row['verdict'] == 'rejected' and not row.get('gate'))
+            retired_source = repair_guard.digest(current_evidence)
+            problems = [p for p in problems if repair_guard.digest(p) not in retired or repair_guard.shown_claim(p) != p
+                        or repair_guard.digest(p) in current_problem_ids]
             deferred_repairs.difference_update(row['claim'] for row in findings if row['verdict'] == 'rejected')
             if not repair_targets:
                 if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
-                    finding_feedback = [{k: row[k] for k in ('id', 'verdict', 'reason')} for row in findings]
+                    finding_feedback = [{k: row[k] for k in ('verdict', 'safe_reason')} for row in findings]
                     recheck_only_used = True
                     continue  # Re-review once; a rejected finding is not itself proof the task is complete.
                 problems = ['Repair findings need validation; no speculative source edits were authorized'] + problems
@@ -2772,6 +2846,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     progress.now(f"Reading the {repo} code")
     from engine import execution
     journal = recovery.CURRENT.get()
+    execution.refresh_unpublished_main(journal)
     resumed = execution.pending(journal, "develop")
     planned = execution.generation_plan(journal, repo, task) if not resumed else None
     if resumed:
@@ -2801,6 +2876,11 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         if not journal.state.get('executionPublication'):
             journal.checkpoint(sha, base=base)
         journal.loader = lambda path: read_source(repo, path, journal.state['candidate'], repo_token)
+    from engine import operational_review
+    if not resumed and not planned:
+        operational_review.observe_origin(base, sha, not leftover)
+    else:
+        operational_review.restore_origin(lambda path: gh(path, repo_token))
     if resumed:
         context = resumed["context"]
         model, summary, explanation = context["model"], context["summary"], context["explanation"]
@@ -2820,6 +2900,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         # Source code only goes to fallback providers allowed for this repository's visibility.
         allowed = code_providers(is_private(repo, repo_token))
         sources = {}
+        archive, inventory_plan = {}, None
         if planned:
             paths = planned['context']['paths']
             stages = [Stage(row['text'], row['files'], row['independent']) for row in planned['context']['stages']]
@@ -2827,7 +2908,9 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         else:
             archive = download_repository(repo, sha, existing, repo_token)
             exploration.CURRENT.set(exploration_repository(repo, sha, existing, repo_token, archive))
-            repo_map = build_repo_map(repo, sha, existing, repo_token, sources=archive)
+            from engine import inventory
+            inventory_plan = inventory.read_plan(task, existing, LARGE.read_files)
+            repo_map = None if inventory_plan else build_repo_map(repo, sha, existing, repo_token, sources=archive)
             if repo_map:
                 progress.act("read", f"Mapped {len(repo_map.paths)} files and what each defines")
             exploration.REQUEST.set(())
@@ -2835,7 +2918,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             paths = list(dict.fromkeys(list(goal.paths or ()) + paths))
         for path in paths:
             try:
-                sources[path] = read_source(repo, path, sha, repo_token)
+                sources[path] = archive[path] if inventory_plan and path in archive else read_source(repo, path, sha, repo_token)
             except (ValueError, UnicodeDecodeError):
                 continue
         require_test = tests_required(existing)
@@ -2961,6 +3044,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     plan_update(progress, "add", "The candidate passed the full sandbox regression before its first commit", "test",
                 completed=["Sandbox: full test suite passed on the uncommitted candidate"])
     changes = validation_result["candidate_changes"]
+    from engine import commit_provenance
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, repo_token))
     if execution.digest(changes) != reviewed_candidate or (resumed and answered):
         classify_task(progress, journal, repo, request)
         verdict, open_problems = review_sandbox_candidate(api_key, task, repo, saved['sha'], repo_token, sources,
@@ -3224,10 +3309,26 @@ def files_named_in(log, existing, changed):
 REPAIR_REVIEW_TARGETS = 2
 
 
+def repair_branch_observation(repo, pr, candidate, token):
+    """Observe the branch ref itself; PR base.sha can be a stale snapshot."""
+    ref = (pr.get('base') or {}).get('ref')
+    if not isinstance(ref, str) or not ref:
+        return None
+    try:
+        row = gh(f'repos/{repo}/git/ref/heads/{urllib.parse.quote(ref, safe="")}', token)
+    except (urllib.error.URLError, ValueError, TimeoutError):
+        return None
+    obj = row.get('object') if isinstance(row, dict) else None
+    sha = obj.get('sha') if isinstance(obj, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{40}', sha) or obj.get('type') != 'commit':
+        return None
+    return dict(ref=ref, sha=sha, candidate=candidate, source='github_branch_ref')
+
+
 def revision_focus(pr, log, existing, changed):
     """Investigate one small repair batch; keep the complete PR review open for final validation."""
     claims = [p for p in requirements_open(pr)
-              if not verify.lifecycle_problem(p) and not verify.process_problem(p)]
+              if not verify.lifecycle_problem(p) and not verify.process_problem(p) and not verify.controller_problem(p)]
     if log:
         claims.insert(0, 'Independent check failure (sandbox tests and/or native iOS build): ' + log[:2400])
     focus = list(dict.fromkeys(claims))[:REPAIR_REVIEW_TARGETS]
@@ -3321,6 +3422,10 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     goal.guidance(guidance)
     task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
+    from engine import operational_review
+    operational_review.restore_origin(lambda path: gh(path, repo_token))
+    if 0 < len(changed) <= 2 and all(path.endswith(('.md', '.rst', '.txt')) for path in changed):
+        task_state.begin_effort(12)
     task_state.observe_pr(pr, repo, branch)
     anchor_pr_goal(goal, pr, repo, repo_token, head_sha)
     goal.validate_paths(changed)
@@ -3409,17 +3514,20 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         existing = {path: size for path, size in existing.items() if path != edit_path}
     # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
     # by a repair: with nothing else open, this round re-checks the current source and writes no code.
-    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) for p in pending)
+    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) or verify.controller_problem(p) for p in pending)
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''
+    prior_assessments = None
     if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
         # Verify only this batch's edit targets. Deferred findings remain in
         # pending/UNFINISHED and the final whole-task review below; they are
         # neither resolved nor permission to edit additional files.
         claims = focus
         original_goal = goal.title + '\n' + goal.request
-        findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed)
+        branch_observation = repair_branch_observation(repo, pr, head_sha, repo_token)
+        findings = repair_guard.verify_all_findings(run_model, api_key, original_goal, claims, sources, allowed,
+                                                   **({'branch_observation': branch_observation} if branch_observation else {}))
         # A test that already exists on the PR base and now fails is a regression caused by this candidate. CI is the
         # evidence, so it is a repair target without a model opinion; tests the PR itself adds still need the verifier.
         base_sha = (pr.get('base') or {}).get('sha')
@@ -3429,23 +3537,31 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             journal.event('Existing tests regressed: ' + str(len(regressions)), strategy='repair_regressions',
                           next_action='Restore the existing behaviour while keeping the owner goal')
         if not targets:
-            raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
-                                                    'Verifier: ' + repair_guard.summary(findings))
-        generation_targets = tuple(files_named_in('\n'.join(targets), existing, []))
-        generation_lines = verified_source_lines(findings, sources)
-        generation_targets = tuple(dict.fromkeys(tuple(generation_lines) + generation_targets))
-        loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
-        # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
-        task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
-        task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
-        task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
-                 'do not edit for unverified findings or claim the task complete from this batch.')
-        generation_advisory = ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
-                               verified_history(design, tried, notes, native_history, diff, limit=3000))
-        if loop_approach:
-            task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
-        # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
-        task += lifecycle_note
+            if findings and all(row['verdict'] == 'rejected' for row in findings) and not failed_jobs:
+                # Disproved historical findings authorize no edits. Review the actual
+                # candidate against every requirement; rejection is not completion.
+                reverify = True
+                prior_assessments = (repair_guard.capture(sources), findings)
+                task = original_goal + '\n\nRecheck the unchanged candidate against the original requirements. ' + lifecycle_note
+            else:
+                raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
+                                                        'Verifier: ' + repair_guard.summary(findings))
+        if targets:
+            generation_targets = tuple(files_named_in('\n'.join(targets), existing, []))
+            generation_lines = verified_source_lines(findings, sources)
+            generation_targets = tuple(dict.fromkeys(tuple(generation_lines) + generation_targets))
+            loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
+            # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
+            task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
+            task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
+            task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
+                     'do not edit for unverified findings or claim the task complete from this batch.')
+            generation_advisory = ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
+                                   verified_history(design, tried, notes, native_history, diff, limit=3000))
+            if loop_approach:
+                task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
+            # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
+            task += lifecycle_note
     if reverify:
         model, summary, changes, explanation = "", "Re-checked the requirements against the current source", {}, ""
     else:
@@ -3469,6 +3585,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             changes, verdict, remaining = check_the_work(api_key, task, repo, head_sha, repo_token, sources, existing,
                                                         changes, guide, allowed, design, tests_required(existing), Progress.latest,
                                                         **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
+                                                        **({'prior_assessments': prior_assessments} if prior_assessments else {}),
                                                         receipt=verify.pr_receipt(pr, repo, branch))
         finally:
             UNFINISHED[:] = prior
@@ -3739,6 +3856,8 @@ def fix_pull_request(issue, api_key, token):
                     + validation["stop_reason"], phase=True, status="blocked")
         return None
     changes = validation["candidate_changes"]
+    from engine import commit_provenance
+    commit_provenance.require_valid(repo, changes, lambda path: gh(path, repo_token))
     if execution.digest(changes) != reviewed_candidate or (resumed and answered):
         classify_task(progress, journal, repo, request)
         verdict, problems = review_sandbox_candidate(api_key, sandbox_task, repo, head, repo_token, repair_sources,

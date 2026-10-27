@@ -1,0 +1,19 @@
+# PR reconciliation and reproduced repairs
+
+Baseline: main `3263e4306ff4f0618e0e4e42fddb0259928d617b`. Scope: reconcile retained draft PRs and repair their reproduced blockers; no merge, phase advancement, deployment or release.
+
+## Reproduction and fixes
+
+The original #279 candidate (`e2f940375bdd6d9dd764ed0cfb501849a527b921`) was stacked on an older audit branch. Integrating current main exposed 17 conflicted files. Current main was retained for those older engine/test implementations; the split-out feature files were preserved. The resulting eight-module focused suite ran 50 tests with eight failures and six errors (subtest failures included).
+
+- `scripts/prompt_cap_probe.py` accessed and assigned removed `gateway.ENGINE_PROMPT_CHARS`, causing AttributeError before its first request. It now uses normal integrated-router admission without mutating any production cap. Existing diagnostic tests cover increasing sizes, resource refusal, non-resource failure, bounded output and sanitized evidence. Generation tests now call the current cap API; the small-envelope advisory test explicitly supplies its intended 20,000-character fixture cap.
+- Intake's fixed creation time had expired. Preserve #275's isolated fixture clock and explicit expired-task refusal test; production authorization is unchanged.
+- Verifier tests predated bounded protocol retries and increased response headroom. They now distinguish invalid-citation protocol retries from a source-reread follow-up, verify identical source snapshots on invalid replies, and check the actual bounded response allocations. Neither literal-proof gates nor production retry/output ceilings are relaxed.
+- A full owner request plus source proof could not fit an existing 8,334-character learned verifier envelope: the verbose protocol was retained above an arbitrary 5,000-character cutoff. Use the existing compact protocol whenever the complete verbose request does not fit a learned ceiling; retain owner requirement references and explicit scope/omission/evidence rules. The existing long-owner/envelope regressions then pass with unchanged ceilings and full owner/source evidence. A whole batch can now fit after context reduction; the resource regression checks the four-finding batch bound and every literal decision rather than requiring an unnecessary split to two.
+- Preserve #275's lossless Unicode requirement references and review-overhead regressions. Repository routing hints are bounded separately from mandatory complete changed-file scope review. Current inventory/source-inspection, operational-receipt and literal-proof instructions are preserved. A broad regression found that the new omission wording broke an established signal; retain that signal as well as the explicit routing-hint omission notice. The immediate 16-test review-overhead/task-301 rerun passed.
+
+The combined focused set ran 55 tests, OK. The first broader run ran 1,191 tests and caught only that omission-wording failure (34 skips); it is not a passing result. Final validation results are recorded in the PR against its published head. Ten structural-rule tests passed, and the structural scan completed without error-severity findings. No live provider inference was used for these regressions. No production request ceilings, counters, effort bounds, authorization or lifecycle gates were raised or reset.
+
+## Preserved work and boundaries
+
+[pr275-reconciliation.md](pr275-reconciliation.md) preserves the historical unique ledger and dispositions. The roadmap's tracking reflects separate small audit PRs, with later phases still parked. This reconciliation does not establish full Phase 3.1 acceptance or future model accuracy. The task-intake workflow introduces `actions: write` only in its dispatch job, and uses no new secret bindings. Review that workflow before merge; this task did not dispatch inference or deploy it.

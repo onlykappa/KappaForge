@@ -26,7 +26,6 @@ def main():
     )
     journal_handle = recovery.CURRENT.set(journal)
     role_handle = task_state.ROUTING_ROLE.set("code")
-    original_cap = gateway.ENGINE_PROMPT_CHARS
     results = []
     try:
         for index, size in enumerate(SIZES):
@@ -34,7 +33,6 @@ def main():
                 print(json.dumps({'nextChars': size, 'waitSeconds': gateway.PINNED_INTERVAL}), flush=True)
                 time.sleep(gateway.PINNED_INTERVAL)
             prompt = PREFIX + ("x" * (size - len(PREFIX)))
-            gateway.ENGINE_PROMPT_CHARS = size
             try:
                 # Keep provider route and generated text out of Actions logs; only the
                 # tested size and sanitized outcome are relevant to this measurement.
@@ -58,7 +56,6 @@ def main():
                               "conclusion": "continuing" if size < SIZES[-1] else "at_least_50000"},
                              separators=(",", ":")), flush=True)
     finally:
-        gateway.ENGINE_PROMPT_CHARS = original_cap
         task_state.ROUTING_ROLE.reset(role_handle)
         recovery.CURRENT.reset(journal_handle)
     return 0

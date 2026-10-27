@@ -54,6 +54,25 @@ TARGET_RE = re.compile(r"^Repository:\s*(onlykappa/[A-Za-z0-9_.-]+)\s*$", re.M |
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "KappaForge/0.1",
            "X-GitHub-Api-Version": "2022-11-28"}
 
+def github_response(req):
+    """Retry transient read failures only; ambiguous writes must never be replayed."""
+    method = req.get_method()
+    host = urllib.parse.urlsplit(req.full_url).hostname
+    attempts = 3 if method == 'GET' and host == 'api.github.com' else 1
+    for attempt in range(attempts):
+        try:
+            return urllib.request.urlopen(req, timeout=35)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (502, 503, 504) and attempt + 1 < attempts:
+                exc.close()
+                time.sleep(attempt + 1)
+                continue
+            # Keep the HTTP type/status for existing policy checks. Never include
+            # query parameters, credentials, response bodies or untrusted messages.
+            exc.msg = f'{method} {host}: upstream HTTP {exc.code} after {attempt + 1} attempt(s)'
+            raise
+
+
 def request(url, payload=None, token=None, method=None):
     from engine.intent_guard import report_provenance, record_success
     payload = report_provenance(url, payload)
@@ -66,14 +85,14 @@ def request(url, payload=None, token=None, method=None):
     from engine.intent_guard import guard_request
     def read_current(number):
         current = urllib.request.Request(f"https://api.github.com/repos/{ROOT}/issues/{number}", headers=headers)
-        with urllib.request.urlopen(current, timeout=35) as response:
+        with github_response(current) as response:
             return json.load(response)
     guard_request(url, payload, method or ("POST" if payload is not None else "GET"), read_current)
     if (method or ("POST" if payload is not None else "GET")) == 'POST':
         from engine.infrastructure import authorize_dispatch
         authorize_dispatch(url, payload, token)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=35) as response:
+    with github_response(req) as response:
         body = response.read()
         if not body.strip():
             record_success(url, payload, {})
@@ -677,6 +696,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     from engine import recovery, task_state
     journal = recovery.CURRENT.get()
     task_state.require_journal_identity(journal)
+    task_state.charge_effort()
     if journal:
         RecoveryCoordinator.charge(journal, 'modelCalls')
     prompt = task_state.add_to_prompt(prompt, journal)
@@ -685,6 +705,8 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     # immutable owner scope that cannot fit stops without sending an oversized call.
     from engine import gateway
     gateway.require_prompt_fits(prompt)
+    from engine import operational_review
+    operational_review.bounded_request(gateway.prompt_budget(prompt))
     previous = MODEL_DEADLINE
     MODEL_DEADLINE = min(previous or float("inf"), time.monotonic() + 240)
     try:
@@ -769,7 +791,11 @@ def run_integrated_router(prompt, max_output_tokens=2000, allowed=None, json_mod
     payload.pop("premium", None)
     encoded = json.dumps(payload).encode('utf-8')
     if len(encoded) > PROVIDERS['routing']['defaults']['maxRequestBytes']:
-        raise gateway.GatewayRequestTooLarge('Serialized coding request exceeds the gateway byte limit; no inference was sent')
+        cap = PROVIDERS['routing']['defaults']['maxRequestBytes']
+        print('KAPPA_PROMPT_BUDGET ' + json.dumps(dict(requestBytes=len(encoded), requestByteCap=cap,
+              failedChecks=['serializedRequestBytes'], role=payload['role'], sent=False)), flush=True)
+        raise gateway.GatewayRequestTooLarge(f'Serialized coding request exceeds the gateway byte limit: '
+                                            f'{len(encoded)}/{cap} bytes; no inference was sent')
     request = urllib.request.Request(endpoint + "/router/infer", encoded, {
         "Content-Type": "application/json", "Authorization": "Bearer " + token,
         "Accept": "application/json", "User-Agent": "KappaForge-Coding-Router/1",

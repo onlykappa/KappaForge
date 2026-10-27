@@ -145,8 +145,8 @@ class ExplorationRepairTests(unittest.TestCase):
     def test_each_new_error_causes_further_investigation(self):
         controller, result = self.run_repair()
         investigated = [h for h in controller.state['history'] if h.startswith('Investigated the new failure')]
-        self.assertEqual(investigated, ['Investigated the new failure (discount_total): read shop/discounts.py, shop/__init__.py, shop/pricing.py',
-                                        'Investigated the new failure (ROUND_HALF_UP): read nothing new'])
+        self.assertEqual(investigated, ['Investigated the new failure (discount_total): read tests/test_shop.py, shop/discounts.py, shop/__init__.py, shop/pricing.py',
+                                        'Investigated the new failure (ROUND_HALF_UP): read shop/discounts.py'])
         import_prompt = next(p for p, a in zip(self.agent.prompts, self.agent.actions) if a == ('apply_patch', 'shop/discounts.py'))
         self.assertIn('ROUND_HALF_UP: no definition found in the repository', investigation(import_prompt))
         self.assertIn('used at shop/discounts.py:9', investigation(import_prompt))
@@ -190,7 +190,7 @@ class ExplorationRepairTests(unittest.TestCase):
         self.assertIn('discount_total: defined at shop/discounts.py:6', investigation(self.agent.prompts[0]),
                       'the resumed agent sees the saved investigation; it is not redone')
         self.assertEqual([h for h in controller.state['history'] if 'discount_total' in h and h.startswith('Investigated')][:1],
-                         ['Investigated the new failure (discount_total): read shop/discounts.py, shop/__init__.py, shop/pricing.py'])
+                         ['Investigated the new failure (discount_total): read tests/test_shop.py, shop/discounts.py, shop/__init__.py, shop/pricing.py'])
         self.assertGreater(controller.state['explored'], explored, 'the budget continues from the saved count')
 
     def test_a_failure_that_names_nothing_still_points_the_agent_at_the_test(self):
