@@ -2491,7 +2491,7 @@ MAX_REPAIR_TARGETS = 3
 
 
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
-                   receipt=None, defer_lifecycle=False, review_only=False):
+                   receipt=None, defer_lifecycle=False, review_only=False, prior_assessments=None):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
 
     `receipt` is GitHub's record of this task's draft PR (verify.pr_receipt); it alone decides PR lifecycle asks.
@@ -2518,8 +2518,19 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     rescued = None
     loop = repair_guard.RepairLoop() if repair_guard.enabled() else None
     finding_feedback, recheck_only_used = [], False
+    retired, retired_source = set(), None
+    if prior_assessments and not changes:
+        stamp, prior_findings = prior_assessments
+        repair_guard.fresh(stamp, sources)
+        retired = {row.get('id') for row in prior_findings if row.get('verdict') == 'rejected' and not row.get('gate')}
+        retired_source = repair_guard.digest(sources)
+        finding_feedback = [{k: row[k] for k in ('verdict', 'safe_reason') if k in row}
+                            for row in prior_findings if row.get('verdict') == 'rejected']
     deferred_repairs = set()
     for round_ in range(MAX_CHECK_ROUNDS + 2):
+        if retired_source != repair_guard.digest({**cache, **changes}):
+            retired.clear()
+            finding_feedback = []
         progress.now("Checking the work against the task" if not round_ else f"Checking the fixes (round {round_} of {MAX_CHECK_ROUNDS})"
                      if round_ <= MAX_CHECK_ROUNDS else "Checking the premium rescue's fix with the free models")
         problems = verify.wiring_problems(repo, ROOT, read, sources, changes, existing, task)
@@ -2581,7 +2592,12 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
-        problems = list(dict.fromkeys(outstanding + previous_review_problems + problems + sorted(deferred_repairs)))
+        if retired_source != repair_guard.digest({**cache, **changes}):
+            retired.clear()  # New source/dependencies require fresh finding decisions.
+        stale = [p for p in outstanding if repair_guard.digest(p) not in retired or repair_guard.shown_claim(p) != p]
+        current_problems = previous_review_problems + problems + sorted(deferred_repairs)
+        current_problem_ids = {repair_guard.digest(p) for p in current_problems}
+        problems = list(dict.fromkeys(stale + current_problems))
         task_state.review(reqs, problems)
         if review_only:
             break  # The sandbox receipt belongs to this exact candidate; a final review must never edit it.
@@ -2616,6 +2632,10 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 task_state.review(reqs, problems)
                 break
             repair_targets = [row['claim'] for row in findings if row['verdict'] == 'confirmed']
+            retired.update(row['id'] for row in findings if row['verdict'] == 'rejected' and not row.get('gate'))
+            retired_source = repair_guard.digest(current_evidence)
+            problems = [p for p in problems if repair_guard.digest(p) not in retired or repair_guard.shown_claim(p) != p
+                        or repair_guard.digest(p) in current_problem_ids]
             deferred_repairs.difference_update(row['claim'] for row in findings if row['verdict'] == 'rejected')
             if not repair_targets:
                 if all(row['verdict'] == 'rejected' for row in findings) and not recheck_only_used:
@@ -3466,6 +3486,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''
+    prior_assessments = None
     if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
         # Verify only this batch's edit targets. Deferred findings remain in
         # pending/UNFINISHED and the final whole-task review below; they are
@@ -3488,6 +3509,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                 # Disproved historical findings authorize no edits. Review the actual
                 # candidate against every requirement; rejection is not completion.
                 reverify = True
+                prior_assessments = (repair_guard.capture(sources), findings)
                 task = original_goal + '\n\nRecheck the unchanged candidate against the original requirements. ' + lifecycle_note
             else:
                 raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
@@ -3531,6 +3553,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             changes, verdict, remaining = check_the_work(api_key, task, repo, head_sha, repo_token, sources, existing,
                                                         changes, guide, allowed, design, tests_required(existing), Progress.latest,
                                                         **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
+                                                        **({'prior_assessments': prior_assessments} if prior_assessments else {}),
                                                         receipt=verify.pr_receipt(pr, repo, branch))
         finally:
             UNFINISHED[:] = prior
