@@ -20,12 +20,10 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version-file: .python-version
-    - name: Probe bounded free-route prompt sizes
+    - name: Probe Groq directly up to 80000 characters
       env:
-        KAPPA_ROUTER_REQUIRED: 'true'
-        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
-        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
-      run: PYTHONUNBUFFERED=1 python -m scripts.prompt_cap_probe
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      run: PYTHONUNBUFFERED=1 python -m scripts.groq_direct_probe
   router-check:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'router-check'
     runs-on: ubuntu-latest
