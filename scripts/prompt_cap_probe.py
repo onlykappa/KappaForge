@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from engine import gateway, recovery, runner, task_state
 
 
-SIZES = tuple(range(20_000, 50_001, 5_000))
+SIZES = (26_880, 26_881)
 PREFIX = "KappaForge request-size capacity probe. Reply with OK only.\n"
 
 
@@ -55,7 +55,7 @@ def main():
                 return 1 if category != "worker_resource_limit" else 0
             results.append({"chars": size, "result": "passed"})
             print(json.dumps({"tested": results, "highestSuccessfulChars": size,
-                              "conclusion": "continuing" if size < SIZES[-1] else "at_least_50000"},
+                              "conclusion": "continuing" if size < SIZES[-1] else "at_least_" + str(size)},
                              separators=(",", ":")), flush=True)
     finally:
         gateway.ENGINE_PROMPT_CHARS = original_cap

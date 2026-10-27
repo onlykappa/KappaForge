@@ -10,6 +10,9 @@ from scripts import prompt_cap_probe
 
 class PromptCapProbeTests(unittest.TestCase):
     def setUp(self):
+        self.size_patch = patch.object(prompt_cap_probe, "SIZES", tuple(range(20000, 50001, 5000)))
+        self.size_patch.start()
+        self.addCleanup(self.size_patch.stop)
         self.sleep_patch = patch('time.sleep')
         self.sleep = self.sleep_patch.start()
         self.addCleanup(self.sleep_patch.stop)
