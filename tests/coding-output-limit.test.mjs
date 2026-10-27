@@ -47,10 +47,20 @@ test('a model that publishes a smaller limit keeps it',async()=>{
  assert.equal(sent[0].max_tokens,4096);
 });
 
-test('an 8K provider cap and the Groq free request envelope still apply to a 16K ask',async()=>{
+test('a Groq request that cannot reserve its answer is skipped before inference',async()=>{
  const {response,sent}=await asked('groq',{maxTokens:16384,model:'groq:openai/gpt-oss-120b',fallback:false},[{id:'openai/gpt-oss-120b'}]);
+ assert.equal(response.status,413,await response.clone().text());
+ assert.equal(sent.length,0,'no truncated-output request should be sent');
+});
+
+test('35000-character source reaches a fitting model without calling undersized Groq or cutting output',async()=>{
+ const content='exact current source\n'.repeat(1750).slice(0,35000);
+ assert.equal(content.length,35000);
+ const {response,sent}=await asked('groq,openrouter',{maxTokens:6000,messages:[{role:'user',content}]},
+  [{id:'openai/gpt-oss-120b'},free('qwen/qwen3-coder:free',32768)]);
  assert.equal(response.status,200,await response.clone().text());
- const limit=sent[0].max_completion_tokens;
- assert.ok(limit<=registry.providers.groq.maxOutput,'provider cap');
- assert.ok(limit<=registry.providers.groq.freeRequestTokenBudget-256,'free request envelope');
+ assert.equal(sent.length,1);
+ assert.equal(sent[0].model,'qwen/qwen3-coder:free');
+ assert.ok(sent[0].messages.some(m=>m.role==='user'&&m.content===content),'complete owner/source payload survives routing');
+ assert.equal(sent[0].max_tokens,6000);
 });

@@ -30,7 +30,7 @@ class LongTaskBriefTests(unittest.TestCase):
         self.assertIn(TASK, model.call_args.args[1])
 
     def test_brief_that_cannot_fit_the_request_cap_fails_before_inference(self):
-        too_long = 'x' * 20000
+        too_long = 'x' * gateway.engine_prompt_cap()
         with patch.object(developer, 'run_model') as model:
             with self.assertRaises(gateway.GatewayRequestTooLarge):
                 developer.generate('fixture', too_long, 'onlykappa/KappaForge', SOURCES, EXISTING)

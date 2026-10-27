@@ -172,7 +172,8 @@ def resolve(reqs, changes):
                     proof = dict(paths=sorted(paths), guard='task draft workflow only; no release authority')
             else:
                 stats = record.control.get('requests')
-                if stats and stats.get('calls', 0) > 0 and stats.get('maxChars', 20001) <= 20000:
+                from engine import gateway
+                if stats and stats.get('calls', 0) > 0 and stats.get('maxChars', gateway.engine_prompt_cap() + 1) <= gateway.engine_prompt_cap():
                     proof = dict(paths=sorted(paths), boundedRequests=stats['calls'], maxPromptChars=stats['maxChars'],
                                  guard='unchanged gateway/provider gates; documentation-only diff')
         if proof:

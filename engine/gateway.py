@@ -9,7 +9,6 @@ from engine.reliability import ProviderRoutesUnavailable, retry_after
 
 PINNED_OUTPUT_TOKENS = 768
 PINNED_PROMPT_CHARS = 18000
-ENGINE_PROMPT_CHARS = 20000
 PINNED_MAX_CALLS = 4
 PINNED_INTERVAL = 65
 RESOURCE_ROLES = ('verify', 'review', 'diagnose', 'code', 'light')
@@ -25,6 +24,12 @@ class GatewayRequestTooLarge(RuntimeError):
     """Local request construction failure, never a provider capacity failure."""
     terminal = True
     gateway_failure = True
+
+
+def engine_prompt_cap():
+    """The shared transport boundary; each Worker route checks its own token budget."""
+    from engine.runner import PROVIDERS
+    return PROVIDERS['routing']['defaults']['maxPromptChars']
 
 
 def resource_ceiling():
@@ -62,10 +67,10 @@ def prompt_budget(prompt, reserve=0):
     prompt = task_state.add_to_prompt(prompt, recovery.CURRENT.get())
     from engine.runner import PROVIDERS
     limits = PROVIDERS['routing']['defaults']
-    # Match JS UTF-16 length and the conservative context estimate used by the router.
+    # Match JS UTF-16 length. Model context is checked per route in the Worker;
+    # the default model's context must not reject larger authorized models here.
     chars = len(prompt.encode('utf-16-le')) // 2
-    maximum = min(ENGINE_PROMPT_CHARS, limits['maxPromptChars'],
-                  int((limits['maxContextTokens'] - limits['maxOutputTokens']) * 3.5))
+    maximum = engine_prompt_cap()
     ceiling = resource_ceiling()
     if ceiling is not None:
         maximum = min(maximum, ceiling)
@@ -80,7 +85,7 @@ def prompt_budget(prompt, reserve=0):
         failed.append('requestBytes')
     return dict(promptChars=chars, promptCharCap=maximum, promptJsonBytes=wire,
                 reserve=reserve, requestOverheadBytes=4096, requestByteCap=limits['maxRequestBytes'],
-                engineCharCap=ENGINE_PROMPT_CHARS, gatewayCharCap=limits['maxPromptChars'],
+                engineCharCap=engine_prompt_cap(), gatewayCharCap=limits['maxPromptChars'],
                 contextTokenCap=limits['maxContextTokens'], outputTokenReserve=limits['maxOutputTokens'],
                 resourceCharCap=ceiling, failedChecks=failed)
 
@@ -93,7 +98,7 @@ def require_prompt_fits(prompt):
     budget = prompt_budget(prompt)
     if budget['failedChecks']:
         print('KAPPA_PROMPT_BUDGET ' + json.dumps(dict(budget, role=resource_role(), sent=False), sort_keys=True), flush=True)
-        raise GatewayRequestTooLarge('Coding prompt exceeds the gateway request/context budget; '
+        raise GatewayRequestTooLarge(f'Inference prompt ({resource_role()}) exceeds the gateway request/context budget; '
                                     f"prompt characters {budget['promptChars']}/{budget['promptCharCap']}; "
                                     f"request estimate {budget['promptJsonBytes'] + budget['requestOverheadBytes']}/{budget['requestByteCap']} bytes; "
                                     f"failed {','.join(budget['failedChecks'])}; "
@@ -171,7 +176,7 @@ class ReviewResources:
                     if local_reductions >= 3:
                         raise
                     chars = len(prompt.encode('utf-16-le')) // 2
-                    cap = max(1024, min(ENGINE_PROMPT_CHARS - 1024, chars * 2 // 3))
+                    cap = max(1024, min(engine_prompt_cap() - 1024, chars * 2 // 3))
                     self.ceiling = min(self.ceiling or cap, cap)
                     local_reductions += 1
                     print('Gateway request exceeds the engine prompt cap; rebuilding with less review evidence.', flush=True)
