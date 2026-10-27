@@ -2533,6 +2533,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     outstanding = list(UNFINISHED)
     previous_review_problems = []
     journal = recovery.CURRENT.get()
+    if journal and journal.state.get('requirementClassification') and requirements.CURRENT.get() is None:
+        goal = task_goal.CURRENT.get()
+        classify_task(progress, journal, repo, goal.original if goal else task_goal.owner_request(journal.issue))
     original_texts = [row['text'] for row in requirements.split(task_goal.CURRENT.get().request)] if task_goal.CURRENT.get() else []
     canonical = lambda text: requirements.canonical_text(text, original_texts)
     requirement_catalog = {canonical(text): {'text': canonical(text), 'met': False} for text in journal.state['requirements']
@@ -2607,6 +2610,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 rows = requirements.matrix(classified, reqs, lambda path: changes.get(path) if path in changes else read(path))
                 requirements.ROWS.set(rows)
                 previous_review_problems += requirements.open_items(rows)
+                previous_review_problems += ['Requirement not reviewed: ' + row['id'] + ' ' + row['text'][:200]
+                                             for row in rows if row['status'] == 'not reviewed']
             if not reqs:
                 previous_review_problems.append("Requirement review returned no requirements; verification is incomplete")
             elif not previous_review_problems:

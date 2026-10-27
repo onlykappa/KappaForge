@@ -143,6 +143,45 @@ class PartialAnswerTests(Base):
 
 
 class ProcessProblemTests(Base):
+    def test_review_only_retry_reloads_saved_classification_before_accepting_completion(self):
+        from engine import requirements
+        from tests.test_recovery_journal import GitHub
+        world = GitHub()
+        journal = world.journal()
+        request = '- Document numeric inputs.\n- Document empty input refusal.'
+        self.goal.request = self.goal.original = request
+        classified = requirements.classify(request)
+        requirements.save(journal, classified, developer.ROOT, request)
+        self.addCleanup(recovery.CURRENT.reset, recovery.CURRENT.set(journal))
+        self.addCleanup(requirements.CURRENT.reset, requirements.CURRENT.set(None))
+        def review(*args, **kwargs):
+            self.assertEqual([r.id for r in kwargs['classified']], [r.id for r in classified])
+            return ([dict(id=classified[0].id, text=classified[0].text, met=True,
+                          evidence={'path': 'app.py', 'quote': 'return a + b'})], [], [])
+        with patch.object(verify, 'model_review', side_effect=review), \
+                patch.object(developer, 'generate', side_effect=AssertionError('missing review is not a source defect')):
+            _, _, problems = developer.check_the_work(
+                'key', request, developer.ROOT, SHA, 'token', SOURCES, {'app.py': 40}, {}, '',
+                {'free'}, '', False, self.progress())
+        self.assertTrue(any('Requirement not reviewed: ' + classified[1].id in p for p in problems), problems)
+
+    def test_omitted_classified_requirement_blocks_completion_without_source_repair(self):
+        from engine import requirements
+        request = '- Document numeric inputs.\n- Document empty input refusal.'
+        self.goal.request = self.goal.original = request
+        classified = requirements.classify(request)
+        self.addCleanup(requirements.CURRENT.reset, requirements.CURRENT.set(classified))
+        review = ([dict(id=classified[0].id, text=classified[0].text, met=True,
+                        evidence={'path': 'app.py', 'quote': 'return a + b'})], [], [])
+        with patch.object(verify, 'model_review', return_value=review), \
+                patch.object(developer, 'generate', side_effect=AssertionError('missing review is not a source defect')):
+            changes, verdict, problems = developer.check_the_work(
+                'key', request, developer.ROOT, SHA, 'token', SOURCES, {'app.py': 40}, {}, '',
+                {'free'}, '', False, self.progress())
+        self.assertEqual(changes, {})
+        self.assertTrue(any('Requirement not reviewed: ' + classified[1].id in p for p in problems), problems)
+        self.assertTrue(all(verify.process_problem(p) for p in problems), problems)
+
     PROCESS = ['Requirement review unavailable; task completion is not verified: TimeoutError',
                'Requirement review returned no requirements; verification is incomplete',
                'Requirement verification is incomplete', 'Invalid requirement verification record',
