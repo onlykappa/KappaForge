@@ -15,8 +15,14 @@ CI_FILES = ('tests.yml', 'agent.yml', 'sandbox-tests.yml', 'project-tests.yml',
             'review-graph.yml', 'ios-build.yml', 'deploy-chat.yml', 'recovery.yml')
 
 
+def source_review(task):
+    match = re.search(r'\bCreate only docs/[A-Za-z0-9_./-]+\.md[^\n:]{0,100}:\s*document[^\n]*', task, re.I)
+    return bool(match and re.search(r'\bsource inspection\b', match.group(), re.I)
+                and not re.search(r'\b(?:implement|refactor|fix|add|repair)\b', match.group(), re.I))
+
+
 def target(task):
-    if not TASK_RE.search(task):
+    if not TASK_RE.search(task) and not source_review(task):
         return None
     matches = re.findall(r'\bCreate only (docs/[A-Za-z0-9_./-]+\.md)(?=[:\s.]|$)', task)
     if len(matches) != 1 or '..' in matches[0] or '//' in matches[0]:
@@ -25,7 +31,7 @@ def target(task):
 
 
 def evidence_ask(text):
-    return bool((TASK_RE.search(text) and not re.search(r'\b(?:fix|implement|refactor|code|feature|button|screen|ui|endpoint|route|function)\b', text, re.I))
+    return bool(source_review(text) or (TASK_RE.search(text) and not re.search(r'\b(?:fix|implement|refactor|code|feature|button|screen|ui|endpoint|route|function)\b', text, re.I))
                 or re.fullmatch(r'Inspect source and cite file paths/commit-pinned GitHub links[.]?', text, re.I)
                 or re.fullmatch(r'(?:Label|Distinguish) source inspection (?:separately )?from (?:tests|checks) actually run'
                                 r'(?:; record uncertainties instead of guessing)?[.]?', text, re.I))
@@ -33,6 +39,13 @@ def evidence_ask(text):
 
 def read_plan(task, files, limit):
     output = target(task)
+    if source_review(task) and output and output not in files:
+        paths = ['engine/runner.py', 'engine/intent_guard.py', 'KAPPA.md', '.kappaforge/owner-preferences.md']
+        if len(paths) <= limit and all(p in files for p in paths):
+            return paths, [], ('One source-inspection document. Trace request(), guard_request(), check_current() and permit() '
+                               'from their actual definitions, including payload and owner-body checks. Do not call an '
+                               'uninspected function proven or invent missing checks; distinguish policy from implemented '
+                               'behavior and tests actually run. Cite the inspected main revision and stop at this partial job.')
     if (not output or output in files or not all(p in files for p in ENTRY_FILES)
             or re.search(r'\b(?:fix|implement|refactor|feature|button|screen|endpoint)\b', task, re.I)):
         return None

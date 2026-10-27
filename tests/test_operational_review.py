@@ -70,7 +70,7 @@ def simulate(origin=True):
         stack.callback(lambda: developer.UNFINISHED.__setitem__(slice(None), prior))
         progress = SimpleNamespace(now=lambda *a, **kw: None, ok=lambda *a, **kw: None)
         _, _, problems = developer.check_the_work('key', TASK, active.repo, SHA, 'token',
-            {}, {DOC: len(SOURCE)}, {DOC: SOURCE}, '', None, '', False, progress)
+            {}, {}, {DOC: SOURCE}, '', None, '', False, progress)
         return dict(counts, completed=not problems, modelCallsUsed=journal.state['budgets']['modelCalls'], liveHTTP=0)
 
 
@@ -78,6 +78,13 @@ class OperationalReviewTests(unittest.TestCase):
     def test_real_review_pipeline_resolves_constraints_without_finding_votes(self):
         result = simulate()
         self.assertEqual(result, dict(gateway=1, verification=0, review=1, completed=True, modelCallsUsed=15, liveHTTP=0))
+
+    def test_scripted_review_never_reads_github_for_the_new_document(self):
+        with patch.object(runner.urllib.request, 'urlopen', side_effect=AssertionError('Unexpected live HTTP')) as network:
+            result = simulate()
+        network.assert_not_called()
+        self.assertTrue(result['completed'])
+        self.assertEqual(result['gateway'], 1)
 
     def test_missing_origin_stays_open_without_spending_source_repair_calls(self):
         result = simulate(origin=False)

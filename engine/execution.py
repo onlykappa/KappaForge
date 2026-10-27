@@ -7,6 +7,7 @@ import base64
 import copy
 import hashlib
 import json
+import os
 import re
 import shlex
 import time
@@ -222,6 +223,75 @@ def generation_plan(journal, repo, task):
             or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != task_digest(task)):
         raise CheckpointMismatch('Saved generation plan belongs to different task authority')
     return plan
+
+
+def refresh_unpublished_main(journal):
+    """Owner-receipted refresh of a never-published document task; preserve all spend/history."""
+    if not journal or not journal.state.get('generationPlan'):
+        return False
+    scope, state = journal.scope, journal.state
+    if (scope.repo != recovery.ROOT or getattr(scope, 'mode', None) != 'develop' or state.get('files') or state.get('pr')
+            or state.get('executionPublication') or state.get('executionPublished')
+            or state.get('authorization') != scope.identity or state.get('digest') != scope.digest):
+        return False
+    head = os.getenv('GITHUB_SHA', '')
+    if not re.fullmatch('[a-f0-9]{40}', head) or head == state.get('candidate'):
+        return False
+    text = f'Refresh unpublished task #{scope.number} from reviewed main {head}; preserve cumulative budgets and archive saved work.'
+    receipts = [row for row in recovery.comments(journal.read, scope.number)
+                if row.get('user', {}).get('login', '').lower() == 'onlykappa' and row.get('body', '').strip() == text]
+    if not receipts:
+        return False
+    from engine import inventory
+    output = inventory.target(journal.issue.get('body', ''))
+    if not output:
+        raise CheckpointMismatch('Reviewed refresh requires one explicit new documentation output')
+    main = journal.target_read(f'repos/{scope.repo}/git/ref/heads/main')['object']['sha']
+    if main != head:
+        raise CheckpointMismatch('Reviewed refresh must execute the exact current main engine')
+    comparison = journal.target_read(f'repos/{scope.repo}/compare/{state["candidate"]}...{head}')
+    added = comparison.get('commits') or []
+    dates = [recovery._time(row.get('commit', {}).get('committer', {}).get('date')) for row in added]
+    if (comparison.get('status') != 'ahead' or not 0 < len(added) <= recovery.MAX_ADOPTED_COMMITS
+            or comparison.get('ahead_by') != len(added) or None in dates
+            or not any((recovery._time(row.get('created_at')) or 0) >= max(dates) for row in receipts)):
+        raise CheckpointMismatch('Reviewed refresh lacks a fresh owner receipt for a bounded fast-forward')
+    from urllib.error import HTTPError
+    for path in (f'repos/{scope.repo}/git/ref/heads/kappa/dev-{scope.number}',
+                 f'repos/{scope.repo}/contents/{output}?ref={head}'):
+        try:
+            journal.target_read(path)
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            raise CheckpointMismatch('Reviewed refresh cannot replace an existing branch or document')
+    if journal.target_read(f'repos/{scope.repo}/pulls?state=all&head=onlykappa:kappa/dev-{scope.number}&per_page=2'):
+        raise CheckpointMismatch('Reviewed refresh cannot replace an existing task PR')
+    proposal = pending(journal, 'develop')
+    if proposal and (proposal['identity'].get('base') != state['candidate'] or set(proposal['changes']) != {output}):
+        raise CheckpointMismatch('Saved proposal is outside the unpublished document refresh')
+    keys = ('executionCheckpoint', 'executionDiagnostics', 'generationCheckpoint', 'generationPlan',
+            'taskPlan', 'requirementClassification', 'branchOrigin', 'repairBatch')
+    saved = {key: copy.deepcopy(state[key]) for key in keys if key in state}
+    material = {key: _read_blob(journal, value) for key, value in saved.items()
+                if isinstance(value, dict) and 'hash' in value and 'parts' in value}
+    plan = material.get('generationPlan', {})
+    if (plan.get('task') != scope.number or plan.get('repo') != scope.repo
+            or plan.get('scope') != scope.digest or plan.get('base') != state['candidate']):
+        raise CheckpointMismatch('Saved plan is not bound to the current task and candidate')
+    if proposal:
+        material['proposal'] = proposal
+    # A failed archive leaves every live checkpoint intact. No counters or ledger are reset.
+    journal.archive([dict(base=state['candidate'], replacement=head, receipts=saved, material=material)], 'reviewedUnpublished')
+    previous = state['candidate']
+    for key in keys:
+        state.pop(key, None)
+    state.update(candidate=head, unpublishedRefresh=dict(base=previous, replacement=head,
+                 ownerReceipt=receipts[-1]['id'], archived=list(saved)))
+    journal.event('Archived unpublished preparation for owner-reviewed main refresh',
+                  strategy='refresh_unpublished_from_reviewed_main', outcome='recovering')
+    return True
 
 
 def save_plan(journal, repo, sha, task, context, sources):
