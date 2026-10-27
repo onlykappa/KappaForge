@@ -1,8 +1,11 @@
 """Execution constraints use real controller receipts; provider responses are scripted."""
 from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
+import contextvars
 import copy
 import json
 import os
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -112,6 +115,8 @@ class OperationalReviewTests(unittest.TestCase):
                     active.permit(base + f'actions/workflows/{workflow}/dispatches', payload, 'POST')
             row = dict(text=ASKS[2], met=False)
             verify.resolve_controller([row], {DOC: SOURCE}); self.assertTrue(row['met'])
+            verify.resolve_controller([row], {'.github/workflows/other.yml': 'changed'})
+            self.assertFalse(row['met'])  # A changed workflow could have indirect side effects.
             active.own_prs.add(284)
             verify.resolve_controller([row], {DOC: SOURCE}); self.assertFalse(row['met'])
             bad = copy.deepcopy(payload); bad['inputs']['release'] = 'true'
@@ -182,6 +187,27 @@ class OperationalReviewTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify.parse_review(json.dumps({'requirements': [{'text': 'Implement a new setting.',
                                                                   'met': True, 'kind': 'controller'}]}))
+
+    def test_parallel_observations_preserve_request_diagnostics_and_durable_counters(self):
+        class YieldingState(dict):
+            def get(self, key, default=None):
+                value = super().get(key, default)
+                if key == 'boundedRequests':
+                    time.sleep(0)  # Model workers may yield between reading and replacing diagnostics.
+                return value
+        with ExitStack() as stack:
+            _, journal, _ = context(stack)
+            journal.state = YieldingState(journal.state)
+            contexts = [contextvars.copy_context() for _ in range(40)]
+            with ThreadPoolExecutor(max_workers=8) as workers:
+                futures = [workers.submit(ctx.run, operational_review.bounded_request,
+                                          dict(failedChecks=[], promptChars=1000 + i))
+                           for i, ctx in enumerate(contexts)]
+                for future in futures:
+                    future.result()
+            self.assertEqual(journal.state['boundedRequests']['calls'], 40)
+            self.assertEqual(journal.state['boundedRequests']['maxChars'], 1039)
+            self.assertEqual(journal.state['budgets']['modelCalls'], 14)
 
 
 if __name__ == '__main__':

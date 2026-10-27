@@ -107,16 +107,19 @@ def bounded_request(budget):
         return
     _, record, journal, scope = observed
     # Persist with the next existing checkpoint/counter write; no additional GitHub write.
-    stats = journal.state.get('boundedRequests', {})
-    if not isinstance(stats, dict):
-        return
-    if stats.get('authorization') != scope.identity or stats.get('digest') != scope.digest:
-        stats = dict(authorization=scope.identity, digest=scope.digest, calls=0, maxChars=0)
-    if any(type(stats.get(k)) is not int or stats[k] < 0 for k in ('calls', 'maxChars')):
-        return  # Malformed diagnostics cannot become a proof receipt.
-    stats = dict(stats, calls=stats['calls'] + 1, maxChars=max(stats['maxChars'], budget['promptChars']))
-    journal.state['boundedRequests'] = stats
-    record.control['requests'] = dict(stats)
+    with record.lock:
+        stats = journal.state.get('boundedRequests', {})
+        if not isinstance(stats, dict):
+            record.control.pop('requests', None)
+            return
+        if stats.get('authorization') != scope.identity or stats.get('digest') != scope.digest:
+            stats = dict(authorization=scope.identity, digest=scope.digest, calls=0, maxChars=0)
+        if any(type(stats.get(k)) is not int or stats[k] < 0 for k in ('calls', 'maxChars')):
+            record.control.pop('requests', None)
+            return  # Malformed diagnostics cannot become a proof receipt.
+        stats = dict(stats, calls=stats['calls'] + 1, maxChars=max(stats['maxChars'], budget['promptChars']))
+        journal.state['boundedRequests'] = stats
+        record.control['requests'] = dict(stats)
 
 
 def resolve(reqs, changes):
@@ -144,7 +147,7 @@ def resolve(reqs, changes):
         elif category == 'foreign':
             match = FOREIGN_RE.fullmatch(' '.join(req['text'].split()))
             task, pr = map(int, match.groups())
-            if scope.repo == 'onlykappa/KappaForge' and task != scope.number and pr not in scope.own_prs:
+            if docs_only and scope.repo == 'onlykappa/KappaForge' and task != scope.number and pr not in scope.own_prs:
                 # Check the actual active guard, not a model declaration that a task was left alone.
                 probes = [(f'issues/{task}/comments', {'body': 'report'}),
                           (f'pulls/{pr}', {'body': 'edit'})]

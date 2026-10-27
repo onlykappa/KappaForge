@@ -94,7 +94,9 @@ newer head requires a GitHub ancestry check. Saved checkpoints without this new
 receipt remain unverified; history is never synthesized from a model assertion.
 The current receipt does not assume that a repository's default branch is main.
 
-Foreign-task restrictions are checked against the actual active execution guard.
+Foreign-task restrictions are checked against the actual active execution guard
+and require the owner-scoped documentation-only change set; changed workflows or
+code cannot receive this non-interference exemption.
 Workflow dispatch is narrowed to the existing branch-scoped validation/review
 workflows; deployment or extra release inputs are refused. Source-scope/limit
 receipts additionally require a complete documentation-only change set within the
@@ -128,7 +130,7 @@ accuracy, transport/provider failures and old checkpoints lacking receipts still
 need honest handling. This PR fixes the identified mechanisms, not every possible
 future model error.
 
-Final expanded repair validation: 1,114 Python tests, OK (32 skipped); 868 JavaScript
+Final expanded repair validation: 1,115 Python tests, OK (32 skipped); 868 JavaScript
 tests passed. Web, execution-policy, structural and whitespace checks passed. A
 separate pinned-source check resolved all 11 blob/tree links, enumerated the 22
 workflow filenames and rechecked paid Worker limit declarations. GitHub CI is
@@ -137,3 +139,8 @@ reported on the PR against its exact head; no live task was launched.
 Source excerpts also carry renderer-owned path metadata. Literal source headers
 inside an untrusted document cannot impersonate a supplied source block; a
 regression covers that forged-header case.
+
+Parallel fitted-request observations are serialized under the existing record lock;
+a yielding-worker regression verifies exact diagnostic totals without touching
+the durable proposal counter. Non-interference receipts also reject code/workflow
+changes rather than assuming their indirect effects are harmless.
