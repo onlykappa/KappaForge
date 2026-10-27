@@ -22,6 +22,7 @@ class CompleteEnvelopeTests(unittest.TestCase):
         task_state.observe_pr(dict(html_url='https://github.com/onlykappa/KappaForge/pull/284',state='open',draft=True,
             head=dict(sha=sha,ref='kappa/dev-282',repo={'full_name':'onlykappa/KappaForge'})), 'onlykappa/KappaForge','kappa/dev-282')
         task_state.observe_validation('sandbox',sha,dict(id=40400807991,status='completed',conclusion='success'))
+        check_label = goal.record.checks['sandbox']['evidence']
         source='| 3.1a | INSPECTED | Phase 1: '+ 'b'*40 +'; Phase 2: '+ 'c'*40 +' |'
         calls=[]
         def model(key,prompt,**kwargs):
@@ -45,14 +46,17 @@ class CompleteEnvelopeTests(unittest.TestCase):
                 call.event('answered','fixture')
             return 'fixture',json.dumps({'findings':rows})
         try:
-            for claims in (['missing Phase 1 link','missing Phase 2 link'], ['missing Phase 1 link']):
-                rows=repair_guard.verify_all_findings(model,'unused',task,claims,{'docs/audit.md':source})
+            for revision, claims in enumerate((['missing Phase 1 link','missing Phase 2 link'], ['missing Phase 1 link'])):
+                # A source change requires a fresh inference, exercising the full
+                # post-answer envelope rather than the immutable-decision cache.
+                rows=repair_guard.verify_all_findings(model,'unused',task,claims,{'docs/audit.md':source + '\n' * revision})
                 self.assertTrue(all(row['verdict']=='confirmed' for row in rows))
             self.assertGreaterEqual(len(calls),2)
             self.assertTrue(all(n<=4074 for n in calls))
             self.assertEqual(journal.state['gatewayResourceBudgets'],{'verify':4074})
             self.assertEqual(goal.request,task)
             self.assertEqual(goal.record.checks['sandbox']['runId'],40400807991)
+            self.assertEqual(goal.record.checks['sandbox']['evidence'],check_label)
         finally:
             recovery.CURRENT.reset(jhandle)
             task_goal.CURRENT.reset(handle)

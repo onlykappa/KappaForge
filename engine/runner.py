@@ -696,6 +696,7 @@ def run_model(api_key, prompt, max_output_tokens=2000, allowed=None, json_mode=F
     from engine import recovery, task_state
     journal = recovery.CURRENT.get()
     task_state.require_journal_identity(journal)
+    task_state.charge_effort()
     if journal:
         RecoveryCoordinator.charge(journal, 'modelCalls')
     prompt = task_state.add_to_prompt(prompt, journal)
