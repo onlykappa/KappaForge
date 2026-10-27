@@ -231,6 +231,37 @@ class VerifierFallbackTests(GuardCase):
         self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
         self.assertNotIn('foreign', message.replace('missing_or_foreign_ids', ''), 'answer text is never echoed')
 
+    def test_malformed_citation_retries_only_failed_finding_and_keeps_uncertainty(self):
+        calls = []
+        claims = ['Plan PR opens before validation', 'Live checkout provenance unavailable']
+        def model(key, prompt, **kw):
+            data = review_input(prompt)
+            calls.append((data['findings'], kw.get('skip', ())))
+            result = json.loads(self.good(prompt))
+            if len(calls) == 1:
+                result['findings'][0]['evidence'] = ['task state says current candidate']
+                result['findings'].append(dict(id=data['findings'][1]['id'], verdict='needs_validation',
+                                              in_goal=True, reason='Live checkout evidence unavailable'))
+            return 'bad' if len(calls) == 1 else 'good', json.dumps(result)
+        rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, self.SOURCE)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([r['id'] for r in calls[1][0]], [repair_guard.digest(claims[0])])
+        self.assertEqual(calls[1][1], ('bad',))
+        self.assertEqual([r['verdict'] for r in rows], ['confirmed', 'needs_validation'])
+
+    def test_malformed_evidence_exhaustion_keeps_gate_and_never_authorizes(self):
+        for malformed in (None, [], 'source text', [dict(path='engine/developer.py')]):
+            with self.subTest(evidence=malformed):
+                def model(key, prompt, **kw):
+                    data = json.loads(self.good(prompt));data['findings'][0]['evidence'] = malformed
+                    return 'bad', json.dumps(data)
+                mocked = Mock(side_effect=model)
+                rows = repair_guard.verify_findings(mocked, 'key', self.goal.request,
+                                                    ['Plan PR opens before validation'], self.SOURCE)
+                self.assertEqual(mocked.call_count, repair_guard.VERIFIER_ATTEMPTS)
+                self.assertEqual(rows[0]['verdict'], 'needs_validation')
+                self.assertIn('no_literal_source_evidence', rows[0]['gate'])
+
     def test_a_valid_but_unconvinced_answer_is_not_retried(self):
         model = Mock(side_effect=lambda key, prompt, **kw: ('ollama:gpt-oss:120b', json.dumps({'findings': [dict(
             id=review_input(prompt)['findings'][0]['id'], verdict='needs_validation', in_goal=True, reason='Omitted code matters')]})))
