@@ -359,7 +359,8 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                       'Return strict JSON {"findings":[{"id":"supplied id","verdict":"confirmed|rejected|needs_validation",'
                       '"in_goal":true,"reason":"concrete reasoning","owner_ref":"R1",'
                       '"evidence":[{"path":"supplied path","lines":[120,122]}]}]}. '
-                      'One decision/id. confirmed requires in-scope cause/effect and literal source/owner proof; '
+                      'One decision/id; reason at most 40 words. Evidence must be objects, not prose or task-state references. '
+                      'confirmed requires in-scope cause/effect and literal source/owner proof; '
                       'rejected requires source disproof or owner exclusion. Quotes alone prove no bug. '
                       'Cite 1-8 consecutive shown lines ("123| ") or exact source quote, never traceback text. '
                       'owner_ref indexes owner_requirements spans [start,end) in owner_goal, Unicode offsets. '
@@ -414,7 +415,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
         # already answered badly are skipped), up to VERIFIER_ATTEMPTS. Every answer must still pass the full shape check.
         tried, problems = [], []
         original_claims = {digest(claim): claim for claim in claims}
-        answered, decision_contexts = {}, {}
+        answered, decision_contexts, invalid_evidence = {}, {}, set()
         attempts = 0
         def collected():
             return [answered.get(key, dict(id=key, verdict='needs_validation', in_goal=True,
@@ -439,7 +440,18 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                     if not row.get('unanswered'):
                         answered[row['id']] = row
                         decision_contexts[row['id']] = data, owner_rows
-                missing = [key for key in original_claims if key not in answered]
+                        invalid_evidence.discard(row['id'])
+                        # A schema-valid verdict with malformed citation objects is still a
+                        # protocol failure. Retry only that finding; keep the bad answer for
+                        # fail-closed diagnostics if no model supplies a usable replacement.
+                        # Explicit uncertainty and semantic disagreement are never retried.
+                        raw = row.get('evidence')
+                        if row['verdict'] in ('confirmed', 'rejected') and row['in_goal'] and sources:
+                            issues = ([quote_issue(item, data, sources) for item in raw]
+                                      if isinstance(raw, list) and 1 <= len(raw) <= 4 else ['evidence_count'])
+                            if issues and all(issue in ('malformed', 'evidence_count') for issue in issues):
+                                invalid_evidence.add(row['id'])
+                missing = [key for key in original_claims if key not in answered or key in invalid_evidence]
                 if not missing or attempts >= VERIFIER_ATTEMPTS:
                     decisions = collected()
                     break
