@@ -24,6 +24,21 @@ MARKER = re.compile(r"^<!-- kappa-authorization:(\{[^\n]+\}) -->$", re.M)
 # A pinned route is an owner-requested narrowing for a bounded live verification task.
 # Keep this list to routes whose no-charge model eligibility has been independently reviewed.
 PINNED_INFERENCE_ROUTES = {"groq:openai/gpt-oss-120b"}
+TEST_WORKFLOWS = frozenset({'sandbox-tests.yml', 'project-tests.yml', 'ios-build.yml', 'review-graph.yml'})
+
+
+def test_dispatch(path, payload, scope):
+    if not isinstance(payload, dict) or set(payload) - {'ref', 'inputs'}:
+        return False
+    match = re.fullmatch(r'/repos/onlykappa/KappaForge/actions/workflows/([^/]+)/dispatches', path)
+    inputs = (payload or {}).get('inputs', {})
+    return bool(match and match[1] in TEST_WORKFLOWS and (payload or {}).get('ref') in ('main', 'codex/phase4-cloud-execution')
+                and isinstance(inputs, dict) and isinstance(inputs.get('branch'), str) and scope.branch(inputs['branch'])
+                and set(inputs) <= {'branch', 'candidate_sha', 'repo', 'automatic_fixes'}
+                and inputs.get('repo', scope.repo.split('/')[1]) == scope.repo.split('/')[1]
+                and inputs.get('automatic_fixes', 'false') == 'false'
+                and ('candidate_sha' not in inputs or isinstance(inputs['candidate_sha'], str)
+                     and re.fullmatch('[a-f0-9]{40}', inputs['candidate_sha'])))
 
 
 def timestamp(value):
@@ -170,10 +185,8 @@ class ExecutionScope:
             raise PermissionError("Investigation cannot modify repository state")
         if not p.startswith(f"/repos/{self.repo}/"):
             # Test dispatches run on trusted KappaForge workflows for the same branch.
-            if p.startswith("/repos/onlykappa/KappaForge/actions/workflows/") and p.endswith("/dispatches"):
-                inputs = (payload or {}).get("inputs", {})
-                if self.branch(inputs.get("branch", "")):
-                    return
+            if method == 'POST' and test_dispatch(p, payload, self):
+                return
             raise PermissionError("Mutation targets a repository outside the task")
         suffix = p.removeprefix(f"/repos/{self.repo}/")
         own_pr = re.fullmatch(r"issues/(\d+)/comments|pulls/(\d+)", suffix)
@@ -191,7 +204,7 @@ class ExecutionScope:
             return
         if suffix == "pulls" and method == "POST" and (payload or {}).get("draft") is True and self.branch((payload or {}).get("head", "")):
             return
-        if suffix.startswith("actions/workflows/") and suffix.endswith("/dispatches") and self.branch((payload or {}).get("inputs", {}).get("branch", "")):
+        if method == 'POST' and test_dispatch(p, payload, self):
             return
         if suffix.startswith("contents/") and method == "PUT" and self.branch((payload or {}).get("branch", "")):
             return

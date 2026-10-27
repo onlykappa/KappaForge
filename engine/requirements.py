@@ -134,8 +134,12 @@ def negated_action(text, position):
 
 def rule_categories(text):
     from engine import verify
+    from engine import operational_review
+    from engine import inventory
     found = [name for name, pattern in SIGNALS.items() if pattern.search(text)]
-    if verify.lifecycle_requirement(text) or SCOPE_RESTRICTION_RE.fullmatch(text):
+    if inventory.evidence_ask(text):
+        found = [c for c in found if c not in WORK] + ['documentation']
+    elif verify.lifecycle_requirement(text) or operational_review.kind(text):
         found = [c for c in found if c not in WORK] + ['housekeeping']
     elif verify.CODE_WORK_RE.search(text) and not WORK & set(found):
         found.append('code')
@@ -161,6 +165,8 @@ def validate(items, request, scope=None):
     - Authorization: a read-only task records work it may not do; an owner-only action is never done by KappaForge.
     None of this grants or widens anything; the execution scope alone decides what runs."""
     from engine import verify
+    from engine import operational_review
+    from engine import inventory
     holds = bool(verify.MERGE_HOLD_RE.search((request or '').replace('’', "'")))
     restrictions = dict(getattr(scope, 'restrictions', None) or {})
     mode = getattr(scope, 'mode', None)
@@ -170,11 +176,14 @@ def validate(items, request, scope=None):
         text = item['text']
         rules = set(rule_categories(text))
         chosen = set(item.get('categories') or ()) & set(CATEGORIES) or set(rules)
+        if inventory.evidence_ask(text):
+            chosen -= WORK
+            chosen.add('documentation')
         # Saved labels are revalidated too: old behavioral/owner-action labels
         # must not keep orchestration and inspection stuck in source-repair loops.
         phase_stop = re.match(r'^\s*Do not continue to\s+\d+(?:\.\d+)*[a-z]?\b', text, re.I)
         inspected_commits = rules == {'research'} and re.search(r'\bverify\b.*\bcommits?\b', text, re.I)
-        if (verify.lifecycle_requirement(text) or SCOPE_RESTRICTION_RE.fullmatch(text)
+        if (verify.lifecycle_requirement(text) or operational_review.kind(text)
                 or FRESH_BRANCH_RE.fullmatch(text) or (phase_stop and not verify.CODE_WORK_RE.search(text))):
             chosen -= WORK
             chosen.add('housekeeping')

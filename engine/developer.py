@@ -56,6 +56,10 @@ def _add_engine_developer_source(sources, existing, repo, sha, token):
     """
     if repo != ROOT:
         return sources
+    from engine import inventory
+    goal = task_goal.CURRENT.get()
+    if goal and inventory.target(goal.original):
+        return sources  # A documentation inventory needs its described source, not this large controller.
     path = 'engine/developer.py'
     if path in sources:
         return sources
@@ -211,6 +215,8 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
             move_branch(repo, writer, branch, commit['sha'], create=create)
     else:
         move_branch(repo, writer, branch, commit['sha'], create=create)
+    from engine import operational_review
+    operational_review.published(parent, commit['sha'])
     if journal:
         journal.state['phase'] = 'publication'
         journal.checkpoint(commit['sha'], base=base, files=changes)
@@ -713,6 +719,13 @@ def plan_change(api_key, task, files, guide="", allowed=None, limit=LARGE.read_f
             references = [p for p in files if p in task and p.endswith('.md')]
             return references[:PINNED.read_files], [], 'Create only the owner-scoped documentation file; retain all existing files.'
         limit = PINNED.read_files
+    from engine import inventory
+    direct = inventory.read_plan(task, files, limit)
+    if direct:
+        exploration.REQUEST.set(())
+        clarification.REQUEST.set(None)
+        requirements.ANSWER.set(None)
+        return direct
     return select_files(api_key, task, files, guide, allowed, limit, with_stages=True, repo_map=repo_map)
 
 
@@ -2575,7 +2588,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     if not verify.lifecycle_requirement(text):
                         found.append('A requirement disappeared between repair rounds: ' + text)
             verify.resolve_lifecycle(reqs, receipt)
-            verify.resolve_controller(reqs)
+            verify.resolve_controller(reqs, changes)
             # Lifecycle asks are KappaForge's own actions, not code work for a repair round.
             previous_review_problems = [f"Requirement not met: {r['text']}" + (f" ({r['evidence']})" if r.get("evidence") else "")
                                        for r in reqs if r.get("met") is not True and r.get("kind") != "lifecycle"] + found
@@ -2854,6 +2867,11 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         if not journal.state.get('executionPublication'):
             journal.checkpoint(sha, base=base)
         journal.loader = lambda path: read_source(repo, path, journal.state['candidate'], repo_token)
+    from engine import operational_review
+    if not resumed and not planned:
+        operational_review.observe_origin(base, sha, not leftover)
+    else:
+        operational_review.restore_origin(lambda path: gh(path, repo_token))
     if resumed:
         context = resumed["context"]
         model, summary, explanation = context["model"], context["summary"], context["explanation"]
@@ -2873,6 +2891,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         # Source code only goes to fallback providers allowed for this repository's visibility.
         allowed = code_providers(is_private(repo, repo_token))
         sources = {}
+        archive, inventory_plan = {}, None
         if planned:
             paths = planned['context']['paths']
             stages = [Stage(row['text'], row['files'], row['independent']) for row in planned['context']['stages']]
@@ -2880,7 +2899,9 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         else:
             archive = download_repository(repo, sha, existing, repo_token)
             exploration.CURRENT.set(exploration_repository(repo, sha, existing, repo_token, archive))
-            repo_map = build_repo_map(repo, sha, existing, repo_token, sources=archive)
+            from engine import inventory
+            inventory_plan = inventory.read_plan(task, existing, LARGE.read_files)
+            repo_map = None if inventory_plan else build_repo_map(repo, sha, existing, repo_token, sources=archive)
             if repo_map:
                 progress.act("read", f"Mapped {len(repo_map.paths)} files and what each defines")
             exploration.REQUEST.set(())
@@ -2888,7 +2909,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
             paths = list(dict.fromkeys(list(goal.paths or ()) + paths))
         for path in paths:
             try:
-                sources[path] = read_source(repo, path, sha, repo_token)
+                sources[path] = archive[path] if inventory_plan and path in archive else read_source(repo, path, sha, repo_token)
             except (ValueError, UnicodeDecodeError):
                 continue
         require_test = tests_required(existing)
@@ -3392,6 +3413,8 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     goal.guidance(guidance)
     task_number = issue.get('number') or int(branch.removeprefix('kappa/dev-'))
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
+    from engine import operational_review
+    operational_review.restore_origin(lambda path: gh(path, repo_token))
     if 0 < len(changed) <= 2 and all(path.endswith(('.md', '.rst', '.txt')) for path in changed):
         task_state.begin_effort(12)
     task_state.observe_pr(pr, repo, branch)

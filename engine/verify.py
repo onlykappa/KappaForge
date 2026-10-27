@@ -548,7 +548,7 @@ def controller_requirement(text):
     return TASK_EXCLUSION_RE.fullmatch(' '.join(str(text or '').split()))
 
 
-def resolve_controller(reqs):
+def resolve_controller(reqs, changes=None):
     from engine import recovery, requirements
     goal, record = task_state.current()
     journal = recovery.CURRENT.get()
@@ -575,14 +575,20 @@ def resolve_controller(reqs):
         req['met'] = bool(bound and owned and identity['task'] != int(match[1]))
         req['evidence'] = ({'controller_receipt': dict(identity), 'source': 'bound_task_and_checkpoint_identity'}
                            if req['met'] else {'missing': 'Matching current task, branch and checkpoint authority required'})
-    return reqs
+    from engine import operational_review
+    return operational_review.resolve(reqs, changes)
 
 
 def controller_problem(problem, resolved=None):
     text = str(problem or '')
     target = None
     if text.startswith('Requirement not met: '):
-        match = controller_requirement(text[len('Requirement not met: '):].split(' ({')[0])
+        ask = text[len('Requirement not met: '):].split(' ({')[0]
+        from engine import operational_review
+        if operational_review.kind(ask):
+            return resolved is None or any(req.get('kind') == 'controller' and req.get('met') is True
+                                          and req.get('text') == ask for req in resolved)
+        match = controller_requirement(ask)
         target = int(match[1]) if match else None
     else:
         match = re.fullmatch(r'R\d+: No evidence that task #([1-9][0-9]*) was not resumed or its branch reused[.]?', text)
@@ -650,11 +656,12 @@ def inventory_sources(task, changes, paths):
 def inventory_evidence_problems(links, checks, read, changes, known, context):
     """An inventory cannot prove its own descriptions by quoting itself."""
     problems = []
+    from engine.inventory import MAX_REVIEW_SOURCES
+    if len({p for refs in links.values() for p in refs}) > MAX_REVIEW_SOURCES:
+        return ['Inventory source verification incomplete: exceeds bounded total source inventory']
     rows = checks if isinstance(checks, list) else []
     for document, paths in links.items():
-        if len(set(paths)) > 8:
-            problems.append('Inventory source verification incomplete: more than eight cited files in ' + document)
-        for path in paths[:8]:
+        for path in paths:
             if path == document:
                 problems.append('Inventory source verification incomplete: self-citation in ' + document)
                 continue
@@ -725,6 +732,8 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000):
         "KappaForge itself opens and updates this task's draft pull request and reports progress to the owner; those "
         "asks are checked against GitHub, not source. List them as requirements, but never report their absence from "
         "the code as a defect or ask for scripts, workflows or hooks that open PRs or send notifications. "
+        "Execution constraints such as fresh branch origin, task isolation and retained limits are checked by the "
+        "controller using bound receipts; leave unproven facts unmet rather than inventing source changes. "
         "If evidence is missing, return files_to_inspect with exact repository paths; do not invent the missing code. "
         "For documentation, verify factual descriptions against the source being described, not merely a quote from the new document. "
         + inventory_instructions +
@@ -753,7 +762,9 @@ def parse_review(output):
             or any(not isinstance(p, str) for p in data.get('problems', []))):
         raise ValueError('Invalid requirement evidence or problem entry')
     for requirement in data.get('requirements', []):
-        if requirement['met']:
+        from engine import operational_review
+        controller = controller_requirement(requirement['text']) or operational_review.kind(requirement['text'])
+        if requirement['met'] and not controller:
             evidence = requirement.get('evidence')
             if (not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str)
                     or not evidence['path'].strip() or not isinstance(evidence.get('quote'), str)
@@ -928,8 +939,13 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                 source_limit, diff_limit = 220000, 40000
                 while True:
                     complete = set()
-                    context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit,
-                                                   complete=complete, balance=scope_required or batched_scope)
+                    if inventory_links:
+                        from engine import inventory
+                        context, seen = inventory.review_context(read, review_changes, inventory_links, requested,
+                                                                source_limit, complete, known)
+                    else:
+                        context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit,
+                                                      complete=complete, balance=scope_required or batched_scope)
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
                                            inventory_limit=min(4000, source_limit // 2))
                     if classified:
@@ -1013,7 +1029,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             scope_retry_hint = 'one or more necessary decisions lacked a literal quote from the current source'
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
-            resolve_controller(reqs)
+            resolve_controller(reqs, review_changes)
             problems = [p for p in problems if not controller_problem(p, reqs)]
             for requirement in reqs:
                 original_requirements.setdefault(requirement['text'], dict(requirement))
