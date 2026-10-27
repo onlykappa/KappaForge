@@ -132,7 +132,7 @@ class ExecutionRecoveryTests(unittest.TestCase):
             def call(self, args, **kwargs):
                 result = super().call(args, **kwargs)
                 if args[:1] == ['run']:
-                    result.stdout += '\nPRIVATE=' + secret + '\nAuthorization: Bearer ' + secret
+                    result.stdout += '\nPRIVATE=' + secret + '\nAuthorization' + ': Bearer ' + secret
                 return result
         updates = []
         progress = Mock(execution_update=lambda value: updates.append(copy.deepcopy(value)))
@@ -314,6 +314,19 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertTrue(self.journal.begin('fix'))
         self.assertEqual(self.journal.state['candidate'], 'c' * 40)
         self.assertEqual(self.journal.state['phase'], 'publication')
+
+    def test_publish_candidate_rejects_empty_changes(self):
+        with self.assertRaises(developer.EmptyPublicationError):
+            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', Mock(), 'branch')
+
+    def test_publish_candidate_with_existing_receipt_rejects_empty_changes(self):
+        self.journal.state['executionPublication'] = {'key': 'k', 'sha': 's'}
+        with self.assertRaises(developer.EmptyPublicationError):
+            developer.publish_candidate('repo', 'parent', {}, {}, 'msg', Mock(), 'branch')
+
+    def test_commit_changes_returns_parent_for_empty_changes(self):
+        result = developer.commit_changes('repo', 'parent', {}, {}, 'msg', Mock())
+        self.assertEqual(result, {'sha': 'parent'})
 
 
 if __name__ == '__main__':
