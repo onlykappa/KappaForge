@@ -879,7 +879,17 @@ def syntax_error(path, text):
     """Parse-only checks. Nothing generated is imported or executed."""
     try:
         if path.endswith(".py"):
-            ast.parse(text, filename=path)
+            tree = ast.parse(text, filename=path)
+            name = path.rsplit('/', 1)[-1]
+            if path.startswith('tests/') or '/tests/' in path or name.startswith('test_') or name.endswith('_test.py'):
+                for scope in [tree] + [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
+                    tests = {}
+                    for node in scope.body:
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test'):
+                            if node.name in tests:
+                                return (f'{path}: duplicate test {node.name} at line {node.lineno} hides the '
+                                        f'regression at line {tests[node.name]}; keep one definition per test')
+                            tests[node.name] = node.lineno
         elif path.endswith(".json"):
             json.loads(text)
         elif path.endswith((".js", ".mjs", ".cjs")) and shutil.which("node"):

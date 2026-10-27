@@ -268,6 +268,17 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("previous nonblank line 2 uses 4 leading spaces", message)
         self.assertIn("Match the enclosing block's indentation", message)
 
+    def test_duplicate_test_definitions_cannot_silently_replace_regressions(self):
+        duplicate = 'raise AssertionError("must not execute")\nclass Checks:\n    def test_receipt(self):\n        assert False\n    def test_receipt(self):\n        pass\n'
+        message = syntax_error('tests/test_recovery.py', duplicate)
+        self.assertIsNotNone(message)
+        self.assertIn('test_receipt', message)
+        self.assertIn('line 5', message)
+        self.assertIn('line 3', message)
+        self.assertIsNotNone(syntax_error('test_recovery.py', 'def test_receipt(): pass\ndef test_receipt(): pass\n'))
+        self.assertIsNone(syntax_error('tests/test_recovery.py',
+            'class A:\n    def test_receipt(self): pass\nclass B:\n    def test_receipt(self): pass\n'))
+
     def test_oversized_result_reports_exact_limit_and_recommends_small_edits(self):
         source = {"app/main.py": "x = 1\n"}
         proposal = {"files": [{"path": "app/main.py", "content": "x" * (developer.SMALL.file_chars + 1)}]}
