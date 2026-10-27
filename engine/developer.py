@@ -3481,23 +3481,30 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             journal.event('Existing tests regressed: ' + str(len(regressions)), strategy='repair_regressions',
                           next_action='Restore the existing behaviour while keeping the owner goal')
         if not targets:
-            raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
-                                                    'Verifier: ' + repair_guard.summary(findings))
-        generation_targets = tuple(files_named_in('\n'.join(targets), existing, []))
-        generation_lines = verified_source_lines(findings, sources)
-        generation_targets = tuple(dict.fromkeys(tuple(generation_lines) + generation_targets))
-        loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
-        # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
-        task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
-        task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
-        task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
-                 'do not edit for unverified findings or claim the task complete from this batch.')
-        generation_advisory = ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
-                               verified_history(design, tried, notes, native_history, diff, limit=3000))
-        if loop_approach:
-            task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
-        # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
-        task += lifecycle_note
+            if findings and all(row['verdict'] == 'rejected' for row in findings) and not failed_jobs:
+                # Disproved historical findings authorize no edits. Review the actual
+                # candidate against every requirement; rejection is not completion.
+                reverify = True
+                task = original_goal + '\n\nRecheck the unchanged candidate against the original requirements. ' + lifecycle_note
+            else:
+                raise repair_guard.RepairReviewRequired('No repair finding was confirmed against the owner goal and current source; saved draft retained. '
+                                                        'Verifier: ' + repair_guard.summary(findings))
+        if targets:
+            generation_targets = tuple(files_named_in('\n'.join(targets), existing, []))
+            generation_lines = verified_source_lines(findings, sources)
+            generation_targets = tuple(dict.fromkeys(tuple(generation_lines) + generation_targets))
+            loop_approach = repair_guard.RepairLoop().before_repair(run_model, api_key, sources, findings, allowed)
+            # Earlier PR findings and logs are hypotheses, not extra requirements for generation.
+            task = original_goal + '\n\nVerified repair targets only:\n' + '\n'.join('- ' + target for target in targets)
+            task += '\nFix the verified defects; never remove the feature itself to make tests pass.'
+            task += ('\nThis is one small repair batch. Other findings remain open for the final whole-task review; '
+                     'do not edit for unverified findings or claim the task complete from this batch.')
+            generation_advisory = ('\n\nExisting design and attempt history (unverified context, not additional repair targets):\n' +
+                                   verified_history(design, tried, notes, native_history, diff, limit=3000))
+            if loop_approach:
+                task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
+            # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
+            task += lifecycle_note
     if reverify:
         model, summary, changes, explanation = "", "Re-checked the requirements against the current source", {}, ""
     else:

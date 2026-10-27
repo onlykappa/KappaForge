@@ -287,6 +287,17 @@ def owner_quoted(quote, task):
 VERIFIER_ATTEMPTS = 3
 
 
+def source_span(item, sources):
+    """A bounded, real source span is a reread lead; it is never evidence by itself."""
+    if not isinstance(item, dict):
+        return False
+    path, span = item.get('path'), item.get('lines')
+    return (isinstance(path, str) and path in sources and isinstance(span, list)
+            and 1 <= len(span) <= 2 and all(type(n) is int for n in span)
+            and 1 <= span[0] <= span[-1] <= len(sources[path].split('\n'))
+            and span[-1] - span[0] < MAX_CITED_LINES)
+
+
 def review_shape(output, ids):
     """The verifier's well-formed decisions, or ValueError naming what is wrong with the envelope. Never repairs an
     answer: a malformed or missing decision is only ever 'not answered' (needs_validation), which authorizes nothing,
@@ -372,7 +383,8 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                       'One decision/id; reason at most 40 words. Evidence must be objects, not prose or task-state references. '
                       'confirmed requires in-scope cause/effect and literal source/owner proof; '
                       'rejected requires source disproof or owner exclusion. Quotes alone prove no bug. '
-                      'Cite 1-8 consecutive shown lines ("123| ") or exact source quote, never traceback text. '
+                      'Use lines:[start,end] inclusive, at most 8 consecutive shown lines ("123| "), '
+                      'or lines:[single_line] or exact source quote; never traceback text. '
                       'owner_ref indexes owner_requirements spans [start,end) in owner_goal, Unicode offsets. '
                       'Missing/omitted source, unreproduced behavior or conflicting facts: needs_validation; name missing evidence. '
                       'If omitted code could change the verdict, identify it. '
@@ -396,7 +408,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                           'Decide every id. Return strict JSON {"findings":[{"id":"supplied id",'
                           '"verdict":"confirmed|rejected|needs_validation","in_goal":true,"reason":"cause/effect",'
                           '"owner_quote":"literal owner phrase","evidence":[{"path":"shown path","lines":[1,2]}]}]}. '
-                          'Cite 1-8 shown lines or literal quotes. '
+                          'Cite lines:[start,end] inclusive (at most 8 shown lines), [single_line], or literal quotes. '
                           'Confirm only in-scope cause/effect with owner and source proof; reject only source disproof '
                           'or owner exclusion. Missing/conflicting evidence: needs_validation. No invented proof. '
                           'GitHub errors/PR existence are not source bugs. Publication before required validation may be '
@@ -467,7 +479,10 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
                         if row['verdict'] in ('confirmed', 'rejected') and row['in_goal'] and sources:
                             issues = ([quote_issue(item, data, sources) for item in raw]
                                       if isinstance(raw, list) and 1 <= len(raw) <= 4 else ['evidence_count'])
-                            if issues and all(issue in ('malformed', 'evidence_count') for issue in issues):
+                            protocol_errors = [issue in ('malformed', 'evidence_count') or
+                                               (issue == 'lines_not_shown' and not source_span(item, sources))
+                                               for item, issue in zip(raw, issues)] if isinstance(raw, list) and 1 <= len(raw) <= 4 else [True]
+                            if issues and all(protocol_errors):
                                 invalid_evidence.add(row['id'])
                 missing = [key for key in original_claims if key not in answered or key in invalid_evidence]
                 if not missing or attempts >= VERIFIER_ATTEMPTS:
@@ -517,17 +532,13 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
             # An unseen citation is a lead, never proof. Rebuild one fresh
             # excerpt from this immutable source snapshot, then reverify once.
             # Do not chase invented paths, invalid/huge spans or owner exclusions.
-            if (_requested_lines is None and row['verdict'] == 'confirmed' and row['in_goal']
-                    and owner_proof and 'evidence:lines_not_shown' in gate):
+            if (_requested_lines is None and row['verdict'] in ('confirmed', 'rejected') and row['in_goal']
+                    and (owner_proof or row['verdict'] == 'rejected') and 'evidence:lines_not_shown' in gate):
                 for item in raw[:4]:
-                    if not isinstance(item, dict):
+                    if not source_span(item, sources):
                         continue
                     path, span = item.get('path'), item.get('lines')
-                    if (isinstance(path, str) and path in sources and isinstance(span, list)
-                            and 1 <= len(span) <= 2 and all(type(n) is int for n in span)
-                            and 1 <= span[0] <= span[-1] <= len(sources[path].split('\n'))
-                            and span[-1] - span[0] < MAX_CITED_LINES
-                            and any(n not in data['shown_lines'].get(path, ()) for n in range(span[0], span[-1] + 1))):
+                    if any(n not in data['shown_lines'].get(path, ()) for n in range(span[0], span[-1] + 1)):
                         reread[path] = list(dict.fromkeys(reread.get(path, []) + list(range(span[0] - 1, span[-1]))))[:MAX_CITED_LINES]
                         rereview.append(row['id'])
             # Missing verification is never converted into a coding request.
