@@ -17,3 +17,5 @@ The combined focused set ran 55 tests, OK. The first broader run ran 1,191 tests
 ## Preserved work and boundaries
 
 [pr275-reconciliation.md](pr275-reconciliation.md) preserves the historical unique ledger and dispositions. The roadmap's tracking reflects separate small audit PRs, with later phases still parked. This reconciliation does not establish full Phase 3.1 acceptance or future model accuracy. The task-intake workflow introduces `actions: write` only in its dispatch job, and uses no new secret bindings. Review that workflow before merge; this task did not dispatch inference or deploy it.
+
+Final local rerun: 1,191 Python tests, OK (31 skipped, 44.395 seconds); 873 JavaScript tests passed; web/bundle, dependency-map and execution-policy checks passed. Structural-rule tests: 10 passed; structural scan had no error-severity findings. Whitespace was corrected in the archived ledger excerpt before the final published follow-up. Real-Docker, native-device and live model acceptance were not run.
