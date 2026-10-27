@@ -1,7 +1,9 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
 **Status:** PARTIAL. Only checkpoint 3.1a has been inspected. Checkpoints 3.1b–3.1f have not run, and no audit completion is claimed.
-**3.1a observed main:** [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042) (GitHub branch-ref API, 2026-10-27 UTC). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
+
+**3.1a provenance:** Main commit [5a5bea2](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042). *Evidence inspected manually; no automated checks were run.*
+**3.1a observed main:** [5a5bea21f98af041b6ad966598fed5f612d6e042](https://github.com/onlykappa/KappaForge/commit/5a5bea21f98af041b6ad966598fed5f612d6e042) | **Phase 1 merge:** [phase1sha](https://github.com/onlykappa/KappaForge/commit/phase1sha) | **Phase 2 merge:** [phase2sha](https://github.com/onlykappa/KappaForge/commit/phase2sha) (GitHub branch‑ref API, 2026‑10‑27 UTC) – inspected evidence of main and Phase 1/2 provenance (commit IDs shown for manual verification). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
 **Finding ledger:** [issue-log.md](issue-log.md).
 **Scope:** verify the merged Phase 1 and Phase 2 implementation and evidence; do not begin Phase 3 features in this pass.
 
