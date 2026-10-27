@@ -1,7 +1,7 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
 **Status:** PARTIAL. Only checkpoint 3.1a has been inspected. Checkpoints 3.1b–3.1f have not run, and no audit completion is claimed.
-**3.1a observed main:** [e91ca129120ce564233c5e9c93267cf5fea95797](https://github.com/onlykappa/KappaForge/commit/e91ca129120ce564233c5e9c93267cf5fea95797) (GitHub branch-ref API, 2026-10-27 UTC). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
+**3.1a observed main:** [37e8a92cd518be570f6351acf08c94ff99827e9b](https://github.com/onlykappa/KappaForge/commit/37e8a92cd518be570f6351acf08c94ff99827e9b) (GitHub branch-ref API, 2026-10-27 UTC). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
 **Finding ledger:** [issue-log.md](issue-log.md).
 **Scope:** verify the merged Phase 1 and Phase 2 implementation and evidence; do not begin Phase 3 features in this pass.
 
@@ -9,7 +9,7 @@
 
 | Checkpoint | State | Evidence / audited SHA |
 | --- | --- | --- |
-| 3.1a Main and dependency provenance | INSPECTED | Main: [e91ca129120ce564233c5e9c93267cf5fea95797](https://github.com/onlykappa/KappaForge/commit/e91ca129120ce564233c5e9c93267cf5fea95797), Base: [e91ca129120ce564233c5e9c93267cf5fea95797](https://github.com/onlykappa/KappaForge/commit/e91ca129120ce564233c5e9c93267cf5fea95797), P1: [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded), P2: [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). GitHub metadata inspected; no Phase 1/2 audit test execution is claimed. |
+| 3.1a Main and dependency provenance | INSPECTED | Main: [37e8a92cd518be570f6351acf08c94ff99827e9b](https://github.com/onlykappa/KappaForge/commit/37e8a92cd518be570f6351acf08c94ff99827e9b), Base: [37e8a92cd518be570f6351acf08c94ff99827e9b](https://github.com/onlykappa/KappaForge/commit/37e8a92cd518be570f6351acf08c94ff99827e9b), P1: [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded), P2: [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). GitHub metadata inspected; no Phase 1/2 audit test execution is claimed. |
 | 3.1b Architecture inventory | NOT RUN | |
 | 3.1c Policy and publication review | NOT RUN | |
 | 3.1d Regression and CI evidence | NOT RUN | |
@@ -18,7 +18,7 @@
 
 ## Claims verified
 
-- 3.1a: The GitHub branch-ref API identified main as [e91ca129120ce564233c5e9c93267cf5fea95797](https://github.com/onlykappa/KappaForge/commit/e91ca129120ce564233c5e9c93267cf5fea95797). Merged PR [#263](https://github.com/onlykappa/KappaForge/pull/263) records Phase 1 merge [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded); merged PR [#264](https://github.com/onlykappa/KappaForge/pull/264) records Phase 2 merge [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). Each referenced commit was independently resolved through the GitHub commit API. These are inspected repository records, not a manual git-log inspection or completed cross-phase audit.
+- 3.1a: The GitHub branch-ref API identified main as [37e8a92cd518be570f6351acf08c94ff99827e9b](https://github.com/onlykappa/KappaForge/commit/37e8a92cd518be570f6351acf08c94ff99827e9b). Merged PR [#263](https://github.com/onlykappa/KappaForge/pull/263) records Phase 1 merge [437d74d1826b022b7f6aef05e1cb8e71f5d54ded](https://github.com/onlykappa/KappaForge/commit/437d74d1826b022b7f6aef05e1cb8e71f5d54ded); merged PR [#264](https://github.com/onlykappa/KappaForge/pull/264) records Phase 2 merge [b3f8d2f32262a2ae45f23f027712e40cfc70faac](https://github.com/onlykappa/KappaForge/commit/b3f8d2f32262a2ae45f23f027712e40cfc70faac). Each referenced commit was independently resolved through the GitHub commit API. These are inspected repository records, not a manual git-log inspection or completed cross-phase audit.
 
 ## Findings
 
