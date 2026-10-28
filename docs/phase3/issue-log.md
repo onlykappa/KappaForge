@@ -403,6 +403,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Validation: 166 focused tests, OK. First and final full discovery: each 1,157 run, OK, 32 skipped; the final run follows the tightened missing-job branch. Ten structural-rule tests, shipped-source structural scan, dependency-map, execution-policy and whitespace checks passed.
 - Status: PATCHED and locally verified; serial updated-engine trial pending. Task and Phase 3.1 remain incomplete.
 
+## P3-052 — malformed review diagnostics hide the failing field and misdirect the retry
+
+- Evidence: [40619160667](https://github.com/onlykappa/KappaForge/actions/runs/40619160667), engine `230249b`, successfully reached review-only revalidation without editing the candidate. The bounded review still failed with only “invalid response”; the actual failing field was not retained. All project CI on `230249b` passed, including real-Docker sandbox. Candidate `75811f8` stayed unchanged and completion stayed blocked.
+- Reproducers: `test_invalid_line_evidence_retry_reports_the_evidence_error_not_json` initially failed because a valid JSON reply with an unshown line span received “response was not valid JSON” instead of useful evidence feedback. `test_invalid_review_field_is_reported_without_echoing_the_reply` initially failed because an invalid met value lost its field diagnostic. Neither test establishes the exact malformed field in the live run, whose raw response is unavailable.
+- Patch: report the failing schema location and expected type, distinguish JSON syntax from invalid source proof, and give that precise safe reason to the existing single format retry. Unshown evidence remains refused. Final errors preserve the diagnostic without echoing model values, source, credentials or raw responses. No additional model call, edit permission, default completion or limit change.
+- Immediate validation: 110 focused tests, OK, one skipped. Full discovery: 1,159 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; updated-engine live diagnostic pending. Task and Phase 3.1 remain incomplete.
+
 ## Finding template
 
 ### P3-NNN — short defect title

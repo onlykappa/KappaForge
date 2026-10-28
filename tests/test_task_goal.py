@@ -104,6 +104,47 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_invalid_line_evidence_retry_reports_the_evidence_error_not_json(self):
+        from engine import requirements
+        goal = task_goal.from_request('Document input behavior.')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            calls = []
+            def model(key, prompt, **kw):
+                calls.append(prompt)
+                if len(calls) == 2:
+                    self.assertIn('lines_not_shown', prompt)
+                    self.assertNotIn('the response was not valid JSON', prompt)
+                return 'scripted', json.dumps(dict(requirements=[dict(id='R1', met=True,
+                    evidence=dict(path='README.md', lines=[1, 999] if len(calls) == 1 else [1]))], problems=[],
+                    file_scope=[dict(path='README.md', necessary=True, reason='Document the requested inputs', lines=[1])]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'README.md': 'Inputs\n'},
+                ['README.md'], classified=requirements.classify(goal.request))
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(result[0][0]['evidence']['quote'], 'Inputs')
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_invalid_review_field_is_reported_without_echoing_the_reply(self):
+        from engine import requirements
+        goal = task_goal.from_request('Document input behavior.')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            model = unittest.mock.Mock(return_value=('scripted', json.dumps(dict(
+                requirements=[dict(id='R1', met='private malformed value')], problems=[]))))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'README.md': 'Inputs\n'},
+                ['README.md'], classified=requirements.classify(goal.request))
+            self.assertIsNone(result)
+            self.assertEqual(model.call_count, 2)
+            self.assertTrue(verify.SCOPE_UNDECIDED.get())
+            self.assertIn('requirements[0].met must be boolean', verify.REVIEW_FAILURE.get())
+            self.assertNotIn('private malformed value', verify.REVIEW_FAILURE.get())
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_review_cannot_cite_real_but_unshown_source_lines(self):
         goal = task_goal.from_request('Review this source change')
         token = task_goal.CURRENT.set(goal)

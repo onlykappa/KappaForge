@@ -819,11 +819,16 @@ def parse_review(output):
     if not isinstance(data, dict) or any(not isinstance(data.get(key, []), list)
                                         for key in ('requirements', 'problems', 'files_needed', 'files_to_inspect')):
         raise ValueError('Invalid requirement review shape')
-    if (any(not isinstance(r, dict) or not isinstance(r.get('text'), str) or not r['text'].strip()
-            or not isinstance(r.get('met'), bool) for r in data.get('requirements', []))
-            or any(not isinstance(p, str) for p in data.get('problems', []))):
-        raise ValueError('Invalid requirement evidence or problem entry')
-    for requirement in data.get('requirements', []):
+    if any(not isinstance(p, str) for p in data.get('problems', [])):
+        raise ValueError('problems entries must be strings')
+    for index, requirement in enumerate(data.get('requirements', [])):
+        field = f'requirements[{index}]'
+        if not isinstance(requirement, dict):
+            raise ValueError(field + ' must be an object')
+        if not isinstance(requirement.get('text'), str) or not requirement['text'].strip():
+            raise ValueError(field + '.text needs the original wording or a valid original id')
+        if not isinstance(requirement.get('met'), bool):
+            raise ValueError(field + '.met must be boolean')
         from engine import operational_review
         controller = controller_requirement(requirement['text']) or operational_review.kind(requirement['text'])
         if requirement['met'] and not controller:
@@ -831,7 +836,9 @@ def parse_review(output):
             if (not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str)
                     or not evidence['path'].strip() or not isinstance(evidence.get('quote'), str)
                     or not evidence['quote'].strip()):
-                raise ValueError('A met requirement needs a source path and literal quote')
+                raise ValueError(field + '.evidence ' + ('lines_not_shown: cite at most eight contiguous displayed source lines'
+                    if isinstance(evidence, dict) and evidence.get('issue') == 'lines_not_shown' else
+                    'needs a source path and literal quote for met:true'))
     reqs = [r for r in data.get("requirements", []) if isinstance(r, dict) and isinstance(r.get("text"), str)]
     problems = [p for p in data.get("problems", []) if isinstance(p, str) and p.strip()]
     files = [f for f in data.get("files_needed", []) if isinstance(f, str)]
@@ -1066,15 +1073,18 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                 raw = json.loads(wire[wire.find('{'):wire.rfind('}') + 1])
                 raw = resolve_review_lines(raw, line_context, classified)
                 result = parse_review(json.dumps(raw))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
                 if not scope_required and not classified:
                     raise
+                # Report schema locations, never raw reply values. A bad proof is not a JSON syntax error.
+                reason = ('invalid JSON syntax' if isinstance(exc, json.JSONDecodeError) else
+                          str(exc) if type(exc) is ValueError else 'invalid review field type')
                 if not retried:
                     retried, avoid = True, other_model(model)
-                    scope_retry_hint = 'the response was not valid JSON'
-                    requirement_retry_hint = 'Return valid requirements with every original id and valid current-source evidence.'
+                    scope_retry_hint = reason
+                    requirement_retry_hint = reason + '. Return every original id with valid current-source evidence.'
                     continue
-                raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
+                raise ScopeReviewUnavailable('File scope reviewer returned an invalid response: ' + reason + '; no source repair is authorized')
             reqs, problems, files = result
             if goal:
                 from engine import requirements
