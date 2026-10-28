@@ -419,6 +419,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Validation: 132 focused tests, OK. Full discovery: 1,160 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed. Serial live observation is pending; no task completion is accepted.
 - Status: PATCHED and locally verified; live diagnostic pending.
 
+## P3-054 — copied numbered quotes and scope retry instructions disagree
+
+- Evidence: fresh progress in [40620760124](https://github.com/onlykappa/KappaForge/actions/runs/40620760124), engine `94f1f44`, reports the current failure explicitly: file-scope evidence does not match source for both changed task files. This is distinct from the older generic error retained on the PR. Raw scope quotes are not retained, so their exact live mismatch is unknown.
+- Reproducers: `test_copied_numbered_quotes_resolve_to_literal_scope_and_requirement_evidence` initially fails: copying `N|` display prefixes into quotes makes actual literal source fail scope validation. It also verifies that an invented quote with that prefix remains refused after normalization. `test_scope_format_retry_keeps_displayed_line_citations_available` initially fails because the later scope-retry instructions demand copied quotes despite the earlier displayed-line option.
+- Patch: apply the existing numbered-quote resolver to quoted requirement/test/scope evidence as well as line spans. Strip only the display prefix and retain exact literal/executable checks; no fuzzy matching. Make initial and retry scope instructions consistently accept bounded displayed lines when that context exists. Unknown/unshown/overlong line spans and invented source remain blocked.
+- Immediate validation: 113 focused tests, OK, one skipped. Full discovery: 1,162 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; serial updated-engine trial pending. Task and Phase 3.1 remain incomplete.
+
 ## Finding template
 
 ### P3-NNN — short defect title

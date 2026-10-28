@@ -145,6 +145,56 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_copied_numbered_quotes_resolve_to_literal_scope_and_requirement_evidence(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            source = 'def add(a, b):\n    return int(a) + int(b)\n'
+            quote = '2|     return int(a) + int(b)'
+            model = unittest.mock.Mock(return_value=('scripted', json.dumps(dict(
+                requirements=[dict(text=goal.request, met=True, evidence=dict(path='app.py', quote=quote))],
+                problems=[], file_scope=[dict(path='app.py', necessary=True, reason='Convert requested inputs', quote=quote)]))))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(result[0][0]['evidence']['quote'], '    return int(a) + int(b)')
+            self.assertEqual(result[1], [])
+            self.assertEqual(model.call_count, 1)
+            bad = '2|     return an invented implementation'
+            model = unittest.mock.Mock(return_value=('scripted', json.dumps(dict(
+                requirements=[dict(text=goal.request, met=True, evidence=dict(path='app.py', quote=bad))],
+                problems=[], file_scope=[dict(path='app.py', necessary=True, reason='Convert requested inputs', quote=bad)]))))
+            self.assertIsNone(verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py']))
+            self.assertEqual(model.call_count, 2)
+            self.assertIn('does not match current source', verify.REVIEW_FAILURE.get())
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_scope_format_retry_keeps_displayed_line_citations_available(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            source = 'def add(a, b):\n    return int(a) + int(b)\n'
+            calls = []
+            def model(key, prompt, **kw):
+                calls.append(prompt)
+                scope = dict(path='app.py', necessary=True, reason='Convert requested inputs')
+                if len(calls) == 1:
+                    scope['quote'] = 'return a fabricated implementation'
+                else:
+                    retry = prompt.split('SCOPE FORMAT REPAIR', 1)[-1]
+                    self.assertIn('or displayed lines', retry)
+                    scope['lines'] = [2]
+                return 'scripted', json.dumps(dict(requirements=[dict(text=goal.request, met=True,
+                    evidence=dict(path='app.py', lines=[2]))], problems=[], file_scope=[scope]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(result[1], [])
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_review_cannot_cite_real_but_unshown_source_lines(self):
         goal = task_goal.from_request('Review this source change')
         token = task_goal.CURRENT.set(goal)
