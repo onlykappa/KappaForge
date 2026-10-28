@@ -2637,6 +2637,10 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 # A task is not complete while a behavioral requirement is untested (Phase 2 section 4).
                 rows = requirements.matrix(classified, reqs, lambda path: changes.get(path) if path in changes else read(path))
                 requirements.ROWS.set(rows)
+                if callable(getattr(progress, 'act', None)):
+                    counts = collections.Counter(row['status'] for row in rows)
+                    progress.act('check', 'Current requirement matrix: ' + ', '.join(
+                        f'{status}={count}' for status, count in sorted(counts.items())))
                 previous_review_problems += requirements.open_items(rows)
                 previous_review_problems += ['Requirement not reviewed: ' + row['id'] + ' ' + row['text'][:200]
                                              for row in rows if row['status'] == 'not reviewed']

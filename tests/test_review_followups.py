@@ -161,6 +161,9 @@ class ReviewFollowupTests(unittest.TestCase):
                 data = dict(identity=dict(repo=ROOT, base=SHA, task=9, scope=active.digest),
                     controller=dict(status='success', stop_reason='validated', test_results=[{'status':'passed'}]),
                     patchRef=dict(hash=execution.digest(execution.patch(work))))
+                run = work.results[0]
+                data['commands'] = [dict(status=run.status, result=run.to_dict(), key=execution.digest(dict(
+                    revision=execution.revision(work), phase='final', argv=run.argv, profile=run.profile, source=run.source)))]
                 report_claims.observe_precommit(journal, data, work)
                 report_claims.published(SHA, 'b' * 40, published)
                 journal.state['candidate'] = 'b' * 40

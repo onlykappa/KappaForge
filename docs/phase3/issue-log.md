@@ -559,6 +559,22 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Immediate rerun:53 execution-recovery/follow-up/integrated-router tests pass after restoring the journal, active scope and progress publisher in fixture cleanup. Existing router URL and authorization assertions remain unchanged.
 - Status: PATCHED locally; final full discovery and exact-head CI pending.
 
+## P3-079 — actual failed local tests cannot supply a reporting receipt
+
+- Baseline: merged maina76561a. Real Session/Execution/SandboxRepairController and Journal fixtures run a failing test through fake Docker; Sandbox tests failed is then refused with Unverified validation claim: docker. Three initial cases: one error, two controls pass. No real Docker/inference/API mutation was used.
+- Cause: observe_precommit registers only fully successful validation; failed GitHub-run receipts are supported but equivalent measured local execution has no receipt.
+- Required correction: allow only a measured failed regression command tied to the current sandbox revision/checkpoint. Failure evidence cannot grant a success/native/device claim or publication authority.
+- Immediate rerun: four real-controller local-proof regressions pass after repair; reporting/recovery/controller focus77 tests passed. Zero-discovered-test and native/success claims remain refused.
+- Status: PATCHED locally; full validation and one serial trial pending.
+
+## P3-080 — passed local proof can follow an untested edit
+
+- Same baseline. A real controller validates value2, then changing its Session to value3 triggers a save with stale success fields. Docker tests passed is incorrectly accepted for the untested patch. Direct regression fails before repair; the combined four-method baseline has one error and one failed assertion.
+- Cause: success metadata/counts are checked, but the actual command key is not checked against the current workspace revision. This can promote old results during checkpoint saves after an edit.
+- Required correction: bind actual controller command receipts to the exact current revision and validation phase, preserving successful tested publication and refusal after untested changes.
+- Immediate rerun: the untested-edit regression now refuses the stale pass; tested publication/net-delta compatibility remains covered. Reporting/recovery/controller focus77 tests passed. The former manual successful-proof fixture now supplies a current command receipt; its assertions are retained.
+- Status: PATCHED locally; full validation and one serial updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title
