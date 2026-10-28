@@ -706,7 +706,7 @@ def inventory_evidence_problems(links, checks, read, changes, known, context):
     return problems
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=4000, classified=()):
+def review_prompt(task, diff, paths, context='', inventory_limit=4000, classified=(), scope_paths=()):
     schema = dict(requirements=[dict(text='short requirement', met=True,
                   evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
                   problems=['file: literal evidence, concrete defect and fix'],
@@ -714,6 +714,9 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000, classifie
     if classified:
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
         schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
+    if scope_paths:
+        schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task', quote=None)
+                                for p in sorted(scope_paths)]
     inventory = []
     used = 0
     all_paths = sorted(paths)
@@ -1021,7 +1024,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                                       complete=complete, balance=scope_required or batched_scope,
                                                       line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
-                                           inventory_limit=min(4000, source_limit // 2), classified=classified)
+                                           inventory_limit=min(4000, source_limit // 2), classified=classified,
+                                           scope_paths=sorted(review_changes) if scope_required else ())
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)
