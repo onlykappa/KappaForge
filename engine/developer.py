@@ -180,8 +180,16 @@ def repair_history(result):
     return "\n".join(rows)[:5000] or "No meaningful repair candidate was applied."
 
 
+class EmptyPublicationError(Exception):
+    """Raised when an empty change set is submitted for publication."""
+
+
+
+
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
+    if not changes:
+        raise EmptyPublicationError('Cannot publish an empty change set')
     from engine import execution
     from engine import commit_provenance
     # This runs even when reusing a publication receipt after interruption.
