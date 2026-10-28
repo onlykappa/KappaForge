@@ -38,13 +38,13 @@ function mergeTaskHistory(ids=[],records=[]){
  for(const j of trackedJobs.filter(taskHasActiveExecution))if(taskHistoryRecords[j.number]&&taskHistoryRecords[j.number].state!=='restored')writeHistoryRecord(j.number,'restored');
  dismissedTaskIds=new Set();
  for(const r of Object.values(taskHistoryRecords).filter(validHistoryRecord)){
-  if(r.snapshot?.job)delete r.snapshot.job.authorization;
+  if(r.snapshot?.job){delete r.snapshot.job.authorization;delete r.snapshot.job.cancelAuthorization;}
   if(!Number.isFinite(r.expiresAt)||r.expiresAt<=Date.now())delete r.snapshot;
   if(r.state!=='restored')dismissedTaskIds.add(r.number);
   else if(r.snapshot){
    // Restoring a card never restores execution authority, polling or dispatch.
    let job=trackedJobs.find(j=>j.number===r.number);
-   if(!job){job={...r.snapshot.job,number:r.number,finished:true,historyOnly:true};delete job.authorization;trackedJobs.push(job);}
+   if(!job){job={...r.snapshot.job,number:r.number,finished:true,historyOnly:true};delete job.authorization;delete job.cancelAuthorization;trackedJobs.push(job);}
    if(job.historyOnly)for(const c of chats)for(const m of (Array.isArray(r.snapshot.cards?.[c.id])?r.snapshot.cards[c.id]:[]))if(!c.messages.some(x=>(m.progressKey&&x.progressKey===m.progressKey)||(m.jobReport&&x.jobReport===m.jobReport)))c.messages.push(m);
   }
  }
@@ -61,7 +61,10 @@ function restoreTaskHistory(numbers=lastHistoryBatch){
  return count?'Restored '+count+' task history entries. Execution was not restarted.':'No restorable history remains. Saved history can be restored for 30 days; legacy cleared entries have no saved snapshot.';
 }
 function taskHasActiveExecution(job){
- if(job.cancellation&&!job.cancellation.terminatedAt)return true;
+ if(job.cancellation){
+  if(!job.cancellation.terminatedAt||!job.cancellation.issueClosedAt||job.cancellation.errors?.length)return true;
+  if(job.finished&&job.message==='cancelled')return false;
+ }
  if(!job.finished&&job.recoveryRequest&&job.recoveryRequest.attemptId===(job.progress?.attemptId||'')&&job.recoveryRequest.revision===(job.progress?.revision??-1))return true;
  return ['queued','running','recovering','waiting','testing'].includes(job.progress?.status)||(!job.progress&&!job.finished&&['waiting','progress'].includes(job.message));
 }
@@ -98,7 +101,7 @@ function clearTaskHistory(status,filters={},state='cleared'){
   return (!filters.before||at<Date.parse(filters.before+'T00:00:00Z'))&&(!filters.after||at>=Date.parse(filters.after+'T00:00:00Z')+86400000);
  });
  for(const job of selected){
-  const safe=JSON.parse(JSON.stringify(job));delete safe.authorization;
+  const safe=JSON.parse(JSON.stringify(job));delete safe.authorization;delete safe.cancelAuthorization;
   const cards={};for(const c of chats)cards[c.id]=c.messages.filter(m=>String(m.progressKey||m.jobReport||'').match(/^(?:progress|job):(\d+):/)?.[1]===String(job.number));
   writeHistoryRecord(job.number,state,{job:safe,cards});
  }
@@ -270,15 +273,17 @@ async function executeRecordedCapability(proposal,context={}){
    acceptTaskRetry(params.task,result,context.chatId);const job=trackedJobs.find(j=>j.number===params.task);if(job)job.routeTracking={requestId,index,requestedAt:Date.now(),outcome:context.receipt?.outcome||'requested',operation:scoped,decision:KappaIntent.executionDecision(context.userText||'retry task #'+params.task,context.resolvedContext||{})};if(job&&typeof ensureTaskCard==='function')ensureTaskCard(job);persistJobs();return result.message||'Recovery requested for task #'+params.task+'.';
   },
   'tasks.cancel':async params=>{
-   const job=trackedJobs.find(j=>j.number===params.task);if(!job?.authorization)throw Error('This device has no cancellation authorization for task #'+params.task+'. Manage its issue on GitHub.');
+   const job=trackedJobs.find(j=>j.number===params.task);if(!job)throw Error('Refresh tasks before cancelling this task.');
    if(!backend||!access)throw Error('Connect AI before cancelling a task.');
-   await refreshOperationContract();
-   const response=await fetch(backend+'/cancel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({...job.authorization,contract:registry.contract,device:taskHistoryDevice})});
+   const response=await userAuthorizedFetch('/cancel',{task:params.task,confirmed:true},context.userText||'Cancel task #'+params.task,context.source,context.requestId||requestId,context.chatId||current||'controls');
    const result=await response.json();if(!response.ok)throw Error(result.error||'Cancellation request failed');
-   job.cancellation=result.cancellation||{authorizationRevokedAt:Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};job.finished=false;job.message='cancellation-requested';persistJobs();
+   if(result.state!=='cancelled'||typeof result.id!=='string'||typeof result.conversationId!=='string')throw Error('Cancellation response did not identify a revoked request');
+   job.cancelAuthorization={id:result.id,conversationId:result.conversationId};
+   job.cancellation=result.cancellation||{authorizationRevokedAt:Date.now(),requestedAt:Date.now(),runnerAcknowledgedAt:null,terminatedAt:null};
+   job.finished=!!(job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length);job.message=job.finished?'cancelled':'cancellation-requested';job.pollAfter=0;persistJobs();
    if(context.receipt)context.receipt.outcome=job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length?'verified':'partially-completed';
    job.cancellationRoute={requestId,index,decision,operation:scoped,outcome:context.receipt.outcome};persistJobs();
-   return 'Cancellation authorization revoked for task #'+params.task+'. '+(job.cancellation.terminatedAt?'Observed task runners have stopped.':'Runner termination has not been confirmed; already running work may still be stopping.')+(job.cancellation.errors?.length?' '+job.cancellation.errors.join('. '):'');
+   return 'Stop requested for task #'+params.task+'. '+(job.cancellation.terminatedAt?'Observed task runners have stopped.':'Runner termination has not been confirmed; already running work may still be stopping.')+(job.cancellation.errors?.length?' '+job.cancellation.errors.join('. '):'');
   },
   'chats.rename':params=>{
    const chat=chats.find(c=>c.id===params.chat);if(!chat)throw Error('Conversation is no longer available.');
@@ -368,7 +373,7 @@ async function runAppOperation(text,chat,message){
 // request gets an Approve or Deny card. Everything else is conversation.
 // Tasks started outside this device (on GitHub, from another device, or by an assistant working on the repository) are
 // followed too, so Running and Agent tasks show them. They have no chat card here and open on GitHub. Open kappa-task
-// issues from the last week only.
+// issues are paginated independently of unrelated repository data.
 function adoptRepositoryTasks(issues){
  let added=false;
  for(const i of issues||[]){
@@ -377,7 +382,7 @@ function adoptRepositoryTasks(issues){
   const mode=(String(i.body||"").match(/^Mode:\s*([\w-]+)\s*$/mi)||[])[1]||"develop",known=trackedJobs.find(j=>j.number===i.number);
   // Adopted before the mode was read (2.2.5): read its reports again, so a later failure isn't hidden behind "Finished".
   if(known){if(known.adopted&&!known.mode){Object.assign(known,{mode,finished:false,finishedAt:0,lastReportId:0,lastProgressAt:0,delivered:[],pollAfter:0,message:"waiting"});added=true}continue}
-  const created=Date.parse(i.created_at||"")||0;if(Date.now()-created>7*86400000)continue;
+  const created=Date.parse(i.created_at||"")||0;
   trackedJobs.push({number:i.number,title:String(i.title||"").slice(0,120),url:i.html_url,mode,chatId:null,adopted:true,message:"waiting",queuedAt:created,activeAt:Date.parse(i.updated_at||"")||created,progress:null});
   added=true;
  }
@@ -456,7 +461,7 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
 function resumeJob(number,chatId){
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){job={number,message:"waiting",url:"https://github.com/onlykappa/KappaForge/issues/"+number,chatId};trackedJobs.push(job)}
- delete job.historyOnly;delete job.cancellation;
+ delete job.historyOnly;delete job.cancellation;delete job.cancelAuthorization;
  Object.assign(job,{finished:false,message:"waiting",activeAt:Date.now(),queuedAt:Date.now(),resumedAt:Date.now(),lastReportId:0,lastReportAt:0,pollAfter:0,stuckNote:null,finishedAt:0,lastProgressAt:0,startedAt:0,progress:KappaProgress.queued(number)});mergeTaskHistory();ensureTaskCard(job);save();persistJobs();taskCheckpoint(job,"waiting","resume");jobPollAfter=0;
 }
 // A task owns one card across comments and retries. Never infer launch from assistant prose.
@@ -533,7 +538,7 @@ function acceptTaskRetry(number,result,chatId){
  if(result.status==='blocked')throw Error(result.message||'Saved task requires review');
  let job=trackedJobs.find(j=>j.number===number);
  if(!job){resumeJob(number,chatId);job=trackedJobs.find(j=>j.number===number)}
- delete job.historyOnly;delete job.cancellation;
+ delete job.historyOnly;delete job.cancellation;delete job.cancelAuthorization;
  writeHistoryRecord(number,'restored');
  KappaProgress.recoveryReceipt(job,result);mergeTaskHistory();ensureTaskCard(job);persistJobs();jobPollAfter=0;
 }
@@ -634,18 +639,18 @@ function collectTaskFailureHistory(job,body){
  if(JSON.stringify(next)===JSON.stringify(job.failureHistory||[]))return false;
  job.failureHistory=next;return true;
 }
-async function checkJobResult(){
- if(jobTrackingBusy||Date.now()<jobPollAfter||document.hidden)return;
+async function checkJobResult(force=false){
+ if(jobTrackingBusy||(!force&&Date.now()<jobPollAfter)||document.hidden)return;
  // Tracked even when its chat was deleted or replaced by a sync, so Running never counts a task nobody follows.
- const jobs=trackedJobs.filter(j=>!j.historyOnly&&!j.finished&&Date.now()>=(j.pollAfter||0));if(!jobs.length)return;
+ const jobs=trackedJobs.filter(j=>!j.historyOnly&&(!j.finished||force)&&(force||Date.now()>=(j.pollAfter||0)));if(!jobs.length)return;
  jobTrackingBusy=true;let changed=false;
  try{
   for(const job of jobs){
    try{
    if(job.cancellation){
-    const response=await fetch(backend+'/cancel/status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.authorization)});
+    const response=await fetch(backend+'/cancel/status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.cancelAuthorization||job.authorization)});
     const receipt=await response.json();if(!response.ok)throw Error(receipt.error||'Cancellation status unavailable');
-    job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!job.cancellation.terminatedAt;job.pollAfter=Date.now()+15000;observeJobRoute(job);changed=true;continue;
+    job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!(job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length);job.message=job.finished?'cancelled':'cancellation-requested';job.pollError='';job.lastCheckedAt=Date.now();job.pollAfter=Date.now()+15000;observeJobRoute(job);changed=true;continue;
    }
    const [comments,issue]=await Promise.all([taskComments(job.number),taskRead("KappaForge/issues/"+job.number)]);
    if(dismissedTaskIds.has(job.number))continue;
@@ -776,12 +781,13 @@ document.addEventListener("keydown",e=>{
  if(e.key==="Escape")closeTaskSheet();
  if(e.key==="Tab"){const items=[...document.querySelectorAll(".task-sheet select,.task-sheet button")].filter(el=>!el.disabled);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
 });
-// The 90-second refresh and the Refresh buttons. A live stream already delivers changes, so only poll without one.
+// Live updates suppress routine polls. A manual refresh always reads one fresh snapshot;
+// awaiting the lifetime of an SSE stream would leave the Refresh button busy.
 async function refreshActivity(force=false){
  if(activity.busy||document.hidden||(!force&&view!=="home"))return;
  if(!force&&backend&&access&&workflowMonitor.mode!=="poll"&&!workflowMonitor.paused)return;
  activity.busy=true;
- try{await (force?monitorRefresh():monitorPoll());activity.last=new Date();activity.error=workflowMonitor.error}
+ try{await monitorPoll();activity.last=new Date();activity.error=workflowMonitor.error}
  finally{activity.busy=false}
 }
 

@@ -1,7 +1,7 @@
 import '../../preview/intent-guard.js';
 export const {classify,permits,executionDecision,scopeTaskRequest,requestText,taskOperation,requestLimits,taskConflict,isOperation}=globalThis.KappaIntent;
 export const capabilityRegistry=globalThis.KappaCapabilities;
-const writePaths=new Set(['/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
+const writePaths=new Set(['/cancel','/jobs','/retry','/guidance','/decisions','/undo','/actions/control']);
 export const needsAuthorization=path=>writePaths.has(path);
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).filter(k=>k!=='authorization').sort().map(k=>[k,canonical(value[k])])):value;
 const encode=value=>JSON.stringify(canonical(value));
@@ -23,7 +23,8 @@ export function validateRequest(path,payload,userText,source){
   if(payload.context&&typeof payload.context!=='string')throw Error('Invalid context');
  }else if(source==='user-request'){
   const operation=capabilityRegistry.resolve(userText);
-  if(path!=='/retry'||operation?.id!=='tasks.retry'||operation.params.task!==payload.task||Object.values(operation.restrictions).some(Boolean))throw Error('A specific user control is required for this action');
+  const kind=path==='/retry'?'tasks.retry':path==='/cancel'?'tasks.cancel':null;
+  if(!kind||operation?.id!==kind||operation.params.task!==payload.task||(path==='/retry'&&Object.values(operation.restrictions).some(Boolean)))throw Error('A specific user control is required for this action');
  }else if(payload.confirmed!==true&&path!=='/retry'&&path!=='/guidance')throw Error('Confirm the selected action');
 }
 // Account-scoped Durable Object transaction serializes claims and cancellation.
@@ -43,7 +44,7 @@ export async function authorizationStore(state,request){
   const record=await storage.get(key);
   if(!record||record.conversationId!==input.conversationId)return {error:'Authorization is missing or belongs to another conversation'};
   if(url.pathname==='/authorization/replay'){
-   if(record.digest!==input.digest||record.path!==input.path||record.state==='authorized'||record.state==='cancelled')return {error:'Operation replay is outside scope'};
+   if(record.digest!==input.digest||record.path!==input.path||record.state==='authorized'||(record.state==='cancelled'&&record.path!=='/cancel'))return {error:'Operation replay is outside scope'};
    return {...record,replayed:true};
   }
   if(url.pathname==='/authorization/complete'){
@@ -72,6 +73,7 @@ export async function authorizationStore(state,request){
 }
 export async function authorize(env,path,input,claim=false){
  if(path==='/retry')capabilityRegistry.validate('tasks.retry',{task:input.task});
+ if(path==='/cancel')capabilityRegistry.validate('tasks.cancel',{task:input.task});
  if(path==='/jobs'){
   if(input.requestScope&&!scopeTaskRequest(input.requestScope.ownerRequest,input.requestScope.actionIndex,input.instructions))throw Error('Mixed action scope is invalid');
   if(isOperation(input.instructions))throw Error('App operations cannot start development');

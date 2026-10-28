@@ -140,6 +140,7 @@ const apiServer=createServer(async(req,res)=>{
  await page.locator('#message').fill('Interrupted fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Preserved partial reply/);assert.match(await page.locator('.from-assistant').last().innerText(),/Response interrupted/);
  await page.locator('#message').fill('Buffered fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Live request fixture passed/);
  console.log(name+': progressive streaming, stop, interrupted response preservation and JSON fallback passed');
+ await require('./task-feed-browser.cjs')(page,backendURL,name);await go(page,'chat');
  // Use the actual approval, dispatch, retrieval and persistence flow. No real GitHub writes.
  const firstChat=await page.evaluate(()=>current);
  await page.evaluate(()=>{pendingJob={title:'Audit fixture project',instructions:'Inspect fixture source for bugs',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===1&&!jobTrackingBusy);

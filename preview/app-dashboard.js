@@ -26,28 +26,60 @@ const api=async (p,force=false)=>{
   const value=await r.json();requestCache.set(p,{value,time:Date.now()});return value;
  })();
  requestCache.set(p,{...hit,promise});
- try{return await promise}catch(err){if(hit?.value){requestCache.set(p,hit);return hit.value}requestCache.delete(p);throw err}
+ try{return await promise}catch(err){if(hit?.value&&!force){requestCache.set(p,hit);return hit.value}requestCache.delete(p);throw err}
 };
-let lastDashboardFetch=0, dashboardLoading=null;
+let lastDashboardFetch=0, dashboardLoading=null, taskRefreshPromise=null, taskFeedRefreshing=false;
+async function repositoryTaskIssues(force){
+ const rows=[];
+ for(let page=1;page<=10;page++){
+  const batch=await api("KappaForge/issues?labels=kappa-task&state=open&sort=updated&direction=desc&per_page=100&page="+page,force);
+  if(!Array.isArray(batch))throw Error("Task discovery returned an invalid response");
+  rows.push(...batch.filter(i=>!i.pull_request).map(i=>({...i,repo:"KappaForge"})));
+  if(batch.length<100)return rows;
+ }
+ throw Error("Task discovery exceeded 1,000 issues; existing tasks are preserved.");
+}
 async function load(force=false){
- if(dashboardLoading)return dashboardLoading;
+ if(dashboardLoading){await dashboardLoading;if(force)return load(true);return}
  if(!force&&data.loaded&&Date.now()-lastDashboardFetch<300000){render();return}
  dashboardLoading=(async()=>{
+  const names=[...new Set(["KappaForge",...knownRepos])].slice(0,6),errors=[];
+  const group=async(key,suffix,convert)=>{
+   const results=await Promise.allSettled(names.map(n=>api(n+suffix,force)));
+   return results.flatMap((r,index)=>{
+    const n=names[index];if(r.status==="fulfilled")return convert(r.value,n);
+    errors.push(n+suffix+": "+r.reason.message);
+    return (data[key]||[]).filter(v=>(v.repo||v.name)===n);
+   });
+  };
   try{
-   const names=knownRepos.slice(0,6);
-   const [r,i,p,w]=await Promise.all([
-    Promise.all(names.map(n=>api(n,force))),
-    Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30",force).then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),
-    Promise.all(names.map(n=>api(n+"/pulls?state=open&per_page=30",force).then(x=>x.map(v=>({...v,repo:n}))))),
-    api("KappaForge/actions/runs?per_page=10",force)
+   const [r,i,p,w,t]=await Promise.all([
+    group("repos","",x=>[x]),
+    group("issues","/issues?state=open&per_page=30",(x,n)=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))),
+    group("prs","/pulls?state=open&per_page=30",(x,n)=>x.map(v=>({...v,repo:n}))),
+    api("KappaForge/actions/runs?per_page=10",force).catch(e=>{errors.push(e.message);return {workflow_runs:data.runs||[]}}),
+    repositoryTaskIssues(force).catch(e=>{errors.push("Task discovery: "+e.message);return []})
    ]);
-   data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};
-   adoptRepositoryTasks(data.issues);
-   lastDashboardFetch=Date.now();
+   data={repos:r,issues:[...new Map([...i,...t].map(v=>[v.repo+"#"+v.number,v])).values()],prs:p,runs:w.workflow_runs||[],error:errors.join("; "),loaded:true};
+   adoptRepositoryTasks(data.issues);lastDashboardFetch=Date.now();
   }catch(e){data.error=e.message}
   finally{if(["home","projects","tasks","reviews"].includes(view))render();dashboardLoading=null}
  })();
  return dashboardLoading;
+}
+async function refreshTasks(){
+ if(taskRefreshPromise)return taskRefreshPromise;
+ taskFeedRefreshing=true;render();
+ taskRefreshPromise=(async()=>{
+  try{
+   await load(true);await refreshActivity(true);
+   jobPollAfter=0;for(const job of trackedJobs)job.pollAfter=0;
+   await checkJobResult(true);
+   const error=data.error||activity.error;toast(error?"Refresh incomplete: "+error:"Tasks refreshed");
+  }catch(e){toast("Task refresh failed: "+e.message)}
+  finally{taskFeedRefreshing=false;taskRefreshPromise=null;render()}
+ })();
+ return taskRefreshPromise;
 }
 
 function repairItem(p){
@@ -434,6 +466,7 @@ function taskProgressMessage(number){
 // One line of truth for an open task issue: what its agent last reported, from this device's tracking.
 function taskStatusText(issue){
  const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
+ if(job?.message==="cancelled")return "Cancelled";
  if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
  if(job.message==="question")return "Paused · answer its question with Send guidance";
@@ -445,9 +478,11 @@ function taskStatusText(issue){
 }
 const TASK_ENDED={merged:"Merged",closed:"Closed without merging",cancelled:"Cancelled",complete:"Finished","tests-passed":"Tests passed"};
 // Running tasks (and the day's finished ones) with their step, progress and time; a row opens the task's card in chat.
+let taskListExpanded=false;
 function agentTasksPanel(){
  const day=Date.now()-86400000;
- const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
+ const allJobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0));
+ const jobs=taskListExpanded?allJobs:allJobs.slice(0,5);
  const rows=jobs.map(job=>{
   // A task started elsewhere (GitHub, another device) has no chat card here; its own progress snapshot still shows.
   const found=taskProgressMessage(job.number);if(!found&&!job.adopted)return "";
@@ -456,7 +491,7 @@ function agentTasksPanel(){
   const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
   const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
   const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
-  const failed=!!model.failed||["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed";
+  const failed=job.message!=="cancelled"&&(!!model.failed||["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed");
   // A failed task stays red and says why, finished or not; a finished one never shows a step as still running.
   const now=failed?model.failed||checks.find(c=>c.state==="failed"):model.current||checks.find(c=>c.state==="current")||all.filter(r=>r.state==="done").at(-1);
   const state=failed?"failed":job.finished?"done":model.current||checks.some(c=>c.state==="current")?"current":"done";
@@ -466,7 +501,7 @@ function agentTasksPanel(){
    '<span class="agent-task-step">'+esc(label)+'</span>'+
    '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span><span class="sr-only">Hold for more actions</span></button>';
  }).filter(Boolean);
- return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
+ return '<section class="panel agent-tasks" aria-label="Agent tasks"><div class="control-head"><h3>Agent tasks</h3><button type="button" class="btn secondary" id="taskrefresh"'+(taskFeedRefreshing?' disabled aria-busy="true"':'')+'>'+(taskFeedRefreshing?'Refreshing…':'↻ Refresh')+'</button></div>'+(rows.length?'<div class="agent-task-list">'+rows.join("")+'</div>':'<p class="muted">No tasks to show. Refresh to check GitHub.</p>')+(allJobs.length>5?'<button type="button" class="btn secondary" id="taskshowall">'+(taskListExpanded?'Show fewer tasks':'Show all '+allJobs.length+' tasks')+'</button>':'')+'</section>';
 }
 // Hold a task on the Dashboard (or right-click it) for its actions. Delete removes it from this app only.
 function taskMenuSheet(){
@@ -477,7 +512,7 @@ function taskMenuSheet(){
  return iosSheet("Task #"+job.number,'<p class="task-menu-title">'+esc(clip(job.title||"Development task",120))+'</p>'+
   '<div class="ios-group icons">'+row("open","chat","Open in chat")+// Retry is for a task that failed or stopped updating, as on its chat card; a healthy running task has nothing to retry.
   (failed||stuck?row("retry","retry","Retry",failed?"Ask for recovery of the saved work":"No recent update · ask for recovery"):"")+
-  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(job.authorization&&open?row("cancel","stop","Cancel task","","warn"):"")+'</div>'+
+  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(!["cancelled","closed","merged"].includes(job.message)?row("cancel","stop","Cancel task","Stops work; Delete then removes its history","warn"):"")+'</div>'+
   (job.url||job.prUrl?'<div class="ios-group icons">'+(job.url?link(job.url,"repo","View on GitHub"):"")+(job.prUrl?link(job.prUrl,"merge","Open draft PR"):"")+(job.url?row("copy","copy","Copy link"):"")+'</div>':'')+
   '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task",deletable?"Clears inactive history. Undo is available for 30 days. GitHub stays unchanged.":"Active or unknown work stays tracked. Cancel and wait for termination first.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
 }
@@ -643,6 +678,8 @@ document.getElementById('undo-task-history')?.addEventListener('click',async()=>
 document.getElementById('clear-task-history')?.addEventListener('click',async()=>{try{const result=await executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}});
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
+document.getElementById("taskrefresh")?.addEventListener("click",refreshTasks);
+document.getElementById("taskshowall")?.addEventListener("click",()=>{taskListExpanded=!taskListExpanded;render()});
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
 document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){const step=c.pendingActions?.requestId===pendingJob?.routeRequestId?c.pendingActions.steps[pendingJob.routeActionIndex]:null;if(step){step.status="failed";step.awaitingApproval=false;step.result="The owner declined this task.";recordRoute(step.decision,null,"failed",c.pendingActions.requestId,step.index);}c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});

@@ -598,6 +598,26 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Required correction: narrowly recognize the exact owned hold sentence, observe the referenced same-repository PR branch, and prove the active guard refuses mutations to that branch. Missing/foreign/same-candidate metadata or model-provided receipts cannot approve it. Do not invent a code test for an operational promise or grant an exemption to compound code asks.
 - Status: PATCHED locally; six production-path follow-up regressions pass, including malformed/foreign/same-candidate metadata, model receipts, expired scope and permissive-guard refusals. The95-test focused selection and full1,272-test discovery pass (31 full-suite skips). No branch permission changes. Exact-head CI and renewed live trial remain pending.
 
+## P3-084 — task discovery and refresh can leave external tasks invisible
+
+- Evidence: task308 is an open owner-authored kappa-Task issue within the adoption window and is present in the live first GitHub page. Dashboard load uses one all-or-nothing Promise.all across repositories; any unrelated failed request prevents adoption. It also reads only30 mixed issue/PR objects and can exclude KappaForge from the first six repositories. Forced API reads silently fall back to stale cache. The Today task panel has no manual refresh control. Exact cause on the screenshot device is unobserved.
+- Status: PATCHED locally; four failing discovery/refresh regressions now pass, plus manual-SSE snapshot coverage. Desktop/phone Chromium exercises the real Refresh control. See task-feed-controls.md; exact device-state cause is not claimed.
+
+## P3-085 — adopted tasks cannot use owner cancellation
+
+- Evidence: tasks.cancel throws unless job.authorization exists locally, and the menu hides Cancel without it. Repository-adopted308/274 and tasks on another device have no original local credential. A fresh authenticated owner control must be able to cancel a validated task without trusting a model or restoring its original execution grant.
+- Status: PATCHED locally; fresh owner scope cancels adopted tasks, retains legacy cancellation, revokes the original stored grant and refuses foreign/model/mismatched/renewed targets. Production backend regressions pass; no real task cancellation was performed.
+
+## P3-086 — cancellation completion depends on historical runs
+
+- Evidence: cancellationEvidence scans only three100-run repository pages and refuses termination when there are no matching historical runs. A busy repository therefore never establishes inventoryComplete; an owner task with no worker can remain cancellation-requested indefinitely.
+- Status: PATCHED locally; active-status inventory and individual known-run checks replace completed-history traversal. Idle, queued, omitted-running, overflow/outage and renewed-task controls pass. Observed-runner limits remain explicit.
+
+## P3-087 — confirmed cancellation leaves stale active progress blocking deletion
+
+- Evidence: checkJobResult marks the job finished after cancellation confirmation but retains the old progress snapshot. taskHasActiveExecution treats that snapshot as active before considering finished state, so Delete can remain disabled.
+- Status: PATCHED locally; confirmed-stop deletion passes while pending/error cases stay tracked. Browser Refresh→Cancel→Delete→Refresh passes at desktop/phone widths; tombstones and history-only Undo remain. See task-feed-controls.md.
+
 ## Finding template
 
 ### P3-NNN — short defect title

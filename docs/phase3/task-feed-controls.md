@@ -1,0 +1,26 @@
+# External task discovery, refresh and cancellation
+
+## Observed problem
+
+The owner reported that task308 was missing from the iPhone Today feed and that Cancel/Delete were unreliable. Live GitHub inspection confirms308 is an open owner-authored kappa-Task issue, created2026-10-27T19:20:15Z, present in the first open-issues page. Its absence on that particular device is not reproduced from device storage; no exact device-state cause is claimed.
+
+Seven new behavioral regressions initially failed while18 existing history tests passed. They reproduce all-or-nothing multi-repository discovery, limited issue discovery, silent stale fallback on forced reads, absent task refresh, inability to cancel an adopted task, history-dependent cancellation inventory, and deletion blocked by a stale running snapshot after confirmed cancellation. Additional negative cases cover owner/provenance failures, incomplete inventory, an omitted known runner, original-grant revocation and renewed-task protection. Findings084–087 group these related failures; they are not four individual failing assertions or a count of every code defect.
+
+## Resulting behavior
+
+- Today has a visible Refresh button even when the task feed is empty. It bypasses read/poll cooldowns, discovers open labelled tasks independently of other repositories, and rechecks workflow/task status. A manual refresh reads one workflow snapshot instead of awaiting an SSE connection's lifetime. Busy/error feedback reflects the actual result.
+- Task discovery always includes KappaForge and paginates up to ten100-issue pages. It excludes PR objects and retains dismissed-history markers. Open tasks older than a week remain discoverable. Unrelated failures preserve prior information and report partial-refresh errors. The task panel offers Show all when more than five rows qualify.
+- A selected Cancel control or an exact owner cancel request can stop an adopted task without its original device credential. The authenticated backend issues a new request bound to the exact task and conversation, validates the owner-authored labelled issue, revokes the original stored task grant when present, persists cancellation, closes only that task issue and requests cancellation of matching task runners. It does not close a PR or merge code. Legacy original-grant cancellation remains supported.
+- Cancellation inspects queued, running, waiting, requested and pending statuses, with bounded pagination. Previously known live runners omitted by an index are checked individually. Incomplete/error responses stay unconfirmed. A closed task with no observed active runner can finish cancellation even when there are thousands of unrelated completed runs. Coverage is observed task runners, not every possible external process.
+- Replayed cancellation retains its initial task-generation cutoff. A renewed task cannot be stopped by an old cancel. Status polling does not send stop requests, and transient status errors clear without concealing delivery failures.
+- Delete remains a history operation. It waits for a confirmed stop when work is active/unknown, then removes the card durably even if an older progress snapshot still says running. Refresh and sync cannot restore the deleted card. Undo retains its existing30-day history-only behavior and does not restore execution authority.
+
+## Verification and delivery limits
+
+The production dashboard Refresh→external308 discovery→fresh owner Cancel→confirmed stop→Delete→Refresh path passed on desktop and phone-sized installed Chromium through Playwright. Fixtures replace GitHub and backend transport; no real task was cancelled or deleted. Phone screenshot inspected at /tmp/kappaforge-phone-chromium-task-refresh.png. The same helper is now called by the existing full Chromium/WebKit CI regression. Local pinned-browser download was denied; no local Safari run is claimed. CI evidence is recorded on PR312 after completion.
+
+Full Node:897 passed, zero failures/skips. Full Python:1,272 run, OK,31 skipped. The91-test cancellation/authority selection passes. Worker dry-build, ten structural rules, source scan, policy/map and bundle checks pass. Source-scan warnings remain; no warning-free security claim. Existing tests were updated only for the new visible empty-feed Refresh, removal of the one-week adoption limit, fresh cancellation requests, actual active-status read counts and persisted closure receipts. Existing safety assertions remain. The shared web sources and native Web bundle are synchronized.
+
+All repairs remain in draft312. Nothing is merged, deployed, released or marked ready. The frontend/native bundle and Worker need delivery together before the device can use fresh adopted-task cancellation; a new frontend calling an old unsupported Worker fails explicitly. No app version or production setting was changed.
+
+Task308's original execution scope remains expired. This session has authenticated GitHub access but no connected KappaForge app session/browser tool. An explicit Retry can be sent as text in KappaForge chat without a feed entry: retry task #308. No fresh app authorization, recovery marker or deadline was fabricated, and no expired/duplicate task worker was dispatched. Phase3.1 remains open until renewed updated-engine acceptance and audit reconciliation.

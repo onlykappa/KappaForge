@@ -108,6 +108,6 @@ test('Worker cancellation redelivery observes runners without repeating GitHub s
   const body={id:f.payload.authorization.id,conversationId:'chat',contract:C.contract};
   const first=await worker.fetch(req('/cancel',body),f.env);assert.equal(first.status,200);assert.ok((await first.json()).cancellation.issueClosedAt);
   const again=await worker.fetch(req('/cancel',body),f.env);assert.equal(again.status,200);assert.ok((await again.json()).cancellation.issueClosedAt);
-  assert.equal(calls.filter(c=>c.method==='PATCH').length,1);assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.includes('/actions/runs?')).length,2);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.endsWith('/issues/198')).length,2,'recheck current task authority before stop and replay');
+  assert.equal(calls.filter(c=>c.method==='PATCH').length,1);assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.includes('/actions/runs?')).length,10);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.endsWith('/issues/198')).length,2,'recheck current task authority before stop and replay');
  }finally{globalThis.fetch=previous}
 });

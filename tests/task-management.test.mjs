@@ -225,3 +225,10 @@ test('an explicit retry reactivates restored history but a blocked retry never r
  h.box.clearTaskHistory('inactive');assert.equal(h.state().trackedJobs.length,1,'pending dispatch is retained even with a previous failed snapshot');
  assert.throws(()=>h.box.acceptTaskRetry(999,{status:'blocked'},'chat'),/requires review/);assert.equal(h.state().trackedJobs.some(j=>j.number===999),false);
 });
+
+test('confirmed cancellation overrides an old running snapshot so history can be deleted',async()=>{
+ const h=harness({jobs:[{number:308,message:'cancelled',finished:true,progress:{status:'running'},cancellation:{requestedAt:1,issueClosedAt:2,terminatedAt:3,errors:[]}}]});
+ assert.equal(h.box.inactiveTask(h.state().trackedJobs[0]),true);
+ assert.match(await h.box.deleteTaskHistory(308),/Cleared 1 inactive task/);
+ assert.equal(h.state().trackedJobs.length,0);
+});

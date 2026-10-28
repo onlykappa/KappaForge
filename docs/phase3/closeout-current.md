@@ -2,6 +2,8 @@
 
 Phase 3.1 is open. The remaining acceptance work concerns the latest engine trial and evidence reconciliation; Phase 3.2 has not started. The owner has already authorized moving to 3.2 after satisfactory closeout. No new merge permission is implied.
 
+Owner follow-up: missing task feed entries and Cancel/Delete defects084–087 are now reproduced and repaired in the same draft312. A visible manual Refresh, independent paginated discovery and fresh owner cancellation are covered by897 passing Node tests and the real dashboard flow on desktop/phone Chromium. Source/native bundle match; no deployment or real cancellation was performed. [Task feed controls](task-feed-controls.md) records the boundaries and the lack of an authenticated KappaForge session for renewal. Current new-head CI is recorded on the PR.
+
 ## Completed evidence
 
 - Provenance: Phase 1/2 merge ancestry, audited source, current main and integration are recorded in phase1-phase2-audit.md and the regression/CI report. Main a76561abbbe9aa88c44e75c6394afda63ac4736f contains the owner-approved #309/#311 merges. Its tree equals tested #311 head 2e7d2bc9e253d446d7b84be74d940ac1e102abe1.

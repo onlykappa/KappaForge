@@ -107,3 +107,7 @@ P3-078: PATCHED fixture isolation, not a production router change. A direct clea
 | P3-083 | PATCHED locally; updated-engine trial pending | Exact owner branch hold uses observed target metadata and actual guard refusal, with negative controls. |
 
 Latest full discovery:1,272 run, OK,31 skipped. The95-test focused selection and ten structural rules pass. Final-head CI and renewed live acceptance are tracked on312 and in closeout-current.md. These are grouped findings, not a count of distinct production bugs.
+
+## Dashboard and cancellation084–087
+
+084–087 are patched locally in312; before/after tests, authority boundaries and browser evidence are recorded in [task-feed-controls.md](task-feed-controls.md). Task308 is confirmed present in GitHub, but the screenshot device's storage was not inspected. The actual refresh/cancel/delete flow is covered with fake transport; no production cancellation/deletion or app deployment was performed. Exact-head CI and task308 renewal/acceptance remain separate.
