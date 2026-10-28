@@ -427,6 +427,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate validation: 113 focused tests, OK, one skipped. Full discovery: 1,162 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed.
 - Status: PATCHED and locally verified; serial updated-engine trial pending. Task and Phase 3.1 remain incomplete.
 
+## P3-055 — current audit head lacks exact-head Docker and live-research evidence
+
+- Evidence: PR #279 at `f5501afe417a63c4ebc089954d99968ef4e55bb0` had successful unit/web/Worker/structure/native checks, but its branch's latest real-Docker self-test was on earlier `58e735ae`; no research-live run existed on this branch. The current audit report still described 3.1b–3.1f as not run, despite delivered partial work.
+- Correction: continue the independent 3.1d checkpoint, resolve all 40 named acceptance test references, execute the available local policy/exploration/planning/requirements/research/clarification/publication suites, and dispatch the existing read-only validation workflows once each on the exact audited head. No workflow, permission or production code was changed.
+- Rerun: 163 local tests discovered, 162 passed, one skipped because jsonschema was missing; after installing jsonschema==4.25.1, that one test separately passed. Ten structural-rule tests, dependency-map and execution-policy checks passed; source scan exited zero with 15 warnings retained for source review.
+- Independent CI: real-Docker [40623228909](https://github.com/onlykappa/KappaForge/actions/runs/40623228909) and live-research [40623231877](https://github.com/onlykappa/KappaForge/actions/runs/40623231877) both succeeded on exact `f5501afe`. Remote numerical counts were not read from logs; no counts are invented. Native artifact metadata, rather than screenshot/xcresult contents, was inspected.
+- Status: PATCHED — the missing evidence was supplied and the audit report refreshed. Full provenance, commands, named references, step results and limits are in regression-ci-audit.md and regression-ci-evidence.json. Phase 3.1 remains incomplete; #308's reviewer proof gap and the remaining policy/integration work stay open. No merge, phase advancement or duplicate task worker.
+
 ## Finding template
 
 ### P3-NNN — short defect title

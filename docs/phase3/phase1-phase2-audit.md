@@ -1,5 +1,22 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
+**Current update — 2026-10-28:** Phase 3.1 remains partial, but the old statement that only 3.1a has run is historical. The new [regression and CI checkpoint](regression-ci-audit.md) records work actually performed against PR #279 at `f5501afe417a63c4ebc089954d99968ef4e55bb0`, with main/base `c6258f2406e84cd872334a8bc4545a613f1e4365`.
+
+| Checkpoint | Current disposition |
+| --- | --- |
+| 3.1a Provenance | Refreshed: Phase 1/2 merge metadata and ancestry to current main and the audited head verified. |
+| 3.1b Inventory | Corrected inventory delivered through #300 and incorporated into #279; its pinned inspection is recorded in architecture-inventory.md. No full current-source reaudit is implied. |
+| 3.1c Policy/publication | Partial request-helper and publication reviews delivered. The empty-publication correction is independently validated in #310; remaining backend/workflow paths are the next bounded source audit. |
+| 3.1d Regression/CI | Evidence matrix recorded: 40 named test references resolved; 163 distinct local targeted tests passed; structural/policy checks passed; fresh exact-head Docker and live-research workflows succeeded. Remote counts and artifact-content inspection limits are explicit. |
+| 3.1e Defect loop | Engine repairs are validated separately in #309. Task #308's automated source-proof review remains unaccepted; the repairs are not integrated into #279. |
+| 3.1f Closeout | Incomplete: reconcile findings, finish policy coverage and validate the combined delivery revision. |
+
+The audited #279 branch is unchanged. This update and its [machine-readable evidence](regression-ci-evidence.json) are delivered through the open engine/audit accumulator #309. Current evidence does not grant merge, deployment, readiness or Phase 3.2 authority.
+
+<details>
+<summary>Historical 2026-10-27 audit snapshot and orchestration findings</summary>
+
+
 **Status:** PARTIAL. Only checkpoint 3.1a has been inspected. Checkpoints 3.1b–3.1f have not run, and no audit completion is claimed.
 **3.1a observed main:** [42272f41b30b7d59b5b891ad083f6fccb321c46f](https://github.com/onlykappa/KappaForge/commit/42272f41b30b7d59b5b891ad083f6fccb321c46f) (GitHub branch-ref API, 2026-10-27 UTC). This is the pinned audit observation, not a claim that main cannot advance. The task branch includes this main revision.
 **Finding ledger:** [issue-log.md](issue-log.md).
@@ -53,3 +70,5 @@ P3-001 through P3-004 remain open. Phase 3.1 is incomplete. A fresh owner-author
 ## Closeout
 
 Not complete. Do not advance to Phase 3.2 until all in-scope issues are fixed and their reproducers pass, this report and the issue ledger agree, and the owner advances the phase.
+
+</details>
