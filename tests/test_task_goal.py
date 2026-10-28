@@ -707,3 +707,49 @@ class ScopeResponseContractTests(unittest.TestCase):
         self.assertEqual(len(calls), 2, 'invalid owner wording must not pass as source evidence')
         self.assertEqual(result[1], [])
         self.assertTrue(result[0][0]['met'])
+
+    def test_scope_proof_failure_retains_safe_reason_without_echoing_reply(self):
+        goal = task_goal.from_request('Make add accept numeric strings.')
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        source = 'def add(a, b):\n    return int(a) + int(b)\n'
+        for proof, reason in (({'lines': [1, 999]}, 'lines_not_shown'),
+                              ({'quote': goal.request}, 'owner_text_is_not_source'),
+                              ({'quote': 'private-invalid-model-fragment'}, 'not_current_source'),
+                              ({'quote': None}, 'missing_literal_quote')):
+            with self.subTest(reason=reason):
+                model = unittest.mock.Mock(return_value=('scripted', json.dumps(dict(
+                    requirements=[dict(text=goal.request, met=False)], problems=[],
+                    file_scope=[dict(path='app.py', necessary=True, reason='Convert inputs', **proof)]))))
+                self.assertIsNone(verify.model_review(model, 'fixture', goal.request, lambda p: '',
+                                                      {'app.py': source}, ['app.py']))
+                self.assertEqual(model.call_count, 2)
+                self.assertIn(reason, verify.REVIEW_FAILURE.get())
+                self.assertNotIn('private-invalid-model-fragment', verify.REVIEW_FAILURE.get())
+
+    def test_classified_source_proof_has_typed_slots_and_empty_slots_never_pass(self):
+        from engine import requirements
+        goal = task_goal.from_request('Make add accept numeric strings.')
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        source = 'def add(a, b):\n    return int(a) + int(b)\n'
+        classified = requirements.classify(goal.request)
+        calls = []
+        def model(key, prompt, **kw):
+            calls.append(prompt)
+            schema = json.JSONDecoder().raw_decode(prompt.split('Return ONLY strict JSON:\n', 1)[1])[0]
+            row = schema['requirements'][0]
+            self.assertIsInstance(row['evidence'], dict, 'the actual response schema must describe required source proof')
+            self.assertEqual(row['evidence'], {'path': None, 'lines': None})
+            row['met'] = True
+            if len(calls) == 2:
+                row['evidence'] = dict(path='app.py', lines=[2, 2])
+            return 'scripted', json.dumps(dict(requirements=[row], problems=[], file_scope=[
+                dict(path='app.py', necessary=True, reason='Converts requested inputs', lines=[2, 2])]))
+        result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source},
+                                     ['app.py'], classified=classified)
+        self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+        self.assertEqual(len(calls), 2, 'empty typed proof slots must be refused before a valid retry')
+        self.assertTrue(result[0][0]['met'])

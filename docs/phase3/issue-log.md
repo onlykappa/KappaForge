@@ -483,7 +483,25 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate rerun: 108 focused tests passed. Full discovery on the isolated engine: 1,165 run, OK, 31 skipped; full Node880 passed; web/bundle and ten structural-rule checks passed. A fresh post-restart full Python run independently confirmed 1,165 run, OK, 31 skipped. Combined local revision also passed 1,220 Python run (31 skipped), Node880 and web/bundle checks.
 - Live follow-up: serial trial40677156989 used a1e7050 and still refused file-scope proof for both task files, retaining candidate75811f8 and history. No completion is accepted. The schema still offered only quote slots despite displaying numbered source; the added line-slot wire-contract assertion fails on that revision. Prefer undecided line-citation slots when source is numbered, with the existing literal-quote fallback for unnumbered context; retain all validation and the same retry bound.
 - Follow-up validation:108 focused tests passed; fresh full Python1,165 run, OK,31 skipped. The combined follow-up also passed1,220 Python run, OK,31 skipped. Existing Node880/web checks remain applicable to unchanged JS.
-- Status: PATCHED and locally verified; serial line-slot trial pending. No resource/counter change or proof relaxation.
+- Status: PATCHED and locally verified; Line-slot trial40678099430 on3e245a7 remained refused; diagnostic follow-up is tracked under062. No resource/counter change or proof relaxation.
+
+## P3-062 — scope proof failure discards its actionable validation reason
+
+- Evidence: trials40677156989/a1e7050 and40678099430/3e245a7 correctly refuse both task-file proofs but expose only does-not-match-current-source. No raw scope reply is retained, so its exact defect is unknown. The line resolver already classifies invalid ranges but resolve_review_lines discards that issue for file_scope.
+- Reproducer: a production model_review table tests invalid/unshown ranges, owner-text quotes, invented source and missing proof. All four fail before repair because only the generic path diagnostic survives. It also requires two bounded calls, blocked completion and no reply-fragment echo.
+- Required correction: preserve the existing line-resolution issue and emit fixed safe reason codes in the retry/final failure. Never include raw quotes or accept unsupported evidence.
+- Immediate rerun:109 focused tests passed. Full isolated discovery1,166 run, OK,31 skipped; full combined1,221 run, OK,31 skipped. No raw reply is echoed and the same two-call bound remains.
+- Integration follow-up: the isolated trial engine lacked279's already-reviewed prompt-overhead/lossless-reference changes, although the combined branch contained them. Copy only those engine changes and their pure-Python regressions into309; keep workflows/scripts/configuration excluded from the trial engine. No live cause is inferred without the new diagnostic.
+- Final isolated integration verification:1,214 Python run, OK,31 skipped, including279 engine-only prompt-overhead regressions and the new safe diagnostic table. Combined source already passed1,221 run,31 skipped. Ten structural rules, shipped-source scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED locally; one serial diagnostic trial pending. Source-proof acceptance stays blocked until actual evidence passes.
+
+## P3-063 — classified review template omits the required evidence object shape
+
+- Evidence: serial trial40679225234 on1e4ca14 retained candidate75811f8 and83→85 calls/14 fix cycles without edits. The current error is requirements[0].evidence needs a source path and literal quote for met:true. Unlike the generic unclassified example, each classified entry's primary JSON template supplies evidence:null and no object slots. This is an observed wire-contract omission, not proof of the model's internal cause.
+- Reproducer: the production review table fills met:true with the schema's empty proof first, then valid displayed-source evidence. It fails before repair because no evidence object exists in the actual schema. Empty placeholders must remain blocked; only the valid retry may pass.
+- Required correction: expose undecided evidence path plus displayed-line (or unnumbered literal-quote) slots for each original id. Preserve every original requirement, scope proof, source validation and existing two-call bound; no model call/limit expansion.
+- Immediate rerun:110 focused tests passed; final engine discovery1,215 run, OK,31 skipped; final combined discovery1,222 run, OK,31 skipped. Existing Node880/web/bundle checks apply to unchanged JS.
+- Status: PATCHED and locally verified; one serial updated-engine confirmation pending. Empty typed placeholders remain refused.
 
 ## Finding template
 

@@ -1,0 +1,525 @@
+{
+  "inspected_source_sha": "2e9da7e449a5aae48afcc98bb001b2db85ef346a",
+  "category": "GitHub API metadata inspection; artifact contents not downloaded",
+  "runs": [
+    {
+      "id": 40678062524,
+      "name": "KappaForge tests",
+      "head_sha": "2e9da7e449a5aae48afcc98bb001b2db85ef346a",
+      "conclusion": "success",
+      "url": "https://github.com/onlykappa/KappaForge/actions/runs/40678062524",
+      "jobs": [
+        {
+          "name": "worker",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run npm ci",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build Worker without deployment or production credentials",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify persistent automatic recovery alarms in isolated workerd",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "web",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run npm ci",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run npm test",
+              "conclusion": "success"
+            },
+            {
+              "name": "Use the Ubuntu archive for browser dependencies",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run npx playwright install --with-deps chromium webkit",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run npm run test:web",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "structure",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ast-grep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Test the structural security rules",
+              "conclusion": "success"
+            },
+            {
+              "name": "Scan the shipped code",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "unit",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ast-grep so the structural scan tests run for real",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preflight agent tools and build settings",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run set -Eeuo pipefail",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check the dependency map the chat reads is current",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify the reviewed free execution workflow manifest",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 40678062418,
+      "name": "Sandbox self-test",
+      "head_sha": "2e9da7e449a5aae48afcc98bb001b2db85ef346a",
+      "conclusion": "success",
+      "url": "https://github.com/onlykappa/KappaForge/actions/runs/40678062418",
+      "jobs": [
+        {
+          "name": "sandbox",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify free execution permissions and resource availability",
+              "conclusion": "success"
+            },
+            {
+              "name": "Real-Docker sandbox tests",
+              "conclusion": "success"
+            },
+            {
+              "name": "Faulty project repaired through the agent tool loop",
+              "conclusion": "success"
+            },
+            {
+              "name": "Phase 1 acceptance requirements on the faulty invoice fixture",
+              "conclusion": "success"
+            },
+            {
+              "name": "Phase 2 exploration inside sandbox repair on the shop fixture",
+              "conclusion": "success"
+            },
+            {
+              "name": "KappaForge's own suites inside the sandbox",
+              "conclusion": "success"
+            },
+            {
+              "name": "Nothing left behind",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 40678062639,
+      "name": "iOS build and release",
+      "head_sha": "2e9da7e449a5aae48afcc98bb001b2db85ef346a",
+      "conclusion": "success",
+      "url": "https://github.com/onlykappa/KappaForge/actions/runs/40678062639",
+      "jobs": [
+        {
+          "name": "sandbox",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "name": "native",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify candidate checkout",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Choose the release version (next patch when the configured one is already published)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install XcodeGen",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preflight native tools and build settings",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native update contract",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify shared source and bundle latest interface",
+              "conclusion": "success"
+            },
+            {
+              "name": "Generate KappaForge app icon",
+              "conclusion": "success"
+            },
+            {
+              "name": "Generate native project",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build simulator application",
+              "conclusion": "success"
+            },
+            {
+              "name": "Boot simulator and verify bundled launch",
+              "conclusion": "success"
+            },
+            {
+              "name": "Export keyboard screenshots for inspection",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preserve keyboard screenshots",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preserve iOS simulator UI test results",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build unsigned iPhone application",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify bundle, icon and package unsigned IPA",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "release",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "name": "agent-report",
+          "conclusion": "skipped",
+          "steps": []
+        }
+      ]
+    },
+    {
+      "id": 40678062414,
+      "name": "Review graph KappaForge audit/phase3-combined",
+      "head_sha": "2e9da7e449a5aae48afcc98bb001b2db85ef346a",
+      "conclusion": "success",
+      "url": "https://github.com/onlykappa/KappaForge/actions/runs/40678062414",
+      "jobs": [
+        {
+          "name": "fetch",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate inputs",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Find the base branch",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package the code and its history",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "analyze",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/download-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install code-review-graph",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the graph and analyse the change",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "publish",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/download-artifact@v4",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post or update the sticky review comment",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "native_artifact_metadata": [
+    {
+      "id": 12812176507,
+      "name": "iOS-keyboard-ui-test-results",
+      "size_in_bytes": 4853751,
+      "expired": false
+    },
+    {
+      "id": 12812036825,
+      "name": "KappaForge-unsigned-iPhone-IPA",
+      "size_in_bytes": 484226,
+      "expired": false
+    },
+    {
+      "id": 12811962049,
+      "name": "iOS-keyboard-screenshots",
+      "size_in_bytes": 3942806,
+      "expired": false
+    },
+    {
+      "id": 12811847540,
+      "name": "iOS-launch-screenshot",
+      "size_in_bytes": 168478,
+      "expired": false
+    }
+  ]
+}

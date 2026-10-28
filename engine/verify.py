@@ -757,7 +757,8 @@ def review_prompt(task, diff, paths, context='', inventory_limit=600, classified
                   files_needed=['existing/path the fix must edit'], files_to_inspect=['existing/path needed to verify a claim'])
     if classified:
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
-        schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
+        schema['requirements'] = [dict(id=r.id, met=None,
+            evidence=dict(path=None, **({'lines': None} if scope_lines else {'quote': None})), test=None) for r in classified]
     if scope_paths:
         schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task',
                                    **({'lines': None} if scope_lines else {'quote': None})) for p in sorted(scope_paths)]
@@ -845,7 +846,10 @@ def resolve_review_lines(raw, line_context, classified=()):
                 row[key] = proof(row[key])
     for row in raw.get('file_scope', []) if isinstance(raw.get('file_scope'), list) else []:
         if isinstance(row, dict) and ('lines' in row or 'quote' in row):
-            row['quote'] = proof(row).get('quote')
+            resolved = proof(row)
+            row['quote'] = resolved.get('quote')
+            if resolved.get('issue'):
+                row['issue'] = resolved['issue']
     return raw
 
 
@@ -1155,11 +1159,15 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             problems.append('Unrelated change outside the owner goal: ' + row['path'] + ': ' + row['reason'][:200])
                         elif (not isinstance(row.get('quote'), str) or not row['quote'].strip()
                               or row['quote'] not in review_changes[row['path']]):
-                            unsupported.append(row['path'])
+                            quote = row.get('quote')
+                            reason = ('lines_not_shown' if row.get('issue') == 'lines_not_shown' else
+                                      'missing_literal_quote' if not isinstance(quote, str) or not quote.strip() else
+                                      'owner_text_is_not_source' if quote in task else 'not_current_source')
+                            unsupported.append(row['path'] + ' (' + reason + ')')
                     if unsupported:
                         if not retried:
                             retried, avoid = True, other_model(model)
-                            scope_retry_hint = 'one or more necessary decisions lacked a literal quote from the current source'
+                            scope_retry_hint = 'Current-source proof refused: ' + ', '.join(unsupported)
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
             if classified:
