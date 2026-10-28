@@ -11,7 +11,13 @@ TYPES = {
 }
 SUCCESS = re.compile(r'\b(?:passed|succeeded|successful|success|validated|completed|executed|performed|ran|built|compiled|tested|worked|checked)\b|\b(?:was|were|have|has)\s+(?:been\s+)?run\b', re.I)
 FAILURE = re.compile(r'\b(?:failed|failure)\b', re.I)
-NEGATIVE = re.compile(r"\b(?:not|never|cannot|can't|couldn't|didn't|unable to)\s+(?:(?:yet|actually|been|be|able|to|all)\s+){0,5}(?:run|passed|executed|performed|validated|completed|tested|attempted|successful|succeeded)\b|\bno\s+(?:\w+[/-]?\s*){0,5}(?:were|was|have been)\s+run\b", re.I)
+NEGATIVE = re.compile(
+    r"\b(?:not|never|cannot|can't|couldn't|didn't|unable to)\s+"
+    r"(?:(?:yet|actually|been|be|able|to|all)\s+){0,5}"
+    r"(?:run|passed|executed|performed|validated|completed|tested|attempted|successful|succeeded)\b|"
+    r"\bno\s+(?:(?!and\b|but\b|or\b)[\w/-]+\s+){0,8}"
+    r"(?:run|ran|passed|executed|performed|validated|completed|tested|attempted)\b|"
+    r"\bfailed\s+to\s+(?:run|execute|start|perform|complete)\b", re.I)
 
 
 def constraint(text):

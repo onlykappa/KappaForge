@@ -28,6 +28,11 @@ def fixed(*args, **kwargs):
 
 class ExecutionRecoveryTests(unittest.TestCase):
     def setUp(self):
+        for var in (recovery.CURRENT, intent_guard.ACTIVE):
+            handle = var.set(None)
+            self.addCleanup(var.reset, handle)
+        previous = developer.Progress.latest
+        self.addCleanup(setattr, developer.Progress, 'latest', previous)
         self.world = GitHub()
         self.journal = self.world.journal()
         self.journal.checkpoint('a' * 40, base='main')
