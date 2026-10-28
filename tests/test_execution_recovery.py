@@ -417,6 +417,10 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(self.journal.state['phase'], 'publication')
 
 
+
+
+
+
 if __name__ == '__main__':
     unittest.main()
 

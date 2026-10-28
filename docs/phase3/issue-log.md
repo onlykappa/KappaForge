@@ -2,6 +2,8 @@
 
 This is the shared issue log for every defect, missing acceptance proof, test failure or workflow error discovered during Phase 3. Record evidence before changing code. For a fix, capture the reproducer, patch location, regression and immediate rerun before moving to unrelated work. Never mark a finding patched from an agent claim alone.
 
+**Current reconciliation:** [finding-reconciliation.md](finding-reconciliation.md) records the 2026-10-28 disposition of every ID. Historical OPEN/BLOCKED/live-pending lines below remain preserved as dated run evidence; they are not silently treated as current completion claims.
+
 **Statuses:** `OPEN`, `PATCHED` (only after reproducer passes), `BLOCKED` (needs owner decision), `NOT REPRODUCED` (include the attempted reproducer), `ACCEPTED LIMITATION` (owner-approved only).
 
 | ID | Found in / checkpoint | Evidence and impact | Reproducer / initial result | Permanent fix and regression | Immediate rerun (command, counts, result) | Commit / PR | Status |
@@ -481,7 +483,7 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate rerun: 108 focused tests passed. Full discovery on the isolated engine: 1,165 run, OK, 31 skipped; full Node880 passed; web/bundle and ten structural-rule checks passed. A fresh post-restart full Python run independently confirmed 1,165 run, OK, 31 skipped. Combined local revision also passed 1,220 Python run (31 skipped), Node880 and web/bundle checks.
 - Live follow-up: serial trial40677156989 used a1e7050 and still refused file-scope proof for both task files, retaining candidate75811f8 and history. No completion is accepted. The schema still offered only quote slots despite displaying numbered source; the added line-slot wire-contract assertion fails on that revision. Prefer undecided line-citation slots when source is numbered, with the existing literal-quote fallback for unnumbered context; retain all validation and the same retry bound.
 - Follow-up validation:108 focused tests passed; fresh full Python1,165 run, OK,31 skipped. The combined follow-up also passed1,220 Python run, OK,31 skipped. Existing Node880/web checks remain applicable to unchanged JS.
-- Status: PATCHED and locally verified; serial line-slot trial pending. No resource/counter change or proof relaxation.
+- Status: PATCHED and locally verified; Line-slot trial40678099430 on3e245a7 remained refused; diagnostic follow-up is tracked under062. No resource/counter change or proof relaxation.
 
 ## P3-062 — scope proof failure discards its actionable validation reason
 
