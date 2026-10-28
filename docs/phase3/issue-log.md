@@ -501,6 +501,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate rerun:110 focused tests passed; final engine discovery1,215 run, OK,31 skipped; final combined discovery1,222 run, OK,31 skipped. Existing Node880/web/bundle checks apply to unchanged JS.
 - Status: PATCHED and locally verified; one serial updated-engine confirmation pending. Empty typed placeholders remain refused.
 
+## P3-064 — proof formatting still fails on generated source-line ranges
+
+- Evidence: serial trial40680156936 on62399c6 passed the former missing-object point but refused requirements[1] with lines_not_shown. Candidate75811f8 and original counters/history remain. We do not know whether that raw range was unshown, too long or malformed; none is accepted.
+- Reproducer: a production model_review transport test selects only catalogued source IDs. It fails before repair because no catalog/resolver exists. Controls require unknown IDs and references for another scope file to fail within two calls.
+- Correction: add a bounded catalog of snapshot-bound IDs for at most eight actually displayed contiguous lines. The model must still decide met/necessary and choose supporting evidence; the engine copies exact shown source and retains all existing literal/executable/scope checks. Legacy quote/line input remains supported. IDs cannot confer task or mutation authority.
+- Immediate rerun:142 focused tests passed after catalog/resolver integration; all five final transport tests pass. A subsequent protocol-wording check found one existing mandatory-evidence phrase assertion; preserve that assertion and restore the phrase, then71 focused tests passed. Final fresh full discovery:1,217 isolated-engine and1,224 combined tests run, OK,31 skipped each. Structural rules/scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; one serial catalog-protocol trial pending. No source/mutation permission or model-call/limit change. See source-citation-protocol.md.
+
 ## Finding template
 
 ### P3-NNN — short defect title
