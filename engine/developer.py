@@ -2594,7 +2594,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
                            + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + review_task)
         classified = requirements.CURRENT.get()
-        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
+        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified,
+                                     **({'retained_requirements': tuple(requirement_catalog)} if classified and requirement_catalog else {}))
         files_needed = []
         if review:
             reqs, found, files_needed = review

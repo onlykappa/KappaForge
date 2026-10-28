@@ -750,16 +750,22 @@ def review_inventory(paths, task, limit=600):
                                  'all changed files still require scope review.)' if len(selected) < len(paths) else '')
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=(), scope_lines=False, citations=()):
+def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=(), scope_lines=False, citations=(), retained_requirements=()):
     schema = dict(requirements=[dict(text='short requirement', met=True,
                   evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
                   problems=['file: literal evidence, concrete defect and fix'],
                   files_needed=['existing/path the fix must edit'], files_to_inspect=['existing/path needed to verify a claim'])
     if classified:
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
-        schema['requirements'] = [dict(id=r.id, met=None,
-            evidence=({'citation': None} if citations else dict(path=None,
-                **({'lines': None} if scope_lines else {'quote': None}))), test=None) for r in classified]
+        def proof_slots():
+            return {'citation': None} if citations else dict(path=None, **({'lines': None} if scope_lines else {'quote': None}))
+        schema['requirements'] = [dict(id=r.id, met=None, evidence=proof_slots(),
+            test=proof_slots() if r.behavioral or 'testing' in r.categories else None) for r in classified]
+        represented = {' '.join(r.text.split()) for r in classified}
+        for text in dict.fromkeys(retained_requirements):
+            if isinstance(text, str) and text.strip() and ' '.join(text.split()) not in represented:
+                schema['requirements'].append(dict(text=text, met=None, evidence=proof_slots(), test=proof_slots()))
+                represented.add(' '.join(text.split()))
     if scope_paths:
         schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task',
                                    **({'citation': None} if any(c['path'] == p for c in citations) else
@@ -812,7 +818,7 @@ def review_prompt(task, diff, paths, context='', inventory_limit=600, classified
         + inventory_instructions +
         "Return ONLY strict JSON:\n"
         + json.dumps(schema) + '\n'
-        + (f'Fill all {len(classified)} requirement entries exactly once, in this id order. Replace each met:null with '
+        + (f'Fill all {len(schema["requirements"])} requirement entries exactly once. Preserve original ids and every retained text. Replace each met:null with '
            'your true/false assessment of the whole original entry; null is invalid. Evidence/test null means no proof, '
            'never completion. Do not return only implementation asks or omit constraints, baseline facts and reporting asks.\n'
            if classified else '') +
@@ -1046,7 +1052,7 @@ def scope_batches(run_model, api_key, task, changes, goal, allowed, pinned=False
 
 @task_state.role('reviewer', 'Review the current candidate against the owner goal',
                  'Current-source evidence covers each goal; model findings remain hypotheses until verified')
-def model_review(run_model, api_key, task, read, changes, paths, allowed=None, classified=None):
+def model_review(run_model, api_key, task, read, changes, paths, allowed=None, classified=None, retained_requirements=()):
     """The model's bounded source-backed verdict; None leaves verification incomplete. `classified` (section 4
     requirements) asks the review to report them by id with any test that exercises them."""
     REVIEW_FAILURE.set('')
@@ -1107,7 +1113,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
                                            inventory_limit=min(600, source_limit // 2), classified=classified,
                                            scope_paths=sorted(review_changes) if scope_required else (),
-                                           scope_lines=bool(line_context), citations=citations)
+                                           scope_lines=bool(line_context), citations=citations,
+                                           retained_requirements=retained_requirements)
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)
@@ -1121,7 +1128,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                    'Do not use diff line numbers as source evidence.')
                     if citations:
                         prompt += ('\nSOURCE_CITATION_CATALOG\n' + json.dumps(citations, separators=(',', ':')) +
-                            '\nFor source proof you may return {"citation":"exact catalog id"}. The engine copies only that '
+                            '\nIn evidence, test or file_scope you may return {"citation":"exact catalog id"}. The engine copies only that '
                             'displayed span from this snapshot. Choose an id only if its source proves the requirement or '
                             'file connection; an id is not a verdict. Leave unproved claims false or request source. '
                             'Do not invent ids or use another file for a scope decision. Literal quotes/lines remain accepted.')
@@ -1235,6 +1242,17 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             'This is review repair, not permission to edit source.')
                         continue
                     raise ScopeReviewUnavailable('Requirement review incomplete; missing or duplicated original decisions: ' + ', '.join(missing or ids))
+            retained_missing = [text for text in dict.fromkeys(retained_requirements)
+                                if isinstance(text, str) and text.strip() and
+                                ' '.join(text.split()) not in {' '.join(row['text'].split()) for row in reqs}]
+            if retained_missing:
+                if not retried:
+                    retried, avoid = True, other_model(model)
+                    requirement_retry_hint = ('Your response omitted saved original requirement texts. Return every '
+                        'original id and each retained text from the response template; leave unproved claims false. '
+                        'This is a review-format retry, not authorization to edit source.')
+                    continue
+                raise ScopeReviewUnavailable('Requirement review incomplete; missing retained original decisions')
             resolve_controller(reqs, review_changes)
             problems = [p for p in problems if not controller_problem(p, reqs)]
             for requirement in reqs:

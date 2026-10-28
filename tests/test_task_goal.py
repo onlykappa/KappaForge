@@ -809,3 +809,53 @@ class ScopeResponseContractTests(unittest.TestCase):
         self.assertIsNone(verify.model_review(model, 'fixture', goal.request, lambda p: '',
                                              {'app.py': source + '# new snapshot\n'}, ['app.py']))
         self.assertIn('citation_unknown', verify.REVIEW_FAILURE.get())
+
+    def test_saved_requirement_and_behavior_test_proof_survive_the_whole_review_path(self):
+        from types import SimpleNamespace
+        from engine import recovery, requirements
+        first = 'Make add accept numeric strings.'
+        retained = 'Keep strict invalid-input refusal.'
+        goal = task_goal.from_request(first + '\n' + retained)
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        classified = requirements.classify(first)
+        handle = requirements.CURRENT.set(classified)
+        self.addCleanup(requirements.CURRENT.reset, handle)
+        journal = SimpleNamespace(state=dict(requirements=[retained]), project={},
+            scope=SimpleNamespace(inference_route=None), persist=lambda: None, requirements=lambda rows: None)
+        handle = recovery.CURRENT.set(journal)
+        self.addCleanup(recovery.CURRENT.reset, handle)
+        sources = {'app.py': 'def add(a, b):\n    return int(a) + int(b)\n',
+                   'tests/test_app.py': 'from app import add\nimport unittest\nclass Inputs(unittest.TestCase):\n'
+                   '    def test_inputs(self):\n        self.assertEqual(add("1", "2"), 3)\n'
+                   '        with self.assertRaises(ValueError): add("bad", 1)\n'}
+        goal.review_paths = tuple(sources)
+        saved = list(developer.UNFINISHED)
+        self.addCleanup(lambda: developer.UNFINISHED.__setitem__(slice(None), saved))
+        for omit_retained in (False, True):
+            calls = []
+            developer.UNFINISHED[:] = ['Requirement not met: ' + retained]
+            def model(key, prompt, **kw):
+                calls.append(prompt)
+                schema = json.JSONDecoder().raw_decode(prompt.split('Return ONLY strict JSON:\n', 1)[1])[0]
+                self.assertEqual(len(schema['requirements']), 2, 'saved owner wording must be represented alongside original ids')
+                self.assertEqual(schema['requirements'][1]['text'], retained)
+                catalog = json.JSONDecoder().raw_decode(prompt.split('SOURCE_CITATION_CATALOG\n', 1)[1])[0]
+                refs = {p: next(r['id'] for r in catalog if r['path'] == p) for p in sources}
+                rows = schema['requirements'][:1] if omit_retained else schema['requirements']
+                for row in rows:
+                    self.assertEqual(row['test'], {'citation': None}, 'test proof needs its actual typed output slot')
+                    row.update(met=True, evidence=dict(citation=refs['app.py']), test=dict(citation=refs['tests/test_app.py']))
+                return 'scripted', json.dumps(dict(requirements=rows, problems=[], file_scope=[
+                    dict(path=p, necessary=True, reason='Implements or tests requested inputs', citation=refs[p]) for p in sources]))
+            with self.subTest(omit_retained=omit_retained), patch.object(developer, 'run_model', side_effect=model), \
+                    patch.object(developer, 'gh', side_effect=AssertionError('No live GitHub in this review')):
+                _, _, problems = developer.check_the_work('fixture', goal.request, developer.ROOT, 'a' * 40,
+                    'fixture', sources, {p: len(s) for p, s in sources.items()}, {}, '', [], '', True,
+                    SimpleNamespace(now=lambda *a, **kw: None, ok=lambda *a, **kw: None), review_only=True)
+                self.assertEqual(len(calls), 2 if omit_retained else 1)
+                if omit_retained:
+                    self.assertTrue(any(retained in p for p in problems), 'omitting the saved ask must still block completion')
+                else:
+                    self.assertEqual(problems, [])
