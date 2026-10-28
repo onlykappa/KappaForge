@@ -1,0 +1,32 @@
+name: Start owner-created KappaForge development tasks
+run-name: "${{ github.event.issue.number && format('Task intake #{0}', github.event.issue.number) || 'Task intake' }}"
+permissions:
+  contents: read
+concurrency:
+  group: kappaforge-task-intake-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+on:
+  issues:
+    types: [opened, labeled]
+jobs:
+  dispatch:
+    if: github.event.issue.user.login == 'onlykappa' && (github.event.action == 'opened' || (github.event.action == 'labeled' && github.event.label.name == 'kappa-task'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      issues: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Validate and dispatch a new owner task once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_EVENT_ACTION: ${{ github.event.action }}
+        run: python scripts/task_intake.py

@@ -473,6 +473,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Follow-up reproduction: a successful status poll after issue closure succeeded but runner inspection failed cleared the prior delivery error. The partial-with-status control fails before the follow-up repair because explicit retry sends zero writes. Preserve prior errors through status inspection until explicit delivery is retried; deduplicate retained messages.
 - Status: PATCHED and locally verified. Explicit cancel can retry failed or unconfirmed delivery; status remains externally read-only and revoked execution remains denied. Focused validation: 98 Python and 146 Node tests passed without skips. Full validation: 1,164 Python run, OK, 31 skipped; 880 Node passed. Structural, execution-policy, dependency-map and whitespace checks passed. See recovery-control-policy-review.md; delivery CI pending.
 
+## P3-061 — scope decisions are mandatory in prose but missing from the response schema
+
+- Evidence: latest #308 trial40621255382 returns original requirement decisions but uses owner wording as file-scope proof. The gate correctly refuses it. Source inspection finds the authoritative JSON response template includes requirements but omits the mandatory file_scope array, which is requested only later in prose. This mismatch is reproducible; the model's exact internal cause is unknown.
+- Reproducer: ScopeResponseContractTests invokes production model_review and inspects the actual wire schema for two changed files. It fails before repair because neither mandatory path exists in the schema. Its behavioral control supplies invalid owner-wording proof first, then displayed current-source lines; the existing two-call limit and literal source checks must remain.
+- Correction: include undecided scope entries in the same response schema, with exact paths and null decision/proof placeholders. Keep requirements, independent assessment, source validation and all call/resource limits. No placeholder constitutes acceptance.
+- Immediate rerun: 108 focused tests passed. Full discovery on the isolated engine: 1,165 run, OK, 31 skipped; full Node880 passed; web/bundle and ten structural-rule checks passed. A fresh post-restart full Python run independently confirmed 1,165 run, OK, 31 skipped. Combined local revision also passed 1,220 Python run (31 skipped), Node880 and web/bundle checks.
+- Status: PATCHED and locally verified. No resource/counter change or proof relaxation. Exact-head CI and one serial updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

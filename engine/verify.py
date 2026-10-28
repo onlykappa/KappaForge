@@ -706,7 +706,51 @@ def inventory_evidence_problems(links, checks, read, changes, known, context):
     return problems
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=4000, classified=()):
+def requirement_references(task, texts):
+    """Lossless requirement retention: exact spans when already present, full text otherwise."""
+    rows = []
+    for text in dict.fromkeys(texts):
+        if not isinstance(text, str):
+            raise ValueError('Retained requirements must be text')
+        start = task.find(text)
+        row = {'span': [start, start + len(text)]} if start >= 0 else {'text': text}
+        if start < 0 and len(task) <= 20000 and len(text) <= 2000:
+            # Formatting changes in a prior model's requirement wording do
+            # not justify dropping it or repeating every shared paragraph.
+            # Only exact fragments become references; literal gaps preserve
+            # the original string byte-for-byte at the Unicode text level.
+            import difflib
+            parts, cursor = [], 0
+            for match in difflib.SequenceMatcher(None, task, text, autojunk=False).get_matching_blocks():
+                if match.size < 32:
+                    continue
+                if match.b > cursor:
+                    parts.append({'text': text[cursor:match.b]})
+                parts.append({'span': [match.a, match.a + match.size]})
+                cursor = match.b + match.size
+            if cursor < len(text):
+                parts.append({'text': text[cursor:]})
+            candidate = {'parts': parts}
+            if parts and len(parts) <= 9 and len(json.dumps(candidate)) < len(json.dumps(row)):
+                row = candidate
+        rows.append(row)
+    return rows
+
+
+def review_inventory(paths, task, limit=600):
+    """Bounded routing hints, never scope-review coverage or proof of absent behavior."""
+    paths = sorted(set(paths))
+    named = [p for p in paths if p in task]
+    selected, used = [], 0
+    for path in dict.fromkeys(named + paths):
+        if used + len(path) + 2 <= limit:
+            selected.append(path)
+            used += len(path) + 2
+    return ', '.join(selected) + (f'\n({len(paths) - len(selected)} repository paths omitted; additional repository paths omitted from routing hints; '
+                                 'all changed files still require scope review.)' if len(selected) < len(paths) else '')
+
+
+def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=()):
     schema = dict(requirements=[dict(text='short requirement', met=True,
                   evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
                   problems=['file: literal evidence, concrete defect and fix'],
@@ -714,20 +758,11 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000, classifie
     if classified:
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
         schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
-    inventory = []
-    used = 0
-    all_paths = sorted(paths)
-    if re.search(r'\b(?:architecture|repository|source) inventory\b', task, re.I):
-        all_paths.sort(key=lambda p: (not p.startswith(('.github/workflows/', 'config/')), p))
-    for path in all_paths:
-        if used + len(path) + 2 > inventory_limit:
-            break
-        inventory.append(path)
-        used += len(path) + 2
-    omitted = len(all_paths) - len(inventory)
-    listing = ', '.join(inventory)
-    if omitted:
-        listing += f'\n{omitted} repository paths omitted for size; request exact paths with files_to_inspect if evidence is missing.'
+    if scope_paths:
+        schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task', quote=None)
+                                for p in sorted(scope_paths)]
+    listing = review_inventory(paths, task, limit=inventory_limit)
+
     from engine import inventory
     source_inspection = inventory.source_review(task)
     inventory_instructions = (
@@ -1021,7 +1056,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                                       complete=complete, balance=scope_required or batched_scope,
                                                       line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
-                                           inventory_limit=min(4000, source_limit // 2), classified=classified)
+                                           inventory_limit=min(600, source_limit // 2), classified=classified,
+                                           scope_paths=sorted(review_changes) if scope_required else ())
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)
@@ -1058,7 +1094,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                        'This is a formatting/evidence retry only; independently assess scope and preserve every '
                                        'existing safety rule. The previous response failed because: ' + scope_retry_hint)
                     if original_requirements:
-                        prompt += '\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP:\n' + json.dumps(list(original_requirements))
+                        prompt += ('\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP: spans are Unicode [start,end) offsets in TASK; concatenate parts in order; retain exact texts.\n' + json.dumps(requirement_references(task, original_requirements)))
                     if unavailable_sources:
                         prompt += '\n\nUNRESOLVED SOURCE REQUESTS (not available in this snapshot):\n' + json.dumps(sorted(unavailable_sources))
                     from engine import gateway

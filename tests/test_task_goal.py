@@ -678,3 +678,30 @@ class TaskGoalTests(unittest.TestCase):
             self.assertTrue(developer.tests_required(existing), 'behavior changes still need a test')
         finally:
             task_goal.CURRENT.reset(broad)
+
+class ScopeResponseContractTests(unittest.TestCase):
+    def test_scope_schema_covers_each_file_and_invalid_owner_quote_still_needs_source_proof(self):
+        goal = task_goal.from_request('Make add accept numeric strings and test that behavior.')
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+        sources = {'app.py': 'def add(a, b):\n    return int(a) + int(b)\n',
+                   'tests/test_app.py': 'from app import add\ndef test_add():\n    assert add("1", "2") == 3\n'}
+        calls = []
+        def model(key, prompt, **kw):
+            calls.append(prompt)
+            schema = json.JSONDecoder().raw_decode(prompt.split('Return ONLY strict JSON:\n', 1)[1])[0]
+            self.assertEqual({r['path'] for r in schema.get('file_scope', [])}, set(sources),
+                             'the actual wire schema must include every mandatory scope decision')
+            self.assertTrue(all(r['necessary'] is None and r['quote'] is None for r in schema['file_scope']),
+                            'the prompt must not preapprove a file or supply proof on the model behalf')
+            rows = [dict(path=p, necessary=True, reason='Implements or tests the requested numeric inputs',
+                         **({'quote': goal.request} if len(calls) == 1 else {'lines': [2, 2] if p == 'app.py' else [3, 3]}))
+                    for p in sources]
+            return 'scripted', json.dumps(dict(requirements=[dict(text=goal.request, met=True,
+                evidence=dict(path='app.py', lines=[2, 2]))], problems=[], file_scope=rows))
+        result = verify.model_review(model, 'fixture', goal.request, lambda p: '', sources, list(sources))
+        self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+        self.assertEqual(len(calls), 2, 'invalid owner wording must not pass as source evidence')
+        self.assertEqual(result[1], [])
+        self.assertTrue(result[0][0]['met'])
