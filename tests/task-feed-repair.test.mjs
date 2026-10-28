@@ -109,3 +109,12 @@ test('replaying a scoped cancel never adopts a renewed task or repeats a confirm
   renewed=true;closed=false;const stale=await worker.fetch(h.req('/cancel',h.payload),h.env);const receipt=await stale.json();assert.equal(receipt.cancellation.terminatedAt,null);assert.deepEqual(writes,[]);assert.ok(receipt.cancellation.errors.length);
  }finally{globalThis.fetch=saved}
 });
+test('closed or merged cards with uncertain old progress can still request a stop before deletion',()=>{
+ const source=read('app-dashboard.js');
+ for(const message of ['closed','merged','failed']){
+  const box={trackedJobs:[{number:308,message,finished:true,progress:{status:'running'}}],taskMenu:308,taskMenuConfirm:false,KappaJobs:{needsAttention:()=>false},KappaProgress:{stale:()=>false},inactiveTask:()=>false,clip:x=>x,esc:x=>String(x||''),iosRow:r=>'<button '+r.attrs+'>'+r.title+'</button>',iosSheet:(_,body)=>body};
+  vm.createContext(box);vm.runInContext(source.slice(source.indexOf('function taskMenuSheet('),source.indexOf('async function taskMenuAction(')),box);
+  const html=box.taskMenuSheet();assert.match(html,/data-task-act="cancel"/);assert.match(html,/data-task-act="delete" disabled/);
+  box.trackedJobs[0].cancellation={terminatedAt:1};assert.match(box.taskMenuSheet(),/data-task-act="cancel"/,'a legacy incomplete receipt still offers Cancel');
+ }
+});

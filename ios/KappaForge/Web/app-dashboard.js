@@ -507,12 +507,13 @@ function agentTasksPanel(){
 function taskMenuSheet(){
  const job=trackedJobs.find(j=>j.number===taskMenu);if(!job){taskMenu=0;return ""}
  const failed=KappaJobs.needsAttention(job),open=!job.finished,deletable=inactiveTask(job),stuck=open&&KappaProgress.stale(job);
+ const cancellationDone=!!(job.cancellation?.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length);
  const row=(act,icon,title,sub="",tone="")=>iosRow({attrs:'data-task-act="'+act+'"'+(act==="delete"&&!deletable?' disabled aria-disabled="true"':''),icon,tone,title,sub,chevron:false});
  const link=(href,icon,title)=>iosRow({tag:"a",attrs:'href="'+esc(href)+'" target="_blank" rel="noopener noreferrer"',icon,title});
  return iosSheet("Task #"+job.number,'<p class="task-menu-title">'+esc(clip(job.title||"Development task",120))+'</p>'+
   '<div class="ios-group icons">'+row("open","chat","Open in chat")+// Retry is for a task that failed or stopped updating, as on its chat card; a healthy running task has nothing to retry.
   (failed||stuck?row("retry","retry","Retry",failed?"Ask for recovery of the saved work":"No recent update · ask for recovery"):"")+
-  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(!["cancelled","closed","merged"].includes(job.message)?row("cancel","stop","Cancel task","Stops work; Delete then removes its history","warn"):"")+'</div>'+
+  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(!cancellationDone?row("cancel","stop","Cancel task","Stops work; Delete then removes its history","warn"):"")+'</div>'+
   (job.url||job.prUrl?'<div class="ios-group icons">'+(job.url?link(job.url,"repo","View on GitHub"):"")+(job.prUrl?link(job.prUrl,"merge","Open draft PR"):"")+(job.url?row("copy","copy","Copy link"):"")+'</div>':'')+
   '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task",deletable?"Clears inactive history. Undo is available for 30 days. GitHub stays unchanged.":"Active or unknown work stays tracked. Cancel and wait for termination first.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
 }

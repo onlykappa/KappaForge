@@ -618,6 +618,8 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Evidence: checkJobResult marks the job finished after cancellation confirmation but retains the old progress snapshot. taskHasActiveExecution treats that snapshot as active before considering finished state, so Delete can remain disabled.
 - Status: PATCHED locally; confirmed-stop deletion passes while pending/error cases stay tracked. Browser Refresh→Cancel→Delete→Refresh passes at desktop/phone widths; tombstones and history-only Undo remain. See task-feed-controls.md.
 
+P3-087 closed-card follow-up: a new production-menu regression fails on495ff15 for a closed/merged card whose old progress still says running. Delete is correctly disabled while runner state is uncertain, but Cancel is hidden, leaving no recovery control. The correction keeps Cancel available until a full stop/closure receipt is confirmed, including legacy partial receipts; it does not permit blind deletion. All49 task/feed/menu/history checks pass.
+
 ## Finding template
 
 ### P3-NNN — short defect title
