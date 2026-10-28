@@ -13,6 +13,108 @@ REQUEST = f'Add a single comment line {COMMENT} as the first line of {PATH}. Cha
 
 
 class TaskGoalTests(unittest.TestCase):
+    def test_review_resolves_displayed_source_lines_without_model_copied_quotes(self):
+        goal = task_goal.from_request('Make add accept numeric strings')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            source = 'def add(a, b):\n    return int(a) + int(b)\n'
+            def model(key, prompt, **kw):
+                self.assertIn('2|     return int(a) + int(b)', prompt)
+                return 'scripted', json.dumps(dict(requirements=[dict(text=goal.request, met=True,
+                    evidence=dict(path='app.py', lines=[2]))], problems=[],
+                    file_scope=[dict(path='app.py', necessary=True, reason='Convert requested inputs', lines=[2])]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual(result[0][0]['evidence']['quote'], '    return int(a) + int(b)')
+            self.assertEqual(result[1], [])
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_incomplete_classified_review_gets_existing_bounded_format_retry(self):
+        from engine import requirements
+        goal = task_goal.from_request('- Document numeric inputs.\n- Document empty input refusal.')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            classified = requirements.classify(goal.request)
+            calls = []
+            def model(key, prompt, **kw):
+                calls.append(prompt)
+                chosen = classified[:1] if len(calls) == 1 else classified
+                if len(calls) == 2:
+                    self.assertIn('R2', prompt)
+                return 'scripted', json.dumps(dict(requirements=[dict(id=r.id, met=True,
+                    evidence=dict(path='README.md', quote='Numeric inputs; empty input is refused.')) for r in chosen],
+                    problems=[], file_scope=[dict(path='README.md', necessary=True,
+                    reason='Document requested behavior', quote='Numeric inputs; empty input is refused.')]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '',
+                {'README.md': 'Numeric inputs; empty input is refused.\n'}, ['README.md'], classified=classified)
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual({r['id']: r['text'] for r in result[0]}, {r.id: r.text for r in classified})
+            self.assertEqual(len(calls), 2)
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_persistently_missing_or_duplicate_ids_block_source_repair_after_one_retry(self):
+        from engine import requirements
+        goal = task_goal.from_request('- Document numeric inputs.\n- Document empty input refusal.')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            classified = requirements.classify(goal.request)
+            for duplicate in (False, True):
+                with self.subTest(duplicate=duplicate):
+                    task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+                    rows = [dict(id=r.id, met=False, evidence='Not documented') for r in classified]
+                    rows = rows + [rows[0]] if duplicate else rows[:1]
+                    model = unittest.mock.Mock(return_value=('scripted', json.dumps(dict(requirements=rows,
+                        problems=[], file_scope=[dict(path='README.md', necessary=True, reason='Document requested inputs', quote='Inputs')]))))
+                    result = verify.model_review(model, 'fixture', goal.request, lambda p: '',
+                        {'README.md': 'Inputs\n'}, ['README.md'], classified=classified)
+                    self.assertIsNone(result)
+                    self.assertEqual(model.call_count, 2)
+                    self.assertTrue(verify.SCOPE_UNDECIDED.get(), 'a review format gap cannot authorize source edits')
+                    self.assertIn('missing or duplicated original decisions', verify.REVIEW_FAILURE.get())
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_review_cannot_cite_real_but_unshown_source_lines(self):
+        goal = task_goal.from_request('Review this source change')
+        token = task_goal.CURRENT.set(goal)
+        calls = []
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            source = 'x = 0\n' * 20000 + 'needle = 1\n' + 'x = 0\n' * 20000
+            def model(key, prompt, **kw):
+                calls.append(prompt)
+                self.assertNotIn('20001| needle', prompt)
+                return 'scripted', json.dumps(dict(requirements=[dict(text=goal.request, met=True,
+                    evidence=dict(path='app.py', lines=[20001]))], problems=[],
+                    file_scope=[dict(path='app.py', necessary=True, reason='Review the requested change', lines=[1])]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
+            self.assertIsNone(result)
+            self.assertIn('ScopeReviewUnavailable', verify.REVIEW_FAILURE.get())
+            self.assertEqual(len(calls), 2)
+        finally:
+            task_goal.CURRENT.reset(token)
+
+    def test_requested_definition_after_large_prefix_is_shown_for_line_evidence(self):
+        goal = task_goal.from_request('Check commit_changes empty-input behavior')
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            source = 'x = 0\n' * 20000 + 'def commit_changes(parent, changes):\n    if not changes:\n        return {"sha": parent}\n' + 'x = 0\n' * 20000
+            def model(key, prompt, **kw):
+                self.assertIn('20001| def commit_changes(parent, changes):', prompt)
+                return 'scripted', json.dumps(dict(requirements=[dict(text=goal.request, met=True,
+                    evidence=dict(path='app.py', lines=[20001, 20003]))], problems=[],
+                    file_scope=[dict(path='app.py', necessary=True, reason='Check the requested function', lines=[20001, 20003])]))
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertIn('return {"sha": parent}', result[0][0]['evidence']['quote'])
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_an_existing_comment_is_preserved_and_never_duplicated(self):
         for before in (AFTER, AFTER.replace('\n', '\r\n')):
             goal = task_goal.from_request(REQUEST)

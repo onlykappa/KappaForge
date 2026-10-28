@@ -250,18 +250,24 @@ class ScriptedScenarioTests(unittest.TestCase):
         if "You are reviewing a change" in prompt:
             # A repair can propose only the unfinished test; earlier source is already on its candidate.
             changed = json.loads(prompt.split('\nChanged files: ', 1)[1].splitlines()[0])
+            tested = 'def test_new_conversions' in prompt
+            test = {"path": "tests/test_convert.py", "quote": "self.assertEqual(fahrenheit_to_celsius(32), 0)"} if tested else None
             return "scripted", json.dumps({"file_scope": [
                 row for row in (
                     {"path": "units/convert.py", "necessary": True, "reason": "Implement the requested conversions", "quote": "def fahrenheit_to_celsius"},
-                    {"path": "tests/test_convert.py", "necessary": True, "reason": "Exercise the requested conversions", "quote": "fahrenheit_to_celsius"}) if row['path'] in changed], "requirements": [{"text": "Add fahrenheit_to_celsius", "met": True, "evidence": {
-                "path": "units/convert.py", "quote": "def fahrenheit_to_celsius"}}], "problems": []})
+                    {"path": "tests/test_convert.py", "necessary": True, "reason": "Exercise the requested conversions", "quote": "fahrenheit_to_celsius"}) if row['path'] in changed], "requirements": [
+                {"id": "R1", "met": True, "test": test, "evidence": {"path": "units/convert.py", "quote": "def fahrenheit_to_celsius"}},
+                {"id": "R2", "met": True, "test": {"path": "tests/test_convert.py", "quote": "with self.assertRaises(ValueError):"} if tested else None, "evidence": {"path": "units/convert.py", "quote": "raise ValueError(\"below absolute zero\")"}},
+                {"id": "R3", "met": tested, "evidence": test if tested else "The scripted change only imports the helper; conversion and error tests are absent.", "test": test}
+            ], "problems": []})
         if "THIS IS STAGE 1" in prompt:
             return "scripted", json.dumps({"summary": "Add conversions", "files": [{"path": "units/convert.py", "reason": "Implement the requested conversions", "content":
                                                                                   REFERENCE["easy"]["units/convert.py"]}]})
         if "THIS IS STAGE 2" in prompt:
-            return "scripted", json.dumps({"summary": "Tests", "files": [{"path": "tests/test_convert.py", "reason": "Exercise the requested conversion behavior", "edits": [{
-                "find": "from units.convert import celsius_to_fahrenheit",
-                "replace": "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius"}]}]})
+            return "scripted", json.dumps({"summary": "Tests", "files": [{"path": "tests/test_convert.py", "reason": "Exercise the requested conversion behavior", "content": next(s for s in sim.SCENARIOS if s["key"] == "easy")["files"]["tests/test_convert.py"].replace(
+                "from units.convert import celsius_to_fahrenheit",
+                "from units.convert import celsius_to_fahrenheit, fahrenheit_to_celsius, celsius_to_kelvin") +
+                "\n    def test_new_conversions(self):\n        self.assertEqual(fahrenheit_to_celsius(32), 0)\n        self.assertEqual(celsius_to_kelvin(0), 273.15)\n        with self.assertRaises(ValueError):\n            fahrenheit_to_celsius(-460)\n        with self.assertRaises(ValueError):\n            celsius_to_kelvin(-274)\n"}]})
         return "scripted", "{}"
 
     @staticmethod

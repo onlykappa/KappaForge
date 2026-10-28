@@ -786,7 +786,16 @@ class PrFirstTests(unittest.TestCase):
 
     def test_pr_creation_failure_keeps_only_the_already_validated_single_commit(self):
         calls, fake_gh = self.world(pr_status=422)
-        model = MagicMock(side_effect=self.answers())
+        answers = self.answers()
+        plan = json.loads(answers[0][1])
+        plan['stage_files'][0].append('tests/test_main.py')
+        generated = json.loads(answers[1][1])
+        generated['files'].append({'path': 'tests/test_main.py', 'reason': 'Exercise numeric-string inputs', 'content': ADD_TEST})
+        review = {'file_scope': ADD_SCOPE + [TEST_SCOPE], 'requirements': [
+            {'id': 'R1', 'text': 'Make add() accept numeric strings.', 'met': True,
+             'evidence': {'path': 'app/main.py', 'quote': 'return int(a) + int(b)'},
+             'test': {'path': 'tests/test_main.py', 'quote': "assert add('1', '2') == 3"}}], 'problems': []}
+        model = MagicMock(side_effect=[('flash', json.dumps(row)) for row in (plan, generated, review)])
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", model), \
                 self.assertRaises(urllib.error.HTTPError):
             produce_development_pr(self.issue(), "key", "token")

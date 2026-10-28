@@ -433,7 +433,8 @@ def diff_text(read, changes, limit=40000):
     return "\n\n".join(parts)[:limit]
 
 
-def review_sources(read, changes, paths, requested=(), limit=220000, complete=None, balance=False):
+def review_sources(read, changes, paths, requested=(), limit=220000, complete=None, balance=False,
+                   line_context=None, clues=''):
     """Bounded current-source evidence, including classic-script globals and imports.
 
     A diff omits unchanged definitions, and may cut a minified line in half.
@@ -465,10 +466,29 @@ def review_sources(read, changes, paths, requested=(), limit=220000, complete=No
             remaining = reserved - seen
             available = max(0, (available - sum(len(p) + 140 for p in remaining)) // (len(remaining) + 1))
         take = min(len(text), limit if path in requested else 90000, available)
-        if complete is not None and text and take == len(text):
+        shown = text[:take]
+        if line_context is not None and take:
+            from engine import repair_guard
+            from engine.developer import excerpt
+            definitions = [m for m in re.finditer(r'^\s*(?:async\s+)?def\s+(\w{4,})\s*\(', text, re.M)
+                           if re.search(r'\b' + re.escape(m[1]) + r'\b', clues)]
+            anchors = [text.count('\n', 0, m.start()) for m in sorted(definitions, key=lambda m: -len(m[1]))[:8]]
+            while take:
+                shown = text if take >= len(text) else excerpt(text, clues, take, lines_near=anchors)
+                rendered, numbers = repair_guard.numbered(shown, text)
+                if len(rendered) <= available:
+                    break
+                take //= 2
+            if take:
+                line_context[path] = dict(source=text, lines=numbers)
+            else:
+                shown, rendered = '', ''
+        else:
+            rendered = shown
+        if complete is not None and text and shown == text:
             complete.add(path)
-        label = 'COMPLETE' if take == len(text) else f'PARTIAL: {take}/{len(text)} chars; request this file if evidence is missing'
-        block = f'\n===== CURRENT SOURCE {path} ({label}) =====\n' + text[:take] + '\n'
+        label = 'COMPLETE' if shown == text else f'PARTIAL: {len(shown)}/{len(text)} chars; request this file if evidence is missing'
+        block = f'\n===== CURRENT SOURCE {path} ({label}) =====\n' + rendered + '\n'
         if not take:
             block = f'\n===== {path}: OMITTED by context budget; request if needed =====\n'
         blocks.append(block)
@@ -759,6 +779,32 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000):
         + "\n\nCURRENT SOURCE AND DEPENDENCIES (authoritative over diff excerpts):\n" + context)
 
 
+def resolve_review_lines(raw, line_context, classified=()):
+    """Copy only bounded lines actually shown from this exact current source snapshot."""
+    if not isinstance(raw, dict):
+        return raw
+    from engine import repair_guard
+    data = dict(sources={p: {} for p in line_context},
+                shown_lines={p: row['lines'] for p, row in line_context.items()})
+    sources = {p: row['source'] for p, row in line_context.items()}
+    owner_text = {r.id: r.text for r in classified or ()}
+    for row in raw.get('requirements', []) if isinstance(raw.get('requirements'), list) else []:
+        if not isinstance(row, dict):
+            continue
+        if row.get('id') in owner_text:
+            row['text'] = owner_text[row['id']]
+        for key in ('evidence', 'test'):
+            if isinstance(row.get(key), dict) and 'lines' in row[key]:
+                row[key] = (repair_guard.resolved(row[key], data, sources) if row[key].get('path') in line_context
+                            else dict(row[key], quote=None, issue='lines_not_shown'))
+    for row in raw.get('file_scope', []) if isinstance(raw.get('file_scope'), list) else []:
+        if isinstance(row, dict) and 'lines' in row:
+            proof = (repair_guard.resolved(row, data, sources) if row.get('path') in line_context
+                     else dict(row, quote=None, issue='lines_not_shown'))
+            row['quote'] = proof.get('quote')
+    return raw
+
+
 def parse_review(output):
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (output or "").strip())
     data = json.loads(text[text.find("{"):text.rfind("}") + 1])
@@ -927,6 +973,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
         # A malformed scope answer gets its own retry; it never uses up the source-inspection round.
         inspected = retried = False
         scope_retry_hint = ''
+        requirement_retry_hint = ''
         avoid = ()
         # Retry an undecided scope review on a different model (#228: one model omitted file_scope twice), unless
         # the task is pinned to one route.
@@ -942,23 +989,36 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
         resources = gateway.ReviewResources()
         while True:
             complete = set()
+            line_context = {}
             def build():
                 nonlocal complete, context
                 source_limit, diff_limit = 220000, 40000
                 while True:
                     complete = set()
+                    line_context.clear()
                     if inventory_links:
                         from engine import inventory
                         context, seen = inventory.review_context(read, review_changes, inventory_links, requested,
                                                                 source_limit, complete, known)
                     else:
                         context, seen = review_sources(read, review_changes, paths, requested, limit=source_limit,
-                                                      complete=complete, balance=scope_required or batched_scope)
+                                                      complete=complete, balance=scope_required or batched_scope,
+                                                      line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
                                            inventory_limit=min(4000, source_limit // 2))
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)
+                        prompt += ('\nFor a valid original id, text is optional: the engine copies its complete original wording. '
+                                   'Assess that entire entry, not a shorter paraphrase; return every id exactly once.')
+                    if line_context:
+                        prompt += ('\nSOURCE LINE CITATIONS: Current-source lines are numbered N|. For requirement evidence, '
+                                   'test evidence and file_scope decisions you may use path and lines:[start,end] '
+                                   'instead of copying a quote. Cite at most eight contiguous displayed lines per item. '
+                                   'The engine copies their exact current text; unshown or invalid spans are refused. '
+                                   'Do not use diff line numbers as source evidence.')
+                    if requirement_retry_hint:
+                        prompt += '\nREQUIREMENT FORMAT REPAIR: ' + requirement_retry_hint
                     if scope_required:
                         prompt += ('\n\nFILE SCOPE CHECK: Include "file_scope" in the JSON: one object for EVERY changed file '
                                    'with path, necessary (boolean), reason (why the original owner request requires this change), '
@@ -994,13 +1054,17 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
             model, output = resources.call(run_model, api_key, build, max_output_tokens=6000, allowed=allowed, json_mode=True,
                                             **({'skip': avoid} if avoid else {}))
             try:
-                result = parse_review(output)
+                wire = re.sub(r'^```(?:json)?\s*|\s*```$', '', output.strip())
+                raw = json.loads(wire[wire.find('{'):wire.rfind('}') + 1])
+                raw = resolve_review_lines(raw, line_context, classified)
+                result = parse_review(json.dumps(raw))
             except (ValueError, TypeError):
-                if not scope_required:
+                if not scope_required and not classified:
                     raise
                 if not retried:
                     retried, avoid = True, other_model(model)
                     scope_retry_hint = 'the response was not valid JSON'
+                    requirement_retry_hint = 'Return valid requirements with every original id and valid current-source evidence.'
                     continue
                 raise ScopeReviewUnavailable('File scope reviewer returned an invalid response; no source repair is authorized')
             reqs, problems, files = result
@@ -1011,8 +1075,6 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                     row['text'] = requirements.canonical_text(row['text'], owner_texts)
             problems += scope_problems
             # Decide the scope answer first: a rejected answer's requirements must not bind the retry.
-            wire = re.sub(r'^```(?:json)?\s*|\s*```$', '', output.strip())
-            raw = json.loads(wire[wire.find('{'):wire.rfind('}') + 1])
             problems += inventory_evidence_problems(inventory_links, raw.get('source_checks'), read,
                                                     review_changes, known, context)
             if scope_required:
@@ -1042,6 +1104,18 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             scope_retry_hint = 'one or more necessary decisions lacked a literal quote from the current source'
                             continue
                         raise ScopeReviewUnavailable('File scope evidence does not match current source: ' + ', '.join(unsupported))
+            if classified:
+                ids = [row.get('id') for row in reqs if row.get('id') in {r.id for r in classified}]
+                decided = [r.id for r in classified if any(row.get('id') == r.id or row['text'] == r.text for row in reqs)]
+                missing = [r.id for r in classified if r.id not in decided]
+                if missing or len(ids) != len(set(ids)):
+                    if not retried:
+                        retried, avoid = True, other_model(model)
+                        requirement_retry_hint = ('Your response omitted or duplicated original requirement decisions: ' + ', '.join(missing)
+                            + '. Return every original id once; keep unmet requirements false and never invent evidence. '
+                            'This is review repair, not permission to edit source.')
+                        continue
+                    raise ScopeReviewUnavailable('Requirement review incomplete; missing or duplicated original decisions: ' + ', '.join(missing or ids))
             resolve_controller(reqs, review_changes)
             problems = [p for p in problems if not controller_problem(p, reqs)]
             for requirement in reqs:

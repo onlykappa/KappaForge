@@ -371,6 +371,22 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Patch: retain failed focused-command output as the latest diagnostic, investigate its real known-workspace frames and state the sandbox's Python/Node versions. Keep all command receipts and rerun the complete suite before publication. Identical failure/source investigations are deduplicated rather than spending the read budget again; the existing each-new-error investigation regression remains intact.
 - Validation: included in P3-045's final checks. Status: PATCHED and locally verified.
 
+## P3-048 — source-copy drift and late definitions obstruct requirement review
+
+- Evidence: run [40615218736](https://github.com/onlykappa/KappaForge/actions/runs/40615218736), engine `06a415e`, adopted independently reviewed candidate `75811f8` without replaying the superseded sandbox failure. Review still supplied a nonexistent `commit_changes(... writer)` signature and a whitespace-mismatched multiline test quote. The helper definition lies late in the large engine file; prefix-only review context can omit it. The strict literal-source checker correctly refused these claims. Candidate source independently passed 51 focused tests and 1,140 full tests (32 skipped), CI and fresh [sandbox 40615597925](https://github.com/onlykappa/KappaForge/actions/runs/40615597925).
+- Reproducers: `test_review_resolves_displayed_source_lines_without_model_copied_quotes` failed before numbered source was supplied. `test_requested_definition_after_large_prefix_is_shown_for_line_evidence` exercises a requested definition beyond a 20,000-line prefix. `test_review_cannot_cite_real_but_unshown_source_lines` refuses an existing but undisplayed line after one format retry.
+- Patch: number the current-source review context and resolve bounded evidence/test/scope citations from the exact displayed snapshot using the existing eight-line resolver. Prefer actual function definitions mentioned in the task/diff when excerpting large files. Keep the existing source budget, literal/executable checks, inventory protocol and provider admission intact. Unknown paths and unshown/invalid spans fail closed; no fuzzy source evidence.
+- Validation: 200 focused tests, OK, one skipped. Full Python discovery: 1,155 run, OK, 35 skipped; three skipped real ast-grep tests separately ran and passed with the installed executable on PATH. Ten structural-rule tests, shipped-source structural scan, preflight, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; updated-engine live review pending. Candidate `75811f8` stays an unmerged draft; no Phase 3.1 completion is claimed.
+
+## P3-049 — incomplete requirement answers need protocol repair, not source edits
+
+- Evidence: run 40615218736 reviewed the corrected draft without deciding most of the 24 saved original requirements. It correctly remained incomplete, but another unchanged review would repeat the same protocol failure rather than identify all original decisions.
+- Reproducers: `test_incomplete_classified_review_gets_existing_bounded_format_retry` failed before the patch. A first reply omits R2; the second supplies original IDs without rewritten wording, which the engine binds to the complete owner entries. `test_persistently_missing_or_duplicate_ids_block_source_repair_after_one_retry` verifies two calls maximum and a typed no-source-repair result for persistent omissions or duplicated IDs.
+- Patch: use the existing single format retry for missing/duplicate original decisions, shared with scope-format recovery. Accept original IDs and copy their authentic complete text rather than requiring model transcription. Require an explicit assessment of the whole entry, preserve false decisions and evidence validation, and retain an unavailable review when protocol recovery fails. No increased token/call limits, counter resets or source-edit authority.
+- Validation: included in P3-048's checks. Three older scripted lifecycle fixtures initially failed; their responses now identify original requirements and real tests, while the intentionally unfinished chat fixture still reports its original compound requirement unmet. Existing publication/orchestration assertions are unchanged.
+- Status: PATCHED and locally verified; serial updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title
