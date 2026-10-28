@@ -170,9 +170,6 @@ def report_sandbox_failure(number, result, token):
     gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": redact(body)})
 
 
-class EmptyPublicationError(Exception): pass
-
-
 def repair_history(result):
     """Summarize each meaningful candidate change and why it differs from the previous one."""
     rows = []
@@ -191,8 +188,6 @@ class EmptyPublicationError(Exception):
 
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
-    if not changes:
-        raise EmptyPublicationError('Cannot publish empty changes.')
     if not changes:
         raise EmptyPublicationError('Cannot publish an empty change set')
     from engine import execution
