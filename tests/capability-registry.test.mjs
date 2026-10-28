@@ -163,3 +163,34 @@ test('cancellation distinguishes stop request from trusted terminal runner evide
   globalThis.fetch=async()=>new Response('',{status:503});const unknown=await cancellationEvidence({},record);assert.equal(unknown.terminatedAt,null);assert.ok(unknown.errors.length);
  }finally{globalThis.fetch=original}
 });
+
+
+test('a fresh retry grant cancels older runners of the same task without reporting premature termination',async()=>{
+ const {cancellationEvidence}=await import('../chat-backend/src/task-cancellation.js');
+ const original=globalThis.fetch,calls=[],now=Date.now();let olderFinished=false;
+ const record={issueNumber:198,issuedAt:now,cancellation:{authorizationRevokedAt:now,requestedAt:now}};
+ globalThis.fetch=async(url,options={})=>{
+  calls.push({url:String(url),method:options.method||'GET'});
+  if(String(url).endsWith('/issues/198')&&options.method==='PATCH')return Response.json({state:'closed'});
+  if(String(url).includes('/actions/runs?'))return Response.json({workflow_runs:[
+   {id:10,path:'.github/workflows/agent.yml',display_title:'Agent task #198 fix',created_at:new Date(now-3*3600000).toISOString(),status:olderFinished?'completed':'in_progress',conclusion:olderFinished?'cancelled':null},
+   {id:11,path:'.github/workflows/recovery.yml',display_title:'Recovery task #198',created_at:new Date(now-60000).toISOString(),status:'completed',conclusion:'success'},
+   {id:12,path:'.github/workflows/agent.yml',display_title:'Agent task #1980 fix',created_at:new Date(now).toISOString(),status:'in_progress'},
+   {id:13,path:'.github/workflows/agent.yml',display_title:'Scheduled agent',created_at:new Date(now).toISOString(),status:'in_progress'}]});
+  if(String(url).endsWith('/10/cancel')&&options.method==='POST')return new Response(null,{status:202});
+  assert.fail('Unexpected fixture request '+url);
+ };
+ try{
+  const pending=await cancellationEvidence({},record,{requestStop:true});
+  assert.equal(pending.terminatedAt,null,'an earlier task runner is still running despite the fresh control grant');
+  assert.equal(pending.runnerAcknowledgedAt,null);
+  assert.deepEqual(pending.runs.map(row=>row.id),[10,11]);
+  assert.ok(calls.some(call=>call.url.endsWith('/10/cancel')));
+  assert.ok(!calls.some(call=>/\/(?:12|13)\/cancel$/.test(call.url)));
+  olderFinished=true;calls.length=0;
+  const stopped=await cancellationEvidence({},record);
+  assert.ok(stopped.terminatedAt);
+  assert.equal(stopped.terminationScope,'observed runners only');
+  assert.ok(calls.every(call=>call.method==='GET'));
+ }finally{globalThis.fetch=original}
+});

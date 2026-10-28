@@ -35,5 +35,5 @@ Result: 367 tests passed, zero failures/skips. This includes existing Worker aut
 
 - The main-branch push workflows may deploy/release after an owner merge under the repository's existing policy. This audit did not perform those actions or establish separate future Phase 3.7 lifecycle grants.
 - External-project `testState` has different check-run fallback and no-test behavior; the KappaForge-specific sandbox trace above is not proof that every external check executes tests.
-- [Task intake](task-intake-policy-review.md) is now separately inspected and locally tested. Finish recovery-wake, retry/guidance, cancellation, Actions-control and the remaining workflow mutation paths before claiming complete 3.1c coverage.
+- [Task intake](task-intake-policy-review.md) is now separately inspected and locally tested. [Recovery-wake, retry/guidance, cancellation and Actions controls](recovery-control-policy-review.md) are now separately traced and repaired. Finish the remaining workflow mutation paths and combined validation before claiming complete 3.1c coverage.
 - CI and fake-transport tests are not physical-device, production credential-distribution or live owner-action acceptance. Phase 3.1 and the independent #308 reviewer-proof gap remain open.

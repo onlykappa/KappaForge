@@ -444,6 +444,34 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate rerun: the changed-head and unchanged-head controls both passed within 367 focused Node tests; full npm test passed 875 with zero skips. Dependency-map, execution-policy and structural checks passed. Full Python discovery: 1,162 run, OK, 31 skipped. All project CI checks, including real-Docker sandbox, passed on exact source d244834ad78b0160b8d8e8534628401100bd718c.
 - Status: PATCHED and verified locally and in CI. The bounded backend trace and remaining inspection limits are in backend-merge-policy-review.md. All reproduction and merge-path test calls used fake transport.
 
+## P3-057 — expired GitHub-owner task renewal loses the saved checkpoint identity
+
+- Evidence: `agent-work.js:renewTask` creates resumeFrom only when a prior chat authorization ID exists. A directly owner-created GitHub task instead has Python identity github-task:N. After expiry, a fresh owner retry appends a chat authorization without linking that identity, so the real recovery loader refuses its saved journal.
+- Reproducer: `TaskRenewalTests.test_expired_owner_task_restores_real_checkpoint_without_resetting_history` runs the production JavaScript retry/renewal and then restores its result through the production Python Scope/Journal with real journal fixtures. Before repair the GitHub-origin case raises Saved checkpoint scope changed; the existing chat-origin and missing-fresh-grant controls pass. All external transport is fake; no task was dispatched.
+- Required correction: link the exact original body digest and github-task:N identity when renewing a task without a prior chat record. Preserve existing chat links, body/mode/repository, restrictions, candidate, events, counters and limits. A fresh user authorization remains mandatory.
+- Status: PATCHED and locally verified. Renewal links the original identity and exact body digest; production JavaScript/Python restoration preserves checkpoint history and budgets. Fresh-grant refusal remains covered. Focused validation: 98 Python and 146 Node tests passed without skips. Full validation: 1,164 Python run, OK, 31 skipped; 880 Node passed. Structural, execution-policy, dependency-map and whitespace checks passed. See recovery-control-policy-review.md; delivery CI pending.
+
+## P3-058 — recovery delivery rejects descriptor header casing accepted by the engine
+
+- Evidence: Python ExecutionScope matches Mode/Repository header names case-insensitively while preserving case-sensitive mode and registered repository values. recoveryTask required literal Mode and Repository header spelling. Valid mixed-case headers therefore restore in the Python controller but are refused by the wakeup layer.
+- Reproducer: the cross-language task-renewal regression restores the real journal after P3-057 but fails to schedule recovery for mixed-case headers (both direct GitHub and chat origins). The new recovery-wake table also fails its first valid mixed-case header case before patch. It includes negative controls for duplicate modes, invalid mode-value casing, foreign owner values and conflicting repository descriptors.
+- Required correction: align header-name matching and reject ambiguous descriptors, without normalizing or broadening the allowed values. Preserve the Python controller as the execution authority and keep all delivery caps/counters.
+- Status: PATCHED and locally verified. Header names align with the controller; values remain case-sensitive and ambiguous descriptors are refused. Mixed-case direct/chat renewal and wake regressions pass. Focused validation: 98 Python and 146 Node tests passed without skips. Full validation: 1,164 Python run, OK, 31 skipped; 880 Node passed. Structural, execution-policy, dependency-map and whitespace checks passed. See recovery-control-policy-review.md; delivery CI pending.
+
+## P3-059 — a fresh control grant hides older runners of the same cancelled task
+
+- Evidence: cancellationEvidence filters task-bound runs by record.issuedAt minus two minutes. A retry can issue a fresh grant for the same original task. An older still-running agent is then omitted while a recent completed recovery is observed, causing a non-null terminatedAt and no cancellation request for the older runner.
+- Reproducer: the new capability-registry regression uses production cancellationEvidence with fake GitHub transport. Before repair it reports termination despite the three-hour-old agent still running. Controls retain the exact task-title boundary, exclude another task and unidentified scheduled runs, and require status-only reads after completion.
+- Required correction: identify all attempts of the same stable task number, retaining the workflow allowlist and exact title match instead of using the fresh grant timestamp as the task's origin. Keep bounded pagination and observed-runners-only termination semantics.
+- Status: PATCHED and locally verified. Stable task identity replaces the fresh-grant time filter; older same-task runners are cancelled and termination waits for observed completion. No live cancellation was performed. Focused validation: 98 Python and 146 Node tests passed without skips. Full validation: 1,164 Python run, OK, 31 skipped; 880 Node passed. Structural, execution-policy, dependency-map and whitespace checks passed. See recovery-control-policy-review.md; delivery CI pending.
+
+## P3-060 — explicit cancellation retry cannot redeliver a failed or unconfirmed stop
+
+- Evidence: the Worker marks an authorization cancelled before remote issue closure/runner cancellation. Every subsequent /cancel is tagged replayed and forced into read-only evidence collection, even if the first delivery failed or the process stopped before recording delivery.
+- Reproducer: the new intent-guard regression invokes the real Worker and authorization store with fake GitHub transport. After HTTP 503, a second explicit cancel performs no closure request; the test fails before patch. A second case covers revocation persisted before any delivery receipt. Controls require status polling to remain read-only, acknowledged cancellation not to replay blindly, and revoked execution to remain denied.
+- Required correction: permit the owner's explicit /cancel to retry failed or unconfirmed delivery for the same bound task. Never retry through /cancel/status or restore the cancelled execution grant.
+- Status: PATCHED and locally verified. Explicit cancel can retry failed or unconfirmed delivery; status remains externally read-only and revoked execution remains denied. Focused validation: 98 Python and 146 Node tests passed without skips. Full validation: 1,164 Python run, OK, 31 skipped; 880 Node passed. Structural, execution-policy, dependency-map and whitespace checks passed. See recovery-control-policy-review.md; delivery CI pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

@@ -83,7 +83,7 @@ async function renewTask(env,t,authorization){
  if(!Number.isFinite(expires)||expires<=Date.now()){
   if(!authorization?.id||!authorization.conversationId||!Number.isFinite(authorization.issuedAt))return {error:"A fresh user authorization is required to retry this expired task.",status:409};
   const priorDigest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))].map(x=>x.toString(16).padStart(2,'0')).join('');
-  const next={...authorization,intent:"execution",state:"executing",resumeFrom:record?.id?{authorization:record.id,digest:priorDigest}:undefined,repo:"onlykappa/"+t.repo,mode,restrictions:record?.restrictions||requestLimits(body).restrictions,allowMerge:false,expiresAt:authorization.issuedAt+duration};
+  const next={...authorization,intent:"execution",state:"executing",resumeFrom:{authorization:record?record.id:'github-task:'+t.number,digest:priorDigest},repo:"onlykappa/"+t.repo,mode,restrictions:record?.restrictions||requestLimits(body).restrictions,allowMerge:false,expiresAt:authorization.issuedAt+duration};
   const marker="<!-- kappa-authorization:"+JSON.stringify(next)+" -->";
   const renewed=match?body.replace(match[0],marker):body+"\nApproved from KappaForge Chat.\n"+marker;
   const r=await fetch("https://api.github.com/"+ROOT+"/issues/"+t.number,{method:"PATCH",headers:{...githubHeaders(env),"Content-Type":"application/json"},body:JSON.stringify({body:renewed}),signal:AbortSignal.timeout(8000)});

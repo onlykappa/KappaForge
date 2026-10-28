@@ -447,7 +447,8 @@ const workerImplementation = {
       if(statusOnly&&cancelled.state!=='cancelled')return json({error:'Cancellation has not been requested'},409,cors);
       if(cancelled.issueNumber){
         try{capabilityRegistry.validate('tasks.cancel',{task:cancelled.issueNumber})}catch{return json({error:'Invalid cancellation target'},400,cors)}
-        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly&&!cancelled.replayed})}
+        const pendingDelivery=!cancelled.cancellation?.issueClosedAt||!!cancelled.cancellation?.errors?.length;
+        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly&&(!cancelled.replayed||pendingDelivery)})}
         catch(e){cancelled.cancellation={...cancelled.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,errors:[e.message]}}
         await stub.fetch('https://memory.internal/authorization/cancellation-evidence',{method:'POST',body:JSON.stringify({id:cancelled.id,conversationId:cancelled.conversationId,cancellation:cancelled.cancellation})});
       }

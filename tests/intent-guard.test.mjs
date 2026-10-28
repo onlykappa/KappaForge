@@ -251,3 +251,39 @@ test('cancellation persists revocation on partial remote failure and status cann
   assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403);
  }finally{globalThis.fetch=original}
 });
+
+test('explicit cancellation retries failed or unconfirmed delivery while status checks stay read-only',async()=>{
+ for(const interrupted of [false,true]){
+  const f=fixture();await f.issue();
+  await authorizationStore(f.state,req('/authorization/bind',{...f.payload.authorization,issueNumber:198}));
+  const original=globalThis.fetch,calls=[];let completed=false;
+  globalThis.fetch=async()=>new Response(null,{status:503});
+  try{
+   if(interrupted)await authorizationStore(f.state,req('/authorization/cancel',f.payload.authorization));
+   else assert.equal((await worker.fetch(req('/cancel',f.payload.authorization),f.env)).status,200);
+   assert.equal(f.records.get('authorization:'+f.payload.authorization.id).state,'cancelled');
+   globalThis.fetch=async(url,options={})=>{
+    const path=new URL(url).pathname,method=options.method||'GET';calls.push({path,method});
+    if(path.endsWith('/issues/198')&&method==='PATCH')return Response.json({state:'closed'});
+    if(path.endsWith('/actions/runs')&&method==='GET')return Response.json({workflow_runs:[
+     {id:55,path:'.github/workflows/agent.yml',display_title:'Agent task #198 fix',
+      created_at:new Date(Date.now()-3600000).toISOString(),status:completed?'completed':'in_progress',conclusion:completed?'cancelled':null}]});
+    if(path.endsWith('/actions/runs/55/cancel')&&method==='POST')return new Response(null,{status:202});
+    assert.fail('Unexpected cancellation fixture request '+method+' '+path);
+   };
+   const retried=await worker.fetch(req('/cancel',f.payload.authorization),f.env);
+   assert.equal(retried.status,200);
+   assert.equal((await retried.json()).cancellation.terminatedAt,null);
+   assert.equal(calls.filter(row=>row.method==='PATCH').length,1,'retry must deliver issue closure');
+   assert.equal(calls.filter(row=>row.method==='POST').length,1,'retry must deliver runner cancellation');
+   calls.length=0;
+   await worker.fetch(req('/cancel',f.payload.authorization),f.env);
+   assert.ok(calls.every(row=>row.method==='GET'),'an acknowledged cancellation is not blindly replayed');
+   completed=true;calls.length=0;
+   const status=await worker.fetch(req('/cancel/status',f.payload.authorization),f.env);
+   assert.ok((await status.json()).cancellation.terminatedAt);
+   assert.ok(calls.every(row=>row.method==='GET'));
+   assert.equal((await worker.fetch(req('/jobs',f.payload),f.env)).status,403,'delivery retry never restores execution authority');
+  }finally{globalThis.fetch=original}
+ }
+});
