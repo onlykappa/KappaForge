@@ -3432,7 +3432,7 @@ def revision_files(pr, repo, head_sha, token):
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None):
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None, checks_failed=False):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = revision_files(pr, repo, head_sha, repo_token)
@@ -3531,9 +3531,13 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         if len(files) != 1 or files[0]['filename'] != edit_path or files[0]['status'] != 'added':
             raise PermissionError('Bounded repair requires only the task-owned new document')
         existing = {path: size for path, size in existing.items() if path != edit_path}
-    # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
-    # by a repair: with nothing else open, this round re-checks the current source and writes no code.
-    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) or verify.controller_problem(p) for p in pending)
+    # Review-process gaps are resolved by reviewing again, never by editing source.
+    # An unavailable review can leave stale source claims beside its process note. Review that unchanged
+    # candidate first; those claims still authorize no edit. A real failed check always keeps its repair gate,
+    # including when GitHub could not supply the failing job details.
+    unavailable_review = any(p.startswith('Requirement review unavailable;') for p in pending)
+    reverify = bool(pending) and not (failed_jobs or checks_failed) and (unavailable_review or
+        all(verify.process_problem(p) or verify.controller_problem(p) for p in pending))
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''
@@ -3556,7 +3560,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             journal.event('Existing tests regressed: ' + str(len(regressions)), strategy='repair_regressions',
                           next_action='Restore the existing behaviour while keeping the owner goal')
         if not targets:
-            if findings and all(row['verdict'] == 'rejected' for row in findings) and not failed_jobs:
+            if findings and all(row['verdict'] == 'rejected' for row in findings) and not (failed_jobs or checks_failed):
                 # Disproved historical findings authorize no edits. Review the actual
                 # candidate against every requirement; rejection is not completion.
                 reverify = True
@@ -3605,7 +3609,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                                                         changes, guide, allowed, design, tests_required(existing), Progress.latest,
                                                         **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
                                                         **({'prior_assessments': prior_assessments} if prior_assessments else {}),
-                                                        receipt=verify.pr_receipt(pr, repo, branch))
+                                                        review_only=reverify, receipt=verify.pr_receipt(pr, repo, branch))
         finally:
             UNFINISHED[:] = prior
         explanation = verdict + "\n\n" + explanation + "\n\n" + review_record(remaining)
@@ -3812,7 +3816,7 @@ def fix_pull_request(issue, api_key, token):
         for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
             try:
                 model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, review_guidance,
-                                                                            native_history, allowed=allowed)
+                                                                            native_history, allowed=allowed, checks_failed=bool(failures))
                 break
             except GenerationFailure as exc:
                 # A rejected round is not a reason to idle: start the next round now, with the rejected proposals and

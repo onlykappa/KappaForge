@@ -395,6 +395,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate validation: 201 focused tests, OK, one skipped. Full discovery: 1,156 run, OK, 32 skipped, with the installed structural scanner on PATH. Ten structural-rule tests, shipped-source scan, dependency-map, execution-policy and whitespace checks passed.
 - Status: PATCHED and locally verified; the next serial updated-engine trial is pending. No task/Phase 3 acceptance is claimed.
 
+## P3-051 — stale claims beside an unavailable review block the review retry
+
+- Evidence: [40618403882](https://github.com/onlykappa/KappaForge/actions/runs/40618403882), engine `a308c8d`, stopped before the new original-ID checklist ran. The saved draft still held old unsupported source claims plus an explicit unavailable-review problem. Fix treated the combination as source repair and its finding verifier correctly returned needs_validation. No candidate commit was created; `75811f8` remained intact. All project CI checks on `a308c8d` passed; the failed task code job is separate evidence.
+- Reproducer: `test_unavailable_review_with_old_source_claims_rechecks_without_edit_permission` failed before repair, because the repair verifier ran before any fresh review. It now requires a review-only pass of unchanged source, preserves all unresolved claims, forbids generation and never treats the unavailable result as completion.
+- Patch: with no failed independent check, an explicit unavailable-review record triggers a fresh review even when older source hypotheses remain beside it. Pass review_only through the existing checker so that pass cannot authorize source edits. Real failed sandbox/native checks retain repair verification, including when GitHub supplies no failing job details; propagate that known-failure fact explicitly. The existing rejected-finding and uncertain-finding regressions stay intact, with an added missing-job failed-check case. No source or publication guard, request limit or counter is relaxed.
+- Validation: 166 focused tests, OK. First and final full discovery: each 1,157 run, OK, 32 skipped; the final run follows the tightened missing-job branch. Ten structural-rule tests, shipped-source structural scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; serial updated-engine trial pending. Task and Phase 3.1 remain incomplete.
+
 ## Finding template
 
 ### P3-NNN — short defect title
