@@ -1,3 +1,16 @@
+# Active Phase3 follow-up — draft PR312
+
+Baseline main: a76561abbbe9aa88c44e75c6394afda63ac4736f, containing owner-approved merges309/311. Current repair accumulator: https://github.com/onlykappa/KappaForge/pull/312, branch fix/308-phase3-followups. New bugs/fixes remain in this draft; do not merge it without a new owner instruction. The owner authorized progressing to3.2 after honest3.1 closeout.
+
+Phase3.1 source/inventory/policy/regression evidence is on main. The remaining defect loop is using task308 and frozen candidate75811f8510b4d02a8cd165c4ec081e3c032d998f (#310). Do not edit279's frozen branch, reset budgets, weaken source/test gates, or start duplicate task workers.
+
+312 fixes079/080 (local execution reporting and stale proof after edits). Trial40736533794 used312 engine8d06b8f and retained counters:93 model calls,2 edits,19 fix cycles. Its fresh matrix was17 tested,2 checked on GitHub,4 done,1 untested, while the old85-problem backlog stayed active. Finding081 corrects only historical review diagnostics resolved by current validated evidence; the current missing test, manual validation blockers and unrelated source findings stay open. Next serial trial must inspect current missing-citation IDs rather than repeat unchanged work.
+
+Validation and before/after regressions are in docs/phase3/issue-log.md and local-execution-reporting.md. Current owner-review records are preserved in owner-review-followups.md. Live model success is not inferred from a successful Actions job. Use the current PR head for the next explicit Fix after checking no active308 worker; confirm the saved engine receipt identifies312 and that head. Keep all counters/deadlines/provider limits unchanged.
+
+<details>
+<summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
+
 # Active Phase 3 handoff — PR #279
 
 Context snapshot: `c6258f2406e84cd872334a8bc4545a613f1e4365`. Active branch: `claude/phase3-intelligent-reviews`; active PR: https://github.com/onlykappa/KappaForge/pull/279.
@@ -145,3 +158,5 @@ def require_valid(repo, changes, read):
     if failures:
         raise CommitReferenceError('; '.join(failures))
 ```
+
+</details>

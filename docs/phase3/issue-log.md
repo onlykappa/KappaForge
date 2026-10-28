@@ -575,6 +575,15 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Immediate rerun: the untested-edit regression now refuses the stale pass; tested publication/net-delta compatibility remains covered. Reporting/recovery/controller focus77 tests passed. The former manual successful-proof fixture now supplies a current command receipt; its assertions are retained.
 - Status: PATCHED locally; full validation and one serial updated-engine trial pending.
 
+## P3-081 — resolved historical review diagnostics stay active beside a partial fresh review
+
+- Evidence: serial312-engine trial40736533794 on8d06b8f returns27 current decisions/zero findings. Fresh matrix:17 tested,2 checked on GitHub,4 done,1 untested; nevertheless the active marker still contains exactly the same85 historical problems, including old unavailable/not-reviewed/evidence failures now contradicted by fresh validated decisions.
+- Reproducer: real check_the_work/model_review/requirements.matrix with a completed tested ask and a second currently untested ask retains all five resolved old review diagnostics. Three tests: one fails before correction; incomplete-review and bad-source-proof controls pass. Transport is fake; no source edit or API write occurs.
+- Required correction: retire only typed historical review diagnostics supported by fresh validated decisions/matrix rows. Preserve current missing tests, unknown/unrelated source findings, manual independent-validation blockers and every original/retained ask. Missing/invalid review cannot retire history.
+- Immediate rerun:84 diagnostic-retirement/task-goal/root-cause/reporting checks pass. The positive current-subset regression passes, while incomplete-review, bad-proof, manual-blocker and unrelated-source-finding controls remain enforced.
+- Broader validation: full discovery1,266 run, OK,31 skipped; final84 focused checks pass, including an unrelated diagnostic-lookalike that must not be retired. Strict canonical delimiter handling preserves that negative control.
+- Status: PATCHED locally; one serial updated-engine confirmation pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

@@ -10,6 +10,11 @@ from tests.test_recovery_journal import GitHub
 
 
 class LocalFailureReportTests(unittest.TestCase):
+    def setUp(self):
+        for var in (intent_guard.ACTIVE, recovery.CURRENT, task_goal.CURRENT):
+            token = var.set(None)
+            self.addCleanup(var.reset, token)
+
     def bind(self, stack):
         world = GitHub()
         world.issue['body'] += '\n' + report_claims.ASK + '.'

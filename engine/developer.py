@@ -2614,6 +2614,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         files_needed = []
         if review:
             reqs, found, files_needed = review
+            rows = []
             if hasattr(progress, 'act'):
                 progress.act('check', f'Current reviewer returned {len(reqs)} requirement decisions and {len(found)} findings')
             if defer_lifecycle:
@@ -2641,6 +2642,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                     counts = collections.Counter(row['status'] for row in rows)
                     progress.act('check', 'Current requirement matrix: ' + ', '.join(
                         f'{status}={count}' for status, count in sorted(counts.items())))
+                    untested = [row['id'] for row in rows if row['status'] == 'untested']
+                    if untested:
+                        progress.act('check', 'Current requirements without test citations: ' + ', '.join(untested))
                 previous_review_problems += requirements.open_items(rows)
                 previous_review_problems += ['Requirement not reviewed: ' + row['id'] + ' ' + row['text'][:200]
                                              for row in rows if row['status'] == 'not reviewed']
@@ -2648,6 +2652,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 previous_review_problems.append("Requirement review returned no requirements; verification is incomplete")
             elif not previous_review_problems:
                 outstanding = []
+            outstanding = [p for p in outstanding if not verify.superseded_review_problem(p, reqs, rows)]
         else:
             if hasattr(progress, 'act'):
                 progress.act('error', 'Current requirement review unavailable: ' + (verify.REVIEW_FAILURE.get() or 'no diagnostic'))

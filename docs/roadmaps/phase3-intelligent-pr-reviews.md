@@ -1,7 +1,7 @@
 # Phase 3 roadmap: intelligent PR reviews, visual testing and owner approval
 
 **Repository:** `onlykappa/KappaForge`
-**Tracking:** PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
+**Tracking:** draft [#312](https://github.com/onlykappa/KappaForge/pull/312) is the current bug/engine accumulator, based on merged309/311 in maina76561a. The owner requested keeping new fixes in312 and KappaForge using that engine. PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
 **Starting point:** latest `main` verified at `ce7a5645cee806ddc4d0df523cbcb68f4be1117f` (2026-10-25).
 **Dependencies:** merged Phase 1 sandbox/execution and Phase 2 dynamic exploration, task planning, classification, research and clarification.
 **Owner boundary:** no automatic merge, release, deployment, access change, branch-protection change or production configuration change. A successful test, positive review or readiness recommendation is never merge authorization. Only the authenticated owner may perform an explicit merge action.

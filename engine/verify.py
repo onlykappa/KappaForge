@@ -938,6 +938,38 @@ def parse_review(output):
     return reqs, problems, files
 
 
+def superseded_review_problem(problem, reviewed, rows=()):
+    """Retire only an old review diagnostic that this fresh validated review actually resolves.
+
+    Unknown source findings and manual validation blockers never become implicit approvals.
+    The caller must not use this when the current review is unavailable.
+    """
+    if not reviewed:
+        return False
+    unavailable = 'Requirement review unavailable; task completion is not verified'
+    if problem == unavailable or problem.startswith(unavailable + ': '):
+        return True
+    for prefix in ('Requirement evidence does not match executable current source: ', 'Requirement not met: '):
+        if problem.startswith(prefix):
+            tail = problem[len(prefix):]
+            matches = [r for r in reviewed if tail == r['text'] or prefix == 'Requirement not met: '
+                       and tail.startswith(r['text'] + ' ({') and tail.endswith(')')]
+            return len(matches) == 1 and matches[0].get('met') is True
+    prefix = 'A requirement disappeared between repair rounds: '
+    if problem.startswith(prefix):
+        return any(r['text'] == problem[len(prefix):] for r in reviewed)
+    for row in rows:
+        represented = any(r.get('id') == row['id'] or r.get('text') == row['text'] for r in reviewed)
+        if not represented:
+            continue
+        if problem == f"Requirement not reviewed: {row['id']} {row['text'][:200]}":
+            return True
+        if (problem == f"Requirement untested: {row['id']} {row['text'][:200]} (add or cite a test that exercises it)"
+                and row['status'] in ('tested', 'done', 'checked on GitHub')):
+            return True
+    return False
+
+
 def executable_evidence(path, source, quote):
     if re.search(r'\.[cm]?js$', path):
         return executable_quote(source, quote)
