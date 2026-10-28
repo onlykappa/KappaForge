@@ -584,6 +584,20 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Broader validation: full discovery1,266 run, OK,31 skipped; final84 focused checks pass, including an unrelated diagnostic-lookalike that must not be retired. Strict canonical delimiter handling preserves that negative control.
 - Status: PATCHED locally; one serial updated-engine confirmation pending.
 
+## P3-082 — validation claims bleed across sentence boundaries
+
+- Evidence: after the independent validation paragraph was added, reporting R18 fails again. A direct guard regression reproduces Docker validation passed. Native tests were not run. being refused as an unsupported native success, despite a valid Docker receipt.
+- Cause: claimed splits lines/semicolons/but but not sentences; a success verb in the Docker sentence is associated with the later native sentence after its negation is removed.
+- Required correction: separate sentence clauses before associating category and outcome. Actual unsupported native success in a separate sentence must remain refused.
+- Status: PATCHED locally; the sentence-boundary regression and unsupported-native control pass. Focused reporting/operational selection:95 passed; full discovery:1,272 run, OK,31 skipped. Exact-head CI and renewed live trial remain pending.
+
+
+## P3-083 — foreign branch hold is classified as behavioral source work
+
+- Evidence: trial40739723033 leaves R21 untested. The phrase verified fix in Leave its branch untouched so the verified fix can be folded into #279 after independent review makes it bug_fix rather than a task-operation invariant. Direct classification assertion fails before repair.
+- Required correction: narrowly recognize the exact owned hold sentence, observe the referenced same-repository PR branch, and prove the active guard refuses mutations to that branch. Missing/foreign/same-candidate metadata or model-provided receipts cannot approve it. Do not invent a code test for an operational promise or grant an exemption to compound code asks.
+- Status: PATCHED locally; six production-path follow-up regressions pass, including malformed/foreign/same-candidate metadata, model receipts, expired scope and permissive-guard refusals. The95-test focused selection and full1,272-test discovery pass (31 full-suite skips). No branch permission changes. Exact-head CI and renewed live trial remain pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

@@ -8,6 +8,8 @@ Phase3.1 source/inventory/policy/regression evidence is on main. The remaining d
 
 Validation and before/after regressions are in docs/phase3/issue-log.md and local-execution-reporting.md. Current owner-review records are preserved in owner-review-followups.md. Live model success is not inferred from a successful Actions job. Use the current PR head for the next explicit Fix after checking no active308 worker; confirm the saved engine receipt identifies312 and that head. Keep all counters/deadlines/provider limits unchanged.
 
+Latest closeout (2026-10-28): trial40739723033 on496902a reduced85 historical blockers to5; fresh matrix still has the operational branch-hold R21 misclassified and reporting-domain mismatch.082/083 now reproduce and fix those causes;95 focused and1,272 full Python tests pass (31 full-suite skips), plus structural/policy/map checks. Candidate75811f8 is unchanged and independently passes51 focused/1,140 full tests (31 full-suite skips). Task308's retained counters are96 model calls,2 edits,20 fix cycles. Its authorization expired2026-10-28T19:20:15Z; do not dispatch an expired task or edit its deadline/counters. Authenticated KappaForge Retry must renew the existing scope with resumeFrom before a serial312-engine trial. Current completion checklist is docs/phase3/closeout-current.md. Phase3.1 remains open;3.2 begins after honest closeout.
+
 <details>
 <summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
 

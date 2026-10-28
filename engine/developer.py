@@ -2544,6 +2544,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     Returns the final changes, a one-paragraph verdict for the owner, and the problems still open."""
     from engine import verify
     progress = progress if progress is not None else _QuietReviewProgress()
+    from engine import operational_review
+    operational_review.observe_branch_holds(lambda path: gh(path, repo_token))
     cache = dict(sources)
 
     def read(path):

@@ -1,5 +1,7 @@
 # Phase 3.1 finding reconciliation — 2026-10-28
 
+**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
+
 Every ledger ID is accounted for below. PATCHED means the recorded regression/correction exists and passed available local validation; it is not an assertion that each historical abandoned workflow or production interaction was repeated. The current combined suite ran1,241 tests, OK,31 skipped; Node880 and web/bundle checks passed. Exact-head delivery CI and #308 source-proof acceptance remain pending.
 
 The original ledger is retained as historical evidence. Later corrections and scope changes supersede its old OPEN/BLOCKED labels only as stated here. No counter, expiry, permission or provider cap was changed to clear a finding. No unsupported model verdict becomes completion.
@@ -93,3 +95,15 @@ No owner-approved ACCEPTED LIMITATION disposition is invented. Future Phase3.7 a
 Owner-authorized review follow-ups067–077: full combined1,258 Python run, OK,31 skipped; Node884 passed, zero skips. First full run found a new fixture publisher leak; the corrected fixture and complete rerun pass. The queued-run and disabled-paid-rescue allegations are qualified in owner-review-followups.md; no unsupported limitation is invented. Owner now explicitly authorizes merging309/311 after verification; this supersedes their prior draft/no-merge instruction, without fabricating Phase3.1 closeout.
 
 P3-078: PATCHED fixture isolation, not a production router change. A direct cleanup assertion failed before correction;53 recovery/follow-up/router tests pass after it. Final full discovery:1,247 engine /1,259 combined run, OK,31 skipped each; Node884 run, all passed, zero skips. Final reporting/follow-up selection29 passed after the last negative-language refinement. Exact-head CI and merge evidence are tracked on309/311.
+
+## Current accumulator079–083
+
+| Finding | Current disposition | Evidence |
+| --- | --- | --- |
+| P3-079 | PATCHED; reporting/controller regressions pass | Actual failed local suite can supply a failure receipt, never a success receipt. |
+| P3-080 | PATCHED; reporting/controller regressions pass | A success receipt cannot follow an untested edit. |
+| P3-081 | PATCHED; local and live behavior verified | Trial40739723033 retired only resolved historical diagnostics; active85→5. |
+| P3-082 | PATCHED locally; updated-engine trial pending | Supported Docker pass and native-not-run sentence remain separate; unsupported native pass refused. |
+| P3-083 | PATCHED locally; updated-engine trial pending | Exact owner branch hold uses observed target metadata and actual guard refusal, with negative controls. |
+
+Latest full discovery:1,272 run, OK,31 skipped. The95-test focused selection and ten structural rules pass. Final-head CI and renewed live acceptance are tracked on312 and in closeout-current.md. These are grouped findings, not a count of distinct production bugs.

@@ -1,5 +1,7 @@
 # Owner review follow-ups for PR309 and PR311
 
+**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
+
 2026-10-28: the owner supplied the first review for311 and second review for309, then explicitly requested patches in those existing PRs, pushes and merges to main after verification. This supersedes the prior draft/no-merge instruction for these two PRs. It does not declare Phase3.1 complete or authorize paid inference. No additional repair PR or task worker was launched.
 
 | Owner finding | Finding IDs | Correction and verification |

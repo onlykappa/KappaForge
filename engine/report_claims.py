@@ -104,7 +104,7 @@ def claimed(body, scope):
                         '### KappaForge failure ledger', '### KappaForge recovery history')):
         body = re.sub(r'<!-- KAPPA_(?:RECOVERY(?:_ARCHIVE)?|EXECUTION|PROGRESS|FAILURES|TASK_STATE|PLAN|REQUIREMENTS|GENERATION)_V1 .*? -->', '', body, flags=re.S)
     claims = []
-    for line in re.split(r'[\n;]|\bbut\b', body):
+    for line in re.split(r'[\n;]|\bbut\b|(?<=[.!?])\s+', body):
         clean = NEGATIVE.sub('', line)
         outcome = 'success' if SUCCESS.search(clean) else 'failure' if FAILURE.search(clean) else None
         if outcome:

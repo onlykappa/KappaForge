@@ -1,5 +1,7 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
+**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
+
 **Latest continuation:** owner-approved309/311 are merged in maina76561a; their final heads passed unit/web/Worker/structure, review graph, real Docker and (311) native simulator/UI/unsigned-build CI. The main tree was verified identical to tested311 head2e7d2bc. Source/inventory/policy coverage and the original pinned reports below remain evidence, not claims of real-device or artifact-content inspection. Prior pending-CI labels refer to their dated snapshots.
 
 Current bugs/fixes accumulate in [draft312](https://github.com/onlykappa/KappaForge/pull/312).079/080 have four passing real-controller regressions and1,263-test full discovery (31 skips) before081. A serial312-engine run returned27 decisions and the fresh24-row matrix:17 tested,6 non-code checked/done,1 untested.081 reproduces why resolved review history still inflated the active count to85. Closeout remains withheld while that correction and the actual current test-citation gap are verified. All source/owner/budget gates remain; no Phase3.2 implementation or task308 acceptance is claimed.

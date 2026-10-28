@@ -4,9 +4,11 @@ Missing authority, history or evidence stays unmet and cannot authorize a code r
 """
 import re
 import time
+from urllib.parse import quote
 from engine import intent_guard, recovery, task_state
 
 FOREIGN_RE = re.compile(r'^Leave task #([1-9][0-9]*) and draft PR #([1-9][0-9]*) untouched for later owner audit[.]?$', re.I)
+BRANCH_HOLD_RE = re.compile(r'^Leave its branch untouched so the verified fix can be folded into #([1-9][0-9]*) after independent review[.]?$', re.I)
 LIMITS = 'Keep model requests small and retain existing request/provider limits and validation gates.'
 
 
@@ -20,6 +22,8 @@ def kind(text):
         return 'origin'
     if FOREIGN_RE.fullmatch(text):
         return 'foreign'
+    if BRANCH_HOLD_RE.fullmatch(text):
+        return 'branch_hold'
     if requirements.SCOPE_RESTRICTION_RE.fullmatch(text):
         return 'scope'
     if text.rstrip('.').lower() == LIMITS.rstrip('.').lower():
@@ -48,6 +52,33 @@ def authority():
             or state.get('authorization') != scope.identity or state.get('digest') != scope.digest):
         return None
     return goal, record, journal, active
+
+
+def observe_branch_holds(read):
+    """Read only owner-named protected branches; model declarations supply no receipt."""
+    observed = authority()
+    if not observed:
+        return
+    _, record, _, scope = observed
+    from engine import requirements
+    holds = {}
+    record.control['branch_holds'] = holds
+    for row in requirements.split(scope.body):
+        match = BRANCH_HOLD_RE.fullmatch(' '.join(row['text'].split()))
+        if not match:
+            continue
+        number = int(match[1])
+        pr = read(f'repos/{scope.repo}/pulls/{number}')
+        if not isinstance(pr, dict) or not isinstance(pr.get('head'), dict):
+            continue
+        head = pr['head']
+        if not isinstance(head.get('repo'), dict):
+            continue
+        branch = head.get('ref')
+        if (type(pr.get('number')) is int and pr['number'] == number and head['repo'].get('full_name') == scope.repo
+                and isinstance(branch, str) and branch and branch != record.identity['branch']
+                and re.fullmatch('[a-f0-9]{40}', str(head.get('sha', '')))):
+            holds[number] = dict(branch=branch, observedHead=head['sha'], authorization=scope.identity, digest=scope.digest)
 
 
 def origin_valid(origin, scope):
@@ -142,7 +173,24 @@ def resolve(reqs, changes):
             continue
         _, record, journal, scope = observed
         proof = None
-        if category == 'reporting':
+        if category == 'branch_hold':
+            number = int(BRANCH_HOLD_RE.fullmatch(' '.join(req['text'].split()))[1])
+            hold = record.control.get('branch_holds', {}).get(number)
+            if hold and hold.get('authorization') == scope.identity and hold.get('digest') == scope.digest:
+                branch = hold['branch']
+                probes = [('git/refs/heads/' + quote(branch, safe='/'), {'sha': record.identity['candidate'], 'force': False}, 'PATCH'),
+                          ('git/refs', {'ref': 'refs/heads/' + branch, 'sha': record.identity['candidate']}, 'POST'),
+                          ('git/refs/heads/' + quote(branch, safe='/'), None, 'DELETE')]
+                denied = 0
+                for path, payload, method in probes:
+                    try:
+                        scope.permit(f'https://api.github.com/repos/{scope.repo}/{path}', payload, method)
+                    except PermissionError:
+                        denied += 1
+                if denied == len(probes):
+                    proof = dict(protectedPR=number, branch=branch, observedHead=hold['observedHead'],
+                                 guard='active task denies protected-branch mutations; external actors not asserted')
+        elif category == 'reporting':
             from engine import report_claims
             proof = report_claims.controller_proof()
         elif category == 'origin':

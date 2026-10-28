@@ -1,0 +1,22 @@
+# Phase 3.1 closeout status — 2026-10-28
+
+Phase 3.1 is open. The remaining acceptance work concerns the latest engine trial and evidence reconciliation; Phase 3.2 has not started. The owner has already authorized moving to 3.2 after satisfactory closeout. No new merge permission is implied.
+
+## Completed evidence
+
+- Provenance: Phase 1/2 merge ancestry, audited source, current main and integration are recorded in phase1-phase2-audit.md and the regression/CI report. Main a76561abbbe9aa88c44e75c6394afda63ac4736f contains the owner-approved #309/#311 merges. Its tree equals tested #311 head 2e7d2bc9e253d446d7b84be74d940ac1e102abe1.
+- Architecture/policy: the inventory accounts for all 23 workflow files and the backend/client/publication/recovery paths. Findings 067–078 from the owner review and fixture isolation are delivered in the merged PRs. Their earlier pending-CI wording is historical.
+- Final #309 CI: unit/web/Worker/structure [40729958920](https://github.com/onlykappa/KappaForge/actions/runs/40729958920), Docker [40729958933](https://github.com/onlykappa/KappaForge/actions/runs/40729958933), graph [40729958935](https://github.com/onlykappa/KappaForge/actions/runs/40729958935) succeeded.
+- Final #311 CI: unit/web/Worker/structure [40730979007](https://github.com/onlykappa/KappaForge/actions/runs/40730979007), Docker [40730979088](https://github.com/onlykappa/KappaForge/actions/runs/40730979088), native simulator/UI/unsigned build [40730979329](https://github.com/onlykappa/KappaForge/actions/runs/40730979329), graph [40730979036](https://github.com/onlykappa/KappaForge/actions/runs/40730979036) succeeded. Artifact metadata was inspected; artifact contents and physical-device behavior were not established.
+- Independent empty-publication candidate #310 remains frozen at 75811f8510b4d02a8cd165c4ec081e3c032d998f. Fresh focused validation:51 tests, OK, zero skips. Fresh full discovery:1,140 tests run, OK,31 skipped. The original before-fix failures and nonempty/recovery controls remain in independent-task308-review.md.
+- New accumulator #312 contains findings079–083. Four real-controller tests reproduce failure-report receipt and stale-success-proof bugs. Typed diagnostic retirement is separately tested. Six additional follow-up tests cover sentence-local validation claims and the operational protected-branch hold, including negative controls. Latest focused selection:95 passed. Full Python discovery:1,272 run, OK,31 skipped. Ten structural-rule tests, shipped-source scan, dependency-map, execution-policy and whitespace checks pass; existing HTML-injection warnings remain.
+- #312 prior head496902ae3d3838b2eff4afbf6d5b060e43222dda passed automatic tests [40739057679](https://github.com/onlykappa/KappaForge/actions/runs/40739057679), graph [40739057736](https://github.com/onlykappa/KappaForge/actions/runs/40739057736), and explicit real-Docker self-test [40740049540](https://github.com/onlykappa/KappaForge/actions/runs/40740049540). Those runs do not validate the later082/083 source.
+
+## Remaining acceptance steps
+
+1. Publish082/083 in the existing draft #312 and inspect CI for that exact head. Keep the PR open; no merge or readiness action.
+2. Renew existing task308 through the authenticated KappaForge Retry flow. Its scope expired at2026-10-28T19:20:15Z. The engine explicitly rejects expired scope; a GitHub dispatch alone cannot renew it. Preserve the exact original task, candidate, failure history and consumed counters (96 model calls,2 edits,20 fix cycles) using the existing resumeFrom mechanism. Do not edit recovery state, fabricate an authorization receipt or change limits.
+3. After renewal and a no-active-worker check, run one explicit Fix with #312's exact current engine SHA. Verify engine provenance, fresh requirement matrix, actual task outcome and retained counters. Diagnose any new failure before another run. A successful workflow alone is insufficient.
+4. Reconcile the ledger and final audit with that result. The previous trial40739723033 reduced active historical problems85→5 but left R21 and the reporting constraint blocked;082/083 address the reproduced causes. Only clear completion after fresh evidence supports it. Then close3.1 and proceed to the already-authorized3.2 review-ingestion work.
+
+PR #279 and candidate #310 remain unchanged. Source review, local tests, remote CI, model review and physical-device testing are distinct evidence. No deployment, release, production setting, provider limit or counter change is part of closeout.
