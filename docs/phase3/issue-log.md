@@ -435,6 +435,15 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Independent CI: real-Docker [40623228909](https://github.com/onlykappa/KappaForge/actions/runs/40623228909) and live-research [40623231877](https://github.com/onlykappa/KappaForge/actions/runs/40623231877) both succeeded on exact `f5501afe`. Remote numerical counts were not read from logs; no counts are invented. Native artifact metadata, rather than screenshot/xcresult contents, was inspected.
 - Status: PATCHED — the missing evidence was supplied and the audit report refreshed. Full provenance, commands, named references, step results and limits are in regression-ci-audit.md and regression-ci-evidence.json. Phase 3.1 remains incomplete; #308's reviewer proof gap and the remaining policy/integration work stay open. No merge, phase advancement or duplicate task worker.
 
+## P3-056 — readiness mutation ignores a changed head already observed on reread
+
+- Evidence: Phase 3.1c backend trace at `f5501afe` found that `review.js:mergePR` checks the reviewed head, then rereads the draft before GraphQL readiness but uses only its node ID. A changed head returned by this second read is ignored. The later merge PUT still binds the old SHA and can refuse the merge; this finding does not establish an unexpected merge.
+- Reproducer: `tests/review-publication.test.mjs` uses the real production helper with completely fake fetch transport. The changed-head case fails before repair: it sends readiness POST and stale merge PUT instead of returning 409 with zero mutations. The unchanged-head control passes. The helper is identical between audited #279 and engine accumulator baseline `b3a9ba0`.
+- Scope: refuse a head mismatch already visible at the existing readiness reread, before either write. GitHub's ready-for-review operation has no commit-SHA precondition, so this bounded fix cannot make a subsequent remote head change atomic with readiness. Retain the merge endpoint's expected-SHA guard.
+- Patch: compare the already-reread head with expectedSha before readiness. A mismatch returns 409 before every mutation; the unchanged path retains its original sequence. No additional API request or permission change.
+- Immediate rerun: the changed-head and unchanged-head controls both passed within 367 focused Node tests; full npm test passed 875 with zero skips. Dependency-map, execution-policy and structural checks passed. Full Python discovery passed 1,162 tests (31 skipped); delivery CI pending.
+- Status: PATCHED and locally verified; delivery CI pending. The bounded backend trace and remaining inspection limits are in backend-merge-policy-review.md. All reproduction and merge-path test calls used fake transport.
+
 ## Finding template
 
 ### P3-NNN — short defect title
