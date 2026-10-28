@@ -479,7 +479,9 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Reproducer: ScopeResponseContractTests invokes production model_review and inspects the actual wire schema for two changed files. It fails before repair because neither mandatory path exists in the schema. Its behavioral control supplies invalid owner-wording proof first, then displayed current-source lines; the existing two-call limit and literal source checks must remain.
 - Correction: include undecided scope entries in the same response schema, with exact paths and null decision/proof placeholders. Keep requirements, independent assessment, source validation and all call/resource limits. No placeholder constitutes acceptance.
 - Immediate rerun: 108 focused tests passed. Full discovery on the isolated engine: 1,165 run, OK, 31 skipped; full Node880 passed; web/bundle and ten structural-rule checks passed. A fresh post-restart full Python run independently confirmed 1,165 run, OK, 31 skipped. Combined local revision also passed 1,220 Python run (31 skipped), Node880 and web/bundle checks.
-- Status: PATCHED and locally verified. No resource/counter change or proof relaxation. Exact-head CI and one serial updated-engine trial pending.
+- Live follow-up: serial trial40677156989 used a1e7050 and still refused file-scope proof for both task files, retaining candidate75811f8 and history. No completion is accepted. The schema still offered only quote slots despite displaying numbered source; the added line-slot wire-contract assertion fails on that revision. Prefer undecided line-citation slots when source is numbered, with the existing literal-quote fallback for unnumbered context; retain all validation and the same retry bound.
+- Follow-up validation:108 focused tests passed; fresh full Python1,165 run, OK,31 skipped. The combined follow-up also passed1,220 Python run, OK,31 skipped. Existing Node880/web checks remain applicable to unchanged JS.
+- Status: PATCHED and locally verified; serial line-slot trial pending. No resource/counter change or proof relaxation.
 
 ## Finding template
 

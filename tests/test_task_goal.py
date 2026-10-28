@@ -693,8 +693,10 @@ class ScopeResponseContractTests(unittest.TestCase):
             schema = json.JSONDecoder().raw_decode(prompt.split('Return ONLY strict JSON:\n', 1)[1])[0]
             self.assertEqual({r['path'] for r in schema.get('file_scope', [])}, set(sources),
                              'the actual wire schema must include every mandatory scope decision')
-            self.assertTrue(all(r['necessary'] is None and r['quote'] is None for r in schema['file_scope']),
+            self.assertTrue(all(r['necessary'] is None and r.get('quote') is None and r.get('lines') is None for r in schema['file_scope']),
                             'the prompt must not preapprove a file or supply proof on the model behalf')
+            self.assertTrue(all('lines' in r and 'quote' not in r for r in schema['file_scope']),
+                            'numbered source must expose citation slots in the actual scope response contract')
             rows = [dict(path=p, necessary=True, reason='Implements or tests the requested numeric inputs',
                          **({'quote': goal.request} if len(calls) == 1 else {'lines': [2, 2] if p == 'app.py' else [3, 3]}))
                     for p in sources]
