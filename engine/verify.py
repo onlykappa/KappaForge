@@ -757,7 +757,8 @@ def review_prompt(task, diff, paths, context='', inventory_limit=600, classified
                   files_needed=['existing/path the fix must edit'], files_to_inspect=['existing/path needed to verify a claim'])
     if classified:
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
-        schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
+        schema['requirements'] = [dict(id=r.id, met=None,
+            evidence=dict(path=None, **({'lines': None} if scope_lines else {'quote': None})), test=None) for r in classified]
     if scope_paths:
         schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task',
                                    **({'lines': None} if scope_lines else {'quote': None})) for p in sorted(scope_paths)]

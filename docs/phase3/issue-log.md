@@ -493,6 +493,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Final isolated integration verification:1,214 Python run, OK,31 skipped, including279 engine-only prompt-overhead regressions and the new safe diagnostic table. Combined source already passed1,221 run,31 skipped. Ten structural rules, shipped-source scan, dependency-map, execution-policy and whitespace checks passed.
 - Status: PATCHED locally; one serial diagnostic trial pending. Source-proof acceptance stays blocked until actual evidence passes.
 
+## P3-063 — classified review template omits the required evidence object shape
+
+- Evidence: serial trial40679225234 on1e4ca14 retained candidate75811f8 and83→85 calls/14 fix cycles without edits. The current error is requirements[0].evidence needs a source path and literal quote for met:true. Unlike the generic unclassified example, each classified entry's primary JSON template supplies evidence:null and no object slots. This is an observed wire-contract omission, not proof of the model's internal cause.
+- Reproducer: the production review table fills met:true with the schema's empty proof first, then valid displayed-source evidence. It fails before repair because no evidence object exists in the actual schema. Empty placeholders must remain blocked; only the valid retry may pass.
+- Required correction: expose undecided evidence path plus displayed-line (or unnumbered literal-quote) slots for each original id. Preserve every original requirement, scope proof, source validation and existing two-call bound; no model call/limit expansion.
+- Immediate rerun:110 focused tests passed; final engine discovery1,215 run, OK,31 skipped; final combined discovery1,222 run, OK,31 skipped. Existing Node880/web/bundle checks apply to unchanged JS.
+- Status: PATCHED and locally verified; one serial updated-engine confirmation pending. Empty typed placeholders remain refused.
+
 ## Finding template
 
 ### P3-NNN — short defect title
