@@ -387,6 +387,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Validation: included in P3-048's checks. Three older scripted lifecycle fixtures initially failed; their responses now identify original requirements and real tests, while the intentionally unfinished chat fixture still reports its original compound requirement unmet. Existing publication/orchestration assertions are unchanged.
 - Status: PATCHED and locally verified; serial updated-engine trial pending.
 
+## P3-050 — the primary review schema competes with the original checklist
+
+- Evidence: updated-engine run [40617555270](https://github.com/onlykappa/KappaForge/actions/runs/40617555270), engine `263d56e`, correctly refused a review deciding only two original requirements. Its format retry still omitted 22 IDs, leaving the task incomplete and candidate `75811f8` unchanged. All engine CI checks, including real-Docker sandbox, passed. This is an unsuccessful live review, not task acceptance.
+- Reproducer: `test_large_classified_review_schema_keeps_every_original_decision` follows the actual primary JSON example for a 24-entry checklist. Before repair it fails after two calls with all original IDs missing: the primary example contains only one shortened text requirement, conflicting with the later complete-ID instructions. The live raw reply is not retained here; this reproducible schema mismatch is not proof of the model's internal reason for omitting entries.
+- Patch: when a saved classification exists, render every authentic original ID in the primary response schema with `met:null`, `evidence:null`, `test:null`, and demand independent true/false assessment of every complete entry. Null remains invalid and supplies no default completion. Generic reviews retain their prior shape. The existing original wording, current-source evidence, one retry, request/output limits and cumulative counters remain enforced.
+- Immediate validation: 201 focused tests, OK, one skipped. Full discovery: 1,156 run, OK, 32 skipped, with the installed structural scanner on PATH. Ten structural-rule tests, shipped-source scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; the next serial updated-engine trial is pending. No task/Phase 3 acceptance is claimed.
+
 ## Finding template
 
 ### P3-NNN — short defect title

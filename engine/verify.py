@@ -706,7 +706,14 @@ def inventory_evidence_problems(links, checks, read, changes, known, context):
     return problems
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=4000):
+def review_prompt(task, diff, paths, context='', inventory_limit=4000, classified=()):
+    schema = dict(requirements=[dict(text='short requirement', met=True,
+                  evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
+                  problems=['file: literal evidence, concrete defect and fix'],
+                  files_needed=['existing/path the fix must edit'], files_to_inspect=['existing/path needed to verify a claim'])
+    if classified:
+        # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
+        schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
     inventory = []
     used = 0
     all_paths = sorted(paths)
@@ -766,10 +773,11 @@ def review_prompt(task, diff, paths, context='', inventory_limit=4000):
         "For documentation, verify factual descriptions against the source being described, not merely a quote from the new document. "
         + inventory_instructions +
         "Return ONLY strict JSON:\n"
-        '{"requirements":[{"text":"short requirement","met":true,"evidence":{"path":"existing/source.js",'
-        '"quote":"literal source fragment proving this requirement"}}],'
-        '"problems":["file: literal evidence, concrete defect and fix"],"files_needed":["existing/path the fix must edit"],'
-        '"files_to_inspect":["existing/path needed to verify a claim"]}\n'
+        + json.dumps(schema) + '\n'
+        + (f'Fill all {len(classified)} requirement entries exactly once, in this id order. Replace each met:null with '
+           'your true/false assessment of the whole original entry; null is invalid. Evidence/test null means no proof, '
+           'never completion. Do not return only implementation asks or omit constraints, baseline facts and reporting asks.\n'
+           if classified else '') +
         "Every met:true requirement must include evidence with an existing source path and a nonempty literal quote "
         "from that file's CURRENT candidate contents. Evidence is checked against source, not accepted as a narrative. "
         "Keep every requirement from the first review in the follow-up; resolve it with evidence or leave it unmet.\n"
@@ -1005,7 +1013,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                                       complete=complete, balance=scope_required or batched_scope,
                                                       line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
-                                           inventory_limit=min(4000, source_limit // 2))
+                                           inventory_limit=min(4000, source_limit // 2), classified=classified)
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)

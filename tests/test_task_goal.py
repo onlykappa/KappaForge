@@ -78,6 +78,32 @@ class TaskGoalTests(unittest.TestCase):
         finally:
             task_goal.CURRENT.reset(token)
 
+    def test_large_classified_review_schema_keeps_every_original_decision(self):
+        from engine import requirements
+        goal = task_goal.from_request('\n'.join(f'- Document input case {n}.' for n in range(24)))
+        token = task_goal.CURRENT.set(goal)
+        try:
+            task_state.bind('onlykappa/KappaForge', 9, 'kappa/dev-9', 'a' * 40)
+            classified = requirements.classify(goal.request)
+            def model(key, prompt, **kw):
+                # The transport follows the JSON format example rather than inventing a second schema.
+                row = json.JSONDecoder().raw_decode(prompt.split('Return ONLY strict JSON:\n', 1)[1])[0]
+                for decision in row['requirements']:
+                    decision.update(met=False, evidence='Not documented in the current source')
+                row.update(problems=[], files_needed=[], files_to_inspect=[], file_scope=[
+                    dict(path='README.md', necessary=True, reason='Document requested cases', quote='Inputs')])
+                return 'scripted', json.dumps(row)
+            model = unittest.mock.Mock(side_effect=model)
+            result = verify.model_review(model, 'fixture', goal.request, lambda p: '',
+                {'README.md': 'Inputs\n'}, ['README.md'], classified=classified)
+            self.assertIsNotNone(result, verify.REVIEW_FAILURE.get())
+            self.assertEqual({r['id']: r['text'] for r in result[0]}, {r.id: r.text for r in classified})
+            self.assertEqual(len(result[0]), 24)
+            self.assertTrue(all(r['met'] is False for r in result[0]), 'the schema supplies no default completion')
+            self.assertEqual(model.call_count, 1)
+        finally:
+            task_goal.CURRENT.reset(token)
+
     def test_review_cannot_cite_real_but_unshown_source_lines(self):
         goal = task_goal.from_request('Review this source change')
         token = task_goal.CURRENT.set(goal)
