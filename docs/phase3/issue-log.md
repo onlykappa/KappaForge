@@ -411,6 +411,14 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate validation: 110 focused tests, OK, one skipped. Full discovery: 1,159 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed.
 - Status: PATCHED and locally verified; updated-engine live diagnostic pending. Task and Phase 3.1 remain incomplete.
 
+## P3-053 — live progress omits the fresh review result beside retained older problems
+
+- Evidence: after run 40619713311, the runtime receipt confirms engine `15ed9de`, while PR #310 still shows the prior generic invalid-response text and its prior update timestamp. Existing progress reports only the total of retained and current problems, without the fresh review decision count or failure reason. This does not establish an engine-pin failure or the exact live malformed field. The earlier pin hypothesis was checked and rejected.
+- Reproducer: `ProcessProblemTests.test_current_review_schema_failure_reaches_progress_beside_stale_notes` failed because no current diagnostic reaches progress. The real checker still includes the precise new failure beside the old note under scripted transport; that result is distinguished from the unexplained live report.
+- Patch: publish the current review's safe failure diagnostic, or its decision/finding counts, through the existing progress activity before combining historical problems. Do not echo raw responses or alter review acceptance, history, source or publication permissions.
+- Validation: 132 focused tests, OK. Full discovery: 1,160 run, OK, 32 skipped. Ten structural-rule tests, source scan, dependency-map, execution-policy and whitespace checks passed. Serial live observation is pending; no task completion is accepted.
+- Status: PATCHED and locally verified; live diagnostic pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

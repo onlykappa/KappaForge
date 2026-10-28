@@ -2598,6 +2598,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         files_needed = []
         if review:
             reqs, found, files_needed = review
+            if hasattr(progress, 'act'):
+                progress.act('check', f'Current reviewer returned {len(reqs)} requirement decisions and {len(found)} findings')
             if defer_lifecycle:
                 reqs = [item for item in reqs if not verify.lifecycle_requirement(item.get('text', ''))]
             for requirement in reqs:
@@ -2627,6 +2629,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             elif not previous_review_problems:
                 outstanding = []
         else:
+            if hasattr(progress, 'act'):
+                progress.act('error', 'Current requirement review unavailable: ' + (verify.REVIEW_FAILURE.get() or 'no diagnostic'))
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")

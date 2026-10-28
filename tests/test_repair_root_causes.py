@@ -219,6 +219,28 @@ class ProcessProblemTests(Base):
                                                             {'app.py': 50}, {}, '', None, '', False, self.progress())
         self.assertEqual((changes, problems), ({}, []))
 
+    def test_current_review_schema_failure_reaches_progress_beside_stale_notes(self):
+        from engine import requirements
+        token = requirements.CURRENT.set(requirements.classify(self.goal.request))
+        self.addCleanup(requirements.CURRENT.reset, token)
+        stale = 'Requirement review unavailable; task completion is not verified: old diagnostic'
+        developer.UNFINISHED[:] = [stale]
+        self.addCleanup(developer.UNFINISHED.clear)
+        progress = self.progress()
+        progress.act = Mock()
+        with patch.object(developer, 'run_model', return_value=('fixture', json.dumps(dict(
+                requirements=[dict(id='R1', met='private malformed value')], problems=[])))), \
+                patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(developer, 'generate', side_effect=AssertionError('no speculative edits')):
+            changes, _, problems = developer.check_the_work('key', self.goal.request, developer.ROOT, SHA, 'token',
+                SOURCES, {'app.py': 50}, {}, '', None, '', False, progress, review_only=True)
+        self.assertEqual(changes, {})
+        self.assertIn(stale, problems)
+        events = [str(call.args) for call in progress.act.call_args_list]
+        self.assertTrue(any('requirements[0].met must be boolean' in event for event in events), events)
+        self.assertTrue(any('requirements[0].met must be boolean' in problem for problem in problems))
+        self.assertFalse(any('private malformed value' in event for event in events))
+
     def test_process_notes_from_a_review_never_reach_the_verifier(self):
         developer.UNFINISHED.clear()
         review = ([dict(text='Make add accept numeric strings', met=True, evidence={'path': 'app.py', 'quote': 'return a + b'})],
