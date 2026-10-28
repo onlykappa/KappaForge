@@ -549,6 +549,16 @@ The owner supplied both reviews and explicitly authorized patching the existing 
 
 [Detailed review mapping, baseline outcomes and limits](owner-review-followups.md). The paid-rescue assertion is not reproduced: premium_possible intentionally returns false under the existing $0 policy. Queued-run coverage also already worked on the inspected source; its control remains. All other listed corrections have meaningful regressions. Final full suites passed:3091,246 Python and3111,258 run,31 skipped each; Node884 with zero skips,133 focused shared checks,38 resource/isolation checks and29 intake/workflow checks pass. Ten structural rules, shipped-source scan (preexisting warnings, no errors), web/bundle, policy/map and whitespace checks pass. Exact-head CI remains pending; merge is authorized only after verification.
 
+P3-069 final wording follow-up: four additional no/failed-to-execute phrasings reproduced four errors on5a2704b; all29 report/follow-up checks now pass. Negative subject tokens require whitespace separators and stop at conjunctions, preserving independent positive claims.
+
+## P3-078 — recovery test fixture leaves a journal active for later modules
+
+- Evidence: the final root discovery failed IntegratedRouterTests.test_coding_uses_scoped_gateway_and_returns_actual_route because a leftover task130 journal persisted provider usage through the router test's mocked urlopen; its exact URL assertion saw a GitHub issue read instead of the router request. The combined discovery passed, showing the timing dependence; the failure is retained in owner-engine-language-final.log.
+- Reproducer: a direct fixture lifecycle regression sets its journal, runs doCleanups and requires recovery.CURRENT to be restored. It fails before correction. Existing execution-recovery setup clears progress and temporarily clears the goal, but never restores the journal/active scope/publisher it can leave behind.
+- Required correction: isolate and restore those fixture context variables/publisher around each test. Keep the router URL/authorization assertions and all production request guards unchanged.
+- Immediate rerun:53 execution-recovery/follow-up/integrated-router tests pass after restoring the journal, active scope and progress publisher in fixture cleanup. Existing router URL and authorization assertions remain unchanged.
+- Status: PATCHED locally; final full discovery and exact-head CI pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

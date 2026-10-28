@@ -36,7 +36,9 @@ class ReviewFollowupTests(unittest.TestCase):
             for text in ['Docker tests could not be executed.', 'Native tests were not actually run.',
                          'Docker tests have not been run.', 'Sandbox tests were never executed.',
                          'Live tests cannot be performed.', 'Docker tests were not able to run.',
-                         'Native tests could not run.', 'Docker tests have not yet been executed.']:
+                         'Native tests could not run.', 'Docker tests have not yet been executed.',
+                         'No Docker tests were executed.', 'No native tests were performed.',
+                         'No live tests passed.', 'Docker tests failed to execute.']:
                 with self.subTest(text=text):
                     report_claims.guard(active, {'body': text})
             with self.assertRaises(PermissionError):
@@ -186,3 +188,13 @@ class ReviewFollowupTests(unittest.TestCase):
             developer.fix_pull_request(case.ISSUE, 'fixture', 'fixture')
         self.assertEqual(publish.call_count, 1)
         self.assertEqual(publish.call_args.args[2], changes)
+
+    def test_recovery_test_fixture_restores_its_journal_after_cleanup(self):
+        from engine import recovery
+        previous = recovery.CURRENT.get()
+        case = recovery_fixture.ExecutionRecoveryTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        recovery.CURRENT.set(case.journal)
+        case.doCleanups()
+        self.assertIs(recovery.CURRENT.get(), previous)
