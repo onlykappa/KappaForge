@@ -73,7 +73,8 @@ class TaskGoalTests(unittest.TestCase):
                         {'README.md': 'Inputs\n'}, ['README.md'], classified=classified)
                     self.assertIsNone(result)
                     self.assertEqual(model.call_count, 2)
-                    self.assertTrue(verify.SCOPE_UNDECIDED.get(), 'a review format gap cannot authorize source edits')
+                    self.assertTrue(verify.REVIEW_UNDECIDED.get(), 'a review format gap cannot authorize source edits')
+                    self.assertFalse(verify.SCOPE_UNDECIDED.get(), 'requirement format is not file-scope failure')
                     self.assertIn('missing or duplicated original decisions', verify.REVIEW_FAILURE.get())
         finally:
             task_goal.CURRENT.reset(token)
@@ -139,7 +140,8 @@ class TaskGoalTests(unittest.TestCase):
                 ['README.md'], classified=requirements.classify(goal.request))
             self.assertIsNone(result)
             self.assertEqual(model.call_count, 2)
-            self.assertTrue(verify.SCOPE_UNDECIDED.get())
+            self.assertTrue(verify.REVIEW_UNDECIDED.get())
+            self.assertFalse(verify.SCOPE_UNDECIDED.get())
             self.assertIn('requirements[0].met must be boolean', verify.REVIEW_FAILURE.get())
             self.assertNotIn('private malformed value', verify.REVIEW_FAILURE.get())
         finally:
@@ -210,7 +212,7 @@ class TaskGoalTests(unittest.TestCase):
                     file_scope=[dict(path='app.py', necessary=True, reason='Review the requested change', lines=[1])]))
             result = verify.model_review(model, 'fixture', goal.request, lambda p: '', {'app.py': source}, ['app.py'])
             self.assertIsNone(result)
-            self.assertIn('ScopeReviewUnavailable', verify.REVIEW_FAILURE.get())
+            self.assertIn('RequirementReviewUnavailable', verify.REVIEW_FAILURE.get())
             self.assertEqual(len(calls), 2)
         finally:
             task_goal.CURRENT.reset(token)
@@ -280,7 +282,8 @@ class TaskGoalTests(unittest.TestCase):
             with patch.object(developer, 'run_model', return_value=('m', 'not JSON')) as invalid_review:
                 self.assertIsNone(verify.model_review(invalid_review, 'key', goal.request, lambda _: '', changes, changes))
             self.assertIn('invalid response', verify.REVIEW_FAILURE.get())
-            self.assertTrue(verify.SCOPE_UNDECIDED.get(), 'a typed signal stops source repair, not the message text')
+            self.assertTrue(verify.REVIEW_UNDECIDED.get(), 'a typed signal stops source repair, not the message text')
+            self.assertFalse(verify.SCOPE_UNDECIDED.get())
             with patch.object(developer, 'run_model', side_effect=OSError('network down')) as down:
                 self.assertIsNone(verify.model_review(down, 'key', goal.request, lambda _: '', changes, changes))
             self.assertFalse(verify.SCOPE_UNDECIDED.get(), 'other review failures keep their bounded repair rounds')
@@ -366,7 +369,8 @@ class TaskGoalTests(unittest.TestCase):
                     return 'reviewer', json.dumps({'file_scope': rows})
                 with self.subTest(defect=defect):
                     self.assertIsNone(verify.model_review(model, 'key', goal.request, lambda _: '', changes, changes))
-                    self.assertTrue(verify.SCOPE_UNDECIDED.get())
+                    self.assertTrue(verify.REVIEW_UNDECIDED.get())
+                    self.assertTrue(verify.SCOPE_UNDECIDED.get(), 'actual scope failures retain their scope signal')
                     self.assertEqual(len(calls), 2)
         finally:
             task_goal.CURRENT.reset(token)

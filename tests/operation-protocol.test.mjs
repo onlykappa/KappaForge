@@ -97,16 +97,17 @@ test('cancellation redelivery revokes once and preserves its original evidence t
 
 test('Worker cancellation redelivery observes runners without repeating GitHub stop mutations',async()=>{
  const f=fixture();await f.issue();await f.internal('bind',{issueNumber:198});f.env.GITHUB_JOB_TOKEN='fixture';
- const previous=globalThis.fetch,calls=[];
+ const previous=globalThis.fetch,calls=[],created=new Date(Date.now()-1000).toISOString();
  globalThis.fetch=async(url,options={})=>{
   calls.push({url,method:options.method||'GET'});
+  if(String(url).endsWith('/issues/198')&&!options.method)return Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'});
   if(options.method==='POST'||options.method==='PATCH')return new Response(null,{status:202});
-  return Response.json({workflow_runs:[{id:42,path:'.github/workflows/agent.yml',display_title:'Agent task #198',created_at:new Date().toISOString(),status:'in_progress'}]});
+  return Response.json({workflow_runs:[{id:42,path:'.github/workflows/agent.yml',display_title:'Agent task #198',created_at:created,status:'in_progress'}]});
  };
  try{
   const body={id:f.payload.authorization.id,conversationId:'chat',contract:C.contract};
   const first=await worker.fetch(req('/cancel',body),f.env);assert.equal(first.status,200);assert.ok((await first.json()).cancellation.issueClosedAt);
   const again=await worker.fetch(req('/cancel',body),f.env);assert.equal(again.status,200);assert.ok((await again.json()).cancellation.issueClosedAt);
-  assert.equal(calls.filter(c=>c.method==='PATCH').length,1);assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.method==='GET').length,2);
+  assert.equal(calls.filter(c=>c.method==='PATCH').length,1);assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.includes('/actions/runs?')).length,2);assert.equal(calls.filter(c=>c.method==='GET'&&c.url.endsWith('/issues/198')).length,2,'recheck current task authority before stop and replay');
  }finally{globalThis.fetch=previous}
 });

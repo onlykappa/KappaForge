@@ -177,12 +177,15 @@ class ReportClaimsTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 report_claims.guard(active, {'body': 'Sandbox validation passed.'})
 
-    def test_failed_workflow_is_not_proof_that_individual_tests_executed(self):
+    def test_failed_workflow_supports_failure_report_but_not_success_or_execution_claim(self):
         with ExitStack() as stack:
             _, active, _, _, _ = fixture(stack, validation=sandbox_run(conclusion='failure'))
             report_claims.guard(active, {'body': 'Sandbox workflow failed.'})
+            report_claims.guard(active, {'body': 'Sandbox tests failed.'})
             with self.assertRaises(PermissionError):
-                report_claims.guard(active, {'body': 'Sandbox tests failed.'})
+                report_claims.guard(active, {'body': 'Sandbox tests executed and passed.'})
+            with self.assertRaises(PermissionError):
+                report_claims.guard(active, {'body': 'Sandbox tests ran and failed.'})
 
     def test_real_controller_registers_evidence_before_publishing_passed_progress(self):
         from engine import sandbox_repair_controller

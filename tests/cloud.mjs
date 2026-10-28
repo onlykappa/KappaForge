@@ -48,6 +48,8 @@ test('joining a duplicate task binds cancellation to the actual running issue',a
    created++;issues=[{number:777,html_url:'https://github.test/777',created_at:new Date().toISOString(),body:JSON.parse(init.body).body}];
    return Response.json({...issues[0],user:{login:'onlykappa'}});
   }
+  if(u.endsWith('/issues/777')&&!init.method)return Response.json({...issues[0],state:'open',user:{login:'onlykappa'}});
+  if(u.includes('/actions/runs?'))return Response.json({workflow_runs:[]});
   if(u.endsWith('/issues/777')&&init.method==='PATCH'){closed++;return Response.json({state:'closed'})}
   if(u.endsWith('/dispatches'))return new Response(null,{status:204});
   throw Error(u);

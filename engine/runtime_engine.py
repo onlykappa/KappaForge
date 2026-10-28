@@ -89,6 +89,14 @@ def attest(scope, read, previous=None, env=None, checkout=None):
                     raise PermissionError('Main does not include the authorized engine revision; recovery cannot downgrade')
         return None
     if re.fullmatch(r'fix/' + str(scope.number) + r'-[a-z0-9-]+', ref) and env.get('INPUT_ACTION', '') in ('', 'fix'):
+        if env.get('INPUT_ACTION', '') == '':
+            receipt = verify_receipt(previous, scope, read)
+            if receipt['ref'] != ref or receipt['sha'] != sha:
+                raise PermissionError('Automatic continuation cannot adopt a new trial engine; explicit owner Fix required')
+            trial_pr(receipt, scope, read, current=True)
+            if read(f'repos/{ROOT}/git/ref/heads/{ref}')['object']['sha'] != sha:
+                raise PermissionError('Pinned trial engine branch moved')
+            return receipt
         if previous:
             verify_receipt(previous, scope, read)
         prs = read(f'repos/{ROOT}/pulls?state=open&head=onlykappa:{ref}&per_page=2')

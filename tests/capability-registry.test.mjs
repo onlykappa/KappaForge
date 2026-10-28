@@ -156,7 +156,7 @@ test('cancellation distinguishes stop request from trusted terminal runner evide
  const {cancellationEvidence}=await import('../chat-backend/src/task-cancellation.js');
  const original=globalThis.fetch,calls=[],record={issueNumber:198,issuedAt:1000,cancellation:{authorizationRevokedAt:2000,requestedAt:2001}};
  let completed=false;
- globalThis.fetch=async(url,options={})=>{calls.push({url,options});if(url.includes('/actions/runs?'))return Response.json({workflow_runs:[{id:10,path:'.github/workflows/agent.yml',display_title:'Agent task #198 develop',created_at:new Date(1000).toISOString(),status:completed?'completed':'in_progress',conclusion:completed?'cancelled':null},{id:11,path:'.github/workflows/agent.yml',display_title:'Agent task #1980 develop',created_at:new Date(1000).toISOString(),status:'in_progress'},{id:12,display_title:'Scheduled agent',created_at:new Date(1000).toISOString(),status:'in_progress'}]});return new Response(null,{status:202});};
+ globalThis.fetch=async(url,options={})=>{calls.push({url,options});if(url.endsWith('/issues/198')&&!options.method)return Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'});if(url.includes('/actions/runs?'))return Response.json({workflow_runs:[{id:10,path:'.github/workflows/agent.yml',display_title:'Agent task #198 develop',created_at:new Date(1000).toISOString(),status:completed?'completed':'in_progress',conclusion:completed?'cancelled':null},{id:11,path:'.github/workflows/agent.yml',display_title:'Agent task #1980 develop',created_at:new Date(1000).toISOString(),status:'in_progress'},{id:12,display_title:'Scheduled agent',created_at:new Date(1000).toISOString(),status:'in_progress'}]});return new Response(null,{status:202});};
  try{
   const pending=await cancellationEvidence({},record,{requestStop:true});assert.equal(pending.terminatedAt,null);assert.equal(pending.runnerAcknowledgedAt,null);assert.ok(pending.runs[0].cancelRequestedAt);assert.equal(pending.runs.length,1);assert.ok(calls.some(c=>c.url.endsWith('/10/cancel')));assert.ok(!calls.some(c=>c.url.endsWith('/11/cancel')));
   completed=true;calls.length=0;const terminal=await cancellationEvidence({},record);assert.ok(terminal.runnerAcknowledgedAt);assert.ok(terminal.terminatedAt);assert.equal(terminal.terminationScope,'observed runners only');assert.ok(calls.every(c=>!c.options.method),'status read performs no writes');
@@ -171,6 +171,7 @@ test('a fresh retry grant cancels older runners of the same task without reporti
  const record={issueNumber:198,issuedAt:now,cancellation:{authorizationRevokedAt:now,requestedAt:now}};
  globalThis.fetch=async(url,options={})=>{
   calls.push({url:String(url),method:options.method||'GET'});
+  if(String(url).endsWith('/issues/198')&&!options.method)return Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'});
   if(String(url).endsWith('/issues/198')&&options.method==='PATCH')return Response.json({state:'closed'});
   if(String(url).includes('/actions/runs?'))return Response.json({workflow_runs:[
    {id:10,path:'.github/workflows/agent.yml',display_title:'Agent task #198 fix',created_at:new Date(now-3*3600000).toISOString(),status:olderFinished?'completed':'in_progress',conclusion:olderFinished?'cancelled':null},

@@ -258,13 +258,14 @@ test('explicit cancellation retries failed or unconfirmed delivery while status 
   const f=fixture();await f.issue();
   await authorizationStore(f.state,req('/authorization/bind',{...f.payload.authorization,issueNumber:198}));
   const original=globalThis.fetch,calls=[];let completed=false;
-  globalThis.fetch=async(url,options={})=>scenario==='partial-with-status'&&options.method==='PATCH'?Response.json({state:'closed'}):new Response(null,{status:503});
+  globalThis.fetch=async(url,options={})=>String(url).endsWith('/issues/198')&&!options.method?Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'}):scenario==='partial-with-status'&&options.method==='PATCH'?Response.json({state:'closed'}):new Response(null,{status:503});
   try{
    if(interrupted)await authorizationStore(f.state,req('/authorization/cancel',f.payload.authorization));
    else assert.equal((await worker.fetch(req('/cancel',f.payload.authorization),f.env)).status,200);
    assert.equal(f.records.get('authorization:'+f.payload.authorization.id).state,'cancelled');
    globalThis.fetch=async(url,options={})=>{
     const path=new URL(url).pathname,method=options.method||'GET';calls.push({path,method});
+    if(path.endsWith('/issues/198')&&method==='GET')return Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'});
     if(path.endsWith('/issues/198')&&method==='PATCH')return Response.json({state:'closed'});
     if(path.endsWith('/actions/runs')&&method==='GET')return Response.json({workflow_runs:[
      {id:55,path:'.github/workflows/agent.yml',display_title:'Agent task #198 fix',
@@ -274,7 +275,7 @@ test('explicit cancellation retries failed or unconfirmed delivery while status 
    };
    if(scenario==='partial-with-status'){
     const polled=await worker.fetch(req('/cancel/status',f.payload.authorization),f.env);
-    assert.equal(polled.status,200);assert.ok((await polled.json()).cancellation.errors.length,'status retains failed delivery evidence');assert.ok(calls.every(row=>row.method==='GET'));calls.length=0;
+    assert.equal(polled.status,200);assert.deepEqual((await polled.json()).cancellation.statusErrors,[],'healthy status retires the transient read failure');assert.ok(calls.every(row=>row.method==='GET'));calls.length=0;
    }
    const retried=await worker.fetch(req('/cancel',f.payload.authorization),f.env);
    assert.equal(retried.status,200);
