@@ -248,6 +248,9 @@ def observe_pr(pr, repo, branch):
         receipt = None
     goal.receipt = receipt
     if record:
+        from engine import report_claims
+        report_claims.observe_pr(pr, repo, branch)
+    if record:
         record.revision += 1
     return receipt is not None
 
@@ -264,6 +267,8 @@ def observe_validation(kind, candidate, run):
                                   conclusion=clean(run.get('conclusion') or 'unknown', 30),
                                   evidence='GitHub run selected by controller for this candidate; actual checkout not asserted')
         record.revision += 1
+    from engine import report_claims
+    report_claims.observe_ci(kind, candidate, run)
 
 
 def failure(error, model=''):

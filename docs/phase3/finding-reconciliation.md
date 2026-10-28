@@ -1,6 +1,6 @@
 # Phase 3.1 finding reconciliation — 2026-10-28
 
-Every ledger ID is accounted for below. PATCHED means the recorded regression/correction exists and passed available local validation; it is not an assertion that each historical abandoned workflow or production interaction was repeated. The current combined suite ran1,220 tests, OK,31 skipped; Node880 and web/bundle checks passed. Exact-head delivery CI and #308 source-proof acceptance remain pending.
+Every ledger ID is accounted for below. PATCHED means the recorded regression/correction exists and passed available local validation; it is not an assertion that each historical abandoned workflow or production interaction was repeated. The current combined suite ran1,241 tests, OK,31 skipped; Node880 and web/bundle checks passed. Exact-head delivery CI and #308 source-proof acceptance remain pending.
 
 The original ledger is retained as historical evidence. Later corrections and scope changes supersede its old OPEN/BLOCKED labels only as stated here. No counter, expiry, permission or provider cap was changed to clear a finding. No unsupported model verdict becomes completion.
 
@@ -72,4 +72,8 @@ The original ledger is retained as historical evidence. Later corrections and sc
 
 | [P3-063](issue-log.md) | PATCHED locally; live acceptance pending | Primary classified JSON now exposes undecided source-proof object slots. Empty slots remain refused;110 focused and1,215 engine/1,222 combined Python run passed (31 skipped each). |
 
-No owner-approved ACCEPTED LIMITATION disposition is invented. Future Phase3.7 action-specific lifecycle grants and production/native-device checks remain explicitly tracked roadmap work, not delivered features or acceptance evidence. Phase3.1 closeout is still withheld while the automated source-proof gate (061/062) and final combined validation are pending.
+| [P3-064](issue-log.md) | PATCHED; transport verified locally/live | Snapshot-bound citations passed production transport regressions and live trial40682534799 returned24 original decisions with zero findings. This cleared source formatting, not whole-task acceptance. |
+| [P3-065](issue-log.md) | PATCHED; local regression verified | Saved asks and behavioral test citations remain mandatory;160 focused tests and full discovery passed. Trial40684862539 exposed the separate reporting-domain issue066. |
+| [P3-066](issue-log.md) | PATCHED; live confirmation pending | Candidate-bound execution/report receipts and before-write category guard;16 reporting regressions and54 report/state tests passed. Full engine1,234/combined1,241 run,31 skipped each. No device proof from simulator CI. |
+
+No owner-approved ACCEPTED LIMITATION disposition is invented. Future Phase3.7 action-specific lifecycle grants and production/native-device checks remain explicitly tracked roadmap work, not delivered features or acceptance evidence. Phase3.1 closeout is still withheld while final updated-engine task acceptance and exact-head combined CI are pending. Owner has authorized Phase3.2 after Phase3.1 closeout.

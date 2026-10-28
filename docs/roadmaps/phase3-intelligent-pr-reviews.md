@@ -24,6 +24,8 @@ Every newly encountered issue gets an ID in [issue-log.md](../phase3/issue-log.m
 
 ## Phase 3.1 — verify Phase 1 and Phase 2
 
+Owner update (2026-10-28): finish Phase3.1 verification and closeout, then proceed to Phase3.2 once satisfied with the evidence. This authorizes the transition after closeout; it does not authorize merging or bypassing a failing check.
+
 This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. Do not begin Phase 3.2 until the owner directs it.
 
 - [ ] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.

@@ -219,6 +219,8 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
         move_branch(repo, writer, branch, commit['sha'], create=create)
     from engine import operational_review
     operational_review.published(parent, commit['sha'])
+    from engine import report_claims
+    report_claims.published(parent, commit['sha'], changes)
     if journal:
         journal.state['phase'] = 'publication'
         journal.checkpoint(commit['sha'], base=base, files=changes)
@@ -2594,7 +2596,8 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
                            + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + review_task)
         classified = requirements.CURRENT.get()
-        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
+        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified,
+                                     **({'retained_requirements': tuple(requirement_catalog)} if classified and requirement_catalog else {}))
         files_needed = []
         if review:
             reqs, found, files_needed = review
