@@ -483,6 +483,16 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Follow-up validation:108 focused tests passed; fresh full Python1,165 run, OK,31 skipped. The combined follow-up also passed1,220 Python run, OK,31 skipped. Existing Node880/web checks remain applicable to unchanged JS.
 - Status: PATCHED and locally verified; serial line-slot trial pending. No resource/counter change or proof relaxation.
 
+## P3-062 — scope proof failure discards its actionable validation reason
+
+- Evidence: trials40677156989/a1e7050 and40678099430/3e245a7 correctly refuse both task-file proofs but expose only does-not-match-current-source. No raw scope reply is retained, so its exact defect is unknown. The line resolver already classifies invalid ranges but resolve_review_lines discards that issue for file_scope.
+- Reproducer: a production model_review table tests invalid/unshown ranges, owner-text quotes, invented source and missing proof. All four fail before repair because only the generic path diagnostic survives. It also requires two bounded calls, blocked completion and no reply-fragment echo.
+- Required correction: preserve the existing line-resolution issue and emit fixed safe reason codes in the retry/final failure. Never include raw quotes or accept unsupported evidence.
+- Immediate rerun:109 focused tests passed. Full isolated discovery1,166 run, OK,31 skipped; full combined1,221 run, OK,31 skipped. No raw reply is echoed and the same two-call bound remains.
+- Integration follow-up: the isolated trial engine lacked279's already-reviewed prompt-overhead/lossless-reference changes, although the combined branch contained them. Copy only those engine changes and their pure-Python regressions into309; keep workflows/scripts/configuration excluded from the trial engine. No live cause is inferred without the new diagnostic.
+- Final isolated integration verification:1,214 Python run, OK,31 skipped, including279 engine-only prompt-overhead regressions and the new safe diagnostic table. Combined source already passed1,221 run,31 skipped. Ten structural rules, shipped-source scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED locally; one serial diagnostic trial pending. Source-proof acceptance stays blocked until actual evidence passes.
+
 ## Finding template
 
 ### P3-NNN — short defect title
