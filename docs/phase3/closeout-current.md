@@ -4,6 +4,8 @@ Phase 3.1 is open. The remaining acceptance work concerns the latest engine tria
 
 Owner follow-up: missing task feed entries and Cancel/Delete defects084–087 are now reproduced and repaired in the same draft312. A visible manual Refresh, independent paginated discovery and fresh owner cancellation are covered by901 passing Node tests and the real dashboard flow on desktop/phone Chromium. Source/native bundle match; no deployment or real cancellation was performed. [Task feed controls](task-feed-controls.md) records the boundaries and the lack of an authenticated KappaForge session for renewal. Current new-head CI is recorded on the PR.
 
+Renewal update: the owner sent retry task #308 in KappaForge chat. A fresh linked app authorization now exists; the earlier expired-scope blocker below is historical. Run40783400962 failed at the nested engine receipt, without consuming additional model calls/edits. Finding088 repairs that migration with103 focused and1,276 full Python tests passing (31 skips). The next action is a serial trial from312's corrected exact head, followed by fresh requirement reconciliation. See renewed-engine-receipts.md.
+
 ## Completed evidence
 
 - Provenance: Phase 1/2 merge ancestry, audited source, current main and integration are recorded in phase1-phase2-audit.md and the regression/CI report. Main a76561abbbe9aa88c44e75c6394afda63ac4736f contains the owner-approved #309/#311 merges. Its tree equals tested #311 head 2e7d2bc9e253d446d7b84be74d940ac1e102abe1.

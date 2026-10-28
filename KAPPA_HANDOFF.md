@@ -12,6 +12,8 @@ Latest closeout (2026-10-28): trial40739723033 on496902a reduced85 historical bl
 
 Current UI/control follow-up: owner reported308 missing and unreliable Cancel/Delete, explicitly requested repairs without merging. Findings084–087 and docs/phase3/task-feed-controls.md cover independent paginated discovery, manual Refresh, fresh owner cancellation of adopted tasks, active-run inventory and confirmed-stop history deletion. Desktop and phone Chromium exercise the actual flow; the full web regression includes the same check for Chromium/WebKit. Source and native bundle are synchronized. No task was cancelled/deleted in production, and no app authorization was fabricated. Task308 renewal still needs an authenticated KappaForge app request/session; a feed row is not required for the chat command retry task #308.
 
+Owner retried308 in KappaForge chat: fresh app renewal succeeded and retains candidate75811f8/counters96/2/20. Main retry40783400962 failed before task work because the nested engine receipt retained the old scope digest. P3-088 now migrates that receipt only after strict old-provenance and renewal-link verification. Scope/owner/SHA checks remain strict;103 focused and1,276 full Python tests pass (31 full-suite skips). See docs/phase3/renewed-engine-receipts.md. After publishing, check no active308 worker and run one explicit Fix using312's exact current head. Do not merge or reset counters. The former need for user renewal is resolved.
+
 <details>
 <summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
 

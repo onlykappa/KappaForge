@@ -54,6 +54,17 @@ def verify_receipt(receipt, scope, read):
     return receipt
 
 
+def renew_receipt(receipt, scope, read):
+    """Rebind only an explicitly linked, independently verified prior engine receipt."""
+    previous = getattr(scope, 'resume_from', None)
+    if not isinstance(previous, dict) or not isinstance(receipt, dict) or receipt.get('digest') != previous.get('digest'):
+        raise PermissionError('Engine renewal has no matching prior scope link')
+    from types import SimpleNamespace
+    prior_scope = SimpleNamespace(number=scope.number, repo=scope.repo, digest=previous['digest'])
+    verified = verify_receipt(receipt, prior_scope, read)
+    return dict(verified, digest=scope.digest)
+
+
 def attest(scope, read, previous=None, env=None, checkout=None):
     env = os.environ if env is None else env
     sha, run_id, ref = env.get('GITHUB_SHA', ''), env.get('GITHUB_RUN_ID', ''), env.get('GITHUB_REF_NAME', '')

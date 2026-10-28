@@ -204,6 +204,11 @@ class Journal:
                          and isinstance(state['continuations'], int) and 0 <= state['continuations'] <= MAX_CONTINUATIONS + MAX_QUOTA_RESUMES
                          and 0 <= state.get('quotaResumes', 0) <= min(state['continuations'], MAX_QUOTA_RESUMES))
                 if valid:
+                    if state.get('engine') and state['engine'].get('digest') != self.scope.digest:
+                        from engine.runtime_engine import renew_receipt
+                        # Covers both fresh renewals and checkpoints already migrated by an
+                        # older controller that left the nested engine receipt unchanged.
+                        state = dict(state, engine=renew_receipt(state['engine'], self.scope, self.read))
                     if renewed_scope:
                         state = dict(state, digest=self.scope.digest, authorization=self.scope.identity, expiresAt=int(self.scope.expires*1000))
                         self.renewed_scope = True

@@ -622,6 +622,12 @@ P3-087 closed-card follow-up: a new production-menu regression fails on495ff15 f
 
 P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503 clears the saved known-live runner list; the next empty active index falsely establishes termination. Correction preserves both prior and newly observed live identities through failed/incomplete reads, replacing them only after successful inventory and individual rechecks. Two failing-before outage regressions pass. A third regression proves a newer runner is never cancelled under an old cutoff and its delivery error clears only after it is observed completed. Final cancellation/authority selection95 passed.
 
+## P3-088 — renewed task cannot validate its previously attested engine
+
+- Evidence: user renewed308 through KappaForge chat. Run40783400962 reached code on reviewed main but stopped with Engine receipt is invalid for this task. The real journal migrated the authorization/body digest and preserved candidate75811f8 and96/2/20 consumed counters; its attested engine receipt still carries the previous digest. verify_receipt requires only the new digest, so even the next explicit owner Fix on312 would be rejected.
+- Required correction: accept the existing authenticated resumeFrom digest link when checking the same task's old engine receipt. Still require the original owner workflow, repository, branch, commit and PR proofs. A new explicit Fix attests its current engine under the new scope; automatic continuations may not adopt another SHA. No authorization, deadline, candidate, counter or receipt is manually rewritten.
+- Status: PATCHED locally; two positive cases fail on unchanged67fc2df (one error/one assertion failure), then four new runtime-engine regressions and103 focused tests pass. Full Python1,276 run, OK,31 skipped. The trusted journal rebinds a fully verified linked receipt; verify_receipt stays strict. See renewed-engine-receipts.md. One serial updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

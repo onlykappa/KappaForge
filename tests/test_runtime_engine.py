@@ -94,6 +94,71 @@ class RuntimeEngineTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             runtime_engine.attest(self.journal.scope, read, receipt, dict(resume, GITHUB_SHA='c' * 40), 'c' * 40)
 
+    def renewed_trial(self):
+        read, env, pr, comparison = self.trial()
+        receipt = runtime_engine.attest(self.journal.scope, read, None, env, 'b' * 40)
+        self.journal.state['engine'] = receipt
+        self.journal.state['budgets'] = dict(modelCalls=96, edits=2, fixCycles=20)
+        self.journal.persist()
+        old = self.journal.scope
+        grant = dict(id='renewed-owner-request', conversationId='owner-chat', requestId='renewed-owner-request',
+                     repo=recovery.ROOT, mode='develop', expiresAt=(self.world.now+86400)*1000,
+                     resumeFrom=dict(digest=old.digest, authorization=old.identity))
+        self.world.issue['body'] += '\nApproved from KappaForge Chat.\n<!-- kappa-authorization:' + json.dumps(grant) + ' -->'
+        self.world.read = read
+        intent_guard.activate(self.world.issue)
+        renewed = self.world.journal()
+        self.assertTrue(renewed.renewed_scope)
+        self.assertNotEqual(renewed.scope.digest, receipt['digest'])
+        return renewed, read, env, pr, receipt
+
+    def test_explicit_fix_after_real_scope_renewal_retains_attestation_candidate_and_counters(self):
+        renewed, read, env, pr, receipt = self.renewed_trial()
+        before = copy.deepcopy(renewed.state)
+        pr['head']['sha'] = 'c' * 40
+        self.world.refs[env['GITHUB_REF_NAME']] = 'c' * 40
+        self.runs['34'] = dict(self.runs['33'], head_sha='c' * 40)
+        with patch.dict(os.environ, dict(env, GITHUB_RUN_ID='34', GITHUB_SHA='c' * 40)), patch.object(subprocess, 'check_output', return_value='c' * 40+'\n'):
+            renewed.begin('fix')
+        self.assertEqual(renewed.state['engine']['sha'], 'c' * 40)
+        self.assertEqual(renewed.state['engine']['digest'], renewed.scope.digest)
+        self.assertEqual(renewed.state['candidate'], before['candidate'])
+        self.assertEqual(renewed.state['budgets'], before['budgets'])
+        self.assertEqual(receipt['digest'], renewed.scope.resume_from['digest'])
+        with self.assertRaises(PermissionError):
+            runtime_engine.verify_receipt(receipt, renewed.scope, read)
+
+    def test_already_renewed_checkpoint_can_recover_its_stale_nested_engine_digest(self):
+        renewed, read, env, pr, receipt = self.renewed_trial()
+        renewed.state['engine'] = dict(receipt)  # The persisted state produced by the older controller.
+        renewed.persist()
+        restored = self.world.journal()
+        self.assertEqual(restored.state['engine']['digest'], restored.scope.digest)
+        self.assertEqual(restored.state['engine']['sha'], receipt['sha'])
+        self.assertEqual(restored.state['engine']['originRun'], receipt['originRun'])
+        self.assertEqual(restored.state['budgets'], dict(modelCalls=96, edits=2, fixCycles=20))
+
+    def test_scope_renewal_cannot_adopt_another_trial_engine_automatically(self):
+        renewed, read, env, pr, receipt = self.renewed_trial()
+        pr['head']['sha'] = 'c' * 40
+        self.world.refs[env['GITHUB_REF_NAME']] = 'c' * 40
+        self.runs['34'] = dict(self.runs['33'], head_sha='c' * 40)
+        with self.assertRaises(PermissionError):
+            runtime_engine.attest(renewed.scope, read, renewed.state['engine'], dict(env, GITHUB_RUN_ID='34', GITHUB_SHA='c' * 40, INPUT_ACTION=''), 'c' * 40)
+
+    def test_renewal_link_cannot_validate_unlinked_foreign_or_forged_engine_proof(self):
+        renewed, read, env, pr, receipt = self.renewed_trial()
+        for link in (None, dict(digest='f'*64, authorization='github-task:130')):
+            renewed.scope.resume_from = link
+            with self.subTest(link=link), self.assertRaises(PermissionError):
+                runtime_engine.renew_receipt(receipt, renewed.scope, read)
+        renewed.scope.resume_from = dict(digest=receipt['digest'], authorization='github-task:130')
+        with self.assertRaises(PermissionError):
+            runtime_engine.renew_receipt(dict(receipt, task=131), renewed.scope, read)
+        self.runs['33']['triggering_actor'] = dict(login='reviewer')
+        with self.assertRaises(PermissionError):
+            runtime_engine.renew_receipt(receipt, renewed.scope, read)
+
     def test_engine_trial_refuses_foreign_stale_closed_and_unreviewed_infrastructure(self):
         changes = [lambda p, c: p.update(state='closed'), lambda p, c: p.update(draft=False),
                    lambda p, c: p['head'].update(sha='c' * 40),
