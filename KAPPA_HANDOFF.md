@@ -14,6 +14,8 @@ Current UI/control follow-up: owner reported308 missing and unreliable Cancel/De
 
 Owner retried308 in KappaForge chat: fresh app renewal succeeded and retains candidate75811f8/counters96/2/20. Main retry40783400962 failed before task work because the nested engine receipt retained the old scope digest. P3-088 now migrates that receipt only after strict old-provenance and renewal-link verification. Scope/owner/SHA checks remain strict;103 focused and1,276 full Python tests pass (31 full-suite skips). See docs/phase3/renewed-engine-receipts.md. After publishing, check no active308 worker and run one explicit Fix using312's exact current head. Do not merge or reset counters. The former need for user renewal is resolved.
 
+Latest live trial40784333199 verified312 engine06c16a9 under the renewed scope, then stopped before fresh whole-task review on stale R21 test evidence. Candidate75811f8 remains unchanged; counters98/2/21. Findings089/090 now route exact operational test diagnostics to review-only verification and rebind revalidated cached labels across identical-task renewals.68 focused/1,280 full Python tests pass (31 full-suite skips). Next: publish to312, check no active308 worker, run one explicit Fix at the exact new head and inspect actual fresh requirement outcome. No merges or counter/deadline resets.
+
 <details>
 <summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
 

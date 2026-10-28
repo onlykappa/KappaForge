@@ -602,6 +602,12 @@ def resolve_controller(reqs, changes=None):
 def controller_problem(problem, resolved=None):
     text = str(problem or '')
     target = None
+    untested = re.fullmatch(r'Requirement untested: R[1-9][0-9]* (.+) \(add or cite a test that exercises it\)', text)
+    if untested:
+        from engine import operational_review
+        ask = untested[1]
+        return bool(operational_review.kind(ask) and (resolved is None or any(
+            req.get('kind') == 'controller' and req.get('met') is True and req.get('text') == ask for req in resolved)))
     if text.startswith('Requirement not met: '):
         ask = text[len('Requirement not met: '):].split(' ({')[0]
         from engine import operational_review

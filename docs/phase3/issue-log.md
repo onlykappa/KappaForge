@@ -628,6 +628,16 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Required correction: accept the existing authenticated resumeFrom digest link when checking the same task's old engine receipt. Still require the original owner workflow, repository, branch, commit and PR proofs. A new explicit Fix attests its current engine under the new scope; automatic continuations may not adopt another SHA. No authorization, deadline, candidate, counter or receipt is manually rewritten.
 - Status: PATCHED locally; two positive cases fail on unchanged67fc2df (one error/one assertion failure), then four new runtime-engine regressions and103 focused tests pass. Full Python1,276 run, OK,31 skipped. The trusted journal rebinds a fully verified linked receipt; verify_receipt stays strict. See renewed-engine-receipts.md. One serial updated-engine trial pending.
 
+## P3-089 — stale operational test diagnostics route into source repair
+
+- Evidence: trial40784333199 verifies312 engine06c16a9, then stops before fresh whole-task review: needs_validation: No explicit test evidence for R21. Its five retained problems include the old Requirement untested R21 protected-branch hold. That exact ask is now operational, but controller_problem recognizes only its Requirement not met form. One stale test diagnostic therefore sends the entire batch through source repair.
+- Status: PATCHED locally; real revise_branch now routes only the exact operational diagnostic to fresh review without edits. Real failed checks and source-test diagnostics retain their repair gate; pending proof remains open. Four new routing/renewal cases had two errors/one failure before repair (one refusal control passed);68 focused and1,280 full Python tests pass (31 full-suite skips). Current candidate unchanged; counters98 calls/2 edits/21 fix cycles.
+
+## P3-090 — saved requirement labels reject explicit scope renewal
+
+- Evidence: requirements.load requires cached record.scope to equal the new journal digest, despite an explicit resumeFrom link and identical taskHash. Once089 permits fresh review, the existing saved classification cannot load under the renewed scope. Reproduce with the real blob-backed classification and Journal renewal.
+- Status: PATCHED locally; identical taskHash and explicit prior digest link are required, saved labels are revalidated against current rules/restrictions, and the cache is saved under the current scope. Successive renewals pass, stale behavioral labels are corrected, and wrong links/requests remain refused. Full Python1,280 run, OK,31 skipped; one serial updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

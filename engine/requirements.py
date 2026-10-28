@@ -370,16 +370,23 @@ def load(journal, repo, task, scope=None):
         return None
     from engine import execution
     record = execution._read_blob(journal, journal.state['requirementClassification'])
+    accepted_scopes = {journal.scope.digest}
+    previous = getattr(journal.scope, 'resume_from', None)
+    if isinstance(previous, dict):
+        accepted_scopes.add(previous.get('digest'))
     if (record.get('version') != 1 or record.get('task') != journal.scope.number or record.get('repo') != repo
-            or record.get('scope') != journal.scope.digest or record.get('taskHash') != execution.digest(task)):
+            or record.get('scope') not in accepted_scopes or record.get('taskHash') != execution.digest(task)):
         raise execution.CheckpointMismatch('Saved requirement classification belongs to a different task or request')
     rows = record.get('requirements')
     expected = {r['id']: r for r in split(task)}
     if not isinstance(rows, list) or [r.get('id') if isinstance(r, dict) else None for r in rows] != list(expected):
         raise execution.CheckpointMismatch('Saved requirement classification does not match the request')
     # The saved categories are re-checked by the same deterministic rules; nothing saved is trusted as is.
-    return validate([dict(expected[r['id']], categories=r.get('categories'), reason=r.get('reason'), source=r.get('source', 'rules'))
-                     for r in rows], task, scope)
+    classified = validate([dict(expected[r['id']], categories=r.get('categories'), reason=r.get('reason'), source=r.get('source', 'rules'))
+                           for r in rows], task, scope)
+    if record['scope'] != journal.scope.digest:
+        save(journal, classified, repo, task)  # Canonical current-scope labels support a later explicit renewal too.
+    return classified
 
 
 def scoped(function):
