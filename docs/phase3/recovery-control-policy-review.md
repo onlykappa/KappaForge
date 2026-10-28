@@ -26,7 +26,7 @@ The Worker persists revocation before delivering the remote stop. Conversation-b
 
 P3-059: filtering by a newly issued grant's timestamp omitted older active attempts of the same task and could falsely report termination. Removing that time filter retains the stable task identity, workflow allowlist and bounded inspection. The regression initially reports termination with an old agent still active; after repair it requests that run's cancellation and waits for completion, excluding another task and unidentified scheduled runs.
 
-P3-060: an explicit second cancel was always treated as read-only replay, including after failed delivery or revocation persisted before a receipt. Explicit cancel now retries only failed or unconfirmed delivery. Status polling remains externally read-only, acknowledged stops are not blindly repeated, and cancelled grants cannot execute jobs. Stateful Worker/store regressions initially fail after HTTP 503 and cover the interrupted-delivery case; both pass after repair. Partial remote failures remain recorded rather than restoring execution authority.
+P3-060: an explicit second cancel was always treated as read-only replay, including after failed delivery or revocation persisted before a receipt. Explicit cancel now retries only failed or unconfirmed delivery. Status polling remains externally read-only, acknowledged stops are not blindly repeated, and cancelled grants cannot execute jobs. Stateful Worker/store regressions initially fail after HTTP 503 and cover the interrupted-delivery case; both pass after repair. Partial remote failures remain recorded rather than restoring execution authority. A follow-up regression reproduced successful status polling erasing a prior delivery failure and suppressing retry; polling now retains deduplicated errors until explicit stop delivery is retried.
 
 ## Actions controls
 
@@ -46,6 +46,6 @@ python scripts/execution-policy.py --check
 python scripts/dependency-map.py --check
 ```
 
-Full Python discovery: 1,164 run, OK, 31 skipped. Full Node suite: 880 passed, zero failures/skips. Ten structural-rule tests, source scan, execution-policy, dependency-map and whitespace checks passed. Source-scan warnings remain inspection evidence, not security clearance. Delivery CI is pending on the committed repair head; local tests do not demonstrate production credential distribution or a live owner interaction.
+Full Python discovery: 1,164 run, OK, 31 skipped. Full Node suite: 880 passed, zero failures/skips. Ten structural-rule tests, source scan, execution-policy, dependency-map and whitespace checks passed. Source-scan warnings remain inspection evidence, not security clearance. The follow-up cancellation/status regression also passed within a fresh full Node run (880 passed, zero skips); the Python source is unchanged by that follow-up. Delivery CI is pending on the committed repair head; local tests do not demonstrate production credential distribution or a live owner interaction.
 
 This completes the bounded source traces of the recovery-wake, retry/guidance, cancellation and Actions backend paths. Remaining workflow mutation inventory, combined-delivery validation, finding reconciliation and #308's automated source-proof acceptance still prevent Phase 3.1 closeout. No Phase 3.2 work or owner acceptance is claimed.

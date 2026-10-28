@@ -3,7 +3,7 @@ import {githubHeaders} from './github.js';
 // workers are never inferred to have stopped from an issue closure or HTTP 202.
 export async function cancellationEvidence(env,record,{requestStop=false}={}){
  const base='https://api.github.com/repos/onlykappa/KappaForge',headers=githubHeaders(env,'KappaForge-cancel');
- const cancellation={...record.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,runs:[],coverage:'task-bound-runners',terminationScope:'observed runners only',errors:[]};
+ const cancellation={...record.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,runs:[],coverage:'task-bound-runners',terminationScope:'observed runners only',errors:requestStop?[]:[...(record.cancellation?.errors||[])]};
  if(!record.issueNumber)return cancellation;
  if(requestStop){
   const closed=await fetch(base+'/issues/'+record.issueNumber,{method:'PATCH',headers,body:JSON.stringify({state:'closed'}),signal:AbortSignal.timeout(10000)});
@@ -34,5 +34,6 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
    cancellation.runnerAcknowledgedAt=Date.now();cancellation.terminatedAt=Date.now();
   }
  }catch(e){cancellation.errors.push(e.message)}
+ cancellation.errors=[...new Set(cancellation.errors)];
  return cancellation;
 }

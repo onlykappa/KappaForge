@@ -253,11 +253,12 @@ test('cancellation persists revocation on partial remote failure and status cann
 });
 
 test('explicit cancellation retries failed or unconfirmed delivery while status checks stay read-only',async()=>{
- for(const interrupted of [false,true]){
+ for(const scenario of ['failed','interrupted','partial-with-status']){
+  const interrupted=scenario==='interrupted';
   const f=fixture();await f.issue();
   await authorizationStore(f.state,req('/authorization/bind',{...f.payload.authorization,issueNumber:198}));
   const original=globalThis.fetch,calls=[];let completed=false;
-  globalThis.fetch=async()=>new Response(null,{status:503});
+  globalThis.fetch=async(url,options={})=>scenario==='partial-with-status'&&options.method==='PATCH'?Response.json({state:'closed'}):new Response(null,{status:503});
   try{
    if(interrupted)await authorizationStore(f.state,req('/authorization/cancel',f.payload.authorization));
    else assert.equal((await worker.fetch(req('/cancel',f.payload.authorization),f.env)).status,200);
@@ -271,6 +272,10 @@ test('explicit cancellation retries failed or unconfirmed delivery while status 
     if(path.endsWith('/actions/runs/55/cancel')&&method==='POST')return new Response(null,{status:202});
     assert.fail('Unexpected cancellation fixture request '+method+' '+path);
    };
+   if(scenario==='partial-with-status'){
+    const polled=await worker.fetch(req('/cancel/status',f.payload.authorization),f.env);
+    assert.equal(polled.status,200);assert.ok((await polled.json()).cancellation.errors.length,'status retains failed delivery evidence');assert.ok(calls.every(row=>row.method==='GET'));calls.length=0;
+   }
    const retried=await worker.fetch(req('/cancel',f.payload.authorization),f.env);
    assert.equal(retried.status,200);
    assert.equal((await retried.json()).cancellation.terminatedAt,null);
