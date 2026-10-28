@@ -441,8 +441,8 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Reproducer: `tests/review-publication.test.mjs` uses the real production helper with completely fake fetch transport. The changed-head case fails before repair: it sends readiness POST and stale merge PUT instead of returning 409 with zero mutations. The unchanged-head control passes. The helper is identical between audited #279 and engine accumulator baseline `b3a9ba0`.
 - Scope: refuse a head mismatch already visible at the existing readiness reread, before either write. GitHub's ready-for-review operation has no commit-SHA precondition, so this bounded fix cannot make a subsequent remote head change atomic with readiness. Retain the merge endpoint's expected-SHA guard.
 - Patch: compare the already-reread head with expectedSha before readiness. A mismatch returns 409 before every mutation; the unchanged path retains its original sequence. No additional API request or permission change.
-- Immediate rerun: the changed-head and unchanged-head controls both passed within 367 focused Node tests; full npm test passed 875 with zero skips. Dependency-map, execution-policy and structural checks passed. Full Python discovery passed 1,162 tests (31 skipped); delivery CI pending.
-- Status: PATCHED and locally verified; delivery CI pending. The bounded backend trace and remaining inspection limits are in backend-merge-policy-review.md. All reproduction and merge-path test calls used fake transport.
+- Immediate rerun: the changed-head and unchanged-head controls both passed within 367 focused Node tests; full npm test passed 875 with zero skips. Dependency-map, execution-policy and structural checks passed. Full Python discovery: 1,162 run, OK, 31 skipped. All project CI checks, including real-Docker sandbox, passed on exact source d244834ad78b0160b8d8e8534628401100bd718c.
+- Status: PATCHED and verified locally and in CI. The bounded backend trace and remaining inspection limits are in backend-merge-policy-review.md. All reproduction and merge-path test calls used fake transport.
 
 ## Finding template
 
