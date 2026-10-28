@@ -5,11 +5,23 @@ Missing authority, history or evidence stays unmet and cannot authorize a code r
 import re
 import time
 from urllib.parse import quote
+import urllib.error
 from engine import intent_guard, recovery, task_state
 
 FOREIGN_RE = re.compile(r'^Leave task #([1-9][0-9]*) and draft PR #([1-9][0-9]*) untouched for later owner audit[.]?$', re.I)
 BRANCH_HOLD_RE = re.compile(r'^Leave its branch untouched so the verified fix can be folded into #([1-9][0-9]*) after independent review[.]?$', re.I)
 LIMITS = 'Keep model requests small and retain existing request/provider limits and validation gates.'
+
+
+def file_scope_paths(text):
+    match = re.fullmatch(r'Keep this task to (.+?)[.]?', ' '.join(str(text or '').split()), re.I)
+    if not match:
+        return None
+    paths = re.split(r'\s*(?:,\s*(?:and\s+)?|\s+and\s+)\s*', match[1])
+    if not 0 < len(paths) <= 64 or any(not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9_-]+', p)
+            or any(part in ('.', '..', '.git') for part in p.split('/')) for p in paths):
+        return None
+    return tuple(paths)
 
 
 def kind(text):
@@ -24,6 +36,8 @@ def kind(text):
         return 'foreign'
     if BRANCH_HOLD_RE.fullmatch(text):
         return 'branch_hold'
+    if file_scope_paths(text):
+        return 'file_scope'
     if requirements.SCOPE_RESTRICTION_RE.fullmatch(text):
         return 'scope'
     if text.rstrip('.').lower() == LIMITS.rstrip('.').lower():
@@ -79,6 +93,89 @@ def observe_branch_holds(read):
                 and isinstance(branch, str) and branch and branch != record.identity['branch']
                 and re.fullmatch('[a-f0-9]{40}', str(head.get('sha', '')))):
             holds[number] = dict(branch=branch, observedHead=head['sha'], authorization=scope.identity, digest=scope.digest)
+
+
+def observe_file_scope(read):
+    """Observe the complete published delta; proposals are checked separately at resolution."""
+    observed = authority()
+    if not observed:
+        return
+    goal, record, journal, scope = observed
+    record.control.pop('file_scope', None)
+    from engine import requirements
+    if not any(file_scope_paths(r['text']) for r in requirements.split(goal.request)):
+        return
+    candidate = record.identity['candidate']
+    def paths(rows):
+        if not isinstance(rows, list) or any(not isinstance(r, dict) or not isinstance(r.get('filename'), str)
+                or r.get('status') not in ('added', 'modified', 'removed', 'renamed', 'copied', 'changed', 'unchanged')
+                or (r.get('status') == 'renamed' and not isinstance(r.get('previous_filename'), str)) for r in rows):
+            return None
+        if len({r['filename'] for r in rows}) != len(rows):
+            return None
+        return {p for r in rows for p in (r['filename'], r.get('previous_filename') if r['status'] == 'renamed' else None) if p}
+    url = (goal.receipt.get('url') if isinstance(goal.receipt, dict) else '') or journal.state.get('pr', '')
+    match = re.fullmatch(r'https://github.com/'+re.escape(scope.repo)+r'/pull/([1-9][0-9]*)', url)
+    if url and not match:
+        return
+    try:
+        if match:
+            number = int(match[1]); endpoint = f'repos/{scope.repo}/pulls/{number}'
+            pr = read(endpoint)
+            if not isinstance(pr, dict):
+                return
+            head = pr.get('head', {})
+            base = pr.get('base', {})
+            count = pr.get('changed_files')
+            if (not isinstance(base, dict) or not re.fullmatch('[a-f0-9]{40}', str(base.get('sha', '')))
+                    or not isinstance(head, dict) or pr.get('number') != number or pr.get('state') != 'open'
+                    or head.get('sha') != candidate or head.get('ref') != record.identity['branch']
+                    or not isinstance(head.get('repo'), dict) or head['repo'].get('full_name') != scope.repo
+                    or type(count) is not int or not 0 <= count <= 1000):
+                return
+            rows = []
+            for page in range(1, 12):
+                batch = read(endpoint+f'/files?per_page=100&page={page}')
+                if not isinstance(batch, list):
+                    return
+                rows.extend(batch)
+                if len(batch) < 100:
+                    break
+            else:
+                return
+            current = read(endpoint)
+            if (len(rows) != count or not isinstance(current, dict) or not isinstance(current.get('head'), dict)
+                    or current['head'].get('sha') != candidate
+                    or current.get('changed_files') != count or not isinstance(current.get('base'), dict)
+                    or (current['base'].get('sha'), current['base'].get('ref')) != (base.get('sha'), base.get('ref'))):
+                return
+            actual = paths(rows)
+        else:
+            try:
+                branch = read(f"repos/{scope.repo}/git/ref/heads/{record.identity['branch']}")
+            except urllib.error.HTTPError as error:
+                if error.code != 404:
+                    raise
+                actual = set()  # No published task branch: only the current proposal exists.
+            else:
+                if branch.get('object', {}).get('sha') != candidate:
+                    return
+                origin = journal.state.get('branchOrigin')
+                previous = getattr(scope, 'resume_from', None)
+                from types import SimpleNamespace
+                prior = SimpleNamespace(number=scope.number, repo=scope.repo,
+                    digest=previous['digest'], identity=previous['authorization']) if previous else scope
+                if not (origin_valid(origin, scope) or origin_valid(origin, prior)):
+                    return
+                delta = read(f"repos/{scope.repo}/compare/{origin['sha']}...{candidate}")
+                if (delta.get('status') not in ('ahead', 'identical') or delta.get('merge_base_commit', {}).get('sha') != origin['sha']
+                        or not isinstance(delta.get('files'), list) or len(delta['files']) >= 300):
+                    return
+                actual = paths(delta['files'])
+        if actual is not None:
+            record.control['file_scope'] = dict(identity=dict(record.identity), authorization=scope.identity, digest=scope.digest, paths=sorted(actual))
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
+        return  # Missing metadata cannot establish that no other file changed.
 
 
 def origin_valid(origin, scope):
@@ -173,7 +270,13 @@ def resolve(reqs, changes):
             continue
         _, record, journal, scope = observed
         proof = None
-        if category == 'branch_hold':
+        if category == 'file_scope':
+            allowed_paths = set(file_scope_paths(req['text']))
+            receipt = record.control.get('file_scope', {})
+            if (receipt.get('identity') == record.identity and receipt.get('authorization') == scope.identity
+                    and receipt.get('digest') == scope.digest and set(receipt.get('paths', ())) | paths <= allowed_paths):
+                proof = dict(paths=sorted(set(receipt['paths']) | paths), guard='observed candidate and proposal stay within owned file restriction')
+        elif category == 'branch_hold':
             number = int(BRANCH_HOLD_RE.fullmatch(' '.join(req['text'].split()))[1])
             hold = record.control.get('branch_holds', {}).get(number)
             if hold and hold.get('authorization') == scope.identity and hold.get('digest') == scope.digest:

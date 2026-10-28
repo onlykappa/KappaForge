@@ -16,6 +16,8 @@ Owner retried308 in KappaForge chat: fresh app renewal succeeded and retains can
 
 Latest live trial40784333199 verified312 engine06c16a9 under the renewed scope, then stopped before fresh whole-task review on stale R21 test evidence. Candidate75811f8 remains unchanged; counters98/2/21. Findings089/090 now route exact operational test diagnostics to review-only verification and rebind revalidated cached labels across identical-task renewals.68 focused/1,280 full Python tests pass (31 full-suite skips). Next: publish to312, check no active308 worker, run one explicit Fix at the exact new head and inspect actual fresh requirement outcome. No merges or counter/deadline resets.
 
+Latest trial40785639666:6041ec1 ran a fresh review,27/27 decisions met, five blockers became two (independent validation and R2's file restriction incorrectly requiring a code test). No source change; counters100/2/22.091 now verifies complete actual candidate/proposal paths and enforces the owned list before editing.90 focused/1,287 full Python tests pass (31 skips). Publish then one serial updated-engine trial after a no-active308 check; refresh independent75811f8 validation. Keep the validation gate open until actual fresh evidence. Do not merge.
+
 <details>
 <summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
 

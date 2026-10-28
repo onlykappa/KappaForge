@@ -8,6 +8,8 @@ Renewal update: the owner sent retry task #308 in KappaForge chat. A fresh linke
 
 Latest renewal trial:40784333199 proved088's engine handoff, then exposed089/090 before fresh whole-task review. The local corrections now pass68 focused and1,280 full Python tests (31 skips), with no code candidate changes. Retained counters98/2/21; new serial updated-engine trial pending.
 
+Newest fresh review:40785639666 used6041ec1, returned27 met decisions and reduced retained blockers5→2.091 repairs the remaining scope/test classification using actual complete GitHub file metadata plus a pre-edit path guard.90 focused/1,287 full Python tests pass (31 skips). New serial acceptance and fresh independent validation of unchanged75811f8 are pending; the manual gate is preserved.
+
 ## Completed evidence
 
 - Provenance: Phase 1/2 merge ancestry, audited source, current main and integration are recorded in phase1-phase2-audit.md and the regression/CI report. Main a76561abbbe9aa88c44e75c6394afda63ac4736f contains the owner-approved #309/#311 merges. Its tree equals tested #311 head 2e7d2bc9e253d446d7b84be74d940ac1e102abe1.

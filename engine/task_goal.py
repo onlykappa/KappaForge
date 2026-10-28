@@ -64,7 +64,13 @@ class Goal:
                 raise ValueError('Owner goal: the original target source is unavailable')
 
     def validate_paths(self, paths):
-        outside = set(paths) - set(self.paths or ())
+        paths = set(paths)
+        from engine import requirements, operational_review
+        for row in requirements.split(self.request):
+            allowed = operational_review.file_scope_paths(row['text'])
+            if allowed and paths - set(allowed):
+                raise ValueError('Owner goal: files outside the explicit task scope: ' + ', '.join(sorted(paths - set(allowed))))
+        outside = paths - set(self.paths or ())
         if self.paths and outside:
             raise ValueError('Owner goal: unrelated files are outside this task: ' + ', '.join(sorted(outside)))
 

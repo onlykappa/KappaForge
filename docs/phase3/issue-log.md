@@ -638,6 +638,12 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Evidence: requirements.load requires cached record.scope to equal the new journal digest, despite an explicit resumeFrom link and identical taskHash. Once089 permits fresh review, the existing saved classification cannot load under the renewed scope. Reproduce with the real blob-backed classification and Journal renewal.
 - Status: PATCHED locally; identical taskHash and explicit prior digest link are required, saved labels are revalidated against current rules/restrictions, and the cache is saved under the current scope. Successive renewals pass, stale behavioral labels are corrected, and wrong links/requests remain refused. Full Python1,280 run, OK,31 skipped; one serial updated-engine trial pending.
 
+## P3-091 — file scope restriction is classified as a behavioral test requirement
+
+- Evidence: trial40785639666 completed fresh review with27/27 requirements marked met and no source changes. Retained blockers fell5→2: the independent-validation gate and Requirement untested R2 Keep this task to engine/developer.py and tests/test_execution_recovery.py. The named test path triggers testing/code classification, but this is an edit-scope invariant.
+- Required correction: narrowly parse that owned restriction and prove actual candidate/proposal paths remain within it using complete fresh GitHub metadata. Include previous paths for renames, reject wrong/stale/incomplete metadata, and never exempt compound code asks. No model declaration can provide the path receipt.
+- Status: PATCHED locally; seven new path-scope/goal cases cover classification, complete actual metadata, rename history, stale/missing evidence, outside proposals, first publication, resumed publication and pre-edit rejection. Initial four cases reproduce two failures/six errors (including subcases); pre-edit rejection separately fails before correction.90 focused and1,287 full Python tests pass (31 full-suite skips). Current candidate75811f8 unchanged; counters100 calls/2 edits/22 fix cycles. Updated-engine trial pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title
