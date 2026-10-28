@@ -1,7 +1,7 @@
 """Tests for one-time auto-start of direct owner-created development issues."""
 import unittest
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, call
 from scripts import task_intake
 
 
@@ -49,12 +49,18 @@ class TaskIntakeTests(unittest.TestCase):
 
     def test_dispatch_targets_only_the_trusted_main_agent_workflow_and_deduplicates(self):
         task = issue()
+        def api(path, token, payload=None):
+            if payload and '/comments' in path:
+                return {'id': 42, 'body': payload['body']}
+            return [] if payload is None else None
         with patch.object(task_intake, "already_dispatched", return_value=False), \
-             patch.object(task_intake, "request", return_value=None) as request:
+             patch.object(task_intake, "request", side_effect=api) as request:
             self.assertEqual(task_intake.dispatch(task, "fixture"), "dispatched")
-        request.assert_called_once_with(
+        self.assertEqual(request.call_args_list[-1], call(
             "/repos/onlykappa/KappaForge/actions/workflows/agent.yml/dispatches",
-            "fixture", {"ref": "main", "inputs": {"issue_number": "274"}})
+            "fixture", {"ref": "main", "inputs": {"issue_number": "274"}}))
+        self.assertEqual(request.call_count, 3, 'read claim, persist debit, then dispatch')
+        self.assertIn('KAPPA_INTAKE_V1', request.call_args_list[1].args[2]['body'])
 
         with patch.object(task_intake, "already_dispatched", return_value=True), \
              patch.object(task_intake, "request") as request:

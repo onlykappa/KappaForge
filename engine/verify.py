@@ -737,12 +737,15 @@ def requirement_references(task, texts):
     return rows
 
 
-def review_inventory(paths, task, limit=600):
+def review_inventory(paths, task, limit=None):
     """Bounded routing hints, never scope-review coverage or proof of absent behavior."""
     paths = sorted(set(paths))
+    if limit is None:
+        limit = 4000 if re.search(r'\binventor(?:y|ies)\b', task, re.I) else 600
     named = [p for p in paths if p in task]
+    critical = [p for p in paths if p.startswith(('.github/workflows/', 'config/'))]
     selected, used = [], 0
-    for path in dict.fromkeys(named + paths):
+    for path in dict.fromkeys(named + critical + paths):
         if used + len(path) + 2 <= limit:
             selected.append(path)
             used += len(path) + 2
@@ -750,7 +753,7 @@ def review_inventory(paths, task, limit=600):
                                  'all changed files still require scope review.)' if len(selected) < len(paths) else '')
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=(), scope_lines=False, citations=(), retained_requirements=()):
+def review_prompt(task, diff, paths, context='', inventory_limit=None, classified=(), scope_paths=(), scope_lines=False, citations=(), retained_requirements=()):
     schema = dict(requirements=[dict(text='short requirement', met=True,
                   evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
                   problems=['file: literal evidence, concrete defect and fix'],
@@ -963,10 +966,15 @@ def executable_evidence(path, source, quote):
 REVIEW_FAILURE = ContextVar('requirement_review_failure', default='')
 # Set when model_review returned None because the file-scope review could not decide: no source repair may follow.
 SCOPE_UNDECIDED = ContextVar('scope_review_undecided', default=False)
+REVIEW_UNDECIDED = ContextVar('review_undecided', default=False)
 
 
 class ScopeReviewUnavailable(ValueError):
     """The scope review could not decide; the candidate stays saved and the review is marked incomplete."""
+
+
+class RequirementReviewUnavailable(ValueError):
+    """The requirement response is malformed; this is not a file-scope verdict or a code defect."""
 
 
 MAX_SCOPE_REVIEW_FILES = 1000  # Same complete inventory bound as revision_files; individual batches remain three.
@@ -1057,9 +1065,11 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
     requirements) asks the review to report them by id with any test that exercises them."""
     REVIEW_FAILURE.set('')
     SCOPE_UNDECIDED.set(False)
+    REVIEW_UNDECIDED.set(False)
     try:
         requested = []
         unavailable_sources, original_requirements = set(), {}
+        reference_cache = {}  # This review only: no global retention of owner text or source.
         known = set(paths) | set(changes)
         from engine.task_goal import CURRENT
         goal = CURRENT.get()
@@ -1111,7 +1121,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                                       line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     citations = source_citation_catalog(line_context, task + '\n' + getattr(goal, 'review_diff', ''), review_changes)
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
-                                           inventory_limit=min(600, source_limit // 2), classified=classified,
+                                           inventory_limit=min(4000 if re.search(r'\binventor(?:y|ies)\b', task, re.I) else 600,
+                                                               source_limit // 2), classified=classified,
                                            scope_paths=sorted(review_changes) if scope_required else (),
                                            scope_lines=bool(line_context), citations=citations,
                                            retained_requirements=retained_requirements)
@@ -1159,7 +1170,10 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                        'This is a formatting/evidence retry only; independently assess scope and preserve every '
                                        'existing safety rule. The previous response failed because: ' + scope_retry_hint)
                     if original_requirements:
-                        prompt += ('\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP: spans are Unicode [start,end) offsets in TASK; concatenate parts in order; retain exact texts.\n' + json.dumps(requirement_references(task, original_requirements)))
+                        key = tuple(original_requirements)
+                        if key not in reference_cache:
+                            reference_cache[key] = json.dumps(requirement_references(task, key))
+                        prompt += ('\n\nREQUIREMENTS TO RETAIN IN FOLLOW-UP: spans are Unicode [start,end) offsets in TASK; concatenate parts in order; retain exact texts.\n' + reference_cache[key])
                     if unavailable_sources:
                         prompt += '\n\nUNRESOLVED SOURCE REQUESTS (not available in this snapshot):\n' + json.dumps(sorted(unavailable_sources))
                     from engine import gateway
@@ -1188,7 +1202,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                     scope_retry_hint = reason
                     requirement_retry_hint = reason + '. Return every original id with valid current-source evidence.'
                     continue
-                raise ScopeReviewUnavailable('File scope reviewer returned an invalid response: ' + reason + '; no source repair is authorized')
+                raise RequirementReviewUnavailable('Requirement reviewer returned an invalid response: ' + reason + '; no source repair is authorized')
             reqs, problems, files = result
             if goal:
                 from engine import requirements
@@ -1241,7 +1255,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                             + '. Return every original id once; keep unmet requirements false and never invent evidence. '
                             'This is review repair, not permission to edit source.')
                         continue
-                    raise ScopeReviewUnavailable('Requirement review incomplete; missing or duplicated original decisions: ' + ', '.join(missing or ids))
+                    raise RequirementReviewUnavailable('Requirement review incomplete; missing or duplicated original decisions: ' + ', '.join(missing or ids))
             retained_missing = [text for text in dict.fromkeys(retained_requirements)
                                 if isinstance(text, str) and text.strip() and
                                 ' '.join(text.split()) not in {' '.join(row['text'].split()) for row in reqs}]
@@ -1252,7 +1266,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                         'original id and each retained text from the response template; leave unproved claims false. '
                         'This is a review-format retry, not authorization to edit source.')
                     continue
-                raise ScopeReviewUnavailable('Requirement review incomplete; missing retained original decisions')
+                raise RequirementReviewUnavailable('Requirement review incomplete; missing retained original decisions')
             resolve_controller(reqs, review_changes)
             problems = [p for p in problems if not controller_problem(p, reqs)]
             for requirement in reqs:
@@ -1298,6 +1312,7 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
         from engine.recovery import clean
         REVIEW_FAILURE.set(type(exc).__name__ + ': ' + clean(exc, 180))
         SCOPE_UNDECIDED.set(isinstance(exc, ScopeReviewUnavailable))
+        REVIEW_UNDECIDED.set(isinstance(exc, (ScopeReviewUnavailable, RequirementReviewUnavailable)))
         return None
 
 

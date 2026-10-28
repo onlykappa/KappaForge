@@ -76,4 +76,18 @@ The original ledger is retained as historical evidence. Later corrections and sc
 | [P3-065](issue-log.md) | PATCHED; local regression verified | Saved asks and behavioral test citations remain mandatory;160 focused tests and full discovery passed. Trial40684862539 exposed the separate reporting-domain issue066. |
 | [P3-066](issue-log.md) | PATCHED; live confirmation pending | Candidate-bound execution/report receipts and before-write category guard;16 reporting regressions and54 report/state tests passed. Full engine1,234/combined1,241 run,31 skipped each. No device proof from simulator CI. |
 
+| P3-067 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-068 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-069 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-070 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-071 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-072 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-073 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-074 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-075 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-076 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+| P3-077 | PATCHED locally; exact-head CI pending | Owner review mapping, before/after evidence and limits in [owner-review-followups.md](owner-review-followups.md). |
+
 No owner-approved ACCEPTED LIMITATION disposition is invented. Future Phase3.7 action-specific lifecycle grants and production/native-device checks remain explicitly tracked roadmap work, not delivered features or acceptance evidence. Phase3.1 closeout is still withheld while final updated-engine task acceptance and exact-head combined CI are pending. Owner has authorized Phase3.2 after Phase3.1 closeout.
+
+Owner-authorized review follow-ups067–077: full combined1,258 Python run, OK,31 skipped; Node884 passed, zero skips. First full run found a new fixture publisher leak; the corrected fixture and complete rerun pass. The queued-run and disabled-paid-rescue allegations are qualified in owner-review-followups.md; no unsupported limitation is invented. Owner now explicitly authorizes merging309/311 after verification; this supersedes their prior draft/no-merge instruction, without fabricating Phase3.1 closeout.

@@ -529,6 +529,26 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Broader validation: full isolated discovery1,234 run and combined discovery1,241 run, OK,31 skipped each with ast-grep on PATH; final16 reporting regressions also passed after the last concise-claim parser refinement. An earlier preliminary run skipped three structural cases due to PATH; the fresh full runs include them. Eight structural integration tests, ten rule fixtures, shipped-code scan, execution-policy, dependency-map and whitespace checks passed.
 - Status: PATCHED locally; one serial updated-engine confirmation pending. This narrow policy checks recognized validation-category claims, not arbitrary prose, individual test counts, screenshot contents or physical hardware. Native simulator CI never grants physical-device proof. No cap, counter, deadline or source-proof gate changed.
 
+## Owner review follow-ups — PR309 / PR311 (2026-10-28)
+
+The owner supplied both reviews and explicitly authorized patching the existing PRs, pushing and merging after verification. No separate repair PR is requested. These findings were recorded before production edits; initial production-path results are in owner-review-before.log (7 tests:3 failures/5 errors, including negative-phrasing subtests). The duplicate-definition check passes in309 and reproduces in311. Existing progress.act calls in check_the_work already have hasattr guards; classify_task(None,...) and progress.now on a resumed review remain unguarded.
+
+| ID | Finding / scope | Before evidence / required regression | Status |
+| --- | --- | --- | --- |
+| P3-067 | task_intake script cannot import engine (311) | Isolated script import must accept a valid unexpired owner issue without PYTHONPATH. | PATCHED locally; final CI pending |
+| P3-068 | Four shadowing publication test definitions (311) | AST uniqueness check and unchanged stronger ValueError assertions. | PATCHED locally; final CI pending |
+| P3-069 | Reporting rejects negative/failure wording or loses subset-publication receipt (shared) | Real guard negative-phrasing and failure receipt tests fail; exact validated tree must bind publication, not arbitrary subsets. | PATCHED locally; final CI pending |
+| P3-070 | Intake dispatch visibility race / fragile title /1000-run ceiling (311) | Durable pre-dispatch claim under per-task workflow serialization; repeated events with no visible run dispatch once; old histories stop safely. | PATCHED locally; final CI pending |
+| P3-071 | Blank-action trial can adopt new engine without explicit Fix (shared) | attest(...previous=None, INPUT_ACTION='') unexpectedly succeeds. Exact pinned continuation remains permitted. | PATCHED locally; final CI pending |
+| P3-072 | Resumed review/classification requires live progress object (shared) | check_the_work(...progress=None) raises AttributeError before review. | PATCHED locally; final CI pending |
+| P3-073 | Cancellation generation, queued coverage and persistent status errors (311 source, shared inherited code) | Old cancellation must never close renewed scope; newer queued runner prevents termination; transient reads clear independently of delivery errors. | PATCHED locally; final CI pending |
+| P3-074 | Explicit Fix retains terminal repeat streak; exploratory failure replaces regression evidence (shared) | Same first tool on Fix immediately stops despite remaining budget. Preserve total action/attempt counters and actual test failure. | PATCHED locally; final CI pending |
+| P3-075 | Requirement-format failure mislabeled scope / skips rescue (shared) | Distinguish requirement format from actual incomplete file_scope; preserve no-unsupported-edit boundary. | PATCHED locally; final CI pending |
+| P3-076 | Lossless text comparison repeated within review retries (shared) | Same task/requirements must reuse immutable reference encoding during bounded retries. | PATCHED locally; final CI pending |
+| P3-077 | Inventory routing budget/priority hides workflow/config paths (shared) | Inventory task currently gets708-character listing, below restored4k routing budget. | PATCHED locally; final CI pending |
+
+[Detailed review mapping, baseline outcomes and limits](owner-review-followups.md). The paid-rescue assertion is not reproduced: premium_possible intentionally returns false under the existing $0 policy. Queued-run coverage also already worked on the inspected source; its control remains. All other listed corrections have meaningful regressions. Final full suites passed:3091,246 Python and3111,258 run,31 skipped each; Node884 with zero skips,133 focused shared checks,38 resource/isolation checks and29 intake/workflow checks pass. Ten structural rules, shipped-source scan (preexisting warnings, no errors), web/bundle, policy/map and whitespace checks pass. Exact-head CI remains pending; merge is authorized only after verification.
+
 ## Finding template
 
 ### P3-NNN — short defect title

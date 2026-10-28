@@ -11,7 +11,7 @@ TYPES = {
 }
 SUCCESS = re.compile(r'\b(?:passed|succeeded|successful|success|validated|completed|executed|performed|ran|built|compiled|tested|worked|checked)\b|\b(?:was|were|have|has)\s+(?:been\s+)?run\b', re.I)
 FAILURE = re.compile(r'\b(?:failed|failure)\b', re.I)
-NEGATIVE = re.compile(r'\b(?:not|never)\s+(?:been\s+)?(?:run|passed|executed|performed|validated|completed|tested|attempted)\b|\bno\s+(?:\w+[/-]?\s*){0,5}(?:were|was|have been)\s+run\b', re.I)
+NEGATIVE = re.compile(r"\b(?:not|never|cannot|can't|couldn't|didn't|unable to)\s+(?:(?:yet|actually|been|be|able|to|all)\s+){0,5}(?:run|passed|executed|performed|validated|completed|tested|attempted|successful|succeeded)\b|\bno\s+(?:\w+[/-]?\s*){0,5}(?:were|was|have been)\s+run\b", re.I)
 
 
 def constraint(text):
@@ -99,9 +99,7 @@ def claimed(body, scope):
     claims = []
     for line in re.split(r'[\n;]|\bbut\b', body):
         clean = NEGATIVE.sub('', line)
-        outcome = ('success' if SUCCESS.search(clean) else
-                   'test_failure' if FAILURE.search(clean) and re.search(r'\btests?\b', clean, re.I) else
-                   'failure' if FAILURE.search(clean) else None)
+        outcome = 'success' if SUCCESS.search(clean) else 'failure' if FAILURE.search(clean) else None
         if outcome:
             validation = re.search(r'\b(?:tests?|validation|checks?|checked|workflow|regression|smoke|compiled|built|simulator|KAPPA_VALIDATION_V1)\b', clean, re.I)
             claims += [(kind, outcome) for kind, pattern in TYPES.items()
@@ -163,6 +161,15 @@ def observe_precommit(journal, data, session):
         return
     record.control['claim_precommit'] = dict(candidate=record.identity['candidate'],
         checkpoint=journal.state['executionCheckpoint']['hash'], patch=(data.get('patchRef') or {}).get('hash'))
+    # A validated patch can mention files already identical to its immutable base.
+    # Publishing just its actual delta produces the same tested tree. No other subset qualifies.
+    if hasattr(session, 'changes') and hasattr(session, 'base'):
+        from engine import execution
+        full = execution.patch(session)
+        if execution.digest(full) == record.control['claim_precommit']['patch']:
+            delta = {p: value for p, value in full.items()
+                     if session.base.files.get(p) != (value.encode('utf-8') if value is not None else None)}
+            record.control['claim_precommit']['netPatch'] = execution.digest(delta)
 
 
 def published(parent, child, changes):
@@ -171,6 +178,6 @@ def published(parent, child, changes):
     if observed:
         _, record, journal, _ = observed
         pending = record.control.get('claim_precommit') or {}
-        if (pending.get('candidate') == parent and pending.get('patch') == execution.digest(changes)
+        if (pending.get('candidate') == parent and execution.digest(changes) in (pending.get('patch'), pending.get('netPatch'))
                 and pending.get('checkpoint') == (journal.state.get('executionCheckpoint') or {}).get('hash')):
             record.control['claim_precommit'] = dict(pending, candidate=child)

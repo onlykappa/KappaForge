@@ -2,6 +2,9 @@
 import json
 import os
 import re
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -52,20 +55,38 @@ def eligible(issue, action, label_name=""):
 def already_dispatched(issue_number, created_at, token):
     earliest = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     for page in range(1, 11):
-        query = urllib.parse.urlencode({"event": "workflow_dispatch", "per_page": 100, "page": page})
+        query = urllib.parse.urlencode({"event": "workflow_dispatch", "created": ">=" + created_at, "per_page": 100, "page": page})
         runs = request(f"/repos/{ROOT}/actions/workflows/agent.yml/runs?{query}", token).get("workflow_runs", [])
         for run in runs:
-            if (str(run.get("display_title", "")).startswith(f"Agent task #{issue_number} ")
+            title = str(run.get("display_title", "")).strip()
+            if ((title == f"Agent task #{issue_number}" or title.startswith(f"Agent task #{issue_number} "))
                     and datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")) >= earliest):
                 return True
-        if len(runs) < 100:
+        if len(runs) < 100 or any(datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) < earliest for r in runs):
             return False
-    raise RuntimeError("Task workflow history exceeded the supported inspection limit")
+    raise RuntimeError("Task creation window contains too many workflow runs to establish dispatch history safely")
 
 
 def dispatch(issue, token):
     if already_dispatched(issue["number"], issue["created_at"], token):
         return "already-dispatched"
+    # task-intake.yml serializes opened/labeled events by issue. Persist the debit before
+    # dispatch: Actions run listings can lag a successful POST. Unknown delivery is never replayed.
+    marker = '<!-- KAPPA_INTAKE_V1 ' + json.dumps(dict(issue=int(issue['number']), created=issue['created_at']), sort_keys=True) + ' -->'
+    for page in range(1, 101):
+        comments = request(f"/repos/{ROOT}/issues/{int(issue['number'])}/comments?per_page=100&page={page}", token)
+        if not isinstance(comments, list):
+            raise RuntimeError('Intake claim inventory unavailable; dispatch refused')
+        if any(marker in (c.get('body') or '') and (c.get('user') or {}).get('login') in ('github-actions[bot]', 'onlykappa') for c in comments):
+            return 'already-dispatched'
+        if len(comments) < 100:
+            break
+    else:
+        raise RuntimeError('Intake claim inventory incomplete; dispatch refused')
+    claim = request(f"/repos/{ROOT}/issues/{int(issue['number'])}/comments", token,
+                    {'body': 'Initial task dispatch claimed. If delivery is interrupted, inspect Actions before an explicit Fix.\n\n' + marker})
+    if not isinstance(claim, dict) or type(claim.get('id')) is not int or claim['id'] <= 0 or marker not in (claim.get('body') or ''):
+        raise RuntimeError('Intake claim was not acknowledged; dispatch refused')
     request(f"/repos/{ROOT}/actions/workflows/agent.yml/dispatches", token,
             {"ref": "main", "inputs": {"issue_number": str(int(issue["number"]))}})
     return "dispatched"

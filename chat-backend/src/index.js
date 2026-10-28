@@ -447,8 +447,15 @@ const workerImplementation = {
       if(statusOnly&&cancelled.state!=='cancelled')return json({error:'Cancellation has not been requested'},409,cors);
       if(cancelled.issueNumber){
         try{capabilityRegistry.validate('tasks.cancel',{task:cancelled.issueNumber})}catch{return json({error:'Invalid cancellation target'},400,cors)}
-        const pendingDelivery=!cancelled.cancellation?.issueClosedAt||!!cancelled.cancellation?.errors?.length;
-        try{cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop:!statusOnly&&(!cancelled.replayed||pendingDelivery)})}
+        try{
+          // Refresh read evidence before replay: a transient status failure is not a new stop request.
+          let refreshed=false;
+          if(cancelled.replayed&&!statusOnly){cancelled.cancellation=await cancellationEvidence(env,cancelled);refreshed=true}
+          const evidence=cancelled.cancellation;
+          const pendingDelivery=!evidence?.issueClosedAt||!!evidence?.deliveryErrors?.length||evidence?.inventoryComplete!==true||evidence?.runs?.some(r=>r.status!=='completed'&&!r.cancelRequestedAt);
+          const requestStop=!statusOnly&&(!cancelled.replayed||pendingDelivery);
+          if(requestStop||!refreshed)cancelled.cancellation=await cancellationEvidence(env,cancelled,{requestStop});
+        }
         catch(e){cancelled.cancellation={...cancelled.cancellation,runnerAcknowledgedAt:null,terminatedAt:null,errors:[e.message]}}
         await stub.fetch('https://memory.internal/authorization/cancellation-evidence',{method:'POST',body:JSON.stringify({id:cancelled.id,conversationId:cancelled.conversationId,cancellation:cancelled.cancellation})});
       }

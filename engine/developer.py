@@ -665,7 +665,7 @@ def classify_task(progress, journal, repo, request):
         if journal and classified:
             requirements.save(journal, classified, repo, request)
     requirements.CURRENT.set(classified or None)
-    if classified:
+    if classified and callable(getattr(progress, 'act', None)):
         counts = collections.Counter(c for r in classified for c in r.categories)
         progress.act("plan", f"{'Reloaded' if resumed else 'Classified'} {len(classified)} requirement"
                      f"{'s' if len(classified) != 1 else ''}: " + ", ".join(f"{n} {c.replace('_', ' ')}" for c, n in counts.items())
@@ -2523,6 +2523,18 @@ MAX_CHECK_ROUNDS = 3
 MAX_REPAIR_TARGETS = 3
 
 
+class _QuietReviewProgress:
+    """Fresh-process verification can run without a live UI progress publisher."""
+    def now(self, *args, **kwargs):
+        pass
+
+    def ok(self, *args, **kwargs):
+        pass
+
+    def act(self, *args, **kwargs):
+        pass
+
+
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
                    receipt=None, defer_lifecycle=False, review_only=False, prior_assessments=None):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
@@ -2531,6 +2543,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
 
     Returns the final changes, a one-paragraph verdict for the owner, and the problems still open."""
     from engine import verify
+    progress = progress if progress is not None else _QuietReviewProgress()
     cache = dict(sources)
 
     def read(path):
@@ -2651,7 +2664,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         # one. The re-check after it is free again.
         if rescued is not None:
             break
-        if review is None and verify.SCOPE_UNDECIDED.get():
+        if review is None and verify.REVIEW_UNDECIDED.get():
             # An undecided scope review authorizes no source repair. The saved candidate and this open problem
             # stay on the draft, so Retry continues from it instead of restarting the task.
             break
@@ -3907,7 +3920,7 @@ def fix_pull_request(issue, api_key, token):
     final = dict(changes)
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)
-    remaining = {p: text for p, text in final.items() if text != saved['changes'].get(p)}
+    remaining = {p: text for p, text in final.items() if p not in saved['changes'] or text != saved['changes'][p]}
     # Say what triggered the repair: failed checks, or only work the original task still needs (#205).
     purpose = "make sandbox tests pass" if failures else "finish the unfinished requirements"
     writer = push_token(repo, repo_token, remaining)

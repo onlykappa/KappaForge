@@ -66,9 +66,11 @@ class SandboxRepairController:
                         and self.state.get('stop_reason') == 'repeated_tool_call'
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
                     self.state['phase'] = 'repair'
+                    # A new explicit Fix starts a fresh consecutive-call streak, not a new action budget.
+                    self.state['repeated'], self.state['action_key'] = 0, None
                     self.state['history'].append('Explicit Fix continues the retained candidate with remaining budget; prior counters and evidence retained')
                     for run in reversed(self.session.results):
-                        if run.status == 'failed':
+                        if run.status == 'failed' and run.profile == 'test' and self._test_command(run.argv):
                             self.state['last_summary'] = self._diagnostics(dict(status='ok', results=[self.tools._summary(run)]))
                             self._investigate_failure(self.state['last_summary'])
                             break
@@ -180,7 +182,9 @@ class SandboxRepairController:
                 observed = step.get("result") or {}
                 self._report(step.get("tool"), step.get("args") or {}, observed)
                 self._refresh_patch_context(step)
-                if step.get('tool') == 'run_command' and observed.get('status') == 'failed':
+                # Focused test runners can refine suite evidence; an exploratory grep exit1 cannot.
+                if (step.get('tool') == 'run_command' and observed.get('status') == 'failed'
+                        and self._test_command(observed.get('argv'))):
                     self.state['last_summary'] = self._diagnostics(dict(status='ok', results=[observed]))
                     self._investigate_failure(self.state['last_summary'])
                 if step.get("tool") in exploration.Explorer.TOOLS:
@@ -223,6 +227,20 @@ class SandboxRepairController:
             return self._result("failed", "controller_error", f"{type(exc).__name__}: {exc}")
         finally:
             self.session.close()
+
+    def _test_command(self, argv):
+        if not isinstance(argv, list) or not argv:
+            return False
+        if any(argv == command for _, command in self.session.test_commands()):
+            return True
+        rest = argv[1:]
+        if argv[0] in ('python', 'python3'):
+            while rest and rest[0] in ('-B', '-u'):
+                rest = rest[1:]
+            return len(rest) >= 2 and rest[0] == '-m' and rest[1] in ('unittest', 'pytest')
+        return (argv[0] == 'node' and rest[:1] == ['--test']
+                or argv[0] == 'npm' and (rest[:1] in (['test'], ['t'])
+                    or len(rest) >= 2 and rest[0] == 'run' and (rest[1] == 'test' or rest[1].startswith('test:'))))
 
     def _verified(self, test_result):
         if test_result.get("status") != "ok" or not test_result.get("passed"):
