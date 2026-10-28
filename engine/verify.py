@@ -750,7 +750,7 @@ def review_inventory(paths, task, limit=600):
                                  'all changed files still require scope review.)' if len(selected) < len(paths) else '')
 
 
-def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=()):
+def review_prompt(task, diff, paths, context='', inventory_limit=600, classified=(), scope_paths=(), scope_lines=False):
     schema = dict(requirements=[dict(text='short requirement', met=True,
                   evidence=dict(path='existing/source.js', quote='literal source fragment proving this requirement'))],
                   problems=['file: literal evidence, concrete defect and fix'],
@@ -759,8 +759,8 @@ def review_prompt(task, diff, paths, context='', inventory_limit=600, classified
         # One authoritative output shape: the generic short-text example used to compete with the saved checklist.
         schema['requirements'] = [dict(id=r.id, met=None, evidence=None, test=None) for r in classified]
     if scope_paths:
-        schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task', quote=None)
-                                for p in sorted(scope_paths)]
+        schema['file_scope'] = [dict(path=p, necessary=None, reason='connection to the original owner task',
+                                   **({'lines': None} if scope_lines else {'quote': None})) for p in sorted(scope_paths)]
     listing = review_inventory(paths, task, limit=inventory_limit)
 
     from engine import inventory
@@ -1057,7 +1057,8 @@ def model_review(run_model, api_key, task, read, changes, paths, allowed=None, c
                                                       line_context=line_context, clues=task + '\n' + getattr(goal, 'review_diff', ''))
                     prompt = review_prompt(task, diff_text(read, review_changes, limit=diff_limit), paths, context,
                                            inventory_limit=min(600, source_limit // 2), classified=classified,
-                                           scope_paths=sorted(review_changes) if scope_required else ())
+                                           scope_paths=sorted(review_changes) if scope_required else (),
+                                           scope_lines=bool(line_context))
                     if classified:
                         from engine import requirements
                         prompt += requirements.review_instructions(classified)

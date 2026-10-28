@@ -21,3 +21,5 @@ PATH=/workspace/kappaforge-venv/bin:$PATH python -m unittest tests.test_authoriz
 18 passed, zero failures/skips, with fake transport. Coverage includes waiting for the owner without writes, failed/pending checks, forbidden/foreign workflow origin, original no-merge authority, stale candidate rejection, native-build requirements, exact candidate dispatch identity and refusal to build another task's branch. These are existing regressions, not 18 new tests or live native execution.
 
 Remaining: fully trace agent/continuous job and direct-client paths, task282 monitor, review/report workflows and any remaining provider/diagnostic workflows with mutations; reconcile against the architecture inventory; then validate the combined delivery revision. Earlier Python-helper, publication, backend and intake traces retain their own pinned snapshots and limits. Phase 3.1 remains incomplete.
+
+Follow-up: [complete workflow entrypoint inventory](workflow-entrypoint-inventory.md) accounts for all23 files and the remaining direct-client/monitor/diagnostic paths, with93 tests run successfully (12 skipped). Its source-versus-execution and future Phase3.7 limits remain explicit.
