@@ -118,3 +118,24 @@ test('closed or merged cards with uncertain old progress can still request a sto
   box.trackedJobs[0].cancellation={terminatedAt:1};assert.match(box.taskMenuSheet(),/data-task-act="cancel"/,'a legacy incomplete receipt still offers Cancel');
  }
 });
+test('a transient status outage cannot erase a known live runner from later cancellation checks',async()=>{
+ const saved=globalThis.fetch,known={id:777,path:'.github/workflows/agent.yml',display_title:'Agent task #308',status:'in_progress',created_at:new Date(Date.now()-10000).toISOString()};let outage=true;
+ globalThis.fetch=async url=>String(url).endsWith('/issues/308')?response({...task(),state:'closed'}):outage?new Response('',{status:503}):String(url).endsWith('/actions/runs/777')?response(known):response({workflow_runs:[]});
+ try{
+  const record={issueNumber:308,cancellation:{requestedAt:Date.now(),runs:[known]}};record.cancellation=await cancellationEvidence({},record);assert.equal(record.cancellation.terminatedAt,null);
+  outage=false;const fresh=await cancellationEvidence({},record);assert.equal(fresh.terminatedAt,null,'known live runner cannot disappear after an outage');assert.equal(fresh.runs[0].id,777);
+ }finally{globalThis.fetch=saved}
+});
+test('a newly observed queued runner survives an outage later in the same status scan',async()=>{
+ const saved=globalThis.fetch,known={id:888,path:'.github/workflows/agent.yml',display_title:'Agent task #308',status:'queued',created_at:new Date(Date.now()-10000).toISOString()};let outage=true;
+ globalThis.fetch=async url=>{const u=new URL(url);if(u.pathname.endsWith('/issues/308'))return response({...task(),state:'closed'});if(u.pathname.endsWith('/actions/runs/888'))return response({...known,status:'in_progress'});if(outage&&u.searchParams.get('status')==='queued')return response({workflow_runs:[known]});if(outage)return new Response('',{status:503});return response({workflow_runs:[]});};
+ try{const record={issueNumber:308,cancellation:{requestedAt:Date.now(),runs:[]}};record.cancellation=await cancellationEvidence({},record);outage=false;const fresh=await cancellationEvidence({},record);assert.equal(fresh.terminatedAt,null);assert.equal(fresh.runs[0].id,888);}finally{globalThis.fetch=saved}
+});
+test('a runner outside an old cancellation cutoff stays protected, then clears its error only after stopping',async()=>{
+ const saved=globalThis.fetch,cutoff=Date.now(),known={id:999,path:'.github/workflows/agent.yml',display_title:'Agent task #308',status:'queued',created_at:new Date(cutoff+1000).toISOString()};let completed=false,writes=0;
+ globalThis.fetch=async(url,o={})=>{if(o.method)writes++;return String(url).endsWith('/issues/308')?response({...task(),state:'closed'}):response({workflow_runs:[{...known,status:completed?'completed':'queued'}]});};
+ try{
+  const record={issueNumber:308,cancellation:{requestedAt:cutoff}};record.cancellation=await cancellationEvidence({},record,{requestStop:true});assert.equal(record.cancellation.terminatedAt,null);assert.ok(record.cancellation.deliveryErrors.length);assert.equal(writes,1,'only issue closure; the newer runner is protected');
+  completed=true;const fresh=await cancellationEvidence({},record);assert.deepEqual(fresh.errors,[]);assert.ok(fresh.terminatedAt);
+ }finally{globalThis.fetch=saved}
+});

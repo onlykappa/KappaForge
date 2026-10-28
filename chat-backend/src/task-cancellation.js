@@ -13,7 +13,7 @@ export async function cancellationTarget(env,number){
 export async function cancellationEvidence(env,record,{requestStop=false}={}){
  const base='https://api.github.com/repos/onlykappa/KappaForge',headers=githubHeaders(env,'KappaForge-cancel');
  const old=record.cancellation||{},legacyDelivery=(old.errors||[]).filter(e=>/Issue closure failed|Runner \d+ cancellation request failed/.test(e));
- const cancellation={...old,runnerAcknowledgedAt:null,terminatedAt:null,runs:[],inventoryComplete:false,coverage:'task-bound-runners',terminationScope:'observed runners only',deliveryErrors:requestStop?[]:[...(old.deliveryErrors??legacyDelivery)],statusErrors:[],errors:[]};
+ const cancellation={...old,runnerAcknowledgedAt:null,terminatedAt:null,runs:(old.runs||[]).map(r=>({...r})),inventoryComplete:false,coverage:'task-bound-runners',terminationScope:'observed runners only',deliveryErrors:requestStop?[]:[...(old.deliveryErrors??legacyDelivery)],statusErrors:[],errors:[]};
  const finish=()=>{cancellation.errors=[...new Set([...cancellation.deliveryErrors,...cancellation.statusErrors])];return cancellation};
  if(!record.issueNumber)return finish();
  const cutoff=old.requestedAt??old.authorizationRevokedAt;
@@ -43,6 +43,11 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
  const title=new RegExp('^(?:Agent task #'+record.issueNumber+'(?: |$)|Recovery task #'+record.issueNumber+'$)');
  try{
   const observed=new Map();let complete=true;
+  const remember=run=>{
+   const evidence={id:run.id,status:run.status,conclusion:run.conclusion||null,observedAt:Date.now()};
+   const prior=cancellation.runs.find(r=>r.id===run.id);
+   if(prior)Object.assign(prior,evidence);else cancellation.runs.push(evidence);
+  };
   // Completed history is irrelevant to stopping current work. A bounded active inventory
   // includes queued, held and running attempts even after thousands of old runs.
   for(const status of ['queued','in_progress','waiting','requested','pending']){
@@ -53,7 +58,7 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
     const result=await response.json();if(!Array.isArray(result.workflow_runs))throw Error('Invalid runner status');
     for(const run of result.workflow_runs)if(['.github/workflows/agent.yml','.github/workflows/recovery.yml'].includes(run.path)&&title.test(run.display_title||'')){
      if(!Number.isSafeInteger(run.id))throw Error('Invalid task runner identity');
-     observed.set(run.id,run);
+     observed.set(run.id,run);remember(run);
     }
     if(result.workflow_runs.length<100){ended=true;break}
    }
@@ -66,8 +71,9 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
    if(!response.ok)throw Error('Known runner status unavailable: '+response.status);
    const run=await response.json();
    if(run.id!==prior.id||!['.github/workflows/agent.yml','.github/workflows/recovery.yml'].includes(run.path)||!title.test(run.display_title||''))throw Error('Known task runner identity changed');
-   observed.set(run.id,run);
+   observed.set(run.id,run);remember(run);
   }
+  cancellation.runs=[]; // Replace saved live identities only after all required reads succeeded.
   for(const run of observed.values()){
    const evidence={id:run.id,status:run.status,conclusion:run.conclusion||null,observedAt:Date.now()};
    const prior=old.runs?.find(r=>r.id===run.id);if(prior?.cancelRequestedAt)evidence.cancelRequestedAt=prior.cancelRequestedAt;
@@ -83,7 +89,7 @@ export async function cancellationEvidence(env,record,{requestStop=false}={}){
   }
   cancellation.inventoryComplete=complete;
   cancellation.deliveryErrors=cancellation.deliveryErrors.filter(e=>{
-   const match=e.match(/^Runner (\d+) cancellation request failed:/);
+   const match=e.match(/^Runner (\d+) (?:cancellation request failed:|is outside this cancellation authorization)/);
    return !match||!cancellation.runs.some(r=>r.id===Number(match[1])&&r.status==='completed');
   });
   if(complete&&cancellation.issueClosedAt&&!cancellation.deliveryErrors.length&&cancellation.runs.every(r=>r.status==='completed')){

@@ -620,6 +620,8 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 
 P3-087 closed-card follow-up: a new production-menu regression fails on495ff15 for a closed/merged card whose old progress still says running. Delete is correctly disabled while runner state is uncertain, but Cancel is hidden, leaving no recovery control. The correction keeps Cancel available until a full stop/closure receipt is confirmed, including legacy partial receipts; it does not permit blind deletion. All49 task/feed/menu/history checks pass.
 
+P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503 clears the saved known-live runner list; the next empty active index falsely establishes termination. Correction preserves both prior and newly observed live identities through failed/incomplete reads, replacing them only after successful inventory and individual rechecks. Two failing-before outage regressions pass. A third regression proves a newer runner is never cancelled under an old cutoff and its delivery error clears only after it is observed completed. Final cancellation/authority selection95 passed.
+
 ## Finding template
 
 ### P3-NNN — short defect title
