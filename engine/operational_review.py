@@ -13,6 +13,9 @@ LIMITS = 'Keep model requests small and retain existing request/provider limits 
 def kind(text):
     from engine import requirements
     text = ' '.join(str(text or '').split())
+    from engine import report_claims
+    if report_claims.constraint(text):
+        return 'reporting'
     if requirements.FRESH_BRANCH_RE.fullmatch(text):
         return 'origin'
     if FOREIGN_RE.fullmatch(text):
@@ -139,7 +142,10 @@ def resolve(reqs, changes):
             continue
         _, record, journal, scope = observed
         proof = None
-        if category == 'origin':
+        if category == 'reporting':
+            from engine import report_claims
+            proof = report_claims.controller_proof()
+        elif category == 'origin':
             origin = record.control.get('origin')
             if (origin_valid(origin, scope) and origin['candidate'] == record.identity['candidate']
                     and ('default branch' not in req['text'].lower() or origin.get('default') is True)):

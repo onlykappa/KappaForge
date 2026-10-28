@@ -219,6 +219,8 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
         move_branch(repo, writer, branch, commit['sha'], create=create)
     from engine import operational_review
     operational_review.published(parent, commit['sha'])
+    from engine import report_claims
+    report_claims.published(parent, commit['sha'], changes)
     if journal:
         journal.state['phase'] = 'publication'
         journal.checkpoint(commit['sha'], base=base, files=changes)

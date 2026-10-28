@@ -385,6 +385,8 @@ class Execution:
                 receipt = _write_blob(self.journal, sanitized(self.data), self.journal.state.get('executionCheckpoint'))
                 self.journal.state['executionCheckpoint'] = receipt
                 self.journal.state['executionDiagnostics'] = diagnostic
+                from engine import report_claims
+                report_claims.observe_precommit(self.journal, self.data, self.session)
                 self.journal.persist()
             if self.progress:
                 self.progress.execution_update(copy.deepcopy(diagnostic))
