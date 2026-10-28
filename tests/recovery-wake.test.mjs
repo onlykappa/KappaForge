@@ -75,6 +75,24 @@ test('an owner-created GitHub task wakes on the same terms the engine authorizes
  }
 });
 
+test('recovery accepts case-insensitive descriptor headers but rejects ambiguous modes and foreign values',async()=>{
+ for(const [change,expected] of [
+  [body=>body.replace('Mode:', 'mOdE:'),202],
+  [body=>body.replace('Repository:', 'rEpOsItOrY:'),202],
+  [body=>body+'\nMODE: develop',409],
+  [body=>body.replace('Mode: develop', 'Mode: Develop'),409],
+  [body=>body.replace('onlykappa/KappaForge','ONLYKAPPA/KappaForge'),409],
+  [body=>body+'\nRepository: someone-else/Other',409]
+ ]){
+  const w=githubTask(fixture());try{
+   w.issue.body=change(w.issue.body);
+   w.journal.digest=createHash('sha256').update(w.issue.body).digest('hex');
+   assert.equal((await w.schedule()).status,expected,w.issue.body);
+   assert.equal(deliveries(w).length,0,'registration alone never dispatches');
+  }finally{w.restore()}
+ }
+});
+
 test('production label casing registers recovery while unrelated labels remain unauthorized',async()=>{
  const w=fixture();try{
   w.issue.labels=[{name:'kappa-Task'}];

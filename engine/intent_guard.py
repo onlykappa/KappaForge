@@ -232,6 +232,8 @@ def guard_request(url, payload, method, read_current):
         raise PermissionError("Privileged tool invocation has no user-authorized execution scope")
     scope.check_current(read_current(scope.number))
     scope.permit(url, payload, method)
+    from engine import report_claims
+    report_claims.guard(scope, payload)
     if scope.state == "planning":
         scope.transition("executing")
 

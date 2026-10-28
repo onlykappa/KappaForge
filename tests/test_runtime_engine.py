@@ -59,6 +59,65 @@ class RuntimeEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, 'reviewed main'):
             runtime_engine.attest(self.journal.scope, self.world.read, None, self.env, 'b' * 40)
 
+    def trial(self):
+        ref = 'fix/130-engine-recovery'
+        self.world.refs[ref] = 'b' * 40
+        self.runs['33'] = dict(self.origin, head_branch=ref)
+        pr = dict(number=309, state='open', draft=True, user={'login': 'onlykappa'}, changed_files=2,
+                  base=dict(ref='main', repo={'full_name': recovery.ROOT}),
+                  head=dict(ref=ref, sha='b' * 40, repo={'full_name': recovery.ROOT}))
+        comparison = dict(status='ahead', merge_base_commit={'sha': 'a' * 40},
+                          files=[dict(filename='engine/developer.py'), dict(filename='tests/test_execution_recovery.py')])
+        base = self.world.read
+        def read(path):
+            if path == f'repos/{recovery.ROOT}/pulls?state=open&head=onlykappa:{ref}&per_page=2':
+                return [pr]
+            if path == f'repos/{recovery.ROOT}/pulls/309':
+                return pr
+            if '/compare/' in path:
+                return comparison
+            return base(path)
+        env = dict(self.env, GITHUB_RUN_ID='33', GITHUB_REF_NAME=ref)
+        return read, env, pr, comparison
+
+    def test_owner_repair_pr_engine_trial_and_pinned_continuation(self):
+        read, env, pr, comparison = self.trial()
+        receipt = runtime_engine.attest(self.journal.scope, read, None, env, 'b' * 40)
+        self.assertEqual(receipt['trialPR'], 309)
+        # A later PR update cannot substitute its new engine for a pinned continuation.
+        pr['head']['sha'] = 'c' * 40
+        ref = f'kappa/recovery-130-{self.journal.scope.digest[:12]}-1'
+        self.world.refs[ref] = 'b' * 40
+        self.runs['34'] = dict(self.origin, head_branch=ref)
+        resume = dict(env, GITHUB_RUN_ID='34', GITHUB_REF_NAME=ref, INPUT_ACTION='resume:1:fixture')
+        self.assertEqual(runtime_engine.attest(self.journal.scope, read, receipt, resume, 'b' * 40), receipt)
+        with self.assertRaises(PermissionError):
+            runtime_engine.attest(self.journal.scope, read, receipt, dict(resume, GITHUB_SHA='c' * 40), 'c' * 40)
+
+    def test_engine_trial_refuses_foreign_stale_closed_and_unreviewed_infrastructure(self):
+        changes = [lambda p, c: p.update(state='closed'), lambda p, c: p.update(draft=False),
+                   lambda p, c: p['head'].update(sha='c' * 40),
+                   lambda p, c: p['head'].update(repo={'full_name': 'other/repo'}),
+                   lambda p, c: p.update(user={'login': 'reviewer'}),
+                   lambda p, c: c.update(status='diverged'),
+                   lambda p, c: c['files'][0].update(filename='.github/workflows/agent.yml'),
+                   lambda p, c: c['files'][0].update(previous_filename='config/providers.json'),
+                   lambda p, c: p.update(changed_files=300)]
+        for change in changes:
+            read, env, pr, comparison = self.trial()
+            change(pr, comparison)
+            with self.subTest(change=change), self.assertRaises(PermissionError):
+                runtime_engine.attest(self.journal.scope, read, None, env, 'b' * 40)
+        for change in ({'actor': {'login': 'github-actions[bot]'}},
+                       {'triggering_actor': {'login': 'reviewer'}}, {'event': 'pull_request'}):
+            read, env, _, _ = self.trial()
+            self.runs['33'].update(change)
+            with self.subTest(change=change), self.assertRaises(PermissionError):
+                runtime_engine.attest(self.journal.scope, read, None, env, 'b' * 40)
+        read, env, _, _ = self.trial()
+        with self.assertRaises(PermissionError):
+            runtime_engine.attest(self.journal.scope, read, None, dict(env, INPUT_ACTION='resume:1:fixture'), 'b' * 40)
+
     def test_main_and_stale_checkouts_stop_before_task_work(self):
         self.runs['32'] = dict(self.origin, head_branch='main', head_sha='a' * 40)
         env = dict(self.env, GITHUB_RUN_ID='32', GITHUB_REF_NAME='main', GITHUB_SHA='a' * 40,

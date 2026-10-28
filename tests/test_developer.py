@@ -268,6 +268,17 @@ class DeveloperValidationTests(unittest.TestCase):
         self.assertIn("previous nonblank line 2 uses 4 leading spaces", message)
         self.assertIn("Match the enclosing block's indentation", message)
 
+    def test_duplicate_test_definitions_cannot_silently_replace_regressions(self):
+        duplicate = 'raise AssertionError("must not execute")\nclass Checks:\n    def test_receipt(self):\n        assert False\n    def test_receipt(self):\n        pass\n'
+        message = syntax_error('tests/test_recovery.py', duplicate)
+        self.assertIsNotNone(message)
+        self.assertIn('test_receipt', message)
+        self.assertIn('line 5', message)
+        self.assertIn('line 3', message)
+        self.assertIsNotNone(syntax_error('test_recovery.py', 'def test_receipt(): pass\ndef test_receipt(): pass\n'))
+        self.assertIsNone(syntax_error('tests/test_recovery.py',
+            'class A:\n    def test_receipt(self): pass\nclass B:\n    def test_receipt(self): pass\n'))
+
     def test_oversized_result_reports_exact_limit_and_recommends_small_edits(self):
         source = {"app/main.py": "x = 1\n"}
         proposal = {"files": [{"path": "app/main.py", "content": "x" * (developer.SMALL.file_chars + 1)}]}
@@ -521,9 +532,11 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             return responses.get(path, {})
         answers = [("flash", json.dumps({"read": ["app/main.py"]})),
                    ("flash", json.dumps({"summary": "Cast inputs", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
-                       {"find": "return a + b", "replace": "return int(a) + int(b)"}]}]}))]
-        answers.append(("flash", json.dumps({"file_scope": ADD_SCOPE, "requirements":[{"text":"Cast inputs","met":True,
-            "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"}}],"problems":[]})))
+                       {"find": "return a + b", "replace": "return int(a) + int(b)"}]},
+                       {"path": "tests/test_main.py", "reason": "Exercise the requested feature", "content": ADD_TEST}]}))]
+        answers.append(("flash", json.dumps({"file_scope": ADD_SCOPE + [TEST_SCOPE], "requirements":[{"id":"R1","text":"Add a feature","met":True,
+            "evidence":{"path":"app/main.py","quote":"return int(a) + int(b)"},
+            "test":{"path":"tests/test_main.py","quote":"assert add('1', '2') == 3"}}],"problems":[]})))
         def validate_before_publish(repo, sha, token, changes, task, api_key, allowed, **_kwargs):
             self.assertFalse(any(path.endswith(("/git/commits", "/git/refs", "/pulls")) for path, _ in calls),
                              "no commit, ref or PR exists before sandbox validation")
@@ -536,9 +549,11 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertEqual(url, "https://github.com/onlykappa/KappaForge/pull/50")
         paths = [p for p, _ in calls]
         tree = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/trees")
-        self.assertEqual(tree["tree"][0]["path"], "app/main.py")
-        self.assertIn("int(a) + int(b)", tree["tree"][0]["content"])
-        self.assertEqual(tree["tree"][0]["mode"], "100755")
+        entries = {entry['path']: entry for entry in tree['tree']}
+        self.assertEqual(set(entries), {'app/main.py', 'tests/test_main.py'})
+        self.assertIn("int(a) + int(b)", entries['app/main.py']['content'])
+        self.assertEqual(entries['app/main.py']['mode'], "100755")
+        self.assertEqual(entries['tests/test_main.py']['content'], ADD_TEST)
         ref = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/refs")
         self.assertEqual(ref, {"ref": "refs/heads/kappa/dev-9", "sha": "c" * 40})
         self.assertNotIn("repos/onlykappa/KappaForge/git/refs/heads/main", paths)
@@ -674,7 +689,7 @@ class PrFirstTests(unittest.TestCase):
         answers = [('m', json.dumps({'read': [path], 'stages': ['Add comment']})),
                    ('m', json.dumps({'files': [{'path': path, 'edits': [{'find': before, 'replace': comment + '\n' + before}]}]})),
                    ('m', json.dumps({'requirements': [
-                       {'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': comment}},
+                       {'id': 'R1', 'text': 'Add the comment', 'met': True, 'evidence': {'path': path, 'quote': comment}},
                        {'text': 'Open a draft PR for this change and do not merge it.', 'met': False}], 'problems': []}))]
         observations, responses = [], iter(answers)
         def model_response(*args, **kwargs):
@@ -771,7 +786,16 @@ class PrFirstTests(unittest.TestCase):
 
     def test_pr_creation_failure_keeps_only_the_already_validated_single_commit(self):
         calls, fake_gh = self.world(pr_status=422)
-        model = MagicMock(side_effect=self.answers())
+        answers = self.answers()
+        plan = json.loads(answers[0][1])
+        plan['stage_files'][0].append('tests/test_main.py')
+        generated = json.loads(answers[1][1])
+        generated['files'].append({'path': 'tests/test_main.py', 'reason': 'Exercise numeric-string inputs', 'content': ADD_TEST})
+        review = {'file_scope': ADD_SCOPE + [TEST_SCOPE], 'requirements': [
+            {'id': 'R1', 'text': 'Make add() accept numeric strings.', 'met': True,
+             'evidence': {'path': 'app/main.py', 'quote': 'return int(a) + int(b)'},
+             'test': {'path': 'tests/test_main.py', 'quote': "assert add('1', '2') == 3"}}], 'problems': []}
+        model = MagicMock(side_effect=[('flash', json.dumps(row)) for row in (plan, generated, review)])
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", model), \
                 self.assertRaises(urllib.error.HTTPError):
             produce_development_pr(self.issue(), "key", "token")
@@ -814,12 +838,16 @@ class PrFirstTests(unittest.TestCase):
     def test_staged_build_is_published_once_after_final_validation(self):
         calls, fake_gh = self.world()
         two_stages = [("flash", json.dumps({"read": ["app/main.py"], "stages": ["Cast a", "Cast b"],
-                                            "stage_files": [["app/main.py"], ["app/main.py"]]})),
+                                            "stage_files": [["app/main.py"], ["app/main.py", "tests/test_main.py"]]})),
                       ("flash", json.dumps({"summary": "Cast a", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
                           {"find": "return a + b", "replace": "return int(a) + b"}]}]})),
                       ("flash", json.dumps({"summary": "Cast b", "files": [{"path": "app/main.py", "reason": "Convert the requested add inputs at the function boundary", "edits": [
-                          {"find": "return int(a) + b", "replace": "return int(a) + int(b)"}]}]})),
-                      self.answers()[2]]
+                          {"find": "return int(a) + b", "replace": "return int(a) + int(b)"}]},
+                          {"path": "tests/test_main.py", "reason": "Exercise both numeric-string inputs", "content": ADD_TEST}]})),
+                      ("flash", json.dumps({"file_scope": ADD_SCOPE + [TEST_SCOPE], "requirements": [
+                          {"id": "R1", "text": "Make add() accept numeric strings.", "met": True,
+                           "evidence": {"path": "app/main.py", "quote": "return int(a) + int(b)"},
+                           "test": {"path": "tests/test_main.py", "quote": "assert add('1', '2') == 3"}}], "problems": []}))]
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=two_stages), \
                 patch.object(developer, "review_stage", return_value=(True, "")):
             produce_development_pr(self.issue(), "key", "token")

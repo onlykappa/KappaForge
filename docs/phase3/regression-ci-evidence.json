@@ -1,0 +1,742 @@
+{
+  "recordedDateUTC": "2026-10-28",
+  "repository": "onlykappa/KappaForge",
+  "auditedHead": "f5501afe417a63c4ebc089954d99968ef4e55bb0",
+  "observedMain": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+  "engineRepairHead": "b3a9ba087be3c07382f76afae685e90fdd3b517b",
+  "mergeProvenance": {
+    "phase1": {
+      "merge_commit_sha": "437d74d1826b022b7f6aef05e1cb8e71f5d54ded",
+      "merged_at": "2026-10-25T02:17:58Z",
+      "number": 263
+    },
+    "phase2": {
+      "merge_commit_sha": "b3f8d2f32262a2ae45f23f027712e40cfc70faac",
+      "merged_at": "2026-10-25T16:30:24Z",
+      "number": 264
+    },
+    "gitAncestorChecks": "Both phase merge commits are ancestors of observed main; observed main is an ancestor of audited head."
+  },
+  "localExecution": {
+    "focused": {
+      "command": "python -m unittest tests.test_phase1_acceptance.PolicyAcceptance tests.test_exploration tests.test_task_plan tests.test_requirements tests.test_research tests.test_clarification tests.test_phase2_exploration_repair.ExplorationRepairTests tests.test_phase2_audit_repairs tests.test_execution_recovery tests.test_operational_review tests.test_commit_provenance tests.test_runtime_engine -v",
+      "discovered": 163,
+      "passed": 162,
+      "skipped": 1,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 13.173,
+      "skipReason": "jsonschema is not installed"
+    },
+    "schemaFollowup": {
+      "dependencyInstalled": "jsonschema==4.25.1",
+      "command": "python -m unittest tests.test_requirements.MatrixTests.test_the_published_schema_matches_the_code -v",
+      "discovered": 1,
+      "passed": 1,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "structure": {
+      "ruleTestsPassed": 10,
+      "scanExitCode": 0,
+      "scanSeverities": {
+        "warning": 15
+      }
+    },
+    "otherChecks": {
+      "dependencyMap": "passed",
+      "executionPolicy": "passed"
+    },
+    "notes": [
+      "Local model/API transports are scripted; this is not live-model acceptance.",
+      "Docker, live research and native simulator jobs below are inspected GitHub CI evidence, not local execution."
+    ]
+  },
+  "acceptanceReferences": [
+    {
+      "document": "docs/phase1/acceptance.md",
+      "references": 15,
+      "resolved": 15,
+      "rows": [
+        {
+          "reference": "DevelopmentFlowAcceptance.test_candidate_code_executes_before_the_first_commit",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.DevelopmentFlowAcceptance.test_candidate_code_executes_before_the_first_commit",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 433
+            }
+          ]
+        },
+        {
+          "reference": "test_candidate_code_executes_in_the_sandbox_before_any_publication",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_candidate_code_executes_in_the_sandbox_before_any_publication",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 134
+            }
+          ]
+        },
+        {
+          "reference": "test_test_failures_trigger_targeted_code_changes",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_test_failures_trigger_targeted_code_changes",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 142
+            }
+          ]
+        },
+        {
+          "reference": "test_all_five_repair_attempts_are_separately_recorded",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_all_five_repair_attempts_are_separately_recorded",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 166
+            }
+          ]
+        },
+        {
+          "reference": "test_identical_failed_approaches_are_detected",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_identical_failed_approaches_are_detected",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 187
+            }
+          ]
+        },
+        {
+          "reference": "PolicyAcceptance.test_unsupported_commands_are_blocked",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.PolicyAcceptance.test_unsupported_commands_are_blocked",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 324
+            }
+          ]
+        },
+        {
+          "reference": "test_secrets_are_inaccessible_to_candidate_execution",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_secrets_are_inaccessible_to_candidate_execution",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 207
+            }
+          ]
+        },
+        {
+          "reference": "test_untrusted_repositories_cannot_escalate_permissions",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_untrusted_repositories_cannot_escalate_permissions",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 235
+            }
+          ]
+        },
+        {
+          "reference": "PolicyAcceptance.test_untrusted_task_content_cannot_widen_github_permissions",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.PolicyAcceptance.test_untrusted_task_content_cannot_widen_github_permissions",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 344
+            }
+          ]
+        },
+        {
+          "reference": "test_checkpoints_survive_interruption",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_checkpoints_survive_interruption",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 285
+            }
+          ]
+        },
+        {
+          "reference": "test_failed_work_never_reports_successful_validation",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_failed_work_never_reports_successful_validation",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 302
+            }
+          ]
+        },
+        {
+          "reference": "PolicyAcceptance.test_a_failed_sandbox_run_is_never_published_or_reported_as_validated",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.PolicyAcceptance.test_a_failed_sandbox_run_is_never_published_or_reported_as_validated",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 410
+            }
+          ]
+        },
+        {
+          "reference": "test_no_commit_is_created_during_ordinary_candidate_repair",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_no_commit_is_created_during_ordinary_candidate_repair",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 158
+            }
+          ]
+        },
+        {
+          "reference": "PolicyAcceptance.test_no_automatic_merge_deployment_or_release",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.PolicyAcceptance.test_no_automatic_merge_deployment_or_release",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 371
+            }
+          ]
+        },
+        {
+          "reference": "test_the_fixture_fails_initially_and_passes_only_after_an_agent_driven_repair",
+          "matches": [
+            {
+              "test": "test_phase1_acceptance.RealSandboxAcceptance.test_the_fixture_fails_initially_and_passes_only_after_an_agent_driven_repair",
+              "path": "tests/test_phase1_acceptance.py",
+              "line": 122
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "document": "docs/phase2/acceptance.md",
+      "references": 25,
+      "resolved": 25,
+      "rows": [
+        {
+          "reference": "test_exploration.InvestigationTests.test_a_file_absent_from_the_initial_plan_is_discovered_read_and_added",
+          "matches": [
+            {
+              "test": "test_exploration.InvestigationTests.test_a_file_absent_from_the_initial_plan_is_discovered_read_and_added",
+              "path": "tests/test_exploration.py",
+              "line": 198
+            }
+          ]
+        },
+        {
+          "reference": "test_exploration.ExplorationToolTests.test_more_than_eight_follow_up_reads_fit_the_configured_budget",
+          "matches": [
+            {
+              "test": "test_exploration.ExplorationToolTests.test_more_than_eight_follow_up_reads_fit_the_configured_budget",
+              "path": "tests/test_exploration.py",
+              "line": 107
+            }
+          ]
+        },
+        {
+          "reference": "test_phase2_exploration_repair.ExplorationRepairTests.test_each_new_error_causes_further_investigation",
+          "matches": [
+            {
+              "test": "test_phase2_exploration_repair.ExplorationRepairTests.test_each_new_error_causes_further_investigation",
+              "path": "tests/test_phase2_exploration_repair.py",
+              "line": 145
+            }
+          ]
+        },
+        {
+          "reference": "test_exploration.BudgetTests.test_each_budget_runs_out_and_says_which",
+          "matches": [
+            {
+              "test": "test_exploration.BudgetTests.test_each_budget_runs_out_and_says_which",
+              "path": "tests/test_exploration.py",
+              "line": 135
+            }
+          ]
+        },
+        {
+          "reference": "test_the_tool_loop_stops_safely_when_a_budget_is_spent",
+          "matches": [
+            {
+              "test": "test_exploration.BudgetTests.test_the_tool_loop_stops_safely_when_a_budget_is_spent",
+              "path": "tests/test_exploration.py",
+              "line": 179
+            }
+          ]
+        },
+        {
+          "reference": "test_phase2_exploration_repair.ExplorationRepairTests.test_the_exploration_budget_is_bounded",
+          "matches": [
+            {
+              "test": "test_phase2_exploration_repair.ExplorationRepairTests.test_the_exploration_budget_is_bounded",
+              "path": "tests/test_phase2_exploration_repair.py",
+              "line": 205
+            }
+          ]
+        },
+        {
+          "reference": "test_research.ProvenanceTests.test_every_fetch_records_its_source_time_size_and_digest",
+          "matches": [
+            {
+              "test": "test_research.ProvenanceTests.test_every_fetch_records_its_source_time_size_and_digest",
+              "path": "tests/test_research.py",
+              "line": 111
+            }
+          ]
+        },
+        {
+          "reference": "test_research.ClaimTests.test_only_quoted_claims_from_fetched_pages_are_verified",
+          "matches": [
+            {
+              "test": "test_research.ClaimTests.test_only_quoted_claims_from_fetched_pages_are_verified",
+              "path": "tests/test_research.py",
+              "line": 135
+            }
+          ]
+        },
+        {
+          "reference": "test_api_checks_flag_deprecated_and_undocumented_symbols",
+          "matches": [
+            {
+              "test": "test_research.ClaimTests.test_api_checks_flag_deprecated_and_undocumented_symbols",
+              "path": "tests/test_research.py",
+              "line": 151
+            }
+          ]
+        },
+        {
+          "reference": "test_unavailable_research_is_reported_not_invented",
+          "matches": [
+            {
+              "test": "test_research.ClaimTests.test_unavailable_research_is_reported_not_invented",
+              "path": "tests/test_research.py",
+              "line": 161
+            }
+          ]
+        },
+        {
+          "reference": "test_requirements.PhrasingTests.test_each_kind_is_recognized_across_phrasings",
+          "matches": [
+            {
+              "test": "test_requirements.PhrasingTests.test_each_kind_is_recognized_across_phrasings",
+              "path": "tests/test_requirements.py",
+              "line": 67
+            }
+          ]
+        },
+        {
+          "reference": "test_a_negated_owner_action_is_a_restriction_not_a_request",
+          "matches": [
+            {
+              "test": "test_requirements.PhrasingTests.test_a_negated_owner_action_is_a_restriction_not_a_request",
+              "path": "tests/test_requirements.py",
+              "line": 73
+            }
+          ]
+        },
+        {
+          "reference": "test_requirements.AuthorizationTests.test_classification_cannot_bypass_authorization",
+          "matches": [
+            {
+              "test": "test_requirements.AuthorizationTests.test_classification_cannot_bypass_authorization",
+              "path": "tests/test_requirements.py",
+              "line": 127
+            }
+          ]
+        },
+        {
+          "reference": "test_nothing_in_classification_touches_the_execution_scope",
+          "matches": [
+            {
+              "test": "test_requirements.AuthorizationTests.test_nothing_in_classification_touches_the_execution_scope",
+              "path": "tests/test_requirements.py",
+              "line": 141
+            }
+          ]
+        },
+        {
+          "reference": "test_clarification.PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+          "matches": [
+            {
+              "test": "test_clarification.PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+              "path": "tests/test_clarification.py",
+              "line": 242
+            }
+          ]
+        },
+        {
+          "reference": "JournalTests.test_asking_saves_the_question_and_marks_only_this_task_waiting",
+          "matches": [
+            {
+              "test": "test_clarification.JournalTests.test_asking_saves_the_question_and_marks_only_this_task_waiting",
+              "path": "tests/test_clarification.py",
+              "line": 107
+            }
+          ]
+        },
+        {
+          "reference": "test_clarification.AnswerTests.test_only_the_owners_guidance_after_the_question_answers_it",
+          "matches": [
+            {
+              "test": "test_clarification.AnswerTests.test_only_the_owners_guidance_after_the_question_answers_it",
+              "path": "tests/test_clarification.py",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "reference": "test_answers_leave_the_checkpoint_identity_unchanged",
+          "matches": [
+            {
+              "test": "test_clarification.AnswerTests.test_answers_leave_the_checkpoint_identity_unchanged",
+              "path": "tests/test_clarification.py",
+              "line": 76
+            }
+          ]
+        },
+        {
+          "reference": "JournalTests.test_asking_saves_the_question_and_marks_only_this_task_waiting",
+          "matches": [
+            {
+              "test": "test_clarification.JournalTests.test_asking_saves_the_question_and_marks_only_this_task_waiting",
+              "path": "tests/test_clarification.py",
+              "line": 107
+            }
+          ]
+        },
+        {
+          "reference": "PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+          "matches": [
+            {
+              "test": "test_clarification.PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+              "path": "tests/test_clarification.py",
+              "line": 242
+            }
+          ]
+        },
+        {
+          "reference": "test_clarification.RepairPauseTests.test_a_paused_repair_keeps_its_state_and_resumes_exactly",
+          "matches": [
+            {
+              "test": "test_clarification.RepairPauseTests.test_a_paused_repair_keeps_its_state_and_resumes_exactly",
+              "path": "tests/test_clarification.py",
+              "line": 159
+            }
+          ]
+        },
+        {
+          "reference": "test_clarification.PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+          "matches": [
+            {
+              "test": "test_clarification.PipelineTests.test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer",
+              "path": "tests/test_clarification.py",
+              "line": 242
+            }
+          ]
+        },
+        {
+          "reference": "test_a_repair_pause_opens_no_pr_and_saves_the_question",
+          "matches": [
+            {
+              "test": "test_clarification.PipelineTests.test_a_repair_pause_opens_no_pr_and_saves_the_question",
+              "path": "tests/test_clarification.py",
+              "line": 291
+            }
+          ]
+        },
+        {
+          "reference": "test_phase2_exploration_repair.ExplorationRepairTests.test_an_unknown_file_dependency_is_discovered_and_fixed",
+          "matches": [
+            {
+              "test": "test_phase2_exploration_repair.ExplorationRepairTests.test_an_unknown_file_dependency_is_discovered_and_fixed",
+              "path": "tests/test_phase2_exploration_repair.py",
+              "line": 133
+            }
+          ]
+        },
+        {
+          "reference": "RealSandboxExplorationRepair.test_the_unknown_dependency_is_discovered_and_fixed_in_the_real_sandbox",
+          "matches": [
+            {
+              "test": "test_phase2_exploration_repair.RealSandboxExplorationRepair.test_the_unknown_dependency_is_discovered_and_fixed_in_the_real_sandbox",
+              "path": "tests/test_phase2_exploration_repair.py",
+              "line": 220
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "workflowSourceDigests": {
+    ".github/workflows/tests.yml": "8bca1dd85c0c0b3bf5f391fd22c7d7b18426976e5d2f237165344e885a28f35f",
+    ".github/workflows/sandbox-selftest.yml": "29dcac98aed22ae4e2d74593841193e2ac4c356326d8be610c10a958cb804ccb",
+    ".github/workflows/research-live.yml": "17a797bb0534e9da39b9398a9a93941e61cc653380be21363a1164f0821f81ef",
+    ".github/workflows/ios-build.yml": "3c1aaddfacd9f8970d18a0844e2eb6e77ad27cfc3673744efcf7514b85a1bddc"
+  },
+  "inspectedCI": {
+    "headChecks": [
+      {
+        "conclusion": "skipped",
+        "name": "agent-report",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938210/job/122409887276"
+      },
+      {
+        "conclusion": "skipped",
+        "name": "release",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938210/job/122409886114"
+      },
+      {
+        "conclusion": "success",
+        "name": "publish",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938117/job/122404049549"
+      },
+      {
+        "conclusion": "success",
+        "name": "analyze",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938117/job/122403659123"
+      },
+      {
+        "conclusion": "skipped",
+        "name": "sandbox",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938210/job/122403583629"
+      },
+      {
+        "conclusion": "success",
+        "name": "fetch",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938117/job/122403581314"
+      },
+      {
+        "conclusion": "success",
+        "name": "unit",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938058/job/122403580517"
+      },
+      {
+        "conclusion": "success",
+        "name": "web",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938058/job/122403580392"
+      },
+      {
+        "conclusion": "success",
+        "name": "worker",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938058/job/122403580340"
+      },
+      {
+        "conclusion": "success",
+        "name": "native",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938210/job/122403580332"
+      },
+      {
+        "conclusion": "success",
+        "name": "structure",
+        "status": "completed",
+        "url": "https://github.com/onlykappa/KappaForge/actions/runs/40564938058/job/122403579782"
+      }
+    ],
+    "docker": {
+      "run": {
+        "conclusion": "success",
+        "head_sha": "f5501afe417a63c4ebc089954d99968ef4e55bb0",
+        "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40623228909",
+        "id": 40623228909,
+        "name": "Sandbox self-test",
+        "path": ".github/workflows/sandbox-selftest.yml",
+        "status": "completed"
+      },
+      "jobs": [
+        {
+          "conclusion": "success",
+          "name": "sandbox",
+          "steps": [
+            {
+              "conclusion": "success",
+              "name": "Set up job"
+            },
+            {
+              "conclusion": "success",
+              "name": "Run actions/checkout@v4"
+            },
+            {
+              "conclusion": "success",
+              "name": "Run actions/setup-python@v5"
+            },
+            {
+              "conclusion": "success",
+              "name": "Verify free execution permissions and resource availability"
+            },
+            {
+              "conclusion": "success",
+              "name": "Real-Docker sandbox tests"
+            },
+            {
+              "conclusion": "success",
+              "name": "Faulty project repaired through the agent tool loop"
+            },
+            {
+              "conclusion": "success",
+              "name": "Phase 1 acceptance requirements on the faulty invoice fixture"
+            },
+            {
+              "conclusion": "success",
+              "name": "Phase 2 exploration inside sandbox repair on the shop fixture"
+            },
+            {
+              "conclusion": "success",
+              "name": "KappaForge's own suites inside the sandbox"
+            },
+            {
+              "conclusion": "success",
+              "name": "Nothing left behind"
+            },
+            {
+              "conclusion": "success",
+              "name": "Post Run actions/setup-python@v5"
+            },
+            {
+              "conclusion": "success",
+              "name": "Post Run actions/checkout@v4"
+            },
+            {
+              "conclusion": "success",
+              "name": "Complete job"
+            }
+          ]
+        }
+      ],
+      "artifactMetadata": []
+    },
+    "research": {
+      "run": {
+        "conclusion": "success",
+        "head_sha": "f5501afe417a63c4ebc089954d99968ef4e55bb0",
+        "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40623231877",
+        "id": 40623231877,
+        "name": "Research live check",
+        "path": ".github/workflows/research-live.yml",
+        "status": "completed"
+      },
+      "jobs": [
+        {
+          "conclusion": "success",
+          "name": "research",
+          "steps": [
+            {
+              "conclusion": "success",
+              "name": "Set up job"
+            },
+            {
+              "conclusion": "success",
+              "name": "Run actions/checkout@v4"
+            },
+            {
+              "conclusion": "success",
+              "name": "Run actions/setup-python@v5"
+            },
+            {
+              "conclusion": "success",
+              "name": "Live research against every allowlisted host"
+            },
+            {
+              "conclusion": "success",
+              "name": "Post Run actions/setup-python@v5"
+            },
+            {
+              "conclusion": "success",
+              "name": "Post Run actions/checkout@v4"
+            },
+            {
+              "conclusion": "success",
+              "name": "Complete job"
+            }
+          ]
+        }
+      ],
+      "artifactMetadata": []
+    },
+    "native": {
+      "runId": 40564938210,
+      "jobs": [
+        {
+          "conclusion": "success",
+          "name": "native",
+          "steps": [
+            "Set up job",
+            "Run actions/checkout@v4",
+            "Install XcodeGen",
+            "Preflight native tools and build settings",
+            "Verify native update contract",
+            "Verify shared source and bundle latest interface",
+            "Generate KappaForge app icon",
+            "Generate native project",
+            "Build simulator application",
+            "Boot simulator and verify bundled launch",
+            "Export keyboard screenshots for inspection",
+            "Preserve keyboard screenshots",
+            "Preserve iOS simulator UI test results",
+            "Build unsigned iPhone application",
+            "Verify bundle, icon and package unsigned IPA",
+            "Run actions/upload-artifact@v4",
+            "Run actions/upload-artifact@v4",
+            "Post Run actions/checkout@v4",
+            "Complete job"
+          ]
+        },
+        {
+          "conclusion": "skipped",
+          "name": "sandbox",
+          "steps": []
+        },
+        {
+          "conclusion": "skipped",
+          "name": "release",
+          "steps": []
+        },
+        {
+          "conclusion": "skipped",
+          "name": "agent-report",
+          "steps": []
+        }
+      ],
+      "artifactMetadata": [
+        {
+          "expired": false,
+          "name": "iOS-keyboard-ui-test-results",
+          "size_in_bytes": 4468866
+        },
+        {
+          "expired": false,
+          "name": "KappaForge-unsigned-iPhone-IPA",
+          "size_in_bytes": 484226
+        },
+        {
+          "expired": false,
+          "name": "iOS-launch-screenshot",
+          "size_in_bytes": 170954
+        },
+        {
+          "expired": false,
+          "name": "iOS-keyboard-screenshots",
+          "size_in_bytes": 3613687
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Remote numerical runner counts were not read from logs; none are inferred from source or job success.",
+    "CI log downloads redirect to hosts blocked by the managed environment; no network bypass was attempted.",
+    "Native artifact metadata was inspected; screenshot and xcresult contents were not downloaded or visually assessed.",
+    "No physical-device validation, live coding-model acceptance, merge, deployment, release, or Phase 3.2 feature work is claimed.",
+    "The engine repair and task correction have not been incorporated into PR #279; its audited branch is unchanged."
+  ]
+}

@@ -106,6 +106,7 @@ export async function mergePR(env,repo,number,expectedSha){
  if(expectedSha!==review.tests.sha)return {error:"The pull request changed since you reviewed it. Refresh and review again.",status:409};
  if(review.draft){
   const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
+  if(pr.head?.sha!==expectedSha)return {error:"The pull request changed since you reviewed it. Refresh and review again.",status:409};
   const ready=await api(env,"graphql",{method:"POST",body:JSON.stringify({query:"mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}",variables:{id:pr.node_id}})});
   const result=await ready.json().catch(()=>({}));
   if(!ready.ok||result.errors)return {error:"GitHub would not mark the draft ready for merge. The token needs Pull requests: read and write.",status:502};

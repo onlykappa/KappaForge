@@ -239,6 +239,24 @@ class PipelineTests(unittest.TestCase):
     def prs_opened(self):
         return [c for c in self.world.calls if c[0].endswith('/pulls')]
 
+    def test_saved_plan_survives_owner_guidance_without_losing_it_from_generation(self):
+        from engine import task_plan
+        self.addCleanup(task_plan.CURRENT.reset, task_plan.CURRENT.set(None))
+        original = self.world.issue['title'] + '\n' + self.world.issue['body']
+        execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, original,
+                            dict(base='main', paths=['app.py'], stages=[], design='Change the value.'),
+                            {'app.py': 'value=1\n'})
+        developer.start_plan(None, self.journal, recovery.ROOT, 'a' * 40, original,
+                             self.world.issue, 'Change the value.', {'app.py': 'value=1\n'}, [], [], True)
+        self.world.rows.append(owner(len(self.world.rows) + 1, 'Guidance: Preserve the existing helper.'))
+        def write(api_key, task, *args, **kwargs):
+            self.assertIn('Preserve the existing helper.', task)
+            return 'free:writer', 'Change value', {'app.py': 'value=2\n'}, 'Set value'
+        url, planner, writer, _ = self.run_task(AssertionError('saved plan must be reused'), write)
+        self.assertEqual(url, self.world.prs[0]['html_url'])
+        planner.assert_not_called()
+        writer.assert_called_once()
+
     def test_an_ambiguous_task_pauses_asks_once_and_resumes_with_the_answer(self):
         def ambiguous(*args, **kwargs):
             developer.clarification.REQUEST.set(QUESTION)

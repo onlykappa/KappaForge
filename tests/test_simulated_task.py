@@ -165,7 +165,8 @@ class World:
                                                 "reason": "Save the requested weather units setting", "quote": "weatherUnits:'F'"}],
                                "requirements": [{"text": "Add a weather units setting", "met": True,
                                                  "evidence": {"path": "preview/core.js", "quote": "weatherUnits:'F'"}},
-                                                {"text": "Show it in chat", "met": False, "evidence": "nothing shows it"}],
+                                                {"id": "R1", "text": "Add a weather units setting and show it in chat.",
+                                                 "met": False, "evidence": "nothing shows it"}],
                                "problems": [], "files_needed": ["preview/app-main.js"]})
         if kind == "fix":
             return "Still not JSON."

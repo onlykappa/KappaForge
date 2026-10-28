@@ -143,6 +143,45 @@ class PartialAnswerTests(Base):
 
 
 class ProcessProblemTests(Base):
+    def test_review_only_retry_reloads_saved_classification_before_accepting_completion(self):
+        from engine import requirements
+        from tests.test_recovery_journal import GitHub
+        world = GitHub()
+        journal = world.journal()
+        request = '- Document numeric inputs.\n- Document empty input refusal.'
+        self.goal.request = self.goal.original = request
+        classified = requirements.classify(request)
+        requirements.save(journal, classified, developer.ROOT, request)
+        self.addCleanup(recovery.CURRENT.reset, recovery.CURRENT.set(journal))
+        self.addCleanup(requirements.CURRENT.reset, requirements.CURRENT.set(None))
+        def review(*args, **kwargs):
+            self.assertEqual([r.id for r in kwargs['classified']], [r.id for r in classified])
+            return ([dict(id=classified[0].id, text=classified[0].text, met=True,
+                          evidence={'path': 'app.py', 'quote': 'return a + b'})], [], [])
+        with patch.object(verify, 'model_review', side_effect=review), \
+                patch.object(developer, 'generate', side_effect=AssertionError('missing review is not a source defect')):
+            _, _, problems = developer.check_the_work(
+                'key', request, developer.ROOT, SHA, 'token', SOURCES, {'app.py': 40}, {}, '',
+                {'free'}, '', False, self.progress())
+        self.assertTrue(any('Requirement not reviewed: ' + classified[1].id in p for p in problems), problems)
+
+    def test_omitted_classified_requirement_blocks_completion_without_source_repair(self):
+        from engine import requirements
+        request = '- Document numeric inputs.\n- Document empty input refusal.'
+        self.goal.request = self.goal.original = request
+        classified = requirements.classify(request)
+        self.addCleanup(requirements.CURRENT.reset, requirements.CURRENT.set(classified))
+        review = ([dict(id=classified[0].id, text=classified[0].text, met=True,
+                        evidence={'path': 'app.py', 'quote': 'return a + b'})], [], [])
+        with patch.object(verify, 'model_review', return_value=review), \
+                patch.object(developer, 'generate', side_effect=AssertionError('missing review is not a source defect')):
+            changes, verdict, problems = developer.check_the_work(
+                'key', request, developer.ROOT, SHA, 'token', SOURCES, {'app.py': 40}, {}, '',
+                {'free'}, '', False, self.progress())
+        self.assertEqual(changes, {})
+        self.assertTrue(any('Requirement not reviewed: ' + classified[1].id in p for p in problems), problems)
+        self.assertTrue(all(verify.process_problem(p) for p in problems), problems)
+
     PROCESS = ['Requirement review unavailable; task completion is not verified: TimeoutError',
                'Requirement review returned no requirements; verification is incomplete',
                'Requirement verification is incomplete', 'Invalid requirement verification record',
@@ -180,6 +219,28 @@ class ProcessProblemTests(Base):
                                                             {'app.py': 50}, {}, '', None, '', False, self.progress())
         self.assertEqual((changes, problems), ({}, []))
 
+    def test_current_review_schema_failure_reaches_progress_beside_stale_notes(self):
+        from engine import requirements
+        token = requirements.CURRENT.set(requirements.classify(self.goal.request))
+        self.addCleanup(requirements.CURRENT.reset, token)
+        stale = 'Requirement review unavailable; task completion is not verified: old diagnostic'
+        developer.UNFINISHED[:] = [stale]
+        self.addCleanup(developer.UNFINISHED.clear)
+        progress = self.progress()
+        progress.act = Mock()
+        with patch.object(developer, 'run_model', return_value=('fixture', json.dumps(dict(
+                requirements=[dict(id='R1', met='private malformed value')], problems=[])))), \
+                patch.object(verify, 'wiring_problems', return_value=[]), \
+                patch.object(developer, 'generate', side_effect=AssertionError('no speculative edits')):
+            changes, _, problems = developer.check_the_work('key', self.goal.request, developer.ROOT, SHA, 'token',
+                SOURCES, {'app.py': 50}, {}, '', None, '', False, progress, review_only=True)
+        self.assertEqual(changes, {})
+        self.assertIn(stale, problems)
+        events = [str(call.args) for call in progress.act.call_args_list]
+        self.assertTrue(any('requirements[0].met must be boolean' in event for event in events), events)
+        self.assertTrue(any('requirements[0].met must be boolean' in problem for problem in problems))
+        self.assertFalse(any('private malformed value' in event for event in events))
+
     def test_process_notes_from_a_review_never_reach_the_verifier(self):
         developer.UNFINISHED.clear()
         review = ([dict(text='Make add accept numeric strings', met=True, evidence={'path': 'app.py', 'quote': 'return a + b'})],
@@ -201,8 +262,8 @@ class ReverifyTests(Base):
                   base={'sha': SHA}, head={'sha': SHA, 'ref': 'kappa/dev-9',
                   'repo': {'full_name': developer.ROOT}}, title='Draft: Cast', body='Plan')
         issue = dict(number=9, title='Cast', body='Make add accept numeric strings')
-        for verdict in ('rejected', 'needs_validation'):
-            with self.subTest(verdict=verdict), \
+        for verdict, check_failed in (('rejected', False), ('needs_validation', False), ('rejected', True)):
+            with self.subTest(verdict=verdict, failed_check=check_failed), \
                     patch.object(developer, 'revision_files', return_value=[dict(filename='app.py', status='modified')]), \
                     patch.object(developer, 'list_tree', return_value=({'app.py': 40}, {})), \
                     patch.object(developer, 'project_guide', return_value=''), \
@@ -216,16 +277,52 @@ class ReverifyTests(Base):
                     patch.object(repair_guard, 'verify_all_findings', return_value=[dict(verdict=verdict)]), \
                     patch.object(developer, 'generate', side_effect=AssertionError('no speculative generation')), \
                     patch.object(developer, 'check_the_work', return_value=({}, 'Still incomplete', ['Actual unmet requirement'])) as review:
-                if verdict == 'needs_validation':
+                if verdict == 'needs_validation' or check_failed:
                     with self.assertRaises(repair_guard.RepairReviewRequired):
-                        developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
+                        developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'}, checks_failed=check_failed)
                     review.assert_not_called()
                 else:
-                    result = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
+                    result = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'}, checks_failed=check_failed)
                     review.assert_called_once()
                     self.assertEqual(review.call_args.args[7], {})
                     self.assertEqual(result[2], {})
                     self.assertIn('Actual unmet requirement', result[3])
+
+    def test_unavailable_review_with_old_source_claims_rechecks_without_edit_permission(self):
+        pr = dict(number=50, html_url='https://github.com/onlykappa/KappaForge/pull/50',
+                  base={'sha': SHA}, head={'sha': SHA, 'ref': 'kappa/dev-9',
+                  'repo': {'full_name': developer.ROOT}}, title='Draft: Cast', body='Plan')
+        issue = dict(number=9, title='Cast', body='Make add accept numeric strings')
+        pending = ['Requirement not met: Make add accept numeric strings (old unsupported quote)',
+                   'Requirement review unavailable; task completion is not verified: ScopeReviewUnavailable: missing IDs']
+        for failed, check_failed in (([], False), ([dict(id=123)], True), ([], True)):
+            with self.subTest(failed_check=check_failed, known_jobs=bool(failed)), \
+                    patch.object(developer, 'revision_files', return_value=[dict(filename='app.py', status='modified')]), \
+                    patch.object(developer, 'list_tree', return_value=({'app.py': 40}, {})), \
+                    patch.object(developer, 'project_guide', return_value=''), \
+                    patch.object(developer, 'read_source', return_value=SOURCES['app.py']), \
+                    patch.object(developer, '_add_engine_developer_source', side_effect=lambda sources, *a: sources), \
+                    patch.object(developer, 'gh', return_value=[]), patch.object(developer, 'job_log', return_value='AssertionError'), \
+                    patch.object(developer, 'anchor_pr_goal'), \
+                    patch.object(developer, 'requirements_open', return_value=pending), \
+                    patch.object(developer, 'repair_branch_observation', return_value=None), \
+                    patch.object(repair_guard, 'enabled', return_value=True), \
+                    patch.object(repair_guard, 'verify_all_findings', side_effect=repair_guard.RepairReviewRequired('needs validation')) as verifier, \
+                    patch.object(developer, 'generate', side_effect=AssertionError('no speculative generation')), \
+                    patch.object(developer, 'check_the_work', return_value=({}, 'Still incomplete', pending)) as review:
+                if check_failed:
+                    with self.assertRaises(repair_guard.RepairReviewRequired):
+                        developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, failed, 'token', 'key', allowed={'free'}, checks_failed=check_failed)
+                    verifier.assert_called_once()
+                    review.assert_not_called()
+                else:
+                    result = developer.revise_branch(issue, pr, 'kappa/dev-9', SHA, [], 'token', 'key', allowed={'free'})
+                    verifier.assert_not_called()
+                    review.assert_called_once()
+                    self.assertTrue(review.call_args.kwargs.get('review_only'), 'the fresh review cannot edit code')
+                    self.assertEqual(result[2], {})
+                    self.assertIn('Still incomplete', result[3])
+                    self.assertEqual(verify.open_problems({'body': result[3]}), pending)
 
     def test_fix_pull_request_publishes_the_fresh_review_without_code_or_test_dispatch(self):
         from engine import native_build

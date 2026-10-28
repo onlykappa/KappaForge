@@ -13,7 +13,8 @@ async function github(env,path,body){
 }
 export async function recoveryTask(env,task){
  const issue=await github(env,'issues/'+task),body=issue.body||'';
- if(issue.state!=='open'||issue.pull_request||issue.user?.login!=='onlykappa'||!issue.labels?.some(x=>typeof x.name==='string'&&x.name.toLowerCase()==='kappa-task')||!/^Mode:\s*develop\s*$/m.test(body))return null;
+ const modes=[...body.matchAll(/^Mode:\s*([\w-]+)\s*$/gmi)];
+ if(issue.state!=='open'||issue.pull_request||issue.user?.login!=='onlykappa'||!issue.labels?.some(x=>typeof x.name==='string'&&x.name.toLowerCase()==='kappa-task')||modes.length!==1||modes[0][1]!=='develop')return null;
  let auth;
  // A body that carries a chat authorization record always takes the stricter chat path (record plus bound grant).
  if(body.includes('Approved from KappaForge Chat.')||/^<!-- kappa-authorization:/m.test(body)){
@@ -27,8 +28,8 @@ export async function recoveryTask(env,task){
  }else{
   // An owner-created GitHub task, exactly as the Python controller authorizes it (intent_guard.TaskScope):
   // identity github-task:<number>, one repository, valid one day from creation. Closing the issue cancels it.
-  const repos=[...body.matchAll(/^Repository:\s*(onlykappa\/[A-Za-z0-9_.-]+)\s*$/gm)],created=Date.parse(issue.created_at);
-  if(repos.length!==1||!Number.isFinite(created))return null;
+  const repos=[...body.matchAll(/^Repository:\s*(\S+)\s*$/gmi)],created=Date.parse(issue.created_at);
+  if(repos.length!==1||!/^onlykappa\/[A-Za-z0-9_.-]+$/.test(repos[0][1])||!Number.isFinite(created))return null;
   auth={id:'github-task:'+task,repo:repos[0][1],expiresAt:created+86400000};
   if(auth.expiresAt<=Date.now())return null;
  }

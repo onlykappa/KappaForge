@@ -182,6 +182,8 @@ def repair_history(result):
 
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
+    if not changes:
+        raise ValueError('Empty publication requires a nonempty candidate patch')
     from engine import execution
     from engine import commit_provenance
     # This runs even when reusing a publication receipt after interruption.
@@ -217,6 +219,8 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
         move_branch(repo, writer, branch, commit['sha'], create=create)
     from engine import operational_review
     operational_review.published(parent, commit['sha'])
+    from engine import report_claims
+    report_claims.published(parent, commit['sha'], changes)
     if journal:
         journal.state['phase'] = 'publication'
         journal.checkpoint(commit['sha'], base=base, files=changes)
@@ -661,7 +665,7 @@ def classify_task(progress, journal, repo, request):
         if journal and classified:
             requirements.save(journal, classified, repo, request)
     requirements.CURRENT.set(classified or None)
-    if classified:
+    if classified and callable(getattr(progress, 'act', None)):
         counts = collections.Counter(c for r in classified for c in r.categories)
         progress.act("plan", f"{'Reloaded' if resumed else 'Classified'} {len(classified)} requirement"
                      f"{'s' if len(classified) != 1 else ''}: " + ", ".join(f"{n} {c.replace('_', ' ')}" for c, n in counts.items())
@@ -877,7 +881,17 @@ def syntax_error(path, text):
     """Parse-only checks. Nothing generated is imported or executed."""
     try:
         if path.endswith(".py"):
-            ast.parse(text, filename=path)
+            tree = ast.parse(text, filename=path)
+            name = path.rsplit('/', 1)[-1]
+            if path.startswith('tests/') or '/tests/' in path or name.startswith('test_') or name.endswith('_test.py'):
+                for scope in [tree] + [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
+                    tests = {}
+                    for node in scope.body:
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test'):
+                            if node.name in tests:
+                                return (f'{path}: duplicate test {node.name} at line {node.lineno} hides the '
+                                        f'regression at line {tests[node.name]}; keep one definition per test')
+                            tests[node.name] = node.lineno
         elif path.endswith(".json"):
             json.loads(text)
         elif path.endswith((".js", ".mjs", ".cjs")) and shutil.which("node"):
@@ -2509,6 +2523,18 @@ MAX_CHECK_ROUNDS = 3
 MAX_REPAIR_TARGETS = 3
 
 
+class _QuietReviewProgress:
+    """Fresh-process verification can run without a live UI progress publisher."""
+    def now(self, *args, **kwargs):
+        pass
+
+    def ok(self, *args, **kwargs):
+        pass
+
+    def act(self, *args, **kwargs):
+        pass
+
+
 def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, changes, guide, allowed, design, require_test, progress, checkpoint=None,
                    receipt=None, defer_lifecycle=False, review_only=False, prior_assessments=None):
     """Check the change against the task before it becomes a PR, and fix what the check finds (up to MAX_CHECK_ROUNDS).
@@ -2517,6 +2543,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
 
     Returns the final changes, a one-paragraph verdict for the owner, and the problems still open."""
     from engine import verify
+    progress = progress if progress is not None else _QuietReviewProgress()
     cache = dict(sources)
 
     def read(path):
@@ -2531,6 +2558,9 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
     outstanding = list(UNFINISHED)
     previous_review_problems = []
     journal = recovery.CURRENT.get()
+    if journal and journal.state.get('requirementClassification') and requirements.CURRENT.get() is None:
+        goal = task_goal.CURRENT.get()
+        classify_task(progress, journal, repo, goal.original if goal else task_goal.owner_request(journal.issue))
     original_texts = [row['text'] for row in requirements.split(task_goal.CURRENT.get().request)] if task_goal.CURRENT.get() else []
     canonical = lambda text: requirements.canonical_text(text, original_texts)
     requirement_catalog = {canonical(text): {'text': canonical(text), 'met': False} for text in journal.state['requirements']
@@ -2579,10 +2609,13 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
             review_task = ('RETAIN THESE EXACT REQUIREMENTS IN EVERY REVIEW (resolve with evidence or mark unmet):\n'
                            + json.dumps(list(requirement_catalog)) + '\n\nORIGINAL TASK:\n' + review_task)
         classified = requirements.CURRENT.get()
-        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified)
+        review = verify.model_review(run_model, api_key, review_task, read, changes, existing, allowed, classified=classified,
+                                     **({'retained_requirements': tuple(requirement_catalog)} if classified and requirement_catalog else {}))
         files_needed = []
         if review:
             reqs, found, files_needed = review
+            if hasattr(progress, 'act'):
+                progress.act('check', f'Current reviewer returned {len(reqs)} requirement decisions and {len(found)} findings')
             if defer_lifecycle:
                 reqs = [item for item in reqs if not verify.lifecycle_requirement(item.get('text', ''))]
             for requirement in reqs:
@@ -2605,11 +2638,15 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
                 rows = requirements.matrix(classified, reqs, lambda path: changes.get(path) if path in changes else read(path))
                 requirements.ROWS.set(rows)
                 previous_review_problems += requirements.open_items(rows)
+                previous_review_problems += ['Requirement not reviewed: ' + row['id'] + ' ' + row['text'][:200]
+                                             for row in rows if row['status'] == 'not reviewed']
             if not reqs:
                 previous_review_problems.append("Requirement review returned no requirements; verification is incomplete")
             elif not previous_review_problems:
                 outstanding = []
         else:
+            if hasattr(progress, 'act'):
+                progress.act('error', 'Current requirement review unavailable: ' + (verify.REVIEW_FAILURE.get() or 'no diagnostic'))
             problems.append("Requirement review unavailable; task completion is not verified" + (": " + verify.REVIEW_FAILURE.get() if verify.REVIEW_FAILURE.get() else ""))
         if require_test and needs_test(changes) and not has_tests(changes):
             problems.append("No test proves the change works yet: add or update a regression test")
@@ -2627,7 +2664,7 @@ def check_the_work(api_key, task, repo, sha, repo_token, sources, existing, chan
         # one. The re-check after it is free again.
         if rescued is not None:
             break
-        if review is None and verify.SCOPE_UNDECIDED.get():
+        if review is None and verify.REVIEW_UNDECIDED.get():
             # An undecided scope review authorizes no source repair. The saved candidate and this open problem
             # stay on the draft, so Retry continues from it instead of restarting the task.
             break
@@ -2848,7 +2885,9 @@ def produce_development_pr(issue, api_key, token, adopt=None):
     journal = recovery.CURRENT.get()
     execution.refresh_unpublished_main(journal)
     resumed = execution.pending(journal, "develop")
-    planned = execution.generation_plan(journal, repo, task) if not resumed else None
+    # Guidance remains generation input, not a replacement for the issue's task identity.
+    identity_task = (issue.get('title') or '') + '\n' + body
+    planned = execution.generation_plan(journal, repo, identity_task) if not resumed else None
     if resumed:
         sha, base = resumed["identity"]["base"], resumed["context"]["base"]
         existing, modes = list_tree(repo, sha, repo_token)
@@ -2926,7 +2965,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         # A requirement classified as research is investigated too (Phase 2 section 5).
         lookups = tuple("Research: " + r.text[:200] for r in classified or () if "research" in r.categories)
         questions = () if planned else tuple(dict.fromkeys(tuple(exploration.REQUEST.get()) + lookups))
-        start_plan(progress, journal, repo, sha, task, issue, design, sources, stages, questions, require_test,
+        start_plan(progress, journal, repo, sha, identity_task, issue, design, sources, stages, questions, require_test,
                    repo_map=None if planned else repo_map)
         if answered:
             plan = task_plan.CURRENT.get()
@@ -2970,7 +3009,7 @@ def produce_development_pr(issue, api_key, token, adopt=None):
                         completed=plan.completed + ["Investigated: " + "; ".join(questions)[:250]])
         if planned and execution.digest(sources) != planned['sourceHash']:
             raise execution.CheckpointMismatch('Saved generation sources changed at their authorized base revision')
-        execution.save_plan(journal, repo, sha, task, dict(base=base, paths=list(sources), design=design,
+        execution.save_plan(journal, repo, sha, identity_task, dict(base=base, paths=list(sources), design=design,
             stages=[dict(text=str(s), files=list(getattr(s, 'files', ())), independent=getattr(s, 'independent', False)) for s in stages]), sources)
         progress.ok(f"Read {len(sources)} files: {short_list(sources)}", tool="read", count=len(sources),
                     detail="\n".join(list(sources)[:12]))
@@ -3413,7 +3452,7 @@ def revision_files(pr, repo, head_sha, token):
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None):
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None, checks_failed=False):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = revision_files(pr, repo, head_sha, repo_token)
@@ -3512,9 +3551,13 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
         if len(files) != 1 or files[0]['filename'] != edit_path or files[0]['status'] != 'added':
             raise PermissionError('Bounded repair requires only the task-owned new document')
         existing = {path: size for path, size in existing.items() if path != edit_path}
-    # Open problems about the review itself (it was unavailable or incomplete) are resolved by reviewing again, never
-    # by a repair: with nothing else open, this round re-checks the current source and writes no code.
-    reverify = bool(pending) and not failed_jobs and all(verify.process_problem(p) or verify.controller_problem(p) for p in pending)
+    # Review-process gaps are resolved by reviewing again, never by editing source.
+    # An unavailable review can leave stale source claims beside its process note. Review that unchanged
+    # candidate first; those claims still authorize no edit. A real failed check always keeps its repair gate,
+    # including when GitHub could not supply the failing job details.
+    unavailable_review = any(p.startswith('Requirement review unavailable;') for p in pending)
+    reverify = bool(pending) and not (failed_jobs or checks_failed) and (unavailable_review or
+        all(verify.process_problem(p) or verify.controller_problem(p) for p in pending))
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''
@@ -3537,7 +3580,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
             journal.event('Existing tests regressed: ' + str(len(regressions)), strategy='repair_regressions',
                           next_action='Restore the existing behaviour while keeping the owner goal')
         if not targets:
-            if findings and all(row['verdict'] == 'rejected' for row in findings) and not failed_jobs:
+            if findings and all(row['verdict'] == 'rejected' for row in findings) and not (failed_jobs or checks_failed):
                 # Disproved historical findings authorize no edits. Review the actual
                 # candidate against every requirement; rejection is not completion.
                 reverify = True
@@ -3586,7 +3629,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                                                         changes, guide, allowed, design, tests_required(existing), Progress.latest,
                                                         **({'checkpoint': lambda changed: checkpoint(changed, modes)} if checkpoint else {}),
                                                         **({'prior_assessments': prior_assessments} if prior_assessments else {}),
-                                                        receipt=verify.pr_receipt(pr, repo, branch))
+                                                        review_only=reverify, receipt=verify.pr_receipt(pr, repo, branch))
         finally:
             UNFINISHED[:] = prior
         explanation = verdict + "\n\n" + explanation + "\n\n" + review_record(remaining)
@@ -3793,7 +3836,7 @@ def fix_pull_request(issue, api_key, token):
         for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
             try:
                 model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, review_guidance,
-                                                                            native_history, allowed=allowed)
+                                                                            native_history, allowed=allowed, checks_failed=bool(failures))
                 break
             except GenerationFailure as exc:
                 # A rejected round is not a reason to idle: start the next round now, with the rejected proposals and
@@ -3877,7 +3920,7 @@ def fix_pull_request(issue, api_key, token):
     final = dict(changes)
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)
-    remaining = {p: text for p, text in final.items() if text != saved['changes'].get(p)}
+    remaining = {p: text for p, text in final.items() if p not in saved['changes'] or text != saved['changes'][p]}
     # Say what triggered the repair: failed checks, or only work the original task still needs (#205).
     purpose = "make sandbox tests pass" if failures else "finish the unfinished requirements"
     writer = push_token(repo, repo_token, remaining)

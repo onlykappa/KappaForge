@@ -1,6 +1,7 @@
 """Run generated candidates and bounded repairs in an isolated sandbox before publication."""
 import hashlib
 import json
+import os
 import re
 
 from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger
@@ -61,8 +62,29 @@ class SandboxRepairController:
             if self.session.test_definition_changed():
                 return self._result("failed", "test_definition_changed", "Candidate changes the test command")
             if self.state["phase"] == "complete":
-                return self._result(self.state["status"], self.state["stop_reason"], self.state["last_summary"],
-                                    self.state["last_diff"], self.state.get("test_results"))
+                if (self.journal and os.getenv('INPUT_ACTION') == 'fix' and self.state.get('status') == 'failed'
+                        and self.state.get('stop_reason') == 'repeated_tool_call'
+                        and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
+                    self.state['phase'] = 'repair'
+                    # A new explicit Fix starts a fresh consecutive-call streak, not a new action budget.
+                    self.state['repeated'], self.state['action_key'] = 0, None
+                    self.state['history'].append('Explicit Fix continues the retained candidate with remaining budget; prior counters and evidence retained')
+                    for run in reversed(self.session.results):
+                        if run.status == 'failed' and run.profile == 'test' and self._test_command(run.argv):
+                            self.state['last_summary'] = self._diagnostics(dict(status='ok', results=[self.tools._summary(run)]))
+                            self._investigate_failure(self.state['last_summary'])
+                            break
+                    for entry in reversed(self.state['history']):
+                        try:
+                            step = json.loads(entry)
+                        except (TypeError, ValueError):
+                            continue
+                        if isinstance(step, dict) and self._refresh_patch_context(step):
+                            break
+                    self.execution._save()
+                else:
+                    return self._result(self.state["status"], self.state["stop_reason"], self.state["last_summary"],
+                                        self.state["last_diff"], self.state.get("test_results"))
             self.execution.transition("dependencies", message="Restore isolated dependencies; previous runner volumes cannot be reused")
             installs = self.session.install()
             bad_installs = [item for item in installs if not item.ok and item.status != "skipped"]
@@ -159,6 +181,12 @@ class SandboxRepairController:
                 step = steps[-1]
                 observed = step.get("result") or {}
                 self._report(step.get("tool"), step.get("args") or {}, observed)
+                self._refresh_patch_context(step)
+                # Focused test runners can refine suite evidence; an exploratory grep exit1 cannot.
+                if (step.get('tool') == 'run_command' and observed.get('status') == 'failed'
+                        and self._test_command(observed.get('argv'))):
+                    self.state['last_summary'] = self._diagnostics(dict(status='ok', results=[observed]))
+                    self._investigate_failure(self.state['last_summary'])
                 if step.get("tool") in exploration.Explorer.TOOLS:
                     # Read-only investigation spends the exploration budget, not one of the repair actions.
                     self.state["actions"] -= 1
@@ -199,6 +227,20 @@ class SandboxRepairController:
             return self._result("failed", "controller_error", f"{type(exc).__name__}: {exc}")
         finally:
             self.session.close()
+
+    def _test_command(self, argv):
+        if not isinstance(argv, list) or not argv:
+            return False
+        if any(argv == command for _, command in self.session.test_commands()):
+            return True
+        rest = argv[1:]
+        if argv[0] in ('python', 'python3'):
+            while rest and rest[0] in ('-B', '-u'):
+                rest = rest[1:]
+            return len(rest) >= 2 and rest[0] == '-m' and rest[1] in ('unittest', 'pytest')
+        return (argv[0] == 'node' and rest[:1] == ['--test']
+                or argv[0] == 'npm' and (rest[:1] in (['test'], ['t'])
+                    or len(rest) >= 2 and rest[0] == 'run' and (rest[1] == 'test' or rest[1].startswith('test:'))))
 
     def _verified(self, test_result):
         if test_result.get("status") != "ok" or not test_result.get("passed"):
@@ -303,6 +345,40 @@ class SandboxRepairController:
         self.state["explored"] = explorer.totals()["calls"]
         return result
 
+    def _refresh_patch_context(self, step):
+        if step.get('tool') != 'apply_patch' or (step.get('result') or {}).get('status') != 'invalid':
+            return False
+        hint = (step.get('result') or {}).get('read_hint')
+        if not isinstance(hint, dict):
+            # Older checkpoints have no hint. Recover it from current bytes,
+            # without replaying the rejected edit or trusting historical source.
+            edits = (step.get('args') or {}).get('edits')
+            for edit in edits if isinstance(edits, list) else []:
+                if not isinstance(edit, dict) or not isinstance(edit.get('find'), str) or not sandbox.safe_path(edit.get('path')):
+                    continue
+                source = self.session.current().get(edit['path'], b'')
+                try:
+                    source = source.decode('utf-8')
+                except UnicodeDecodeError:
+                    continue
+                if source.count(edit['find']) != 1:
+                    hint = sandbox_tools.patch_read_hint(edit['path'], edit['find'], source)
+                    if hint:
+                        break
+        if not isinstance(hint, dict):
+            return False
+        current = self._explore('read_file', **hint)
+        if current.get('status') != 'ok':
+            return False
+        self.state.setdefault('investigation', {})['evidence'] = execution.clean(
+            'Current source after rejected patch (read lead, not permission):\n'
+            + hint['path'] + ':' + str(current['start_line']) + '\n' + current['text'], 6000)
+        self._note_read('read_file', hint, current)
+        if self.progress:
+            self.progress.act('read', 'Reread current source after rejected patch: ' + hint['path'],
+                              tool='read', count=1, detail=hint['path'])
+        return True
+
     def _investigate_failure(self, diagnostics):
         """Follow what a new failure names: find where each missing symbol is defined and who imports it, read the
         defining code, and inspect the named module and the modules it imports. The evidence goes into the next repair
@@ -310,6 +386,12 @@ class SandboxRepairController:
         if self._workspace_explorer() is None:
             return
         found = exploration.leads(diagnostics)
+        frames = exploration.traceback_files(diagnostics, self.explorer.repo.files)
+        fingerprint = _fingerprint(json.dumps(dict(leads=found, frames=frames,
+            errors=sorted(set(re.findall(r'\b\w*(?:Error|Exception)\b', diagnostics))),
+            revision=self._diff_fingerprint()), sort_keys=True))
+        if (self.state.get('investigation') or {}).get('fingerprint') == fingerprint:
+            return  # A focused rerun of the same failure needs no duplicate reads.
         notes, files = [], []
         def read(path, start, end):
             excerpt = self._explore("read_file", path=path, start_line=max(1, start), end_line=end)
@@ -317,7 +399,6 @@ class SandboxRepairController:
                 notes.append(f"--- {path} lines {excerpt['start_line']}-{excerpt['end_line']} ---\n" + excerpt["text"][:2500])
                 return True
             return False
-        frames = exploration.traceback_files(diagnostics, self.explorer.repo.files)
         for path, line in frames:
             if read(path, line - 12, line + 12):
                 files.append(path)
@@ -352,7 +433,8 @@ class SandboxRepairController:
             notes.append("The failure names no missing symbol or module: read the failing test and the code it calls.")
         files = list(dict.fromkeys(files))
         names = ", ".join(lead.get("symbol") or lead.get("module") for lead in found) or ", ".join(p for p, _ in frames) or "the failing test"
-        self.state["investigation"] = {"leads": found, "files": files, "evidence": execution.clean("\n".join(notes), 6000)}
+        self.state["investigation"] = {"leads": found, "files": files, "fingerprint": fingerprint,
+                                       "evidence": execution.clean("\n".join(notes), 6000)}
         self.state["history"] = (self.state["history"] + ["Investigated the new failure (" + names + "): read "
                                  + (", ".join(files) or "nothing new")])[-10:]
         if self.progress:
@@ -378,7 +460,11 @@ class SandboxRepairController:
         return {"status": "needs_clarification", "request": record}
 
     def _repair_prompt(self, task, diff, diagnostics, history, investigation=""):
-        return (task + "\n\nThe current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
+        return (task + f"\n\nRepair action {self.state['actions']} of {MAX_MODEL_ACTIONS} (this call is already charged). "
+                + 'Sandbox language versions (Python, Node): ' + json.dumps(self.session.versions) + '. '
+                + "Use APIs supported by these versions. "
+                "Use current repository evidence for exact find text; earlier proposals may describe stale source. "
+                "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "make a focused correction with apply_patch, then let the engine rerun the tests. Do not edit or weaken "
                 "test commands, test definitions, safety checks, or unrelated files. Each tool call is one action. "
                 "If the tests pass, reply done. Only when a material ambiguity about the expected behavior, safety or "
