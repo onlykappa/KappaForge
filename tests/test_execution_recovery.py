@@ -42,6 +42,36 @@ class ExecutionRecoveryTests(unittest.TestCase):
     def reload(self):
         return self.world.journal()
 
+    def test_explicit_fix_can_continue_terminal_tool_repeat_with_remaining_budget(self):
+        stale = lambda *a, **kw: ('scripted', json.dumps(dict(tool='apply_patch', reason='stale',
+            args=dict(edits=[dict(path='app.py', find='missing', replace='value=2')]))))
+        failed = self.controller().run_repair(TASK, stale, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(failed['stop_reason'], 'repeated_tool_call')
+        before = execution.pending(self.reload())['controller']
+        with patch.dict(os.environ, {'INPUT_ACTION': 'resume:1:fixture'}):
+            blocked = self.controller(journal=self.reload()).run_repair(
+                TASK, Mock(side_effect=AssertionError('automatic resume cannot restart terminal work')), 'fixture')
+        self.assertEqual(blocked['stop_reason'], 'repeated_tool_call')
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            result = self.controller(journal=self.reload()).run_repair(TASK, fixed, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['actions'], before['actions'] + 1)
+        self.assertGreaterEqual(len(after['history']), len(before['history']))
+        self.assertEqual(len(after['attempts']), len(before['attempts']) + 1)
+
+    def test_explicit_fix_does_not_replenish_exhausted_sandbox_actions(self):
+        stale = lambda *a, **kw: ('scripted', json.dumps(dict(tool='apply_patch', reason='stale',
+            args=dict(edits=[dict(path='app.py', find='missing', replace='value=2')]))))
+        with patch.object(sandbox_repair_controller, 'MAX_MODEL_ACTIONS', 3):
+            failed = self.controller().run_repair(TASK, stale, 'fixture', {'app.py': 'value=0\n'})
+            self.assertEqual(failed['stop_reason'], 'repeated_tool_call')
+            with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+                result = self.controller(journal=self.reload()).run_repair(
+                    TASK, Mock(side_effect=AssertionError('exhausted budget cannot run inference')), 'fixture')
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(execution.pending(self.reload())['controller']['actions'], 3)
+
     def test_provider_failure_restores_exact_patch_and_skips_completed_candidate_tests(self):
         def exhausted(*args, **kwargs):
             raise RuntimeError('all free routes unavailable')

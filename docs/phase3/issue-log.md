@@ -349,6 +349,28 @@ This is the shared issue log for every defect, missing acceptance proof, test fa
 - Immediate rerun: developer/repair-root-cause/requirement suites, 113 run, OK, one skipped. The actual saved proposal is rejected with the exact duplicate name and lines 324/336. Full discovery: 1,146 run, OK, 32 skipped. Dependency-map, execution-policy, structural scan and whitespace checks passed; no new task completion is claimed.
 - Status: PATCHED and locally verified. Keep both task #308 and Phase 3.1 incomplete until the draft's real regression coverage is verified.
 
+## P3-045 — rejected sandbox patches leave the model using stale source
+
+- Evidence: saved controller history from run 40584278635 repeatedly tries an older duplicate-test body after the current candidate already uses a token context manager. Exact matching correctly refuses it, but the loop then rereads a helper range ending before its raise instead of refreshing the rejected test definition.
+- Reproducer: `test_stale_patch_reads_current_definition_before_next_attempt` fails without current-source feedback. It exercises real Session/SandboxTools operations with a scripted model: the stale edit must not apply, the next prompt must show the current definition, and one corrected candidate must pass fresh final regression.
+- Patch: a rejected exact edit provides a bounded read lead anchored in actual current source. The controller reads that range through the existing exploration ledger and includes the observed bytes in the next prompt. No fuzzy patching, new source permission, counter reset or raised limit. Legacy checkpoint histories can recover the same read lead without replaying an edit.
+- Validation: final focused sandbox/controller/recovery/tool/exploration suites: 98 run, OK, one skipped. Full Python discovery: 1,150 run, OK, 32 skipped. Ten structural-rule tests, structural scan, dependency-map, execution-policy and whitespace checks passed.
+- Status: PATCHED and locally verified; updated-engine trial pending.
+
+## P3-046 — an explicit Fix replays a cached terminal failure
+
+- Evidence: a retained sandbox controller at `phase=complete`, `status=failed`, `stop_reason=repeated_tool_call` returns the old failure before the updated engine can do any work. Task #308 retains 19 of 20 actions, so a retry still has a bounded opportunity to correct it.
+- Reproducer: `test_explicit_fix_can_continue_terminal_tool_repeat_with_remaining_budget` failed before repair. After repair an explicit Fix continues the same candidate, preserves the prior attempts/history, increments the action count, and passes regression. An automatic continuation still returns the retained failure. `test_explicit_fix_does_not_replenish_exhausted_sandbox_actions` proves exhausted work cannot invoke another model.
+- Patch: admit only explicit Fix of a repeated-tool failure with remaining original action and attempt budgets. Retain every counter and the old evidence, hydrate the latest failed command and current-source context, and keep successful completions and other terminal stops unchanged.
+- Validation: included in the 98 focused and 1,150 full tests for P3-045. Status: PATCHED and locally verified; no budget reset or expansion.
+
+## P3-047 — focused failure evidence is lost behind the older broad summary
+
+- Evidence: the task's focused execution-recovery run reports the exact `_contextvars.Token` context-manager error, but later prompts keep presenting the earlier broad failure summary and eventually lose the focused result from bounded history.
+- Reproducer: `test_failed_focused_command_replaces_stale_broad_diagnostic` fails when the latest-evidence section lacks the focused error. The corrected controller makes that evidence available and a real fake-transport Session repair passes final regression.
+- Patch: retain failed focused-command output as the latest diagnostic, investigate its real known-workspace frames and state the sandbox's Python/Node versions. Keep all command receipts and rerun the complete suite before publication. Identical failure/source investigations are deduplicated rather than spending the read budget again; the existing each-new-error investigation regression remains intact.
+- Validation: included in P3-045's final checks. Status: PATCHED and locally verified.
+
 ## Finding template
 
 ### P3-NNN — short defect title

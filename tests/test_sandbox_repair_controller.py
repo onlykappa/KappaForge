@@ -100,6 +100,49 @@ class TestSandboxRepairController(unittest.TestCase):
         self.assertEqual(result["stop_reason"], "repeated_tool_call")
         self.assertEqual(result["attempts"], [])
 
+    def test_stale_patch_reads_current_definition_before_next_attempt(self):
+        work = fixture_tree(files={'app.py': b'def make_value():\n    return 1\nvalue=1\n'})
+        controller = sandbox_repair_controller.SandboxRepairController(work)
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            if len(calls) == 1:
+                find = 'def make_value():\n    return 0\nvalue=1'
+            else:
+                self.assertIn('Current source after rejected patch', prompt)
+                self.assertIn('return 1', prompt)
+                find = 'def make_value():\n    return 1\nvalue=1'
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Repair the observed value',
+                args=dict(edits=[dict(path='app.py', find=find,
+                                     replace='def make_value():\n    return 2\nvalue=2')])))
+        result = controller.run_repair('Repair the value using current source', model, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result['candidate_changes']['app.py'], 'def make_value():\n    return 2\nvalue=2\n')
+        self.assertEqual(len(result['attempts']), 1, 'the rejected stale patch is not a candidate')
+
+    def test_failed_focused_command_replaces_stale_broad_diagnostic(self):
+        focused_error = "TypeError: '_contextvars.Token' object does not support the context manager protocol"
+        class FocusedDocker(FakeDocker):
+            def call(self, args, **kwargs):
+                if args[:1] == ['run'] and 'tests/test_app.py' in args:
+                    return sandbox.Exec(1, focused_error, '')
+                return super().call(args, **kwargs)
+        controller = sandbox_repair_controller.SandboxRepairController(fixture_tree(FocusedDocker()))
+        calls = []
+        def model(key, prompt, **kwargs):
+            calls.append(prompt)
+            if len(calls) == 1:
+                return 'scripted', json.dumps(dict(tool='run_command', reason='Focus the observed failure',
+                    args=dict(argv=['python', '-B', '-m', 'unittest', 'tests/test_app.py'])))
+            evidence = prompt.split('Latest sandbox test evidence (untrusted output):\n', 1)[1].split('\n\n', 1)[0]
+            self.assertIn(focused_error, evidence)
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Correct the current candidate',
+                args=dict(edits=[dict(path='app.py', find='value=1', replace='value=2')])))
+        result = controller.run_repair('Repair the value', model, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        self.assertEqual(len(calls), 2)
+
     def test_attempt_limit_counts_changed_candidates_not_model_actions(self):
         docker = FakeDocker(always_fail=True, vary_failure=True)
         session = fixture_tree(docker, {"app.py": b"a1\na2\na3\na4\na5\n"})
