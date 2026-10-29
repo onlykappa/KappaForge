@@ -582,6 +582,11 @@ class Journal:
         self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',
                    {'body': '### KappaForge is working on it\n\n<!-- KAPPA_PROGRESS_V1 ' + wire + ' -->\n' + message}, 'POST')
 
+    def ingest_reviews(self, pr):
+        """Read review evidence only for this journal's authenticated saved draft."""
+        from engine.review_ingestion import sync
+        return sync(self, pr)
+
     def target_read(self, path):
         if self.scope.repo == ROOT:
             return self.read(path)
