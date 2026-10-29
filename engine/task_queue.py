@@ -147,8 +147,12 @@ def checkpoint(api, row, run_id, engine_sha):
             continue
         engine = state.get('engine') or {}
         if (state.get('version') == 1 and state.get('task') == row['issue'] and state.get('repo') == ROOT
-                and state.get('digest') == row['digest'] and engine.get('queueRun') == str(run_id)
-                and engine.get('sha') == engine_sha and state.get('run') == str(run_id)):
+                and state.get('digest') == row['digest']
+                and (run_id is None or engine.get('queueRun') == str(run_id))
+                and (engine_sha is None or engine.get('sha') == engine_sha)
+                and re.fullmatch(r'[1-9][0-9]*', str(engine.get('queueRun', '')))
+                and authority.SHA.fullmatch(str(engine.get('sha', '')))
+                and state.get('run') == engine.get('queueRun')):
             matches.append(state)
     if len(matches) != 1:
         raise Blocked('No unique task checkpoint from this pinned queue execution')
@@ -182,6 +186,49 @@ class Queue:
         if not self.comment:
             self.comment = result['id']
 
+    def owner_upgrade(self, rows, origin, row, candidate_sha):
+        if origin.get('conclusion') != 'cancelled' or origin.get('head_sha') == self.sha:
+            return False
+        expected = dict(fromRun=str(origin['id']), fromSha=origin['head_sha'], toSha=self.sha,
+                        manifest=self.state['manifest'], task=row['issue'], candidate=candidate_sha)
+        for comment in rows:
+            if ((comment.get('user') or {}).get('login') != 'onlykappa'
+                    or not timestamp(origin.get('updated_at'))
+                    or not timestamp(origin['updated_at']) <= timestamp(comment.get('created_at')) <= self.clock()):
+                continue
+            marker = re.search(r'^<!-- ' + UPGRADE_MARKER + r' (.*?) -->$', comment.get('body') or '', re.M)
+            try:
+                if marker and json.loads(marker[1]) == expected:
+                    return True
+            except ValueError:
+                pass
+        return False
+
+    def reservation(self, row, record, origin):
+        name = f"kappa/queue-claim-{self.grant['control']}-{row['issue']}"
+        actual = self.api(PREFIX + 'git/ref/heads/' + name)['object']['sha']
+        if record.get('reservationSha'):
+            if actual != record['reservationSha']:
+                raise Blocked('Original queue reservation moved')
+        elif actual != origin.get('head_sha'):
+            # Legacy checkpoints did not retain the first claim SHA across engine upgrades.
+            # Establish it from an actual owner-selected run of this exact grant, never replace it.
+            runs = pages(self.api, PREFIX + f'actions/workflows/agent.yml/runs?head_sha={actual}&event=workflow_dispatch', 'workflow_runs')
+            verified = False
+            for run in runs:
+                if run.get('head_sha') != actual or run.get('display_title') != f"Agent task #{self.grant['control']} queue":
+                    continue
+                try:
+                    if authority.owner_run(run['id'], self.api, actual, live=False) == self.grant:
+                        verified = True
+                        break
+                except PermissionError:
+                    continue
+            if not verified:
+                raise Blocked('Original queue reservation has no matching owner provenance')
+        record['reservationSha'] = actual
+        return actual
+
     def load(self):
         rows = pages(self.api, PREFIX + f"issues/{self.grant['control']}/comments")
         found = []
@@ -202,35 +249,12 @@ class Queue:
                 old = self.api(PREFIX + f"actions/runs/{prior.get('run')}")
                 if old.get('head_sha') != prior.get('sha'):
                     raise Blocked('Queue checkpoint belongs to another grant or engine revision')
-                upgraded = set()
-                if old.get('status') == 'completed' and old.get('conclusion') == 'cancelled' and self.sha != prior.get('sha'):
-                    for key in unfinished:
-                        expected = dict(fromRun=prior.get('run'), fromSha=prior.get('sha'), toSha=self.sha,
-                                        manifest=self.state['manifest'], task=int(key))
-                        for comment in rows:
-                            if ((comment.get('user') or {}).get('login') != 'onlykappa'
-                                    or not timestamp(old.get('updated_at'))
-                                    or not timestamp(old['updated_at']) <= timestamp(comment.get('created_at')) <= self.clock()):
-                                continue
-                            marker = re.search(r'^<!-- ' + UPGRADE_MARKER + r' (.*?) -->$', comment.get('body') or '', re.M)
-                            try:
-                                value = json.loads(marker[1]) if marker else {}
-                            except ValueError:
-                                continue
-                            if (set(value) == set(expected) | {'candidate'}
-                                    and authority.SHA.fullmatch(str(value.get('candidate', '')))
-                                    and all(value.get(k) == v for k, v in expected.items())):
-                                upgraded.add((key, value['candidate']))
-                if old.get('status') != 'completed' or (old.get('conclusion') not in ('success', 'failure') and not upgraded):
-                    raise Blocked('Prior unfinished or cancelled queue cannot be replayed')
-                try:
-                    old_grant = authority.owner_run(prior.get('run'), self.api, prior.get('sha'), live=False)
-                except PermissionError:
-                    raise Blocked('Queue checkpoint belongs to another grant or engine revision') from None
-                if old_grant != self.grant:
+                if old.get('status') != 'completed':
+                    raise Blocked('Prior unfinished queue cannot be replayed')
+                if authority.owner_run(prior.get('run'), self.api, prior.get('sha'), live=False) != self.grant:
                     raise Blocked('Previous queue grant differs; no resumption authorized')
-                if unfinished and prior.get('status') != 'blocked' and not upgraded:
-                    raise Blocked('Prior unfinished launch has an ambiguous outcome; inspection required')
+                if not unfinished and old.get('conclusion') not in ('success', 'failure'):
+                    raise Blocked('Cancelled queue cannot be replayed')
                 for key, record in unfinished.items():
                     row = next((r for r in self.grant['tasks'] if str(r['issue']) == key), None)
                     if row is None or type(record.get('attempts')) is not int or not 1 <= record['attempts'] < MAX_ATTEMPTS:
@@ -238,20 +262,32 @@ class Queue:
                     authority.task(self.grant, self.api(PREFIX + f"issues/{row['issue']}"), self.clock())
                     if active_agents(self.api, row['issue']):
                         raise Blocked('Previous task still has an active worker; duplicate refused')
-                    saved = checkpoint(self.api, row, prior['run'], prior['sha'])
-                    status = saved.get('engineStatus') if saved.get('status') == 'engine_pinned' else saved.get('status')
-                    upgrade = (key, saved.get('candidate')) in upgraded
+                    # A supervisor can stop before launching a child. The task's authentic
+                    # journal identifies its last coder; the supervisor run is a separate identity.
+                    saved = checkpoint(self.api, row, None, None)
+                    engine = saved['engine']
+                    origin = self.api(PREFIX + f"actions/runs/{engine['queueRun']}")
+                    if (origin.get('status') != 'completed'
+                            or authority.owner_run(engine['queueRun'], self.api, engine['sha'], live=False) != self.grant):
+                        raise Blocked('Previous coder is active or has foreign authority')
+                    upgrade = self.owner_upgrade(rows, origin, row, saved.get('candidate'))
+                    if origin.get('conclusion') not in ('success', 'failure') and not upgrade:
+                        raise Blocked('Cancelled coder lacks exact owner engine-upgrade authorization')
                     if old.get('conclusion') == 'cancelled' and not upgrade:
-                        raise Blocked('Cancelled task lacks exact owner engine-upgrade authorization')
+                        raise Blocked('Cancelled supervisor lacks exact owner upgrade authorization')
+                    if prior.get('status') != 'blocked' and not upgrade:
+                        raise Blocked('Prior unfinished launch has an ambiguous outcome; inspection required')
+                    status = saved.get('engineStatus') if saved.get('status') == 'engine_pinned' else saved.get('status')
                     if status not in ('blocked', 'waiting') and not (upgrade and status in ('running', 'recovering')):
                         raise Blocked('Previous task outcome is ambiguous; inspection required')
                     pr = candidate(self.api, row)
                     if pr is None or saved.get('candidate') != pr['head']['sha']:
                         raise Blocked('Previous candidate changed; concurrent work preserved')
-                    self.reservations[key] = prior['sha']
+                    self.reservations[key] = self.reservation(row, record, origin)
+                    record['run'] = engine['queueRun']
                 self.state['resumedFrom'] = prior['run']
             self.state['tasks'] = prior['tasks']
-            # Do not select this comment for writes until all provenance checks pass.
+            # Invalid checkpoints are never selected for subsequent error writes.
             self.comment = checkpoint_id
         self.save('running', 'Owner-selected engine verified; dependency queue is active.')
 
@@ -281,7 +317,7 @@ class Queue:
         record = self.state['tasks'].setdefault(str(number), dict(status='queued', attempts=0))
         if record['attempts'] >= MAX_ATTEMPTS:
             raise Blocked('Queue repair attempts exhausted; existing task counters retained')
-        record.update(status='running', attempts=record['attempts'] + 1)
+        record.update(status='running', attempts=record['attempts'] + 1, run=self.run_id)
         self.save(detail=f'Starting #{number}; queue attempt {record["attempts"]}.')
         env = dict(os.environ, INPUT_ISSUE_NUMBER=str(number), INPUT_ACTION=action,
                    KAPPA_QUEUE_RUN=self.run_id, KAPPA_ENGINE_CHECK='true', KAPPA_TASK_SCOPE='write')

@@ -696,6 +696,13 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Regression: positive exact owner upgrade plus six negative controls;126 focused and1,312 full Python tests pass (31 skips). No manual state/claim/counter reset or cap increase.
 - Status: IMPLEMENTED and locally validated. Actual owner marker and new live run are recorded on318 after push. All PRs remain draft; no merge/deploy/release.
 
+## P3-099 — queue upgrades conflate original claim, supervisor and actual coder identity
+
+- Evidence: upgraded supervisor40818187464 at913f45e stopped before spawning a coder with Immutable queue reservation/base moved. The original immutable claim still correctly identifiesbc464f4, while the most recent actual coder was40816365254 at02fce53. The failed supervisor incorrectly expected its immediate predecessor's engine SHA in that original claim. It then advanced its control checkpoint identity despite no new task checkpoint existing.
+- Patch: retain reservationSha and last actual coder run independently from supervisor run/source. For legacy records, establish the original claim from an authenticated owner queue run of the identical manifest; never move or recreate it. Read the unique actual task checkpoint, verify its own owner run/grant/termination and unchanged candidate, and require an exact owner upgrade for a deliberately cancelled coder. Failed pre-launch supervisors grant no fictitious task progress. Attempts and original model/edit/fix counters remain.
+- Regression: two consecutive upgrades with a pre-launch supervisor failure preserve an older original claim and last coder while advancing only the supervisor. Missing owner provenance or a moved recorded claim is refused without checkpoint/claim writes.113 focused queue/runtime/recovery tests and1,314 full Python discovery pass (31 skips); ten structural rules plus policy/map checks pass.
+- Status: PATCHED locally; fresh exact owner upgrade and live trial follow. The failed pre-launch supervisor spent no additional task model calls; retained task counters55/13/4 and queue attempts2. No manual state/claim edit, cap increase or merge/deployment.
+
 ## Finding template
 
 ### P3-NNN — short defect title

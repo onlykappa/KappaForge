@@ -101,6 +101,9 @@ class World:
             n = int(p.split('/')[1]) - 100
             return copy.deepcopy(self.paths[n] if '/files?' in p else self.prs[n])
         if 'actions/workflows/agent.yml/runs?' in p:
+            if 'head_sha=' in p:
+                sha = p.split('head_sha=')[1].split('&')[0]
+                return {'workflow_runs': [copy.deepcopy(r) for r in [self.run, *self.history.values()] if r['head_sha'] == sha]}
             return {'workflow_runs': []}
         if p.startswith('actions/workflows/'):
             workflow = p.split('/')[2]
@@ -378,6 +381,48 @@ class QueueProgressTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
             self.assertIsNone(queue.comment)
             self.assertEqual(self.w.comments, before)
+
+    def test_multiple_upgrades_preserve_first_claim_and_last_coder_when_supervisor_never_launched(self):
+        comment, marker = self.prepare_owner_upgrade()
+        original = 'c' * 40
+        self.w.history[80] = dict(self.w.history[90], id=80, head_sha=original, conclusion='failure')
+        self.w.refs['kappa/queue-claim-318-313'] = original
+        first = self.w.queue(); first.load()
+        self.assertEqual(first.reservations['313'], original)
+        first.save('blocked', 'Immutable queue reservation/base moved')
+        # Simulate the legacy checkpoint after its pre-launch supervisor failure:
+        # only the supervisor identity advanced; the coder and original claim did not.
+        prior = json.loads(self.w.comments[0]['body'].split(q.MARKER + ' ')[1].split(' -->')[0])
+        prior['tasks']['313'].pop('reservationSha')
+        prior['tasks']['313'].pop('run')
+        self.w.comments[0]['body'] = '<!-- ' + q.MARKER + ' ' + json.dumps(prior) + ' -->'
+        self.w.history[91] = dict(self.w.run, status='completed', conclusion='failure')
+        self.w.sha = 'd' * 40
+        self.w.run = dict(self.w.run, id=92, head_sha=self.w.sha)
+        marker['toSha'] = self.w.sha
+        self.w.comments.append(dict(comment, id=101, body='<!-- ' + q.UPGRADE_MARKER + ' ' + json.dumps(marker) + ' -->'))
+        resumed = self.w.queue(); resumed.load()
+        self.assertEqual(resumed.reservations['313'], original)
+        self.assertEqual(resumed.state['tasks']['313']['reservationSha'], original)
+        self.assertEqual(resumed.state['tasks']['313']['run'], '90')
+        self.assertEqual(resumed.state['tasks']['313']['attempts'], 1)
+        self.assertEqual(resumed.state['resumedFrom'], '91')
+        self.assertEqual(self.w.refs['kappa/queue-claim-318-313'], original)
+
+    def test_legacy_claim_needs_actual_owner_provenance_and_recorded_claim_cannot_move(self):
+        for recorded in (False, True):
+            self.w = World(); self.prepare_failed_queue()
+            self.w.refs['kappa/queue-claim-318-313'] = 'c' * 40
+            if recorded:
+                state = json.loads(self.w.comments[0]['body'].split(q.MARKER + ' ')[1].split(' -->')[0])
+                state['tasks']['313']['reservationSha'] = 'a' * 40
+                self.w.comments[0]['body'] = '<!-- ' + q.MARKER + ' ' + json.dumps(state) + ' -->'
+            before = copy.deepcopy(self.w.comments)
+            queue = self.w.queue()
+            with self.subTest(recorded=recorded), self.assertRaises(q.Blocked): queue.load()
+            self.assertIsNone(queue.comment)
+            self.assertEqual(self.w.comments, before)
+            self.assertEqual(self.w.refs['kappa/queue-claim-318-313'], 'c' * 40)
 
     def test_cancelled_grant_during_model_call_terminates_child(self):
         queue = self.w.queue()

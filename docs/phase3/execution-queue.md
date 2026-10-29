@@ -2,6 +2,10 @@
 
 The owner explicitly requested automatic advancement to save assistant supervision. This supersedes the earlier supervised-only plan below. Implementation is in engine/task_queue.py, authority in engine/queue_authority.py, and the existing agent workflow's owner-only `queue` job. No merge or deployment is required to execute an explicit owner dispatch from312's branch.
 
+## Reservation identity correction
+
+Supervisor40818187464 failed before launching a coder because the original reservation was compared to a later engine SHA.099 separates original reservationSha, actual coder identity and supervisor identity. Legacy claim identity requires matching authenticated owner-run/manifest provenance and stays immutable. A supervisor that never started a child cannot invent a new task checkpoint.113 focused and1,314 full Python tests pass (31 skips), including multiple upgrades and pre-launch failure. Actual coder source02fce53/run40816365254 and counters55/13/4 remain until a real new child acknowledges. Control318 records the next exact upgrade/run.
+
 ## Monitoring correction: XCTest recognition and explicit engine upgrade
 
 Run40816365254 repeatedly rejected real native work because XCTest bundle paths were absent from both generation and evidence policies.097 fixes them through one shared policy and a before/after generation regression. The old run was deliberately cancelled to stop wasting inference; counters55/13/4 and candidate d2785c2 remain.098 permits only a new explicit owner-selected engine revision with an exact owner-authored upgrade marker posted after cancellation, bound to old run/source, new source, manifest, task and candidate. Generic cancellation still stops; no attempt/claim/counter reset.126 focused,1,312 full Python tests pass (31 skips); ten structural rules and policy/map checks pass. Control318 records the live marker/run. Native CI remains required before progression.
