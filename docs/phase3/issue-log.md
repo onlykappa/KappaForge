@@ -761,6 +761,13 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Source: generation/execution checkpoint patch receipts on314, independently inspected read-only while the owner worker was active. No generated candidate code was executed on the review host. No branch or PR was published;5b remains the original validated baseline.
 - Decision: preserve failed proposal/checkpoints and every counter. Five sandbox repair attempts are exhausted even though outer queue attempts are2/3; retrying cannot replenish the inner allowance. Do not resume or create replacement authorization. Progress watch paused at owner's explicit exhaustion boundary. Further feature delivery needs owner review of this retained failure and a deliberate next scope, without pretending314 completed.
 
+## P3-108 — direct owner-requested continuation: durable scoped review inbox
+
+- Scope: implementation enhancement after owner requested resume, not an automatic retry/reset of exhausted314 or a claim that its rejected proposal passed. Work stays in312. The original failed task/queue counters and frozen candidates are unchanged.
+- Implementation: real Journal.ingest_reviews interface, live active/journal scope and exact saved candidate checks, three authenticated REST categories, complete stable bounded scans, qualified identities and supplied metadata, immutable hashed durable inbox receipts, idempotent reload, edits/tombstones/reappearance, cancellation/concurrency/API/storage refusal. Feedback remains untrusted and links are never followed; no edit or lifecycle action follows from ingestion.
+- Validation:12 behavioral tests and119 focused ingestion/journal/task-state tests pass. Full Python discovery:1,340 run OK,31 skipped; ten structural rules and shipped-source scan pass with15 existing warnings. Policy/map/whitespace checks pass. No live candidate ingestion or automatic repair integration claimed. Details/limits: review-ingestion.md.
+- Remaining: automatic consumer/wakeup integration, downstream processed decisions, richer thread resolution metadata and live scoped acceptance. The complete Phase3.2 milestone stays open pending these acceptance boundaries;314/315 stay historical, not machine-marked complete.
+
 ## Finding template
 
 ### P3-NNN — short defect title

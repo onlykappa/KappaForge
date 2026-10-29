@@ -1,3 +1,7 @@
+# Direct continuation — owner update2026-10-29
+
+Owner requested resume after the stop below. Work now continues directly in312 without restarting exhausted314 or changing any cap/counter. P3-108 implements the durable, authenticated review-inbox API on the existing Journal, with119 focused tests including12 new behavior tests. Full Python discovery passes1,340 tests (31 skips), plus ten structural rules and policy/map/source checks; new-head remote CI is pending. Complete snapshot synchronization handles pagination, edits, removals, rate limits, cancellation, interruption and observed concurrent changes. Automatic repair consumption/wakeups and live acceptance remain pending, so Phase3.2 is not falsely closed. See review-ingestion.md. No merge, deployment or release.
+
 # Queue outcome — 2026-10-29
 
 Queue319/run40826673859 has stopped with failure, not delivery.314's sandbox controller retained status=failed, stop_reason=attempt_limit, five attempts and twelve model repair actions; task totals are35 model calls/6 generation edits. Outer queue attempts remain2/3, but that does not replenish the exhausted inner repair allowance. No PR or candidate branch was published; original candidate/base remains5b.315 has never started. No worker remains active; no restart or authorization replacement was requested.
