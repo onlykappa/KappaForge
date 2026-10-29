@@ -175,27 +175,36 @@ class RealSandboxAcceptance(unittest.TestCase):
         self.assertTrue(all(p.endswith('/comments') or '/issues/comments/' in p for p in mutations), mutations)
         self.assertEqual(run.world.files, {'value.py': 'value = 1\n'}, 'repository files are untouched')
 
-    def test_all_ten_repair_attempts_are_separately_recorded(self):
-        def wrong(failing, call):
-            # Ten distinct wrong offsets, each failing differently, so neither repeat rule stops them.
-            previous = 'net_days - 1' if call == 1 else f'net_days - {call}'
-            return f'Attempt {call}: try a {call + 1}-day offset', {'edits': [
-                dict(path='invoice/terms.py', find=f'timedelta(days={previous})', replace=f'timedelta(days=net_days - {call + 1})')]}
-        run = Scenario(Agent(wrong))
+    def test_all_budgeted_repair_attempts_are_separately_recorded(self):
+        # Independent named failures exercise capacity without pretending many
+        # wrong offsets for one assertion are different repair mechanisms.
+        total = sandbox_repair_controller.MAX_ATTEMPTS + 1
+        source = ''.join(f'def value_{n}():\n    return 0\n\n' for n in range(1, total + 1))
+        tests = 'import unittest\nimport values\nclass Values(unittest.TestCase):\n' + ''.join(
+            f'    def test_value_{n}(self): self.assertEqual(values.value_{n}(), {n})\n' for n in range(1, total + 1))
+        selected = []
+        def repair(failing, call):
+            name = sorted(failing)[0]
+            n = int(name.rsplit('_', 1)[1])
+            selected.append(n)
+            return f'Attempt {call}: implement independently failing value {n}', {'edits': [
+                dict(path='values.py', find=f'def value_{n}():\n    return 0', replace=f'def value_{n}():\n    return {n}')]}
+        run = Scenario(Agent(repair), files={'values.py': source.encode(), 'tests/test_values.py': tests.encode()})
         self.assertEqual((run.result['status'], run.result['stop_reason']), ('failed', 'attempt_limit'))
+        limit = sandbox_repair_controller.MAX_ATTEMPTS
         attempts = run.result['attempts']
-        self.assertEqual([a['index'] for a in attempts], list(range(1, 11)))
-        self.assertEqual(len({a['fingerprint'] for a in attempts}), 10)
-        for n, attempt in enumerate(attempts, 1):
-            self.assertIn(f'net_days - {n + 1}', attempt['diff'])
-            self.assertIn(f'Attempt {n}:', attempt['rationale'])
+        self.assertEqual([a['index'] for a in attempts], list(range(1, limit + 1)))
+        self.assertEqual(len({a['fingerprint'] for a in attempts}), limit)
+        self.assertEqual(len(set(selected)), limit)
+        for call, attempt in enumerate(attempts, 1):
+            self.assertIn(f'Attempt {call}:', attempt['rationale'])
             self.assertEqual(attempt['status'], 'failed')
             self.assertTrue(attempt['test_results'] and attempt['diagnostics'])
-        self.assertEqual(len(run.agent.seen), 10, 'after the tenth failed attempt no further change is requested')
+        self.assertEqual(len(run.agent.seen), limit, 'no change is requested beyond the ceiling')
         saved = run.journal.state['executionDiagnostics']
-        self.assertEqual([a['index'] for a in saved['attempts']], [6, 7, 8, 9, 10], 'display keeps the latest five attempts')
+        self.assertEqual([a['index'] for a in saved['attempts']], list(range(limit - 4, limit + 1)))
         persisted = execution.pending(run.journal)['controller']['attempts']
-        self.assertEqual([a['index'] for a in persisted], list(range(1, 11)), 'full durable history retains all ten')
+        self.assertEqual([a['index'] for a in persisted], list(range(1, limit + 1)))
         self.assertNotEqual(saved['finalValidation'], 'passed')
 
     def test_identical_failed_approaches_are_detected(self):

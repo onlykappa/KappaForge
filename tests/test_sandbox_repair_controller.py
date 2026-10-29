@@ -156,7 +156,7 @@ class TestSandboxRepairController(unittest.TestCase):
 
     def test_attempt_limit_counts_changed_candidates_not_model_actions(self):
         docker = FakeDocker(always_fail=True, vary_failure=True)
-        session = fixture_tree(docker, {"app.py": "".join(f"a{n}\n" for n in range(1, 11)).encode()})
+        session = fixture_tree(docker, {"app.py": "".join(f"a{n}\n" for n in range(1, sandbox_repair_controller.MAX_ATTEMPTS + 1)).encode()})
         controller = sandbox_repair_controller.SandboxRepairController(session)
         calls = 0
 
@@ -170,8 +170,8 @@ class TestSandboxRepairController(unittest.TestCase):
 
         result = controller.run_repair("repair", scripted, "key")
         self.assertEqual(result["stop_reason"], "attempt_limit")
-        self.assertEqual(len(result["attempts"]), 10)
-        self.assertEqual(calls, 10)
+        self.assertEqual(len(result["attempts"]), sandbox_repair_controller.MAX_ATTEMPTS)
+        self.assertEqual(calls, sandbox_repair_controller.MAX_ATTEMPTS)
         self.assertTrue(all(row["why_different"] for row in result["attempts"]))
 
     def test_zero_discovered_tests_do_not_establish_success(self):
@@ -194,9 +194,9 @@ class TestSandboxRepairController(unittest.TestCase):
                 dict(path='app.py', find='value=' + str(previous), replace='value=' + str(previous + 1))])))
         result = controller.run_repair('repair', next_patch, 'key', {'app.py': '#' + 'x' * 25000 + '\nvalue=3\n'})
         self.assertEqual(result['stop_reason'], 'attempt_limit')
-        self.assertEqual(len(result['attempts']), 10)
-        self.assertEqual(count, 9, 'the generated candidate plus nine repairs use the ten attempts')
-        self.assertEqual(len({a['fingerprint'] for a in result['attempts']}), 10)
+        self.assertEqual(len(result['attempts']), sandbox_repair_controller.MAX_ATTEMPTS)
+        self.assertEqual(count, sandbox_repair_controller.MAX_ATTEMPTS - 1, 'the generated candidate also consumes one attempt')
+        self.assertEqual(len({a['fingerprint'] for a in result['attempts']}), sandbox_repair_controller.MAX_ATTEMPTS)
 
     def test_all_skipped_tests_do_not_establish_success(self):
         session = fixture_tree(FakeDocker(skipped_tests=True))

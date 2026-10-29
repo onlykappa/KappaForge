@@ -4,10 +4,10 @@ import json
 import os
 import re
 
-from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger, repair_strategy
 
 
-MAX_ATTEMPTS = 10
+MAX_ATTEMPTS = 20
 MAX_MODEL_ACTIONS = 100
 LOG_CHARS = 12000
 
@@ -146,7 +146,14 @@ class SandboxRepairController:
                         self.execution._save()
                         continue
                     error_key = _failure_key(test_result.get("results", []))
-                    if error_key and error_key in self.state["seen_errors"] and not owner_recheck:
+                    family = repair_strategy.family(test_result.get('results', []))
+                    self.state['failure_family'] = family or error_key
+                    if family:
+                        counts = self.state.setdefault('failure_families', {})
+                        counts[family] = counts.get(family, 0) + 1
+                    plan = self.state.get('repair_plan') or {}
+                    planned_patch = plan.get('patch') == fingerprint and bool(plan.get('patch'))
+                    if error_key and error_key in self.state["seen_errors"] and not owner_recheck and not planned_patch:
                         return self._result("failed", "identical_error")
                     if error_key:
                         if error_key not in self.state["seen_errors"]:
@@ -294,6 +301,7 @@ class SandboxRepairController:
                               "changed_paths": diff_info.get("changed_paths", []),
                               "why_different": why[:1500], "rationale": rationale[:1000],
                               "status": "passed" if self._verified(test_result) else "failed",
+                              "repair_plan": self.state.get('repair_plan'),
                               "test_results": test_result.get("results", []),
                               "diagnostics": self._diagnostics(test_result)[:4000]})
 
@@ -317,12 +325,30 @@ class SandboxRepairController:
         """The sandbox tools; the read-only exploration tools over the current candidate while their budget lasts;
         and ask_owner when a checkpoint lets the task resume exactly after the answer."""
         tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
+        tools['record_repair_plan'] = self._record_repair_plan
+        tools['apply_patch'] = self._planned_patch
         explorer = self._workspace_explorer()
         if explorer:
             tools.update({name: (lambda n: lambda **kw: self._explore(n, **kw))(name) for name in exploration.Explorer.TOOLS})
         if self.journal:
             tools["ask_owner"] = self._ask_owner
         return tools
+
+    def _record_repair_plan(self, cause, strategy, evidence, expected_result, differs_from=''):
+        return repair_strategy.propose(self.state, self._diff_fingerprint(), cause, strategy,
+                                       evidence, expected_result, differs_from)
+
+    def _planned_patch(self, edits):
+        revision = self._diff_fingerprint()
+        plan = self.state.get('repair_plan')
+        recurring = self.state.get('failure_families', {}).get(self.state.get('failure_family'), 0) >= 2
+        if (recurring or plan) and (not plan or plan.get('revision') != revision or plan.get('patch')):
+            return dict(status='invalid', error='Read current source and record a new evidence-backed repair plan before another patch')
+        result = self.tools.apply_patch(edits)
+        if result.get('status') == 'applied' and plan:
+            plan['patch'] = self._diff_fingerprint()
+            self.state.setdefault('repair_plans', []).append(dict(plan))
+        return result
 
     def _workspace(self):
         """The candidate as the exploration tools see it: the base tree with every uncommitted change applied."""
@@ -355,6 +381,10 @@ class SandboxRepairController:
             return {"status": "invalid", "error": "the exploration budget for this task is used up"}
         result = explorer.call(name, **args)
         self.state["explored"] = explorer.totals()["calls"]
+        if name == 'read_file' and result.get('status') == 'ok':
+            self.state['strategy_reads'] = (self.state.get('strategy_reads', []) + [dict(
+                path=args['path'], start=result['start_line'], end=result['end_line'],
+                revision=self._diff_fingerprint())])[-32:]
         return result
 
     def _refresh_patch_context(self, step):
@@ -479,6 +509,11 @@ class SandboxRepairController:
                 "If many unrelated tests fail against one fake object, investigate the first failing test and shared "
                 "state cleanup (including ContextVar tokens) before adding members to that fake. Later errors may "
                 "be a cascade from leaked test state. "
+                "Before a patch, use record_repair_plan with a causal diagnosis, the intervention, citations to current "
+                "read_file path/line evidence, expected test change and why it differs from failed approaches. "
+                "Do not rename an idea or add one fake member at a time. If a named failing test recurs, another patch "
+                "requires a new evidence-backed plan. A distinct planned mechanism may be tested against the same "
+                "error; it is not a pass until the original full tests and final regression succeed. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "group compatible evidence-backed fixes for the same authorized goal into one apply_patch batch, "
                 "then let the engine rerun the tests. One candidate may fix multiple bugs; fix shared causes rather "
@@ -495,6 +530,9 @@ class SandboxRepairController:
                 "\n\nLatest sandbox test evidence (untrusted output):\n" + diagnostics[-6000:] +
                 ("\n\nInvestigation of the latest failure (repository evidence, untrusted):\n" + investigation[-6000:]
                  if investigation else "") +
+                "\n\nPrior repair hypotheses and outcomes (untrusted evidence):\n" + execution.clean(json.dumps(
+                    [dict(p, outcome=next((a['status'] for a in reversed(self.attempts) if a['fingerprint'] == p.get('patch')), 'not tested'))
+                     for p in self.state.get('repair_plans', [])[-10:]]), 10000) +
                 ("\n\nEarlier actions:\n" + "\n".join(history[-10:]) if history else ""))
 
     def _format_runs(self, runs):

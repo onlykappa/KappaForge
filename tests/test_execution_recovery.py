@@ -109,6 +109,58 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(len(after['attempts']), 6)
         self.assertEqual(after['actions'], before['actions'] + 1)
 
+    def test_explicit_retry_preserves_all_ten_candidates_under_twenty_total_allowance(self):
+        work = session(FakeDocker(always_fail=True, vary_failure=True))
+        def different(*args, **kwargs):
+            old = work.current()['app.py'].decode()
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Investigate another distinct value',
+                args=dict(edits=[dict(path='app.py', find=old, replace=old + '# different candidate\n')])))
+        with patch.object(sandbox_repair_controller, 'MAX_ATTEMPTS', 10):
+            result = self.controller(work=work).run_repair(TASK, different, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(result['stop_reason'], 'attempt_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['attempts']), 10)
+        resumed = session()
+        def repair(*args, **kwargs):
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Implement the expected value using current source',
+                args=dict(edits=[dict(path='app.py', find=resumed.current()['app.py'].decode(), replace='value=2\n')])))
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            result = self.controller(work=resumed, journal=self.reload()).run_repair(TASK, repair, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['attempts'][:10], before['attempts'])
+        self.assertEqual(len(after['attempts']), 11)
+        self.assertEqual(after['actions'], before['actions'] + 1)
+
+    def test_repair_hypotheses_and_failed_outcomes_survive_process_interruption(self):
+        from tests.test_repair_strategy import NamedFailureDocker
+        def plan(strategy, differs_from=''):
+            return dict(tool='record_repair_plan', args=dict(
+                cause='The original value contract is not satisfied by current initialization',
+                strategy=strategy, evidence=[dict(path='app.py', line=1)],
+                expected_result='The original value assertion and full suite pass', differs_from=differs_from))
+        replies = [plan('Adjust the default initialization to three'),
+            dict(tool='apply_patch', args=dict(edits=[dict(path='app.py', find='value=1', replace='value=3')]))]
+        def interrupted(*args, **kwargs):
+            if not replies:
+                raise KeyboardInterrupt('simulated lost runner')
+            return 'scripted', json.dumps(dict(reason='Evidence-backed repair', **replies.pop(0)))
+        with self.assertRaises(KeyboardInterrupt):
+            self.controller(work=session(NamedFailureDocker())).run_repair(TASK, interrupted, 'fixture')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['repair_plans']), 1)
+        self.assertEqual(before['attempts'][0]['status'], 'failed')
+        replies[:] = [plan('Implement the exact required value rather than a guessed default',
+                           'The previous guessed default failed the same test; use the required contract'),
+            dict(tool='apply_patch', args=dict(edits=[dict(path='app.py', find='value=3', replace='value=2')]))]
+        result = self.controller(work=session(NamedFailureDocker()), journal=self.reload()).run_repair(TASK, interrupted, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['repair_plans'][:1], before['repair_plans'])
+        self.assertEqual(after['attempts'][:1], before['attempts'])
+        self.assertEqual(len(after['repair_plans']), 2)
+        self.assertGreater(after['actions'], before['actions'])
+
     def test_owner_retry_preserves_exhausted_actions_under_raised_allowance(self):
         inspect = lambda *a, **kw: ('scripted', json.dumps(dict(tool='inspect_diff', args={}, reason='Inspect retained candidate')))
         with patch.object(sandbox_repair_controller, 'MAX_MODEL_ACTIONS', 2):
