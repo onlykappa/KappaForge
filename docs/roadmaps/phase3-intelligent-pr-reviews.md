@@ -8,7 +8,11 @@
 
 This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in the relevant delivery PR. A code-generation claim alone does not close an item. Keep each authorized slice in its tracked draft PR; do not merge, release, deploy or mark ready for review.
 
-## Current execution — 2026-10-29
+## Current direct implementation — 2026-10-29
+
+The owner switched Phase3 implementation to direct Codex work. KappaForge run40970125368 is cancelled and queue control319 is closed; scheduled monitoring stays off.314 had passed original-task review and exact-source validation40938553578 at d561a8a;315's failed history remains intact and is not marked complete by the direct implementation. Draft312 now carries the direct ingestion/thread-state, review-decision/repair, browser-evidence and mobile review-card delivery described in [direct-delivery.md](../phase3/direct-delivery.md). Local full Python1,392 run OK (33 skips), Node910 passed, and desktop/phone Chromium runs passed. Final controlled pixel experiments, exact-head remote CI and the remaining end-to-end/integration audit are still required. No merge, deployment, release, readiness change or worker restart is authorized by these results.
+
+## Historical execution snapshot — 2026-10-29
 
 Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests40820462881 and native40820462875 succeeded (all five UI tests). Latest automatic trial40888143488 stopped at10/10 tested candidate versions,30/100 repair actions,55 model calls/6 generation edits and4/10 outer launches. Its failed history remains unchanged;315 is unstarted. The owner subsequently requested a separately reviewable corrected candidate: draft320 starts at the original immutable5b base and contains the durable Journal API/tests already developed in312. Head94da2aa passed remote Python/web/Worker/structural40899169255 and graph40899169240. It has not been adopted into the exhausted task checkpoint or marked accepted. Current direct review patches a deleted-author inventory blocker (P3-113); fresh corrected-head CI remains required. Engine0964f14 passed ordinary/Docker checks but its latest native run40896030489 failed keyboard dismissal and persisted acknowledgment assertions (P3-114); earlier passing native evidence does not erase that failure. Scheduled watch remains disabled at the owner's request; no autonomous task restart, grant/counter reset, merge or deployment.
 

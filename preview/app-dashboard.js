@@ -163,9 +163,14 @@ async function openReviewCard(key){
  if(reviewCards[key]&&!reviewCards[key].loading&&!reviewCards[key].error){delete reviewCards[key];render();return}
  const [repo,number]=key.split("#");
  reviewCards[key]={loading:true};render();
- try{reviewCards[key]={data:await reviewAction("/review",{repo,prNumber:Number(number)})}}
+ try{reviewCards[key]={data:await reviewAction("/review",{repo,prNumber:Number(number),includeEvidence:true})}}
  catch(e){reviewCards[key]={error:e.message}}
  render();
+}
+function developmentReviewItem(p){
+ const key=p.repo+"#"+p.number;
+ return '<div class="workitem"><strong>'+esc(p.title.replace(/^Draft:\s*/,""))+'</strong><span class="worksmall">'+esc(p.repo)+' #'+esc(p.number)+' · KappaForge change awaiting your review</span>'+
+  (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review change</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
 }
 function reviewCardHTML(key){
  const card=reviewCards[key];if(!card)return "";
@@ -176,6 +181,15 @@ function reviewCardHTML(key){
   running:'<span class="status-pending">🔄 Tests are running</span>',none:'<span class="worksmall">Tests have not run on the latest commit yet</span>'}[t.state]||"";
  const risks=(d.risks||[]).map(r=>'<li class="'+(r.level==="high"?"status-bad":"status-pending")+'">'+(r.level==="high"?"⚠ ":"• ")+esc(r.text)+' <span class="worksmall">('+esc(r.files.slice(0,3).join(", "))+')</span></li>').join("");
  const files=(d.files||[]).slice(0,12).map(f=>esc(f.name)+' <span class="worksmall">+'+esc(f.additions)+' / -'+esc(f.deletions)+'</span>').join("<br>");
+ const evidence=d.evidence;
+ const safeEvidenceURL=value=>typeof value==='string'&&/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\//.test(value)?value:'';
+ const evidenceLink=(url,label)=>safeEvidenceURL(url)?'<a target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(label)+' ↗</a>':esc(label);
+ const evidenceHTML=evidence?'<div class="review-evidence"><strong>Validation evidence</strong>'+['browser','visualComparison','simulator','device'].map(kind=>{
+  const item=evidence[kind]||{},label=({browser:'Browser interactions',visualComparison:'Pixel comparison',simulator:'iOS simulator',device:'Physical iPhone'})[kind];
+  return '<p>'+esc(label)+': '+esc(({passed:'passed',failed:'failed',running:'running',not_run:'not run'})[item.state]||'unknown')+(item.reason?' · '+esc(item.reason):'')+(item.url?' · '+evidenceLink(item.url,'Logs'):'')+'</p>';
+ }).join('')+(evidence.artifacts||[]).map(a=>'<p>'+evidenceLink(a.url,a.kind==='acceptance'?'Readiness report and acceptance evidence':'Screenshots, traces and source manifest')+'</p>').join('')+
+ '<details><summary>Review feedback ('+esc((evidence.feedback||[]).length)+')</summary>'+(evidence.feedback||[]).map(r=>'<p>'+evidenceLink(r.url,r.author+' · '+r.source)+(r.outdated?' · earlier revision':'')+(r.resolved===true?' · resolved':'')+'<br>'+esc(r.body)+(r.truncated?' … Open the full discussion.':'')+'</p>').join('')+'</details>'+
+ (evidence.limitations||[]).map(text=>'<p class="worksmall">'+esc(text)+'</p>').join('')+'<p class="worksmall">Evidence supports your review. It does not approve a baseline, merge, release or deployment.</p></div>':'';
  return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change.")+'</p>'+
   (d.explanation?.fix?'<p><strong>Latest fix</strong>'+esc(d.explanation.fix)+'</p>':'')+
   (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before.</p>':
@@ -184,7 +198,7 @@ function reviewCardHTML(key){
    running:'<span class="status-pending">🔄 iOS build is running</span>'}[d.native.state]||'<span class="worksmall">The iOS build has not run on the latest commit yet</span>')+
    (d.native.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(d.native.url)+'">Build log and IPA ↗</a>':'')+'</p>':'')+
   (risks?'<div class="review-risks"><strong>⚠ Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
-  '<p class="review-files">'+files+'</p><div class="review-tools">'+
+  evidenceHTML+'<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+
   (d.canFix?'<button data-fix="'+esc(key)+'">Fix it</button>':'')+
   (d.canTest&&!d.canMerge&&!d.canFix?'<button data-runtests="'+esc(key)+'">Run tests</button>':'')+
@@ -201,7 +215,7 @@ async function mergeReviewed(key){
 async function fixReviewed(key){
  const d=reviewCards[key]?.data;if(!d?.canFix)return;
  if(!confirm("Ask KappaForge to fix the failing tests on \""+d.title.replace(/^Draft:\s*/,"")+"\"?\n\nIt reads the test output, pushes a fix to this PR and re-runs the tests. Nothing merges until you tap Merge."))return;
- try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
+ try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true,reviewFeedback:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
  catch(e){alert("Fix not started: "+e.message)}
 }
 async function runReviewTests(key){
@@ -334,9 +348,7 @@ function controlCenter(){
  const failures=failing.length?'<p class="control-message">⚠ '+failing.length+' recent workflow(s) need attention. Open the run for actual logs.</p>':"";
  const review=prs.filter(p=>!(p.repo==="KappaForge"&&reviewHidden.has(p.number))).slice(0,10).map(p=>{
  if(isDevPR(p)){
-  const key=p.repo+"#"+p.number;
-  return '<div class="workitem"><strong>'+esc(p.title.replace(/^Draft:\s*/,""))+'</strong><span class="worksmall">'+esc(p.repo)+' #'+esc(p.number)+' · KappaForge change awaiting your review</span>'+
-   (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review &amp; merge</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
+  return developmentReviewItem(p);
  }
  const decision=reviewDecisions[p.number]||"";
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'" data-diffrepo="'+esc(p.repo||"KappaForge")+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
@@ -610,7 +622,7 @@ if(view==="chat"&&chatSheet)html+=chatSheetHTML();
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button><button class="btn secondary" id="clear-task-history">Clear inactive history</button><button class="btn secondary" id="undo-task-history">Undo history clear</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
-if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
+if(view==="reviews")html=card("Pull requests",data.prs.map(x=>isDevPR(x)?developmentReviewItem(x):x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 if(view!=="home")document.body.classList.toggle("sheet-open",view==="chat"&&!!chatSheet);

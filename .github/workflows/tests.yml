@@ -81,6 +81,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         persist-credentials: false
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
     - uses: actions/setup-node@v4
       with:
         node-version: '22'
@@ -102,7 +103,9 @@ jobs:
       if: always()
       with:
         name: browser-regression-evidence
-        path: /tmp/kappaforge-*.png
+        path: |
+          /tmp/kappaforge-*.png
+          /tmp/kappaforge-visual/**
         if-no-files-found: warn
 'on':
   push:

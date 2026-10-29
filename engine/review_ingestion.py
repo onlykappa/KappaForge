@@ -43,9 +43,10 @@ def _candidate(journal, pr):
             or value.get('state') != 'open' or value.get('draft') is not True
             or (value.get('head') or {}).get('ref') != f'kappa/dev-{journal.scope.number}'
             or (value.get('head') or {}).get('sha') != journal.state['candidate']
+            or journal.state.get('base') and (value.get('base') or {}).get('ref') != journal.state['base']
             or any(((value.get(side) or {}).get('repo') or {}).get('full_name') != journal.scope.repo
                    for side in ('head', 'base'))):
-        raise PermissionError('Review PR is closed, foreign or differs from the saved candidate')
+        raise PermissionError('Review PR is closed, foreign or differs from the saved candidate/base')
     return value['head']['sha']
 
 
@@ -79,6 +80,14 @@ def _inventory(journal, pr):
                 break
         else:
             raise ValueError('Review inventory exceeds the bounded page limit')
+    from engine.review_threads import inventory
+    threads = inventory(journal, pr, journal.state['candidate'])
+    inline = {row['id'] for row in items.values() if row['source'] == 'inline'}
+    if set(threads) != inline:
+        raise execution.CheckpointMismatch('REST comments and review threads disagree; retry a fresh snapshot')
+    for row in items.values():
+        if row['source'] == 'inline':
+            row.update(threads[row['id']])
     return items
 
 
@@ -107,8 +116,8 @@ def load(journal, pr):
 def sync(journal, pr):
     """Take a stable bounded snapshot; failure never replaces the durable inbox.
 
-    REST does not expose every thread's resolution/outdated state. Missing fields
-    stay unknown. Two complete scans reject observed concurrent edits/pagination
+    REST comments are joined to a complete authenticated GraphQL thread inventory.
+    Two complete scans reject observed concurrent edits, thread changes and page
     shifts; feedback arriving after the snapshot is picked up on the next call.
     """
     _authorize(journal, pr)

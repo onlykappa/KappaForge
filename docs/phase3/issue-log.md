@@ -876,6 +876,41 @@ Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker
 - Added regressions reproduce that malformed fixture and exercise a real addition exactly between conversation scans. The latter preserves the old pointer, makes no writes on an unstable scan, then reloads/retries and ingests both identities once with one revision increment. Duplicate checks and behavioral expectations remain. All118 focused tests pass. Corrections live in312;315's unpublished checkpoint/history and frozen candidate are not rewritten or declared complete.
 - Status: PATCHED protocol feedback and regression coverage;315 delivery remains blocked pending a corrected proposal and original-requirement validation. No worker restart is implied.
 
+## P3-122 — skipped/neutral and no-tests execution looked like passing tests
+
+- Inspection: external testState accepted every neutral/skipped check-run conclusion as passed. A successful project workflow with its explicit No tests detected step also kept tests.state=passed. Neither establishes executed passing tests.
+- Correction: skipped/neutral-only external checks report none; mixed non-success checks cannot pass. A successful no-tests workflow keeps workflowState=passed but tests.state=none and the existing explicit-owner manual-review warning/policy. No-tests workflow completion is not a fabricated test result.
+- Regression: review-evidence.test.mjs rejects a skipped external receipt, and intelligence.test.mjs retains the successful tested-project case plus the no-tests manual-review case while asserting distinct workflow/test states. New source verification is recorded in the direct-delivery report.
+- Status: PATCHED locally; no live owner merge was performed.
+
+## P3-123 — app merge gates omitted browser failure
+
+- The existing merge helper checked the trusted sandbox and native build but not the app candidate's browser job. A visual regression could therefore coexist with an enabled owner merge action.
+- Correction: app merge requires the exact source/branch browser job to pass before any readiness/merge request. Failed, skipped, missing or unavailable browser evidence cannot satisfy it. GitHub's reviewed-head binding and all owner consent/free-execution gates remain. Browser execution explicitly checks out the PR head; artifacts record its source/workspace identity.
+- Regression: merge-browser-gate.test.mjs simulates passing sandbox/native checks with failed or skipped browser execution and asserts409 plus zero lifecycle writes. The existing positive owner-merge fixture now supplies a real-shaped passing browser receipt; its original assertions remain.
+- Status: PATCHED locally; all lifecycle calls in tests use injected transport.
+
+## P3-124 — Reviews page bypassed the detailed development-PR card
+
+- Reproducer: the desktop browser reached the Reviews page with draft fixture900 present, but no data-reviewcard control existed; the browser timed out after30 seconds. The Dashboard had the detailed card while Reviews rendered only a plain link.
+- Correction: both entry points render developmentReviewItem, including the same safe evidence, feedback, refresh and owner controls. No new automatic mutation or merge action is introduced.
+- Immediate rerun: desktop and390px phone Chromium regression matrix passed, including opening the actual review control, escaped script-like feedback, physical-device not-run wording, no merge button for an unready candidate and no horizontal overflow. Screenshots were visually inspected. Remote WebKit/native results remain separate.
+- Status: PATCHED locally; delivery CI pending.
+
+## P3-125 — saved review authority did not bind the PR base ref
+
+- Reproducer: keep the same saved draft PR/head/repository, retarget its base from main to release, then ingest again. The new regression failed because ingestion accepted that retargeting.
+- Correction: when the journal has a saved base, the observed PR base ref must match it before collection, decisions or publication. A changed base cannot reuse the original saved authority. The prior inbox is retained on denial.
+- Immediate rerun: the review ingestion/thread/decision/runtime/acceptance selection passes after correction. No actual PR was retargeted by the test.
+- Status: PATCHED locally; source-specific remote verification pending.
+
+## P3-126 — deprecated GraphQL comment identities lose64-bit IDs
+
+- Independent API schema inspection confirmed PullRequestReviewComment.databaseId is deprecated Int and fullDatabaseId is BigInt. The old query cannot safely represent modern64-bit comment identities. A regression using2**55+7 failed before correction.
+- Correction: query fullDatabaseId and accept an exact positive signed64-bit integer or canonical decimal string; reject bool/float/malformed/duplicate IDs. REST joins retain the full integer without rounding. The corrected query was validated against the live GitHub schema using a read-only312 query; that PR had zero inline threads, so no live task ingestion is claimed.
+- Immediate rerun:39 review-focused tests run OK (one real-Docker skip), including the preserved64-bit identity. Original failed task histories and grants are untouched.
+- Status: PATCHED locally; source-specific remote verification pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

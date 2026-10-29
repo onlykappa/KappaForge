@@ -125,3 +125,24 @@ class ReviewRuntimeTests(unittest.TestCase):
             with self.assertRaises(OSError): developer.fix_pull_request(self.world.issue, 'fixture', 'fixture')
         self.assertFalse(self.journal.state.get('ownerCandidateReviewAttempted'))
         self.assertFalse(self.journal.state.get('ownerCandidateReviewed'))
+
+    def test_confirmed_feedback_can_enter_owner_fix_with_green_checks_but_noop_cannot_finish_it(self):
+        from engine import execution, review_repair
+        batch = [dict(id='feedback', source='scoped-comment', status='actionable')]
+        with ExitStack() as stack:
+            check, model, repair = self.invoke(stack)
+            check.return_value = dict(id=12, status='completed', conclusion='success')
+            stack.enter_context(patch.object(developer, 'revision_files', return_value=[dict(filename='value.py')]))
+            stack.enter_context(patch.object(developer, 'is_private', return_value=False))
+            stack.enter_context(patch.object(developer, 'code_providers', return_value={'fixture'}))
+            stack.enter_context(patch.object(developer, 'owner_guidance', return_value=[]))
+            prepare = stack.enter_context(patch.object(review_repair, 'prepare', return_value=batch))
+            stack.enter_context(patch.object(review_repair, 'report'))
+            revise = stack.enter_context(patch.object(developer, 'revise_branch', return_value=('', 'No change', {}, '', {})))
+            publish = stack.enter_context(patch.object(developer, 'publish_candidate'))
+            with self.assertRaisesRegex(execution.CheckpointMismatch, 'no correction'):
+                developer.fix_pull_request(self.world.issue, 'fixture', 'fixture')
+        self.assertEqual(revise.call_args.kwargs['review_batch'], batch)
+        prepare.assert_called_once()
+        repair.assert_not_called()
+        publish.assert_not_called()

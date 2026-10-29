@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 import urllib.error
 
-from engine import execution, intent_guard, recovery, review_ingestion as reviews, task_goal
+from engine import execution, intent_guard, recovery, review_ingestion as reviews, review_threads, task_goal
 from tests.test_recovery_journal import GitHub
 
 REPO = recovery.ROOT
@@ -24,6 +24,24 @@ class World(GitHub):
                        base=dict(sha='b' * 40, repo=dict(full_name=REPO)))
         self.feedback = {kind: [] for kind in reviews.SOURCES}
         self.target_calls = []
+        self.graphql_calls = []
+
+    def write(self, path, payload, method):
+        if path != 'graphql':
+            return super().write(path, payload, method)
+        intent_guard.guard_request('https://api.github.com/graphql', payload, method, lambda n: self.issue)
+        self.graphql_calls.append(deepcopy(payload))
+        pull = dict(number=133, headRefOid=self.pr['head']['sha'], repository=dict(nameWithOwner=REPO))
+        nodes = [dict(id=row.get('thread_id', f'thread-{row["id"]}'),
+                      isResolved=row.get('isResolved', row.get('resolved', False)),
+                      isOutdated=row.get('isOutdated', row.get('outdated', False)), pullRequest=pull,
+                      comments=dict(nodes=[dict(fullDatabaseId=row['id'])], pageInfo=dict(hasNextPage=False)))
+                 for row in self.feedback['inline']]
+        start = int(payload['variables'].get('after') or 0)
+        page, more = nodes[start:start + 100], len(nodes) > start + 100
+        return dict(data=dict(repository=dict(nameWithOwner=REPO, pullRequest=dict(
+            pull, reviewThreads=dict(nodes=page, pageInfo=dict(hasNextPage=more,
+                endCursor=str(start + 100) if more else None))))))
 
     def read(self, path):
         if path == f'repos/{REPO}/pulls/133':
@@ -99,12 +117,13 @@ class ReviewIngestionTests(unittest.TestCase):
         result = self.journal.ingest_reviews(133)
         self.assertFalse(result['items'][f'{REPO}#133:conversation:2']['deleted'])
 
-    def test_pagination_and_unknown_thread_state(self):
+    def test_pagination_and_authenticated_thread_state(self):
         self.world.feedback['inline'] = [comment(n) for n in range(1, 102)]
         result = self.journal.ingest_reviews(133)
         self.assertEqual(len(result['items']), 101)
         self.assertTrue(any(path.endswith('page=2') for path in self.world.target_calls))
-        self.assertNotIn('resolved', result['items'][f'{REPO}#133:inline:1'])
+        self.assertFalse(result['items'][f'{REPO}#133:inline:1']['resolved'])
+        self.assertEqual(len(self.world.graphql_calls), 4)
 
     def test_owner_scope_and_pr_denials_happen_before_any_target_read(self):
         for change in ('no_active', 'wrong_pr', 'bool_pr', 'expired', 'closed_task', 'changed_task', 'foreign_saved_pr'):
@@ -274,6 +293,15 @@ class ReviewIngestionTests(unittest.TestCase):
             return target(path)
         with patch.object(self.journal, 'target_read', side_effect=move):
             with self.assertRaises(PermissionError): self.journal.ingest_reviews(133)
+        self.assertEqual(self.journal.state['reviewInbox'], pointer)
+
+    def test_retargeted_pr_base_cannot_reuse_the_saved_review_authority(self):
+        self.world.pr['base']['ref'] = 'main'
+        self.journal.checkpoint(SHA, base='main', pr=self.world.pr['html_url'])
+        self.journal.ingest_reviews(133)
+        pointer = deepcopy(self.journal.state['reviewInbox'])
+        self.world.pr['base']['ref'] = 'release'
+        with self.assertRaises(PermissionError): self.journal.ingest_reviews(133)
         self.assertEqual(self.journal.state['reviewInbox'], pointer)
 
     def test_cancellation_between_pages_stops_without_persistence(self):

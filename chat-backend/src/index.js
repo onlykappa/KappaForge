@@ -542,10 +542,10 @@ const workerImplementation = {
           fixRun=run;
           if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         }
-        const result = action === "review" ? await reviewPR(env, repo, number) :
+        const result = action === "review" ? await reviewPR(env, repo, number, {includeEvidence: input.includeEvidence === true}) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
           action === "close" ? await closePR(env, repo, number) :
-          action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+          action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number, {includeEvidence: input.reviewFeedback === true});
         if(result.error && fixRun)await refundAgentRun(env,fixRun);
         if (!result.error && action === "merge") await notifyOwner(env, "✅ Merged " + repo + " #" + number + ". " + (repo === "KappaForge" ? "KappaForge redeploys now; if anything breaks, use Undo last change on the Dashboard." : "") + "\n" + result.url);
         if (!result.error && action === "close") await notifyOwner(env, "Closed " + repo + " #" + number + " without merging.");

@@ -160,6 +160,9 @@ test('review card explains the change, and merge requires passing tests on the e
   if(u.includes('/user/repos'))return Response.json([{name:'KappaForge',owner:{login:'onlykappa'}}]);
   if(u.endsWith('/pulls/50'))return Response.json(pr);
   if(u.includes('/pulls/50/files'))return Response.json([{filename:'preview/ui.js',status:'modified',additions:3,deletions:1}]);
+  if(u.includes('/actions/workflows/tests.yml/runs?head_sha='))return Response.json({workflow_runs:[{
+   id:123,head_sha:head,head_branch:'kappa/dev-9',event:'pull_request',path:'.github/workflows/tests.yml'}]});
+  if(u.includes('/actions/runs/123/jobs?'))return Response.json({jobs:[{name:'web',status:'completed',conclusion:'success'}]});
   if(u.includes('sandbox-tests.yml/runs'))return Response.json({workflow_runs:[{display_title:'Sandbox validation kappa/dev-9 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion,html_url:'https://github.com/run/1'}]});
   if(u.includes('ios-build.yml/runs'))return Response.json({workflow_runs:[{display_title:'iOS build kappa/dev-9 @ '+head,head_branch:'main',event:'workflow_dispatch',status:'completed',conclusion:native,html_url:'https://github.com/run/2'}]});
   if(u.endsWith('/graphql'))return Response.json({data:{markPullRequestReadyForReview:{pullRequest:{isDraft:false}}}});
@@ -335,6 +338,7 @@ test('other repositories are tested in the secret-free project sandbox, with a w
   assert.equal(review.tests.state,'passed');assert.equal(review.tests.sandbox,true);assert.equal(review.canMerge,true);assert.equal(review.risks.length,0);
   steps=[{name:'No tests detected',conclusion:'success'}];
   review=await(await worker.fetch(req('/review',{repo:'OmniPC',prNumber:3}),env)).json();
+  assert.equal(review.tests.state,'none');assert.equal(review.tests.workflowState,'passed');
   assert.equal(review.canMerge,true);assert.match(review.risks[0].text,/no automated tests/);
  }finally{globalThis.fetch=original}
 });

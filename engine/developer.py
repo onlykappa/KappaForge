@@ -3468,7 +3468,7 @@ def revision_files(pr, repo, head_sha, token):
 @task_goal.owner_task
 @task_state.role('repair', 'Reconcile failures and repair the existing task candidate',
                  'Repaired source still implements the original goal; verify the same candidate independently')
-def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None, checks_failed=False):
+def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo=ROOT, repo_token=None, guidance=(), native_history="", checkpoint=None, allowed=None, checks_failed=False, review_batch=()):
     """Prepare a fix for a failing development PR without writing anything. Test logs live in KappaForge."""
     repo_token = repo_token or token
     files = revision_files(pr, repo, head_sha, repo_token)
@@ -3494,6 +3494,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     log = "\n".join(job_log(job["id"], token) for job in failed_jobs[:2])
     # Also read existing files the failure output names, such as the failing test module.
     focus, read_paths = revision_focus(pr, log, existing, changed)
+    if review_batch:
+        paths = [e['path'] for row in review_batch for e in row.get('evidence', []) if e.get('path') in existing]
+        read_paths = list(dict.fromkeys(paths + read_paths))[:LARGE.read_files]
     sources = {}
     for path in read_paths:
         if path in existing and existing[path] <= MAX_LARGE_FILE_CHARS:
@@ -3572,13 +3575,13 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     # candidate first; those claims still authorize no edit. A real failed check always keeps its repair gate,
     # including when GitHub could not supply the failing job details.
     unavailable_review = any(p.startswith('Requirement review unavailable;') for p in pending)
-    reverify = bool(pending) and not (failed_jobs or checks_failed) and (unavailable_review or
+    reverify = bool(pending) and not review_batch and not (failed_jobs or checks_failed) and (unavailable_review or
         all(verify.process_problem(p) or verify.controller_problem(p) for p in pending))
     generation_targets = ()
     generation_lines = {}
     generation_advisory = ''
     prior_assessments = None
-    if repair_guard.enabled() and (pending or failed_jobs) and not reverify:
+    if repair_guard.enabled() and (pending or failed_jobs) and not reverify and (failed_jobs or not review_batch):
         # Verify only this batch's edit targets. Deferred findings remain in
         # pending/UNFINISHED and the final whole-task review below; they are
         # neither resolved nor permission to edit additional files.
@@ -3621,6 +3624,9 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
                 task += '\n\nLoop review suggests this different approach within the unchanged owner goal:\n' + loop_approach
             # The rebuilt task keeps the same lifecycle note (and its ban on PR automation, #205).
             task += lifecycle_note
+    if review_batch:
+        from engine.review_repair import prompt
+        task += prompt(review_batch)
     if reverify:
         model, summary, changes, explanation = "", "Re-checked the requirements against the current source", {}, ""
     else:
@@ -3798,6 +3804,9 @@ def fix_pull_request(issue, api_key, token):
     observed_sandbox = run
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
+    from engine import browser_build
+    browser = (browser_build.result(branch, head, token) if journal and
+               browser_build.needed(repo, journal.state.get('files', [])) else None)
     task_state.observe_validation('sandbox', head, run)
     task_state.observe_validation('native', head, native)
     # A handoff approves the candidate identity, never its implementation. Force
@@ -3809,13 +3818,25 @@ def fix_pull_request(issue, api_key, token):
             'Requirement review unavailable; owner-reviewed source needs original-task acceptance']))
     # The draft PR this runs on is GitHub's proof of the PR lifecycle asks; only code work starts a repair.
     pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
+    review_batch = []
+    if (journal and journal.state.get('reviewInbox')
+            and run and run.get('status') == 'completed'
+            and (not native or native.get('status') == 'completed')
+            and (not browser or browser.get('status') == 'completed')):
+        from engine import review_repair
+        review_files = revision_files(pr, repo, head, repo_token)
+        review_batch = review_repair.prepare(journal, pr,
+            lambda path: read_source(repo, path, head, repo_token),
+            [f['filename'] for f in review_files], run_model, api_key,
+            code_providers(is_private(repo, repo_token)))
+        review_repair.report(journal, pr)
     # An unfinished requirement is already actionable, as is a completed failed
     # check. Waiting for an unrelated in-flight check can strand this repair:
     # a successful native build does not dispatch another fix. Older checks stay
     # tied to their candidate SHA; the repaired commit gets fresh verification.
-    failures = [r for r in (run, native) if r and r.get("status") == "completed" and r.get("conclusion") == "failure"]
-    if not failures and not pending:
-        if run and run.get("status") == "completed" and not (native and native.get("status") != "completed"):
+    failures = [r for r in (run, native, browser) if r and r.get("status") == "completed" and r.get("conclusion") == "failure"]
+    if not failures and not pending and not review_batch:
+        if run and run.get("status") == "completed" and not any(r and r.get('status') != 'completed' for r in (native, browser)):
             raise ValueError("Fix needs a failed sandbox test run or native iOS build on the PR's latest commit")
         # Usually an earlier fix already pushed a newer commit, which is being tested now.
         print("No failed check on the PR's latest commit; nothing to fix now.")
@@ -3839,6 +3860,7 @@ def fix_pull_request(issue, api_key, token):
         if resumed["identity"]["base"] != head:
             raise execution.CheckpointMismatch("PR revision changed since the saved uncommitted repair")
         context = resumed["context"]
+        review_batch = context.get('review_batch', review_batch)
         model, summary, explanation = context["model"], context["summary"], context["explanation"]
         changes = resumed["changes"]
         cycle, cycle_limit = context["cycle"], context["cycle_limit"]
@@ -3866,7 +3888,8 @@ def fix_pull_request(issue, api_key, token):
         for repair_round in range(1, IMMEDIATE_REPAIR_ROUNDS + 1):
             try:
                 model, summary, changes, explanation, modes = revise_branch(issue, pr, branch, head, failed, token, api_key, repo, repo_token, review_guidance,
-                                                                            native_history, allowed=allowed, checks_failed=bool(failures))
+                                                                            native_history, allowed=allowed, checks_failed=bool(failures),
+                                                                            **({'review_batch': review_batch} if review_batch else {}))
                 break
             except GenerationFailure as exc:
                 # A rejected round is not a reason to idle: start the next round now, with the rejected proposals and
@@ -3877,6 +3900,8 @@ def fix_pull_request(issue, api_key, token):
                 cycle, cycle_limit = RecoveryCoordinator.start_fix(journal, fixes)
                 progress.now(f"Previous round was rejected; writing {fix_label(cycle, cycle_limit)} immediately", phase=True)
     if not changes:
+        if review_batch:
+            raise execution.CheckpointMismatch('Confirmed review defects received no correction; review remains open')
         # A re-check, not a repair: only review-process problems were open, and the fresh review wrote no code. Record
         # what it found on the draft; there is nothing to validate, commit or test.
         still_open = requirements_open({"body": explanation})
@@ -3923,6 +3948,7 @@ def fix_pull_request(issue, api_key, token):
     validation = run_sandbox_repair(repo, head, repo_token, changes, sandbox_task, api_key, allowed,
                                     base_sources=repair_sources, context=dict(kind="fix", model=model,
                                     summary=summary, explanation=explanation, cycle=cycle, cycle_limit=cycle_limit,
+                                    review_batch=review_batch,
                                     reviewed_candidate=reviewed_candidate,
                                     clarifications=[{'id': r['id']} for r in asked],
                                     publication=dict(body=re.split(r"\n\n## Latest fix\n", re.sub(r"<!-- KAPPA_REVIEW_V1 .*? -->", "", pr.get('body') or ''))[0]
@@ -3959,6 +3985,10 @@ def fix_pull_request(issue, api_key, token):
     for path in set(saved['changes']) - set(changes):
         final[path] = read_source(repo, path, head, repo_token)
     remaining = {p: text for p, text in final.items() if p not in saved['changes'] or text != saved['changes'][p]}
+    if review_batch:
+        from engine import review_repair
+        review_repair.verify_corrections(review_batch, repair_sources, changes, run_model, api_key, allowed)
+        review_repair.fresh(journal, pr, review_batch)
     # Say what triggered the repair: failed checks, or only work the original task still needs (#205).
     purpose = "make sandbox tests pass" if failures else "finish the unfinished requirements"
     writer = push_token(repo, repo_token, remaining)
@@ -3970,6 +4000,9 @@ def fix_pull_request(issue, api_key, token):
         publication_finished(journal)
         journal.state['phase'] = 'tests'
         journal.checkpoint(commit['sha'], pr=pr['html_url'], files=changes)
+        if review_batch:
+            review_repair.published(journal, pr, review_batch, head, commit['sha'], validation)
+            review_repair.report(journal, pr)
         note_progress(journal, files=list(changes), model=model, append_done=['Repair saved: ' + summary],
                       complete=bool(pending) and not requirements_open({'body': explanation}),
                       status='Repair saved; independent tests running')

@@ -33,3 +33,11 @@ test('review card shows the iOS build of app changes with a link to its log and 
  assert.match(render({data:{tests:{state:'passed'},native:{state:'none'}}}),/iOS build has not run/);
  assert.doesNotMatch(render({data:{tests:{state:'passed'}}}),/iOS build/,'non-app changes have no iOS build line');
 });
+test('review evidence is escaped, linked safely and never describes browser evidence as native-device proof',()=>{
+ const html=render({data:{evidence:{browser:{state:'passed'},simulator:{state:'not_run'},device:{state:'not_run'},
+  visualComparison:{state:'not_run'},feedback:[{author:'Reviewer',source:'inline',body:'<img onerror=evil()>',url:'https://attacker.invalid'}],
+  artifacts:[{url:'https://github.com/onlykappa/KappaForge/actions/runs/1/artifacts/2'}]}}});
+ assert.match(html,/Browser interactions: passed/);assert.match(html,/Physical iPhone: not run/);
+ assert.match(html,/&lt;img/);assert.doesNotMatch(html,/href="https:\/\/attacker/);assert.doesNotMatch(html,/<img/);
+ assert.match(html,/Screenshots, traces and source manifest/);
+});

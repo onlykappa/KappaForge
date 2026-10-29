@@ -151,6 +151,10 @@ class ExecutionScope:
         if p.endswith('/merge') or (p == "/graphql" and method == "POST" and
                 "mergePullRequest" in str((payload or {}).get("query", ""))):
             raise PermissionError("Merging requires the owner to use the Merge button or explicitly authorize it")
+        if p == '/graphql' and method == 'POST':
+            from engine.review_threads import permits
+            if permits(self, payload):
+                return
         # Reporting is bound to the current task; cannot create child tasks.
         if p == f"/repos/onlykappa/KappaForge/issues/{self.number}/comments" and method == "POST":
             if set(payload or {}) != {"body"} or str(payload["body"]).startswith("Guidance:"):
