@@ -795,6 +795,15 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 
 The live314 ledger also showed33 read calls and121,764 output characters against a120,000-character output allowance: investigation was already exhausted. Before dispatch, expanded config/exploration.json to the existing validated maxima (500 reads,3,600 active tool seconds,2,000,000 output/context characters). Prior read usage is not cleared; request/prompt size, scoped local read-only tools and per-result limits remain unchanged. A regression using the actual retained amounts proves the old allowance refuses another read and the new configuration permits it while increasing the cumulative counter33→34. Final exploration/ledger checks:39 run OK (1 explicit Docker skip). Final full Python discovery:1,346 run OK,32 skipped. Map/policy/whitespace/source checks pass; new-head Docker batch acceptance remains pending. No new external endpoints or provider capacity is granted.
 
+## P3-112 — stopped worker leaves a contradictory running row in the queue report
+
+- Evidence: queue319/40888143488 correctly stopped overall as blocked, while tasks314.status remained running. The child can exit0 after recording its blocked/paused/question state; Queue.run raised before updating the pre-start running row. This is a reporting bug, not an active hidden worker or task completion.
+- Reproducer: one real-Queue regression exercises clean child exit with blocked,paused,needs_clarification checkpoints and no published PR. All three cases failed before the correction (running != recorded outcome).
+- Correction: copy the authenticated child checkpoint's stop status to the same task row before the existing stop/report path. Keep attempts/claims/candidate unchanged and never start the successor. No manual rewrite of the historical live checkpoint.
+- Validation: all three red-before cases now pass;36 queue tests pass. Map/execution-policy/whitespace checks pass. No new worker dispatch or cap change.
+- Latest independent trial review:314 exhausted10 candidate versions at30/100 actions,55 model calls/6 generation edits and4/10 launches. Candidate source/PR remains unpublished,315 unstarted. Python errors fell18→1 because the test now crashes earlier at recovery.CURRENT.get().record before leaking dummy state, not because17 distinct bugs were fixed. Ingestion module remains the original incomplete in-memory implementation, with missing scope/persistence guarantees. Final saved patch721c488efb04826609133bd2ff6373bbd9d9a538b68161f54130f04e355c6cab is retained, not accepted.
+- Engineb1a8264 unit/web/Worker/structure40888046606, real Docker40888046745, native40888046788 and graph40888046753 succeeded. Inspected Docker job123496948639 logs confirm both the ten-attempt accounting and two-root single-batch tests passed;17 Phase1 tests ran. These fixture successes do not establish314 success. Watch paused per the explicit exhaustion rule; no duplicate run, reset, replacement authorization or merge/deploy/release.
+
 ## Finding template
 
 ### P3-NNN — short defect title

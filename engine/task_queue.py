@@ -490,6 +490,7 @@ class Queue:
                         self.launch(row, 'fix' if pr else 'queue-step', deadline)
                     continue
                 if status in ('blocked', 'paused', 'needs_clarification'):
+                    self.state['tasks'][key]['status'] = status
                     raise Blocked(f'Task #{number} requires review or an owner answer')
                 if pr is None:
                     raise Blocked('Task returned without a draft candidate; inspect its saved checkpoint')

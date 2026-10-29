@@ -630,6 +630,29 @@ class QueueProgressTests(unittest.TestCase):
             with self.assertRaises(PermissionError): queue.launch(self.w.grant['tasks'][0], 'fix', self.w.now + 100)
         kill.assert_called_once_with(100, q.signal.SIGTERM)
 
+    def test_clean_child_exit_with_blocked_checkpoint_does_not_leave_running_task(self):
+        for outcome in ('blocked', 'paused', 'needs_clarification'):
+            with self.subTest(outcome=outcome):
+                self.w = World()
+                queue = self.w.queue()
+                def child(row, action, deadline):
+                    queue.state['tasks'][str(row['issue'])] = dict(attempts=1, run='90', status='running')
+                    self.w.complete(row['issue'])
+                    self.w.prs.pop(row['issue'])  # Stopped before publishing, as in the actual314 trial.
+                    checkpoint = self.w.checkpoints[row['issue']]
+                    state = json.loads(checkpoint['body'].split('KAPPA_RECOVERY_V1 ')[1].split(' -->')[0])
+                    state['engineStatus'] = outcome
+                    checkpoint['body'] = '### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(state) + ' -->'
+                with patch.object(queue, 'launch', side_effect=child) as launch:
+                    with self.assertRaises(q.Blocked): queue.run(self.w.now + 100)
+                self.assertEqual(launch.call_count, 1)
+                self.assertEqual(queue.state['tasks']['313']['status'], outcome)
+                self.assertEqual(queue.state['tasks']['313']['attempts'], 1)
+                queue.save('blocked', 'Stopped child checkpoint retained')
+                saved = json.loads(self.w.comments[0]['body'].split(q.MARKER + ' ')[1].split(' -->')[0])
+                self.assertEqual(saved['tasks']['313']['status'], outcome)
+                self.assertNotIn('fix/phase3-queue-base-314', self.w.refs)
+
     def test_child_failure_stops_queue_and_does_not_start_successor(self):
         queue = self.w.queue()
         with patch.object(queue, 'launch', side_effect=q.Blocked('failed')) as launch:
