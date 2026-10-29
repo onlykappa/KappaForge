@@ -1,5 +1,5 @@
 name: KappaForge agent
-run-name: "${{ inputs.issue_number != '' && format('Agent task #{0} {1}', inputs.issue_number, inputs.action) || 'Scheduled agent' }}"
+run-name: "${{ github.event_name == 'push' && 'Owner-authorized coding queue' || inputs.issue_number != '' && format('Agent task #{0} {1}', inputs.issue_number, inputs.action) || 'Scheduled agent' }}"
 permissions:
   contents: read
 # One queue per task: a shared group lets GitHub cancel a pending run when a newer task arrives.
@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   queue:
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'queue' && github.actor == 'onlykappa'
+    if: github.actor == 'onlykappa' && ((github.event_name == 'workflow_dispatch' && inputs.action == 'queue') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Resume owner-authorized coding queue')))
     runs-on: ubuntu-latest
     timeout-minutes: 360
     concurrency:
@@ -81,7 +81,7 @@ jobs:
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
       run: python -m engine.gateway
   classify:
-    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe' && inputs.action != 'queue'
+    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe' && inputs.action != 'queue' && github.event_name != 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -303,6 +303,8 @@ jobs:
       pull-requests: write
       actions: write
 'on':
+  push:
+    branches: [fix/308-phase3-followups]
   workflow_dispatch:
     inputs:
       issue_number:

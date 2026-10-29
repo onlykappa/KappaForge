@@ -1,3 +1,7 @@
+# Recorded source/native gate outcome — 2026-10-29
+
+Corrected source5b462fa77b6bd9971ebeb2403135f0bef653ca9a passed tests40820462881 and native40820462875. Native job123271478539 logs were inspected: five UI tests passed, zero failures, TEST SUCCEEDED. The keyboard geometry test passed in70.521seconds. Separate unchanged candidate baseline40819438848 also succeeded. Control319 recorded this validated seed and started314 in40820493588;314 then failed generation without publishing a code change. Phase3.1 is complete;3.2 remains in progress with recovery fixes in312. Earlier pending statements below describe the pre-result state.
+
 # Native geometry verification and fresh Phase 3.2 batch
 
 The native failure is observed, not inferred: run40788587109 at6c8b138 failed the composer-above-keyboard assertion (editor maxY601 versus keyboard minY+14=232.33333333333334). Unchanged native source later passed in40818157083 and40818835008. This is intermittent evidence, not proof that the production app always overlaps the keyboard.

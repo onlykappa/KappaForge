@@ -12,7 +12,10 @@ This update supersedes pending exact-head CI/live-trial labels in the historical
 | 088 | Engine receipt renewal reproduced before repair and verified live40784333199, followed by complete acceptance40788699260. Strict direct receipt verification retained. |
 | 089–090 | Routing/classification regressions pass;40785639666 fresh review reduced5→2;40788699260 zero remaining problems. |
 | 091 |90 focused/1,287 full Python run OK (31 skips);40788699260 fresh review27/27, zero problems. Independent candidate51 focused/1,140 full run OK (31 skips); fresh sandbox40789410323 success. |
-| 092 | OPEN native geometry failure; task313 dispatched, no patch or successful rerun claimed. Blocks honest final native closeout. |
+| 092,100 | Native synchronization corrected independently in312; exact source5b passed native40820462875 (5/5 UI tests) and tests40820462881. Exhausted313 remains failed history. |
+| 093–099 | Bounded sequential queue and owner-provenance/resume corrections; historical attempts and counters retained. |
+| 101 | Fresh-source gate accepted exact5b CI and started314 in40820493588. |
+| 102–105 | Phase3.2 unpublished planning recovery, retained validated seed, Base projection migration and exact-owner push start. Local regression/combined checks recorded in issue-log.md; live resumed acceptance pending. |
 
 [Current closeout](closeout-current.md) has exact sources, CI links and execution limits. [Queue](execution-queue.md) records owner-authorized dependent work. Nothing newly merged/deployed/released.
 

@@ -9,6 +9,9 @@ from engine.intent_guard import ExecutionScope, timestamp
 ROOT = 'onlykappa/KappaForge'
 PATH = 'config/phase3-queue.json'
 SHA = re.compile(r'[a-f0-9]{40}')
+PUSH_TITLE = 'Owner-authorized coding queue'
+PUSH_MESSAGE = 'Resume owner-authorized coding queue'
+START_MARKER = 'KAPPA_QUEUE_START_V1'
 
 
 def digest(body):
@@ -51,7 +54,7 @@ def owner_run(run_id, read, sha=None, ref=None, now=None, live=True):
     if not re.fullmatch(r'[1-9][0-9]*', str(run_id)):
         raise PermissionError('Queue workflow identity missing')
     run = read(f'repos/{ROOT}/actions/runs/{run_id}')
-    if (run.get('event') != 'workflow_dispatch' or run.get('path') != '.github/workflows/agent.yml'
+    if (run.get('event') not in ('workflow_dispatch', 'push') or run.get('path') != '.github/workflows/agent.yml'
             or (run.get('repository') or {}).get('full_name') != ROOT
             or (run.get('actor') or {}).get('login') != 'onlykappa'
             or (run.get('triggering_actor') or {}).get('login') != 'onlykappa'
@@ -64,9 +67,34 @@ def owner_run(run_id, read, sha=None, ref=None, now=None, live=True):
     if file.get('path') != PATH or file.get('encoding') != 'base64':
         raise PermissionError('Pinned queue manifest unavailable')
     grant = manifest(json.loads(base64.b64decode(file['content']).decode()))
-    if (run.get('head_branch') != grant['engineRef']
-            or run.get('display_title') != f"Agent task #{grant['control']} queue"):
+    title = PUSH_TITLE if run['event'] == 'push' else f"Agent task #{grant['control']} queue"
+    if run.get('head_branch') != grant['engineRef'] or run.get('display_title') != title:
         raise PermissionError('Workflow did not select this queue')
+    if run['event'] == 'push':
+        commit = read(f"repos/{ROOT}/commits/{run['head_sha']}").get('commit') or {}
+        at = timestamp((commit.get('committer') or {}).get('date'))
+        started = timestamp(run.get('created_at'))
+        if (commit.get('message') or '').strip() != PUSH_MESSAGE or not at or not started:
+            raise PermissionError('Push did not explicitly request this owner queue')
+        expected = dict(control=grant['control'], sha=run['head_sha'], manifest=digest(json.dumps(grant, sort_keys=True)))
+        approved = False
+        for page in range(1, 11):
+            rows = read(f"repos/{ROOT}/issues/{grant['control']}/comments?per_page=100&page={page}")
+            if not isinstance(rows, list):
+                raise PermissionError('Owner queue start history unavailable')
+            for row in rows:
+                if ((row.get('user') or {}).get('login') != 'onlykappa'
+                        or not at <= timestamp(row.get('created_at')) <= started):
+                    continue
+                marker = re.search(r'^<!-- ' + START_MARKER + r' (.*?) -->$', row.get('body') or '', re.M)
+                try:
+                    approved |= bool(marker and json.loads(marker[1]) == expected)
+                except ValueError:
+                    pass
+            if approved or len(rows) < 100:
+                break
+        if not approved:
+            raise PermissionError('Push requires a fresh exact-source owner queue start grant')
     pr = read(f"repos/{ROOT}/pulls/{grant['enginePR']}")
     if ((pr.get('user') or {}).get('login') != 'onlykappa'
             or (pr.get('base') or {}).get('ref') != 'main'

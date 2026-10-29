@@ -717,6 +717,36 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Regression: successful fresh-source advancement, failed/moved-source refusal and separate native-CI waiting.28 queue tests,75 focused tests and1,317 full Python tests pass (31 full-suite skips); ten structural rules and policy/map checks pass.
 - Status: locally validated. New owner control319 prepares previously unstarted314/315; original313/318 remains stopped with57/13/5 counters and3 attempts, no budget/counter reset or cap increase. Live319 must pass its initial-source gate before coding. No merge/deploy/release.
 
+## P3-102 — unpublished generation cannot resume or replace its failed plan
+
+- Evidence:314/40820493588 failed five exact-anchor proposals, published no source/PR, retained8 calls/4 edits. Existing resume required a PR and reused its wrong-location plan despite owner correction.
+- Correction: resume only when task base/candidate match and all-state PR inventory, dev branch, accepted files and pending checkpoints prove no generated work exists. A hash-bound owner instruction archives old planning before retirement; ordinary guidance preserves cached planning. All counters/claims remain.
+- Regression: unpublished safe-resume and orphan/closed-PR/base-drift refusal; exact owner planning retirement versus generated/published preservation. Local focused and full-suite outcomes below; live trial pending.
+
+## P3-103 — controller upgrades lose independently validated candidate seed
+
+- Evidence:319 already proved tests40820462881/native40820462875 at5b before314 started; resuming orchestration must not silently change that immutable task base.
+- Correction: retain seed, independently verify original owner run, base ref and actual exact-source CI receipts on resume. Controller upgrade does not substitute candidate source or claim the new engine ran native tests.
+- Regression: original-seed reuse and drift/failed-provenance refusal. Live trial pending.
+
+## P3-104 — Base controller header becomes a code requirement
+
+- Evidence:314's persisted classification R1 was `Base: fix/phase3-queue-base-314`, categorized bug_fix, also copied into generated acceptance criteria.
+- Correction: strip Base with existing controller headers, retain actual routing from original issue. Migrate saved labels only between exact legacy/current projections of the same scope-bound owner request; unrelated request/scope changes remain rejected. Generation-plan identity remains the original issue, independently protected.
+- Regression: parser routing boundary, exact persisted classification migration and unrelated-request refusal. Live trial pending.
+
+## P3-105 — no authenticated fresh-engine queue start when API dispatch is unavailable
+
+- Evidence: CLI GitHub API returned401 while connected GitHub metadata/comment/ref tools and Git transport remain available; connector exposes no workflow-dispatch action. Rerunning old code would not validate new engine fixes.
+- Correction: optional push start limited to the accumulator branch, authenticated owner actor, exact commit message, fresh owner comment bound to source SHA/control/manifest, existing finite unexpired grant and one-shot atomic start ref. Ordinary pushes, bot/stale/wrong-source proofs cannot start a coder. Existing runtime source/receipt/claim gates remain active. This does not broaden candidate scope or lifecycle authority.
+- Regression: exact fresh owner proof succeeds; bot, stale/late comment, wrong SHA/manifest and ordinary commit message fail. Full-suite/security checks and live start outcome recorded below.
+
+### Recovery validation for P3-102–105
+
+- Final combined Python discovery:1,326 run, OK,31 skipped. Focused recovery/classification/queue/routing set:164 passed. Ten structural rules passed; shipped-source scan exit0 with15 existing HTML warnings. Dependency-map, reviewed execution-policy and whitespace checks passed.
+- Read-only rehearsal against the actual314 checkpoint verified exact legacy→current19-requirement migration and exact hash-bound failed-plan archival, preserving8 model calls/4 edits. No remote journal/claim state was edited by this rehearsal.
+- Initial full run exposed an outdated workflow-test harness lacking the new event context; it was corrected to check explicit dispatch behavior and push rejection, then the full suite above passed. Status: PATCHED locally; fresh live acceptance pending. All earlier failed task attempts remain evidence.
+
 ## Finding template
 
 ### P3-NNN — short defect title

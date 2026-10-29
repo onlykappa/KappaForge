@@ -8,17 +8,13 @@
 
 This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in the relevant delivery PR. A code-generation claim alone does not close an item. Keep each authorized slice in its tracked draft PR; do not merge, release, deploy or mark ready for review.
 
-## Queued execution — owner update2026-10-29
+## Current execution — 2026-10-29
 
-Owner requested consecutive bounded coding tasks with checks per task and a broad final review. [Execution queue](../phase3/execution-queue.md) tracks313 native investigation (dispatched),314 review ingestion (prepared),315 incremental synchronization (prepared), then the later roadmap stages. The owner subsequently requested automatic handoff: control318 and the pinned finite queue now implement it; live state and limits are recorded in execution-queue.md. New fixes accumulate in312; no merge/deployment. Phase3.1 remains open for the newly observed native failure; the old308 acceptance blocker is resolved.
-
-## Current batch update2026-10-29
-
-Control319 is the fresh batch for previously unstarted314/315. Native synchronization correction100 is in312; required exact-source native/head CI remains the3.1 final gate. The queue records the successful seed before beginning3.2. Exhausted313/318 histories stay unchanged. See [native-geometry-and-seeded-batch.md](../phase3/native-geometry-and-seeded-batch.md).
+Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests40820462881 and native40820462875 succeeded (all five UI tests). Control319 persisted that exact-source seed and began Phase3.2 task314 in40820493588. Its first generation attempt stopped before publishing code; recovery findings102–105 accumulate in draft312.314 retains8 model calls/4 edits, original expiry and immutable claim;315 waits for validated314. Exhausted313/318 remains historical. No merge/deployment/release. Evidence: [current closeout](../phase3/closeout-current.md).
 
 ## Progress and run discipline
 
-- [ ] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
+- [x] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
 - [ ] Phase 3.2 — authenticated, scoped PR review ingestion
 - [ ] Phase 3.3 — review-driven repair and safe PR updates
 - [ ] Phase 3.4 — browser visual verification and evidence
@@ -36,12 +32,12 @@ Owner update (2026-10-28): finish Phase3.1 verification and closeout, then proce
 
 This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. The owner has authorized Phase3.2 after honest closeout; no further transition permission is needed.
 
-- [ ] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.
-- [ ] **3.1b Architecture inventory:** trace the existing sandbox, exploration tools, persistent task plan/checkpoints, requirement classification, research, clarification, repair, authorization and free-first admission paths. Identify reusable interfaces; do not duplicate them.
-- [ ] **3.1c Policy and publication review:** inspect backend authorization and every path that can create/update candidate branches or PRs, run code, change permissions, merge, release or deploy. Confirm owner lifecycle gates are enforced in code, not just prompts.
-- [ ] **3.1d Regression and CI evidence:** map Phase 1/2 acceptance requirements to tests and workflows. Inspect actual CI results and artifacts at the audited commits; label these as inspected evidence. Run available relevant tests and record exact commands, counts and outcomes.
-- [ ] **3.1e Defect loop:** log each newly found issue before patching. For every in-scope defect, add a meaningful regression, apply a permanent fix, immediately rerun its reproducer, then run relevant broader checks. Never weaken a failing check.
-- [ ] **3.1f Audit closeout:** complete [phase1-phase2-audit.md](../phase3/phase1-phase2-audit.md), reconcile every finding with the issue ledger, list unresolved risks and Phase 3 prerequisites, and report the precise next owner action.
+- [x] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.
+- [x] **3.1b Architecture inventory:** trace the existing sandbox, exploration tools, persistent task plan/checkpoints, requirement classification, research, clarification, repair, authorization and free-first admission paths. Identify reusable interfaces; do not duplicate them.
+- [x] **3.1c Policy and publication review:** inspect backend authorization and every path that can create/update candidate branches or PRs, run code, change permissions, merge, release or deploy. Confirm owner lifecycle gates are enforced in code, not just prompts.
+- [x] **3.1d Regression and CI evidence:** map Phase 1/2 acceptance requirements to tests and workflows. Inspect actual CI results and artifacts at the audited commits; label these as inspected evidence. Run available relevant tests and record exact commands, counts and outcomes.
+- [x] **3.1e Defect loop:** log each newly found issue before patching. For every in-scope defect, add a meaningful regression, apply a permanent fix, immediately rerun its reproducer, then run relevant broader checks. Never weaken a failing check.
+- [x] **3.1f Audit closeout:** complete [phase1-phase2-audit.md](../phase3/phase1-phase2-audit.md), reconcile every finding with the issue ledger, list unresolved risks and Phase 3 prerequisites, and report the precise next owner action.
 
 ## Phase 3.2 — authenticated, scoped PR review ingestion
 

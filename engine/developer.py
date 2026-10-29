@@ -3173,7 +3173,7 @@ CHECKPOINT_SAVED = ("Saved implementation checkpoint. Complete the original task
                     "use Fix it if interrupted.")
 
 
-CONTROL_LINE_RE = re.compile(r"^\s*(?:Repository|Mode|Authorization|Scope|Allow flagged changes|Repair files)\s*:", re.I)
+CONTROL_LINE_RE = re.compile(r"^\s*(?:Repository|Mode|Base|Authorization|Scope|Allow flagged changes|Repair files)\s*:", re.I)
 
 
 def plan_layout(issue, stages):

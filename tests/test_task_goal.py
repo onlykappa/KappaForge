@@ -583,6 +583,13 @@ class TaskGoalTests(unittest.TestCase):
         self.assertIsNone(task_goal.from_request(REQUEST + ' Also fix the API.').paths)
         self.assertIsNone(task_goal.from_request('Fix the API. ' + REQUEST).paths)
 
+    def test_base_selector_routes_the_task_without_becoming_a_code_requirement(self):
+        issue = dict(body='Repository: onlykappa/KappaForge\nMode: develop\nBase: fix/phase3-queue-base-314\n\nImplement scoped review ingestion.')
+        self.assertEqual(task_goal.owner_request(issue), 'Implement scoped review ingestion.')
+        self.assertEqual(developer.task_base(issue), 'fix/phase3-queue-base-314')
+        self.assertIn('Base: fix/phase3-queue-base-314', task_goal.owner_request(issue, legacy_base=True))
+        self.assertEqual(task_goal.owner_request({'body': 'Base behavior on the existing API.'}), 'Base behavior on the existing API.')
+
     def test_guidance_is_bounded_idempotent_and_keeps_an_exact_goal_for_lifecycle_only_messages(self):
         goal = task_goal.from_request('Make add accept numeric strings')
         messages = ['first ' + 'a' * 3000, 'second', 'third', 'fourth']

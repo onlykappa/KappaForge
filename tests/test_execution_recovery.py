@@ -384,6 +384,48 @@ class ExecutionRecoveryTests(unittest.TestCase):
         with self.assertRaises(execution.CheckpointMismatch):
             execution.generation_plan(self.reload(), recovery.ROOT, 'different owner task')
 
+    def test_new_owner_guidance_archives_unpublished_planning_without_resetting_spend(self):
+        from engine import task_plan
+        self.journal.state['budgets'] = dict(modelCalls=8, edits=4)
+        task_plan.save(self.journal, task_plan.TaskPlan.initial('Old unstarted plan', files=['app.py']),
+                       recovery.ROOT, 'a' * 40, TASK)
+        execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['app.py'], stages=[]), {'app.py': 'value=1\n'})
+        old = dict(self.journal.state['generationPlan'])
+        directive = (f"Replan unpublished task #{self.journal.scope.number} from plan {old['hash']} before generation; "
+                     'preserve cumulative budgets and archive previous planning.')
+        goal = task_goal.from_request(TASK); goal.guidance([directive, 'Use the actual function signature and a focused module.'])
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        resumed = self.reload()
+        self.assertIsNone(execution.generation_plan(resumed, recovery.ROOT, TASK))
+        self.assertEqual(resumed.state['planningRefresh']['previous'], old['hash'])
+        self.assertEqual(resumed.state['budgets'], dict(modelCalls=8, edits=4))
+        self.assertEqual(resumed.state['candidate'], 'a' * 40)
+        self.assertNotIn('taskPlan', resumed.state)
+        self.assertTrue(any('supersededPlanning' in c['body'] for c in self.world.rows))
+        execution.save_plan(resumed, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['focused.py'], stages=[]), {'focused.py': 'value=1\n'})
+        self.assertEqual(execution.generation_plan(self.reload(), recovery.ROOT, TASK)['context']['paths'], ['focused.py'])
+
+    def test_owner_guidance_never_discards_generated_or_published_work_to_replan(self):
+        execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['app.py'], stages=[]), {'app.py': 'value=1\n'})
+        directive = (f"Replan unpublished task #{self.journal.scope.number} from plan {self.journal.state['generationPlan']['hash']} before generation; "
+                     'preserve cumulative budgets and archive previous planning.')
+        goal = task_goal.from_request(TASK); goal.guidance([directive, 'Use another approach.'])
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        for key, value in (('generationCheckpoint', {'hash': 'saved'}), ('executionCheckpoint', {'hash': 'saved'}),
+                           ('files', ['app.py']), ('pr', 'https://github.com/onlykappa/KappaForge/pull/1')):
+            with self.subTest(key=key):
+                original = self.journal.state.get(key)
+                self.journal.state[key] = value
+                self.assertIsNotNone(execution.generation_plan(self.journal, recovery.ROOT, TASK))
+                self.assertEqual(self.journal.state[key], value)
+                if original is None: self.journal.state.pop(key, None)
+                else: self.journal.state[key] = original
+
     def test_publication_recovery_preserves_completed_requirement_review(self):
         context = {**CONTEXT, 'publication': {'title': 'Draft: repaired', 'body': 'Completed requirement review\n' + developer.review_record([])}}
         work = session()

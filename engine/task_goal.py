@@ -8,12 +8,13 @@ import re
 CURRENT = ContextVar('owner_task_goal', default=None)
 
 
-def owner_request(issue):
+def owner_request(issue, *, legacy_base=False):
     request = re.sub(r'<!--.*?(?:-->|$)', '', issue.get('body') or '', flags=re.S)
     request = re.split(r'\n\s*\n(?:Conversation context \(|Approved from KappaForge Chat\.)', request, maxsplit=1)[0]
     # Imported lazily: the developer owns the task control-line format.
     from engine.developer import CONTROL_LINE_RE
-    return '\n'.join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)).strip()
+    return '\n'.join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)
+                     or legacy_base and re.match(r'^\s*Base\s*:', line, re.I)).strip()
 
 
 @dataclass

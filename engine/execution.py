@@ -222,6 +222,25 @@ def generation_plan(journal, repo, task):
     if (plan.get('task') != journal.scope.number or plan.get('repo') != repo
             or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != task_digest(task)):
         raise CheckpointMismatch('Saved generation plan belongs to different task authority')
+    from engine import task_goal
+    goal = task_goal.CURRENT.get()
+    guidance = tuple(getattr(goal, 'applied', ()))
+    hint = task_digest(json.dumps(guidance))
+    directive = (f'Replan unpublished task #{journal.scope.number} from plan '
+                 f"{journal.state['generationPlan']['hash']} before generation; "
+                 'preserve cumulative budgets and archive previous planning.')
+    if (directive in guidance and plan.get('guidanceHash') != hint
+            and not any(journal.state.get(k) for k in ('files', 'pr', 'generationCheckpoint',
+                'executionCheckpoint', 'executionPublication', 'executionPublished'))):
+        # A changed owner instruction may replace planning, never generated work or authority/accounting.
+        journal.archive([dict(plan=plan, receipt=journal.state['generationPlan'],
+                              taskPlanReceipt=journal.state.get('taskPlan'))], 'supersededPlanning')
+        previous = journal.state.pop('generationPlan')
+        journal.state.pop('taskPlan', None)
+        journal.state['planningRefresh'] = dict(previous=previous['hash'], guidanceHash=hint,
+                                               reason='owner_guidance_before_generation')
+        journal.persist()
+        return None
     return plan
 
 
@@ -298,7 +317,10 @@ def save_plan(journal, repo, sha, task, context, sources):
     if not journal:
         return
     require_storage(journal, repo)
+    from engine import task_goal
+    goal = task_goal.CURRENT.get()
     plan = dict(task=journal.scope.number, repo=repo, scope=journal.scope.digest, base=sha,
+                guidanceHash=task_digest(json.dumps(tuple(getattr(goal, 'applied', ())))),
                 taskHash=task_digest(task), sourceHash=digest(sources), context=context)
     journal.state['generationPlan'] = _write_blob(journal, sanitized(plan), journal.state.get('generationPlan'))
     journal.persist()

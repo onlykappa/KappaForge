@@ -233,6 +233,26 @@ class PersistenceTests(unittest.TestCase):
         self.assertIn('owner_decision', loaded[1].categories)
         self.assertTrue(loaded[1].owner_action)
 
+    def test_old_base_header_labels_migrate_only_for_the_exact_same_owned_request(self):
+        self.world = GitHub()
+        self.world.issue['body'] = ('Repository: onlykappa/KappaForge\nMode: develop\n'
+                                    'Base: fix/phase3-queue-base-314\n\nFix the parser. Add regression tests.')
+        handle = intent_guard.ACTIVE.set(None)
+        self.addCleanup(intent_guard.ACTIVE.reset, handle)
+        intent_guard.activate(self.world.issue)
+        journal = self.world.journal()
+        old = task_goal.owner_request(self.world.issue, legacy_base=True)
+        current = task_goal.owner_request(self.world.issue)
+        requirements.save(journal, requirements.classify(old), recovery.ROOT, old)
+        prior = journal.state['requirementClassification']['hash']
+        loaded = requirements.load(self.world.journal(), recovery.ROOT, current, intent_guard.ACTIVE.get())
+        self.assertEqual([r.text for r in loaded], ['Fix the parser.', 'Add regression tests.'])
+        self.assertEqual([r.id for r in loaded], ['R1', 'R2'])
+        self.assertNotEqual(self.world.journal().state['requirementClassification']['hash'], prior)
+        self.assertEqual(requirements.load(self.world.journal(), recovery.ROOT, current), loaded)
+        with self.assertRaises(execution.CheckpointMismatch):
+            requirements.load(self.world.journal(), recovery.ROOT, current + ' Deploy it.')
+
 
 def setUpModule():
     test_developer.setUpModule()  # Offline archive and the scripted sandbox pass the PR-first world relies on.

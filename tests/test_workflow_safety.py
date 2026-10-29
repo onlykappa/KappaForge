@@ -28,9 +28,11 @@ class TaskScopeTests(unittest.TestCase):
         text = (ROOT / '.github/workflows/agent.yml').read_text()
         guard = text.split('  classify:\n', 1)[1].split('    if: ', 1)[1].splitlines()[0]
         harness = '''const assert = require('node:assert/strict');
-        const allowed = new Function('inputs', 'return (' + GUARD + ')');
-        for (const action of ['router-check', 'prompt-probe']) assert.equal(allowed({action}), false);
+        const evaluate = new Function('inputs', 'github', 'return (' + GUARD + ')');
+        const allowed = inputs => evaluate(inputs, {event_name: 'workflow_dispatch'});
+        for (const action of ['router-check', 'prompt-probe', 'queue']) assert.equal(allowed({action}), false);
         for (const action of ['', 'fix', 'verify', 'resume:2:fixture']) assert.equal(allowed({action}), true);
+        assert.equal(evaluate({action: ''}, {event_name: 'push'}), false);
         '''.replace('GUARD', json.dumps(guard))
         subprocess.run(['node', '-'], input=harness, text=True, capture_output=True, check=True)
 

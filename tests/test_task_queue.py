@@ -82,6 +82,8 @@ class World:
         if p.startswith('actions/runs/'):
             n = int(p.rsplit('/', 1)[1])
             return copy.deepcopy(self.run if n == self.run['id'] else self.history[n])
+        if p.startswith('commits/'):
+            return dict(commit=dict(message=auth.PUSH_MESSAGE, committer=dict(date='2026-10-29T00:47:00Z')))
         if p.startswith('contents/'):
             return dict(path=auth.PATH, encoding='base64', content=base64.b64encode(json.dumps(self.grant).encode()).decode())
         if p == 'pulls/312':
@@ -145,6 +147,42 @@ class QueueAuthorityTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(PermissionError):
                 auth.owner_run('90', self.w.api, self.w.sha, now=self.w.now)
             self.w.run[field] = original
+
+    def test_push_start_requires_fresh_owner_approval_of_exact_source_and_manifest(self):
+        self.w.run.update(event='push', display_title=auth.PUSH_TITLE, created_at='2026-10-29T00:49:00Z')
+        proof = dict(control=318, sha=self.w.sha, manifest=auth.digest(json.dumps(self.w.grant, sort_keys=True)))
+        row = dict(user=dict(login='onlykappa'), created_at='2026-10-29T00:48:00Z',
+                   body='<!-- ' + auth.START_MARKER + ' ' + json.dumps(proof) + ' -->')
+        self.w.comments = [row]
+        self.assertEqual(auth.owner_run('90', self.w.api, now=self.w.now), self.w.grant)
+        for key, value in [('user', dict(login='github-actions[bot]')),
+                           ('created_at', '2026-10-29T00:46:00Z'), ('created_at', '2026-10-29T00:50:00Z'),
+                           ('body', row['body'].replace(self.w.sha, 'b' * 40)),
+                           ('body', row['body'].replace(proof['manifest'], 'c' * 64)), ('body', '<!-- KAPPA_QUEUE_START_V1 {} -->')]:
+            with self.subTest(key=key, value=value):
+                self.w.comments = [dict(row, **{key: value})]
+                with self.assertRaises(PermissionError):
+                    auth.owner_run('90', self.w.api, now=self.w.now)
+        self.w.comments = [row]
+        api = self.w.api
+        def ordinary(path, *args):
+            result = api(path, *args)
+            if '/commits/' in path: result['commit']['message'] = 'Ordinary source update'
+            return result
+        with self.assertRaises(PermissionError):
+            auth.owner_run('90', ordinary, now=self.w.now)
+
+    def test_source_start_is_consumed_once_and_revoked_grant_cannot_consume_it(self):
+        queue = self.w.queue()
+        q.claim_start(queue)
+        with self.assertRaises(urllib.error.HTTPError):
+            q.claim_start(queue)
+        self.assertEqual(len(self.w.refs), 1)
+        self.w.issues[318]['state'] = 'closed'
+        writes = len(self.w.writes)
+        with self.assertRaises(PermissionError):
+            q.claim_start(queue)
+        self.assertEqual(len(self.w.writes), writes)
 
     def test_closed_edited_foreign_or_expired_queue_grants_are_not_authority(self):
         issue = self.w.issues[318]
@@ -235,6 +273,66 @@ class QueueProgressTests(unittest.TestCase):
         self.assertEqual(queue.seed(self.w.now + 100), self.w.sha)
         queue.sleep.assert_called_once_with(30)
         self.assertEqual({e['workflow'] for e in queue.state['seed']['validations']}, {'tests.yml', 'ios-build.yml'})
+
+    def prepare_unpublished_failure(self):
+        self.w.grant['tasks'] = [self.w.grant['tasks'][1]]
+        row = self.w.grant['tasks'][0]
+        self.w.complete(314)
+        self.w.prs.clear()
+        state = json.loads(self.w.checkpoints[314]['body'].split('KAPPA_RECOVERY_V1 ')[1].split(' -->')[0])
+        state.update(candidate=self.w.sha, files=[], pr='', engineStatus='blocked')
+        self.w.checkpoints[314]['body'] = '### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(state) + ' -->'
+        self.w.refs[row['base']] = self.w.sha
+        self.w.refs['kappa/queue-claim-318-314'] = self.w.sha
+        old = self.w.queue(); old.load()
+        old.state['tasks']['314'] = dict(status='blocked', attempts=1, run='90')
+        old.state['seed'] = dict(sha=self.w.sha, ownerRun='90', validations=[dict(workflow='tests.yml', run=80, sha=self.w.sha, conclusion='success')])
+        old.save('blocked', 'Task stopped before publishing')
+        self.w.history[80] = self.initial_ci('tests.yml')
+        self.w.history[90] = dict(self.w.run, status='completed', conclusion='failure')
+        self.w.sha = 'b' * 40
+        self.w.run = dict(self.w.run, id=91, head_sha=self.w.sha)
+        self.w.engine['head']['sha'] = self.w.sha
+        return state
+
+    def test_owner_retry_before_pr_preserves_original_seed_and_attempt_accounting(self):
+        self.prepare_unpublished_failure()
+        queue = self.w.queue()
+        def launch(row, action, deadline):
+            self.assertEqual(action, 'queue-step')
+            self.assertEqual(queue.state['tasks']['314']['attempts'], 1)
+            self.assertEqual(self.w.refs[row['base']], 'a' * 40)
+            queue.state['tasks']['314'].update(attempts=2, status='running')
+            self.w.complete(314)
+        with patch.object(queue, 'launch', side_effect=launch): queue.run(self.w.now + 100)
+        self.assertEqual(queue.state['tasks']['314']['attempts'], 2)
+        self.assertEqual(queue.state['seed']['sha'], 'a' * 40)
+        self.assertEqual(self.w.refs['kappa/queue-claim-318-314'], 'a' * 40)
+        self.assertEqual(queue.state['status'], 'awaiting_owner_review')
+
+    def test_unpublished_retry_refuses_branch_pending_work_closed_pr_or_changed_base(self):
+        for change in ('branch', 'pending', 'closed', 'base'):
+            self.w = World(); state = self.prepare_unpublished_failure()
+            if change == 'branch': self.w.refs['kappa/dev-314'] = 'c' * 40
+            if change == 'base': self.w.refs['fix/phase3-queue-base-314'] = 'c' * 40
+            if change == 'pending':
+                state['generationCheckpoint'] = {'hash': 'preserve-this'}
+                self.w.checkpoints[314]['body'] = '### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(state) + ' -->'
+            reader = self.w.api
+            if change == 'closed':
+                reader = lambda path, *args, **kwargs: [{'number': 999}] if 'pulls?state=all&head=' in path else self.w.api(path, *args, **kwargs)
+            queue = q.Queue(reader, self.w.grant, '91', self.w.sha, clock=lambda: self.w.now)
+            before = copy.deepcopy(self.w.comments)
+            with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
+            self.assertIsNone(queue.comment)
+            self.assertEqual(self.w.comments, before)
+
+    def test_reused_seed_requires_its_actual_old_ci_to_remain_successful(self):
+        self.prepare_unpublished_failure()
+        queue = self.w.queue(); queue.load()
+        self.w.history[80]['conclusion'] = 'failure'
+        with self.assertRaises(q.Blocked): queue.seed(self.w.now + 100)
+        self.assertEqual(queue.state['tasks']['314']['attempts'], 1)
 
     def test_automatic_advancement_waits_for_real_validation_and_preserves_draft_stack(self):
         queue = self.w.queue()

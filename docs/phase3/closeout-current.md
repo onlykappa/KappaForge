@@ -1,3 +1,11 @@
+# Verified Phase 3.1 closeout and active Phase 3.2 — 2026-10-29
+
+Phase 3.1 is complete at source `5b462fa77b6bd9971ebeb2403135f0bef653ca9a`. Exact-source unit/web/Worker/structural CI40820462881 and native CI40820462875 succeeded; the inspected native job123271478539 passed all five UI tests, including keyboard geometry. Task308 already completed27/27 requirements with zero problems and fresh trusted sandbox40789410323 on unchanged candidate75811f8. Main remainsa76561a; no new merge, release or deployment.
+
+Control319 recorded these successful seed runs and started Phase3.2 task314 in40820493588. That first attempt stopped before publishing source after invalid edit anchors in its generated plan (8 model calls/4 edits). It is a Phase3.2 recovery defect, not a missing Phase3.1 native result. Task315 waits for validated314. Findings102–105 in draft312 address unpublished recovery, retained verified seed, Base metadata classification and exact-owner-source queue starts. Live acceptance of these recovery patches remains pending. Counters, expiry, immutable claims and the exhausted313/318 history remain unchanged. Physical-device and final integration validation remain outstanding.
+
+Earlier pending states below are historical snapshots and are superseded by the exact results above.
+
 # Current source gate — 2026-10-29
 
 The original308 acceptance is complete (27/27, zero problems, fresh sandbox success). Native check synchronization100 is implemented independently in312, with unchanged assertions/tolerances; exact corrected-head native CI is still required before closing3.1. Earlier queued313/318 coding attempts stopped without source edits and remain exhausted/history, not accepted or reset.1,317 full Python tests pass (31 skips),75 focused/28 queue and11 Node native checks pass. Control319 now gates the unstarted3.2 tasks314/315 on exact-source tests/native CI and records seed run evidence before any coding. The owner already authorizes that transition after the source gate; no additional permission or merge/deploy/release action is implied. Full evidence/limits: native-geometry-and-seeded-batch.md. Historical closeout snapshots follow.

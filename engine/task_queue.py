@@ -159,6 +159,25 @@ def checkpoint(api, row, run_id, engine_sha):
     return matches[0]
 
 
+def unpublished(api, row, saved):
+    if (saved.get('files') != [] or saved.get('pr')
+            or any(saved.get(k) for k in ('executionCheckpoint', 'generationCheckpoint',
+                                         'executionPublication', 'executionPublished'))):
+        return False
+    base = api(PREFIX + 'git/ref/heads/' + row['base'])['object']['sha']
+    if saved.get('candidate') != base or not authority.SHA.fullmatch(str(base)):
+        return False
+    if api(PREFIX + f"pulls?state=all&head=onlykappa:kappa/dev-{row['issue']}&per_page=2"):
+        return False
+    try:
+        api(PREFIX + f"git/ref/heads/kappa/dev-{row['issue']}")
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return True
+        raise
+    return False
+
+
 class Queue:
     def __init__(self, api, grant, run_id, sha, clock=time.time, sleep=time.sleep):
         self.api, self.grant, self.run_id, self.sha = api, grant, str(run_id), sha
@@ -281,12 +300,18 @@ class Queue:
                     if status not in ('blocked', 'waiting') and not (upgrade and status in ('running', 'recovering')):
                         raise Blocked('Previous task outcome is ambiguous; inspection required')
                     pr = candidate(self.api, row)
-                    if pr is None or saved.get('candidate') != pr['head']['sha']:
+                    if ((pr is None and not unpublished(self.api, row, saved))
+                            or pr is not None and saved.get('candidate') != pr['head']['sha']):
                         raise Blocked('Previous candidate changed; concurrent work preserved')
                     self.reservations[key] = self.reservation(row, record, origin)
                     record['run'] = engine['queueRun']
                 self.state['resumedFrom'] = prior['run']
             self.state['tasks'] = prior['tasks']
+            if prior.get('seed'):
+                seed = dict(prior['seed'])
+                if not seed.get('ownerRun') and seed.get('sha') == prior.get('sha'):
+                    seed['ownerRun'] = prior['run']
+                self.state['seed'] = seed
             # Invalid checkpoints are never selected for subsequent error writes.
             self.comment = checkpoint_id
         self.save('running', 'Owner-selected engine verified; dependency queue is active.')
@@ -358,6 +383,24 @@ class Queue:
             paths = [f.get('filename', '') for f in files] + [f.get('previous_filename', '') for f in files]
             if needed(ROOT, paths):
                 workflows.append('ios-build.yml')
+            previous = self.state.get('seed')
+            if previous:
+                original = previous.get('sha')
+                if (authority.owner_run(previous.get('ownerRun'), self.api, original, live=False) != self.grant
+                        or self.api(PREFIX + 'git/ref/heads/' + self.grant['tasks'][0]['base'])['object']['sha'] != original):
+                    raise Blocked('Previous validated source seed changed or lost owner provenance')
+                for workflow in workflows:
+                    records = [r for r in previous.get('validations', []) if r.get('workflow') == workflow and r.get('sha') == original]
+                    if len(records) != 1:
+                        raise Blocked('Previous source seed has incomplete validation evidence')
+                    run = self.api(PREFIX + f"actions/runs/{records[0]['run']}")
+                    if (run.get('status') != 'completed' or run.get('conclusion') != 'success'
+                            or run.get('head_sha') != original or run.get('event') != 'pull_request'
+                            or run.get('path') != '.github/workflows/' + workflow
+                            or (run.get('repository') or {}).get('full_name') != ROOT):
+                        raise Blocked('Previous source validation no longer establishes success')
+                self.save(detail='Resuming the original independently validated source; task base/counters unchanged.')
+                return original
             pending = False
             evidence = []
             for workflow in workflows:
@@ -372,7 +415,7 @@ class Queue:
                 else:
                     evidence.append(dict(workflow=workflow, run=matching[0]['id'], sha=self.sha, conclusion='success'))
             if not pending:
-                self.state['seed'] = dict(sha=self.sha, checkedAt=self.clock(), validations=evidence)
+                self.state['seed'] = dict(sha=self.sha, ownerRun=self.run_id, checkedAt=self.clock(), validations=evidence)
                 self.save(detail='Initial owner source independently validated; starting the prepared coding batch.')
                 return self.sha
             self.save(detail='Waiting for unit/web/Worker/structure and required native validation of the initial owner source.')
@@ -452,6 +495,13 @@ class Queue:
         self.save('awaiting_owner_review', 'All prepared tasks validated. Broad independent review remains required; nothing merged.')
 
 
+def claim_start(queue):
+    """Consume an authenticated source-specific start once, before any model work."""
+    queue.authorized()
+    queue.api(PREFIX + 'git/refs', {'ref': f"refs/heads/kappa/queue-start-{queue.grant['control']}-{queue.sha}",
+                                   'sha': queue.sha}, 'POST')
+
+
 def main():
     api = API(os.environ['GITHUB_TOKEN'])
     run, sha = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_SHA']
@@ -463,6 +513,9 @@ def main():
     if local != grant:
         raise PermissionError('Local queue manifest differs from the authenticated source')
     queue = Queue(api, grant, run, sha)
+    if os.environ.get('GITHUB_EVENT_NAME') == 'push':
+        # A rerun/repeated ref event may not replay a one-shot owner start grant.
+        claim_start(queue)
     started = api(PREFIX + f'actions/runs/{run}').get('run_started_at')
     from engine.intent_guard import timestamp
     deadline = min(time.time() + 350 * 60, timestamp(started) + 350 * 60)
