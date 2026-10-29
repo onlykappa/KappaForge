@@ -14,6 +14,9 @@ from test_recovery_journal import GitHub
 
 class DurableRecoveryTests(unittest.TestCase):
     def setUp(self):
+        previous = developer.Progress.latest
+        developer.Progress.latest = None
+        self.addCleanup(setattr, developer.Progress, 'latest', previous)
         self.world = GitHub()
         self.journal = self.world.journal()
         self.handle = recovery.CURRENT.set(self.journal)

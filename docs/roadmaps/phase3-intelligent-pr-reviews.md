@@ -41,7 +41,7 @@ This is the initial bounded KappaForge task. Split it into checkpoints so findin
 
 ## Phase 3.2 — authenticated, scoped PR review ingestion
 
-Owner requested direct continuation after314's repair guard stopped. The durable authenticated inbox and complete-snapshot synchronization now have an implementation in312, exposed through Journal.ingest_reviews with12 behavioral/119 focused tests. Automatic review consumption/wakeups and live acceptance remain pending;314/315 are not reset or marked complete. See [review-ingestion.md](../phase3/review-ingestion.md).
+Owner requested direct continuation after314's repair guard stopped. The durable authenticated inbox and complete-snapshot synchronization now have an implementation in312, exposed through Journal.ingest_reviews with12 behavioral/119 focused tests. The existing owner Fix path now syncs evidence for an already-bound journal/PR before any repair planning;135 related tests pass locally. Automatic review consumption/wakeups and live acceptance remain pending;314/315 are not reset or marked complete. See [review-ingestion.md](../phase3/review-ingestion.md).
 
 - [ ] Reuse the authenticated GitHub integration; restrict reads to the authorized repository and PR.
 - [ ] Ingest general conversation comments, inline review comments, review summaries and requested changes, including feedback added after initial PR creation.

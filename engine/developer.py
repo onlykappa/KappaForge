@@ -3775,6 +3775,12 @@ def fix_pull_request(issue, api_key, token):
         raise ValueError("No open pull request for " + branch)
     pr = prs[0]
     head = pr["head"]["sha"]
+    # Existing saved PRs may accumulate feedback between owner Fix requests.
+    # Persist scoped evidence before check polling, repair planning or model calls;
+    # review text is not owner guidance and cannot itself start a repair.
+    # Legacy journals without a saved PR remain unbound; never adopt one here.
+    if journal and journal.state.get('pr'):
+        journal.ingest_reviews(pr['number'])
     task_state.bind(repo, number, branch, head, journal=recovery.CURRENT.get())
     task_state.observe_pr(pr, repo, branch)
     run = sandbox_result(branch, head, token, repo)

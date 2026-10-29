@@ -817,6 +817,24 @@ The live314 ledger also showed33 read calls and121,764 output characters against
 - Prior b1a8264 native40888046788 passed. The newer source change only updates queue reporting, so the latest failure does not establish a native source regression or prove the failures harmless. No speculative app/test patch, relaxed assertion or repeated CI retry was made to hide the evidence.
 - Status: OPEN for native-specific reproduction and artifact inspection. The narrow review-ingestion slice has separate successful remote evidence: PR320/94da2aa tests40899169255 (Python1329 run OK,32 skipped), web, Worker and structure; graph40899169240 passed. No automatic queue continuation is inferred from those checks.
 
+## P3-115 — connect scoped evidence ingestion to the existing owner Fix entry point
+
+- Gap: the durable API in312/320 had behavioral coverage but no runtime caller. Reviews added between authorized Fix requests were not collected. Two real-Journal entry-point regressions failed before wiring: no durable inbox was produced, and a moved saved candidate was not rejected before check polling.
+- Change: fix_pull_request calls Journal.ingest_reviews only when its current journal already binds a PR. The API independently authenticates the exact task/PR/repository/head before every read and persistence. This call precedes task-state rebinding, check polling, model generation and repair accounting. Feedback remains evidence, not owner guidance or a trigger for repair. Unbound legacy journals are not adopted; no-journal behavior is preserved.
+- Regression: four runtime tests cover durable collection with pending checks and no inference/sandbox/budget charge, moved-head refusal before planning or mutations, rate-limit failure retaining the prior inbox, and legacy non-adoption. Related runtime/ingestion/Fix/journal/task-state checks:135 run OK. Final broader validation after the fixture isolation fix:1,352 Python tests run OK (32 skips);10 structural rules, source scan, dependency-map, reviewed execution-policy and whitespace checks pass. No worker dispatch, task completion/adoption, counter reset or lifecycle actions.
+- Status: IMPLEMENTED locally; remote exact-head verification pending. Live owner-scoped acceptance, review-triggered wakeups and Phase3.3 source-repair consumption remain unclaimed.
+
+### P3-113 / P3-114 remote evidence follow-up
+
+Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker and structure in40902062899; its new regression passed in job123546732223. Engine ac74407 passed1348 Python tests (33 skips), web, Worker and structure40902043840 and full Docker40902043850. Native40902044077/job123546667861 ran five UI tests with zero failures, including both previously failing tests. Native application/test sources were not changed to address the earlier failures; this is evidence of intermittent failures, not a permanent root-cause repair. P3-114 remains OPEN for stability investigation. No merge/deployment/release or readiness change.
+
+## P3-116 — recovery fixture inherits a stale progress reporter in a focused test order
+
+- Reproducer: with PYTHONPATH=.:tests, run unittest tests.test_immediate_retry followed by tests.test_reliability.DurableRecoveryTests.test_routing_cooldown_survives_both_generation_error_wrappers. Four tests ran with one error before the correction: the cooldown test's routing retry reached a stale Progress.latest left by the previous module and failed authorization during error reporting. The cooldown test passed alone and normal full discovery passed, demonstrating the order-dependent fixture leak rather than a verified product regression.
+- Correction: DurableRecoveryTests.setUp saves/clears Progress.latest and restores it with addCleanup, matching other real-Journal fixtures. No production authorization, assertion, routing limit or test command is weakened.
+- Immediate rerun: the same four-test sequence now passes. The broader intentionally ordered unlimited-cycle/audit/immediate-retry/reliability selection runs56 tests OK. Final full discovery after this fixture cleanup:1,352 tests run OK (32 skips), separate from the earlier pre-cleanup1352-test pass.
+- Status: PATCHED locally; remote current-head verification pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title
