@@ -2,6 +2,10 @@
 
 The owner explicitly requested automatic advancement to save assistant supervision. This supersedes the earlier supervised-only plan below. Implementation is in engine/task_queue.py, authority in engine/queue_authority.py, and the existing agent workflow's owner-only `queue` job. No merge or deployment is required to execute an explicit owner dispatch from312's branch.
 
+## Blocked-run correction
+
+Run40814839754 stopped on a misapplied small-document policy: a plan-only native draft was treated as a documentation repair.095 narrows that policy to explicit document-only owner work; global caps/counters stay unchanged.096 adds verified explicit-owner resumption of a known failed queue, retaining its original reservation and attempts. Cancelled/active/ambiguous/moved/exhausted work remains refused, and an invalid checkpoint cannot be overwritten by error reporting. Full1,309 Python tests passed (31 skips),151 focused passed and ten structural rules passed. Live state and the new selected source are recorded on318. Native correction is not inferred from this engine fix.
+
 ## Current batch and authority
 
 [Control issue318](https://github.com/onlykappa/KappaForge/issues/318) grants only tasks313→314→315. The immutable config/phase3-queue.json pins that owner's control-body digest and every task body digest, base and order. The owner-started workflow selects the exact312 engine SHA. Ordinary worker runs, reviewers, candidate code, a forged environment variable or another repository cannot select this authority. Future pushes do not update an already-running engine.
@@ -15,7 +19,7 @@ The first313 run40793251944 failed after its runtime small-document proposal all
 - Resume only the named task, retaining its original journal, model/edit/fix counters and limits. Recorded cooldowns can be waited out; queue repairs are additionally capped at3 child attempts per task. Queue-owned journals do not dispatch another engine continuation.
 - Advance only after a unique checkpoint from this pinned queue run, a complete requirement-review record, complete fresh file inventory, and successful exact-candidate trusted main sandbox execution. Require separate trusted native success for native paths/rename history. Missing, stale, foreign, cancelled and failed evidence cannot count as success.
 - Create a separate immutable owner base for each successor from its predecessor's validated SHA. Never move an existing PR base, merge a PR, mark ready or deploy. Candidate PRs stay draft; engine/bug fixes remain tracked in312 for later independent reconciliation.
-- This is a finite three-task batch, not unlimited self-created work. Existing six-hour Actions allocation is unchanged; the supervisor stops by350 minutes and on task/control authorization expiry, unavailable authority, exhausted recovery or unresolved owner questions. A crash/ambiguous delivery requires inspection rather than an automatic replay.
+- This is a finite three-task batch, not unlimited self-created work. Existing six-hour Actions allocation is unchanged; the supervisor stops by350 minutes and on task/control authorization expiry, unavailable authority, exhausted recovery or unresolved owner questions. A crash/ambiguous delivery requires inspection rather than an automatic replay. A known failed task may resume only through a new authenticated owner dispatch with verified prior termination and unchanged candidate/grant; attempts are retained.
 - After the batch, persist `awaiting_owner_review`. Broad independent integration/security review remains required when the owner returns; no readiness or merge action is implied. Live run/results are recorded on318.
 
 ## Verification before live dispatch

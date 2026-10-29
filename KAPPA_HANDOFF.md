@@ -1,3 +1,7 @@
+# Blocked queue repair — 2026-10-29
+
+Queue40814839754 failed before a source patch: native task313 received the small-document policy because candidate317 contained only its plan.095 corrects policy classification;096 adds verified owner resumption of that known failed queue. Original counters24 calls/5 edits/3 fix cycles and queue attempt1 are retained, with the original atomic claim. No manual state/counter/claim changes. New selected engine/run and current status live on control318; inspect it before any dispatch. Source drift, cancelled/active/ambiguous prior work and exhausted attempts remain stops.151 focused,1,309 full Python run OK (31 skips), ten structural rules and27 final queue/efficiency regressions pass. Native finding092 remains open until actually validated. Nothing merged/deployed/released.
+
 # Automatic queue handoff — 2026-10-29
 
 Owner requested and authorized automatic advancement. The earlier supervised-only limitation below is superseded by engine/task_queue.py and queue_authority.py, dispatched as the owner-only `queue` job in agent.yml. Manifest/control318 pin exactly313→314→315.19 dedicated tests,145 focused and1,306 full Python tests passed (31 skips); ten structural rules passed. Current queue state/results live on https://github.com/onlykappa/KappaForge/issues/318. Read docs/phase3/execution-queue.md before any dispatch or intervention; inspect current Actions/checkpoint before retrying. No duplicate queue/task run, manual state/counter reset, merge/deploy/release/ready action.

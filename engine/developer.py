@@ -3475,7 +3475,7 @@ def revise_branch(issue, pr, branch, head_sha, failed_jobs, token, api_key, repo
     task_state.bind(repo, task_number, branch, head_sha, journal=recovery.CURRENT.get())
     from engine import operational_review
     operational_review.restore_origin(lambda path: gh(path, repo_token))
-    if 0 < len(changed) <= 2 and all(path.endswith(('.md', '.rst', '.txt')) for path in changed):
+    if task_state.small_document_repair(changed, goal.request):
         task_state.begin_effort(12)
     task_state.observe_pr(pr, repo, branch)
     anchor_pr_goal(goal, pr, repo, repo_token, head_sha)

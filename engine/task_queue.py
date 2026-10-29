@@ -159,6 +159,7 @@ class Queue:
         self.api, self.grant, self.run_id, self.sha = api, grant, str(run_id), sha
         self.clock, self.sleep = clock, sleep
         self.comment = None
+        self.reservations = {}
         self.state = dict(version=1, control=grant['control'], manifest=authority.digest(json.dumps(grant, sort_keys=True)),
                           sha=sha, run=self.run_id, status='starting', tasks={}, updatedAt=clock())
 
@@ -192,13 +193,43 @@ class Queue:
         if len(found) > 1:
             raise Blocked('Ambiguous queue checkpoint')
         if found:
-            self.comment, prior = found[0]
-            if any(prior.get(k) != self.state[k] for k in ('version', 'control', 'manifest', 'sha')):
+            comment, prior = found[0]
+            if any(prior.get(k) != self.state[k] for k in ('version', 'control', 'manifest')):
                 raise Blocked('Queue checkpoint belongs to another grant or engine revision')
-            # A crashed/ambiguous child is not automatically replayed on a new owner run.
-            if any(t.get('status') != 'complete' for t in prior.get('tasks', {}).values()):
-                raise Blocked('Prior unfinished launch requires inspection; duplicate execution refused')
+            unfinished = {k: v for k, v in prior.get('tasks', {}).items() if v.get('status') != 'complete'}
+            if unfinished or prior.get('sha') != self.sha:
+                old = self.api(PREFIX + f"actions/runs/{prior.get('run')}")
+                if old.get('head_sha') != prior.get('sha'):
+                    raise Blocked('Queue checkpoint belongs to another grant or engine revision')
+                if old.get('status') != 'completed' or old.get('conclusion') not in ('success', 'failure'):
+                    raise Blocked('Prior unfinished or cancelled queue cannot be replayed')
+                try:
+                    old_grant = authority.owner_run(prior.get('run'), self.api, prior.get('sha'), live=False)
+                except PermissionError:
+                    raise Blocked('Queue checkpoint belongs to another grant or engine revision') from None
+                if old_grant != self.grant:
+                    raise Blocked('Previous queue grant differs; no resumption authorized')
+                if unfinished and prior.get('status') != 'blocked':
+                    raise Blocked('Prior unfinished launch has an ambiguous outcome; inspection required')
+                for key, record in unfinished.items():
+                    row = next((r for r in self.grant['tasks'] if str(r['issue']) == key), None)
+                    if row is None or type(record.get('attempts')) is not int or not 1 <= record['attempts'] < MAX_ATTEMPTS:
+                        raise Blocked('Queue task is unknown or its attempt budget is exhausted')
+                    authority.task(self.grant, self.api(PREFIX + f"issues/{row['issue']}"), self.clock())
+                    if active_agents(self.api, row['issue']):
+                        raise Blocked('Previous task still has an active worker; duplicate refused')
+                    saved = checkpoint(self.api, row, prior['run'], prior['sha'])
+                    status = saved.get('engineStatus') if saved.get('status') == 'engine_pinned' else saved.get('status')
+                    if status not in ('blocked', 'waiting'):
+                        raise Blocked('Previous task outcome is ambiguous; inspection required')
+                    pr = candidate(self.api, row)
+                    if pr is None or saved.get('candidate') != pr['head']['sha']:
+                        raise Blocked('Previous candidate changed; concurrent work preserved')
+                    self.reservations[key] = prior['sha']
+                self.state['resumedFrom'] = prior['run']
             self.state['tasks'] = prior['tasks']
+            # Do not select this comment for writes until all provenance checks pass.
+            self.comment = comment
         self.save('running', 'Owner-selected engine verified; dependency queue is active.')
 
     def ref(self, name, sha):
@@ -241,6 +272,7 @@ class Queue:
                     raise Blocked('Queue waiting deadline reached; saved task retained')
                 self.sleep(15)
             if child.returncode:
+                record['status'] = 'blocked'
                 raise Blocked(f'Task #{number} stopped; inspect its retained failure evidence')
         finally:
             if child.poll() is None:
@@ -277,12 +309,14 @@ class Queue:
                     raise
                 self.ref(claim, self.sha)
             else:
-                raise Blocked('Task launch was already reserved; ambiguous duplicate refused')
+                if key not in self.reservations:
+                    raise Blocked('Task launch was already reserved; ambiguous duplicate refused')
+                self.ref(claim, self.reservations.pop(key))
             intake = '<!-- KAPPA_INTAKE_V1 ' + json.dumps(dict(issue=number, created=issue['created_at']), sort_keys=True) + ' -->'
             self.authorized()
             self.api(PREFIX + f'issues/{number}/comments', {'body': 'Owner queue reserved this task; do not dispatch another worker.\n\n' + intake}, 'POST')
             self.api(PREFIX + f'issues/{number}/labels', {'labels': ['kappa-task']}, 'POST')
-            action = 'fix' if row['existing'] else 'queue-step'
+            action = 'fix' if row['existing'] or candidate(self.api, row) is not None else 'queue-step'
             self.launch(row, action, deadline)
             while True:
                 self.authorized()
@@ -343,7 +377,8 @@ def main():
         # Sanitized class/reason only. No credentials, response bodies, logs or model text in queue state.
         reason = str(error)[:300] if isinstance(error, (Blocked, Pending, PermissionError)) else type(error).__name__
         try:
-            queue.save('blocked', reason)
+            if queue.comment is not None:
+                queue.save('blocked', reason)
         except Exception:
             pass  # Revoked authorization cannot authorize another write.
         raise SystemExit('Queue stopped: ' + reason) from None

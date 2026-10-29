@@ -69,6 +69,26 @@ def simulate():
 
 
 class EfficiencyTests(unittest.TestCase):
+    def test_plan_only_native_repair_does_not_acquire_document_effort_limit(self):
+        class StopAfterEffort(Exception):
+            pass
+        for request, bounded in ((TASK, True),
+                ('Investigate and repair native keyboard layout in ios/KappaForge/KappaWebView.swift.', False),
+                ('Update docs/audit.md and repair keyboard behavior.', False)):
+            issue = dict(number=91, title='Owner task', user={'login': 'onlykappa'},
+                         body='Repository: onlykappa/KappaForge\nMode: develop\n\n' + request)
+            with self.subTest(request=request), \
+                    patch.object(developer, 'revision_files', return_value=[dict(filename=PATH)]), \
+                    patch('engine.operational_review.restore_origin'), \
+                    patch.object(task_state, 'observe_pr', side_effect=StopAfterEffort), \
+                    patch.object(task_state, 'begin_effort') as effort:
+                with self.assertRaises(StopAfterEffort):
+                    developer.revise_branch(issue, {}, 'kappa/dev-91', SHA, [], 'token', 'key')
+                if bounded:
+                    effort.assert_called_once_with(12)
+                else:
+                    effort.assert_not_called()
+
     def test_cache_invalidates_on_source_candidate_goal_and_route_and_never_caches_uncertainty(self):
         goal = task_goal.from_request(TASK)
         handle = task_goal.CURRENT.set(goal)

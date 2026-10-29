@@ -666,6 +666,20 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Status: IMPLEMENTED and locally validated;19 dedicated queue tests,145 focused and1,306 full Python run OK (31 skips), ten structural rules and policy/map checks pass. Existing15 source-scan warnings remain. Live dispatch/result is recorded on control318; no automatic success claim from implementation alone.
 - Limits: existing360-minute workflow/350-minute supervisor deadline, original task/control expiry, original task counters/caps plus queue maximum3 attempts, no replay after ambiguous launch, no generated task authority. Owner can stop by closing318. Broad independent review remains after the batch.
 
+## P3-095 — plan-only native task receives the small-document proposal policy
+
+- Evidence: queue40814839754 failed with Small-document repair reached its12-proposal effort budget; candidate317 stayed atd2785c23adb21f10ffda0c03064c4f4c510a7714. revise_branch selected that policy solely because the current PR delta held one Markdown plan, despite the owned native keyboard goal. Task313 retained24 model calls,5 edits and3 fix cycles at the stop.
+- Patch: apply that optional12-proposal document policy only to explicitly owner-named document paths and a conservatively document-only request. A plan-only draft or compound code ask uses the existing normal task policy. No numeric policy constant, lifetime budget, counter or failure history is raised/reset.
+- Regression: actual revise_branch entry is exercised through the policy decision: pure explicit documentation still selects12; a plan-only native request and a compound document/native ask do not. Full1,309 Python run, OK with31 skips;151 focused tests pass, and27 queue/efficiency regressions pass after the final resume-flow refinement.
+- Status: PATCHED locally, exact-head live resumed run pending. Native geometry finding092 is still OPEN; this patch corrects engine routing, not the keyboard itself.
+
+## P3-096 — a known failed owner queue has no verified resumption path
+
+- Evidence: initial queue.load refuses every unfinished record and any engine SHA change. After a corrective patch, even an explicit authenticated owner queue launch would refuse the known failed313 attempt. Its failed child also remained displayed as running. Error reporting after an invalid load could select and overwrite an unverified prior checkpoint.
+- Patch: a new explicit owner workflow may resume a blocked queue only when its manifest/grant is unchanged, the previous owner run is verifiably completed and not cancelled, the prior task checkpoint is uniquely bound to that engine/run, no other worker is active, the candidate is unchanged and queue attempts remain. Retain original atomic reservation, attempt debit, source/task history and all lifetime task counters. Failed children are recorded blocked. Invalid checkpoints are not selected for error writes.
+- Regression: real queue advancement resumes a known failed first task with attempts1→2, retains the original claim and validates the successor. Cancellation, active prior run, source drift, exhausted attempts, ambiguous state and invalid checkpoint writes remain refused.151 focused and1,309 full Python tests pass (31 full-suite skips); ten structural rule tests pass.
+- Status: PATCHED locally; no manual state/claim edit. New owner-selected live run will attest its corrected engine; no duplicate worker, merge/deploy/release.
+
 ## Finding template
 
 ### P3-NNN — short defect title

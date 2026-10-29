@@ -71,6 +71,24 @@ def begin_effort(limit):
                 record.effort = dict(limit=limit, used=0)
 
 
+def small_document_repair(paths, request):
+    """A plan-only PR does not turn a source task into a documentation task."""
+    if not 0 < len(paths) <= 2 or not all(p.endswith(('.md', '.rst', '.txt')) for p in paths):
+        return False
+    named = set(re.findall(r'(?<![\w/.-])[\w./-]+\.[A-Za-z][A-Za-z0-9]*\b', request))
+    if not set(paths) <= named or any(not p.endswith(('.md', '.rst', '.txt')) for p in named):
+        return False
+    if re.search(r'\b(?:repair|fix|implement|refactor|build|test)\b', request, re.I):
+        return False
+    # Be conservative with compound asks: mentioning a report does not bound implementation work.
+    from engine import requirements
+    for row in requirements.split(request):
+        categories = set(requirements.rule_categories(row['text']))
+        if categories & {'code', 'bug_fix', 'testing'}:
+            return False
+    return True
+
+
 def charge_effort():
     _, record = current()
     if record:

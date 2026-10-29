@@ -2,6 +2,10 @@
 
 Phase 3.1 remains open for the newly observed native keyboard assertion and final reconciliation. The old task308 authorization/review blocker is resolved. Phase 3.2 is prepared in the [execution queue](execution-queue.md), not started. The owner authorized continued queued coding and a broad review at the end; no merge/deployment permission is implied.
 
+## Latest blocked-run correction
+
+The first automatic run40814839754 stopped on incorrectly classifying a plan-only native draft as a small-document repair. Findings095/096 correct that routing and add verified explicit-owner resumption without resetting counters or reservations. Full1,309 Python tests pass (31 skips),151 focused and ten structural rules pass. Live status on318 is authoritative; a resumed engine run alone does not close the native finding or3.1.
+
 ## Automatic progression update
 
 The owner explicitly requested automatic handoff. The implementation and verification are recorded in [execution-queue.md](execution-queue.md); control318 pins313→314→315 and records live state. The first313 run failed without a source fix; the owner-authorized queue retry preserves its history/counters. Later tasks advance only after real predecessor acceptance. Original no-merge/deployment and honest3.1 closeout gates remain.

@@ -35,6 +35,7 @@ class World:
         self.paths = {}
         self.started = []
         self.checkpoints = {}
+        self.history = {}
 
     def complete(self, n):
         row = next(r for r in self.grant['tasks'] if r['issue'] == n)
@@ -48,8 +49,8 @@ class World:
         self.runs['sandbox-tests.yml', n] = dict(status='completed', conclusion='success', event='workflow_dispatch',
             path='.github/workflows/sandbox-tests.yml', head_branch='main', repository={'full_name': q.ROOT},
             display_title=f'Sandbox validation kappa/dev-{n} @ {sha}')
-        state = dict(version=1, task=n, repo=q.ROOT, digest=row['digest'], run='90', candidate=sha,
-                     status='engine_pinned', engineStatus='testing', engine=dict(queueRun='90', sha=self.sha))
+        state = dict(version=1, task=n, repo=q.ROOT, digest=row['digest'], run=str(self.run['id']), candidate=sha,
+                     status='engine_pinned', engineStatus='testing', engine=dict(queueRun=str(self.run['id']), sha=self.sha))
         self.checkpoints[n] = dict(id=n, user={'login': 'github-actions[bot]'},
                                   body='### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(state) + ' -->')
         return pr
@@ -75,8 +76,9 @@ class World:
                 row.update(payload)
                 return copy.deepcopy(row)
             raise AssertionError('Unexpected mutation ' + p)
-        if p == 'actions/runs/90':
-            return copy.deepcopy(self.run)
+        if p.startswith('actions/runs/'):
+            n = int(p.rsplit('/', 1)[1])
+            return copy.deepcopy(self.run if n == self.run['id'] else self.history[n])
         if p.startswith('contents/'):
             return dict(path=auth.PATH, encoding='base64', content=base64.b64encode(json.dumps(self.grant).encode()).decode())
         if p == 'pulls/312':
@@ -105,7 +107,7 @@ class World:
         raise AssertionError('Unexpected read ' + p)
 
     def queue(self):
-        return q.Queue(self.api, self.grant, '90', self.sha, clock=lambda: self.now, sleep=lambda _: None)
+        return q.Queue(self.api, self.grant, str(self.run['id']), self.sha, clock=lambda: self.now, sleep=lambda _: None)
 
 
 class QueueAuthorityTests(unittest.TestCase):
@@ -290,6 +292,54 @@ class QueueProgressTests(unittest.TestCase):
         queue.state['sha'] = 'b' * 40; queue.save()
         with self.assertRaisesRegex(q.Blocked, 'another grant'):
             self.w.queue().load()
+
+    def prepare_failed_queue(self):
+        queue = self.w.queue(); queue.load()
+        self.w.complete(313)
+        state = json.loads(self.w.checkpoints[313]['body'].split('KAPPA_RECOVERY_V1 ')[1].split(' -->')[0])
+        state['engineStatus'] = 'blocked'
+        self.w.checkpoints[313]['body'] = '### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(state) + ' -->'
+        queue.state['tasks']['313'] = dict(status='running', attempts=1)
+        queue.save('blocked', 'Task #313 stopped; inspect its retained failure evidence')
+        self.w.refs['kappa/queue-claim-318-313'] = self.w.sha
+        self.w.history[90] = dict(self.w.run, status='completed', conclusion='failure')
+        self.w.sha = 'b' * 40
+        self.w.run = dict(self.w.run, id=91, head_sha=self.w.sha)
+        return queue
+
+    def test_explicit_new_owner_queue_can_resume_known_failed_task_without_resetting_attempts(self):
+        self.prepare_failed_queue()
+        queue = self.w.queue()
+        def launch(row, action, deadline):
+            record = queue.state['tasks'].setdefault(str(row['issue']), dict(attempts=0))
+            if row['issue'] == 313:
+                self.assertEqual(record['attempts'], 1)
+                self.assertEqual(action, 'fix')
+            record.update(attempts=record['attempts'] + 1, status='running')
+            self.w.complete(row['issue'])
+        with patch.object(queue, 'launch', side_effect=launch):
+            queue.run(self.w.now + 1000)
+        self.assertEqual(queue.state['tasks']['313']['attempts'], 2)
+        self.assertEqual(queue.state['resumedFrom'], '90')
+        self.assertEqual(self.w.refs['kappa/queue-claim-318-313'], 'a' * 40)
+        self.assertEqual(queue.state['status'], 'awaiting_owner_review')
+
+    def test_failed_queue_resume_refuses_cancellation_active_worker_drift_or_exhausted_attempts(self):
+        for change in ('cancelled', 'active', 'drift', 'budget', 'ambiguous'):
+            self.w = World(); old = self.prepare_failed_queue()
+            if change == 'cancelled': self.w.history[90]['conclusion'] = 'cancelled'
+            if change == 'active': self.w.history[90]['status'] = 'in_progress'
+            if change == 'drift': self.w.prs[313]['head']['sha'] = 'c' * 40
+            if change in ('budget', 'ambiguous'):
+                state = json.loads(self.w.comments[0]['body'].split(q.MARKER + ' ')[1].split(' -->')[0])
+                if change == 'budget': state['tasks']['313']['attempts'] = q.MAX_ATTEMPTS
+                else: state['status'] = 'running'
+                self.w.comments[0]['body'] = '<!-- ' + q.MARKER + ' ' + json.dumps(state) + ' -->'
+            before = copy.deepcopy(self.w.comments)
+            queue = self.w.queue()
+            with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
+            self.assertIsNone(queue.comment, 'Invalid checkpoints must never be selected for error writes')
+            self.assertEqual(self.w.comments, before)
 
     def test_cancelled_grant_during_model_call_terminates_child(self):
         queue = self.w.queue()
