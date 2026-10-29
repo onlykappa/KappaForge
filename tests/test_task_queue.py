@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 import urllib.error
+from datetime import datetime, timezone
 
 from engine import intent_guard, queue_authority as auth, runtime_engine, task_queue as q
 
@@ -339,6 +340,43 @@ class QueueProgressTests(unittest.TestCase):
             queue = self.w.queue()
             with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
             self.assertIsNone(queue.comment, 'Invalid checkpoints must never be selected for error writes')
+            self.assertEqual(self.w.comments, before)
+
+    def prepare_owner_upgrade(self):
+        self.prepare_failed_queue()
+        self.w.history[90].update(conclusion='cancelled', updated_at=datetime.fromtimestamp(self.w.now - 10, timezone.utc).isoformat())
+        prior = json.loads(self.w.comments[0]['body'].split(q.MARKER + ' ')[1].split(' -->')[0])
+        prior['status'] = 'running'
+        self.w.comments[0]['body'] = '<!-- ' + q.MARKER + ' ' + json.dumps(prior) + ' -->'
+        checkpoint = json.loads(self.w.checkpoints[313]['body'].split('KAPPA_RECOVERY_V1 ')[1].split(' -->')[0])
+        checkpoint['engineStatus'] = 'recovering'
+        self.w.checkpoints[313]['body'] = '### KappaForge recovery checkpoint\n\n<!-- KAPPA_RECOVERY_V1 ' + json.dumps(checkpoint) + ' -->'
+        value = dict(fromRun='90', fromSha='a' * 40, toSha='b' * 40,
+                     manifest=prior['manifest'], task=313, candidate=self.w.prs[313]['head']['sha'])
+        row = dict(id=100, user={'login': 'onlykappa'}, created_at=datetime.fromtimestamp(self.w.now - 5, timezone.utc).isoformat(),
+                   body='<!-- ' + q.UPGRADE_MARKER + ' ' + json.dumps(value) + ' -->')
+        self.w.comments.append(row)
+        return row, value
+
+    def test_owner_can_stop_a_known_broken_engine_and_select_an_exact_new_revision(self):
+        self.prepare_owner_upgrade()
+        queue = self.w.queue(); queue.load()
+        self.assertEqual(queue.reservations, {'313': 'a' * 40})
+        self.assertEqual(queue.state['tasks']['313']['attempts'], 1)
+
+    def test_engine_upgrade_cannot_be_inferred_from_bot_stale_or_wrong_revision_comment(self):
+        for change in ('bot', 'stale', 'candidate', 'revision', 'manifest', 'task'):
+            self.w = World(); comment, value = self.prepare_owner_upgrade()
+            if change == 'bot': comment['user'] = {'login': 'github-actions[bot]'}
+            elif change == 'stale': comment['created_at'] = datetime.fromtimestamp(self.w.now - 20, timezone.utc).isoformat()
+            else:
+                key = {'candidate': 'candidate', 'revision': 'toSha', 'manifest': 'manifest', 'task': 'task'}[change]
+                value[key] = 999 if change == 'task' else 'c' * (64 if change == 'manifest' else 40)
+                comment['body'] = '<!-- ' + q.UPGRADE_MARKER + ' ' + json.dumps(value) + ' -->'
+            before = copy.deepcopy(self.w.comments)
+            queue = self.w.queue()
+            with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
+            self.assertIsNone(queue.comment)
             self.assertEqual(self.w.comments, before)
 
     def test_cancelled_grant_during_model_call_terminates_child(self):

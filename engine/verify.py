@@ -19,7 +19,8 @@ import json
 import posixpath
 import re
 
-TEST_RE = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|(?:^|/)test_[^/]+\.py$|_test\.(?:py|go)$|[.-](?:test|spec)\.[cm]?[jt]sx?$")
+TEST_RE = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|(?:^|/)test_[^/]+\.py$|_test\.(?:py|go)$|[.-](?:test|spec)\.[cm]?[jt]sx?$"
+                     r"|(?:^|/)[\w.-]*Tests/(?:[^/]+/)*[^/]+\.swift$")
 CODE_LIKE = re.compile(r"\.(?:py|[cm]?js|ts|tsx|jsx)$")
 WORKER = "chat-backend/src/index.js"
 CORE = "preview/core.js"

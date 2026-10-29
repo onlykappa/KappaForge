@@ -38,7 +38,7 @@ from engine import structural_scan
 from engine import runner as runner_module
 from engine.runner import allowed_repo, code_providers, notify, request, run_model
 from engine import verify, task_goal, task_state, repair_guard
-from engine.verify import open_problems as requirements_open, review_record
+from engine.verify import open_problems as requirements_open, review_record, TEST_RE
 
 ROOT = "onlykappa/KappaForge"
 OWNER = "onlykappa"
@@ -588,7 +588,6 @@ def waves(stages):
 
 
 # Test files, by the usual conventions; a new feature in a project with tests must come with one.
-TEST_RE = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|(?:^|/)test_[^/]+\.py$|_test\.(?:py|go)$|[.-](?:test|spec)\.[cm]?[jt]sx?$")
 
 
 # Docs, styles, page text and data files don't need a test of their own; code does.

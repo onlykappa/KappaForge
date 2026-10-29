@@ -680,6 +680,22 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Regression: real queue advancement resumes a known failed first task with attempts1→2, retains the original claim and validates the successor. Cancellation, active prior run, source drift, exhausted attempts, ambiguous state and invalid checkpoint writes remain refused.151 focused and1,309 full Python tests pass (31 full-suite skips); ten structural rule tests pass.
 - Status: PATCHED locally; no manual state/claim edit. New owner-selected live run will attest its corrected engine; no duplicate worker, merge/deploy/release.
 
+## P3-097 — Swift XCTest bundles are not recognized as tests
+
+- Evidence: monitoring40816365254 found repeated No test was added or changed rejections while repairing native code. Both developer.TEST_RE and verify.TEST_RE omitted Xcode/Swift Package XCTest bundle conventions. The same omission rejects genuine Swift requirement-test citations.
+- Before/after: an actual generate-path regression containing a corrected Swift geometry function and an XCTest that rejects its previous bad tolerance fails under the original path policy with No test was added. It passes with the shared corrected policy; exact source quote evidence is accepted only in the test bundle, while missing quotes and production Swift files are refused. Native XCTest-only changes no longer demand another test file.
+- Patch: conventional *Tests/ and *UITests/ Swift paths, including nested Swift Package Tests/ paths, are recognized. Developer imports the single verification policy instead of maintaining a duplicate. This does not claim actual Swift execution: exact-candidate trusted native CI remains required.
+- Validation:126 focused tests and1,312 full Python discovery pass (31 skips). Ten structural rules, policy/map/whitespace and source scan pass;15 existing HTML warnings remain.
+- Status: PATCHED locally; live engine upgrade follows. No actual native correction or completed3.1 is inferred.
+
+## P3-098 — deliberate owner engine upgrade cannot distinguish an ordinary cancellation
+
+- Type: bounded owner-control enhancement discovered during monitoring, not automatic cancellation bypass.
+- Evidence: the known-broken02fce53 worker kept repeating the XCTest rejection. It was explicitly stopped to avoid burning more model calls; final retained counters55 calls/13 edits/4 fix cycles, unchanged candidate d2785c2. Existing cancellation refusal correctly prevents a generic automatic replay, but also needs an explicit owner-selected upgrade path.
+- Patch: after the old owner workflow is verifiably completed/cancelled, only a fresh onlykappa-authored control-issue marker may authorize a different exact engine SHA. It binds old run/source, new source, manifest, task and unchanged candidate, and must be timestamped after cancellation. A fresh authenticated owner workflow still selects the new engine. Ordinary cancellation remains a stop; bot/stale/wrong-source/wrong-manifest/wrong-task/wrong-candidate markers are refused. Original attempts, atomic claim and lifetime counters remain.
+- Regression: positive exact owner upgrade plus six negative controls;126 focused and1,312 full Python tests pass (31 skips). No manual state/claim/counter reset or cap increase.
+- Status: IMPLEMENTED and locally validated. Actual owner marker and new live run are recorded on318 after push. All PRs remain draft; no merge/deploy/release.
+
 ## Finding template
 
 ### P3-NNN — short defect title

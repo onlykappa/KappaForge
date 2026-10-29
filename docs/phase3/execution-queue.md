@@ -2,6 +2,10 @@
 
 The owner explicitly requested automatic advancement to save assistant supervision. This supersedes the earlier supervised-only plan below. Implementation is in engine/task_queue.py, authority in engine/queue_authority.py, and the existing agent workflow's owner-only `queue` job. No merge or deployment is required to execute an explicit owner dispatch from312's branch.
 
+## Monitoring correction: XCTest recognition and explicit engine upgrade
+
+Run40816365254 repeatedly rejected real native work because XCTest bundle paths were absent from both generation and evidence policies.097 fixes them through one shared policy and a before/after generation regression. The old run was deliberately cancelled to stop wasting inference; counters55/13/4 and candidate d2785c2 remain.098 permits only a new explicit owner-selected engine revision with an exact owner-authored upgrade marker posted after cancellation, bound to old run/source, new source, manifest, task and candidate. Generic cancellation still stops; no attempt/claim/counter reset.126 focused,1,312 full Python tests pass (31 skips); ten structural rules and policy/map checks pass. Control318 records the live marker/run. Native CI remains required before progression.
+
 ## Blocked-run correction
 
 Run40814839754 stopped on a misapplied small-document policy: a plan-only native draft was treated as a documentation repair.095 narrows that policy to explicit document-only owner work; global caps/counters stay unchanged.096 adds verified explicit-owner resumption of a known failed queue, retaining its original reservation and attempts. Cancelled/active/ambiguous/moved/exhausted work remains refused, and an invalid checkpoint cannot be overwritten by error reporting. Full1,309 Python tests passed (31 skips),151 focused passed and ten structural rules passed. Live state and the new selected source are recorded on318. Native correction is not inferred from this engine fix.
