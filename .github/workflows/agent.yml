@@ -7,6 +7,42 @@ concurrency:
   group: kappaforge-agent-${{ inputs.issue_number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
+  queue:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'queue' && github.actor == 'onlykappa'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: kappaforge-phase3-owner-queue
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version-file: .python-version
+    - name: Install pinned structural security scanner
+      run: python -m pip install --quiet --no-deps --require-hashes -r .github/ast-grep-requirements.txt
+    - name: Verify standard free execution
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python -m engine.infrastructure
+    - name: Advance the finite owner-authorized coding queue
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        KAPPA_ROUTER_REQUIRED: 'true'
+        KAPPA_ROUTER_URL: ${{ vars.KAPPA_ROUTER_URL }}
+        KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
+        KAPPA_CODE_PROVIDERS: ${{ vars.KAPPA_CODE_PROVIDERS }}
+        KAPPA_PRIVATE_CODE_PROVIDERS: ${{ vars.KAPPA_PRIVATE_CODE_PROVIDERS }}
+        KAPPA_CODER_TOKEN: ${{ secrets.KAPPA_CODER_TOKEN }}
+      run: PYTHONUNBUFFERED=1 python -m engine.task_queue
   prompt-cap-probe:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'prompt-probe'
     runs-on: ubuntu-latest
@@ -45,7 +81,7 @@ jobs:
         KAPPA_ROUTER_TOKEN: ${{ secrets.KAPPA_ROUTER_TOKEN }}
       run: python -m engine.gateway
   classify:
-    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe'
+    if: inputs.action != 'router-check' && inputs.action != 'prompt-probe' && inputs.action != 'queue'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -274,7 +310,7 @@ jobs:
         required: false
         type: string
       action:
-        description: Blank to run; fix to repair; verify saved candidate; router-check diagnostics; prompt-probe free-route request sizes
+        description: Blank to run; fix to repair; verify saved candidate; queue for the finite owner-authorized queue; router-check diagnostics; prompt-probe free-route request sizes
         required: false
         type: string
   schedule:

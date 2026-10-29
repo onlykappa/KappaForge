@@ -1,3 +1,9 @@
+# Automatic queue handoff — 2026-10-29
+
+Owner requested and authorized automatic advancement. The earlier supervised-only limitation below is superseded by engine/task_queue.py and queue_authority.py, dispatched as the owner-only `queue` job in agent.yml. Manifest/control318 pin exactly313→314→315.19 dedicated tests,145 focused and1,306 full Python tests passed (31 skips); ten structural rules passed. Current queue state/results live on https://github.com/onlykappa/KappaForge/issues/318. Read docs/phase3/execution-queue.md before any dispatch or intervention; inspect current Actions/checkpoint before retrying. No duplicate queue/task run, manual state/counter reset, merge/deploy/release/ready action.
+
+The queue uses a pinned312 engine and unique immutable successor bases. It retains task counters, waits for exact-source independent checks, stops on cancelled/expired/changed authority or exhausted recovery, and ends awaiting owner review. Existing six-hour job allocation and task expiries are unchanged. Closing318 stops it. The first313 run failed without source edits; the queue retries with actual source-focused guidance. Native finding092 remains OPEN until independently verified;3.2 is not delivered merely by launching the queue.
+
 # Latest queue handoff — 2026-10-29
 
 Current accumulator remains open draft #312 on `fix/308-phase3-followups`, source6c8b138. Task308 now has27/27 requirements, zero problems and fresh successful sandbox validation; candidate758 remains unchanged. Engine Docker succeeded. Native run40788587109 failed one keyboard geometry assertion; log finding P3-092, investigate before closeout. No merge/deployment.

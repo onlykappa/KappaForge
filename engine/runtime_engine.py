@@ -33,6 +33,10 @@ class EngineRefreshRequired(RuntimeError):
 
 
 def verify_receipt(receipt, scope, read):
+    if isinstance(receipt, dict) and 'queueRun' in receipt:
+        from engine.queue_authority import receipt as queue_receipt
+        queue_receipt(receipt, scope, read)
+        return receipt
     if (not isinstance(receipt, dict) or receipt.get('task') != scope.number
             or receipt.get('digest') != scope.digest
             or (receipt.get('ref') != f'kappa/dev-{scope.number}' and 'trialPR' not in receipt)
@@ -75,6 +79,9 @@ def attest(scope, read, previous=None, env=None, checkout=None):
         cwd=Path(__file__).resolve().parents[1], text=True).strip()
     if checkout != sha:
         raise PermissionError('Engine checkout does not match the workflow revision')
+    if env.get('KAPPA_QUEUE_RUN'):
+        from engine.queue_authority import bind
+        return bind(scope, read, env, previous)
     run = read(f'repos/{ROOT}/actions/runs/{run_id}')
     if (run.get('event') != 'workflow_dispatch' or run.get('path') != '.github/workflows/agent.yml'
             or run.get('head_branch') != ref or run.get('head_sha') != sha

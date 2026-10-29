@@ -654,6 +654,18 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Status: OPEN. New bounded KappaForge task313, draft candidate317, explicit updated-engine run40793251944. Engine snapshot316 is frozen source6c8b138 of accumulator312; validated corrections ultimately collect in312.
 - Owner decision needed: no; queued investigation is authorized. No merge/deploy/release.
 
+## P3-093 — module-growth fixture assumes the path inventory fits an impossible budget
+
+- Evidence: full queue-source discovery failed test_dependency_map.test_a_map_over_budget_stays_valid_json_and_says_what_it_left_out after two new modules grew the irreducible all-path representation beyond4000 characters. The test already calculates the true minimum but still unconditionally renders fixed4000/5000 budgets.
+- Status: PATCHED fixture. Below the calculated minimum it now asserts ValueError; feasible budgets still require valid JSON, omission accounting and every module. No map module was dropped and the real5999-character cap was unchanged. Focused145 tests and full1,306 Python discovery pass (31 full-suite skips).
+
+## P3-094 — prepared Phase 3 tasks require manual cross-task handoff
+
+- Type: owner-requested automation enhancement, not a claim of an additional production bug.
+- Implementation: task_queue.py, queue_authority.py, strict runtime receipt/cancellation integration, queue continuation isolation and an owner-only job in existing agent.yml. Manifest318 pins313→314→315; every successor uses its predecessor's exact independently validated candidate through a unique immutable base. No merge/deploy/ready action.
+- Status: IMPLEMENTED and locally validated;19 dedicated queue tests,145 focused and1,306 full Python run OK (31 skips), ten structural rules and policy/map checks pass. Existing15 source-scan warnings remain. Live dispatch/result is recorded on control318; no automatic success claim from implementation alone.
+- Limits: existing360-minute workflow/350-minute supervisor deadline, original task/control expiry, original task counters/caps plus queue maximum3 attempts, no replay after ambiguous launch, no generated task authority. Owner can stop by closing318. Broad independent review remains after the batch.
+
 ## Finding template
 
 ### P3-NNN — short defect title

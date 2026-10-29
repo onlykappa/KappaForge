@@ -10,7 +10,7 @@ This roadmap tracks work across KappaForge runs and reviewers. Each checkbox sta
 
 ## Queued execution — owner update2026-10-29
 
-Owner requested consecutive bounded coding tasks with checks per task and a broad final review. [Execution queue](../phase3/execution-queue.md) tracks313 native investigation (dispatched),314 review ingestion (prepared),315 incremental synchronization (prepared), then the later roadmap stages. This is supervised; no automatic cross-task scheduler is implemented. New fixes accumulate in312; no merge/deployment. Phase3.1 remains open for the newly observed native failure; the old308 acceptance blocker is resolved.
+Owner requested consecutive bounded coding tasks with checks per task and a broad final review. [Execution queue](../phase3/execution-queue.md) tracks313 native investigation (dispatched),314 review ingestion (prepared),315 incremental synchronization (prepared), then the later roadmap stages. The owner subsequently requested automatic handoff: control318 and the pinned finite queue now implement it; live state and limits are recorded in execution-queue.md. New fixes accumulate in312; no merge/deployment. Phase3.1 remains open for the newly observed native failure; the old308 acceptance blocker is resolved.
 
 ## Progress and run discipline
 

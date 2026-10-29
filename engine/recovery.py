@@ -727,6 +727,8 @@ class Journal:
 
     def queue(self, handoff=False):
         """Atomic ref reservation plus durable dispatch state prevents competing scanners."""
+        if (self.state.get('engine') or {}).get('queueRun'):
+            return False  # The owner queue supervises this task; never dispatch a second worker.
         if self.state['status'] != 'waiting' or self.clock() < self.state['nextAt']:
             return False
         # An acknowledgement can be delayed while the previous runner is still
@@ -799,6 +801,8 @@ class Journal:
 
     def handoff_engine(self, sleep=time.sleep):
         """Queue the attested trial engine before exiting; legacy main scanners cannot resume this protocol."""
+        if (self.state.get('engine') or {}).get('queueRun'):
+            return False
         if not self.state.get('engine'):
             return False
         from engine.runner import TASK_DEADLINE

@@ -2,6 +2,10 @@
 
 Phase 3.1 remains open for the newly observed native keyboard assertion and final reconciliation. The old task308 authorization/review blocker is resolved. Phase 3.2 is prepared in the [execution queue](execution-queue.md), not started. The owner authorized continued queued coding and a broad review at the end; no merge/deployment permission is implied.
 
+## Automatic progression update
+
+The owner explicitly requested automatic handoff. The implementation and verification are recorded in [execution-queue.md](execution-queue.md); control318 pins313→314→315 and records live state. The first313 run failed without a source fix; the owner-authorized queue retry preserves its history/counters. Later tasks advance only after real predecessor acceptance. Original no-merge/deployment and honest3.1 closeout gates remain.
+
 ## Latest verified results
 
 - Updated engine: `6c8b1389b23be8790b81f4a55f10cc6ae2b7364d` in #312. Task308 run [40788699260](https://github.com/onlykappa/KappaForge/actions/runs/40788699260) succeeded with27/27 requirements and zero review problems. #310's actual review record is complete; its candidate remains `75811f8510b4d02a8cd165c4ec081e3c032d998f`. Retained counters:103 calls/2 edits/23 fix cycles. No candidate edit or counter reset.

@@ -1,3 +1,32 @@
+# Automatic Phase 3 queue — 2026-10-29
+
+The owner explicitly requested automatic advancement to save assistant supervision. This supersedes the earlier supervised-only plan below. Implementation is in engine/task_queue.py, authority in engine/queue_authority.py, and the existing agent workflow's owner-only `queue` job. No merge or deployment is required to execute an explicit owner dispatch from312's branch.
+
+## Current batch and authority
+
+[Control issue318](https://github.com/onlykappa/KappaForge/issues/318) grants only tasks313→314→315. The immutable config/phase3-queue.json pins that owner's control-body digest and every task body digest, base and order. The owner-started workflow selects the exact312 engine SHA. Ordinary worker runs, reviewers, candidate code, a forged environment variable or another repository cannot select this authority. Future pushes do not update an already-running engine.
+
+The first313 run40793251944 failed after its runtime small-document proposal allowance, with no source patch. Its lifetime counters and failure history are preserved. The queued retry uses explicit updated-engine authorization. Source-focused pending investigation metadata and owner guidance now name the actual KappaWebView.swift, LaunchTests.swift and preview/ui.js files, rather than the invented KeyboardManager.swift.
+
+## Behavior and limits
+
+- Persist a pre-start debit and permanent atomic task reservation; refuse duplicate/ambiguous starts after a crash. Global queue-job concurrency and active-status task checks avoid competing starts by this controller.
+- Re-read the task before work and every privileged engine mutation. Re-read the control grant/run before mutations and while a child model call is pending. Closing318, closing a task, changing either pinned body, expiry or workflow cancellation stops coding/advancement. Stopped children are terminated as a process group.
+- Resume only the named task, retaining its original journal, model/edit/fix counters and limits. Recorded cooldowns can be waited out; queue repairs are additionally capped at3 child attempts per task. Queue-owned journals do not dispatch another engine continuation.
+- Advance only after a unique checkpoint from this pinned queue run, a complete requirement-review record, complete fresh file inventory, and successful exact-candidate trusted main sandbox execution. Require separate trusted native success for native paths/rename history. Missing, stale, foreign, cancelled and failed evidence cannot count as success.
+- Create a separate immutable owner base for each successor from its predecessor's validated SHA. Never move an existing PR base, merge a PR, mark ready or deploy. Candidate PRs stay draft; engine/bug fixes remain tracked in312 for later independent reconciliation.
+- This is a finite three-task batch, not unlimited self-created work. Existing six-hour Actions allocation is unchanged; the supervisor stops by350 minutes and on task/control authorization expiry, unavailable authority, exhausted recovery or unresolved owner questions. A crash/ambiguous delivery requires inspection rather than an automatic replay.
+- After the batch, persist `awaiting_owner_review`. Broad independent integration/security review remains required when the owner returns; no readiness or merge action is implied. Live run/results are recorded on318.
+
+## Verification before live dispatch
+
+19 queue tests cover real serial advancement, immutable stacked bases, failed/missing/forged/stale validation, native rename evidence, exact task boundaries, authority/expiry denial, cancellation during a model call, checkpoint provenance, restart ambiguity and child failure. Focused engine/queue/recovery/admission/intent selection145 tests passed. Full Python discovery1,306 run, OK with31 skips. Ten ast-grep security-rule tests passed; shipped-source scan exit0 with15 existing HTML-injection warnings. Policy/dependency-map/whitespace checks passed. The fixture-only dependency-map correction retains every module and the real5999-character output cap; impossible artificial budgets must fail explicitly.
+
+No native fix, successful current device validation or completed Phase3.2 feature is claimed merely by starting this queue.
+
+<details>
+<summary>Historical supervised queue and initial task setup (superseded above)</summary>
+
 # Phase 3 execution queue — 2026-10-29
 
 Owner request: prepare consecutive KappaForge coding tasks to reduce idle time, retain checks per task, and perform a broad review at the end. Nothing may merge, deploy, release or be marked ready.
@@ -31,3 +60,5 @@ The unchanged runtime binds trial engines to a task-specific owner branch and dr
 5. Keep task checks focused and defer the complete cross-phase review to 3.8/3.9. Never substitute that later review for authorization and publication gates.
 
 No production app update, live cancellation, native physical-device validation, or unattended cross-task scheduler is claimed.
+
+</details>

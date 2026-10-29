@@ -140,6 +140,8 @@ class ExecutionScope:
         if current.get("state") != "open" or current.get("user", {}).get("login", "").lower() != "onlykappa" or hashlib.sha256((current.get("body") or "").encode()).hexdigest() != self.digest:
             self.state = "cancelled"
             raise PermissionError("Task cancelled or scope changed; queued mutation rejected")
+        if getattr(self, 'queue_guard', None):
+            self.queue_guard()
 
     def permit(self, path, payload, method):
         parsed = urlparse(path)
