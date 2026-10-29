@@ -77,6 +77,38 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(execution.pending(self.reload())['controller']['actions'], 3)
 
+    def test_explicit_retry_uses_raised_ceiling_without_resetting_five_saved_attempts(self):
+        work = session(FakeDocker(always_fail=True, vary_failure=True))
+        count = 0
+        def different(*args, **kwargs):
+            nonlocal count
+            count += 1
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Investigated a different candidate',
+                args=dict(edits=[dict(path='app.py', find=work.current()['app.py'].decode(),
+                                     replace=f'value={count + 3}\n')])))
+        with patch.object(sandbox_repair_controller, 'MAX_ATTEMPTS', 5):
+            failed = self.controller(work=work).run_repair(TASK, different, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(failed['stop_reason'], 'attempt_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['attempts']), 5)
+        for action in ('resume:1:fixture', 'queue-step'):
+            with patch.dict(os.environ, {'INPUT_ACTION': action}):
+                result = self.controller(journal=self.reload()).run_repair(TASK, Mock(side_effect=AssertionError('no owner retry')), 'fixture')
+            self.assertEqual(result['stop_reason'], 'attempt_limit')
+        resumed = session()
+        def repair(*args, **kwargs):
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Correct the diagnosed root cause',
+                args=dict(edits=[dict(path='app.py', find=resumed.current()['app.py'].decode(), replace='value=2\n')])))
+        owner_queue = self.reload()
+        owner_queue.scope.queue_guard = lambda: None  # Installed only by the authenticated queue binding.
+        with patch.dict(os.environ, {'INPUT_ACTION': 'queue-step'}):
+            result = self.controller(work=resumed, journal=owner_queue).run_repair(TASK, repair, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['attempts'][:5], before['attempts'])
+        self.assertEqual(len(after['attempts']), 6)
+        self.assertEqual(after['actions'], before['actions'] + 1)
+
     def test_provider_failure_restores_exact_patch_and_skips_completed_candidate_tests(self):
         def exhausted(*args, **kwargs):
             raise RuntimeError('all free routes unavailable')

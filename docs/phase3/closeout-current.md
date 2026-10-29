@@ -1,3 +1,7 @@
+# Owner-requested ten-candidate retry — 2026-10-29
+
+Owner explicitly raised the sandbox candidate allowance5→10 and requested another314 attempt. P3-109 implements retained-state resume and authenticates the previously unpublished sandbox before the existing queue can relaunch it. Five earlier candidates,35 model calls/6 generation edits and twelve repair actions remain spent; no counters or claims are reset. The same original task/grant/expiry and outer three-launch bound remain. Fresh retained-candidate tests precede any further workaround. New exact engine source/live results are recorded on312/319; earlier exhausted/paused descriptions below precede this new owner instruction. No merge/deployment/release.
+
 # Direct continuation — owner update2026-10-29
 
 Owner requested resume after the stop below. Work now continues directly in312 without restarting exhausted314 or changing any cap/counter. P3-108 implements the durable, authenticated review-inbox API on the existing Journal, with119 focused tests including12 new behavior tests. Full Python discovery passes1,340 tests (31 skips), plus ten structural rules and policy/map/source checks; new-head remote CI is pending. Complete snapshot synchronization handles pagination, edits, removals, rate limits, cancellation, interruption and observed concurrent changes. Automatic repair consumption/wakeups and live acceptance remain pending, so Phase3.2 is not falsely closed. See review-ingestion.md. No merge, deployment or release.

@@ -1,6 +1,7 @@
 """Exercise authority, persisted starts and real queue advancement with an injected GitHub API."""
 import base64
 import copy
+import hashlib
 import json
 import os
 from types import SimpleNamespace
@@ -326,6 +327,37 @@ class QueueProgressTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(q.Blocked): queue.load()
             self.assertIsNone(queue.comment)
             self.assertEqual(self.w.comments, before)
+
+    def test_unpublished_sandbox_requires_intact_scope_and_original_base(self):
+        row = self.w.grant['tasks'][1]
+        self.w.refs[row['base']] = self.w.sha
+        parts = []
+        def blob(value):
+            raw = json.dumps(value, sort_keys=True).encode()
+            fingerprint = hashlib.sha256(raw).hexdigest()
+            number = 500 + len(parts)
+            envelope = dict(task=314, repo=q.ROOT, hash=fingerprint, part=0, total=1,
+                            data=base64.b64encode(raw).decode())
+            parts.append(dict(id=number, user=dict(login='github-actions[bot]'),
+                body='### KappaForge execution checkpoint\n\n<!-- KAPPA_EXECUTION_V1 ' + json.dumps(envelope) + ' -->'))
+            return dict(hash=fingerprint, parts=[number])
+        proposal = dict(version=1, identity=dict(task=314, repo=q.ROOT, scope=row['digest'], base=self.w.sha),
+                        context=dict(kind='develop', base=row['base']), patchRef=blob({'engine/feature.py': 'value=1\n'}))
+        saved = dict(files=[], pr='', candidate=self.w.sha, executionCheckpoint=blob(proposal))
+        def read(path, *args):
+            if '/issues/314/comments?' in path: return copy.deepcopy(parts)
+            return self.w.api(path, *args)
+        self.assertTrue(q.unpublished(read, row, saved, self.w.now))
+        self.assertTrue(saved['executionCheckpoint'])
+        for change in ('scope', 'base', 'fragment'):
+            with self.subTest(change=change):
+                bad = copy.deepcopy(proposal)
+                if change == 'scope': bad['identity']['scope'] = 'b' * 64
+                if change == 'base': bad['identity']['base'] = 'b' * 40
+                if change == 'fragment': parts[0]['user']['login'] = 'reviewer'
+                altered = dict(saved, executionCheckpoint=blob(bad))
+                self.assertFalse(q.unpublished(read, row, altered, self.w.now))
+                parts[0]['user']['login'] = 'github-actions[bot]'
 
     def test_reused_seed_requires_its_actual_old_ci_to_remain_successful(self):
         self.prepare_unpublished_failure()

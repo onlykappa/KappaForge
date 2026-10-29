@@ -159,14 +159,29 @@ def checkpoint(api, row, run_id, engine_sha):
     return matches[0]
 
 
-def unpublished(api, row, saved):
+def unpublished(api, row, saved, now=None):
     if (saved.get('files') != [] or saved.get('pr')
-            or any(saved.get(k) for k in ('executionCheckpoint', 'generationCheckpoint',
-                                         'executionPublication', 'executionPublished'))):
+            or any(saved.get(k) for k in ('executionPublication', 'executionPublished'))):
         return False
     base = api(PREFIX + 'git/ref/heads/' + row['base'])['object']['sha']
     if saved.get('candidate') != base or not authority.SHA.fullmatch(str(base)):
         return False
+    if saved.get('executionCheckpoint'):
+        # Preserve and authenticate the uncommitted proposal; never discard it to retry.
+        from types import SimpleNamespace
+        from engine import execution
+        scope = ExecutionScope(api(PREFIX + f"issues/{row['issue']}"), now=now)
+        journal = SimpleNamespace(scope=scope, state=saved, read=api)
+        try:
+            pending = execution.pending(journal, 'develop')
+            if (not pending or pending['identity'].get('base') != base
+                    or pending.get('context', {}).get('base') != row['base']
+                    or not isinstance(pending.get('changes'), dict) or not pending['changes']):
+                return False
+        except execution.CheckpointMismatch:
+            return False
+    elif saved.get('generationCheckpoint'):
+        return False  # A partial generation without a reconstructible sandbox cannot be adopted.
     if api(PREFIX + f"pulls?state=all&head=onlykappa:kappa/dev-{row['issue']}&per_page=2"):
         return False
     try:
@@ -300,7 +315,7 @@ class Queue:
                     if status not in ('blocked', 'waiting') and not (upgrade and status in ('running', 'recovering')):
                         raise Blocked('Previous task outcome is ambiguous; inspection required')
                     pr = candidate(self.api, row)
-                    if ((pr is None and not unpublished(self.api, row, saved))
+                    if ((pr is None and not unpublished(self.api, row, saved, self.clock()))
                             or pr is not None and saved.get('candidate') != pr['head']['sha']):
                         raise Blocked('Previous candidate changed; concurrent work preserved')
                     self.reservations[key] = self.reservation(row, record, origin)

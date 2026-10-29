@@ -7,7 +7,7 @@ import re
 from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger
 
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 10
 MAX_MODEL_ACTIONS = 20
 LOG_CHARS = 12000
 
@@ -23,8 +23,11 @@ def _failure_key(results):
             output = row.get("output") or ""
             output = re.sub(r"Ran (\d+) tests? in [0-9.]+s", r"Ran \1 test(s) in <duration>", output)
             output = re.sub(r"# duration_ms [0-9.]+", "# duration_ms <duration>", output)
+            first_failure = re.sub(r"Ran (\d+) tests? in [0-9.]+s", r"Ran \1 test(s) in <duration>", row.get("first_failure", ""))
+            first_failure = re.sub(r"# duration_ms [0-9.]+", "# duration_ms <duration>", first_failure)
             rows.append({"argv": row.get("argv"), "status": row.get("status"),
                          "exit_code": row.get("exit_code"), "reason": row.get("reason"),
+                         "first_failure": first_failure[:1200],
                          "output": output[-1200:]})
     return _fingerprint(json.dumps(rows, sort_keys=True, ensure_ascii=False)) if rows else ""
 
@@ -62,12 +65,17 @@ class SandboxRepairController:
             if self.session.test_definition_changed():
                 return self._result("failed", "test_definition_changed", "Candidate changes the test command")
             if self.state["phase"] == "complete":
-                if (self.journal and os.getenv('INPUT_ACTION') == 'fix' and self.state.get('status') == 'failed'
-                        and self.state.get('stop_reason') == 'repeated_tool_call'
+                explicit = (os.getenv('INPUT_ACTION') == 'fix' or
+                            os.getenv('INPUT_ACTION') == 'queue-step' and
+                            callable(getattr(getattr(self.journal, 'scope', None), 'queue_guard', None)))
+                if (self.journal and explicit and self.state.get('status') == 'failed'
+                        and self.state.get('stop_reason') in ('repeated_tool_call', 'attempt_limit')
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
-                    self.state['phase'] = 'repair'
-                    # A new explicit Fix starts a fresh consecutive-call streak, not a new action budget.
-                    self.state['repeated'], self.state['action_key'] = 0, None
+                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') == 'attempt_limit' else 'repair'
+                    self.state['owner_recheck'] = self.state.get('stop_reason') == 'attempt_limit'
+                    # Preserve tested versions/actions. Only an explicit Fix renews the consecutive-call streak.
+                    if self.state.get('stop_reason') == 'repeated_tool_call':
+                        self.state['repeated'], self.state['action_key'] = 0, None
                     self.state['history'].append('Explicit Fix continues the retained candidate with remaining budget; prior counters and evidence retained')
                     for run in reversed(self.session.results):
                         if run.status == 'failed' and run.profile == 'test' and self._test_command(run.argv):
@@ -99,6 +107,7 @@ class SandboxRepairController:
                 phase = self.state["phase"]
                 self.execution.transition(phase)
                 if phase in ("candidate", "final"):
+                    owner_recheck = self.state.pop('owner_recheck', False)
                     test_result = self.tools.run_tests()
                     if self.execution.error:
                         raise self.execution.error
@@ -137,10 +146,11 @@ class SandboxRepairController:
                         self.execution._save()
                         continue
                     error_key = _failure_key(test_result.get("results", []))
-                    if error_key and error_key in self.state["seen_errors"]:
+                    if error_key and error_key in self.state["seen_errors"] and not owner_recheck:
                         return self._result("failed", "identical_error")
                     if error_key:
-                        self.state["seen_errors"].append(error_key)
+                        if error_key not in self.state["seen_errors"]:
+                            self.state["seen_errors"].append(error_key)
                         # A new error is investigated before the next patch: what it names, where that is defined
                         # and what the defining module imports.
                         self._investigate_failure(self.state["last_summary"])
@@ -466,6 +476,9 @@ class SandboxRepairController:
                 + 'Sandbox language versions (Python, Node): ' + json.dumps(self.session.versions) + '. '
                 + "Use APIs supported by these versions. "
                 "Use current repository evidence for exact find text; earlier proposals may describe stale source. "
+                "If many unrelated tests fail against one fake object, investigate the first failing test and shared "
+                "state cleanup (including ContextVar tokens) before adding members to that fake. Later errors may "
+                "be a cascade from leaked test state. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "make a focused correction with apply_patch, then let the engine rerun the tests. Do not edit or weaken "
                 "test commands, test definitions, safety checks, or unrelated files. Each tool call is one action. "

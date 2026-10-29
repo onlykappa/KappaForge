@@ -163,17 +163,17 @@ class RealSandboxAcceptance(unittest.TestCase):
         self.assertTrue(all(p.endswith('/comments') or '/issues/comments/' in p for p in mutations), mutations)
         self.assertEqual(run.world.files, {'value.py': 'value = 1\n'}, 'repository files are untouched')
 
-    def test_all_five_repair_attempts_are_separately_recorded(self):
+    def test_all_ten_repair_attempts_are_separately_recorded(self):
         def wrong(failing, call):
-            # Five distinct wrong offsets, each failing differently, so neither repeat rule stops them.
+            # Ten distinct wrong offsets, each failing differently, so neither repeat rule stops them.
             previous = 'net_days - 1' if call == 1 else f'net_days - {call}'
             return f'Attempt {call}: try a {call + 1}-day offset', {'edits': [
                 dict(path='invoice/terms.py', find=f'timedelta(days={previous})', replace=f'timedelta(days=net_days - {call + 1})')]}
         run = Scenario(Agent(wrong))
         self.assertEqual((run.result['status'], run.result['stop_reason']), ('failed', 'attempt_limit'))
         attempts = run.result['attempts']
-        self.assertEqual([a['index'] for a in attempts], [1, 2, 3, 4, 5])
-        self.assertEqual(len({a['fingerprint'] for a in attempts}), 5)
+        self.assertEqual([a['index'] for a in attempts], list(range(1, 11)))
+        self.assertEqual(len({a['fingerprint'] for a in attempts}), 10)
         for n, attempt in enumerate(attempts, 1):
             self.assertIn(f'net_days - {n + 1}', attempt['diff'])
             self.assertIn(f'Attempt {n}:', attempt['rationale'])
