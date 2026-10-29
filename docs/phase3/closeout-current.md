@@ -1,3 +1,11 @@
+# Queue outcome — 2026-10-29
+
+Queue319/run40826673859 has stopped with failure, not delivery.314's sandbox controller retained status=failed, stop_reason=attempt_limit, five attempts and twelve model repair actions; task totals are35 model calls/6 generation edits. Outer queue attempts remain2/3, but that does not replenish the exhausted inner repair allowance. No PR or candidate branch was published; original candidate/base remains5b.315 has never started. No worker remains active; no restart or authorization replacement was requested.
+
+Independent read-only inspection of final patch receipt8967afd4b3c7608cb3fb530e47efc00dd756ea9a643860fc782d2eaa95279c0f found missing durable persistence/scope-qualified identities/metadata/pagination and a leaked dummy journal in the generated tests. It is not an accepted implementation. P3-106 repairs misleading tail-only failure summaries in the engine accumulator; P3-107 records the rejected feature gaps. The progress automation is paused at the owner's explicit attempt-exhaustion boundary. Owner review is required before choosing further feature work; counters and failed evidence remain intact.
+
+Engine255bbee itself passed tests40826680258 (all four jobs), real Docker40826680345, graph40826680204 and native40826680178. Release/deployment jobs skipped. Those results establish the engine baseline, not success of the unpublished feature proposal. Phase3.1 remains complete;3.2 remains incomplete. No merge, deployment or release.
+
 # Verified Phase 3.1 closeout and active Phase 3.2 — 2026-10-29
 
 Phase 3.1 is complete at source `5b462fa77b6bd9971ebeb2403135f0bef653ca9a`. Exact-source unit/web/Worker/structural CI40820462881 and native CI40820462875 succeeded; the inspected native job123271478539 passed all five UI tests, including keyboard geometry. Task308 already completed27/27 requirements with zero problems and fresh trusted sandbox40789410323 on unchanged candidate75811f8. Main remainsa76561a; no new merge, release or deployment.

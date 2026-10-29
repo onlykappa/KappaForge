@@ -298,7 +298,9 @@ class SandboxRepairController:
                                 "counts": inspected.get("counts", {})})
                 continue
             details.append({"argv": result.get("argv"), "status": result.get("status"),
-                            "reason": result.get("reason"), "output": result.get("output", "")[-1800:]})
+                            "reason": result.get("reason"),
+                            "first_failure": result.get("first_failure", "")[:1200],
+                            "output": result.get("output", "")[-1800:]})
         return json.dumps(details, ensure_ascii=False)[:6000]
 
     def _loop_tools(self):

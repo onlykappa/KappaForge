@@ -747,6 +747,20 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Read-only rehearsal against the actual314 checkpoint verified exact legacy→current19-requirement migration and exact hash-bound failed-plan archival, preserving8 model calls/4 edits. No remote journal/claim state was edited by this rehearsal.
 - Initial full run exposed an outdated workflow-test harness lacking the new event context; it was corrected to check explicit dispatch behavior and push rejection, then the full suite above passed. Status: PATCHED locally; fresh live acceptance pending. All earlier failed task attempts remain evidence.
 
+## P3-106 — sandbox repair sees cascading test symptoms after the initial failure is clipped
+
+- Evidence:314/40826673859 generated an unpublished review-ingestion patch. Its test sets recovery.CURRENT to DummyJournal without resetting the ContextVar; subsequent tests fail against that leaked journal. Four successive repairs added missing mock members (project/events/avoid_models/event/scope/loader) while retaining the leakage. The last run reported1,318 tests,18 errors,37 skips;901 Node tests passed. Controller stopped at attempt_limit=5 with35 model calls/6 generation edits retained; no candidate PR exists and candidate remains5b. Queue319 is blocked,315 unstarted, no active coder.
+- Cause: SandboxTools._summary discards all but the last1,500 output characters; controller diagnostics then retain that tail. The first failing test/traceback is lost among later errors, biasing investigation toward secondary failures. Existing full execution logs remain available; this is a repair-prompt evidence defect, not permission to ignore failed tests.
+- Reproducer: two focused regressions with an initial failing test followed by a long DummyJournal error cascade both fail before patch (missing first_failure evidence).
+- Correction: retain a separately bounded1,200-character first-failure excerpt alongside the existing1,500-character tail/counts and carry both into repair diagnostics. No budget, candidate authority, test result, attempt counter or execution boundary changes.
+- Validation: both red-before regressions now pass;40 focused sandbox/controller tests pass. Full Python discovery:1,328 run OK,31 skipped. Ten structural rules, shipped-source scan (15 existing warnings), dependency-map/execution-policy and whitespace checks pass. Status: PATCHED; no live retry after exhausted task314.
+
+## P3-107 — independent review of task314's rejected, unpublished feature proposal
+
+- Status: BLOCKED candidate work, not an accepted delivery or production regression. Saved patch adds review_ingestion.py, a runtime Record.feedback field and one test module. It fetches all three comment categories but lacks PR/repository scope binding, durable Journal persistence, complete revision/line/timestamp/resolution metadata and pagination. IDs are not qualified by repository/PR; no call site integrates ingestion. Its sole test leaks recovery.CURRENT and uses invalid dummysha without installing a Goal record. Successive sandbox repairs did not establish a passing suite.
+- Source: generation/execution checkpoint patch receipts on314, independently inspected read-only while the owner worker was active. No generated candidate code was executed on the review host. No branch or PR was published;5b remains the original validated baseline.
+- Decision: preserve failed proposal/checkpoints and every counter. Five sandbox repair attempts are exhausted even though outer queue attempts are2/3; retrying cannot replenish the inner allowance. Do not resume or create replacement authorization. Progress watch paused at owner's explicit exhaustion boundary. Further feature delivery needs owner review of this retained failure and a deliberate next scope, without pretending314 completed.
+
 ## Finding template
 
 ### P3-NNN — short defect title

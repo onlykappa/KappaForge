@@ -61,6 +61,17 @@ class TestSandboxRepairController(unittest.TestCase):
         self.session = fixture_tree()
         self.controller = sandbox_repair_controller.SandboxRepairController(self.session)
 
+    def test_repair_diagnostics_keep_initial_failure_and_later_suite_counts(self):
+        root = 'ERROR: test_ingest\nTraceback (most recent call last):\nValueError: invalid candidate SHA\n'
+        output = root + ('ERROR: cascade\nAttributeError: DummyJournal.loader\n' * 60) + 'Ran 1318 tests\nFAILED (errors=18)\n'
+        run = sandbox.RunResult(argv=['python', '-m', 'unittest'], profile='test', status='failed',
+                                exit_code=1, duration_s=1, stdout='', stderr=output)
+        summary = self.controller.tools._summary(run)
+        detail = json.loads(self.controller._diagnostics(dict(status='ok', results=[summary])))[0]
+        self.assertIn('ValueError: invalid candidate SHA', detail['first_failure'])
+        self.assertIn('FAILED (errors=18)', detail['output'])
+        self.assertEqual(detail['status'], 'failed')
+
     def test_generated_candidate_passes_then_gets_a_fresh_full_regression(self):
         result = self.controller.run_repair("repair the app", model_reply({}), "key",
                                             initial_changes={"app.py": "value=2\n"})

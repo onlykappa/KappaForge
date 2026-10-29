@@ -15,7 +15,9 @@ This update supersedes pending exact-head CI/live-trial labels in the historical
 | 092,100 | Native synchronization corrected independently in312; exact source5b passed native40820462875 (5/5 UI tests) and tests40820462881. Exhausted313 remains failed history. |
 | 093–099 | Bounded sequential queue and owner-provenance/resume corrections; historical attempts and counters retained. |
 | 101 | Fresh-source gate accepted exact5b CI and started314 in40820493588. |
-| 102–105 | Phase3.2 unpublished planning recovery, retained validated seed, Base projection migration and exact-owner push start. Local regression/combined checks recorded in issue-log.md; live resumed acceptance pending. |
+| 102–105 | Live owner-push resume40826673859 revalidated5b seed, retained8/4 initial spend/claim, archived exact failed plan and migrated19 requirements. New engine255bbee CI all green. Feature later exhausted five sandbox attempts; no success inferred. |
+| 106 | First-failure diagnostic excerpt correction in312; two red-before regressions and40 focused tests pass. Full-suite validation recorded in ledger. |
+| 107 | BLOCKED rejected feature proposal: incomplete authority/persistence/metadata and test ContextVar leakage, never published or accepted.314 exhausted inner allowance,315 unstarted; monitoring paused without reset. |
 
 [Current closeout](closeout-current.md) has exact sources, CI links and execution limits. [Queue](execution-queue.md) records owner-authorized dependent work. Nothing newly merged/deployed/released.
 

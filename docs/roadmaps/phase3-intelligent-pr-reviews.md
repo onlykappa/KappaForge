@@ -10,7 +10,7 @@ This roadmap tracks work across KappaForge runs and reviewers. Each checkbox sta
 
 ## Current execution — 2026-10-29
 
-Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests40820462881 and native40820462875 succeeded (all five UI tests). Control319 persisted that exact-source seed and began Phase3.2 task314 in40820493588. Its first generation attempt stopped before publishing code; recovery findings102–105 accumulate in draft312.314 retains8 model calls/4 edits, original expiry and immutable claim;315 waits for validated314. Exhausted313/318 remains historical. No merge/deployment/release. Evidence: [current closeout](../phase3/closeout-current.md).
+Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests40820462881 and native40820462875 succeeded (all five UI tests). Engine255bbee later passed unit/web/Worker/structure, Docker, graph and native CI too. Control319/task314 stopped in40826673859 after five sandbox repair attempts with35 model calls/6 generation edits retained, no PR/source publication. Outer attempts2/3 do not restore the exhausted inner repair allowance.315 remains unstarted. Findings106–107 record a repaired diagnostic defect and the rejected proposal's substantive gaps. Progress watch paused at the owner boundary; no restart, counter reset or replacement grant. Exhausted313/318 remains historical. No merge/deployment/release. Evidence: [current closeout](../phase3/closeout-current.md).
 
 ## Progress and run discipline
 
