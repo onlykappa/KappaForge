@@ -199,6 +199,7 @@ class Queue:
         self.clock, self.sleep = clock, sleep
         self.comment = None
         self.reservations = {}
+        self.handoffs = {}
         self.state = dict(version=1, control=grant['control'], manifest=authority.digest(json.dumps(grant, sort_keys=True)),
                           sha=sha, run=self.run_id, status='starting', tasks={}, updatedAt=clock())
 
@@ -315,9 +316,15 @@ class Queue:
                     if status not in ('blocked', 'waiting') and not (upgrade and status in ('running', 'recovering')):
                         raise Blocked('Previous task outcome is ambiguous; inspection required')
                     pr = candidate(self.api, row)
-                    if ((pr is None and not unpublished(self.api, row, saved, self.clock()))
-                            or pr is not None and saved.get('candidate') != pr['head']['sha']):
+                    if pr is None and not unpublished(self.api, row, saved, self.clock()):
                         raise Blocked('Previous candidate changed; concurrent work preserved')
+                    if pr is not None and saved.get('candidate') != pr['head']['sha']:
+                        from engine import candidate_handoff
+                        proof = candidate_handoff.inspect(self.api, self.grant, row, saved, self.sha,
+                                                          self.run_id, pr, self.clock(), rows)
+                        if not proof:
+                            raise Blocked('Previous candidate changed; exact owner handoff required')
+                        self.handoffs[key] = proof['receipt']
                     self.reservations[key] = self.reservation(row, record, origin)
                     record['run'] = engine['queueRun']
                 self.state['resumedFrom'] = prior['run']
@@ -361,6 +368,10 @@ class Queue:
         self.save(detail=f'Starting #{number}; queue attempt {record["attempts"]}.')
         env = dict(os.environ, INPUT_ISSUE_NUMBER=str(number), INPUT_ACTION=action,
                    KAPPA_QUEUE_RUN=self.run_id, KAPPA_ENGINE_CHECK='true', KAPPA_TASK_SCOPE='write')
+        handoff = self.handoffs.pop(str(number), None)
+        if handoff:
+            from engine.candidate_handoff import ENV
+            env[ENV] = str(handoff)
         child = subprocess.Popen([sys.executable, '-m', 'engine.runner'], env=env, start_new_session=True)
         try:
             while child.poll() is None:

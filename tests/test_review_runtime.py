@@ -93,3 +93,35 @@ class ReviewRuntimeTests(unittest.TestCase):
         self.assertNotIn('reviewInbox', self.journal.state)
         model.assert_not_called()
         repair.assert_not_called()
+
+    def test_adopted_candidate_requires_fresh_review_and_dispatches_exact_sha_after_no_code_review(self):
+        self.journal.state['ownerCandidateAdoption'] = dict(receipt=700)
+        with ExitStack() as stack:
+            check, model, repair = self.invoke(stack)
+            stack.enter_context(patch.object(developer, 'is_private', return_value=False))
+            stack.enter_context(patch.object(developer, 'code_providers', return_value={'fixture'}))
+            stack.enter_context(patch.object(developer, 'owner_guidance', return_value=[]))
+            stack.enter_context(patch.object(developer, 'revise_branch', return_value=(
+                '', 'Rechecked', {}, 'Independent review found original requirements met\n' + developer.review_record([]), {})))
+            dispatch = stack.enter_context(patch.object(developer, 'dispatch_tests'))
+            self.assertEqual(developer.fix_pull_request(self.world.issue, 'fixture', 'fixture'), self.world.pr['html_url'])
+        self.assertEqual(dispatch.call_args.args[:3], (recovery.ROOT, 'kappa/dev-130', SHA))
+        self.assertTrue(self.journal.state['ownerCandidateReviewAttempted'])
+        self.assertTrue(self.journal.state['ownerCandidateReviewed'])
+        self.assertEqual(self.journal.state['phase'], 'tests')
+        model.assert_not_called()
+        repair.assert_not_called()
+
+    def test_failed_handoff_test_dispatch_keeps_review_retryable(self):
+        self.journal.state['ownerCandidateAdoption'] = dict(receipt=700)
+        with ExitStack() as stack:
+            self.invoke(stack)
+            stack.enter_context(patch.object(developer, 'is_private', return_value=False))
+            stack.enter_context(patch.object(developer, 'code_providers', return_value={'fixture'}))
+            stack.enter_context(patch.object(developer, 'owner_guidance', return_value=[]))
+            stack.enter_context(patch.object(developer, 'revise_branch', return_value=(
+                '', 'Rechecked', {}, 'Review passed\n' + developer.review_record([]), {})))
+            stack.enter_context(patch.object(developer, 'dispatch_tests', side_effect=OSError('dispatch unavailable')))
+            with self.assertRaises(OSError): developer.fix_pull_request(self.world.issue, 'fixture', 'fixture')
+        self.assertFalse(self.journal.state.get('ownerCandidateReviewAttempted'))
+        self.assertFalse(self.journal.state.get('ownerCandidateReviewed'))

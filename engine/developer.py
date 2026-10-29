@@ -229,11 +229,16 @@ def publish_candidate(repo, parent, changes, modes, message, writer, branch, cre
 
 def publication_finished(journal):
     if journal and journal.state.get('executionCheckpoint'):
+        from engine import candidate_handoff
+        candidate_handoff.capture(journal)
         journal.state['executionPublished'] = journal.state['executionCheckpoint']['hash']
         journal.state.pop('executionPublication', None)
-        if journal.state.get('generationCheckpoint'):
+        retired = journal.state.get('ownerCandidatePriorGeneration', {})
+        if (journal.state.get('generationCheckpoint')
+                and journal.state['generationCheckpoint']['hash'] != retired.get('generationCheckpoint')):
             journal.state['generationPublished'] = journal.state['generationCheckpoint']['hash']
-        if journal.state.get('generationPlan'):
+        if (journal.state.get('generationPlan')
+                and journal.state['generationPlan']['hash'] != retired.get('generationPlan')):
             journal.state['generationPlanPublished'] = journal.state['generationPlan']['hash']
 
 
@@ -3790,10 +3795,18 @@ def fix_pull_request(issue, api_key, token):
             break
         time.sleep(3)
         run = sandbox_result(branch, head, token, repo)
+    observed_sandbox = run
     from engine import native_build
     native = native_build.result(branch, head, token) if repo == ROOT else None
     task_state.observe_validation('sandbox', head, run)
     task_state.observe_validation('native', head, native)
+    # A handoff approves the candidate identity, never its implementation. Force
+    # a fresh review of the original requirements through the normal review-only path.
+    adoption_review = bool(journal and journal.state.get('ownerCandidateAdoption')
+                           and not journal.state.get('ownerCandidateReviewAttempted'))
+    if adoption_review:
+        pr = dict(pr, body=(pr.get('body') or '') + '\n' + review_record([
+            'Requirement review unavailable; owner-reviewed source needs original-task acceptance']))
     # The draft PR this runs on is GitHub's proof of the PR lifecycle asks; only code work starts a repair.
     pending = [p for p in requirements_open(pr) if not verify.lifecycle_problem(p)]
     # An unfinished requirement is already actionable, as is a completed failed
@@ -3876,6 +3889,14 @@ def fix_pull_request(issue, api_key, token):
         gh(f"repos/{ROOT}/issues/{number}/comments", token, {"body": "### KappaForge fix ready\n\n" + message + "\n\n" + pr['html_url']})
         progress.ok(message, phase=True, status="blocked" if still_open else "testing")
         if journal:
+            if adoption_review:
+                # A source handoff/review is not a sandbox pass. Verify the same
+                # published SHA even when review needed no additional source edits.
+                journal.state['phase'] = 'tests'
+                if not observed_sandbox:
+                    dispatch_tests(repo, branch, head, token, journal.state['files'])
+                journal.state['ownerCandidateReviewAttempted'] = True
+                journal.state['ownerCandidateReviewed'] = not still_open
             note_progress(journal, complete=not still_open, status=message)
         return pr["html_url"]
     flags, before = {}, {}

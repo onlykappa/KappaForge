@@ -151,13 +151,13 @@ def pending(journal, kind=None):
     if (data.get('version') != 1 or identity.get('task') != journal.scope.number
             or identity.get('repo') != journal.scope.repo or identity.get('scope') not in accepted):
         raise CheckpointMismatch('Execution checkpoint belongs to different task authority')
-    if kind and data.get('context', {}).get('kind') != kind:
-        raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
     superseded = journal.state.get('supersededExecution') or {}
     if (superseded.get('hash') == journal.state['executionCheckpoint']['hash']
             and superseded.get('reason') == 'owner_reviewed_fast_forward'
             and re.fullmatch(r'[a-f0-9]{40}', str(superseded.get('replacement', '')))):
         return None  # Archived proposal, never a published or validated candidate.
+    if kind and data.get('context', {}).get('kind') != kind:
+        raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
     data['changes'] = _read_blob(journal, data['patchRef'])
     return data
 
@@ -194,8 +194,12 @@ def seed(journal, repo, sha, changes, task, context=None):
         return
     if sanitized(changes) != changes:
         raise CheckpointMismatch('Candidate contains credentials or private environment values; execution blocked')
+    from engine import candidate_handoff
+    if journal.state.get('carriedRepair') and (context or {}).get('kind') != 'fix':
+        raise CheckpointMismatch('Owner candidate handoff may continue only through Fix')
+    retained = candidate_handoff.carry(journal, sha)
     data = initial_data(dict(repo=repo, base=sha, tree=None, versions=None, commands=None, taskHash=task_digest(task),
-                             task=journal.scope.number, scope=journal.scope.digest), task, {}, journal, context)
+                             task=journal.scope.number, scope=journal.scope.digest), task, retained, journal, context)
     data['patchRef'] = _write_blob(journal, changes)
     receipt = _write_blob(journal, sanitized(data))
     journal.state['executionCheckpoint'] = receipt

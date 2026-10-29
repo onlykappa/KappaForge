@@ -666,6 +666,7 @@ class Journal:
 
     def begin(self, action=''):
         """Consume a dispatch exactly once, on the same authorization and candidate."""
+        previous_engine = self.state.get('engine')
         if self.state.get('engine') or os.getenv('KAPPA_ENGINE_CHECK') == 'true':
             from engine.runtime_engine import attest
             previous_engine = self.state.get('engine')
@@ -682,6 +683,16 @@ class Journal:
                                f"{os.getenv('GITHUB_SHA', '')} in run {os.getenv('GITHUB_RUN_ID', '')}",
                                strategy='reviewed_main_engine_migration', outcome=self.state['status'])
             print('Engine verified before task work: ' + os.getenv('GITHUB_SHA', ''), flush=True)
+        from engine import candidate_handoff
+        if os.getenv(candidate_handoff.ENV):
+            if not re.fullmatch(r'[1-9][0-9]*', os.environ[candidate_handoff.ENV]):
+                raise PermissionError('Invalid owner candidate handoff identity')
+            prior_resuming = getattr(self, '_resuming', False)
+            self._resuming = True
+            try:
+                candidate_handoff.adopt(self, int(os.environ[candidate_handoff.ENV]), previous_engine=previous_engine)
+            finally:
+                self._resuming = prior_resuming
         if action.startswith('resume:'):
             expected = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"
             if action != expected or self.state['status'] != 'dispatching':
