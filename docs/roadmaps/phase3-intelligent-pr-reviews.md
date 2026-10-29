@@ -8,6 +8,10 @@
 
 This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in the relevant delivery PR. A code-generation claim alone does not close an item. Keep each authorized slice in its tracked draft PR; do not merge, release, deploy or mark ready for review.
 
+## Queued execution — owner update2026-10-29
+
+Owner requested consecutive bounded coding tasks with checks per task and a broad final review. [Execution queue](../phase3/execution-queue.md) tracks313 native investigation (dispatched),314 review ingestion (prepared),315 incremental synchronization (prepared), then the later roadmap stages. This is supervised; no automatic cross-task scheduler is implemented. New fixes accumulate in312; no merge/deployment. Phase3.1 remains open for the newly observed native failure; the old308 acceptance blocker is resolved.
+
 ## Progress and run discipline
 
 - [ ] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
@@ -26,7 +30,7 @@ Every newly encountered issue gets an ID in [issue-log.md](../phase3/issue-log.m
 
 Owner update (2026-10-28): finish Phase3.1 verification and closeout, then proceed to Phase3.2 once satisfied with the evidence. This authorizes the transition after closeout; it does not authorize merging or bypassing a failing check.
 
-This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. Do not begin Phase 3.2 until the owner directs it.
+This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. The owner has authorized Phase3.2 after honest closeout; no further transition permission is needed.
 
 - [ ] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.
 - [ ] **3.1b Architecture inventory:** trace the existing sandbox, exploration tools, persistent task plan/checkpoints, requirement classification, research, clarification, repair, authorization and free-first admission paths. Identify reusable interfaces; do not duplicate them.
@@ -117,4 +121,4 @@ This is the initial bounded KappaForge task. Split it into checkpoints so findin
 
 ## Handoff between KappaForge runs and reviewers
 
-At the end of each authorized slice, update the checkbox and issue ledger only after evidence is available. State the audited/head SHA, test command and count, CI run links, open issue IDs and next bounded task. The next agent must read this roadmap and the ledger before editing. Phase 3.1 is the current authorized slice; later sections remain parked until the owner explicitly advances the task.
+At the end of each authorized slice, update the checkbox and issue ledger only after evidence is available. State the audited/head SHA, test command and count, CI run links, open issue IDs and next bounded task. The next agent must read this roadmap and the ledger before editing. The owner has authorized progression after honest3.1 closeout. Follow the dependency queue; later prepared tasks are not evidence of implementation or automatic dispatch.

@@ -1,6 +1,8 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
-**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
+**2026-10-29 update:** Task308 live acceptance is now27/27 with zero problems; fresh candidate sandbox and current engine Docker passed. Phase3.1 remains open for native keyboard finding P3-092 and reconciliation. Updated-engine task313 is dispatched; dependent3.2 tasks314/315 are prepared. [Current closeout](closeout-current.md) and [execution queue](execution-queue.md) supersede historical pending renewal/trial claims below. No merge/deployment.
+
+**Historical closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
 
 **Latest continuation:** owner-approved309/311 are merged in maina76561a; their final heads passed unit/web/Worker/structure, review graph, real Docker and (311) native simulator/UI/unsigned-build CI. The main tree was verified identical to tested311 head2e7d2bc. Source/inventory/policy coverage and the original pinned reports below remain evidence, not claims of real-device or artifact-content inspection. Prior pending-CI labels refer to their dated snapshots.
 

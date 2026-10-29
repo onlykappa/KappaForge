@@ -1,3 +1,11 @@
+# Latest queue handoff — 2026-10-29
+
+Current accumulator remains open draft #312 on `fix/308-phase3-followups`, source6c8b138. Task308 now has27/27 requirements, zero problems and fresh successful sandbox validation; candidate758 remains unchanged. Engine Docker succeeded. Native run40788587109 failed one keyboard geometry assertion; log finding P3-092, investigate before closeout. No merge/deployment.
+
+Owner requested faster queued Phase3 coding with a broad final review. [Execution queue](docs/phase3/execution-queue.md): #313 dispatched in run40793251944 with frozen task-bound engine snapshot #316, source exactly6c8b138. Draft candidate #317 contains only the owner-prepared investigation plan initially. #314 ingestion and #315 sync/recovery are prepared and deliberately not executable until dependencies pass. This is supervised; automatic cross-task dependency scheduling is not implemented. Do not relaunch308 or duplicate313. All new bug fixes ultimately remain in312. Source/receipt/budget boundaries stay unchanged.
+
+Prior handoff sections below are historical snapshots; pending308 renewal/live-trial statements have been superseded by closeout-current.md.
+
 # Active Phase3 follow-up — draft PR312
 
 Baseline main: a76561abbbe9aa88c44e75c6394afda63ac4736f, containing owner-approved merges309/311. Current repair accumulator: https://github.com/onlykappa/KappaForge/pull/312, branch fix/308-phase3-followups. New bugs/fixes remain in this draft; do not merge it without a new owner instruction. The owner authorized progressing to3.2 after honest3.1 closeout.

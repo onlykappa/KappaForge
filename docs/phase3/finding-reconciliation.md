@@ -1,3 +1,24 @@
+# Current finding reconciliation — 2026-10-29
+
+This update supersedes pending exact-head CI/live-trial labels in the historical ledger below. Findings are grouped defects, setup/evidence gaps and limits, not a count of distinct production bugs.
+
+| Findings | Current evidence/disposition |
+| --- | --- |
+| 001–060 | Original dispositions and before/after evidence retained below and in issue-log.md. No new unsupported pass or accepted limitation inferred. |
+| 061–066 | Source-proof/reporting local regressions plus completed fresh task308 review40788699260:27/27, zero problems. Reporting claim boundaries remain enforced. |
+| 067–078 | Delivered in owner-approved309/311 merges; final exact-head CI for both and main-tree equivalence recorded in closeout-current.md. Old pending labels are historical. |
+| 079–083 | Patched in312; current6c8 tests/graph/Docker and successful fresh task308 acceptance. No candidate source edits. |
+| 084–087 | Dashboard/cancel/delete regressions and CI pass;901 Node tests, Chromium/WebKit CI and local fake-transport mobile/desktop flow. Production deployment/device storage/live cancellation not performed. |
+| 088 | Engine receipt renewal reproduced before repair and verified live40784333199, followed by complete acceptance40788699260. Strict direct receipt verification retained. |
+| 089–090 | Routing/classification regressions pass;40785639666 fresh review reduced5→2;40788699260 zero remaining problems. |
+| 091 |90 focused/1,287 full Python run OK (31 skips);40788699260 fresh review27/27, zero problems. Independent candidate51 focused/1,140 full run OK (31 skips); fresh sandbox40789410323 success. |
+| 092 | OPEN native geometry failure; task313 dispatched, no patch or successful rerun claimed. Blocks honest final native closeout. |
+
+[Current closeout](closeout-current.md) has exact sources, CI links and execution limits. [Queue](execution-queue.md) records owner-authorized dependent work. Nothing newly merged/deployed/released.
+
+<details>
+<summary>Historical reconciliations and dated pending states</summary>
+
 # Phase 3.1 finding reconciliation — 2026-10-28
 
 **Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
@@ -111,3 +132,5 @@ Latest full discovery:1,272 run, OK,31 skipped. The95-test focused selection and
 ## Dashboard and cancellation084–087
 
 084–087 are patched locally in312; before/after tests, authority boundaries and browser evidence are recorded in [task-feed-controls.md](task-feed-controls.md). Task308 is confirmed present in GitHub, but the screenshot device's storage was not inspected. The actual refresh/cancel/delete flow is covered with fake transport; no production cancellation/deletion or app deployment was performed. Exact-head CI and task308 renewal/acceptance remain separate.
+
+</details>

@@ -1,3 +1,24 @@
+# Phase 3.1 current closeout — 2026-10-29
+
+Phase 3.1 remains open for the newly observed native keyboard assertion and final reconciliation. The old task308 authorization/review blocker is resolved. Phase 3.2 is prepared in the [execution queue](execution-queue.md), not started. The owner authorized continued queued coding and a broad review at the end; no merge/deployment permission is implied.
+
+## Latest verified results
+
+- Updated engine: `6c8b1389b23be8790b81f4a55f10cc6ae2b7364d` in #312. Task308 run [40788699260](https://github.com/onlykappa/KappaForge/actions/runs/40788699260) succeeded with27/27 requirements and zero review problems. #310's actual review record is complete; its candidate remains `75811f8510b4d02a8cd165c4ec081e3c032d998f`. Retained counters:103 calls/2 edits/23 fix cycles. No candidate edit or counter reset.
+- Fresh candidate sandbox validation [40789410323](https://github.com/onlykappa/KappaForge/actions/runs/40789410323) succeeded, dispatched once from trusted main with candidate758 and `automatic_fixes=false`. Independent candidate rerun:51 focused tests passed, zero skips;1,140 full Python tests run, OK with31 skips.
+- Exact engine source: automated tests [40788587107](https://github.com/onlykappa/KappaForge/actions/runs/40788587107), graph [40788587163](https://github.com/onlykappa/KappaForge/actions/runs/40788587163), and real Docker [40789543709](https://github.com/onlykappa/KappaForge/actions/runs/40789543709) succeeded. Local90 focused tests passed;1,287 full Python tests run, OK with31 skips. Node901 passed with zero skips on unchanged UI/backend source; automatic CI reran its checks at6c8.
+- Native run [40788587109](https://github.com/onlykappa/KappaForge/actions/runs/40788587109) **failed**: `testComposerRemainsBelowHeaderWhenKeyboardOpens` asserted editor maxY601 <= keyboard minY+14=232.33333333333334. Four other UI tests passed; simulator and unsigned iPhone builds passed. This is P3-092; its cause is unestablished. UI/ios tree hashes equal prior successful67fc2df source, which does not turn this failed run into a pass. Native logs inspected through the GitHub connector; no screenshot-content or physical-device verification claimed.
+- P3-088–091 local reproductions and successful live acceptance are reconciled in [finding-reconciliation.md](finding-reconciliation.md). Earlier pending renewal/trial statements below are dated history.
+
+## Current action
+
+One updated-engine KappaForge worker for new task #313 is dispatched in run40793251944, using frozen snapshot #316 of #312. Candidate plan #317 is incomplete and makes no code/test success claim. #314/#315 are prepared dependent tasks. No #308 worker was relaunched. See [execution-queue.md](execution-queue.md) for exact states and supervision limits.
+
+All source review, local test, remote CI and model-review results remain separate. Existing skips, source-scan warnings and lack of production/physical-device proof remain recorded. #279/#310 are frozen. Nothing new has merged, deployed or released.
+
+<details>
+<summary>Historical closeout checkpoints through 2026-10-28 (superseded by current results above)</summary>
+
 # Phase 3.1 closeout status — 2026-10-28
 
 Phase 3.1 is open. The remaining acceptance work concerns the latest engine trial and evidence reconciliation; Phase 3.2 has not started. The owner has already authorized moving to 3.2 after satisfactory closeout. No new merge permission is implied.
@@ -28,3 +49,5 @@ Newest fresh review:40785639666 used6041ec1, returned27 met decisions and reduce
 4. Reconcile the ledger and final audit with that result. The previous trial40739723033 reduced active historical problems85→5 but left R21 and the reporting constraint blocked;082/083 address the reproduced causes. Only clear completion after fresh evidence supports it. Then close3.1 and proceed to the already-authorized3.2 review-ingestion work.
 
 PR #279 and candidate #310 remain unchanged. Source review, local tests, remote CI, model review and physical-device testing are distinct evidence. No deployment, release, production setting, provider limit or counter change is part of closeout.
+
+</details>

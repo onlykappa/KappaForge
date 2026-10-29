@@ -644,6 +644,16 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Required correction: narrowly parse that owned restriction and prove actual candidate/proposal paths remain within it using complete fresh GitHub metadata. Include previous paths for renames, reject wrong/stale/incomplete metadata, and never exempt compound code asks. No model declaration can provide the path receipt.
 - Status: PATCHED locally; seven new path-scope/goal cases cover classification, complete actual metadata, rename history, stale/missing evidence, outside proposals, first publication, resumed publication and pre-edit rejection. Initial four cases reproduce two failures/six errors (including subcases); pre-edit rejection separately fails before correction.90 focused and1,287 full Python tests pass (31 full-suite skips). Current candidate75811f8 unchanged; counters100 calls/2 edits/22 fix cycles. Updated-engine trial pending.
 
+## P3-092 — native composer keyboard geometry check fails on current source
+
+- Checkpoint/date: Phase3.1 final CI,2026-10-29 inspection.
+- Evidence: run40788587109/job123167856412 on6c8b1389b23be8790b81f4a55f10cc6ae2b7364d. `LaunchTests.testComposerRemainsBelowHeaderWhenKeyboardOpens`, ios/KappaForgeUITests/LaunchTests.swift:47, failed `editor.frame.maxY <= keyboard.frame.minY + 14`:601 >232.33333333333334. Actual job logs inspected through GitHub connector. Four other UI tests and simulator/unsigned builds passed.
+- Impact: current native validation is not green. Could concern layout, keyboard/accessibility geometry, or synchronization; root cause is not established. Identical ios/preview tree hashes to prior green67fc2df do not disprove the failure.
+- Reproducer: native UI workflow above, one of five UI tests failed. No local macOS/device reproduction available.
+- Patch/regression/rerun: not yet available. Do not remove the geometry assertions, increase their tolerance, add fixed sleeps, or rerun until green without investigating.
+- Status: OPEN. New bounded KappaForge task313, draft candidate317, explicit updated-engine run40793251944. Engine snapshot316 is frozen source6c8b138 of accumulator312; validated corrections ultimately collect in312.
+- Owner decision needed: no; queued investigation is authorized. No merge/deploy/release.
+
 ## Finding template
 
 ### P3-NNN — short defect title
