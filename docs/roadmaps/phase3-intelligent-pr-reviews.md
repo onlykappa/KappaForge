@@ -12,6 +12,10 @@ This roadmap tracks work across KappaForge runs and reviewers. Each checkbox sta
 
 Owner requested consecutive bounded coding tasks with checks per task and a broad final review. [Execution queue](../phase3/execution-queue.md) tracks313 native investigation (dispatched),314 review ingestion (prepared),315 incremental synchronization (prepared), then the later roadmap stages. The owner subsequently requested automatic handoff: control318 and the pinned finite queue now implement it; live state and limits are recorded in execution-queue.md. New fixes accumulate in312; no merge/deployment. Phase3.1 remains open for the newly observed native failure; the old308 acceptance blocker is resolved.
 
+## Current batch update2026-10-29
+
+Control319 is the fresh batch for previously unstarted314/315. Native synchronization correction100 is in312; required exact-source native/head CI remains the3.1 final gate. The queue records the successful seed before beginning3.2. Exhausted313/318 histories stay unchanged. See [native-geometry-and-seeded-batch.md](../phase3/native-geometry-and-seeded-batch.md).
+
 ## Progress and run discipline
 
 - [ ] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered

@@ -1,3 +1,7 @@
+# Current source gate — 2026-10-29
+
+The original308 acceptance is complete (27/27, zero problems, fresh sandbox success). Native check synchronization100 is implemented independently in312, with unchanged assertions/tolerances; exact corrected-head native CI is still required before closing3.1. Earlier queued313/318 coding attempts stopped without source edits and remain exhausted/history, not accepted or reset.1,317 full Python tests pass (31 skips),75 focused/28 queue and11 Node native checks pass. Control319 now gates the unstarted3.2 tasks314/315 on exact-source tests/native CI and records seed run evidence before any coding. The owner already authorizes that transition after the source gate; no additional permission or merge/deploy/release action is implied. Full evidence/limits: native-geometry-and-seeded-batch.md. Historical closeout snapshots follow.
+
 # Phase 3.1 current closeout — 2026-10-29
 
 Phase 3.1 remains open for the newly observed native keyboard assertion and final reconciliation. The old task308 authorization/review blocker is resolved. Phase 3.2 is prepared in the [execution queue](execution-queue.md), not started. The owner authorized continued queued coding and a broad review at the end; no merge/deployment permission is implied.

@@ -342,9 +342,45 @@ class Queue:
                     os.killpg(child.pid, signal.SIGKILL)
                     child.wait(timeout=10)
 
+    def seed(self, deadline):
+        """A fresh batch may start from the owner's pinned, independently green engine tree."""
+        while True:
+            self.authorized()
+            if self.clock() >= deadline:
+                raise Blocked('Initial source validation deadline reached')
+            pr = self.api(PREFIX + f"pulls/{self.grant['enginePR']}")
+            if (pr.get('head') or {}).get('sha') != self.sha:
+                raise Blocked('Initial owner source moved; no new source silently adopted')
+            files = pages(self.api, PREFIX + f"pulls/{self.grant['enginePR']}/files")
+            if type(pr.get('changed_files')) is not int or pr['changed_files'] != len(files):
+                raise Blocked('Initial owner source inventory is incomplete')
+            workflows = ['tests.yml']
+            paths = [f.get('filename', '') for f in files] + [f.get('previous_filename', '') for f in files]
+            if needed(ROOT, paths):
+                workflows.append('ios-build.yml')
+            pending = False
+            evidence = []
+            for workflow in workflows:
+                runs = pages(self.api, PREFIX + f'actions/workflows/{workflow}/runs?head_sha={self.sha}&event=pull_request', 'workflow_runs')
+                matching = [r for r in runs if r.get('head_sha') == self.sha and r.get('event') == 'pull_request'
+                            and r.get('path') == '.github/workflows/' + workflow
+                            and (r.get('repository') or {}).get('full_name') == ROOT]
+                if not matching or matching[0].get('status') != 'completed':
+                    pending = True
+                elif matching[0].get('conclusion') != 'success':
+                    raise Blocked('Initial owner source CI failed or was cancelled; no task started')
+                else:
+                    evidence.append(dict(workflow=workflow, run=matching[0]['id'], sha=self.sha, conclusion='success'))
+            if not pending:
+                self.state['seed'] = dict(sha=self.sha, checkedAt=self.clock(), validations=evidence)
+                self.save(detail='Initial owner source independently validated; starting the prepared coding batch.')
+                return self.sha
+            self.save(detail='Waiting for unit/web/Worker/structure and required native validation of the initial owner source.')
+            self.sleep(30)
+
     def run(self, deadline):
         self.load()
-        predecessor = None
+        predecessor = self.seed(deadline) if not self.grant['tasks'][0]['existing'] else None
         for row in self.grant['tasks']:
             number, key = row['issue'], str(row['issue'])
             issue = self.api(PREFIX + f'issues/{number}')

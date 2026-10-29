@@ -29,14 +29,16 @@ class World:
         self.run = dict(id=90, status='in_progress', event='workflow_dispatch', path='.github/workflows/agent.yml',
                         repository={'full_name': q.ROOT}, actor={'login': 'onlykappa'}, triggering_actor={'login': 'onlykappa'},
                         head_sha=self.sha, head_branch=self.grant['engineRef'], display_title='Agent task #318 queue')
-        self.engine = dict(state='open', draft=True, user={'login': 'onlykappa'},
+        self.engine = dict(state='open', draft=True, changed_files=1, user={'login': 'onlykappa'},
                            base=dict(ref='main', repo={'full_name': q.ROOT}),
-                           head=dict(ref=self.grant['engineRef'], repo={'full_name': q.ROOT}))
+                           head=dict(ref=self.grant['engineRef'], sha=self.sha, repo={'full_name': q.ROOT}))
         self.comments, self.refs, self.prs, self.runs, self.writes = [], {}, {}, {}, []
         self.paths = {}
         self.started = []
         self.checkpoints = {}
         self.history = {}
+        self.engine_files = [{'filename': 'engine/task_queue.py', 'status': 'modified'}]
+        self.seed_runs = {}
 
     def complete(self, n):
         row = next(r for r in self.grant['tasks'] if r['issue'] == n)
@@ -84,6 +86,8 @@ class World:
             return dict(path=auth.PATH, encoding='base64', content=base64.b64encode(json.dumps(self.grant).encode()).decode())
         if p == 'pulls/312':
             return copy.deepcopy(self.engine)
+        if p.startswith('pulls/312/files?'):
+            return copy.deepcopy(self.engine_files)
         if p.startswith('issues/') and '/comments?' not in p:
             return copy.deepcopy(self.issues[int(p.rsplit('/', 1)[1])])
         if '/comments?' in p:
@@ -107,6 +111,8 @@ class World:
             return {'workflow_runs': []}
         if p.startswith('actions/workflows/'):
             workflow = p.split('/')[2]
+            if 'head_sha=' in p:
+                return {'workflow_runs': copy.deepcopy(self.seed_runs.get(workflow, []))}
             return {'workflow_runs': [copy.deepcopy(r) for (wf, n), r in self.runs.items() if wf == workflow]}
         raise AssertionError('Unexpected read ' + p)
 
@@ -188,6 +194,47 @@ class QueueAuthorityTests(unittest.TestCase):
 class QueueProgressTests(unittest.TestCase):
     def setUp(self):
         self.w = World()
+
+    def initial_ci(self, workflow, conclusion='success'):
+        return dict(id=80, status='completed', conclusion=conclusion, head_sha=self.w.sha,
+                    event='pull_request', path='.github/workflows/' + workflow, repository={'full_name': q.ROOT})
+
+    def test_fresh_batch_starts_new_task_from_exact_independently_validated_owner_source(self):
+        self.w.grant['tasks'] = [self.w.grant['tasks'][1]]
+        self.w.seed_runs['tests.yml'] = [self.initial_ci('tests.yml')]
+        queue = self.w.queue()
+        def launch(row, action, deadline):
+            self.assertEqual(row['issue'], 314)
+            self.assertEqual(action, 'queue-step')
+            self.assertEqual(self.w.refs[row['base']], self.w.sha)
+            queue.state['tasks']['314'] = dict(attempts=1, status='running')
+            self.w.complete(314)
+        with patch.object(queue, 'launch', side_effect=launch): queue.run(self.w.now + 100)
+        self.assertEqual(queue.state['seed']['validations'][0]['sha'], self.w.sha)
+        self.assertEqual(queue.state['status'], 'awaiting_owner_review')
+        self.assertNotIn('313', queue.state['tasks'], 'A fresh goal does not reset or replay an exhausted task')
+
+    def test_initial_source_cannot_start_work_after_failed_ci_or_branch_movement(self):
+        for change in ('failed', 'moved'):
+            self.w = World(); self.w.grant['tasks'] = [self.w.grant['tasks'][1]]
+            self.w.seed_runs['tests.yml'] = [self.initial_ci('tests.yml', 'failure' if change == 'failed' else 'success')]
+            if change == 'moved': self.w.engine['head']['sha'] = 'b' * 40
+            queue = self.w.queue()
+            with patch.object(queue, 'launch') as launch, self.subTest(change=change), self.assertRaises(q.Blocked):
+                queue.run(self.w.now + 100)
+            launch.assert_not_called()
+            self.assertNotIn('fix/phase3-queue-base-314', self.w.refs)
+
+    def test_initial_native_source_waits_for_separate_native_ci(self):
+        self.w.engine_files = [{'filename': 'ios/App/View.swift', 'status': 'modified'}]
+        self.w.seed_runs['tests.yml'] = [self.initial_ci('tests.yml')]
+        queue = self.w.queue()
+        def wait(_): self.w.seed_runs['ios-build.yml'] = [self.initial_ci('ios-build.yml')]
+        queue.sleep = Mock(side_effect=wait)
+        queue.load()
+        self.assertEqual(queue.seed(self.w.now + 100), self.w.sha)
+        queue.sleep.assert_called_once_with(30)
+        self.assertEqual({e['workflow'] for e in queue.state['seed']['validations']}, {'tests.yml', 'ios-build.yml'})
 
     def test_automatic_advancement_waits_for_real_validation_and_preserves_draft_stack(self):
         queue = self.w.queue()

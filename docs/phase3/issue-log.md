@@ -703,6 +703,20 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Regression: two consecutive upgrades with a pre-launch supervisor failure preserve an older original claim and last coder while advancing only the supervisor. Missing owner provenance or a moved recorded claim is refused without checkpoint/claim writes.113 focused queue/runtime/recovery tests and1,314 full Python discovery pass (31 skips); ten structural rules plus policy/map checks pass.
 - Status: PATCHED locally; fresh exact owner upgrade and live trial follow. The failed pre-launch supervisor spent no additional task model calls; retained task counters55/13/4 and queue attempts2. No manual state/claim edit, cap increase or merge/deployment.
 
+## P3-100 — native keyboard test asserts before asynchronous geometry has settled
+
+- Evidence:40788587109 failed the geometry assertion; unchanged native code passed later40818157083/40818835008. Source sends keyboard frames through an asynchronous WebKit round trip, but the test waited only for keyboard existence. No deterministic production-overlap claim is made.
+- Correction: bounded predicate wait for the original below-header/above-keyboard invariant, followed by unchanged45/14 strict assertions. Applied on initial/repeated focus and foreground return; explicit focus if iOS dismissed the keyboard in background. Persistent bad geometry still fails with actual frame diagnostics. No fixed sleep, tolerance increase or removed assertion.
+- Validation:11 Node keyboard/native-contract tests pass;1,317 full Python tests run OK with31 skips. Actual corrected-head native CI pending. See native-geometry-and-seeded-batch.md.
+- Status: IMPLEMENTED; native rerun pending. The exhausted313/318 engine history is preserved, not marked successful.
+
+## P3-101 — a fresh queue cannot start from independently validated owner source
+
+- Type: owner-requested bounded progression enhancement, not a reset of exhausted313.
+- Correction: a first new task may use the exact pinned owner engine tree only after exact-head tests.yml and required native CI succeed. Persist seed source/run evidence, create a unique immutable task base, and retain per-task authorization/expiry, original counters and3-attempt bound. Missing/failed/cancelled CI or branch movement blocks launch.
+- Regression: successful fresh-source advancement, failed/moved-source refusal and separate native-CI waiting.28 queue tests,75 focused tests and1,317 full Python tests pass (31 full-suite skips); ten structural rules and policy/map checks pass.
+- Status: locally validated. New owner control319 prepares previously unstarted314/315; original313/318 remains stopped with57/13/5 counters and3 attempts, no budget/counter reset or cap increase. Live319 must pass its initial-source gate before coding. No merge/deploy/release.
+
 ## Finding template
 
 ### P3-NNN — short defect title

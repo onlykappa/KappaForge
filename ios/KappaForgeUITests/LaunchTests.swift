@@ -1,6 +1,23 @@
 import XCTest
 
 final class LaunchTests: XCTestCase {
+    private func waitForComposerGeometry(_ editor: XCUIElement, keyboard: XCUIElement, web: XCUIElement,
+                                         file: StaticString = #filePath, line: UInt = #line) {
+        // Keyboard existence precedes the asynchronous UIKit -> WebKit -> native
+        // frame update. Wait for the actual invariant, not a fixed animation delay.
+        let positioned = NSPredicate { _, _ in
+            guard editor.exists, keyboard.exists, web.exists else { return false }
+            let frame = editor.frame
+            return frame.width > 0 && frame.height > 0
+                && frame.minY > web.frame.minY + 45
+                && frame.maxY <= keyboard.frame.minY + 14
+        }
+        let settled = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: positioned, object: nil)], timeout: 10)
+        XCTAssertEqual(settled, .completed,
+                       "Composer geometry did not settle: editor=\(editor.frame), keyboard=\(keyboard.frame), web=\(web.frame)",
+                       file: file, line: line)
+    }
+
     func testBundledInterfaceLaunchAndSettings() {
         let app = XCUIApplication()
         app.launch()
@@ -43,6 +60,7 @@ final class LaunchTests: XCTestCase {
         editor.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "Software keyboard must appear after editor focus")
+        waitForComposerGeometry(editor, keyboard: keyboard, web: web)
         XCTAssertGreaterThan(editor.frame.minY, web.frame.minY + 45, "Composer must remain below navigation header")
         XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard")
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -55,6 +73,13 @@ final class LaunchTests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        if !keyboard.exists {
+            editor.tap()
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        }
+        waitForComposerGeometry(editor, keyboard: keyboard, web: web)
+        XCTAssertGreaterThan(editor.frame.minY, web.frame.minY + 45)
+        XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14)
         // Public bridge dismisses when tapping outside the composer.
         web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
@@ -65,6 +90,7 @@ final class LaunchTests: XCTestCase {
         for _ in 0..<3 {
             editor.tap()
             XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+            waitForComposerGeometry(editor, keyboard: keyboard, web: web)
             XCTAssertFalse(app.toolbars.buttons["Done"].exists)
             XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14)
             web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()

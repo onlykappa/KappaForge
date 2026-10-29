@@ -1,3 +1,7 @@
+# Current automatic batch — control319
+
+The prior313/318 batch stopped truthfully with its original counters/3-attempt bound intact. Native geometry check correction100 is now independently delivered in312; it still requires corrected-head native CI. Control319 contains only the already-authorized, never-started Phase3.2 goals314→315. It waits for exact initial owner-source tests/native CI before creating any candidate, persists seed evidence, then advances serially with all prior validation/cancellation/publication gates. No merge/deployment or exhausted-task reset. See [native-geometry-and-seeded-batch.md](native-geometry-and-seeded-batch.md). Older batch records below are historical and are not the current dispatch instruction.
+
 # Automatic Phase 3 queue — 2026-10-29
 
 The owner explicitly requested automatic advancement to save assistant supervision. This supersedes the earlier supervised-only plan below. Implementation is in engine/task_queue.py, authority in engine/queue_authority.py, and the existing agent workflow's owner-only `queue` job. No merge or deployment is required to execute an explicit owner dispatch from312's branch.
