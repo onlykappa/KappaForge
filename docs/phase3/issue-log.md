@@ -804,6 +804,19 @@ The live314 ledger also showed33 read calls and121,764 output characters against
 - Latest independent trial review:314 exhausted10 candidate versions at30/100 actions,55 model calls/6 generation edits and4/10 launches. Candidate source/PR remains unpublished,315 unstarted. Python errors fell18→1 because the test now crashes earlier at recovery.CURRENT.get().record before leaking dummy state, not because17 distinct bugs were fixed. Ingestion module remains the original incomplete in-memory implementation, with missing scope/persistence guarantees. Final saved patch721c488efb04826609133bd2ff6373bbd9d9a538b68161f54130f04e355c6cab is retained, not accepted.
 - Engineb1a8264 unit/web/Worker/structure40888046606, real Docker40888046745, native40888046788 and graph40888046753 succeeded. Inspected Docker job123496948639 logs confirm both the ten-attempt accounting and two-root single-batch tests passed;17 Phase1 tests ran. These fixture successes do not establish314 success. Watch paused per the explicit exhaustion rule; no duplicate run, reset, replacement authorization or merge/deploy/release.
 
+## P3-113 — deleted review authors block the entire evidence inventory
+
+- Evidence: review_ingestion._inventory rejected an explicit GitHub user:null even when the source ID/body remained valid. One deleted account could block ingestion of all other comments. The real-Journal regression test_deleted_authors_remain_evidence_without_blocking_other_feedback failed before the patch with ValueError: Review source identity is missing.
+- Correction: accept explicit null authors as unknown ID/login/type, retaining the stable comment identity, body and evidence-only flag. This does not mean the comment is deleted or provide owner authority. Missing user fields and malformed non-null author objects still fail closed. Cover all three source categories, reload and subsequent edits.
+- Immediate validation:120 ingestion/journal/task-state tests passed. Additional malformed-author cases preserve the existing committed inbox. Broader rerun:1,348 full Python tests run OK (32 skipped);10 structural rules, shipped-source scan (15 existing warnings), dependency-map, execution-policy and whitespace checks pass. The same source correction is carried into the independently reviewable draft320; engine fixes remain in312.
+- Status: PATCHED locally; remote corrected-head verification pending. No task counter/checkpoint or grant changes.
+
+## P3-114 — latest native UI verification has two unresolved failures
+
+- Evidence: engine0964f14 run40896030489/job123525251554 built simulator and unsigned iPhone applications, but executed5 UI tests with4 assertion failures. Three are keyboard non-dismissal at LaunchTests.swift:97 in the repeat loop; one is missing persisted recovery acknowledgment after restart at line177. These are not the earlier composer-geometry assertion and must not be described as a passed native check.
+- Prior b1a8264 native40888046788 passed. The newer source change only updates queue reporting, so the latest failure does not establish a native source regression or prove the failures harmless. No speculative app/test patch, relaxed assertion or repeated CI retry was made to hide the evidence.
+- Status: OPEN for native-specific reproduction and artifact inspection. The narrow review-ingestion slice has separate successful remote evidence: PR320/94da2aa tests40899169255 (Python1329 run OK,32 skipped), web, Worker and structure; graph40899169240 passed. No automatic queue continuation is inferred from those checks.
+
 ## Finding template
 
 ### P3-NNN — short defect title

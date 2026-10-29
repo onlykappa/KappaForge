@@ -65,6 +65,27 @@ class ReviewIngestionTests(unittest.TestCase):
         self.assertEqual(fresh.ingest_reviews(133), result)
         self.assertEqual(len(self.world.calls), writes)  # Duplicate sync does not persist again.
 
+    def test_deleted_authors_remain_evidence_without_blocking_other_feedback(self):
+        for kind in reviews.SOURCES:
+            deleted = comment(1)
+            deleted['user'] = None  # GitHub keeps comments after deleting the account.
+            self.world.feedback[kind] = [deleted, comment(2)]
+        result = self.journal.ingest_reviews(133)
+        self.assertEqual(len(result['items']), 6)
+        for kind in reviews.SOURCES:
+            row = result['items'][f'{REPO}#133:{kind}:1']
+            self.assertEqual(row['author'], dict(id=None, login=None, type=None))
+            self.assertEqual(row['body'], 'Investigate this')
+            self.assertTrue(row['evidence_only'])
+            self.assertFalse(row['deleted'])  # Missing author is not a deleted comment.
+        fresh = self.world.journal()
+        self.assertEqual(reviews.load(fresh, 133), result)
+        self.world.feedback['conversation'][0]['body'] = 'Edited anonymous evidence'
+        updated = fresh.ingest_reviews(133)
+        self.assertEqual(updated['revision'], 2)
+        self.assertEqual(updated['items'][f'{REPO}#133:conversation:1']['body'],
+                         'Edited anonymous evidence')
+
     def test_new_edited_removed_and_reappearing_feedback(self):
         self.world.feedback['conversation'] = [comment(1), comment(2)]
         self.journal.ingest_reviews(133)
@@ -149,7 +170,8 @@ class ReviewIngestionTests(unittest.TestCase):
             with self.subTest(error=error), patch.object(self.journal, 'target_read', side_effect=fail):
                 with self.assertRaises(type(error)): self.journal.ingest_reviews(133)
             self.assertEqual(self.journal.state['reviewInbox'], pointer)
-        for rows in ([comment(1), comment(1)], [{'id': True}], 'not a list'):
+        for rows in ([comment(1), comment(1)], [{'id': True}], [{'id': 1}],
+                     [dict(comment(1), user={})], [dict(comment(1), user=42)], 'not a list'):
             with self.subTest(rows=rows):
                 self.world.feedback['conversation'] = rows
                 with self.assertRaises(ValueError): self.journal.ingest_reviews(133)

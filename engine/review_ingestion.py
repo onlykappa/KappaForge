@@ -59,14 +59,16 @@ def _inventory(journal, pr):
                 raise ValueError('Review inventory is incomplete or malformed')
             for row in rows:
                 if (not isinstance(row, dict) or type(row.get('id')) is not int or row['id'] < 1
-                        or not isinstance(row.get('user'), dict)
-                        or not isinstance(row['user'].get('login'), str)):
+                        or 'user' not in row
+                        or (row['user'] is not None and (not isinstance(row['user'], dict)
+                            or not isinstance(row['user'].get('login'), str)))):
                     raise ValueError('Review source identity is missing')
                 key = f'{repo}#{pr}:{kind}:{row["id"]}'
                 # Endpoint, scope and IDs come from controller-selected API reads.
                 # All text and location fields remain untrusted evidence, including links.
                 item = dict(repository=repo, pr=pr, source=kind, id=row['id'],
-                            author={k: row['user'].get(k) for k in ('id', 'login', 'type')},
+                            # GitHub may retain evidence with a null user after account deletion.
+                            author={k: (row['user'] or {}).get(k) for k in ('id', 'login', 'type')},
                             evidence_only=True, deleted=False)
                 item.update({k: row[k] for k in FIELDS if k in row})
                 item = execution.sanitized(item)

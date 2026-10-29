@@ -6,7 +6,7 @@ The owner asked to resume after task314 exhausted its sandbox allowance. Work co
 
 `Journal.ingest_reviews(pr_number)` uses the existing authenticated target reader and owner-task scope. The journal must already bind the exact GitHub PR URL, repository, task digest and full candidate SHA. Both the live active scope and journal scope are checked against the owner issue before every target read. PR metadata must confirm an open draft on `kappa/dev-<task>`, with matching head/base repository and candidate SHA. A foreign PR, changed/closed/expired task, moved branch or missing active authority is refused before persistence. Private feedback cannot be stored on a public task tracker; existing execution storage policy applies.
 
-The interface fetches conversation comments, inline review comments and review summaries/requested changes. Identities include repository, PR, source kind and GitHub ID. Stored evidence includes author IDs/login/type, body, supplied timestamps, commit/review/reply/thread IDs, file/line ranges, side, original location, state, and resolution/outdated fields where returned. REST does not expose every thread's state: absence stays unknown. No resolved/outdated state is inferred from a commit mismatch.
+The interface fetches conversation comments, inline review comments and review summaries/requested changes. Identities include repository, PR, source kind and GitHub ID. Stored evidence includes author IDs/login/type (unknown for explicit null/deleted authors), body, supplied timestamps, commit/review/reply/thread IDs, file/line ranges, side, original location, state, and resolution/outdated fields where returned. REST does not expose every thread's state: absence stays unknown. No resolved/outdated state is inferred from a commit mismatch.
 
 Every feedback body, URL and file location remains untrusted evidence. Content is redacted through existing checkpoint sanitization. Links are never followed, bodies never become owner guidance, and no source edit, reply, resolve/approve, merge, release or deployment is performed by ingestion.
 
@@ -22,9 +22,9 @@ This first interface uses stable complete rescans rather than a timestamp-only A
 
 ## Validation
 
-- 12 behavioral tests cover all three categories, durable reload/idempotence, new/edited/deleted/reappearing IDs, supplied/unknown thread states, pagination, corrupt/foreign receipts, scope/auth denial, untrusted links, API401/429, incomplete inventories, concurrent feedback/head changes, cancellation and storage interruption/retry.
-- 119 focused ingestion/journal/task-state tests pass with proper ContextVar cleanup.
-- Full Python discovery:1,340 run OK,31 skipped; ten structural rules and policy/map/source checks pass. New-head remote CI is pending and recorded separately in the PR. No live ingestion on task314 is claimed: it never published an authorized candidate PR.
+- 13 behavioral tests cover all three categories, durable reload/idempotence, new/edited/deleted/reappearing IDs, supplied/unknown thread states, pagination, corrupt/foreign receipts, scope/auth denial, untrusted links, API401/429, incomplete inventories, concurrent feedback/head changes, cancellation and storage interruption/retry.
+- 120 focused ingestion/journal/task-state tests pass with proper ContextVar cleanup.
+- Latest engine follow-up full Python discovery:1,348 run OK,32 skipped; ten structural rules and policy/map/source checks pass. Prior feature candidate94da2aa passed remote Python1329 run (32 skips), web, Worker and structure in40899169255. Corrected deleted-author head remote CI is pending and recorded separately in the PR. No live ingestion on task314 is claimed: it never published an authorized candidate PR.
 
 ## The stopped automatic task
 
