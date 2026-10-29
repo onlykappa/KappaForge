@@ -14,7 +14,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from engine import developer, infrastructure, intent_guard, recovery, sandbox, sandbox_repair_controller, sandbox_tools, tool_loop
+from engine import developer, execution, infrastructure, intent_guard, recovery, sandbox, sandbox_repair_controller, sandbox_tools, tool_loop
 from tests.test_recovery_journal import GitHub
 from tests.test_sandbox import FakeDocker
 
@@ -179,9 +179,11 @@ class RealSandboxAcceptance(unittest.TestCase):
             self.assertIn(f'Attempt {n}:', attempt['rationale'])
             self.assertEqual(attempt['status'], 'failed')
             self.assertTrue(attempt['test_results'] and attempt['diagnostics'])
-        self.assertEqual(len(run.agent.seen), 5, 'after the fifth failed attempt no further change is requested')
+        self.assertEqual(len(run.agent.seen), 10, 'after the tenth failed attempt no further change is requested')
         saved = run.journal.state['executionDiagnostics']
-        self.assertEqual([a['index'] for a in saved['attempts']], [1, 2, 3, 4, 5], 'persisted, not only in memory')
+        self.assertEqual([a['index'] for a in saved['attempts']], [6, 7, 8, 9, 10], 'display keeps the latest five attempts')
+        persisted = execution.pending(run.journal)['controller']['attempts']
+        self.assertEqual([a['index'] for a in persisted], list(range(1, 11)), 'full durable history retains all ten')
         self.assertNotEqual(saved['finalValidation'], 'passed')
 
     def test_identical_failed_approaches_are_detected(self):

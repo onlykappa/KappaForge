@@ -1,3 +1,9 @@
+# Ten-candidate trial outcome — 2026-10-29
+
+40875727069 stopped at action_limit, with20 cumulative repair actions,6/10 candidates,43 model calls/6 generation edits and outer launches3/3. It exposed the focused record=None setup failure but did not fix it or publish a candidate.315 never started. No worker remains active, progress watch is paused, and no further worker is authorized within the unchanged outer/action bounds. All failed state and the immutable5b base/claim remain.
+
+C796 engine tests/graph/native CI passed; its real-Docker acceptance CI40875648113 failed on obsolete five-attempt assertions. P3-110 corrects the test to require ten model calls, UI attempts6–10 and all ten durable attempts; corrected-head Docker evidence is separate and pending. This does not change runtime policy, remove assertions or resume exhausted work. Direct inbox APId3b4d0d remains a separate implemented interface with local validation, not a passed314 result. No merge/deploy/release.
+
 # Owner-requested ten-candidate retry — 2026-10-29
 
 Owner explicitly raised the sandbox candidate allowance5→10 and requested another314 attempt. P3-109 implements retained-state resume and authenticates the previously unpublished sandbox before the existing queue can relaunch it. Five earlier candidates,35 model calls/6 generation edits and twelve repair actions remain spent; no counters or claims are reset. The same original task/grant/expiry and outer three-launch bound remain. Fresh retained-candidate tests precede any further workaround. New exact engine source/live results are recorded on312/319; earlier exhausted/paused descriptions below precede this new owner instruction. No merge/deployment/release.
