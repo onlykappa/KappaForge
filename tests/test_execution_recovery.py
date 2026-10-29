@@ -109,6 +109,25 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(len(after['attempts']), 6)
         self.assertEqual(after['actions'], before['actions'] + 1)
 
+    def test_owner_retry_preserves_exhausted_actions_under_raised_allowance(self):
+        inspect = lambda *a, **kw: ('scripted', json.dumps(dict(tool='inspect_diff', args={}, reason='Inspect retained candidate')))
+        with patch.object(sandbox_repair_controller, 'MAX_MODEL_ACTIONS', 2):
+            result = self.controller().run_repair(TASK, inspect, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(result['stop_reason'], 'action_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(before['actions'], 2)
+        with patch.dict(os.environ, {'INPUT_ACTION': 'resume:1:fixture'}):
+            stopped = self.controller(journal=self.reload()).run_repair(
+                TASK, Mock(side_effect=AssertionError('automatic resume cannot reopen terminal work')), 'fixture')
+        self.assertEqual(stopped['stop_reason'], 'action_limit')
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            resumed = self.controller(journal=self.reload()).run_repair(TASK, fixed, 'fixture')
+        self.assertEqual(resumed['status'], 'success', resumed['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['actions'], 3)
+        self.assertEqual(after['attempts'][:len(before['attempts'])], before['attempts'])
+        self.assertEqual(len(after['attempts']), len(before['attempts']) + 1)
+
     def test_provider_failure_restores_exact_patch_and_skips_completed_candidate_tests(self):
         def exhausted(*args, **kwargs):
             raise RuntimeError('all free routes unavailable')

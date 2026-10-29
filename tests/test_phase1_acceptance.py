@@ -155,6 +155,18 @@ class RealSandboxAcceptance(unittest.TestCase):
         self.assertEqual(sorted(second['changed_paths']), ['invoice/money.py', 'invoice/terms.py'])
         self.assertEqual(second['status'], 'passed')
 
+    def test_compatible_root_causes_can_be_repaired_in_one_batch(self):
+        def together(failing, call):
+            self.assertTrue(failing, 'the batch follows actual failing test evidence')
+            return 'Fix both known invoice root causes together', {'edits': [TERMS_FIX, MONEY_FIX]}
+        run = Scenario(Agent(together))
+        self.assertEqual(run.result['status'], 'success', run.result['summary'])
+        self.assertEqual(len(run.agent.actions), 1)
+        self.assertEqual(set(run.result['candidate_changes']), {'invoice/terms.py', 'invoice/money.py'})
+        self.assertEqual([r['result']['status'] for r in run.tests_run()], ['failed', 'passed', 'passed'])
+        self.assertTrue(all(not any(word in path for word in CODE_WRITES)
+                            for path, _payload, _method in run.world.calls))
+
     def test_no_commit_is_created_during_ordinary_candidate_repair(self):
         run = self.repaired
         mutations = [path for path, _payload, _method in run.world.calls]

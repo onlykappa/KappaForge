@@ -505,6 +505,24 @@ class QueueProgressTests(unittest.TestCase):
         self.assertEqual(self.w.refs['kappa/queue-claim-318-313'], 'a' * 40)
         self.assertEqual(queue.state['status'], 'awaiting_owner_review')
 
+    def test_owner_retry_after_three_launches_preserves_prior_debits(self):
+        self.prepare_failed_queue()
+        for comment in self.w.comments:
+            marker = 'KAPPA_QUEUE_V1 '
+            if marker in comment['body']:
+                state = json.loads(comment['body'].split(marker)[1].split(' -->')[0])
+                state['tasks']['313']['attempts'] = 3
+                comment['body'] = '### KappaForge automatic queue\n\n<!-- ' + marker + json.dumps(state) + ' -->'
+        queue = self.w.queue()
+        def launch(row, action, deadline):
+            record = queue.state['tasks'].setdefault(str(row['issue']), dict(attempts=0))
+            if row['issue'] == 313: self.assertEqual(record['attempts'], 3)
+            record.update(attempts=record['attempts'] + 1, status='running')
+            self.w.complete(row['issue'])
+        with patch.object(queue, 'launch', side_effect=launch): queue.run(self.w.now + 1000)
+        self.assertEqual(queue.state['tasks']['313']['attempts'], 4)
+        self.assertEqual(self.w.refs['kappa/queue-claim-318-313'], 'a' * 40)
+
     def test_failed_queue_resume_refuses_cancellation_active_worker_drift_or_exhausted_attempts(self):
         for change in ('cancelled', 'active', 'drift', 'budget', 'ambiguous'):
             self.w = World(); old = self.prepare_failed_queue()

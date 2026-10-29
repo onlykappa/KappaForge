@@ -1,3 +1,7 @@
+# Owner-requested expanded action/launch capacity — 2026-10-29
+
+Owner requested increasing the newly exhausted limits and batching compatible bugs. P3-111 raises repair actions20→100 and queue launches3→10, with10 tested candidates unchanged. Earlier spend/history/grant/expiry/base/claim remains intact. One new authenticated owner retry may reopen the retained action-limit stop and recheck its exact source; no duplicate coder, new task or reset. Compatible fixes can share one tested candidate; ten parallel workers or guaranteed ten-bug throughput is not claimed. Source62e3aab's full real-Docker self-test40879161187 passed; new source validation/live evidence is separate. Earlier stopped/paused snapshots below precede this new instruction. Nothing merged/deployed/released.
+
 # Ten-candidate trial outcome — 2026-10-29
 
 40875727069 stopped at action_limit, with20 cumulative repair actions,6/10 candidates,43 model calls/6 generation edits and outer launches3/3. It exposed the focused record=None setup failure but did not fix it or publish a candidate.315 never started. No worker remains active, progress watch is paused, and no further worker is authorized within the unchanged outer/action bounds. All failed state and the immutable5b base/claim remain.

@@ -8,7 +8,7 @@ from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastruc
 
 
 MAX_ATTEMPTS = 10
-MAX_MODEL_ACTIONS = 20
+MAX_MODEL_ACTIONS = 100
 LOG_CHARS = 12000
 
 
@@ -69,10 +69,10 @@ class SandboxRepairController:
                             os.getenv('INPUT_ACTION') == 'queue-step' and
                             callable(getattr(getattr(self.journal, 'scope', None), 'queue_guard', None)))
                 if (self.journal and explicit and self.state.get('status') == 'failed'
-                        and self.state.get('stop_reason') in ('repeated_tool_call', 'attempt_limit')
+                        and self.state.get('stop_reason') in ('repeated_tool_call', 'attempt_limit', 'action_limit')
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
-                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') == 'attempt_limit' else 'repair'
-                    self.state['owner_recheck'] = self.state.get('stop_reason') == 'attempt_limit'
+                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') in ('attempt_limit', 'action_limit') else 'repair'
+                    self.state['owner_recheck'] = self.state.get('stop_reason') in ('attempt_limit', 'action_limit')
                     # Preserve tested versions/actions. Only an explicit Fix renews the consecutive-call streak.
                     if self.state.get('stop_reason') == 'repeated_tool_call':
                         self.state['repeated'], self.state['action_key'] = 0, None
@@ -480,8 +480,12 @@ class SandboxRepairController:
                 "state cleanup (including ContextVar tokens) before adding members to that fake. Later errors may "
                 "be a cascade from leaked test state. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
-                "make a focused correction with apply_patch, then let the engine rerun the tests. Do not edit or weaken "
-                "test commands, test definitions, safety checks, or unrelated files. Each tool call is one action. "
+                "group compatible evidence-backed fixes for the same authorized goal into one apply_patch batch, "
+                "then let the engine rerun the tests. One candidate may fix multiple bugs; fix shared causes rather "
+                "than one cascading symptom at a time. You may correct faulty setup/cleanup in a newly generated "
+                "test using the real public interfaces; retain its behavioral assertions and original requirements. "
+                "Do not replace test commands, delete tests/assertions, weaken expected behavior or safety checks, "
+                "or edit unrelated files. Each tool call is one action. "
                 "If the tests pass, reply done. Only when a material ambiguity about the expected behavior, safety or "
                 "authorization blocks a correct fix, and neither the repository nor a convention settles it, use "
                 "ask_owner with one concise question instead of guessing. When a test fails with an error you have not "

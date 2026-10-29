@@ -18,7 +18,7 @@ ROOT = authority.ROOT
 PREFIX = f'repos/{ROOT}/'
 MARKER = 'KAPPA_QUEUE_V1'
 UPGRADE_MARKER = 'KAPPA_QUEUE_ENGINE_UPGRADE_V1'
-MAX_ATTEMPTS = 3  # Additional queue bound; existing task budgets are never reset or increased.
+MAX_ATTEMPTS = 10  # Owner-raised launch allowance; existing counts/claims remain spent.
 
 
 class Pending(Exception):
