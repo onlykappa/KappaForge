@@ -4,7 +4,7 @@ import json
 import os
 import re
 
-from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger, repair_strategy
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger, repair_strategy, task_state
 
 
 MAX_ATTEMPTS = 20
@@ -174,8 +174,11 @@ class SandboxRepairController:
                 prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
                                                   self.state["last_summary"], self.state["history"],
                                                   (self.state.get("investigation") or {}).get("evidence", ""))
-                response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
-                                                   self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
+                with task_state.action('repair', 'Repair the sandbox candidate',
+                                       'Use the saved failure evidence to repair the original owner goal',
+                                       'Pass the original tests and a fresh full regression'):
+                    response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
+                                                       self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
                 if self.execution.error:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
@@ -510,7 +513,8 @@ class SandboxRepairController:
                 "state cleanup (including ContextVar tokens) before adding members to that fake. Later errors may "
                 "be a cascade from leaked test state. "
                 "Before a patch, use record_repair_plan with a causal diagnosis, the intervention, citations to current "
-                "read_file path/line evidence, expected test change and why it differs from failed approaches. "
+                "read_file path/line evidence and expected_result. For a previously tried failure family, include "
+                "differs_from (12–1200 characters) explaining why the previous approach failed and how this mechanism differs. "
                 "Do not rename an idea or add one fake member at a time. If a named failing test recurs, another patch "
                 "requires a new evidence-backed plan. A distinct planned mechanism may be tested against the same "
                 "error; it is not a pass until the original full tests and final regression succeed. "

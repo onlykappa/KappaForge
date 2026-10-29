@@ -197,6 +197,52 @@ class ReviewIngestionTests(unittest.TestCase):
             with self.assertRaises(execution.CheckpointMismatch): self.journal.ingest_reviews(133)
         self.assertEqual(self.journal.state['reviewInbox'], pointer)
 
+    def test_concurrent_addition_is_rejected_atomically_and_retry_ingests_once(self):
+        self.world.feedback['conversation'] = [comment(1)]
+        original = self.journal.ingest_reviews(133)
+        pointer = deepcopy(self.journal.state['reviewInbox'])
+        writes = len(self.world.calls)
+        target, scans = self.journal.target_read, 0
+        def add_between_scans(path):
+            nonlocal scans
+            if '/issues/133/comments?' in path:
+                scans += 1
+                if scans == 2:
+                    self.world.feedback['conversation'].append(comment(2))
+            return target(path)
+        with patch.object(self.journal, 'target_read', side_effect=add_between_scans):
+            with self.assertRaises(execution.CheckpointMismatch):
+                self.journal.ingest_reviews(133)
+        self.assertEqual(scans, 2)
+        self.assertEqual(self.journal.state['reviewInbox'], pointer)
+        self.assertEqual(len(self.world.calls), writes)
+        fresh = self.world.journal()
+        self.assertEqual(reviews.load(fresh, 133), original)
+        synced = fresh.ingest_reviews(133)
+        self.assertEqual(set(synced['items']), {f'{REPO}#133:conversation:1', f'{REPO}#133:conversation:2'})
+        self.assertEqual(synced['revision'], original['revision'] + 1)
+        writes = len(self.world.calls)
+        self.assertEqual(fresh.ingest_reviews(133), synced)
+        self.assertEqual(len(self.world.calls), writes)
+
+    def test_repeated_mock_insertion_is_duplicate_data_not_a_concurrent_snapshot(self):
+        self.world.feedback['conversation'] = [comment(1)]
+        original = self.journal.ingest_reviews(133)
+        pointer = deepcopy(self.journal.state['reviewInbox'])
+        target, calls = self.journal.target_read, 0
+        def faulty_mock(path):
+            nonlocal calls
+            calls += 1
+            if calls > 1 and '/issues/133/comments?' in path:
+                self.world.feedback['conversation'].append(comment(2))
+            return target(path)
+        with patch.object(self.journal, 'target_read', side_effect=faulty_mock):
+            with self.assertRaisesRegex(ValueError, 'repeated a source identity'):
+                self.journal.ingest_reviews(133)
+        self.assertEqual([row['id'] for row in self.world.feedback['conversation']], [1, 2, 2])
+        self.assertEqual(self.journal.state['reviewInbox'], pointer)
+        self.assertEqual(reviews.load(self.world.journal(), 133), original)
+
     def test_persistence_failure_rolls_back_pointer_and_retry_recovers(self):
         self.world.feedback['conversation'] = [comment(1)]
         self.journal.ingest_reviews(133)

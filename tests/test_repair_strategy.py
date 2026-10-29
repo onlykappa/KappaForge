@@ -68,6 +68,10 @@ class RepairStrategyTests(unittest.TestCase):
         self.assertEqual(agent._planned_patch([dict(path='app.py', find='value=1', replace='value=3')])['status'], 'applied')
         self.assertEqual(agent._record_repair_plan(**dict(plan, differs_from='A new label is not a different mechanism'))['status'], 'invalid')
         agent._explore('read_file', path='app.py', start_line=1, end_line=2)
+        missing_contrast = agent._record_repair_plan(**dict(plan, strategy='Use the exact value contract instead'))
+        self.assertEqual(missing_contrast['status'], 'invalid')
+        self.assertIn('differs_from', missing_contrast['error'])
+        self.assertIn('12', missing_contrast['error'])
         self.assertEqual(agent._record_repair_plan(**dict(plan, strategy='Install the real task context before use! 2',
             differs_from='A new label is not a different mechanism'))['status'], 'invalid')
         self.assertEqual(agent._planned_patch([dict(path='app.py', find='value=3', replace='value=2')])['status'], 'invalid')

@@ -44,6 +44,12 @@ The owner subsequently requested more useful repair capacity and different ideas
 
 A source-cited hypothesis cannot authorize another repository, test weakening, lifecycle operations or task completion. No queue restart/adoption has occurred:314's journal still names its historical proposal rather than manual PR320. That handoff must be validated separately before a worker can safely continue. Scheduled automation remains off.
 
+## Verified restart outcome (2026-10-29)
+
+Run40937595380 adopted manual candidate d561a8ac5421ab449c62b0621e4cf5e62426b641 through the authenticated owner receipt and preserved the old failed history/counters. The queue subsequently accepted314 after original-task review and fresh trusted exact-source sandbox validation40938553578. Its verify job123675494234 checked out that full SHA and passed1,330 Python tests (35 skips), plus900 web tests with zero failures. Earlier unadopted/pending descriptions above are historical, not the current outcome.
+
+315 then generated an unpublished proposal and stopped repeated_tool_call:2 tested candidates,19 repair actions,33 model calls,0 generation edits. Its new concurrency fixture repeatedly inserts the same comment identity; its production change only adds redundant parentheses. This is not315 completion or a quota exhaustion. Queue checkpoint319 records314 complete (8 launches) and315 blocked (1 launch). P3-120/121 repair the lightweight routing leak and unclear repair-plan feedback in312; trusted concurrency regressions preserve duplicate rejection and verify atomic retry. The existing315 failed patch/history remain intact, no new worker is dispatched, and scheduled automation stays off.
+
 ## Restarting from the owner-reviewed candidate
 
 A stopped unpublished queue proposal cannot silently switch to an existing manual branch. P3-119 adds an authenticated owner receipt binding its original control manifest, task/digest, stopped run/base/patch checkpoint, reviewed draft/head and selected engine source. This supplements the original live grant and expiry; it cannot create replacement authority. The queue and child independently check the binding, stopped worker, bounded ancestry/file inventory and exact-source CI.

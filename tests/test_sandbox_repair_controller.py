@@ -4,7 +4,7 @@ import tarfile
 import unittest
 from unittest.mock import Mock
 
-from engine import sandbox, sandbox_repair_controller, sandbox_tools
+from engine import sandbox, sandbox_repair_controller, sandbox_tools, task_state
 
 
 class FakeDocker(sandbox.Docker):
@@ -93,6 +93,26 @@ class TestSandboxRepairController(unittest.TestCase):
         self.assertIn("correct the implementation", result["attempts"][0]["rationale"])
         self.assertIn("differs from the failing base state", result["attempts"][0]["why_different"])
         self.assertEqual(result["candidate_changes"], {"app.py": "value=2\n"})
+
+    def test_repair_routes_as_code_and_restores_caller_context(self):
+        for raises in (False, True):
+            with self.subTest(provider_error=raises), task_state.action(
+                    'reviewer', 'review', 'Review current source', 'Find unresolved requirements'):
+                prior_action = task_state.ACTION.get()
+                observed = []
+                def model(*args, **kwargs):
+                    observed.append((task_state.ROUTING_ROLE.get(), task_state.ACTION.get()['role']))
+                    if raises:
+                        raise RuntimeError('provider failed')
+                    return model_reply({'tool': 'apply_patch', 'args': {'edits': [
+                        {'path': 'app.py', 'find': 'value=1', 'replace': 'value=2'}]},
+                        'reason': 'Correct the implementation to match the failing assertion'})(*args, **kwargs)
+                controller = sandbox_repair_controller.SandboxRepairController(fixture_tree())
+                result = controller.run_repair('repair value', model, 'fixture')
+                self.assertEqual(observed, [('code', 'repair')])
+                self.assertEqual(result['stop_reason'], 'controller_error' if raises else 'validated')
+                self.assertEqual(task_state.ROUTING_ROLE.get(), 'review')
+                self.assertIs(task_state.ACTION.get(), prior_action)
 
     def test_identical_test_error_stops_after_one_repair(self):
         reply = {"tool": "apply_patch", "args": {"edits": [

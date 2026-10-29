@@ -43,7 +43,7 @@ def propose(state, revision, cause, strategy, evidence, expected_result, differs
     current_family = state.get('failure_family', '')
     related = [p for p in prior if p['family'] == current_family]
     if related and len(differs_from.strip()) < 12:
-        return dict(status='invalid', error='Explain why the previous approach failed and how this mechanism differs')
+        return dict(status='invalid', error='Provide differs_from (12–1200 characters): explain why the previous approach failed and how this mechanism differs')
     # Check both explanations separately: changing just a diagnosis/attempt label
     # cannot recycle the same stated intervention on this observed failure family.
     if any(normalized(p['strategy']) == normalized(strategy) for p in related):
