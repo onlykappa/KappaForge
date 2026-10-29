@@ -845,6 +845,13 @@ Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker
 - Limits of this mechanism: causal explanations are untrusted model claims, not proof of semantic novelty or correctness. Source citations and normalized exact repeats are mechanically checked; synonymous bad ideas can still require independent review. The guard does not promise20 different bugs fixed. Tests and honest outcome history decide success.
 - Status: IMPLEMENTED locally; exact-head CI pending. No worker was dispatched against the old failed proposal. The manual PR320/source handoff is still unadopted; increasing capacity does not authorize bypassing its journal/source mismatch or changing completion markers.
 
+## P3-118 — real-Docker scripted agents still used the pre-strategy patch protocol
+
+- Evidence: source023be10 real Docker40927316618/job123636174370 failed five Phase1 assertions. The scripted targeted repair fixed due dates first while the same tax test remained first in the failure inventory. The new recurrence guard then correctly required a plan; the old script kept sending unplanned patches and stopped repeated_tool_call. Unit/native CI passed, but this Docker fixture body was skipped locally and was not a verified pass.
+- Correction: successful targeted/interruption scripts now read current source and supply causal plans before their patches; repair counts still count actual patch proposals separately from planning tool calls. The negative unplanned-repeat case now requires refusal before a second candidate, with the guard message recorded. The back-and-forth test supplies distinct plans and retains repeated-patch detection. Existing test-command, isolation, exact-source, full/final regression and persisted-history assertions remain enforced.
+- Local real-controller regression with simulated invoice execution proves the two targeted fixes use two distinct source-cited plans and pass with the original patch/attempt counts. The related57-test selection passed (13 explicit real-Docker skips); the new scripted-protocol regression passed separately. Exact-source real Docker rerun is required before a coding restart.
+- Status: PATCHED locally; remote verification pending. No coder dispatch or machine marker/count/grant rewrite.
+
 ## Finding template
 
 ### P3-NNN — short defect title
