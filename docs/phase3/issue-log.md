@@ -791,6 +791,10 @@ P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503
 - Regressions preserve an old exhausted action prefix on owner retry and prior three queue-launch debits on launch4; full ten-candidate tests remain.101 related tests run OK,13 explicit Docker skips; ten structural rules, source/map/policy/whitespace checks pass. Full Python discovery before the final prompt clarification:1,345 run OK,32 skipped. The clarification permits correcting faulty new-test setup/cleanup while retaining assertions, requirements and command/safety gates; final focused checks cover that source. Fresh live trial pending. Source62e3aab's corrected full Docker40879161187 succeeded before this new change.
 - Target314 remains at43 model calls/6 generation edits,6 tested candidates and20 repair actions before retry; original stopped313/318 is not revived. No merge/deployment/release. More capacity is not a passed feature; actual root fixes still need tests and independent review.
 
+### P3-111 pre-dispatch investigation preflight
+
+The live314 ledger also showed33 read calls and121,764 output characters against a120,000-character output allowance: investigation was already exhausted. Before dispatch, expanded config/exploration.json to the existing validated maxima (500 reads,3,600 active tool seconds,2,000,000 output/context characters). Prior read usage is not cleared; request/prompt size, scoped local read-only tools and per-result limits remain unchanged. A regression using the actual retained amounts proves the old allowance refuses another read and the new configuration permits it while increasing the cumulative counter33→34. Final exploration/ledger checks:39 run OK (1 explicit Docker skip). Final full Python discovery:1,346 run OK,32 skipped. Map/policy/whitespace/source checks pass; new-head Docker batch acceptance remains pending. No new external endpoints or provider capacity is granted.
+
 ## Finding template
 
 ### P3-NNN — short defect title
