@@ -28,6 +28,7 @@ import warnings
 from engine import recovery
 from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
 from engine import repo_map as repo_maps
+from engine import export_index
 from engine import exploration
 from engine import task_plan
 from engine import requirements
@@ -1418,7 +1419,8 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if is_partial:
                 partial.add(path)
             used += len(block)
-        return ''.join(blocks), shown, partial
+        names = export_index.render(working_sources, [p for p in order if not (repo == ROOT and p.startswith(IOS_WEB))])
+        return (names + '\n' if names else '') + ''.join(blocks), shown, partial
     context, shown_sources, partial_sources = source_context()
     instruction = (
         "You are KappaForge, a careful senior engineer implementing an owner-approved change in "
