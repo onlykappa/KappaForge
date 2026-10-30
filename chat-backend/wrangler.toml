@@ -5,6 +5,9 @@ workers_dev = true
 # Keep owner-managed routing variables configured in the Cloudflare dashboard when deploying.
 keep_vars = true
 
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 # Owner-requested Workers Paid maximums. Network waiting is excluded from CPU.
 # The platform's 128 MB isolate memory limit and provider quotas still apply.
 [limits]
