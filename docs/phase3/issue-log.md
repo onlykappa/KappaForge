@@ -935,7 +935,12 @@ Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker
 
 - **Evidence:** run 41087383549 router results. NVIDIA models timed out at transport (status 0) and were then rested with a coordination 429; Groq gpt-oss-120b was refused by the gateway context guard (413, prompts of 22,000 to 68,000 characters); mistral-small was rested as request-too-large. Nearly every call (classification, code, review, verify) was served by rank 4 or 5: gemini-3.1-flash-lite, ollama gpt-oss:120b or codestral.
 - **Impact:** code was written and verified by the weakest available free tier, which makes malformed envelopes and inexact edit anchors likely (the first edit attempt failed with an anchor that matched zero times and recovered on the retry).
-- **Status:** OPEN, roadmap input. No limit or provider setting was changed. Needs a measured routing study rather than a guess.
+- **Causes found (config and code read, no provider call needed):**
+  1. NVIDIA: `FIRST_BYTE_MS` was 20 s for every provider, but `docs/model-master-list.md` records NVIDIA models needing more than 25 s to a first token. A strong model was cut off while still starting, then rested.
+  2. Groq: a real 8,000-token-per-request ceiling (`limits.groq`, measured in `provider-request-budgets.md`), and the answer reservation alone (up to 8,192) exceeds it, so Groq can only serve calls that ask for a small answer. Working as designed, not a defect.
+  3. Mistral small: a 20,000-token-per-request limit; the admission estimate counts one byte as one token (real code is about four bytes a token), so a 22,000-character prompt plus an 8,192 answer is refused as `request_too_large` although it would fit.
+- **Patch (this entry's first part):** a provider may set `firstByteMs` in the registry; NVIDIA gets 45 s, bounded by the 60 s attempt limit. Everyone else keeps 20 s. `tests/slow-starter-first-byte.test.mjs`; the hung-routes bound in `tests/routing-policy.test.mjs` is now 90 s (45 + 20 + 20).
+- **Status:** PARTLY PATCHED. Cause 3 (the byte estimate) is a deliberate, tested policy from the request-budget work; tightening it is an owner decision and is not changed here. Cause 2 needs shorter prompts, not configuration.
 
 ## P3-130 — a finished task could not complete because of report-only asks and stale problem notes
 
