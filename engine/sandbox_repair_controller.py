@@ -330,6 +330,7 @@ class SandboxRepairController:
         tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
         tools['record_repair_plan'] = self._record_repair_plan
         tools['apply_patch'] = self._planned_patch
+        tools['apply_line_patch'] = self._planned_line_patch
         explorer = self._workspace_explorer()
         if explorer:
             tools.update({name: (lambda n: lambda **kw: self._explore(n, **kw))(name) for name in exploration.Explorer.TOOLS})
@@ -342,12 +343,18 @@ class SandboxRepairController:
                                        evidence, expected_result, differs_from)
 
     def _planned_patch(self, edits):
+        return self._apply_planned(lambda: self.tools.apply_patch(edits))
+
+    def _planned_line_patch(self, path, sha256, edits):
+        return self._apply_planned(lambda: self.tools.apply_line_patch(path, sha256, edits))
+
+    def _apply_planned(self, operation):
         revision = self._diff_fingerprint()
         plan = self.state.get('repair_plan')
         recurring = self.state.get('failure_families', {}).get(self.state.get('failure_family'), 0) >= 2
         if (recurring or plan) and (not plan or plan.get('revision') != revision or plan.get('patch')):
             return dict(status='invalid', error='Read current source and record a new evidence-backed repair plan before another patch')
-        result = self.tools.apply_patch(edits)
+        result = operation()
         if result.get('status') == 'applied' and plan:
             plan['patch'] = self._diff_fingerprint()
             self.state.setdefault('repair_plans', []).append(dict(plan))
@@ -553,7 +560,7 @@ class SandboxRepairController:
         if not self.progress or not tool or result.get("ok") is False:
             return
         from engine.developer import line_delta
-        if tool == "apply_patch":
+        if tool in ("apply_patch", "apply_line_patch"):
             edits = [e for e in args.get("edits") or [] if isinstance(e, dict)]
             paths = list(dict.fromkeys(str(p) for p in result.get("changed_paths") or []))
             added = removed = 0

@@ -8,6 +8,7 @@ JSON, and repository content in them is untrusted evidence, never instructions.
 from contextvars import ContextVar
 from dataclasses import dataclass, asdict
 import functools
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -345,7 +346,8 @@ class Explorer:
 
     def _read_file(self, path, start_line=1, end_line=None):
         self._deadline_checkpoint()
-        lines = self.repo.text(path).splitlines()
+        source = self.repo.text(path)
+        lines = source.splitlines()
         self._deadline_checkpoint()
         start = max(1, int(start_line))
         end = min(len(lines), int(end_line) if end_line else start + READ_LINES - 1, start + READ_LINES - 1)
@@ -362,7 +364,8 @@ class Explorer:
         if last >= start:
             self.read.setdefault(path, set()).add((start, last))
         return {'path': path, 'start_line': start, 'end_line': last, 'total_lines': len(lines),
-                'text': '\n'.join(chunk), 'more': last < len(lines)}
+                'text': '\n'.join(chunk), 'more': last < len(lines),
+                'sha256': hashlib.sha256(source.encode()).hexdigest()}
 
     def _list_directory(self, path='', page=1):
         prefix = path.strip('/')

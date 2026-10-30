@@ -1,4 +1,5 @@
 import re
+import hashlib
 from typing import List, Dict, Any
 
 from . import sandbox
@@ -22,6 +23,53 @@ class SandboxTools:
 
     def __init__(self, session: sandbox.Session):
         self.session = session
+
+    def apply_line_patch(self, path, sha256, edits):
+        """Atomic, version-bound line edits. One-based inclusive ranges; end=start-1 inserts.
+
+        Ranges refer to the same original file, not to shifting intermediate text.
+        No fuzzy matching or best-effort application is permitted.
+        """
+        if not sandbox.safe_path(path) or not isinstance(sha256, str) or not re.fullmatch('[a-f0-9]{64}', sha256):
+            return dict(status='invalid', error='A safe path and exact SHA256 from read_file are required')
+        raw = self.session.current().get(path)
+        if not isinstance(raw, bytes):
+            return dict(status='invalid', error='Read an existing UTF-8 file before patching it')
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != sha256:
+            return dict(status='conflict', error='File changed since observation; reread before replanning',
+                        current_sha256=digest, read_hint=dict(path=path, start_line=1, end_line=40))
+        try:
+            source = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            return dict(status='invalid', error='Candidate file is not UTF-8')
+        if not isinstance(edits, list) or not 0 < len(edits) <= 128:
+            return dict(status='invalid', error='Provide 1–128 nonoverlapping line edits')
+        lines = source.splitlines(keepends=True)
+        normalized = []
+        for edit in edits:
+            if not isinstance(edit, dict):
+                return dict(status='invalid', error='Each line edit must be an object')
+            start, end, replacement = edit.get('start_line'), edit.get('end_line'), edit.get('replace')
+            if (type(start) is not int or type(end) is not int or not isinstance(replacement, str)
+                    or not 1 <= start <= len(lines) + 1 or not start - 1 <= end <= len(lines)):
+                return dict(status='invalid', error='Invalid line range or replacement')
+            normalized.append((start, end, replacement))
+        normalized.sort(key=lambda row: (row[0], row[1]))
+        for previous, current in zip(normalized, normalized[1:]):
+            if current[0] <= max(previous[0], previous[1]):
+                return dict(status='invalid', error='Overlapping edits require a fresh combined patch')
+        for start, end, replacement in reversed(normalized):
+            lines[start - 1:end] = [replacement]
+        updated = ''.join(lines)
+        if updated == source:
+            return dict(status='invalid', error='Patch does not change the observed file')
+        try:
+            self.session.apply({path: updated})
+        except (ValueError, TypeError) as error:
+            return dict(status='invalid', error=str(error))
+        return dict(status='applied', ok=True, changed_paths=[path], before_sha256=digest,
+                    sha256=hashlib.sha256(updated.encode()).hexdigest())
 
     # ---------------------------------------------------------------------
     # Helper to produce a concise summary of a RunResult
