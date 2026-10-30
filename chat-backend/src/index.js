@@ -33,6 +33,7 @@ import app from "../../config/app.json" with {type: "json"};
 import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./recovery-wake.js";
 import {transcribe,speak} from "./voice.js";
 import {admitDispatch,ExecutionBlocked} from "./free-execution.js";
+import {diagnostics} from './diagnostics.js';
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -232,13 +233,14 @@ const workerImplementation = {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium", "/voice/transcribe", "/voice/speak"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/diagnostics", "/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium", "/voice/transcribe", "/voice/speak"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
       return json({ error: "Unauthorized" }, 401, cors);
+    if(pathname==='/diagnostics')return json(await diagnostics(env),200,{...cors,'Cache-Control':'no-store'});
     if(pathname==='/operation-capabilities'){
       const input=await request.json().catch(()=>null);if(!input)return json({error:'Invalid contract request'},400,cors);
       const mismatch=checkOperationContract(env,input,{required:true});
@@ -334,7 +336,7 @@ const workerImplementation = {
               example:example?{model:example.model,name:example.name,selectionPolicy:example.selectionPolicy,maxUsd:example.maxUsd}:null};
           }catch{premium={error:"Premium status unavailable",enabled:false};}
         }
-        return json({operationRouting:operationContract(env),tools:weatherTools,version:"2.0.0",provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
+        return json({operationRouting:operationContract(env),tools:weatherTools,version:app.version,provider:"Gemini",models:providers[0].models,limits:REGISTRY.limits||null,neurons,ollamaPlan:ollama,openrouterAccount:openrouter,premium,github:!!env.GITHUB_JOB_TOKEN,memory:!!env.MEMORY,index:!!(env.MEMORY&&env.AI),
           maxAttempts:providers[0].models.length,repos:await listRepos(env),providerQuota:null,pricing:env.MODEL_PRICING_JSON?JSON.parse(env.MODEL_PRICING_JSON):null,providers,
           routingPolicy:policy,routingState:{activeReservations:snapshot.activeReservations,dailyRequests:snapshot.dailyRequests||{day:new Date().toISOString().slice(0,10),used:0,source:"durable-object-counter"},dailyPolicyLimit:routerCaps(env).daily,minuteRequests:snapshot.minuteRequests||{windowStart:Math.floor(Date.now()/60000)*60000,used:0,source:"durable-object-counter"},minutePolicyLimit:routerCaps(env).minute,quotaRemaining:null,quotaSource:"unknown"}},
           200,cors);

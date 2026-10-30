@@ -113,16 +113,16 @@ jobs:
         test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
         node tools/verify-settings.mjs assert-unchanged "$RUNNER_TEMP/kappa-worker-bindings.json"
         if [ "$OPERATION" = "repair-chat" ]; then
-          npm run deploy -- --var KAPPA_CHAT_PROVIDERS:groq 2>&1 | tee deploy.log
+          npm run deploy -- --var "KAPPA_BUILD_SHA:$GITHUB_SHA" --var KAPPA_CHAT_PROVIDERS:groq 2>&1 | tee deploy.log
         elif [ "$OPERATION" = "activate-providers" ]; then
           provider_args=()
           while IFS= read -r permission; do provider_args+=(--var "$permission"); done < <(
             node --input-type=module -e 'import{readFileSync}from"node:fs";const s=JSON.parse(readFileSync(process.argv[1],"utf8"));for(const [name,value]of Object.entries(s.variables))console.log(name+":"+value)' "$RUNNER_TEMP/kappa-worker-bindings.json"
           )
           test "${#provider_args[@]}" = "8" || { echo "::error::Expected exactly four reviewed provider variables."; exit 1; }
-          npm run deploy -- "${provider_args[@]}" 2>&1 | tee deploy.log
+          npm run deploy -- --var "KAPPA_BUILD_SHA:$GITHUB_SHA" "${provider_args[@]}" 2>&1 | tee deploy.log
         else
-          npm run deploy 2>&1 | tee deploy.log
+          npm run deploy -- --var "KAPPA_BUILD_SHA:$GITHUB_SHA" 2>&1 | tee deploy.log
         fi
         echo "url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -1)" >> "$GITHUB_OUTPUT"
       shell: bash
