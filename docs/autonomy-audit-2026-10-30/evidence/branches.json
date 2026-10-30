@@ -1,0 +1,1094 @@
+[
+  {
+    "name": "audit/phase3-combined",
+    "sha": "2e7d2bc9e253d446d7b84be74d940ac1e102abe1"
+  },
+  {
+    "name": "bugfix/audit-october",
+    "sha": "a681ae473b4176d2d74a928d5e5d3610dcd95f9e"
+  },
+  {
+    "name": "claude/agent-limits",
+    "sha": "1f81fde537603ca9fdc9aebdb8016fa10948a784"
+  },
+  {
+    "name": "claude/all-repositories",
+    "sha": "da7f10a16326b978c8708da8a4692a4541c67208"
+  },
+  {
+    "name": "claude/any-repo-tests",
+    "sha": "05dd5e56727f23c0dac9ee00c47836e12980abf4"
+  },
+  {
+    "name": "claude/audit-fixes-2",
+    "sha": "30c34717c615f79af1b6f6abeba2af2500eb68da"
+  },
+  {
+    "name": "claude/auto-release",
+    "sha": "f0ac39a11736dd5bbf34c0be0ec70f68ed99de1c"
+  },
+  {
+    "name": "claude/auto-verify",
+    "sha": "eb052d274a1398a386297e656bed301845f060f4"
+  },
+  {
+    "name": "claude/chat-activity-feed",
+    "sha": "2d16e27b65c123bdc14a163739bd2a9e3071a43b"
+  },
+  {
+    "name": "claude/chat-flow",
+    "sha": "275c0022a27106259fdd3d4c0dc815333674d4bb"
+  },
+  {
+    "name": "claude/checkpoint-rotation",
+    "sha": "8f0d5c1da22c788528e315f201b3753789ab72ca"
+  },
+  {
+    "name": "claude/conversational",
+    "sha": "72db6a1eb35e393c21f203e061c420ff684a5d33"
+  },
+  {
+    "name": "claude/develop-mode",
+    "sha": "4793af1c5a42db8a2b79ed474ddfe21eddc2f264"
+  },
+  {
+    "name": "claude/fix-agent-workflow",
+    "sha": "75efb44bf41fbba150ab730a1270b6d42a66c267"
+  },
+  {
+    "name": "claude/fix-api-rate-limits",
+    "sha": "830de9f692d6936a16710237e91a2d9c46172a98"
+  },
+  {
+    "name": "claude/fix-checkpoint-trailer",
+    "sha": "aaa5d982029b7d8f04d4b4f61cca6d5e5bc4695b"
+  },
+  {
+    "name": "claude/free-llm-apis",
+    "sha": "18e7bdc43286fd9ef216417e2c2163019a88f672"
+  },
+  {
+    "name": "claude/free-llm-providers",
+    "sha": "96ca444f86e1d547d6f1889ce607a43fad17bb4a"
+  },
+  {
+    "name": "claude/free-providers",
+    "sha": "37febc4cd7c25bbfbeea99b752955db0732dd86c"
+  },
+  {
+    "name": "claude/kappaforge-whole-definitions",
+    "sha": "ccb0a57779cd314c734fd9cc10a5bce1ef28461e"
+  },
+  {
+    "name": "claude/live-progress",
+    "sha": "aaecfc56c5d64d00505b841dc53effc0a961abca"
+  },
+  {
+    "name": "claude/mirror-ios-copy",
+    "sha": "7186d64e2f6ce1230ef31f6ca6d72b11e9b4b8df"
+  },
+  {
+    "name": "claude/phase1-step8",
+    "sha": "d49880e7e216446b2d6baf0d684453f7194de998"
+  },
+  {
+    "name": "claude/phase2-exploration",
+    "sha": "1dafdfefca0f2fede7d39cedf5a02e090b159794"
+  },
+  {
+    "name": "claude/phase2-section2-wip",
+    "sha": "3f700547d10ece7d828c4d4af1f8f9673f630026"
+  },
+  {
+    "name": "claude/phase3-audit-fixes",
+    "sha": "fecb93959d0a8b3e7e734b0828f4eeda0944a313"
+  },
+  {
+    "name": "claude/phase3-intelligent-reviews",
+    "sha": "f5501afe417a63c4ebc089954d99968ef4e55bb0"
+  },
+  {
+    "name": "claude/privacy-cap-settings",
+    "sha": "47b697f993f74ab028353118640cbccddf9ba246"
+  },
+  {
+    "name": "claude/privacy-limits-notify",
+    "sha": "657fc76e9eb24b4be7933cbf811469a272fd4a4e"
+  },
+  {
+    "name": "claude/regex-and-quote-filter",
+    "sha": "4cdcee254ffba10e40b8de31711b338fea2010ed"
+  },
+  {
+    "name": "claude/repo-map",
+    "sha": "b87658200ada62513e6072531a570a96f14811dc"
+  },
+  {
+    "name": "claude/resume-budgets",
+    "sha": "a8973cdfadf95fac5f262beea0166c0b1b5ee63d"
+  },
+  {
+    "name": "claude/retire-website",
+    "sha": "c00892fc2359c59f423718e6fb5df7c72c535e2e"
+  },
+  {
+    "name": "claude/review-and-merge",
+    "sha": "35776db4c83cfa6b9a1733c3b2f2ee41b39f01f1"
+  },
+  {
+    "name": "claude/safeguards",
+    "sha": "e4af435ef46c2386e9ac898adfa893196937621a"
+  },
+  {
+    "name": "claude/self-testing",
+    "sha": "7ee6e3cdcd0fdc2e8b7098301a0030a13680a3e8"
+  },
+  {
+    "name": "claude/settings-redesign",
+    "sha": "fc5ee6ee7efaa39ee540644b292db8ef54529703"
+  },
+  {
+    "name": "claude/split-app",
+    "sha": "4c381f7040e4a2262cab578b94686944d0d4b250"
+  },
+  {
+    "name": "claude/staged-tasks",
+    "sha": "8adba5708eab2e8ac073c99ce7848effcf0165b8"
+  },
+  {
+    "name": "claude/test-and-think",
+    "sha": "009f5db3050e26efc3b5090aa894c729cff34209"
+  },
+  {
+    "name": "codex/cerebras-safe-setup",
+    "sha": "ff0567c89102f2e9e98d0608341a55eaf8ae53f4"
+  },
+  {
+    "name": "codex/chat-permission-audit",
+    "sha": "b98fe2f40a90f1da1d93f8a6bfe7f38bdcf30f53"
+  },
+  {
+    "name": "codex/chat-permission-handoff",
+    "sha": "9482c0bde1d6b3c1a8decebad0ce97c6cde76022"
+  },
+  {
+    "name": "codex/free-model-allowlist",
+    "sha": "e8231cbca039e97860d5cf950cb9bb8d3b77076e"
+  },
+  {
+    "name": "codex/gateway-fallback-recovery",
+    "sha": "5e10f603ede85ed6dac29d47b3629ea2290f7b6f"
+  },
+  {
+    "name": "codex/groq-503-checkpoint",
+    "sha": "9572b8b95f287a0403b54baa020df890fe82695e"
+  },
+  {
+    "name": "codex/groq-allowlist-deploy-fix",
+    "sha": "7a3df44dcc6b2dbed792b4e9b3fca281e86261bb"
+  },
+  {
+    "name": "codex/groq-empty-response-fix",
+    "sha": "1a68f5d88ca3f1cea5db79f3fab2487cc7c3f333"
+  },
+  {
+    "name": "codex/groq-post-smoke-diagnostics",
+    "sha": "52f2d4514472c8c068b19336ac23a40a79abd779"
+  },
+  {
+    "name": "codex/groq-route-diagnostics",
+    "sha": "b7816a27a937a1354f56f87b83eceb82523d7a36"
+  },
+  {
+    "name": "codex/phase1-step4",
+    "sha": "b392c1cd31f6468a2205c58de9b36b3b4b5c0d03"
+  },
+  {
+    "name": "codex/phase1-step5-6",
+    "sha": "3dc077ca22fec15af84e2caf5b9bf1a2caf81a29"
+  },
+  {
+    "name": "codex/phase1-step7",
+    "sha": "34bf6af965181ae4d6936340f1a70eaff47544c1"
+  },
+  {
+    "name": "codex/phase3-checkpoint-update",
+    "sha": "03b60122f74b3e92dd24c6661de3fbbe0b1c8f5e"
+  },
+  {
+    "name": "codex/phase3-routing-policy",
+    "sha": "0949ad9afc25fdf6facac0d5d9c189c091247434"
+  },
+  {
+    "name": "codex/phase4-cloud-execution",
+    "sha": "b17f54f9b621a835182a96a1bfcc2153e5542166"
+  },
+  {
+    "name": "codex/phase5-app-acceptance-evidence",
+    "sha": "1e451395210cd27b9a94eedb1bf0849555e69c17"
+  },
+  {
+    "name": "codex/phase5-deployment-evidence",
+    "sha": "53e865086aeabc03fbeec5cee752a99fa1a2f76d"
+  },
+  {
+    "name": "codex/phase5-published-handoff",
+    "sha": "d3da438521b7342a138b2f82a4246d5eee2edbbd"
+  },
+  {
+    "name": "codex/phase5-release-handoff",
+    "sha": "94b43f183d19eb842ed180272837319438b7478d"
+  },
+  {
+    "name": "codex/pr167-release-evidence",
+    "sha": "75f0ff706054fe747338f792962731c0da68bae1"
+  },
+  {
+    "name": "codex/provider-policy-diagnostics",
+    "sha": "649670ba4ffbf9fae0b6c36e929d2d0a639d04b5"
+  },
+  {
+    "name": "codex/recovery-cadence",
+    "sha": "015a1447b5bc9a6549e14379863f28d823413f88"
+  },
+  {
+    "name": "codex/recovery-cadence-handoff",
+    "sha": "7c15888f1ccf9623c60550bd8e0f68f467677b4a"
+  },
+  {
+    "name": "codex/router-auth-smoke-fix",
+    "sha": "9ede7b6620a433375416efe31c24986e6e056b1a"
+  },
+  {
+    "name": "codex/router-auth-smoke-fix-scoped",
+    "sha": "fe2ea7e889ab6e36ca6d7fe96d4ed53e57984b23"
+  },
+  {
+    "name": "codex/task-failure-diagnostics",
+    "sha": "4c82c17aa3e9aaa9116c8753667620971bf5a3e7"
+  },
+  {
+    "name": "codex/task-start-recovery-audit",
+    "sha": "d23bbee3e44dc606c3097ca66c518068a85fa092"
+  },
+  {
+    "name": "diagnostics/groq-prompt-cap",
+    "sha": "c1e959914ea1a9fbcb6f3fb0a09a71b45e4e930d"
+  },
+  {
+    "name": "docs/phase3-closeout",
+    "sha": "258be6c8621adaf187de3570427412e0f8911c56"
+  },
+  {
+    "name": "docs/task-205-lifecycle-investigation",
+    "sha": "8b746e5a6f5741dcec8dc1a21b01a0650c17a3f1"
+  },
+  {
+    "name": "draft/provider-token-bank-analytics",
+    "sha": "c953054f2581c62c77fc135b80bcf677b64c5a68"
+  },
+  {
+    "name": "feat/agent-workflow-access",
+    "sha": "3dd61de66161ee25c872db513480a9cebd09dd6c"
+  },
+  {
+    "name": "feat/export-index-for-coder",
+    "sha": "6efc103c4f7bf3df03e8bb9e511c8caa19d63ada"
+  },
+  {
+    "name": "feat/ios-redesign-a",
+    "sha": "c3299f3e6b13b83481f628a95d912f169c5d3b17"
+  },
+  {
+    "name": "feat/pr94-ios-chat-ui-phase1",
+    "sha": "476eea2786b94c73398528aab3fe62db45e40b8c"
+  },
+  {
+    "name": "feat/pr98-intent-safeguards",
+    "sha": "c157861add95721f32c74cec7c6512a5d5d2b844"
+  },
+  {
+    "name": "feat/pr100-intent-sync-reliability",
+    "sha": "f17b60e5734e088598feaedb7ba70884ff89d349"
+  },
+  {
+    "name": "feat/pr101-actions-live-dashboard",
+    "sha": "b853f3aa46c42c284e7cea2027d137c3a9c4c057"
+  },
+  {
+    "name": "feat/pr103-live-task-progress",
+    "sha": "a652da06c7758b4a9cbcb76474bd8e35b5d87c30"
+  },
+  {
+    "name": "feat/pr-first-draft",
+    "sha": "128b3793207cd76f935e52f574f9fafa470b50af"
+  },
+  {
+    "name": "feat/provider-setup-fallback-recovery",
+    "sha": "847026d4d554d541eadcd3128942cdb8cc6cc0bc"
+  },
+  {
+    "name": "feat/role-aware-free-routing",
+    "sha": "ea3e0b3cd476d17475812e1ba5234e2bf6a1730d"
+  },
+  {
+    "name": "feat/v2.2.3-task-flow",
+    "sha": "7969b1a7eba8eba5d48ae5773874069587e50b02"
+  },
+  {
+    "name": "feat/v3-more-models",
+    "sha": "4d9d3ef64a5dc86fbfb6aea3fbbccc8c829ea037"
+  },
+  {
+    "name": "feature/all-account-chat-models",
+    "sha": "cc753f5158bd254021cdb97d7a2d6e01426d134e"
+  },
+  {
+    "name": "feature/google-usage",
+    "sha": "147a9cfe3d1523f3aba267980907c55957a5cda3"
+  },
+  {
+    "name": "feature/mistral-models",
+    "sha": "344494f1cd01b2b2ee0bf448b5a50373ca512462"
+  },
+  {
+    "name": "feature/multi-agent",
+    "sha": "32b745c6115d30802a9040e1433fa749cea49de3"
+  },
+  {
+    "name": "feature/native-onetap-updates",
+    "sha": "db4dd5ba4c72f69ce93fd9930bf1ff03e980e8cc"
+  },
+  {
+    "name": "feature/openrouter-premium",
+    "sha": "660bf3c71ef75259098aa3ae2dc3c3c5a4e7494e"
+  },
+  {
+    "name": "feature/provider-limits",
+    "sha": "1e8bcb5a5d7d44ce2aed1df13bc5924d0a6cd662"
+  },
+  {
+    "name": "feature/usage-periods",
+    "sha": "102828187d6f06dec241617fb13a0423ea3fa703"
+  },
+  {
+    "name": "fix/agent-parser-followup",
+    "sha": "9081b6cf37e6678457b6679ae70e278af5142eb7"
+  },
+  {
+    "name": "fix/agent-time-budget",
+    "sha": "915011a2e474ba8d248ab754aaefedc2a60abbab"
+  },
+  {
+    "name": "fix/audit-location-diagnostics",
+    "sha": "bb2e1245a51932638ca9177c453fcae224f32cb6"
+  },
+  {
+    "name": "fix/chat-reply-hygiene",
+    "sha": "1fa4a334a718b3d464760f63b9b1d6abcb455261"
+  },
+  {
+    "name": "fix/cloud-agent-audit",
+    "sha": "23f287ff1819cb772e1d629e06e2668e92e09efd"
+  },
+  {
+    "name": "fix/complete-verification-envelope",
+    "sha": "54aacc51bb1efea0cd9c699ee702a0b39e0b0157"
+  },
+  {
+    "name": "fix/confirm-test-regressions",
+    "sha": "0558b7ac338331b1bd34c9913a18815d26726551"
+  },
+  {
+    "name": "fix/controller-task-identity-review",
+    "sha": "25844a5e1cdf8a5dbe4e2f0c1f21c473520d26bc"
+  },
+  {
+    "name": "fix/current-source-retries",
+    "sha": "bdd2cf748f4c31ea9e520df394ae8a6e5590dca9"
+  },
+  {
+    "name": "fix/declare-jsdom",
+    "sha": "40e6d1d147c4950cd93bad8602fa8c0aee6157a0"
+  },
+  {
+    "name": "fix/dependency-map-budget",
+    "sha": "fba447be217017eab9a258d61ac0fdb601f5e465"
+  },
+  {
+    "name": "fix/direct-task-management",
+    "sha": "5ef01386bcab39a3422d1968df7e27e563588934"
+  },
+  {
+    "name": "fix/documentation-validator-evidence",
+    "sha": "3e0fbbdf4eb12e2b1bce0affd00237139d946924"
+  },
+  {
+    "name": "fix/explicit-gemini-model",
+    "sha": "aa27f2e020ff914946401d86f3272b57ca4c071c"
+  },
+  {
+    "name": "fix/generation-recovery",
+    "sha": "a031951836cda5bfdf1c052f2619913282e5deae"
+  },
+  {
+    "name": "fix/github-transient-reads",
+    "sha": "2e7eb37e17c30dc390bc766b3049e01797210282"
+  },
+  {
+    "name": "fix/invalid-step-feedback",
+    "sha": "1a47bdd0a235e330549ce843b79979ad20615a59"
+  },
+  {
+    "name": "fix/ios-chat-polish-95",
+    "sha": "27bfdeae56b012587e742930cb31f503bdeec4c3"
+  },
+  {
+    "name": "fix/ios-keyboard-composer-91",
+    "sha": "09c52b1aa7305a144fd478d8c06eaa461a4c533e"
+  },
+  {
+    "name": "fix/ios-recovery-test-persist",
+    "sha": "86d79c50ee392a5634d0c074d13c1d082f29591e"
+  },
+  {
+    "name": "fix/lifecycle-requirement-evidence",
+    "sha": "f931da9a623ee1090a9c17c09b49c4116c7f04dc"
+  },
+  {
+    "name": "fix/mistral-leanstral",
+    "sha": "043923f5ac313a7d5e0d8a49097ef56c8669d203"
+  },
+  {
+    "name": "fix/model-level-402",
+    "sha": "6f2ef140812c285788e8141a830c188dbd0918b3"
+  },
+  {
+    "name": "fix/no-false-provider-cooldown",
+    "sha": "12d14b40803ff5b21debb675fca911f5752ca8e1"
+  },
+  {
+    "name": "fix/paid-worker-cpu-limit",
+    "sha": "7f3d709b0a1eca798c5247f8961e3075d1278cf2"
+  },
+  {
+    "name": "fix/phase3-queue-base-314",
+    "sha": "5b462fa77b6bd9971ebeb2403135f0bef653ca9a"
+  },
+  {
+    "name": "fix/phase3-queue-base-315",
+    "sha": "d561a8ac5421ab449c62b0621e4cf5e62426b641"
+  },
+  {
+    "name": "fix/pr133-repair-coordination",
+    "sha": "90f81ae38b53399c0c7e5f17ea876d0051df363f"
+  },
+  {
+    "name": "fix/premium-test-midnight",
+    "sha": "0f470ff936bb6dc818c7c7e16d253b78dcaf3432"
+  },
+  {
+    "name": "fix/prompt-budget-diagnostics",
+    "sha": "6778c3c8c64257048972b9227e46cfc960b92e9c"
+  },
+  {
+    "name": "fix/proposal-patch-resilience",
+    "sha": "c5a7b753cac831d9c457ddc6b9fd4f6cb88030d2"
+  },
+  {
+    "name": "fix/provider-request-budgets",
+    "sha": "07a683ad51f7f951d209d1beb1a3cf81c728672e"
+  },
+  {
+    "name": "fix/python-test-import-detection",
+    "sha": "5dea8994cde852ed7b037bf75394bccd074a1734"
+  },
+  {
+    "name": "fix/recovery-budget-routing",
+    "sha": "e6908b0047b8ad1288f9e3542737e10756a85554"
+  },
+  {
+    "name": "fix/recovery-engine-main-handoff",
+    "sha": "b315e162d1db2d7c52c6ed0b28f9314a4959fc96"
+  },
+  {
+    "name": "fix/recovery-wake-user-agent",
+    "sha": "a9a4a772ae887a866e79d6a5cde6feaacbf787f0"
+  },
+  {
+    "name": "fix/reduce-redundant-verification",
+    "sha": "5f250bef816ff7400116e6931b2362978b2c03a8"
+  },
+  {
+    "name": "fix/rejected-finding-handoff",
+    "sha": "3d85ca97a24e08dd0fc2b50255b2f031eca11b9b"
+  },
+  {
+    "name": "fix/repair-review-diagnostics",
+    "sha": "cd707e1a633d1085a1a6917902c2c319a9db7ede"
+  },
+  {
+    "name": "fix/repair-review-publishing",
+    "sha": "b15d4fbffcfad12ba19b063d3126f47cf863bac3"
+  },
+  {
+    "name": "fix/repair-review-required-behavior",
+    "sha": "01b785381686e5db74938fc663d0e561e90d5537"
+  },
+  {
+    "name": "fix/report-requirements",
+    "sha": "10ef9db8484074c64e003a431e92a8d372cb0c52"
+  },
+  {
+    "name": "fix/retire-reviewed-stale-proposal",
+    "sha": "4bf7fd97a2257a327b05a5ae8c67950f775e576b"
+  },
+  {
+    "name": "fix/retry-immediately",
+    "sha": "38d5cf66cf520f04719f354a070e3ff926f86eae"
+  },
+  {
+    "name": "fix/review-feedback-answered",
+    "sha": "b40d7acf97359ac202bb66b960a4bdba94b5ec73"
+  },
+  {
+    "name": "fix/sandbox-multi-agent-check",
+    "sha": "e7bde45f8d4440686a3779152e7f33dacb76efaa"
+  },
+  {
+    "name": "fix/scope-review-json-schema",
+    "sha": "d32973cb6e7f047f982232da297499764346922e"
+  },
+  {
+    "name": "fix/sequential-edit-ordering",
+    "sha": "07264422a1258e0e7ac941460dc782b9b613ca18"
+  },
+  {
+    "name": "fix/shared-inference-context",
+    "sha": "f028b9df181f76fb594f6a1ec6f83de8d952f7c7"
+  },
+  {
+    "name": "fix/shrink-on-worker-1102",
+    "sha": "ae9d131378753d4a305c1924c447b5d2eefdb925"
+  },
+  {
+    "name": "fix/slow-starter-first-byte",
+    "sha": "84820f9d570717e82319aca6633ee8a1ef4276e6"
+  },
+  {
+    "name": "fix/source-grounded-edit-recovery",
+    "sha": "bbf8f90b6188ffcc2e687a4018f4674b6142e912"
+  },
+  {
+    "name": "fix/source-inspection-pins",
+    "sha": "311f69df57143b239da715da2fb8223733131be2"
+  },
+  {
+    "name": "fix/static-import-cycle-check",
+    "sha": "c031567c5f9d75af283812b8d6d61dd3ce7dba20"
+  },
+  {
+    "name": "fix/task301-sandbox-review",
+    "sha": "f18db7439a40beea2acdbeaea484a03c5370333c"
+  },
+  {
+    "name": "fix/task-191-edit-recovery",
+    "sha": "2d8458352bcfa39562c3031228ac8669de5d407b"
+  },
+  {
+    "name": "fix/task-221-goal-scope",
+    "sha": "6ffab5763d4126acc12feb539fc83d8734b37e6f"
+  },
+  {
+    "name": "fix/task-brief-and-chat-cooldown",
+    "sha": "9dbb97081cf6e56c8692a1acb98c3d47d6686b17"
+  },
+  {
+    "name": "fix/test-realism-and-review-retry",
+    "sha": "5d0a18861775d2186f2273033e772f417efae08c"
+  },
+  {
+    "name": "fix/token-capacity",
+    "sha": "52c1037969ef4a7cfa49cfeb2e62fa5a85af0409"
+  },
+  {
+    "name": "fix/unlimited-fix-cycles",
+    "sha": "ce46993b5ea0e5ae1ae399b6880831145912905d"
+  },
+  {
+    "name": "fix/v2.2.1-dashboard-and-tasks",
+    "sha": "d1ee5770ca951301c5360d51c71e9a89b1bfc370"
+  },
+  {
+    "name": "fix/v2.2.2-task-requests",
+    "sha": "9812ad593331994dd514b66bfac849d8e44faaa1"
+  },
+  {
+    "name": "fix/v2.2.4-duplicate-tasks",
+    "sha": "c021910c05a399ca398ff2ccf816cd3f1699456f"
+  },
+  {
+    "name": "fix/v2.2.5-chat-and-agent-reliability",
+    "sha": "0b9b2edd846d6581fdb8a7716a03fefa29d699d3"
+  },
+  {
+    "name": "fix/v2.2.6-dashboard-and-agent-fixes",
+    "sha": "9ca42f68edcc571d164fe7940395ba2e1743b800"
+  },
+  {
+    "name": "fix/v2.2.7-agent-recovers",
+    "sha": "b1c575e7f290d8e7c97d33cdba8eb4b99e7ee33b"
+  },
+  {
+    "name": "fix/v2.2.9-models-check",
+    "sha": "a84a78425512b8e9d218e546a4b5fb805ae61f33"
+  },
+  {
+    "name": "fix/validate-final-commit-links",
+    "sha": "8a1e20bc827645a9d926d139ef8acab82969550a"
+  },
+  {
+    "name": "fix/validation-required-checks",
+    "sha": "3c16b9a0c444c65e4bbf7d97b2d63c3ce22ac9e7"
+  },
+  {
+    "name": "fix/verified-repair-loops",
+    "sha": "fa51bcf0d18e8e41755e5a7bdd4ff9a8e44e729b"
+  },
+  {
+    "name": "fix/verified-repair-prompt-budget",
+    "sha": "3d0fd7bb9de8b4358378423eb62f11abf9ed49cd"
+  },
+  {
+    "name": "fix/verifier-citation-recovery",
+    "sha": "769075db0a8d94761ea1207655055ed0df7a4d08"
+  },
+  {
+    "name": "fix/verifier-decisions",
+    "sha": "6d8f94c63407b927a46b8529a440e24af550758b"
+  },
+  {
+    "name": "fix/verifier-evidence-recovery",
+    "sha": "3e7e18d401b7c362940a600c835ec57ae54f8021"
+  },
+  {
+    "name": "fix/verifier-free-model-fallback",
+    "sha": "cb6ea86abb8e0d348f17b8163f13589e89635c4b"
+  },
+  {
+    "name": "fix/verifier-gate-diagnostics",
+    "sha": "6eae5c6fb319af6bab0df85d4ac9817a0deb3298"
+  },
+  {
+    "name": "fix/verifier-literal-excerpts",
+    "sha": "91d89ed72f12f613c385ac3e6102464a9f49d3a8"
+  },
+  {
+    "name": "fix/verifier-provenance-and-omissions",
+    "sha": "215d6e801acfab0d3c3faee305e3276eab6fc691"
+  },
+  {
+    "name": "fix/verifier-quote-matching",
+    "sha": "b7c1261ce08791476fc0841fdae8fb2e5873ad34"
+  },
+  {
+    "name": "fix/verifier-response-headroom",
+    "sha": "85b49d396892b161b1a3b61ac8a5d8e11d8c9644"
+  },
+  {
+    "name": "fix/verifier-short-ids",
+    "sha": "ce135360628343c784144dd23b4f284b9aacccba"
+  },
+  {
+    "name": "fix/zero-paid-inference",
+    "sha": "4f32e05d34566e882d760e7c77b5ccf6e4f71020"
+  },
+  {
+    "name": "fix/308-empty-publication",
+    "sha": "c054823758b646fd06fbb066d1b630cce3161c97"
+  },
+  {
+    "name": "fix/308-phase3-followups",
+    "sha": "fc5fdaa3b617d69358600822d4072eb5f541c482"
+  },
+  {
+    "name": "fix/313-phase3-engine",
+    "sha": "6c8b1389b23be8790b81f4a55f10cc6ae2b7364d"
+  },
+  {
+    "name": "improve/agent-delivery-quality",
+    "sha": "c0b776a842d73716beaa3af1b711e90164690db3"
+  },
+  {
+    "name": "investigation/task-205-validation-error",
+    "sha": "ad958092c2e40d593a0d7107b55beb0cd07e9643"
+  },
+  {
+    "name": "kappa/allow-validated-engine-edits-20261017",
+    "sha": "97ccb4c9ae5d5bcfa24d5d54ab6e1114e5744373"
+  },
+  {
+    "name": "kappa/cont-9-1",
+    "sha": "188de7aca48aa6bd2e82d42cabe514683cac4da0"
+  },
+  {
+    "name": "kappa/cont-9-2",
+    "sha": "5593da8694253e601c6c1b9d8a1e8fb521e87525"
+  },
+  {
+    "name": "kappa/cont-9-3",
+    "sha": "e518c90d2c5c09cd8e5899f02fb44a6ff10c629e"
+  },
+  {
+    "name": "kappa/cont-27-1",
+    "sha": "0a491224888dcf934a4f8ee7ce66ad44521796c4"
+  },
+  {
+    "name": "kappa/dev-52",
+    "sha": "9a34e1e647aade783b219d8b57e4dae11089a989"
+  },
+  {
+    "name": "kappa/dev-70",
+    "sha": "897b2fb11bb96835a6d2eae32eb49b06a96df929"
+  },
+  {
+    "name": "kappa/dev-73",
+    "sha": "8e8687b7640b66211b8412b0215193847d3bc895"
+  },
+  {
+    "name": "kappa/dev-76",
+    "sha": "13fdd2aae474679c08032c0f98db097ebe2cf4f6"
+  },
+  {
+    "name": "kappa/dev-78",
+    "sha": "c8541723f24f436859217baa01179d27139deeb5"
+  },
+  {
+    "name": "kappa/dev-82",
+    "sha": "bf0dcd0c2f0c04d64e4b02b119bc23e67330e1b7"
+  },
+  {
+    "name": "kappa/dev-84",
+    "sha": "8cd92b2f016ae1e35dbc65416b1c6c22a3165e73"
+  },
+  {
+    "name": "kappa/dev-86",
+    "sha": "5e48a82e616c0b93f4307b537f98cef8875e4309"
+  },
+  {
+    "name": "kappa/dev-95",
+    "sha": "1b450c752cfe3d681b87021aaf8e1917fc741154"
+  },
+  {
+    "name": "kappa/dev-111",
+    "sha": "0b7f9d9ee73e1219d5f5cf45be29dd8d66970210"
+  },
+  {
+    "name": "kappa/dev-119",
+    "sha": "494d7c18284024487106ad85a805f9405c27e912"
+  },
+  {
+    "name": "kappa/dev-130",
+    "sha": "d54d424901539bdd92e951209211fd8ea3f85f81"
+  },
+  {
+    "name": "kappa/dev-152",
+    "sha": "7dac1f28dc87628aaec6af17954c812383dd4de1"
+  },
+  {
+    "name": "kappa/dev-155",
+    "sha": "dbee80bbd9005769f6c8bda60c63c3ae04ebec5f"
+  },
+  {
+    "name": "kappa/dev-157",
+    "sha": "e69c8e60151a125be9d1b34f07dfcf4ef38123c5"
+  },
+  {
+    "name": "kappa/dev-163",
+    "sha": "204f688b7ba0568005e82e81f5341e161f4b1f0f"
+  },
+  {
+    "name": "kappa/dev-198",
+    "sha": "32cb8f65493c05f0303b11b5c4896160ce18a254"
+  },
+  {
+    "name": "kappa/dev-205",
+    "sha": "8b912ee7c5b59c3ab1e4a376b95b16e2df25b313"
+  },
+  {
+    "name": "kappa/dev-221",
+    "sha": "c833ccb7596644d29c5112793de682b603e20801"
+  },
+  {
+    "name": "kappa/dev-227",
+    "sha": "ac964d7076f4b01c6ade9e9343095da6e67d40d1"
+  },
+  {
+    "name": "kappa/dev-230",
+    "sha": "cdaae0fb95ea73bc232ef57b2fcec1d069508242"
+  },
+  {
+    "name": "kappa/dev-232-plan-outage",
+    "sha": "2f11c756be73dfddff0efae75c3ae9e6277368e3"
+  },
+  {
+    "name": "kappa/dev-232",
+    "sha": "cd14798aa000bab8fa4d5d3cc5ddc563664f38c4"
+  },
+  {
+    "name": "kappa/dev-235",
+    "sha": "acd9202e8777c38dbf2f040d606fd882bf26f72f"
+  },
+  {
+    "name": "kappa/dev-237",
+    "sha": "aad7059d5d5fff7b66af2d615377a2ade16528ec"
+  },
+  {
+    "name": "kappa/dev-256",
+    "sha": "9c69daf4dccbcfd9c4119271ab2b03c509ed892d"
+  },
+  {
+    "name": "kappa/dev-273",
+    "sha": "c78e27cad6bbfb6a99f885191b416a2cefcaad3b"
+  },
+  {
+    "name": "kappa/dev-274",
+    "sha": "fecc0aa92170cbdbb2703caa9598bb28346e283d"
+  },
+  {
+    "name": "kappa/dev-282",
+    "sha": "4516ae8e393747aeb6b782ab2d7f417979dd94a4"
+  },
+  {
+    "name": "kappa/dev-298",
+    "sha": "995d974af63e5cbe7bcfe9b172d7daf9a364f3a3"
+  },
+  {
+    "name": "kappa/dev-301",
+    "sha": "7dfdde1d193f1d88a4de9d55ae642a16d9b44c95"
+  },
+  {
+    "name": "kappa/dev-308",
+    "sha": "75811f8510b4d02a8cd165c4ec081e3c032d998f"
+  },
+  {
+    "name": "kappa/dev-313",
+    "sha": "d2785c23adb21f10ffda0c03064c4f4c510a7714"
+  },
+  {
+    "name": "kappa/dev-314",
+    "sha": "d561a8ac5421ab449c62b0621e4cf5e62426b641"
+  },
+  {
+    "name": "kappa/dev-322",
+    "sha": "534633c2a1db73bc7616015fcd3848770af9effc"
+  },
+  {
+    "name": "kappa/dev-330",
+    "sha": "271b9018688e9867983190ac0f8a8c5d277f5d18"
+  },
+  {
+    "name": "kappa/full-repository-instructions-20261017",
+    "sha": "9462b1378f37275f60b7a3cf2fefcc51a0c3a00f"
+  },
+  {
+    "name": "kappa/issue-1",
+    "sha": "aee07b0662ca9a9e19011ab8d65b2173bc7989ad"
+  },
+  {
+    "name": "kappa/issue-4",
+    "sha": "3db417f81c09080aa197c5499751f20c0e7946ba"
+  },
+  {
+    "name": "kappa/issue-11",
+    "sha": "943ebb2ad43b55275676ffcec6d4e2ecddac8584"
+  },
+  {
+    "name": "kappa/issue-16",
+    "sha": "8e8fd518c0abb048ef6dfe5266c88cff48296f74"
+  },
+  {
+    "name": "kappa/owner-queue-stage-255bbee",
+    "sha": "255bbee08ad15a4c99d2dbd29503e9b79146f3ed"
+  },
+  {
+    "name": "kappa/queue-claim-318-313",
+    "sha": "bc464f4926fe72ce548d6ba1be2505bc5ed111de"
+  },
+  {
+    "name": "kappa/queue-claim-319-314",
+    "sha": "5b462fa77b6bd9971ebeb2403135f0bef653ca9a"
+  },
+  {
+    "name": "kappa/queue-claim-319-315",
+    "sha": "e2bfbe2f6504a94a28054e76f1a77245175d173c"
+  },
+  {
+    "name": "kappa/queue-start-319-255bbee08ad15a4c99d2dbd29503e9b79146f3ed",
+    "sha": "255bbee08ad15a4c99d2dbd29503e9b79146f3ed"
+  },
+  {
+    "name": "kappa/recovery-130-0dc7abb869a1-1",
+    "sha": "ccf7ad582f3b617eb53f2e6ca72d600630afaf74"
+  },
+  {
+    "name": "kappa/recovery-171-7c91b0458d38-1",
+    "sha": "d1e61c499db85b28aedb457276b9071c74479e03"
+  },
+  {
+    "name": "kappa/recovery-177-ca43d2a8b73f-1",
+    "sha": "14e4569081d59bc82a7b83bf1629adea2994287c"
+  },
+  {
+    "name": "kappa/recovery-180-778264fb36d5-1",
+    "sha": "5a99d1e50a2a2530dd50c777702d73dc8d17db05"
+  },
+  {
+    "name": "kappa/recovery-180-778264fb36d5-2",
+    "sha": "5a99d1e50a2a2530dd50c777702d73dc8d17db05"
+  },
+  {
+    "name": "kappa/recovery-180-778264fb36d5-3",
+    "sha": "5a99d1e50a2a2530dd50c777702d73dc8d17db05"
+  },
+  {
+    "name": "kappa/recovery-198-42ebfe174c1c-1",
+    "sha": "559e6fb5537422f763e75ed567f39839e9bf649b"
+  },
+  {
+    "name": "kappa/recovery-205-c93852ac316a-1",
+    "sha": "053bcc9d6b046fd065edd053dd51e8c45d692a65"
+  },
+  {
+    "name": "kappa/recovery-221-b810b6f8de90-1",
+    "sha": "666d6ee3dc17c6b81aa36959d96e7b8d6f478c0a"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-1",
+    "sha": "9e94304a8679a4f05c9cb1eef97c5e6608107464"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-2",
+    "sha": "9e94304a8679a4f05c9cb1eef97c5e6608107464"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-3",
+    "sha": "da4aac8fb31c59e427d2d56545ca176dc22691e1"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-4",
+    "sha": "ddae3a69c9dfa80604c7f2215d48dc0c7b77a38f"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-5",
+    "sha": "e6e77759887ffdead9a11481c13549d1888141a5"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-6",
+    "sha": "e6e77759887ffdead9a11481c13549d1888141a5"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-7",
+    "sha": "e6e77759887ffdead9a11481c13549d1888141a5"
+  },
+  {
+    "name": "kappa/recovery-232-becb18b10f9f-8",
+    "sha": "7314a184ceab788bd2bf10ce95475f940b4c1bf3"
+  },
+  {
+    "name": "kappa/recovery-256-73d6432f4681-1",
+    "sha": "7314a184ceab788bd2bf10ce95475f940b4c1bf3"
+  },
+  {
+    "name": "kappa/recovery-274-92e56214b99d-1",
+    "sha": "a6834a92f89a720fce177e1dd02c13dffd47111c"
+  },
+  {
+    "name": "kappa/recovery-274-92e56214b99d-2",
+    "sha": "e79f1e54fb44789a2436852d3852027085165756"
+  },
+  {
+    "name": "kappa/repair-7",
+    "sha": "d7c45e8f76ddf73adc2a1795f747a07e111d38bb"
+  },
+  {
+    "name": "kappa/repair-313",
+    "sha": "d2785c23adb21f10ffda0c03064c4f4c510a7714"
+  },
+  {
+    "name": "lifecycle-simulation",
+    "sha": "a9458960416b7eb14a2ea17e62af4a33380039a5"
+  },
+  {
+    "name": "live-usage-check",
+    "sha": "b635bfe88bcbc6d7da65f5bd14a5befeecae09db"
+  },
+  {
+    "name": "live-usage-check-audit",
+    "sha": "29a3c6b4ee67fcb0f2106c8c6d5cddea68216be2"
+  },
+  {
+    "name": "live-usage-check-provider-mistral",
+    "sha": "b7dca13ccf03b4846992d35c492767388c15b4f7"
+  },
+  {
+    "name": "live-usage-check-provider-openrouter",
+    "sha": "200d1a260993c4ae26943c114dee4bcf5b2cfe52"
+  },
+  {
+    "name": "live-usage-check-quick",
+    "sha": "2d8458352bcfa39562c3031228ac8669de5d407b"
+  },
+  {
+    "name": "live-usage-check-results",
+    "sha": "f13a27c84f719dd6cd6a3ef28897a47b9b838182"
+  },
+  {
+    "name": "main",
+    "sha": "19c95923d12156688487fd8d4e1f6dd1c16eefa6"
+  },
+  {
+    "name": "multi-agent-check",
+    "sha": "882e5c56b9e9eb3661daa44dc39463145f8c1cf1"
+  },
+  {
+    "name": "multi-agent-check-complex",
+    "sha": "a1b9f75e66e01879b2bbaa414d03cfcc5d12c07a"
+  },
+  {
+    "name": "openrouter-review",
+    "sha": "7a440a77dca21dbe0ed1889d1ee8ae49aa6a13da"
+  },
+  {
+    "name": "phase1/execution-sandbox",
+    "sha": "7e6a19c6f316fce9785b3f9acf8a6077477b27d7"
+  },
+  {
+    "name": "premium/openrouter-reviewed-models",
+    "sha": "9b8cebe6c745ce0d70e43a2eab6325bda40fc747"
+  },
+  {
+    "name": "premium-smoke-test",
+    "sha": "20b8ad32fdd8ae39e09940fb78337f487d6b4fb6"
+  },
+  {
+    "name": "release/v2.2.0",
+    "sha": "9ec2771f054296e47387a5efd13e5c5f0cce8cd1"
+  },
+  {
+    "name": "tmp/unorouter-free-check",
+    "sha": "c0ef10ec042bebb6ae2705be2203dd1d4a1485e8"
+  },
+  {
+    "name": "ui/more-and-task-menu",
+    "sha": "dde084e9d1a7a50c65862000262fba92f5ac7ec3"
+  },
+  {
+    "name": "ui/remove-task-review-tabs",
+    "sha": "6c3efc132fe06c5bb6e1670e8056d6abf7337989"
+  },
+  {
+    "name": "voice/talk-to-chat",
+    "sha": "d28395ca8d056a717f14d44e51dd449444fb9eb3"
+  }
+]

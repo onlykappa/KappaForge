@@ -1,0 +1,569 @@
+{
+  "task": 322,
+  "repo": "onlykappa/KappaForge",
+  "candidate": "534633c2a1db73bc7616015fcd3848770af9effc",
+  "status": "blocked",
+  "run": "41114997477",
+  "continuations": 0,
+  "updatedAt": 1793388293.0141585,
+  "boundedRequests": {
+    "authorization": "github-task:322",
+    "digest": "3a05412f7736d13a576e1769a66ebf48f6b8d8ce7fe8ec625d744ad43c23e302",
+    "calls": 40,
+    "maxChars": 84220
+  },
+  "providerUsage": {
+    "gemini:gemini-3.1-flash-lite": {
+      "responses": 27,
+      "failures": 0,
+      "measuredResponses": 27,
+      "tokens": {
+        "input": 269743,
+        "output": 17400,
+        "total": 287143
+      }
+    },
+    "ollama:gpt-oss:120b": {
+      "responses": 8,
+      "failures": 0,
+      "measuredResponses": 8,
+      "tokens": {
+        "input": 67977,
+        "output": 17488,
+        "total": 85465
+      }
+    },
+    "mistral:codestral-latest": {
+      "responses": 5,
+      "failures": 0,
+      "measuredResponses": 5,
+      "tokens": {
+        "input": 35119,
+        "output": 1689,
+        "total": 36808
+      }
+    }
+  },
+  "gatewayEvidence": [
+    {
+      "requestId": "7759dff7-9538-49f3-8a0e-49e4f4b6a2a7",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 83422,
+      "maxTokens": 6000,
+      "usage": {
+        "promptTokenCount": 27420,
+        "candidatesTokenCount": 1133,
+        "totalTokenCount": 28553
+      },
+      "role": "review",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "nvidia/nemotron-3-ultra-550b-a55b",
+          "role": "review",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "review",
+          "rank": 2,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "review",
+          "rank": 3,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "review",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "8f531620-6b13-4a7c-a112-48977d806c7a",
+      "route": "ollama:gpt-oss:120b",
+      "status": 200,
+      "promptChars": 84220,
+      "maxTokens": 6000,
+      "usage": {
+        "promptTokenCount": 23230,
+        "candidatesTokenCount": 5380,
+        "totalTokenCount": 28610
+      },
+      "role": "review",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "nvidia/nemotron-3-ultra-550b-a55b",
+          "role": "review",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "review",
+          "rank": 2,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "review",
+          "rank": 3,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "ollama",
+          "model": "gpt-oss:120b",
+          "role": "review",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "a3cbaad3-58ab-4ba1-8f1a-7ef64137a1ec",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 21674,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 6739,
+        "candidatesTokenCount": 125,
+        "totalTokenCount": 6864
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "ae1dae88-bbbe-44f0-9e9c-0d672b0ec222",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 21806,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 6774,
+        "candidatesTokenCount": 43,
+        "totalTokenCount": 6817
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "e3b6c8af-6415-4738-8627-83e604fbf4ff",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 24748,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 7655,
+        "candidatesTokenCount": 38,
+        "totalTokenCount": 7693
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "ec600a5d-79d5-41bd-9b01-bd9451728256",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 27731,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 8624,
+        "candidatesTokenCount": 71,
+        "totalTokenCount": 8695
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "51ae9335-9eb2-4bcb-99d2-6f1333cc6dbe",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 27868,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 8654,
+        "candidatesTokenCount": 457,
+        "totalTokenCount": 9111
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "b373672f-1b11-423f-9bae-dbf40a472843",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 27996,
+      "maxTokens": 2000,
+      "usage": {
+        "promptTokenCount": 8686,
+        "candidatesTokenCount": 426,
+        "totalTokenCount": 9112
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    }
+  ],
+  "controller": {
+    "phase": "complete",
+    "status": "failed",
+    "stop_reason": "invalid_limit",
+    "actions": 4,
+    "invalid": 3,
+    "repeated": 3
+  },
+  "commands": [
+    {
+      "argv": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "status": "passed",
+      "startedAt": 1793381340480,
+      "finishedAt": 1793381346896,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "status": "passed",
+      "startedAt": 1793381356925,
+      "finishedAt": 1793381395176,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "status": "failed",
+      "startedAt": 1793381401793,
+      "finishedAt": 1793381416899,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    }
+  ],
+  "tool_history_summary": [
+    {
+      "tool": null,
+      "args": null,
+      "status": "invalid",
+      "reason": "invalid JSON reply: expected an object"
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "chat-backend/src/review-evidence.js"
+      },
+      "status": "ok",
+      "reason": null
+    },
+    {
+      "tool": "read_file",
+      "args": {
+        "path": "chat-backend/src/review.js"
+      },
+      "status": "ok",
+      "reason": null
+    },
+    {
+      "tool": null,
+      "args": null,
+      "status": "invalid",
+      "reason": "invalid JSON reply: expected an object"
+    },
+    {
+      "tool": null,
+      "args": null,
+      "status": "invalid",
+      "reason": "invalid JSON reply: expected an object"
+    },
+    {
+      "tool": null,
+      "args": null,
+      "status": "invalid",
+      "reason": "invalid JSON reply: expected an object"
+    }
+  ]
+}
