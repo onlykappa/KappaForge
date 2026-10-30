@@ -148,8 +148,13 @@ def split(request):
                 continue
             found.append((offset + start + lead, offset + start + lead + len(text)))
         offset += len(line)
-    return [dict(id='R' + str(i), text=request[a:b][:MAX_TEXT], start=a, end=b)
-            for i, (a, b) in enumerate(found[:MAX_REQUIREMENTS], 1)]
+    if len(found) > MAX_REQUIREMENTS:
+        raise ValueError(f'Request has {len(found)} requirements; maximum {MAX_REQUIREMENTS}; '
+                         'split the request into smaller dependent tasks. No requirements were discarded.')
+    # Preserve complete owner wording. Request/context admission owns the byte
+    # limit; shortening one row here can drop its final safety constraint.
+    return [dict(id='R' + str(i), text=request[a:b], start=a, end=b)
+            for i, (a, b) in enumerate(found, 1)]
 
 
 def authority_ask(text):

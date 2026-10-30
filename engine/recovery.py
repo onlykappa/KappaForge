@@ -562,9 +562,10 @@ class Journal:
         last = self.state['events'][-1] if self.state['events'] else {}
         execution = self.state.get('executionState', status)
         status = {'paused':'blocked','blocked_authorization':'blocked','needs_clarification':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
-        finished = at if status == 'ready' else 0
+        finished = at if status in ('ready', 'blocked', 'failed', 'cancelled') else 0
         snapshot = dict(version=1, taskId=str(self.scope.number), attemptId=f"recovery:{self.state['continuations']}:{at}",
                         attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
+                        objective=self.state.get('objectiveReceipt'),
                         steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
                                     startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
                         recovery=dict(executionState='dispatch_requested' if self.state['status']=='dispatching' else execution, lastTransitionAt=at, scanIntervalSeconds=RECOVERY_SCAN_SECONDS, candidate=self.state['candidate'], nextAt=int(self.state['nextAt'] * 1000),
@@ -843,6 +844,43 @@ class Journal:
                 self.publish('blocked', 'Workflow cancelled. Retry explicitly to resume.')
                 return False
         return self.defer(RuntimeError('Task execution deadline or interrupted worker; resume saved candidate'))
+
+
+def finalize_attempt(journal, url):
+    """Reconcile delivered draft against the exact current candidate before reporting run outcome.
+
+    A workflow exiting successfully proves the controller ran, not that its objective
+    passed review. Preserve a machine-readable objective receipt and publish the same
+    state the next runner will restore; never infer completion from a URL.
+    """
+    from engine.verify import open_problems
+    if journal.state['status'] == 'needs_clarification':
+        return
+    candidate = journal.state['candidate']
+    problems = []
+    if url:
+        match = re.fullmatch(r'https://github.com/' + re.escape(journal.scope.repo) + r'/pull/([1-9][0-9]*)', url)
+        if not match:
+            raise PermissionError('Delivered draft is outside this task repository')
+        pr = journal.target_read(f'repos/{journal.scope.repo}/pulls/{match[1]}')
+        if (pr.get('state') != 'open' or pr.get('draft') is not True
+                or pr.get('head', {}).get('sha') != candidate
+                or pr.get('head', {}).get('ref') != f'kappa/dev-{journal.scope.number}'):
+            raise PermissionError('Delivered draft differs from the saved candidate')
+        problems = open_problems(pr)
+    status = ('blocked' if problems or not url else
+              'ready' if journal.state['status'] == 'ready' else 'testing')
+    receipt = dict(version=1, candidate=candidate, delivery='draft' if url else 'none',
+                   state='blocked_verification' if status == 'blocked' else
+                         'completed' if status == 'ready' else 'awaiting_independent_checks',
+                   review='blocked' if problems else 'accepted' if url else 'unverified',
+                   problems=[clean(p) for p in problems], updatedAt=int(journal.clock() * 1000))
+    journal.state.update(status=status, objectiveReceipt=receipt)
+    journal.persist()
+    journal.publish(status, 'Objective blocked: review the saved verification problems.' if problems else
+                    'Objective awaits independent checks; draft delivery is not completion.' if status == 'testing' else
+                    'Objective verified; owner merge approval is still required.' if status == 'ready' else
+                    'Execution stopped without a verified delivery.')
 
 
 def verify_saved_candidate(journal, token):

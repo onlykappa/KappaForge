@@ -16,7 +16,7 @@ function inspect(source){
   if(!node)return;
   let next=current;
   if(node.type==='FunctionDeclaration'&&node.id){current.bindings.set(node.id.name,{kind:'local'});summary.definitions.push(node.id.name);}
-  if(functions.has(node.type)){next={parent:current,bindings:new Map()};for(const p of node.params)for(const name of names(p))next.bindings.set(name,{kind:'local'});if(node.id)next.bindings.set(node.id.name,{kind:'local'});}
+  if(functions.has(node.type)){next={parent:current,bindings:new Map(),functionStart:node.start};for(const p of node.params)for(const name of names(p))next.bindings.set(name,{kind:'local'});if(node.id)next.bindings.set(node.id.name,{kind:'local'});}
   else if(node.type==='BlockStatement')next={parent:current,bindings:new Map()};
   scopes.set(node,next);
   if(node.type==='ImportDeclaration')for(const spec of node.specifiers){const b={kind:'import',target:node.source.value,imported:spec.type==='ImportDefaultSpecifier'?'default':spec.type==='ImportNamespaceSpecifier'?'*':spec.imported.name||spec.imported.value};next.bindings.set(spec.local.name,b);summary.imports.push({...b,local:spec.local.name});}
@@ -43,7 +43,8 @@ function inspect(source){
  }
  declare(ast,scope);
  const lookup=(current,name)=>!current?null:current.bindings.has(name)?current.bindings.get(name):lookup(current.parent,name);
- function calls(node){if(node.type==='CallExpression'&&node.callee.type==='Identifier')summary.calls.push({name:node.callee.name,start:node.start,binding:lookup(scopes.get(node),node.callee.name)});for(const child of children(node))calls(child);}
+ const owner=current=>!current?null:current.functionStart??owner(current.parent);
+ function calls(node){if(node.type==='CallExpression'&&node.callee.type==='Identifier')summary.calls.push({name:node.callee.name,start:node.start,scope:owner(scopes.get(node)),binding:lookup(scopes.get(node),node.callee.name)});for(const child of children(node))calls(child);}
  calls(ast);
  // Tokens distinguish executable expressions from comments, quoted fixtures and regex data.
  for(const token of tokenizer(source,{ecmaVersion:'latest',sourceType:'module'})){if(!['eof','string','num','regexp','template','`','${','}'].includes(token.type.label))summary.tokens.push([token.start,token.end]);}

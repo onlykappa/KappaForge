@@ -279,6 +279,13 @@ def test_binding_problems(read, changes, all_paths):
                     continue
                 binding = call.get('binding')
                 if binding and binding['kind'] == 'local':
+                    production_calls = [c.get('binding') for c in parsed['calls']
+                                        if c.get('scope') == call.get('scope')
+                                        and (c.get('binding') or {}).get('kind') == 'import']
+                    if not any(resolve_module(path, b['target'], known) in introduced[name] for b in production_calls):
+                        problems.append(f'{path}: the new test calls its local copy of {name}, not the changed production '
+                                        'module; a passing copied implementation is not behavioral coverage. Call the '
+                                        'real exported entry point and add an independent negative control.')
                     continue
                 if binding and binding['kind'] == 'import':
                     target = resolve_module(path, binding['target'], known)
@@ -971,9 +978,8 @@ def parse_review(output):
         controller = controller_requirement(requirement['text']) or operational_review.kind(requirement['text'])
         if requirement['met'] and not controller:
             evidence = requirement.get('evidence')
-            if (not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str)
-                    or not evidence['path'].strip() or not isinstance(evidence.get('quote'), str)
-                    or not evidence['quote'].strip()):
+            from engine.evidence_contract import source_evidence
+            if not source_evidence(evidence):
                 raise ValueError(field + '.evidence ' + ('lines_not_shown: cite at most eight contiguous displayed source lines'
                     if isinstance(evidence, dict) and evidence.get('issue') == 'lines_not_shown' else
                     'citation_unknown: choose an id from the current source catalog'

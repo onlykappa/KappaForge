@@ -273,9 +273,10 @@ jobs:
         gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body" || echo "::warning::Could not post the iOS build result on task $issue."
       shell: bash
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true && github.actor == 'onlykappa' && github.ref == 'refs/heads/main' && inputs.branch == 'main' && (inputs.candidate_sha == '' || inputs.candidate_sha == github.sha)
     needs: native
     runs-on: ubuntu-latest
+    environment: production-release
     permissions:
       contents: write
     steps:
@@ -287,7 +288,6 @@ jobs:
         name: KappaForge-unsigned-iPhone-IPA
         path: ios
     - name: Publish versioned iPhone release after validated web deployment
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -333,7 +333,7 @@ jobs:
   workflow_dispatch:
     inputs:
       branch:
-        description: Branch to validate (manual runs never publish)
+        description: Branch to validate (publishing requires explicit publish opt-in on main)
         required: false
         default: main
         type: string
@@ -342,6 +342,11 @@ jobs:
         required: false
         default: ''
         type: string
+      publish:
+        description: Explicit owner request to publish the validated main IPA (protected environment approval required)
+        required: false
+        default: false
+        type: boolean
 defaults:
   run:
     shell: bash

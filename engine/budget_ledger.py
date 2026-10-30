@@ -10,7 +10,15 @@ paid for it. Its output, bytes and time are recorded as soon as it returns. The 
 time and output of the one call in flight, and the call itself still counts.
 """
 
+import math
+from collections.abc import Mapping
+
 KINDS = ('investigation', 'repairExploration', 'research')
+
+
+def valid_counter(key, value):
+    return (isinstance(key, str) and type(value) in (int, float) and value >= 0
+            and (type(value) is int or math.isfinite(value)))
 
 
 class Ledger:
@@ -18,10 +26,12 @@ class Ledger:
         if kind not in KINDS:
             raise ValueError('unknown budget ledger: ' + str(kind))
         self.journal, self.kind = journal, kind
-        saved = ((getattr(journal, 'state', None) or {}).get('budgetSpent') or {}).get(kind)
+        state = getattr(journal, 'state', None)
+        spent = state.get('budgetSpent') if isinstance(state, dict) else None
+        saved = spent.get(kind) if isinstance(spent, dict) else None
         # Only non-negative numbers are trusted; anything else counts as nothing spent for that key, never as credit.
         self.prior = {key: value for key, value in (saved.items() if isinstance(saved, dict) else ())
-                      if isinstance(key, str) and type(value) in (int, float) and value >= 0}
+                      if valid_counter(key, value)}
         self.totals = dict(self.prior)
 
     def spent(self, key):
@@ -30,7 +40,13 @@ class Ledger:
 
     def record(self, totals, flush=True):
         """The task's totals so far (earlier runs included). Totals never go down."""
-        self.totals = {key: max(value, self.totals.get(key, 0)) for key, value in totals.items()}
+        if not isinstance(totals, Mapping):
+            raise TypeError('Budget totals must be a mapping')
+        # Validate the entire update before mutating anything. A bad counter must
+        # not partially debit the in-memory ledger or corrupt a durable checkpoint.
+        if any(not valid_counter(key, value) for key, value in totals.items()):
+            raise ValueError('Budget counters require string keys and finite non-negative numbers')
+        self.totals.update({key: max(value, self.totals.get(key, 0)) for key, value in totals.items()})
         if flush:
             self.flush()
 
@@ -38,7 +54,8 @@ class Ledger:
         if self.journal is None:
             return
         rounded = {key: round(value, 3) if isinstance(value, float) else value for key, value in self.totals.items()}
-        spent = dict(self.journal.state.get('budgetSpent') or {})
+        previous = self.journal.state.get('budgetSpent')
+        spent = dict(previous) if isinstance(previous, dict) else {}
         if spent.get(self.kind) == rounded:
             return
         spent[self.kind] = rounded

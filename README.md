@@ -1,5 +1,26 @@
 # KappaForge
 
+## Current capability and 3.0 remediation status
+
+The application version remains2.2.9. This branch prepares3.0 remediation; no release or production deployment is implied. Current program status and all61 original acceptance gates are in [the remediation tracker](docs/autonomy-remediation/MASTER-REMEDIATION-TRACKER.md).
+
+| Surface | Implemented behavior | Verification / limitations |
+|---|---|---|
+| Coding agent | Owner issue intake, dynamic source tools, bounded iterative repair, sandbox tests and draft PRs | Real implementation; broad task completion remains unmeasured |
+| Verification | Exact task/candidate-bound path-scope receipts; copied-helper test detection; distinct objective outcome | New regressions are in tests/test_typed_scope_evidence.py and tests/test_copied_logic_evidence.py; not production-validated |
+| Budgets/requirements | Monotonic durable counters; complete wording; explicit overflow instead of silent truncation | Direct restart and invalid-input regression tests |
+| Tools | Existing exact patches plus version-bound line edits and conflict observations | Existing Docker compute is on Actions, never an unrestricted Worker shell |
+| Model policy | Approved free routes first; PremiumOFF by default, no automatic paid escalation | Actual deployed provider/Premium state remains unverified |
+| Consequential operations | Autonomous workflow publication blocked; deploy/release require explicit owner dispatch | GitHub environment protections and actual token scopes still require owner verification |
+| General assistance | Chat, notes/vault, curated docs research and bespoke API integrations | Broad browser, office and local-device execution are not implemented/verified general tools |
+
+No task is complete merely because a workflow is green, a draft exists or a model says done. Merging requires exact owner approval; deployment/release are separate operations. Run the baseline and per-gap tests listed in [TEST-EVIDENCE.md](docs/autonomy-remediation/TEST-EVIDENCE.md).
+
+## Historical milestone notes
+
+The sections below preserve old versions and setup history. They are **not** the current capability or authority specification. Old statements limiting coding to projects/ or describing an absent dashboard are superseded by the current implementation and tracker above.
+
+
 > **The iPhone app is now the only interface.** The GitHub Pages website is retired: it is no longer built or deployed. The app's screens live in `preview/` and are bundled into the IPA (`ios/KappaForge/Web/`), so their browser regression tests (`npm run test:web`, the tests workflow's `web` job) still run on every PR; the Cloudflare chat backend is unchanged.
 
 A $0-first GitHub Actions AI development assistant controlled from iPad/GitHub.

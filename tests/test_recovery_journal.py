@@ -23,7 +23,7 @@ class GitHub:
                           created_at=datetime.fromtimestamp(self.now - 60, timezone.utc).isoformat(),
                           body='Repository: onlykappa/KappaForge\nMode: develop\nChange value to 2 and test it.')
         self.rows, self.calls, self.refs = [], [], {'main': 'a' * 40, 'kappa/dev-130': 'b' * 40}
-        self.prs = [dict(number=133, html_url='https://github.com/onlykappa/KappaForge/pull/133',
+        self.prs = [dict(number=133, state='open', draft=True, html_url='https://github.com/onlykappa/KappaForge/pull/133',
                          head={'sha': 'b' * 40, 'ref': 'kappa/dev-130', 'repo': {'full_name': recovery.ROOT}}, body=developer.review_record(['Implement value 2']))]
         self.run = dict(status='completed', conclusion='failure')
         self.lose_ack = False
@@ -34,6 +34,8 @@ class GitHub:
         intent_guard.activate(self.issue)
 
     def read(self, path):
+        if path == 'repos/onlykappa/KappaForge/pulls/133':
+            return copy.deepcopy(self.prs[0])
         if path == 'repos/onlykappa/KappaForge':
             return {'private': False}
         if path.endswith('/issues/130'):
@@ -872,7 +874,7 @@ class RecoveryJournalTests(unittest.TestCase):
                 patch.object(runner, 'github', side_effect=lambda path, token=None, payload=None: self.world.read(path) if payload is None else self.world.write(path, payload, 'POST')), \
                 patch.object(developer, 'gh', side_effect=lambda path, token, payload=None, method=None: self.world.read(path) if payload is None else self.world.write(path, payload, method or 'POST')), \
                 patch.object(runner, 'request', side_effect=lambda url, payload=None, token=None, method=None: self.world.write(url.removeprefix('https://api.github.com/'), payload, method)), \
-                patch.object(developer, 'fix_pull_request', return_value=self.world.prs[0]['html_url']) as fix:
+                patch.object(developer, 'fix_pull_request', side_effect=lambda *args: (recovery.CURRENT.get().checkpoint(self.world.prs[0]['head']['sha']) or self.world.prs[0]['html_url'])) as fix:
             runner.main()
             runner.main()
         self.assertEqual(fix.call_count, 1)

@@ -96,8 +96,10 @@ def workflow_runners(text):
                 continue
             key = re.match(r'([a-z][a-z-]*):', line)
             if not key or key[1] not in ('name', 'if', 'runs-on', 'permissions', 'steps', 'needs', 'timeout-minutes',
-                                        'outputs', 'env', 'concurrency', 'defaults', 'continue-on-error'):
+                                        'outputs', 'env', 'concurrency', 'defaults', 'continue-on-error', 'environment'):
                 raise blocked('workflow contains an unreviewed job resource declaration.')
+            if key[1] == 'environment' and line != 'environment: production-release':
+                raise blocked('workflow environment is not the reviewed owner release gate.')
         labels = re.findall(r'^    runs-on: ([A-Za-z0-9.-]+)\s*$', job, re.M)
         if len(labels) != 1 or labels[0] not in RUNNERS or re.search(r'^    (?:uses|strategy):', job, re.M):
             raise blocked('workflow requests an unreviewed, dynamic, reusable, self-hosted or larger runner; use the existing standard runners.')
