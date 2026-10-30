@@ -95,9 +95,14 @@ class ReplyRoomTests(unittest.TestCase):
     def test_a_reply_has_room_for_a_whole_test_file(self):
         model = Model(json.dumps(CALL))
         ran(model)
-        self.assertGreaterEqual(model.kwargs[0]['max_output_tokens'], 3500)
+        self.assertGreaterEqual(model.kwargs[0]['max_output_tokens'], 16384)
         self.assertEqual(model.kwargs[0]['max_output_tokens'], tool_loop.TOOL_REPLY_TOKENS)
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_the_request_never_exceeds_the_shared_coding_ceiling(self):
+        from engine import runner
+        self.assertEqual(tool_loop.TOOL_REPLY_TOKENS, runner.coding_output_ceiling())

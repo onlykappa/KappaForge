@@ -2,9 +2,10 @@
 import json
 import re
 
-# One reply may carry a whole rewritten test file. 2,000 was too small: a cut-off reply is invalid JSON, and three of those
-# in a row ended a live repair with `invalid_limit`. Stays under the 3,500 ceiling the verifier already uses.
-TOOL_REPLY_TOKENS = 3500
+# Ask for the gateway's shared coding ceiling; every route still clamps this to its own provider/model maxOutput (4,096 to
+# 65,536 in config/providers.json), so a small-window provider is never sent more than it allows. A reply can carry a whole
+# rewritten test file, and a cut-off reply is invalid JSON: 2,000 tokens ended a live repair with `invalid_limit`.
+TOOL_REPLY_TOKENS = 16384
 INVALID_HINT = ('Reply with exactly one JSON object and nothing else. Keep each apply_patch small: split a large edit '
                 'into several calls of a few lines each.')
 FENCE_RE = re.compile(r'```(?:json)?[ \t]*\n?(.*?)\n?```', re.S | re.I)
