@@ -4,7 +4,7 @@ import tarfile
 import unittest
 from unittest.mock import Mock
 
-from engine import sandbox, sandbox_repair_controller, sandbox_tools
+from engine import sandbox, sandbox_repair_controller, sandbox_tools, task_state
 
 
 class FakeDocker(sandbox.Docker):
@@ -61,6 +61,17 @@ class TestSandboxRepairController(unittest.TestCase):
         self.session = fixture_tree()
         self.controller = sandbox_repair_controller.SandboxRepairController(self.session)
 
+    def test_repair_diagnostics_keep_initial_failure_and_later_suite_counts(self):
+        root = 'ERROR: test_ingest\nTraceback (most recent call last):\nValueError: invalid candidate SHA\n'
+        output = root + ('ERROR: cascade\nAttributeError: DummyJournal.loader\n' * 60) + 'Ran 1318 tests\nFAILED (errors=18)\n'
+        run = sandbox.RunResult(argv=['python', '-m', 'unittest'], profile='test', status='failed',
+                                exit_code=1, duration_s=1, stdout='', stderr=output)
+        summary = self.controller.tools._summary(run)
+        detail = json.loads(self.controller._diagnostics(dict(status='ok', results=[summary])))[0]
+        self.assertIn('ValueError: invalid candidate SHA', detail['first_failure'])
+        self.assertIn('FAILED (errors=18)', detail['output'])
+        self.assertEqual(detail['status'], 'failed')
+
     def test_generated_candidate_passes_then_gets_a_fresh_full_regression(self):
         result = self.controller.run_repair("repair the app", model_reply({}), "key",
                                             initial_changes={"app.py": "value=2\n"})
@@ -82,6 +93,26 @@ class TestSandboxRepairController(unittest.TestCase):
         self.assertIn("correct the implementation", result["attempts"][0]["rationale"])
         self.assertIn("differs from the failing base state", result["attempts"][0]["why_different"])
         self.assertEqual(result["candidate_changes"], {"app.py": "value=2\n"})
+
+    def test_repair_routes_as_code_and_restores_caller_context(self):
+        for raises in (False, True):
+            with self.subTest(provider_error=raises), task_state.action(
+                    'reviewer', 'review', 'Review current source', 'Find unresolved requirements'):
+                prior_action = task_state.ACTION.get()
+                observed = []
+                def model(*args, **kwargs):
+                    observed.append((task_state.ROUTING_ROLE.get(), task_state.ACTION.get()['role']))
+                    if raises:
+                        raise RuntimeError('provider failed')
+                    return model_reply({'tool': 'apply_patch', 'args': {'edits': [
+                        {'path': 'app.py', 'find': 'value=1', 'replace': 'value=2'}]},
+                        'reason': 'Correct the implementation to match the failing assertion'})(*args, **kwargs)
+                controller = sandbox_repair_controller.SandboxRepairController(fixture_tree())
+                result = controller.run_repair('repair value', model, 'fixture')
+                self.assertEqual(observed, [('code', 'repair')])
+                self.assertEqual(result['stop_reason'], 'controller_error' if raises else 'validated')
+                self.assertEqual(task_state.ROUTING_ROLE.get(), 'review')
+                self.assertIs(task_state.ACTION.get(), prior_action)
 
     def test_identical_test_error_stops_after_one_repair(self):
         reply = {"tool": "apply_patch", "args": {"edits": [
@@ -145,22 +176,22 @@ class TestSandboxRepairController(unittest.TestCase):
 
     def test_attempt_limit_counts_changed_candidates_not_model_actions(self):
         docker = FakeDocker(always_fail=True, vary_failure=True)
-        session = fixture_tree(docker, {"app.py": b"a1\na2\na3\na4\na5\n"})
+        session = fixture_tree(docker, {"app.py": "".join(f"a{n}\n" for n in range(1, sandbox_repair_controller.MAX_ATTEMPTS + 1)).encode()})
         controller = sandbox_repair_controller.SandboxRepairController(session)
         calls = 0
 
         def scripted(*args, **kwargs):
             nonlocal calls
             calls += 1
-            old = "a" + str(calls)
+            old = "a" + str(calls) + "\n"
             reply = {"tool": "apply_patch", "args": {"edits": [
-                {"path": "app.py", "find": old, "replace": old + "_fixed"}]}, "reason": "Change " + old}
+                {"path": "app.py", "find": old, "replace": old.rstrip() + "_fixed\n"}]}, "reason": "Change " + old}
             return "free:test-model", json.dumps(reply)
 
         result = controller.run_repair("repair", scripted, "key")
         self.assertEqual(result["stop_reason"], "attempt_limit")
-        self.assertEqual(len(result["attempts"]), 5)
-        self.assertEqual(calls, 5)
+        self.assertEqual(len(result["attempts"]), sandbox_repair_controller.MAX_ATTEMPTS)
+        self.assertEqual(calls, sandbox_repair_controller.MAX_ATTEMPTS)
         self.assertTrue(all(row["why_different"] for row in result["attempts"]))
 
     def test_zero_discovered_tests_do_not_establish_success(self):
@@ -183,9 +214,9 @@ class TestSandboxRepairController(unittest.TestCase):
                 dict(path='app.py', find='value=' + str(previous), replace='value=' + str(previous + 1))])))
         result = controller.run_repair('repair', next_patch, 'key', {'app.py': '#' + 'x' * 25000 + '\nvalue=3\n'})
         self.assertEqual(result['stop_reason'], 'attempt_limit')
-        self.assertEqual(len(result['attempts']), 5)
-        self.assertEqual(count, 4, 'the generated candidate plus four different repair candidates use the five attempts')
-        self.assertEqual(len({a['fingerprint'] for a in result['attempts']}), 5)
+        self.assertEqual(len(result['attempts']), sandbox_repair_controller.MAX_ATTEMPTS)
+        self.assertEqual(count, sandbox_repair_controller.MAX_ATTEMPTS - 1, 'the generated candidate also consumes one attempt')
+        self.assertEqual(len({a['fingerprint'] for a in result['attempts']}), sandbox_repair_controller.MAX_ATTEMPTS)
 
     def test_all_skipped_tests_do_not_establish_success(self):
         session = fixture_tree(FakeDocker(skipped_tests=True))

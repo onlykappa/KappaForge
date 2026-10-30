@@ -14,9 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     # Waits up to 20 minutes for checks such as the native iOS build to finish.
     timeout-minutes: 25
+    # Verification only reads GitHub state; the owner presses Merge. No write grant is needed.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
       issues: read
       actions: read
     steps:

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "control": 319,
+  "grant": "83974f6a44e8afed4c9965d85296793fedd545a360d166e2a3aef5bf3d046a98",
+  "enginePR": 312,
+  "engineRef": "fix/308-phase3-followups",
+  "tasks": [
+    {
+      "issue": 314,
+      "digest": "ef26eb40a038571e7bb50fa931597b0e68049b22cdea126b82123654bb4c647c",
+      "base": "fix/phase3-queue-base-314",
+      "existing": false
+    },
+    {
+      "issue": 315,
+      "digest": "ba5b6f79e8da4455642e4b435d5f074c777715536246a3f1d2f9ced92e193163",
+      "base": "fix/phase3-queue-base-315",
+      "existing": false
+    }
+  ]
+}

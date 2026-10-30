@@ -118,6 +118,8 @@ jobs:
         xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simulator-build CODE_SIGNING_ALLOWED=NO build
       shell: bash
     - name: Boot simulator and verify bundled launch
+      env:
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
@@ -129,7 +131,18 @@ jobs:
         xcrun simctl install "$DEVICE" ios/simulator-build/Build/Products/Debug-iphonesimulator/KappaForge.app
         APP_ID=$(python3 scripts/config-value.py iosBundleIdentifier)
         xcrun simctl launch "$DEVICE" "$APP_ID"
-        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build -resultBundlePath /tmp/kappaforge-ui-tests.xcresult CODE_SIGNING_ALLOWED=NO test
+        TEST_STATUS=0
+        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build -resultBundlePath /tmp/kappaforge-ui-tests.xcresult CODE_SIGNING_ALLOWED=NO test || TEST_STATUS=$?
+        # Record counts for failed runs too; a failing suite must report what ran, not leave no receipt.
+        EVIDENCE_STATUS=0
+        if xcrun xcresulttool get test-results summary --path /tmp/kappaforge-ui-tests.xcresult > /tmp/kappaforge-native-summary.json; then
+          # A pull_request run checks out GitHub's synthetic merge commit; the receipt must name the reviewed PR head.
+          python3 scripts/native-evidence.py /tmp/kappaforge-native-summary.json --candidate "${PR_HEAD_SHA:-$(git rev-parse HEAD)}" --output /tmp/kappaforge-native-evidence.json || EVIDENCE_STATUS=$?
+        else
+          echo "::warning::xcresulttool could not read the simulator test result bundle; no native count receipt was written"
+        fi
+        [ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"
+        [ "$EVIDENCE_STATUS" -eq 0 ] || exit "$EVIDENCE_STATUS"
         # XCTest may terminate the app. Relaunch, then reject empty/white captures.
         xcrun simctl terminate "$DEVICE" "$APP_ID" || true
         xcrun simctl launch "$DEVICE" "$APP_ID"
@@ -160,6 +173,15 @@ jobs:
         path: /tmp/kappaforge-ui-attachments
         if-no-files-found: warn
         retention-days: 14
+    - name: Preserve native test counts and device limitations
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: native-validation-evidence
+        path: |
+          /tmp/kappaforge-native-summary.json
+          /tmp/kappaforge-native-evidence.json
+        if-no-files-found: warn
     - name: Preserve iOS simulator UI test results
       if: always()
       uses: actions/upload-artifact@v4

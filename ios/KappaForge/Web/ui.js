@@ -86,7 +86,7 @@ function renderTaskActivity(m,i=-1){
   (job&&(fail||validationFailed||stalled)&&!job.finished?'<button type="button" data-task-retry="'+esc(taskNum)+'">'+uiIcon('retry')+'Retry</button>':'')+
   (live?'<button type="button" data-task-guide="'+esc(taskNum)+'">'+uiIcon('chat')+'Send guidance</button>':'')+
   '<button type="button" data-task-copy="'+esc(i)+'">'+uiIcon('copy')+'Copy summary</button>'+
-  (job?.authorization&&!job.finished?'<button type="button" class="task-cancel" data-cancel-task="'+esc(taskNum)+'">'+uiIcon('stop')+'Cancel task</button>':'')+'</div>':'';
+  (job&&!job.finished?'<button type="button" class="task-cancel" data-cancel-task="'+esc(taskNum)+'">'+uiIcon('stop')+'Cancel task</button>':'')+'</div>':'';
  // Open while it runs; a finished card folds to its one-line summary unless the owner opened it.
  const open=m.collapsed===undefined?!(finished&&!testing&&!fail)||!!checks.some(c=>c.state==='current'):!m.collapsed;
  return '<section class="agent-activity'+(fail||validationFailed?' failed':finished&&!testing?' finished':'')+'" aria-label="Task progress">'+
@@ -137,7 +137,7 @@ function renderExecutionActivity(m,job,i=-1){
  };
  const life=job.message,verified=KappaJobs.verifiedTask(job),failed=!!job.verification?.incomplete||p.status==='failed'||!!job.verification?.failed||['failed','tests-failed','native-failed','tests-incomplete'].includes(life),ended=job.finished||KappaProgress.terminal.has(p.status)||verified||failed;
  const expired=KappaProgress.expired?.(p,now)&&['waiting','recovering'].includes(p.status);
- const status=expired?'blocked':verified?'ready':failed?'failed':life==='tests-passed'||life==='native-passed'?'testing':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
+ const status=job.finished&&['cancelled','closed'].includes(life)?life:expired?'blocked':verified?'ready':failed?'failed':life==='tests-passed'||life==='native-passed'?'testing':job.finished?(life==='cancelled'?'cancelled':life==='closed'?'closed':failed?'failed':'completed'):failed?'failed':p.status;
  const labels={queued:'QUEUED',running:'IN PROGRESS',recovering:'RECOVERING',waiting:'WAITING TO RESUME',testing:'TESTING',ready:'READY FOR REVIEW',completed:'DONE',failed:'NEEDS ATTENTION',blocked:'BLOCKED',cancelled:'CANCELLED',closed:'CLOSED'};
  const active=p.steps.find(r=>['running','recovering','waiting'].includes(r.status)),last=p.steps.filter(r=>r.status==='failed'||r.status==='blocked'||r.status==='completed').at(-1);
  const reminder=!ended&&!expired&&KappaProgress.retryReminder(job,now),stale=KappaProgress.stale(job,now),unavailable=!!job.pollError;
@@ -188,7 +188,7 @@ function renderExecutionActivity(m,job,i=-1){
  const clock='<time class="task-clock"'+(clockSince?' data-since="'+clockSince+'"':'')+' aria-label="'+(status==='waiting'?'Waiting time':p.startedAt?'Working time':'Queued time')+'">'+esc(duration(p.startedAt?times.activeMs:times.queuedMs))+'</time>';
  return '<section class="agent-activity'+(failed?' failed':ended?' finished'+(status==='cancelled'||status==='closed'?' stopped':''):status==='testing'||validation.some(r=>r.state==='current')?' testing':'')+(stale||unavailable||reminder?' stale':'')+'" aria-label="Task progress"><details class="task-card" data-progress-detail="'+id+':steps" open><summary>'+heroRing(doneSteps,allSteps)+'<span class="activity-pulse" aria-hidden="true"></span><span class="activity-tag" role="status">'+esc(recoveryDisplay?.label||labels[status]||'IN PROGRESS')+'</span><span class="activity-heading">'+esc(clip(job.title||'Development task #'+id,80))+'</span><span class="task-sub">Task #'+esc(id)+(allSteps?' · '+doneSteps+' of '+allSteps+' steps':'')+'</span>'+clock+'<span class="task-chevron" aria-hidden="true">'+uiIcon('chevron')+'</span></summary><p class="activity-summary">'+esc(headline)+'</p>'+timing+'<ol class="task-steps">'+rows+checks+'</ol>'+bar+executionDiagnostics(p.execution,now)+fresh+'</details>'+findingsCard(findings)+
   (job.prUrl?'<a class="task-result-link" href="'+esc(job.prUrl)+'" target="_blank" rel="noopener noreferrer">Review draft PR ↗</a>':'')+
-  (job.authorization&&!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+actions+
+  (!ended?'<button type="button" class="text-button" data-cancel-task="'+id+'">Cancel task</button>':'')+actions+
   activityFeed(feedItems(p,validation),!ended||validation.some(r=>r.state==='current'),id)+'</section>';
 }
 

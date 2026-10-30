@@ -62,6 +62,21 @@ class SandboxToolsTest(unittest.TestCase):
         self.assertIn('output', res)
         self.assertEqual(res['output'], 'output')
 
+    def test_failed_summary_preserves_first_failure_before_later_cascade(self):
+        root = ('ERROR: test_ingest (test_review_ingestion.ReviewIngestionTest)\n'
+                'Traceback (most recent call last):\n'
+                '  File "tests/test_review_ingestion.py", line 25, in test_ingest\n'
+                'ValueError: Task state requires a repository and full candidate SHA\n')
+        cascade = ('ERROR: later_test\nTraceback (most recent call last):\n'
+                   "AttributeError: 'DummyJournal' object has no attribute 'loader'\n") * 30
+        output = '.' * 2000 + '\n' + root + cascade + '\nRan 1318 tests\nFAILED (errors=18)\n'
+        result = SandboxTools(FakeSession())._summary(make_result('failed', stderr=output))
+        self.assertIn('ERROR: test_ingest', result['first_failure'])
+        self.assertIn('full candidate SHA', result['first_failure'])
+        self.assertLessEqual(len(result['first_failure']), 1200)
+        self.assertIn('FAILED (errors=18)', result['output'])
+        self.assertEqual(len(result['output']), 1500)
+
     def test_run_tests_aggregation(self):
         passed = make_result('passed', stdout='Ran 1 test\nOK')
         failed = make_result('failed', stdout='Ran 1 test\nFAILED (failures=1)')

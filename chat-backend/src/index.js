@@ -1,4 +1,4 @@
-import {cancellationEvidence} from './task-cancellation.js';
+import {cancellationEvidence,cancellationTarget} from './task-cancellation.js';
 import {chooseTier,orderForTier,research} from "./chat-tiers.js";
 import {googleUsage} from "./google-usage.js";
 import {workersAiNeurons} from "./neurons.js";
@@ -441,7 +441,34 @@ const workerImplementation = {
       if(!env.MEMORY)return json({error:"Persistent authorization storage is required"},503,cors);
       const stub=env.MEMORY.get(env.MEMORY.idFromName("owner-v1"));
       const statusOnly=executionPath==='/cancel/status';
-      const result=await stub.fetch('https://memory.internal/authorization/'+(statusOnly?'status':'cancel'),{method:'POST',body:JSON.stringify(input)});
+      let cancellationInput=input;
+      if(!statusOnly&&Object.hasOwn(input,'task')){
+        try{
+          const grant=await authorize(env,'/cancel',input,true);
+          if(grant.issueNumber&&grant.issueNumber!==input.task)throw Error('Cancellation targets a different task');
+          if(grant.state!=='cancelled'){
+            const target=await cancellationTarget(env,input.task);
+            const marker=String(target.body||'').match(/^<!-- kappa-authorization:(\{[^\n]+\}) -->$/m);
+            if(String(target.body||'').includes('<!-- kappa-authorization:')&&!marker)throw Error('Task authorization is malformed');
+            const original=marker?JSON.parse(marker[1]):null;
+            if(original&&(!Number.isFinite(original.issuedAt)||original.issuedAt>grant.issuedAt))throw Error('Task authorization was renewed after this cancellation request');
+            const bound=await stub.fetch('https://memory.internal/authorization/bind',{method:'POST',body:JSON.stringify({...input.authorization,issueNumber:input.task})});
+            if(!bound.ok)throw Error('Cancellation scope could not be bound');
+            if(original){
+              const prior=await stub.fetch('https://memory.internal/authorization/status',{method:'POST',body:JSON.stringify({id:original.id,conversationId:original.conversationId})});
+              if(prior.ok){
+                const priorGrant=await prior.json();
+                if(priorGrant.issueNumber!==input.task)throw Error('Stored execution authorization belongs to another task');
+                const revoked=await stub.fetch('https://memory.internal/authorization/cancel',{method:'POST',body:JSON.stringify({id:original.id,conversationId:original.conversationId})});
+                if(!revoked.ok)throw Error('Execution authorization could not be revoked');
+              }
+            }
+          }
+          cancellationInput=input.authorization;
+        }catch(e){return json({error:e.message},403,cors)}
+      }
+
+      const result=await stub.fetch('https://memory.internal/authorization/'+(statusOnly?'status':'cancel'),{method:'POST',body:JSON.stringify(cancellationInput)});
       const cancelled=await result.json();
       if(!result.ok)return json(cancelled,result.status,cors);
       if(statusOnly&&cancelled.state!=='cancelled')return json({error:'Cancellation has not been requested'},409,cors);
@@ -515,10 +542,10 @@ const workerImplementation = {
           fixRun=run;
           if (!run.allowed) return json({ error: "Daily agent limit reached (" + run.limit + " runs). It resets at midnight UTC; raise DAILY_TASK_LIMIT on the Worker to change it." }, 429, cors);
         }
-        const result = action === "review" ? await reviewPR(env, repo, number) :
+        const result = action === "review" ? await reviewPR(env, repo, number, {includeEvidence: input.includeEvidence === true}) :
           action === "merge" ? await mergePR(env, repo, number, input.headSha) :
           action === "close" ? await closePR(env, repo, number) :
-          action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number);
+          action === "test" ? await requestTests(env, repo, number) : await requestFix(env, repo, number, {includeEvidence: input.reviewFeedback === true});
         if(result.error && fixRun)await refundAgentRun(env,fixRun);
         if (!result.error && action === "merge") await notifyOwner(env, "✅ Merged " + repo + " #" + number + ". " + (repo === "KappaForge" ? "KappaForge redeploys now; if anything breaks, use Undo last change on the Dashboard." : "") + "\n" + result.url);
         if (!result.error && action === "close") await notifyOwner(env, "Closed " + repo + " #" + number + " without merging.");

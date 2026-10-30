@@ -1,4 +1,32 @@
+# Current finding reconciliation — 2026-10-29
+
+This update supersedes pending exact-head CI/live-trial labels in the historical ledger below. Findings are grouped defects, setup/evidence gaps and limits, not a count of distinct production bugs.
+
+| Findings | Current evidence/disposition |
+| --- | --- |
+| 001–060 | Original dispositions and before/after evidence retained below and in issue-log.md. No new unsupported pass or accepted limitation inferred. |
+| 061–066 | Source-proof/reporting local regressions plus completed fresh task308 review40788699260:27/27, zero problems. Reporting claim boundaries remain enforced. |
+| 067–078 | Delivered in owner-approved309/311 merges; final exact-head CI for both and main-tree equivalence recorded in closeout-current.md. Old pending labels are historical. |
+| 079–083 | Patched in312; current6c8 tests/graph/Docker and successful fresh task308 acceptance. No candidate source edits. |
+| 084–087 | Dashboard/cancel/delete regressions and CI pass;901 Node tests, Chromium/WebKit CI and local fake-transport mobile/desktop flow. Production deployment/device storage/live cancellation not performed. |
+| 088 | Engine receipt renewal reproduced before repair and verified live40784333199, followed by complete acceptance40788699260. Strict direct receipt verification retained. |
+| 089–090 | Routing/classification regressions pass;40785639666 fresh review reduced5→2;40788699260 zero remaining problems. |
+| 091 |90 focused/1,287 full Python run OK (31 skips);40788699260 fresh review27/27, zero problems. Independent candidate51 focused/1,140 full run OK (31 skips); fresh sandbox40789410323 success. |
+| 092,100 | Native synchronization corrected independently in312; exact source5b passed native40820462875 (5/5 UI tests) and tests40820462881. Exhausted313 remains failed history. |
+| 093–099 | Bounded sequential queue and owner-provenance/resume corrections; historical attempts and counters retained. |
+| 101 | Fresh-source gate accepted exact5b CI and started314 in40820493588. |
+| 102–105 | Live owner-push resume40826673859 revalidated5b seed, retained8/4 initial spend/claim, archived exact failed plan and migrated19 requirements. New engine255bbee CI all green. Feature later exhausted five sandbox attempts; no success inferred. |
+| 106 | First-failure diagnostic excerpt correction in312; two red-before regressions and40 focused tests pass. Full-suite validation recorded in ledger. |
+| 107 | BLOCKED rejected feature proposal: incomplete authority/persistence/metadata and test ContextVar leakage, never published or accepted.314 exhausted inner allowance,315 unstarted; monitoring paused without reset. |
+
+[Current closeout](closeout-current.md) has exact sources, CI links and execution limits. [Queue](execution-queue.md) records owner-authorized dependent work. Nothing newly merged/deployed/released.
+
+<details>
+<summary>Historical reconciliations and dated pending states</summary>
+
 # Phase 3.1 finding reconciliation — 2026-10-28
+
+**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
 
 Every ledger ID is accounted for below. PATCHED means the recorded regression/correction exists and passed available local validation; it is not an assertion that each historical abandoned workflow or production interaction was repeated. The current combined suite ran1,241 tests, OK,31 skipped; Node880 and web/bundle checks passed. Exact-head delivery CI and #308 source-proof acceptance remain pending.
 
@@ -93,3 +121,21 @@ No owner-approved ACCEPTED LIMITATION disposition is invented. Future Phase3.7 a
 Owner-authorized review follow-ups067–077: full combined1,258 Python run, OK,31 skipped; Node884 passed, zero skips. First full run found a new fixture publisher leak; the corrected fixture and complete rerun pass. The queued-run and disabled-paid-rescue allegations are qualified in owner-review-followups.md; no unsupported limitation is invented. Owner now explicitly authorizes merging309/311 after verification; this supersedes their prior draft/no-merge instruction, without fabricating Phase3.1 closeout.
 
 P3-078: PATCHED fixture isolation, not a production router change. A direct cleanup assertion failed before correction;53 recovery/follow-up/router tests pass after it. Final full discovery:1,247 engine /1,259 combined run, OK,31 skipped each; Node884 run, all passed, zero skips. Final reporting/follow-up selection29 passed after the last negative-language refinement. Exact-head CI and merge evidence are tracked on309/311.
+
+## Current accumulator079–083
+
+| Finding | Current disposition | Evidence |
+| --- | --- | --- |
+| P3-079 | PATCHED; reporting/controller regressions pass | Actual failed local suite can supply a failure receipt, never a success receipt. |
+| P3-080 | PATCHED; reporting/controller regressions pass | A success receipt cannot follow an untested edit. |
+| P3-081 | PATCHED; local and live behavior verified | Trial40739723033 retired only resolved historical diagnostics; active85→5. |
+| P3-082 | PATCHED locally; updated-engine trial pending | Supported Docker pass and native-not-run sentence remain separate; unsupported native pass refused. |
+| P3-083 | PATCHED locally; updated-engine trial pending | Exact owner branch hold uses observed target metadata and actual guard refusal, with negative controls. |
+
+Latest full discovery:1,272 run, OK,31 skipped. The95-test focused selection and ten structural rules pass. Final-head CI and renewed live acceptance are tracked on312 and in closeout-current.md. These are grouped findings, not a count of distinct production bugs.
+
+## Dashboard and cancellation084–087
+
+084–087 are patched locally in312; before/after tests, authority boundaries and browser evidence are recorded in [task-feed-controls.md](task-feed-controls.md). Task308 is confirmed present in GitHub, but the screenshot device's storage was not inspected. The actual refresh/cancel/delete flow is covered with fake transport; no production cancellation/deletion or app deployment was performed. Exact-head CI and task308 renewal/acceptance remain separate.
+
+</details>

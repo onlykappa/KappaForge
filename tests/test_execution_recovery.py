@@ -77,6 +77,109 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(execution.pending(self.reload())['controller']['actions'], 3)
 
+    def test_explicit_retry_uses_raised_ceiling_without_resetting_five_saved_attempts(self):
+        work = session(FakeDocker(always_fail=True, vary_failure=True))
+        count = 0
+        def different(*args, **kwargs):
+            nonlocal count
+            count += 1
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Investigated a different candidate',
+                args=dict(edits=[dict(path='app.py', find=work.current()['app.py'].decode(),
+                                     replace=f'value={count + 3}\n')])))
+        with patch.object(sandbox_repair_controller, 'MAX_ATTEMPTS', 5):
+            failed = self.controller(work=work).run_repair(TASK, different, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(failed['stop_reason'], 'attempt_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['attempts']), 5)
+        for action in ('resume:1:fixture', 'queue-step'):
+            with patch.dict(os.environ, {'INPUT_ACTION': action}):
+                result = self.controller(journal=self.reload()).run_repair(TASK, Mock(side_effect=AssertionError('no owner retry')), 'fixture')
+            self.assertEqual(result['stop_reason'], 'attempt_limit')
+        resumed = session()
+        def repair(*args, **kwargs):
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Correct the diagnosed root cause',
+                args=dict(edits=[dict(path='app.py', find=resumed.current()['app.py'].decode(), replace='value=2\n')])))
+        owner_queue = self.reload()
+        owner_queue.scope.queue_guard = lambda: None  # Installed only by the authenticated queue binding.
+        with patch.dict(os.environ, {'INPUT_ACTION': 'queue-step'}):
+            result = self.controller(work=resumed, journal=owner_queue).run_repair(TASK, repair, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['attempts'][:5], before['attempts'])
+        self.assertEqual(len(after['attempts']), 6)
+        self.assertEqual(after['actions'], before['actions'] + 1)
+
+    def test_explicit_retry_preserves_all_ten_candidates_under_twenty_total_allowance(self):
+        work = session(FakeDocker(always_fail=True, vary_failure=True))
+        def different(*args, **kwargs):
+            old = work.current()['app.py'].decode()
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Investigate another distinct value',
+                args=dict(edits=[dict(path='app.py', find=old, replace=old + '# different candidate\n')])))
+        with patch.object(sandbox_repair_controller, 'MAX_ATTEMPTS', 10):
+            result = self.controller(work=work).run_repair(TASK, different, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(result['stop_reason'], 'attempt_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['attempts']), 10)
+        resumed = session()
+        def repair(*args, **kwargs):
+            return 'scripted', json.dumps(dict(tool='apply_patch', reason='Implement the expected value using current source',
+                args=dict(edits=[dict(path='app.py', find=resumed.current()['app.py'].decode(), replace='value=2\n')])))
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            result = self.controller(work=resumed, journal=self.reload()).run_repair(TASK, repair, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['attempts'][:10], before['attempts'])
+        self.assertEqual(len(after['attempts']), 11)
+        self.assertEqual(after['actions'], before['actions'] + 1)
+
+    def test_repair_hypotheses_and_failed_outcomes_survive_process_interruption(self):
+        from tests.test_repair_strategy import NamedFailureDocker
+        def plan(strategy, differs_from=''):
+            return dict(tool='record_repair_plan', args=dict(
+                cause='The original value contract is not satisfied by current initialization',
+                strategy=strategy, evidence=[dict(path='app.py', line=1)],
+                expected_result='The original value assertion and full suite pass', differs_from=differs_from))
+        replies = [plan('Adjust the default initialization to three'),
+            dict(tool='apply_patch', args=dict(edits=[dict(path='app.py', find='value=1', replace='value=3')]))]
+        def interrupted(*args, **kwargs):
+            if not replies:
+                raise KeyboardInterrupt('simulated lost runner')
+            return 'scripted', json.dumps(dict(reason='Evidence-backed repair', **replies.pop(0)))
+        with self.assertRaises(KeyboardInterrupt):
+            self.controller(work=session(NamedFailureDocker())).run_repair(TASK, interrupted, 'fixture')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['repair_plans']), 1)
+        self.assertEqual(before['attempts'][0]['status'], 'failed')
+        replies[:] = [plan('Implement the exact required value rather than a guessed default',
+                           'The previous guessed default failed the same test; use the required contract'),
+            dict(tool='apply_patch', args=dict(edits=[dict(path='app.py', find='value=3', replace='value=2')]))]
+        result = self.controller(work=session(NamedFailureDocker()), journal=self.reload()).run_repair(TASK, interrupted, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['repair_plans'][:1], before['repair_plans'])
+        self.assertEqual(after['attempts'][:1], before['attempts'])
+        self.assertEqual(len(after['repair_plans']), 2)
+        self.assertGreater(after['actions'], before['actions'])
+
+    def test_owner_retry_preserves_exhausted_actions_under_raised_allowance(self):
+        inspect = lambda *a, **kw: ('scripted', json.dumps(dict(tool='inspect_diff', args={}, reason='Inspect retained candidate')))
+        with patch.object(sandbox_repair_controller, 'MAX_MODEL_ACTIONS', 2):
+            result = self.controller().run_repair(TASK, inspect, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(result['stop_reason'], 'action_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(before['actions'], 2)
+        with patch.dict(os.environ, {'INPUT_ACTION': 'resume:1:fixture'}):
+            stopped = self.controller(journal=self.reload()).run_repair(
+                TASK, Mock(side_effect=AssertionError('automatic resume cannot reopen terminal work')), 'fixture')
+        self.assertEqual(stopped['stop_reason'], 'action_limit')
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            resumed = self.controller(journal=self.reload()).run_repair(TASK, fixed, 'fixture')
+        self.assertEqual(resumed['status'], 'success', resumed['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['actions'], 3)
+        self.assertEqual(after['attempts'][:len(before['attempts'])], before['attempts'])
+        self.assertEqual(len(after['attempts']), len(before['attempts']) + 1)
+
     def test_provider_failure_restores_exact_patch_and_skips_completed_candidate_tests(self):
         def exhausted(*args, **kwargs):
             raise RuntimeError('all free routes unavailable')
@@ -383,6 +486,48 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(saved['context']['paths'], ['app.py'])
         with self.assertRaises(execution.CheckpointMismatch):
             execution.generation_plan(self.reload(), recovery.ROOT, 'different owner task')
+
+    def test_new_owner_guidance_archives_unpublished_planning_without_resetting_spend(self):
+        from engine import task_plan
+        self.journal.state['budgets'] = dict(modelCalls=8, edits=4)
+        task_plan.save(self.journal, task_plan.TaskPlan.initial('Old unstarted plan', files=['app.py']),
+                       recovery.ROOT, 'a' * 40, TASK)
+        execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['app.py'], stages=[]), {'app.py': 'value=1\n'})
+        old = dict(self.journal.state['generationPlan'])
+        directive = (f"Replan unpublished task #{self.journal.scope.number} from plan {old['hash']} before generation; "
+                     'preserve cumulative budgets and archive previous planning.')
+        goal = task_goal.from_request(TASK); goal.guidance([directive, 'Use the actual function signature and a focused module.'])
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        resumed = self.reload()
+        self.assertIsNone(execution.generation_plan(resumed, recovery.ROOT, TASK))
+        self.assertEqual(resumed.state['planningRefresh']['previous'], old['hash'])
+        self.assertEqual(resumed.state['budgets'], dict(modelCalls=8, edits=4))
+        self.assertEqual(resumed.state['candidate'], 'a' * 40)
+        self.assertNotIn('taskPlan', resumed.state)
+        self.assertTrue(any('supersededPlanning' in c['body'] for c in self.world.rows))
+        execution.save_plan(resumed, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['focused.py'], stages=[]), {'focused.py': 'value=1\n'})
+        self.assertEqual(execution.generation_plan(self.reload(), recovery.ROOT, TASK)['context']['paths'], ['focused.py'])
+
+    def test_owner_guidance_never_discards_generated_or_published_work_to_replan(self):
+        execution.save_plan(self.journal, recovery.ROOT, 'a' * 40, TASK,
+                            dict(base='main', paths=['app.py'], stages=[]), {'app.py': 'value=1\n'})
+        directive = (f"Replan unpublished task #{self.journal.scope.number} from plan {self.journal.state['generationPlan']['hash']} before generation; "
+                     'preserve cumulative budgets and archive previous planning.')
+        goal = task_goal.from_request(TASK); goal.guidance([directive, 'Use another approach.'])
+        handle = task_goal.CURRENT.set(goal)
+        self.addCleanup(task_goal.CURRENT.reset, handle)
+        for key, value in (('generationCheckpoint', {'hash': 'saved'}), ('executionCheckpoint', {'hash': 'saved'}),
+                           ('files', ['app.py']), ('pr', 'https://github.com/onlykappa/KappaForge/pull/1')):
+            with self.subTest(key=key):
+                original = self.journal.state.get(key)
+                self.journal.state[key] = value
+                self.assertIsNotNone(execution.generation_plan(self.journal, recovery.ROOT, TASK))
+                self.assertEqual(self.journal.state[key], value)
+                if original is None: self.journal.state.pop(key, None)
+                else: self.journal.state[key] = original
 
     def test_publication_recovery_preserves_completed_requirement_review(self):
         context = {**CONTEXT, 'publication': {'title': 'Draft: repaired', 'body': 'Completed requirement review\n' + developer.review_record([])}}

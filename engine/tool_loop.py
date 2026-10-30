@@ -3,6 +3,7 @@ import json
 
 
 TOOL_CATALOG = {
+    'record_repair_plan': 'record_repair_plan(cause, strategy, evidence=[{path, line}], expected_result, differs_from="")',
     'apply_patch': 'apply_patch(edits: list of {path, find, replace})',
     'run_command': 'run_command(argv: list of strings, profile="test")',
     'run_tests': 'run_tests()',

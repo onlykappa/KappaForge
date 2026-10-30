@@ -8,12 +8,13 @@ import re
 CURRENT = ContextVar('owner_task_goal', default=None)
 
 
-def owner_request(issue):
+def owner_request(issue, *, legacy_base=False):
     request = re.sub(r'<!--.*?(?:-->|$)', '', issue.get('body') or '', flags=re.S)
     request = re.split(r'\n\s*\n(?:Conversation context \(|Approved from KappaForge Chat\.)', request, maxsplit=1)[0]
     # Imported lazily: the developer owns the task control-line format.
     from engine.developer import CONTROL_LINE_RE
-    return '\n'.join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)).strip()
+    return '\n'.join(line for line in request.splitlines() if not CONTROL_LINE_RE.match(line)
+                     or legacy_base and re.match(r'^\s*Base\s*:', line, re.I)).strip()
 
 
 @dataclass
@@ -64,7 +65,13 @@ class Goal:
                 raise ValueError('Owner goal: the original target source is unavailable')
 
     def validate_paths(self, paths):
-        outside = set(paths) - set(self.paths or ())
+        paths = set(paths)
+        from engine import requirements, operational_review
+        for row in requirements.split(self.request):
+            allowed = operational_review.file_scope_paths(row['text'])
+            if allowed and paths - set(allowed):
+                raise ValueError('Owner goal: files outside the explicit task scope: ' + ', '.join(sorted(paths - set(allowed))))
+        outside = paths - set(self.paths or ())
         if self.paths and outside:
             raise ValueError('Owner goal: unrelated files are outside this task: ' + ', '.join(sorted(outside)))
 

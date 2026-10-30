@@ -33,6 +33,10 @@ class EngineRefreshRequired(RuntimeError):
 
 
 def verify_receipt(receipt, scope, read):
+    if isinstance(receipt, dict) and 'queueRun' in receipt:
+        from engine.queue_authority import receipt as queue_receipt
+        queue_receipt(receipt, scope, read)
+        return receipt
     if (not isinstance(receipt, dict) or receipt.get('task') != scope.number
             or receipt.get('digest') != scope.digest
             or (receipt.get('ref') != f'kappa/dev-{scope.number}' and 'trialPR' not in receipt)
@@ -54,6 +58,17 @@ def verify_receipt(receipt, scope, read):
     return receipt
 
 
+def renew_receipt(receipt, scope, read):
+    """Rebind only an explicitly linked, independently verified prior engine receipt."""
+    previous = getattr(scope, 'resume_from', None)
+    if not isinstance(previous, dict) or not isinstance(receipt, dict) or receipt.get('digest') != previous.get('digest'):
+        raise PermissionError('Engine renewal has no matching prior scope link')
+    from types import SimpleNamespace
+    prior_scope = SimpleNamespace(number=scope.number, repo=scope.repo, digest=previous['digest'])
+    verified = verify_receipt(receipt, prior_scope, read)
+    return dict(verified, digest=scope.digest)
+
+
 def attest(scope, read, previous=None, env=None, checkout=None):
     env = os.environ if env is None else env
     sha, run_id, ref = env.get('GITHUB_SHA', ''), env.get('GITHUB_RUN_ID', ''), env.get('GITHUB_REF_NAME', '')
@@ -64,6 +79,9 @@ def attest(scope, read, previous=None, env=None, checkout=None):
         cwd=Path(__file__).resolve().parents[1], text=True).strip()
     if checkout != sha:
         raise PermissionError('Engine checkout does not match the workflow revision')
+    if env.get('KAPPA_QUEUE_RUN'):
+        from engine.queue_authority import bind
+        return bind(scope, read, env, previous)
     run = read(f'repos/{ROOT}/actions/runs/{run_id}')
     if (run.get('event') != 'workflow_dispatch' or run.get('path') != '.github/workflows/agent.yml'
             or run.get('head_branch') != ref or run.get('head_sha') != sha

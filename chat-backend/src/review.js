@@ -1,4 +1,5 @@
 import {githubHeaders} from "./github.js";
+import {reviewEvidence,browserEvidence} from './review-evidence.js';
 import {admitDispatch,ExecutionBlocked} from "./free-execution.js";
 // Owner review of agent pull requests: explain, show test state, and merge only on a verified pass.
 const ROOT="KappaForge";
@@ -61,13 +62,13 @@ export async function testState(env,repo,pr){
    const jobs=(await read(env,"repos/onlykappa/KappaForge/actions/runs/"+run.id+"/jobs?per_page=30")).jobs||[];
    noTests=jobs.some(j=>(j.steps||[]).some(s=>s.name==="No tests detected"&&s.conclusion==="success"));
   }
-  return {state,sha,url:run.html_url,sandbox:true,noTests};
+  return {state:noTests?'none':state,workflowState:state,sha,url:run.html_url,sandbox:true,noTests};
  }
  if(repo===ROOT)return {state:"none",sha};
  const checks=(await read(env,"repos/onlykappa/"+repo+"/commits/"+sha+"/check-runs?per_page=100")).check_runs||[];
  if(!checks.length)return {state:"none",sha};
  if(checks.some(c=>c.status!=="completed"))return {state:"running",sha};
- return {state:checks.every(c=>["success","neutral","skipped"].includes(c.conclusion))?"passed":"failed",sha,url:checks[0].html_url};
+ return {state:checks.every(c=>c.conclusion==="success")?"passed":checks.every(c=>["neutral","skipped"].includes(c.conclusion))?"none":"failed",sha,url:checks[0].html_url};
 }
 
 // Changes bundled into the iPhone app are also built by the agent's dispatched "iOS build <branch> @ <sha>" run.
@@ -79,7 +80,7 @@ export async function nativeState(env,branch,sha){
  return {state:run.status!=="completed"?"running":run.conclusion==="success"?"passed":"failed",url:run.html_url};
 }
 
-export async function reviewPR(env,repo,number){
+export async function reviewPR(env,repo,number,options={}){
  const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
  if(pr.state!=="open"||!agentBranch(repo,pr.head?.ref)||pr.head?.repo?.full_name!==pr.base?.repo?.full_name)
   return {error:"Only open KappaForge agent pull requests can be reviewed here.",status:403};
@@ -87,12 +88,16 @@ export async function reviewPR(env,repo,number){
  const tests=await testState(env,repo,pr);
  const dev=/^kappa\/dev-\d+$/.test(pr.head.ref),restore=/^kappa\/revert-\d+$/.test(pr.head.ref)&&await exactRestore(env,repo,pr.head.sha);
  const native=repo===ROOT&&dev&&files.some(f=>NATIVE_PATHS.some(p=>String(f.filename).startsWith(p)))?await nativeState(env,pr.head.ref,pr.head.sha):null;
+ const evidence=options.includeEvidence===true?reviewEvidence:null;
+ const evidenceData=evidence?await evidence(env,repo,{...pr,number}):null;
+ const reviewFeedback=evidenceData?.feedback.some(r=>r.author!=='github-actions[bot]'&&r.resolved!==true&&r.outdated!==true);
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
+  ...(evidenceData?{evidence:evidenceData}:{}),
   explanation:explanation(pr.body),tests,native,
   risks:restore?[]:[...(tests.noTests?[{level:"medium",text:"This project has no automated tests; merging relies on your review",files:[]}]:[]),...riskScan(files)],files:files.map(f=>({name:f.filename,status:f.status,additions:f.additions,deletions:f.deletions})),
   incomplete:incomplete(pr),
-  canMerge:!incomplete(pr)&&pr.mergeable!==false&&(restore||dev&&tests.state==="passed"&&(!native||native.state==="passed")),
-  canFix:dev&&(incomplete(pr)||!!tests.sandbox&&tests.state==="failed"||native?.state==="failed")&&tests.state!=="running"&&native?.state!=="running",canTest:dev&&tests.state!=="running"&&native?.state!=="running"};
+  canMerge:!incomplete(pr)&&pr.mergeable!==false&&(restore||dev&&(tests.state==="passed"||tests.noTests===true)&&(!native||native.state==="passed")&&(!native||!evidenceData||evidenceData.browser.state==='passed')),
+  canFix:dev&&(incomplete(pr)||!!tests.sandbox&&tests.state==="failed"||native?.state==="failed"||reviewFeedback||evidenceData?.browser.state==='failed')&&tests.state!=="running"&&native?.state!=="running"&&evidenceData?.browser.state!=='running',canTest:dev&&tests.state!=="running"&&native?.state!=="running"};
 }
 
 // Merge only what was reviewed: same head commit, tests passed on it, owner confirmed in the app.
@@ -103,6 +108,10 @@ export async function mergePR(env,repo,number,expectedSha){
  if(!review.canMerge)return {error:review.tests.state!=="passed"?"Merge is available only after tests pass on the latest commit (currently "+review.tests.state+").":
   review.native&&review.native.state!=="passed"?"Merge is available only after the iOS build passes on the latest commit (currently "+review.native.state+").":
   "GitHub reports a merge conflict. Open the PR to resolve it.",status:409};
+ if(review.native){
+  const browser=await browserEvidence(env,review.branch,review.tests.sha);
+  if(browser.state!=='passed')return {error:'Browser checks must pass on this exact app candidate before merging (currently '+browser.state+').',status:409};
+ }
  if(expectedSha!==review.tests.sha)return {error:"The pull request changed since you reviewed it. Refresh and review again.",status:409};
  if(review.draft){
   const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
@@ -176,8 +185,8 @@ export async function requestTests(env,repo,number){
 }
 
 // Ask the agent to fix a failed KappaForge development PR. The owner approves the result like any other change.
-export async function requestFix(env,repo,number){
- const review=await reviewPR(env,repo,number);
+export async function requestFix(env,repo,number,options={}){
+ const review=await reviewPR(env,repo,number,options);
  if(review.error)return review;
  if(!review.canFix)return {error:"Fix it requires unfinished requirements or failed checks, with no verification still running.",status:409};
  const issue=review.branch.split("-").pop();

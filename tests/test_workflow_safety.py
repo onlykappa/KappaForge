@@ -28,9 +28,11 @@ class TaskScopeTests(unittest.TestCase):
         text = (ROOT / '.github/workflows/agent.yml').read_text()
         guard = text.split('  classify:\n', 1)[1].split('    if: ', 1)[1].splitlines()[0]
         harness = '''const assert = require('node:assert/strict');
-        const allowed = new Function('inputs', 'return (' + GUARD + ')');
-        for (const action of ['router-check', 'prompt-probe']) assert.equal(allowed({action}), false);
+        const evaluate = new Function('inputs', 'github', 'return (' + GUARD + ')');
+        const allowed = inputs => evaluate(inputs, {event_name: 'workflow_dispatch'});
+        for (const action of ['router-check', 'prompt-probe', 'queue']) assert.equal(allowed({action}), false);
         for (const action of ['', 'fix', 'verify', 'resume:2:fixture']) assert.equal(allowed({action}), true);
+        assert.equal(evaluate({action: ''}, {event_name: 'push'}), false);
         '''.replace('GUARD', json.dumps(guard))
         subprocess.run(['node', '-'], input=harness, text=True, capture_output=True, check=True)
 
@@ -205,6 +207,17 @@ class NativeBuildWorkflowTests(unittest.TestCase):
         # A failed test still fails the job, so it can never reach the release.
         self.assertIn('\n  release:\n    if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'\n    needs: native\n', self.text)
 
+    def test_native_receipt_is_written_before_a_failed_suite_fails_the_job(self):
+        body = self.step('name: Boot simulator and verify bundled launch')
+        self.assertIn('|| TEST_STATUS=$?', body)
+        self.assertLess(body.index('scripts/native-evidence.py'), body.index('exit "$TEST_STATUS"'))
+        self.assertLess(body.index('exit "$TEST_STATUS"'), body.index('xcrun simctl terminate'))
+
+    def test_native_receipt_names_the_pull_request_head_not_the_merge_commit(self):
+        body = self.step('name: Boot simulator and verify bundled launch')
+        self.assertIn('PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}', body)
+        self.assertIn('--candidate "${PR_HEAD_SHA:-$(git rev-parse HEAD)}"', body)
+
     def test_every_shared_web_file_is_verified_in_the_ipa(self):
         self.assertIn('for SRC in ../preview/*', self.step('name: Verify bundle, icon and package unsigned IPA'))
 
@@ -212,3 +225,14 @@ class NativeBuildWorkflowTests(unittest.TestCase):
         self.assertIn("format('iOS build {0} @ {1}', inputs.branch, inputs.candidate_sha)", self.text.split('\npermissions:')[0])
         self.assertIn("startsWith(inputs.branch, 'kappa/dev-')", self.report)
         self.assertLess(self.report.index('if [ "$head" != "$SHA" ]'), self.report.index('gh workflow run agent.yml'))
+
+
+class AuthorizedCompletionIsReadOnlyTests(unittest.TestCase):
+    def test_verification_never_writes_and_holds_no_write_permission(self):
+        workflow = (ROOT / '.github/workflows/authorized-completion.yml').read_text()
+        job = workflow.split('\njobs:\n', 1)[1]
+        self.assertNotIn(': write', job)
+        source = (ROOT / 'engine/authorized_completion.py').read_text()
+        for verb in ("'POST'", "'PUT'", "'PATCH'", "'DELETE'", 'payload=', 'method='):
+            self.assertNotIn(verb, source.split('def main():', 1)[0], verb)
+        self.assertIn("return 'owner_merge_required'", source)

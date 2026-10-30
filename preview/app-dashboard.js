@@ -26,28 +26,60 @@ const api=async (p,force=false)=>{
   const value=await r.json();requestCache.set(p,{value,time:Date.now()});return value;
  })();
  requestCache.set(p,{...hit,promise});
- try{return await promise}catch(err){if(hit?.value){requestCache.set(p,hit);return hit.value}requestCache.delete(p);throw err}
+ try{return await promise}catch(err){if(hit?.value&&!force){requestCache.set(p,hit);return hit.value}requestCache.delete(p);throw err}
 };
-let lastDashboardFetch=0, dashboardLoading=null;
+let lastDashboardFetch=0, dashboardLoading=null, taskRefreshPromise=null, taskFeedRefreshing=false;
+async function repositoryTaskIssues(force){
+ const rows=[];
+ for(let page=1;page<=10;page++){
+  const batch=await api("KappaForge/issues?labels=kappa-task&state=open&sort=updated&direction=desc&per_page=100&page="+page,force);
+  if(!Array.isArray(batch))throw Error("Task discovery returned an invalid response");
+  rows.push(...batch.filter(i=>!i.pull_request).map(i=>({...i,repo:"KappaForge"})));
+  if(batch.length<100)return rows;
+ }
+ throw Error("Task discovery exceeded 1,000 issues; existing tasks are preserved.");
+}
 async function load(force=false){
- if(dashboardLoading)return dashboardLoading;
+ if(dashboardLoading){await dashboardLoading;if(force)return load(true);return}
  if(!force&&data.loaded&&Date.now()-lastDashboardFetch<300000){render();return}
  dashboardLoading=(async()=>{
+  const names=[...new Set(["KappaForge",...knownRepos])].slice(0,6),errors=[];
+  const group=async(key,suffix,convert)=>{
+   const results=await Promise.allSettled(names.map(n=>api(n+suffix,force)));
+   return results.flatMap((r,index)=>{
+    const n=names[index];if(r.status==="fulfilled")return convert(r.value,n);
+    errors.push(n+suffix+": "+r.reason.message);
+    return (data[key]||[]).filter(v=>(v.repo||v.name)===n);
+   });
+  };
   try{
-   const names=knownRepos.slice(0,6);
-   const [r,i,p,w]=await Promise.all([
-    Promise.all(names.map(n=>api(n,force))),
-    Promise.all(names.map(n=>api(n+"/issues?state=open&per_page=30",force).then(x=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))))),
-    Promise.all(names.map(n=>api(n+"/pulls?state=open&per_page=30",force).then(x=>x.map(v=>({...v,repo:n}))))),
-    api("KappaForge/actions/runs?per_page=10",force)
+   const [r,i,p,w,t]=await Promise.all([
+    group("repos","",x=>[x]),
+    group("issues","/issues?state=open&per_page=30",(x,n)=>x.filter(v=>!v.pull_request).map(v=>({...v,repo:n}))),
+    group("prs","/pulls?state=open&per_page=30",(x,n)=>x.map(v=>({...v,repo:n}))),
+    api("KappaForge/actions/runs?per_page=10",force).catch(e=>{errors.push(e.message);return {workflow_runs:data.runs||[]}}),
+    repositoryTaskIssues(force).catch(e=>{errors.push("Task discovery: "+e.message);return []})
    ]);
-   data={repos:r,issues:i.flat(),prs:p.flat(),runs:w.workflow_runs||[],error:"",loaded:true};
-   adoptRepositoryTasks(data.issues);
-   lastDashboardFetch=Date.now();
+   data={repos:r,issues:[...new Map([...i,...t].map(v=>[v.repo+"#"+v.number,v])).values()],prs:p,runs:w.workflow_runs||[],error:errors.join("; "),loaded:true};
+   adoptRepositoryTasks(data.issues);lastDashboardFetch=Date.now();
   }catch(e){data.error=e.message}
   finally{if(["home","projects","tasks","reviews"].includes(view))render();dashboardLoading=null}
  })();
  return dashboardLoading;
+}
+async function refreshTasks(){
+ if(taskRefreshPromise)return taskRefreshPromise;
+ taskFeedRefreshing=true;render();
+ taskRefreshPromise=(async()=>{
+  try{
+   await load(true);await refreshActivity(true);
+   jobPollAfter=0;for(const job of trackedJobs)job.pollAfter=0;
+   await checkJobResult(true);
+   const error=data.error||activity.error;toast(error?"Refresh incomplete: "+error:"Tasks refreshed");
+  }catch(e){toast("Task refresh failed: "+e.message)}
+  finally{taskFeedRefreshing=false;taskRefreshPromise=null;render()}
+ })();
+ return taskRefreshPromise;
 }
 
 function repairItem(p){
@@ -131,9 +163,14 @@ async function openReviewCard(key){
  if(reviewCards[key]&&!reviewCards[key].loading&&!reviewCards[key].error){delete reviewCards[key];render();return}
  const [repo,number]=key.split("#");
  reviewCards[key]={loading:true};render();
- try{reviewCards[key]={data:await reviewAction("/review",{repo,prNumber:Number(number)})}}
+ try{reviewCards[key]={data:await reviewAction("/review",{repo,prNumber:Number(number),includeEvidence:true})}}
  catch(e){reviewCards[key]={error:e.message}}
  render();
+}
+function developmentReviewItem(p){
+ const key=p.repo+"#"+p.number;
+ return '<div class="workitem"><strong>'+esc(p.title.replace(/^Draft:\s*/,""))+'</strong><span class="worksmall">'+esc(p.repo)+' #'+esc(p.number)+' · KappaForge change awaiting your review</span>'+
+  (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review change</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
 }
 function reviewCardHTML(key){
  const card=reviewCards[key];if(!card)return "";
@@ -144,6 +181,15 @@ function reviewCardHTML(key){
   running:'<span class="status-pending">🔄 Tests are running</span>',none:'<span class="worksmall">Tests have not run on the latest commit yet</span>'}[t.state]||"";
  const risks=(d.risks||[]).map(r=>'<li class="'+(r.level==="high"?"status-bad":"status-pending")+'">'+(r.level==="high"?"⚠ ":"• ")+esc(r.text)+' <span class="worksmall">('+esc(r.files.slice(0,3).join(", "))+')</span></li>').join("");
  const files=(d.files||[]).slice(0,12).map(f=>esc(f.name)+' <span class="worksmall">+'+esc(f.additions)+' / -'+esc(f.deletions)+'</span>').join("<br>");
+ const evidence=d.evidence;
+ const safeEvidenceURL=value=>typeof value==='string'&&/^https:\/\/github\.com\/onlykappa\/[A-Za-z0-9_.-]+\//.test(value)?value:'';
+ const evidenceLink=(url,label)=>safeEvidenceURL(url)?'<a target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(label)+' ↗</a>':esc(label);
+ const evidenceHTML=evidence?'<div class="review-evidence"><strong>Validation evidence</strong>'+['browser','visualComparison','simulator','device'].map(kind=>{
+  const item=evidence[kind]||{},label=({browser:'Browser interactions',visualComparison:'Pixel comparison',simulator:'iOS simulator',device:'Physical iPhone'})[kind];
+  return '<p>'+esc(label)+': '+esc(({passed:'passed',failed:'failed',running:'running',not_run:'not run'})[item.state]||'unknown')+(item.reason?' · '+esc(item.reason):'')+(item.url?' · '+evidenceLink(item.url,'Logs'):'')+'</p>';
+ }).join('')+(evidence.artifacts||[]).map(a=>'<p>'+evidenceLink(a.url,a.kind==='acceptance'?'Readiness report and acceptance evidence':a.kind==='native'?'Native test counts and simulator evidence':'Screenshots, traces and source manifest')+'</p>').join('')+
+ '<details><summary>Review feedback ('+esc((evidence.feedback||[]).length)+')</summary>'+(evidence.feedback||[]).map(r=>'<p>'+evidenceLink(r.url,r.author+' · '+r.source)+(r.outdated?' · earlier revision':'')+(r.resolved===true?' · resolved':'')+'<br>'+esc(r.body)+(r.truncated?' … Open the full discussion.':'')+'</p>').join('')+'</details>'+
+ (evidence.limitations||[]).map(text=>'<p class="worksmall">'+esc(text)+'</p>').join('')+'<p class="worksmall">Evidence supports your review. It does not approve a baseline, merge, release or deployment.</p></div>':'';
  return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change.")+'</p>'+
   (d.explanation?.fix?'<p><strong>Latest fix</strong>'+esc(d.explanation.fix)+'</p>':'')+
   (d.restore?'<p class="status-good">✅ Exact restore of the version that was live before.</p>':
@@ -152,7 +198,7 @@ function reviewCardHTML(key){
    running:'<span class="status-pending">🔄 iOS build is running</span>'}[d.native.state]||'<span class="worksmall">The iOS build has not run on the latest commit yet</span>')+
    (d.native.url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(d.native.url)+'">Build log and IPA ↗</a>':'')+'</p>':'')+
   (risks?'<div class="review-risks"><strong>⚠ Check these before merging</strong><ul>'+risks+'</ul></div>':(d.restore?'':'<p class="worksmall">No risky patterns found in the changes.</p>'))+
-  '<p class="review-files">'+files+'</p><div class="review-tools">'+
+  evidenceHTML+'<p class="review-files">'+files+'</p><div class="review-tools">'+
   (d.canMerge?'<button class="review-approve" data-merge="'+esc(key)+'">Merge</button>':'')+
   (d.canFix?'<button data-fix="'+esc(key)+'">Fix it</button>':'')+
   (d.canTest&&!d.canMerge&&!d.canFix?'<button data-runtests="'+esc(key)+'">Run tests</button>':'')+
@@ -169,7 +215,7 @@ async function mergeReviewed(key){
 async function fixReviewed(key){
  const d=reviewCards[key]?.data;if(!d?.canFix)return;
  if(!confirm("Ask KappaForge to fix the failing tests on \""+d.title.replace(/^Draft:\s*/,"")+"\"?\n\nIt reads the test output, pushes a fix to this PR and re-runs the tests. Nothing merges until you tap Merge."))return;
- try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
+ try{await reviewAction("/decisions",{repo:d.repo,prNumber:d.number,decision:"fix",confirmed:true,reviewFeedback:true});delete reviewCards[key];alert("Fix started. It explains what it changed here and in the PR when ready (usually a few minutes).");render()}
  catch(e){alert("Fix not started: "+e.message)}
 }
 async function runReviewTests(key){
@@ -302,9 +348,7 @@ function controlCenter(){
  const failures=failing.length?'<p class="control-message">⚠ '+failing.length+' recent workflow(s) need attention. Open the run for actual logs.</p>':"";
  const review=prs.filter(p=>!(p.repo==="KappaForge"&&reviewHidden.has(p.number))).slice(0,10).map(p=>{
  if(isDevPR(p)){
-  const key=p.repo+"#"+p.number;
-  return '<div class="workitem"><strong>'+esc(p.title.replace(/^Draft:\s*/,""))+'</strong><span class="worksmall">'+esc(p.repo)+' #'+esc(p.number)+' · KappaForge change awaiting your review</span>'+
-   (reviewCards[key]?'':'<div class="review-tools"><button class="review-approve" data-reviewcard="'+esc(key)+'">Review &amp; merge</button><button class="review-deny" data-closepr="'+esc(key)+'">✕ Close</button></div>')+reviewCardHTML(key)+'</div>';
+  return developmentReviewItem(p);
  }
  const decision=reviewDecisions[p.number]||"";
  return '<div class="workitem"><strong>'+esc(p.title)+'</strong><span class="worksmall">#'+esc(p.number)+' · '+esc(decision==="approve"?"Approved for manual review":decision==="deny"?"Declined":"Awaiting decision")+'</span><div class="review-tools"><button class="review-approve" data-review="'+esc(p.number)+'" data-decision="approve">✓ Approve</button><button class="review-deny" data-review="'+esc(p.number)+'" data-decision="deny">✕ Deny</button><button data-review="'+esc(p.number)+'" data-decision="validate">Run tests</button><button data-hide="'+esc(p.number)+'">Remove from view</button></div><details><summary class="worksmall">More details</summary><div class="review-tools"><button type="button" data-diff="'+esc(p.number)+'" data-diffrepo="'+esc(p.repo||"KappaForge")+'">Preview changes</button><a href="'+esc(p.html_url)+'/checks" target="_blank" rel="noopener noreferrer">Tests</a><a href="'+esc(p.html_url)+'" target="_blank" rel="noopener noreferrer">Open GitHub</a></div>'+inlineDiff(p)+'</details></div>'
@@ -434,6 +478,7 @@ function taskProgressMessage(number){
 // One line of truth for an open task issue: what its agent last reported, from this device's tracking.
 function taskStatusText(issue){
  const job=issue.repo==="KappaForge"&&trackedJobs.find(j=>j.number===issue.number);
+ if(job?.message==="cancelled")return "Cancelled";
  if(!job)return (issue.labels||[]).some(l=>/^kappa-task$/i.test(l.name||""))?"No live updates on this device":"Issue";
  if(["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed")return job.message==="tests-failed"?"Tests failed · ask to retry or send guidance":"Failed · ask to retry or send guidance";
  if(job.message==="question")return "Paused · answer its question with Send guidance";
@@ -445,9 +490,11 @@ function taskStatusText(issue){
 }
 const TASK_ENDED={merged:"Merged",closed:"Closed without merging",cancelled:"Cancelled",complete:"Finished","tests-passed":"Tests passed"};
 // Running tasks (and the day's finished ones) with their step, progress and time; a row opens the task's card in chat.
+let taskListExpanded=false;
 function agentTasksPanel(){
  const day=Date.now()-86400000;
- const jobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0)).slice(0,5);
+ const allJobs=trackedJobs.filter(j=>!j.finished||Number(j.activeAt)>day).sort((a,b)=>Number(!!a.finished)-Number(!!b.finished)||(b.activeAt||0)-(a.activeAt||0));
+ const jobs=taskListExpanded?allJobs:allJobs.slice(0,5);
  const rows=jobs.map(job=>{
   // A task started elsewhere (GitHub, another device) has no chat card here; its own progress snapshot still shows.
   const found=taskProgressMessage(job.number);if(!found&&!job.adopted)return "";
@@ -456,7 +503,7 @@ function agentTasksPanel(){
   const snapshot=job.progress?.steps?.length?job.progress.steps.map(r=>({title:r.title,detail:r.detail,state:({completed:"done",running:"current",failed:"failed",blocked:"failed"})[r.status]||"upcoming"})):null;
   const model=snapshot?{...parsed,rows:snapshot,current:snapshot.find(r=>r.state==="current"),failed:snapshot.find(r=>r.state==="failed")}:parsed,all=[...model.rows,...checks];
   const done=all.filter(r=>r.state==="done").length,pct=all.length?Math.round(done/all.length*100):0;
-  const failed=!!model.failed||["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed";
+  const failed=job.message!=="cancelled"&&(!!model.failed||["failed","tests-failed"].includes(job.message)||job.progress?.status==="failed");
   // A failed task stays red and says why, finished or not; a finished one never shows a step as still running.
   const now=failed?model.failed||checks.find(c=>c.state==="failed"):model.current||checks.find(c=>c.state==="current")||all.filter(r=>r.state==="done").at(-1);
   const state=failed?"failed":job.finished?"done":model.current||checks.some(c=>c.state==="current")?"current":"done";
@@ -466,18 +513,19 @@ function agentTasksPanel(){
    '<span class="agent-task-step">'+esc(label)+'</span>'+
    '<span class="task-bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" aria-label="Task #'+esc(job.number)+' progress"><i style="width:'+pct+'%"></i></span><span class="sr-only">Hold for more actions</span></button>';
  }).filter(Boolean);
- return rows.length?'<section class="panel agent-tasks" aria-label="Agent tasks"><h3>Agent tasks</h3><div class="agent-task-list">'+rows.join("")+'</div></section>':'';
+ return '<section class="panel agent-tasks" aria-label="Agent tasks"><div class="control-head"><h3>Agent tasks</h3><button type="button" class="btn secondary" id="taskrefresh"'+(taskFeedRefreshing?' disabled aria-busy="true"':'')+'>'+(taskFeedRefreshing?'Refreshing…':'↻ Refresh')+'</button></div>'+(rows.length?'<div class="agent-task-list">'+rows.join("")+'</div>':'<p class="muted">No tasks to show. Refresh to check GitHub.</p>')+(allJobs.length>5?'<button type="button" class="btn secondary" id="taskshowall">'+(taskListExpanded?'Show fewer tasks':'Show all '+allJobs.length+' tasks')+'</button>':'')+'</section>';
 }
 // Hold a task on the Dashboard (or right-click it) for its actions. Delete removes it from this app only.
 function taskMenuSheet(){
  const job=trackedJobs.find(j=>j.number===taskMenu);if(!job){taskMenu=0;return ""}
  const failed=KappaJobs.needsAttention(job),open=!job.finished,deletable=inactiveTask(job),stuck=open&&KappaProgress.stale(job);
+ const cancellationDone=!!(job.cancellation?.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length);
  const row=(act,icon,title,sub="",tone="")=>iosRow({attrs:'data-task-act="'+act+'"'+(act==="delete"&&!deletable?' disabled aria-disabled="true"':''),icon,tone,title,sub,chevron:false});
  const link=(href,icon,title)=>iosRow({tag:"a",attrs:'href="'+esc(href)+'" target="_blank" rel="noopener noreferrer"',icon,title});
  return iosSheet("Task #"+job.number,'<p class="task-menu-title">'+esc(clip(job.title||"Development task",120))+'</p>'+
   '<div class="ios-group icons">'+row("open","chat","Open in chat")+// Retry is for a task that failed or stopped updating, as on its chat card; a healthy running task has nothing to retry.
   (failed||stuck?row("retry","retry","Retry",failed?"Ask for recovery of the saved work":"No recent update · ask for recovery"):"")+
-  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(job.authorization&&open?row("cancel","stop","Cancel task","","warn"):"")+'</div>'+
+  (open?row("guide","chat","Send guidance","Used in its next attempt"):"")+(!cancellationDone?row("cancel","stop","Cancel task","Stops work; Delete then removes its history","warn"):"")+'</div>'+
   (job.url||job.prUrl?'<div class="ios-group icons">'+(job.url?link(job.url,"repo","View on GitHub"):"")+(job.prUrl?link(job.prUrl,"merge","Open draft PR"):"")+(job.url?row("copy","copy","Copy link"):"")+'</div>':'')+
   '<div class="ios-group icons">'+row("delete","close",taskMenuConfirm?"Tap again to delete":"Delete task",deletable?"Clears inactive history. Undo is available for 30 days. GitHub stays unchanged.":"Active or unknown work stays tracked. Cancel and wait for termination first.","bad")+'</div>',{closeAttr:"data-task-menu-close"});
 }
@@ -574,7 +622,7 @@ if(view==="chat"&&chatSheet)html+=chatSheetHTML();
 if(view==="home")html=dashboardSummary();
 if(view==="projects")html='<div class="page-heading"><span class="eyebrow">WORKSPACE</span><h1>Your projects</h1><p class="muted">Connected repositories and their latest context.</p></div>'+card("Repositories",data.repos.map(x=>row(x.name,x.description||"Public repository",x.html_url)).join("")||'<p class="muted">No projects loaded.</p>');
 if(view==="tasks")html=card("GitHub tasks",'<button class="btn" id="tasknew">＋ New task</button><button class="btn secondary" id="clear-task-history">Clear inactive history</button><button class="btn secondary" id="undo-task-history">Undo history clear</button>'+(data.issues.filter(x=>x.repo!=="KappaForge"||!dismissedTaskIds.has(x.number)).map(x=>row("#"+x.number+" "+x.title,x.repo+" · "+taskStatusText(x),x.html_url)).join("")||'<p class="muted">No open tasks.</p>'));
-if(view==="reviews")html=card("Pull requests",data.prs.map(x=>x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
+if(view==="reviews")html=card("Pull requests",data.prs.map(x=>isDevPR(x)?developmentReviewItem(x):x.repo==="KappaForge"&&x.head?.ref?.startsWith("kappa/repair-")?repairItem(x):row("#"+x.number+" "+x.title,x.repo+(x.draft?" · Draft":""),x.html_url)).join("")||'<p class="muted">No pull requests loaded.</p>');
 if(view==="settings")html=renderSettings();
 if(data.error&&["home","projects","tasks","reviews"].includes(view))html='<div class="panel">GitHub refresh failed: '+esc(data.error)+'</div>'+html;
 if(view!=="home")document.body.classList.toggle("sheet-open",view==="chat"&&!!chatSheet);
@@ -643,6 +691,8 @@ document.getElementById('undo-task-history')?.addEventListener('click',async()=>
 document.getElementById('clear-task-history')?.addEventListener('click',async()=>{try{const result=await executeAppCapability({id:'tasks.clear-history',params:{status:'inactive'}},{source:'user-control'});render();toast(result)}catch(e){toast(e.message)}});
 document.querySelectorAll("[data-draft]").forEach(b=>b.onclick=()=>{document.getElementById("message").value=b.dataset.draft;focusMessageInput();resizeComposer()});
 document.getElementById("jobcheck")?.addEventListener("click",checkJobResult);
+document.getElementById("taskrefresh")?.addEventListener("click",refreshTasks);
+document.getElementById("taskshowall")?.addEventListener("click",()=>{taskListExpanded=!taskListExpanded;render()});
 document.getElementById("controlrefresh")?.addEventListener("click",()=>{load(true);refreshActivity(true)});
 document.getElementById("tasknew")?.addEventListener("click",()=>{if(!backend||!access){openTask("");return}fresh();const box=document.getElementById("message");box.placeholder="Describe the change, e.g. Add a weather card to the Dashboard";box.focus()});// Approve is the owner's own control for this exact task; Deny drops it and says so in its chat.
 document.getElementById("approvejob")?.addEventListener("click",()=>{if(!pendingJob)return;Object.assign(pendingJob,{authorizationSource:"user-control",confirmed:true});launchJob()});document.getElementById("canceljob")?.addEventListener("click",()=>{const c=chats.find(x=>x.id===pendingJob?.conversationId);if(c){const step=c.pendingActions?.requestId===pendingJob?.routeRequestId?c.pendingActions.steps[pendingJob.routeActionIndex]:null;if(step){step.status="failed";step.awaitingApproval=false;step.result="The owner declined this task.";recordRoute(step.decision,null,"failed",c.pendingActions.requestId,step.index);}c.messages.push({role:"assistant",text:"Task not started."});save()}pendingJob=null;render()});

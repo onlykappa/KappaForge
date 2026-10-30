@@ -19,7 +19,8 @@ import json
 import posixpath
 import re
 
-TEST_RE = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|(?:^|/)test_[^/]+\.py$|_test\.(?:py|go)$|[.-](?:test|spec)\.[cm]?[jt]sx?$")
+TEST_RE = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|(?:^|/)test_[^/]+\.py$|_test\.(?:py|go)$|[.-](?:test|spec)\.[cm]?[jt]sx?$"
+                     r"|(?:^|/)[\w.-]*Tests/(?:[^/]+/)*[^/]+\.swift$")
 CODE_LIKE = re.compile(r"\.(?:py|[cm]?js|ts|tsx|jsx)$")
 WORKER = "chat-backend/src/index.js"
 CORE = "preview/core.js"
@@ -602,6 +603,12 @@ def resolve_controller(reqs, changes=None):
 def controller_problem(problem, resolved=None):
     text = str(problem or '')
     target = None
+    untested = re.fullmatch(r'Requirement untested: R[1-9][0-9]* (.+) \(add or cite a test that exercises it\)', text)
+    if untested:
+        from engine import operational_review
+        ask = untested[1]
+        return bool(operational_review.kind(ask) and (resolved is None or any(
+            req.get('kind') == 'controller' and req.get('met') is True and req.get('text') == ask for req in resolved)))
     if text.startswith('Requirement not met: '):
         ask = text[len('Requirement not met: '):].split(' ({')[0]
         from engine import operational_review
@@ -936,6 +943,38 @@ def parse_review(output):
     problems = [p for p in data.get("problems", []) if isinstance(p, str) and p.strip()]
     files = [f for f in data.get("files_needed", []) if isinstance(f, str)]
     return reqs, problems, files
+
+
+def superseded_review_problem(problem, reviewed, rows=()):
+    """Retire only an old review diagnostic that this fresh validated review actually resolves.
+
+    Unknown source findings and manual validation blockers never become implicit approvals.
+    The caller must not use this when the current review is unavailable.
+    """
+    if not reviewed:
+        return False
+    unavailable = 'Requirement review unavailable; task completion is not verified'
+    if problem == unavailable or problem.startswith(unavailable + ': '):
+        return True
+    for prefix in ('Requirement evidence does not match executable current source: ', 'Requirement not met: '):
+        if problem.startswith(prefix):
+            tail = problem[len(prefix):]
+            matches = [r for r in reviewed if tail == r['text'] or prefix == 'Requirement not met: '
+                       and tail.startswith(r['text'] + ' ({') and tail.endswith(')')]
+            return len(matches) == 1 and matches[0].get('met') is True
+    prefix = 'A requirement disappeared between repair rounds: '
+    if problem.startswith(prefix):
+        return any(r['text'] == problem[len(prefix):] for r in reviewed)
+    for row in rows:
+        represented = any(r.get('id') == row['id'] or r.get('text') == row['text'] for r in reviewed)
+        if not represented:
+            continue
+        if problem == f"Requirement not reviewed: {row['id']} {row['text'][:200]}":
+            return True
+        if (problem == f"Requirement untested: {row['id']} {row['text'][:200]} (add or cite a test that exercises it)"
+                and row['status'] in ('tested', 'done', 'checked on GitHub')):
+            return True
+    return False
 
 
 def executable_evidence(path, source, quote):

@@ -32,6 +32,12 @@ class DependencyMapTests(unittest.TestCase):
              'dependency_links': sum(len(m['depends_on']) for m in data['modules']),
              'note': 'Links left out to fit the chat context; read the code for the full picture.'}))
         for budget in (5000, 4000, max(3500, minimum)):
+            if budget < minimum:
+                # A growing path inventory can exceed these artificial test budgets.
+                # It must refuse rather than omit modules or emit truncated JSON.
+                with self.assertRaises(ValueError):
+                    dependency_map.render(data, budget=budget)
+                continue
             text = dependency_map.render(data, budget=budget)
             self.assertLessEqual(len(text), budget)
             small = json.loads(text)

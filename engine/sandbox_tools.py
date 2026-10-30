@@ -28,8 +28,10 @@ class SandboxTools:
     # ---------------------------------------------------------------------
     def _summary(self, result: sandbox.RunResult) -> Dict[str, Any]:
         output = (result.stdout or "") + (result.stderr or "")
-        # keep only the last 1500 characters
-        output = output[-1500:]
+        # Keep the initial failure as well as the final suite counts: a later cascade
+        # can otherwise hide the test that first corrupted shared process state.
+        failure = re.search(r'^(?:ERROR:|FAIL:|Traceback \(most recent call last\):|\s*not ok \d+)', output, re.M)
+        first_failure = output[failure.start():failure.start() + 1200] if failure and result.status == 'failed' else ''
         return {
             "argv": result.argv,
             "status": result.status,
@@ -37,7 +39,8 @@ class SandboxTools:
             "duration_s": result.duration_s,
             "reason": result.reason,
             "truncated": result.truncated,
-            "output": output,
+            "output": output[-1500:],
+            "first_failure": first_failure,
         }
 
     # ---------------------------------------------------------------------

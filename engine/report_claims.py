@@ -82,7 +82,8 @@ def receipts(observed):
     pending = record.control.get('claim_precommit') or {}
     if (pending.get('checkpoint') and pending.get('candidate') == sha
             and pending.get('checkpoint') == (journal.state.get('executionCheckpoint') or {}).get('hash')):
-        found['docker'] = dict(source='sandbox checkpoint', checkpoint=pending['checkpoint'], conclusion='success')
+        found['docker'] = dict(source='sandbox checkpoint', checkpoint=pending['checkpoint'],
+                              conclusion=pending.get('conclusion', 'success'))
     return found
 
 
@@ -103,7 +104,7 @@ def claimed(body, scope):
                         '### KappaForge failure ledger', '### KappaForge recovery history')):
         body = re.sub(r'<!-- KAPPA_(?:RECOVERY(?:_ARCHIVE)?|EXECUTION|PROGRESS|FAILURES|TASK_STATE|PLAN|REQUIREMENTS|GENERATION)_V1 .*? -->', '', body, flags=re.S)
     claims = []
-    for line in re.split(r'[\n;]|\bbut\b', body):
+    for line in re.split(r'[\n;]|\bbut\b|(?<=[.!?])\s+', body):
         clean = NEGATIVE.sub('', line)
         outcome = 'success' if SUCCESS.search(clean) else 'failure' if FAILURE.search(clean) else None
         if outcome:
@@ -143,6 +144,17 @@ def controller_proof():
                 receipts=receipts(observed))
 
 
+def _current_command(data, revision, run, phases):
+    """A controller-recorded command, not model prose, proves this exact workspace was executed."""
+    from engine import execution
+    keys = {execution.digest(dict(revision=revision, phase=phase,
+                argv=run.argv, profile=run.profile, source=run.source)) for phase in phases}
+    return any(row.get('key') in keys and row.get('status') == run.status
+               and all((row.get('result') or {}).get(k) == getattr(run, k)
+                       for k in ('argv', 'profile', 'source', 'status'))
+               for row in data.get('commands', []))
+
+
 def observe_precommit(journal, data, session):
     observed = authority()
     if not observed or observed[2] is not journal:
@@ -151,19 +163,40 @@ def observe_precommit(journal, data, session):
     identity, controller = data.get('identity', {}), data.get('controller', {})
     results = controller.get('test_results') or []
     if (identity.get('repo') != scope.repo or identity.get('base') != record.identity['candidate']
-            or identity.get('task') != scope.number or identity.get('scope') != scope.digest
-            or controller.get('status') != 'success' or controller.get('stop_reason') != 'validated'
-            or not results or any(r.get('status') != 'passed' for r in results)):
+            or identity.get('task') != scope.number or identity.get('scope') != scope.digest):
         return
+    from engine import execution, sandbox
     from engine.sandbox_tools import SandboxTools
-    if not session or len(session.results) < len(results):
+    if not session or not (journal.state.get('executionCheckpoint') or {}).get('hash') or not (data.get('patchRef') or {}).get('hash'):
         return
     tools = SandboxTools(session)
+    real = isinstance(session, sandbox.Session)
+    revision = execution.revision(session) if real else None
+    if real and (session.base.repo != scope.repo or session.base.sha != identity['base']
+                 or execution.digest(execution.patch(session)) != data['patchRef']['hash']):
+        return
+    # A failed measured regression can be reported even when no candidate may be published.
+    # Model-invoked exploratory commands and results from another revision cannot supply it.
+    if real:
+        for index in range(len(session.results) - 1, -1, -1):
+            run = session.results[index]
+            if (run.status != 'failed' or run.profile != 'test' or run.source == 'model'
+                    or not _current_command(data, revision, run, ('candidate', 'final'))):
+                continue
+            measured = tools.inspect_test_results(index).get('counts', {})
+            if measured.get('ran', 0) > measured.get('skipped', 0):
+                record.control['claim_precommit'] = dict(candidate=record.identity['candidate'], conclusion='failure',
+                    checkpoint=journal.state['executionCheckpoint']['hash'], patch=data['patchRef']['hash'])
+                break
+    if (controller.get('status') != 'success' or controller.get('stop_reason') != 'validated'
+            or not results or any(r.get('status') != 'passed' for r in results)
+            or len(session.results) < len(results)):
+        return
     counts = [tools.inspect_test_results(i).get('counts', {}) for i in range(-len(results), 0)]
     if (any(r.status != 'passed' for r in session.results[-len(results):])
             or sum(max(0, r.get('ran', 0) - r.get('skipped', 0)) for r in counts) <= 0
-            or not (journal.state.get('executionCheckpoint') or {}).get('hash')
-            or not (data.get('patchRef') or {}).get('hash')):
+            or real and any(not _current_command(data, revision, run, ('final',))
+                            for run in session.results[-len(results):])):
         return
     record.control['claim_precommit'] = dict(candidate=record.identity['candidate'],
         checkpoint=journal.state['executionCheckpoint']['hash'], patch=(data.get('patchRef') or {}).get('hash'))

@@ -128,7 +128,7 @@ test('checklist changes announce the new step, notify on finish or failure, and 
 // app-dashboard.js: the Agent tasks panel.
 test('the dashboard lists running tasks first with their step and progress; each opens its card',()=>{
  const dash=read('app-dashboard.js');
- const box={esc,KappaJobs:J,KappaActions:K,Date,Math,Number,String,Object,Array,plain:t=>String(t||'').replace(/`([^`]*)`/g,'$1'),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
+ const box={taskFeedRefreshing:false,esc,KappaJobs:J,KappaActions:K,Date,Math,Number,String,Object,Array,plain:t=>String(t||'').replace(/`([^`]*)`/g,'$1'),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
   taskValidation:()=>[],chats:[{id:'c',messages:[{role:'user',text:'go'},{role:'assistant',text:checklist,progressKey:'progress:90:1'},{role:'assistant',text:'✅ Read project · 2s\n✅ Opened draft PR #7 · 3s',progressKey:'progress:7:1'}]}],
   trackedJobs:[{number:7,finished:true,activeAt:Date.now()},{number:90,message:'progress',activeAt:Date.now()-5000},{number:5,finished:true,activeAt:Date.now()-3*86400000}]};
  vm.createContext(box);vm.runInContext(slice(dash,'function taskProgressMessage(','\nfunction openTaskInChat('),box);
@@ -136,14 +136,14 @@ test('the dashboard lists running tasks first with their step and progress; each
  assert.ok(html.indexOf('data-open-task="90"')<html.indexOf('data-open-task="7"'),'running tasks first');
  assert.match(html,/agent-task current" data-open-task="90">[^]*Task #90[^]*3\/5[^]*Writing the change: Step 2 of 3/);
  assert.match(html,/agent-task done" data-open-task="7"/);assert.doesNotMatch(html,/data-open-task="5"/,'older finished tasks drop off');
- box.trackedJobs=[];assert.equal(box.agentTasksPanel(),'','no panel without tasks');
+ box.trackedJobs=[];assert.match(box.agentTasksPanel(),/id="taskrefresh"/,'empty task feed still has Refresh');assert.match(box.agentTasksPanel(),/No tasks to show/);
 });
 
 // A failed task finishes, but must read as failed with its reason, not as a green step still being written.
 test('finished tasks show how they ended; failures stay red with the failing step',()=>{
  const dash=read('app-dashboard.js');
  const failedList='### KappaForge is working on it\n\n✅ Read project · 2s\n✅ Planned 2 steps · 1s\n❌ Step 1 of 2: Update the regex: failed validation';
- const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,taskValidation:()=>[],
+ const box={taskFeedRefreshing:false,esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,taskValidation:()=>[],
   chats:[{id:'c',messages:[{role:'assistant',text:failedList,progressKey:'progress:98:1'},{role:'assistant',text:'✅ Read project · 2s\n✅ Opened draft PR #7 · 3s',progressKey:'progress:7:1'}]}],
   trackedJobs:[{number:98,finished:true,message:'failed',activeAt:Date.now()},{number:7,finished:true,message:'merged',activeAt:Date.now()-1000}]};
  vm.createContext(box);vm.runInContext(slice(dash,'function taskProgressMessage(','\nfunction openTaskInChat('),box);
@@ -182,7 +182,7 @@ test('assistant claims of running work are recognized with the task numbers they
 test('open repository tasks started elsewhere are followed and shown without a chat card',()=>{
  const tasks=read('app-tasks.js'),dash=read('app-dashboard.js');
  const checked=[];
- const box={dismissedTaskIds:new Set(),esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
+ const box={taskFeedRefreshing:false,dismissedTaskIds:new Set(),esc,KappaJobs:J,KappaActions:K,KappaProgress:{stale:()=>false},Date,Math,Number,String,Object,Array,plain:t=>String(t||''),clip:(t,n)=>t.length>n?t.slice(0,n-1)+'…':t,
   taskValidation:()=>[],chats:[],trackedJobs:[{number:98,finished:true}],persistJobs(){},checkJobResult(){checked.push(1)},jobPollAfter:5};
  vm.createContext(box);
  vm.runInContext(slice(tasks,'function adoptRepositoryTasks(','\n// A request already has a task'),box);
@@ -191,7 +191,7 @@ test('open repository tasks started elsewhere are followed and shown without a c
  box.adoptRepositoryTasks([{repo:'KappaForge',number:119,title:'Add a weather feature',html_url:'https://github.com/onlykappa/KappaForge/issues/119',labels:label,created_at:now,updated_at:now},
   {repo:'KappaForge',number:98,labels:label,created_at:now},{repo:'KappaForge',number:120,labels:[{name:'bug'}],created_at:now},
   {repo:'OmniPC',number:7,labels:label,created_at:now},{repo:'KappaForge',number:60,labels:label,created_at:new Date(Date.now()-9*86400000).toISOString()}]);
- assert.deepEqual(box.trackedJobs.map(j=>j.number),[98,119],'only new, recent KappaForge tasks are adopted');
+ assert.deepEqual(box.trackedJobs.map(j=>j.number),[98,119,60],'all open KappaForge tasks are adopted, including older tasks');
  assert.equal(checked.length,1,'their status is fetched right away');
  const job=box.trackedJobs[1];assert.equal(job.chatId,null);assert.equal(job.adopted,true);
  job.message='failed';job.finished=true;job.activeAt=Date.now();
@@ -226,7 +226,7 @@ test('recovery snapshots render waiting and recovering with the actual error and
  await import('../preview/task-progress.js');
  const P=globalThis.KappaProgress,source=read('ui.js');
  const clock=class extends Date{static now(){return 200000}};
- const box={esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date:clock,Math,Number,String,Object,Array,
+ const box={taskFeedRefreshing:false,esc,KappaJobs:J,KappaActions:K,KappaProgress:P,Date:clock,Math,Number,String,Object,Array,
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
  vm.createContext(box);vm.runInContext(slice(source,'function executionDiagnostics(','\nconst ACTIVITY_KINDS'),box);
@@ -256,7 +256,7 @@ test('waiting recovery becomes blocked at the recorded authorization expiry',()=
 test('a recovery-eligible card offers explicit retry and the local timer reveals it without a provider call',()=>{
  let tick=99000,renders=0;
  const clock=class extends Date{static now(){return tick}};
- const box={esc,KappaJobs:J,KappaActions:K,Date:clock,Math,Number,String,Object,Array,
+ const box={taskFeedRefreshing:false,esc,KappaJobs:J,KappaActions:K,Date:clock,Math,Number,String,Object,Array,
   plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',
   heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[],render(){renders++},
   fetch(){throw Error('A display timer must not dispatch or infer')}};

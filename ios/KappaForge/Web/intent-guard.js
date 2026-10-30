@@ -42,7 +42,7 @@
   'tasks.restore-history':entry('saved task history','device','direct-user-request',{task:'positive-integer'},['restore history only','sync restoration'],'read persisted history','clear again'),
   'tasks.undo-history':entry('last local history batch','device','direct-user-request',{},['restore history only','sync restoration'],'read persisted history','clear again'),
   'tasks.retry':entry('existing owner task','backend','bound-user-authorization',{task:'positive-integer'},['request existing task recovery'],'backend dispatch receipt','not supported'),
-  'tasks.cancel':entry('existing authorized task','backend','existing-task-authorization',{task:'positive-integer'},['revoke task authorization','close task issue'],'backend cancellation receipt','not supported'),
+  'tasks.cancel':entry('existing owner task','backend','bound-user-authorization',{task:'positive-integer'},['revoke task authorization','close task issue'],'backend cancellation receipt','not supported'),
   'chats.rename':entry('selected conversation','device','direct-user-request',{chat:'identifier',title:'title'},['save conversation title','sync conversation'],'read persisted title','rename again'),
   'settings.update':entry('ordinary preferences','device','direct-user-request',{key:['appearance','language','weatherUnits','weatherCity'],value:'setting-value'},['save ordinary preference','sync preferences'],'read persisted preference','set previous value')
  });

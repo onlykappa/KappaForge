@@ -151,13 +151,13 @@ def pending(journal, kind=None):
     if (data.get('version') != 1 or identity.get('task') != journal.scope.number
             or identity.get('repo') != journal.scope.repo or identity.get('scope') not in accepted):
         raise CheckpointMismatch('Execution checkpoint belongs to different task authority')
-    if kind and data.get('context', {}).get('kind') != kind:
-        raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
     superseded = journal.state.get('supersededExecution') or {}
     if (superseded.get('hash') == journal.state['executionCheckpoint']['hash']
             and superseded.get('reason') == 'owner_reviewed_fast_forward'
             and re.fullmatch(r'[a-f0-9]{40}', str(superseded.get('replacement', '')))):
         return None  # Archived proposal, never a published or validated candidate.
+    if kind and data.get('context', {}).get('kind') != kind:
+        raise CheckpointMismatch('Execution checkpoint belongs to a different development stage')
     data['changes'] = _read_blob(journal, data['patchRef'])
     return data
 
@@ -194,8 +194,12 @@ def seed(journal, repo, sha, changes, task, context=None):
         return
     if sanitized(changes) != changes:
         raise CheckpointMismatch('Candidate contains credentials or private environment values; execution blocked')
+    from engine import candidate_handoff
+    if journal.state.get('carriedRepair') and (context or {}).get('kind') != 'fix':
+        raise CheckpointMismatch('Owner candidate handoff may continue only through Fix')
+    retained = candidate_handoff.carry(journal, sha)
     data = initial_data(dict(repo=repo, base=sha, tree=None, versions=None, commands=None, taskHash=task_digest(task),
-                             task=journal.scope.number, scope=journal.scope.digest), task, {}, journal, context)
+                             task=journal.scope.number, scope=journal.scope.digest), task, retained, journal, context)
     data['patchRef'] = _write_blob(journal, changes)
     receipt = _write_blob(journal, sanitized(data))
     journal.state['executionCheckpoint'] = receipt
@@ -222,6 +226,25 @@ def generation_plan(journal, repo, task):
     if (plan.get('task') != journal.scope.number or plan.get('repo') != repo
             or plan.get('scope') != journal.scope.digest or plan.get('taskHash') != task_digest(task)):
         raise CheckpointMismatch('Saved generation plan belongs to different task authority')
+    from engine import task_goal
+    goal = task_goal.CURRENT.get()
+    guidance = tuple(getattr(goal, 'applied', ()))
+    hint = task_digest(json.dumps(guidance))
+    directive = (f'Replan unpublished task #{journal.scope.number} from plan '
+                 f"{journal.state['generationPlan']['hash']} before generation; "
+                 'preserve cumulative budgets and archive previous planning.')
+    if (directive in guidance and plan.get('guidanceHash') != hint
+            and not any(journal.state.get(k) for k in ('files', 'pr', 'generationCheckpoint',
+                'executionCheckpoint', 'executionPublication', 'executionPublished'))):
+        # A changed owner instruction may replace planning, never generated work or authority/accounting.
+        journal.archive([dict(plan=plan, receipt=journal.state['generationPlan'],
+                              taskPlanReceipt=journal.state.get('taskPlan'))], 'supersededPlanning')
+        previous = journal.state.pop('generationPlan')
+        journal.state.pop('taskPlan', None)
+        journal.state['planningRefresh'] = dict(previous=previous['hash'], guidanceHash=hint,
+                                               reason='owner_guidance_before_generation')
+        journal.persist()
+        return None
     return plan
 
 
@@ -298,7 +321,10 @@ def save_plan(journal, repo, sha, task, context, sources):
     if not journal:
         return
     require_storage(journal, repo)
+    from engine import task_goal
+    goal = task_goal.CURRENT.get()
     plan = dict(task=journal.scope.number, repo=repo, scope=journal.scope.digest, base=sha,
+                guidanceHash=task_digest(json.dumps(tuple(getattr(goal, 'applied', ())))),
                 taskHash=task_digest(task), sourceHash=digest(sources), context=context)
     journal.state['generationPlan'] = _write_blob(journal, sanitized(plan), journal.state.get('generationPlan'))
     journal.persist()

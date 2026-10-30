@@ -1,16 +1,24 @@
 # Phase 3 roadmap: intelligent PR reviews, visual testing and owner approval
 
 **Repository:** `onlykappa/KappaForge`
-**Tracking:** PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
+**Tracking:** draft [#312](https://github.com/onlykappa/KappaForge/pull/312) is the current bug/engine accumulator, based on merged309/311 in maina76561a. The owner requested keeping new fixes in312 and KappaForge using that engine. PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
 **Starting point:** latest `main` verified at `ce7a5645cee806ddc4d0df523cbcb68f4be1117f` (2026-10-25).
 **Dependencies:** merged Phase 1 sandbox/execution and Phase 2 dynamic exploration, task planning, classification, research and clarification.
 **Owner boundary:** no automatic merge, release, deployment, access change, branch-protection change or production configuration change. A successful test, positive review or readiness recommendation is never merge authorization. Only the authenticated owner may perform an explicit merge action.
 
 This roadmap tracks work across KappaForge runs and reviewers. Each checkbox stays open until its implementation, regression coverage, documentation and recorded validation are available in the relevant delivery PR. A code-generation claim alone does not close an item. Keep each authorized slice in its tracked draft PR; do not merge, release, deploy or mark ready for review.
 
+## Current direct implementation — 2026-10-29
+
+The owner switched Phase3 implementation to direct Codex work. KappaForge run40970125368 is cancelled and queue control319 is closed; scheduled monitoring stays off.314 had passed original-task review and exact-source validation40938553578 at d561a8a;315's failed history remains intact and is not marked complete by the direct implementation. Draft312 now carries the direct ingestion/thread-state, review-decision/repair, browser-evidence and mobile review-card delivery described in [direct-delivery.md](../phase3/direct-delivery.md). Local full Python1,392 run OK (33 skips), Node910 passed, and desktop/phone Chromium runs passed. Final controlled pixel experiments, exact-head remote CI and the remaining end-to-end/integration audit are still required. No merge, deployment, release, readiness change or worker restart is authorized by these results.
+
+## Historical execution snapshot — 2026-10-29
+
+Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests40820462881 and native40820462875 succeeded (all five UI tests). Latest automatic trial40888143488 stopped at10/10 tested candidate versions,30/100 repair actions,55 model calls/6 generation edits and4/10 outer launches. Its failed history remains unchanged;315 is unstarted. The owner subsequently requested a separately reviewable corrected candidate: draft320 starts at the original immutable5b base and contains the durable Journal API/tests already developed in312. Head94da2aa passed remote Python/web/Worker/structural40899169255 and graph40899169240. It has not been adopted into the exhausted task checkpoint or marked accepted. Current direct review patches a deleted-author inventory blocker (P3-113); fresh corrected-head CI remains required. Engine0964f14 passed ordinary/Docker checks but its latest native run40896030489 failed keyboard dismissal and persisted acknowledgment assertions (P3-114); earlier passing native evidence does not erase that failure. Scheduled watch remains disabled at the owner's request; no autonomous task restart, grant/counter reset, merge or deployment.
+
 ## Progress and run discipline
 
-- [ ] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
+- [x] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
 - [ ] Phase 3.2 — authenticated, scoped PR review ingestion
 - [ ] Phase 3.3 — review-driven repair and safe PR updates
 - [ ] Phase 3.4 — browser visual verification and evidence
@@ -26,16 +34,18 @@ Every newly encountered issue gets an ID in [issue-log.md](../phase3/issue-log.m
 
 Owner update (2026-10-28): finish Phase3.1 verification and closeout, then proceed to Phase3.2 once satisfied with the evidence. This authorizes the transition after closeout; it does not authorize merging or bypassing a failing check.
 
-This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. Do not begin Phase 3.2 until the owner directs it.
+This is the initial bounded KappaForge task. Split it into checkpoints so findings can be fixed and rerun promptly. The owner has authorized Phase3.2 after honest closeout; no further transition permission is needed.
 
-- [ ] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.
-- [ ] **3.1b Architecture inventory:** trace the existing sandbox, exploration tools, persistent task plan/checkpoints, requirement classification, research, clarification, repair, authorization and free-first admission paths. Identify reusable interfaces; do not duplicate them.
-- [ ] **3.1c Policy and publication review:** inspect backend authorization and every path that can create/update candidate branches or PRs, run code, change permissions, merge, release or deploy. Confirm owner lifecycle gates are enforced in code, not just prompts.
-- [ ] **3.1d Regression and CI evidence:** map Phase 1/2 acceptance requirements to tests and workflows. Inspect actual CI results and artifacts at the audited commits; label these as inspected evidence. Run available relevant tests and record exact commands, counts and outcomes.
-- [ ] **3.1e Defect loop:** log each newly found issue before patching. For every in-scope defect, add a meaningful regression, apply a permanent fix, immediately rerun its reproducer, then run relevant broader checks. Never weaken a failing check.
-- [ ] **3.1f Audit closeout:** complete [phase1-phase2-audit.md](../phase3/phase1-phase2-audit.md), reconcile every finding with the issue ledger, list unresolved risks and Phase 3 prerequisites, and report the precise next owner action.
+- [x] **3.1a Main and dependency provenance:** confirm the PR base and actual latest `main`; verify Phase 1 and Phase 2 are merged and record merge commits/PRs and the exact audited SHA.
+- [x] **3.1b Architecture inventory:** trace the existing sandbox, exploration tools, persistent task plan/checkpoints, requirement classification, research, clarification, repair, authorization and free-first admission paths. Identify reusable interfaces; do not duplicate them.
+- [x] **3.1c Policy and publication review:** inspect backend authorization and every path that can create/update candidate branches or PRs, run code, change permissions, merge, release or deploy. Confirm owner lifecycle gates are enforced in code, not just prompts.
+- [x] **3.1d Regression and CI evidence:** map Phase 1/2 acceptance requirements to tests and workflows. Inspect actual CI results and artifacts at the audited commits; label these as inspected evidence. Run available relevant tests and record exact commands, counts and outcomes.
+- [x] **3.1e Defect loop:** log each newly found issue before patching. For every in-scope defect, add a meaningful regression, apply a permanent fix, immediately rerun its reproducer, then run relevant broader checks. Never weaken a failing check.
+- [x] **3.1f Audit closeout:** complete [phase1-phase2-audit.md](../phase3/phase1-phase2-audit.md), reconcile every finding with the issue ledger, list unresolved risks and Phase 3 prerequisites, and report the precise next owner action.
 
 ## Phase 3.2 — authenticated, scoped PR review ingestion
+
+Owner requested direct continuation after314's repair guard stopped. The durable authenticated inbox and complete-snapshot synchronization now have an implementation in312, exposed through Journal.ingest_reviews with12 behavioral/119 focused tests. The existing owner Fix path now syncs evidence for an already-bound journal/PR before any repair planning;135 related tests pass locally. Automatic review consumption/wakeups and live acceptance remain pending;314/315 are not reset or marked complete. See [review-ingestion.md](../phase3/review-ingestion.md).
 
 - [ ] Reuse the authenticated GitHub integration; restrict reads to the authorized repository and PR.
 - [ ] Ingest general conversation comments, inline review comments, review summaries and requested changes, including feedback added after initial PR creation.
@@ -117,4 +127,4 @@ This is the initial bounded KappaForge task. Split it into checkpoints so findin
 
 ## Handoff between KappaForge runs and reviewers
 
-At the end of each authorized slice, update the checkbox and issue ledger only after evidence is available. State the audited/head SHA, test command and count, CI run links, open issue IDs and next bounded task. The next agent must read this roadmap and the ledger before editing. Phase 3.1 is the current authorized slice; later sections remain parked until the owner explicitly advances the task.
+At the end of each authorized slice, update the checkbox and issue ledger only after evidence is available. State the audited/head SHA, test command and count, CI run links, open issue IDs and next bounded task. The next agent must read this roadmap and the ledger before editing. The owner has authorized progression after honest3.1 closeout. Follow the dependency queue; later prepared tasks are not evidence of implementation or automatic dispatch.

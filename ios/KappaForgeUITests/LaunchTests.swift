@@ -1,6 +1,48 @@
 import XCTest
 
 final class LaunchTests: XCTestCase {
+    private func waitForComposerGeometry(_ editor: XCUIElement, keyboard: XCUIElement, web: XCUIElement,
+                                         file: StaticString = #filePath, line: UInt = #line) {
+        // Keyboard existence precedes the asynchronous UIKit -> WebKit -> native
+        // frame update. Wait for the actual invariant, not a fixed animation delay.
+        let positioned = NSPredicate { _, _ in
+            guard editor.exists, keyboard.exists, web.exists else { return false }
+            let frame = editor.frame
+            return frame.width > 0 && frame.height > 0
+                && frame.minY > web.frame.minY + 45
+                && frame.maxY <= keyboard.frame.minY + 14
+        }
+        let settled = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: positioned, object: nil)], timeout: 10)
+        XCTAssertEqual(settled, .completed,
+                       "Composer geometry did not settle: editor=\(editor.frame), keyboard=\(keyboard.frame), web=\(web.frame)",
+                       file: file, line: line)
+    }
+
+    // XCTest reports an element with a null accessibility frame (hidden or detached) as maxY == .infinity. That is not a
+    // mispositioned composer, and a tap on it goes nowhere, so name it and keep the hierarchy for diagnosis.
+    private func assertComposerAboveKeyboard(_ app: XCUIApplication, _ editor: XCUIElement, _ keyboard: XCUIElement, web: XCUIElement,
+                                             belowHeader: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
+        let frame = editor.frame
+        guard frame.minY.isFinite, frame.maxY.isFinite else {
+            XCTContext.runActivity(named: "Composer accessibility frame is null") { activity in
+                activity.add(XCTAttachment(string: "exists=\(editor.exists) keyboardExists=\(keyboard.exists) frame=\(frame) keyboard=\(keyboard.frame) web=\(web.frame)\n" + app.debugDescription))
+            }
+            XCTFail("Composer has no usable accessibility frame (\(frame)); it is hidden or detached, not mispositioned", file: file, line: line)
+            return
+        }
+        if belowHeader {
+            XCTAssertGreaterThan(frame.minY, web.frame.minY + 45, "Composer must remain below navigation header", file: file, line: line)
+        }
+        XCTAssertLessThanOrEqual(frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard", file: file, line: line)
+    }
+
+    // Tapping outside the composer must dismiss the keyboard, so the tap has to land on blank page. At 30% height it can
+    // hit the "Plan a project" suggestion chip on a phone layout, which correctly fills and refocuses the composer.
+    // 45% is the empty band between the chips and the composer on the welcome screen, with the keyboard open or closed.
+    private func tapBlankWebArea(_ web: XCUIElement) {
+        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+    }
+
     func testBundledInterfaceLaunchAndSettings() {
         let app = XCUIApplication()
         app.launch()
@@ -43,8 +85,8 @@ final class LaunchTests: XCTestCase {
         editor.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "Software keyboard must appear after editor focus")
-        XCTAssertGreaterThan(editor.frame.minY, web.frame.minY + 45, "Composer must remain below navigation header")
-        XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard")
+        waitForComposerGeometry(editor, keyboard: keyboard, web: web)
+        assertComposerAboveKeyboard(app, editor, keyboard, web: web)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "PR98 keyboard open layout"
         attachment.lifetime = .keepAlways
@@ -55,8 +97,14 @@ final class LaunchTests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        if !keyboard.exists {
+            editor.tap()
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        }
+        waitForComposerGeometry(editor, keyboard: keyboard, web: web)
+        assertComposerAboveKeyboard(app, editor, keyboard, web: web)
         // Public bridge dismisses when tapping outside the composer.
-        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        tapBlankWebArea(web)
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
         let closed = XCTAttachment(screenshot: app.screenshot())
         closed.name = "PR98 keyboard closed layout"
@@ -65,9 +113,10 @@ final class LaunchTests: XCTestCase {
         for _ in 0..<3 {
             editor.tap()
             XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+            waitForComposerGeometry(editor, keyboard: keyboard, web: web)
             XCTAssertFalse(app.toolbars.buttons["Done"].exists)
-            XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 14)
-            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            assertComposerAboveKeyboard(app, editor, keyboard, web: web, belowHeader: false)
+            tapBlankWebArea(web)
             XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
         }
     }

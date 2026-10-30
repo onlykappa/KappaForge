@@ -559,6 +559,361 @@ P3-069 final wording follow-up: four additional no/failed-to-execute phrasings r
 - Immediate rerun:53 execution-recovery/follow-up/integrated-router tests pass after restoring the journal, active scope and progress publisher in fixture cleanup. Existing router URL and authorization assertions remain unchanged.
 - Status: PATCHED locally; final full discovery and exact-head CI pending.
 
+## P3-079 — actual failed local tests cannot supply a reporting receipt
+
+- Baseline: merged maina76561a. Real Session/Execution/SandboxRepairController and Journal fixtures run a failing test through fake Docker; Sandbox tests failed is then refused with Unverified validation claim: docker. Three initial cases: one error, two controls pass. No real Docker/inference/API mutation was used.
+- Cause: observe_precommit registers only fully successful validation; failed GitHub-run receipts are supported but equivalent measured local execution has no receipt.
+- Required correction: allow only a measured failed regression command tied to the current sandbox revision/checkpoint. Failure evidence cannot grant a success/native/device claim or publication authority.
+- Immediate rerun: four real-controller local-proof regressions pass after repair; reporting/recovery/controller focus77 tests passed. Zero-discovered-test and native/success claims remain refused.
+- Status: PATCHED locally; full validation and one serial trial pending.
+
+## P3-080 — passed local proof can follow an untested edit
+
+- Same baseline. A real controller validates value2, then changing its Session to value3 triggers a save with stale success fields. Docker tests passed is incorrectly accepted for the untested patch. Direct regression fails before repair; the combined four-method baseline has one error and one failed assertion.
+- Cause: success metadata/counts are checked, but the actual command key is not checked against the current workspace revision. This can promote old results during checkpoint saves after an edit.
+- Required correction: bind actual controller command receipts to the exact current revision and validation phase, preserving successful tested publication and refusal after untested changes.
+- Immediate rerun: the untested-edit regression now refuses the stale pass; tested publication/net-delta compatibility remains covered. Reporting/recovery/controller focus77 tests passed. The former manual successful-proof fixture now supplies a current command receipt; its assertions are retained.
+- Status: PATCHED locally; full validation and one serial updated-engine trial pending.
+
+## P3-081 — resolved historical review diagnostics stay active beside a partial fresh review
+
+- Evidence: serial312-engine trial40736533794 on8d06b8f returns27 current decisions/zero findings. Fresh matrix:17 tested,2 checked on GitHub,4 done,1 untested; nevertheless the active marker still contains exactly the same85 historical problems, including old unavailable/not-reviewed/evidence failures now contradicted by fresh validated decisions.
+- Reproducer: real check_the_work/model_review/requirements.matrix with a completed tested ask and a second currently untested ask retains all five resolved old review diagnostics. Three tests: one fails before correction; incomplete-review and bad-source-proof controls pass. Transport is fake; no source edit or API write occurs.
+- Required correction: retire only typed historical review diagnostics supported by fresh validated decisions/matrix rows. Preserve current missing tests, unknown/unrelated source findings, manual independent-validation blockers and every original/retained ask. Missing/invalid review cannot retire history.
+- Immediate rerun:84 diagnostic-retirement/task-goal/root-cause/reporting checks pass. The positive current-subset regression passes, while incomplete-review, bad-proof, manual-blocker and unrelated-source-finding controls remain enforced.
+- Broader validation: full discovery1,266 run, OK,31 skipped; final84 focused checks pass, including an unrelated diagnostic-lookalike that must not be retired. Strict canonical delimiter handling preserves that negative control.
+- Status: PATCHED locally; one serial updated-engine confirmation pending.
+
+## P3-082 — validation claims bleed across sentence boundaries
+
+- Evidence: after the independent validation paragraph was added, reporting R18 fails again. A direct guard regression reproduces Docker validation passed. Native tests were not run. being refused as an unsupported native success, despite a valid Docker receipt.
+- Cause: claimed splits lines/semicolons/but but not sentences; a success verb in the Docker sentence is associated with the later native sentence after its negation is removed.
+- Required correction: separate sentence clauses before associating category and outcome. Actual unsupported native success in a separate sentence must remain refused.
+- Status: PATCHED locally; the sentence-boundary regression and unsupported-native control pass. Focused reporting/operational selection:95 passed; full discovery:1,272 run, OK,31 skipped. Exact-head CI and renewed live trial remain pending.
+
+
+## P3-083 — foreign branch hold is classified as behavioral source work
+
+- Evidence: trial40739723033 leaves R21 untested. The phrase verified fix in Leave its branch untouched so the verified fix can be folded into #279 after independent review makes it bug_fix rather than a task-operation invariant. Direct classification assertion fails before repair.
+- Required correction: narrowly recognize the exact owned hold sentence, observe the referenced same-repository PR branch, and prove the active guard refuses mutations to that branch. Missing/foreign/same-candidate metadata or model-provided receipts cannot approve it. Do not invent a code test for an operational promise or grant an exemption to compound code asks.
+- Status: PATCHED locally; six production-path follow-up regressions pass, including malformed/foreign/same-candidate metadata, model receipts, expired scope and permissive-guard refusals. The95-test focused selection and full1,272-test discovery pass (31 full-suite skips). No branch permission changes. Exact-head CI and renewed live trial remain pending.
+
+## P3-084 — task discovery and refresh can leave external tasks invisible
+
+- Evidence: task308 is an open owner-authored kappa-Task issue within the adoption window and is present in the live first GitHub page. Dashboard load uses one all-or-nothing Promise.all across repositories; any unrelated failed request prevents adoption. It also reads only30 mixed issue/PR objects and can exclude KappaForge from the first six repositories. Forced API reads silently fall back to stale cache. The Today task panel has no manual refresh control. Exact cause on the screenshot device is unobserved.
+- Status: PATCHED locally; four failing discovery/refresh regressions now pass, plus manual-SSE snapshot coverage. Desktop/phone Chromium exercises the real Refresh control. See task-feed-controls.md; exact device-state cause is not claimed.
+
+## P3-085 — adopted tasks cannot use owner cancellation
+
+- Evidence: tasks.cancel throws unless job.authorization exists locally, and the menu hides Cancel without it. Repository-adopted308/274 and tasks on another device have no original local credential. A fresh authenticated owner control must be able to cancel a validated task without trusting a model or restoring its original execution grant.
+- Status: PATCHED locally; fresh owner scope cancels adopted tasks, retains legacy cancellation, revokes the original stored grant and refuses foreign/model/mismatched/renewed targets. Production backend regressions pass; no real task cancellation was performed.
+
+## P3-086 — cancellation completion depends on historical runs
+
+- Evidence: cancellationEvidence scans only three100-run repository pages and refuses termination when there are no matching historical runs. A busy repository therefore never establishes inventoryComplete; an owner task with no worker can remain cancellation-requested indefinitely.
+- Status: PATCHED locally; active-status inventory and individual known-run checks replace completed-history traversal. Idle, queued, omitted-running, overflow/outage and renewed-task controls pass. Observed-runner limits remain explicit.
+
+## P3-087 — confirmed cancellation leaves stale active progress blocking deletion
+
+- Evidence: checkJobResult marks the job finished after cancellation confirmation but retains the old progress snapshot. taskHasActiveExecution treats that snapshot as active before considering finished state, so Delete can remain disabled.
+- Status: PATCHED locally; confirmed-stop deletion passes while pending/error cases stay tracked. Browser Refresh→Cancel→Delete→Refresh passes at desktop/phone widths; tombstones and history-only Undo remain. See task-feed-controls.md.
+
+P3-087 closed-card follow-up: a new production-menu regression fails on495ff15 for a closed/merged card whose old progress still says running. Delete is correctly disabled while runner state is uncertain, but Cancel is hidden, leaving no recovery control. The correction keeps Cancel available until a full stop/closure receipt is confirmed, including legacy partial receipts; it does not permit blind deletion. All49 task/feed/menu/history checks pass.
+
+P3-086 outage follow-up: a new production regression fails on60591c5: an HTTP503 clears the saved known-live runner list; the next empty active index falsely establishes termination. Correction preserves both prior and newly observed live identities through failed/incomplete reads, replacing them only after successful inventory and individual rechecks. Two failing-before outage regressions pass. A third regression proves a newer runner is never cancelled under an old cutoff and its delivery error clears only after it is observed completed. Final cancellation/authority selection95 passed.
+
+## P3-088 — renewed task cannot validate its previously attested engine
+
+- Evidence: user renewed308 through KappaForge chat. Run40783400962 reached code on reviewed main but stopped with Engine receipt is invalid for this task. The real journal migrated the authorization/body digest and preserved candidate75811f8 and96/2/20 consumed counters; its attested engine receipt still carries the previous digest. verify_receipt requires only the new digest, so even the next explicit owner Fix on312 would be rejected.
+- Required correction: accept the existing authenticated resumeFrom digest link when checking the same task's old engine receipt. Still require the original owner workflow, repository, branch, commit and PR proofs. A new explicit Fix attests its current engine under the new scope; automatic continuations may not adopt another SHA. No authorization, deadline, candidate, counter or receipt is manually rewritten.
+- Status: PATCHED locally; two positive cases fail on unchanged67fc2df (one error/one assertion failure), then four new runtime-engine regressions and103 focused tests pass. Full Python1,276 run, OK,31 skipped. The trusted journal rebinds a fully verified linked receipt; verify_receipt stays strict. See renewed-engine-receipts.md. One serial updated-engine trial pending.
+
+## P3-089 — stale operational test diagnostics route into source repair
+
+- Evidence: trial40784333199 verifies312 engine06c16a9, then stops before fresh whole-task review: needs_validation: No explicit test evidence for R21. Its five retained problems include the old Requirement untested R21 protected-branch hold. That exact ask is now operational, but controller_problem recognizes only its Requirement not met form. One stale test diagnostic therefore sends the entire batch through source repair.
+- Status: PATCHED locally; real revise_branch now routes only the exact operational diagnostic to fresh review without edits. Real failed checks and source-test diagnostics retain their repair gate; pending proof remains open. Four new routing/renewal cases had two errors/one failure before repair (one refusal control passed);68 focused and1,280 full Python tests pass (31 full-suite skips). Current candidate unchanged; counters98 calls/2 edits/21 fix cycles.
+
+## P3-090 — saved requirement labels reject explicit scope renewal
+
+- Evidence: requirements.load requires cached record.scope to equal the new journal digest, despite an explicit resumeFrom link and identical taskHash. Once089 permits fresh review, the existing saved classification cannot load under the renewed scope. Reproduce with the real blob-backed classification and Journal renewal.
+- Status: PATCHED locally; identical taskHash and explicit prior digest link are required, saved labels are revalidated against current rules/restrictions, and the cache is saved under the current scope. Successive renewals pass, stale behavioral labels are corrected, and wrong links/requests remain refused. Full Python1,280 run, OK,31 skipped; one serial updated-engine trial pending.
+
+## P3-091 — file scope restriction is classified as a behavioral test requirement
+
+- Evidence: trial40785639666 completed fresh review with27/27 requirements marked met and no source changes. Retained blockers fell5→2: the independent-validation gate and Requirement untested R2 Keep this task to engine/developer.py and tests/test_execution_recovery.py. The named test path triggers testing/code classification, but this is an edit-scope invariant.
+- Required correction: narrowly parse that owned restriction and prove actual candidate/proposal paths remain within it using complete fresh GitHub metadata. Include previous paths for renames, reject wrong/stale/incomplete metadata, and never exempt compound code asks. No model declaration can provide the path receipt.
+- Status: PATCHED locally; seven new path-scope/goal cases cover classification, complete actual metadata, rename history, stale/missing evidence, outside proposals, first publication, resumed publication and pre-edit rejection. Initial four cases reproduce two failures/six errors (including subcases); pre-edit rejection separately fails before correction.90 focused and1,287 full Python tests pass (31 full-suite skips). Current candidate75811f8 unchanged; counters100 calls/2 edits/22 fix cycles. Updated-engine trial pending.
+
+## P3-092 — native composer keyboard geometry check fails on current source
+
+- Checkpoint/date: Phase3.1 final CI,2026-10-29 inspection.
+- Evidence: run40788587109/job123167856412 on6c8b1389b23be8790b81f4a55f10cc6ae2b7364d. `LaunchTests.testComposerRemainsBelowHeaderWhenKeyboardOpens`, ios/KappaForgeUITests/LaunchTests.swift:47, failed `editor.frame.maxY <= keyboard.frame.minY + 14`:601 >232.33333333333334. Actual job logs inspected through GitHub connector. Four other UI tests and simulator/unsigned builds passed.
+- Impact: current native validation is not green. Could concern layout, keyboard/accessibility geometry, or synchronization; root cause is not established. Identical ios/preview tree hashes to prior green67fc2df do not disprove the failure.
+- Reproducer: native UI workflow above, one of five UI tests failed. No local macOS/device reproduction available.
+- Patch/regression/rerun: not yet available. Do not remove the geometry assertions, increase their tolerance, add fixed sleeps, or rerun until green without investigating.
+- Update 2026-10-30 (run41064105732, job124090903734, head 1ecd2f6; passed on b0e6827): the same test failed again with a different value. Line 65 read `editor.frame.maxY` as infinity (threshold 465 = keyboard minY 451 + 14), one second after `waitForComposerGeometry` had passed. Lines 85 and 97 then failed because tapping the editor never raised the keyboard again. The saved \"PR98 keyboard open layout\" screenshot shows a correct layout: the composer pill sits directly above the keyboard (the 451 keyboard frame excludes the 45pt QuickType bar). So the geometry was right; the XCTest snapshot of the editor had a null accessibility frame (infinite maxY), which also explains the dead taps. Not established: whether the app briefly hid the UITextView (`updateComposer` hides it and resigns focus on a `hidden:true` packet) or XCTest resolved a stale snapshot. A Chromium probe of the real page with a stubbed native bridge sent no spontaneous `hidden:true` packet after focus, so the page logic alone does not reproduce it; no macOS reproduction is available.
+- Root cause found 2026-10-30 (runs 41064105732 on 1ecd2f6 and 41072136988 on 192c567, the second with the new receipt step): in both failing runs the saved \"PR98 keyboard closed layout\" screenshot shows the \"Plan a project\" suggestion chip pressed and \"Help me plan a project\" typed into the composer. The test's tap-outside point (30% of the web view height, about y=214pt) sits just above the chip row (starts about y=218pt), so on a phone layout it can hit the chip, which correctly fills and refocuses the composer; the keyboard then rightly stays up and `waitForNonExistence` fails (lines 101 and 113 of the 192c567 file; the same two assertions as lines 85 and 97 earlier). The app behaved correctly. Whether the chip is hit depends on a few points of layout shift, which explains the intermittency. The assertion and product are unchanged; the test now taps the blank band at 45% height. The one-off null-frame reading of `editor.frame` at line 65 in run 41064105732 is not explained by this and keeps its diagnostic. Not yet confirmed on CI; status stays OPEN until the native job passes on the new head.
+- Change (diagnostic only, assertions and tolerances unchanged for finite frames): `assertComposerAboveKeyboard` in LaunchTests.swift fails a null frame with an explicit message and attaches `exists`, the keyboard/web frames and the accessibility hierarchy, so the next occurrence identifies the cause. Not compiled locally; native CI is the first compile and run.
+- Status: OPEN. New bounded KappaForge task313, draft candidate317, explicit updated-engine run40793251944. Engine snapshot316 is frozen source6c8b138 of accumulator312; validated corrections ultimately collect in312.
+- Owner decision needed: no; queued investigation is authorized. No merge/deploy/release.
+
+## P3-093 — module-growth fixture assumes the path inventory fits an impossible budget
+
+- Evidence: full queue-source discovery failed test_dependency_map.test_a_map_over_budget_stays_valid_json_and_says_what_it_left_out after two new modules grew the irreducible all-path representation beyond4000 characters. The test already calculates the true minimum but still unconditionally renders fixed4000/5000 budgets.
+- Status: PATCHED fixture. Below the calculated minimum it now asserts ValueError; feasible budgets still require valid JSON, omission accounting and every module. No map module was dropped and the real5999-character cap was unchanged. Focused145 tests and full1,306 Python discovery pass (31 full-suite skips).
+
+## P3-094 — prepared Phase 3 tasks require manual cross-task handoff
+
+- Type: owner-requested automation enhancement, not a claim of an additional production bug.
+- Implementation: task_queue.py, queue_authority.py, strict runtime receipt/cancellation integration, queue continuation isolation and an owner-only job in existing agent.yml. Manifest318 pins313→314→315; every successor uses its predecessor's exact independently validated candidate through a unique immutable base. No merge/deploy/ready action.
+- Status: IMPLEMENTED and locally validated;19 dedicated queue tests,145 focused and1,306 full Python run OK (31 skips), ten structural rules and policy/map checks pass. Existing15 source-scan warnings remain. Live dispatch/result is recorded on control318; no automatic success claim from implementation alone.
+- Limits: existing360-minute workflow/350-minute supervisor deadline, original task/control expiry, original task counters/caps plus queue maximum3 attempts, no replay after ambiguous launch, no generated task authority. Owner can stop by closing318. Broad independent review remains after the batch.
+
+## P3-095 — plan-only native task receives the small-document proposal policy
+
+- Evidence: queue40814839754 failed with Small-document repair reached its12-proposal effort budget; candidate317 stayed atd2785c23adb21f10ffda0c03064c4f4c510a7714. revise_branch selected that policy solely because the current PR delta held one Markdown plan, despite the owned native keyboard goal. Task313 retained24 model calls,5 edits and3 fix cycles at the stop.
+- Patch: apply that optional12-proposal document policy only to explicitly owner-named document paths and a conservatively document-only request. A plan-only draft or compound code ask uses the existing normal task policy. No numeric policy constant, lifetime budget, counter or failure history is raised/reset.
+- Regression: actual revise_branch entry is exercised through the policy decision: pure explicit documentation still selects12; a plan-only native request and a compound document/native ask do not. Full1,309 Python run, OK with31 skips;151 focused tests pass, and27 queue/efficiency regressions pass after the final resume-flow refinement.
+- Status: PATCHED locally, exact-head live resumed run pending. Native geometry finding092 is still OPEN; this patch corrects engine routing, not the keyboard itself.
+
+## P3-096 — a known failed owner queue has no verified resumption path
+
+- Evidence: initial queue.load refuses every unfinished record and any engine SHA change. After a corrective patch, even an explicit authenticated owner queue launch would refuse the known failed313 attempt. Its failed child also remained displayed as running. Error reporting after an invalid load could select and overwrite an unverified prior checkpoint.
+- Patch: a new explicit owner workflow may resume a blocked queue only when its manifest/grant is unchanged, the previous owner run is verifiably completed and not cancelled, the prior task checkpoint is uniquely bound to that engine/run, no other worker is active, the candidate is unchanged and queue attempts remain. Retain original atomic reservation, attempt debit, source/task history and all lifetime task counters. Failed children are recorded blocked. Invalid checkpoints are not selected for error writes.
+- Regression: real queue advancement resumes a known failed first task with attempts1→2, retains the original claim and validates the successor. Cancellation, active prior run, source drift, exhausted attempts, ambiguous state and invalid checkpoint writes remain refused.151 focused and1,309 full Python tests pass (31 full-suite skips); ten structural rule tests pass.
+- Status: PATCHED locally; no manual state/claim edit. New owner-selected live run will attest its corrected engine; no duplicate worker, merge/deploy/release.
+
+## P3-097 — Swift XCTest bundles are not recognized as tests
+
+- Evidence: monitoring40816365254 found repeated No test was added or changed rejections while repairing native code. Both developer.TEST_RE and verify.TEST_RE omitted Xcode/Swift Package XCTest bundle conventions. The same omission rejects genuine Swift requirement-test citations.
+- Before/after: an actual generate-path regression containing a corrected Swift geometry function and an XCTest that rejects its previous bad tolerance fails under the original path policy with No test was added. It passes with the shared corrected policy; exact source quote evidence is accepted only in the test bundle, while missing quotes and production Swift files are refused. Native XCTest-only changes no longer demand another test file.
+- Patch: conventional *Tests/ and *UITests/ Swift paths, including nested Swift Package Tests/ paths, are recognized. Developer imports the single verification policy instead of maintaining a duplicate. This does not claim actual Swift execution: exact-candidate trusted native CI remains required.
+- Validation:126 focused tests and1,312 full Python discovery pass (31 skips). Ten structural rules, policy/map/whitespace and source scan pass;15 existing HTML warnings remain.
+- Status: PATCHED locally; live engine upgrade follows. No actual native correction or completed3.1 is inferred.
+
+## P3-098 — deliberate owner engine upgrade cannot distinguish an ordinary cancellation
+
+- Type: bounded owner-control enhancement discovered during monitoring, not automatic cancellation bypass.
+- Evidence: the known-broken02fce53 worker kept repeating the XCTest rejection. It was explicitly stopped to avoid burning more model calls; final retained counters55 calls/13 edits/4 fix cycles, unchanged candidate d2785c2. Existing cancellation refusal correctly prevents a generic automatic replay, but also needs an explicit owner-selected upgrade path.
+- Patch: after the old owner workflow is verifiably completed/cancelled, only a fresh onlykappa-authored control-issue marker may authorize a different exact engine SHA. It binds old run/source, new source, manifest, task and unchanged candidate, and must be timestamped after cancellation. A fresh authenticated owner workflow still selects the new engine. Ordinary cancellation remains a stop; bot/stale/wrong-source/wrong-manifest/wrong-task/wrong-candidate markers are refused. Original attempts, atomic claim and lifetime counters remain.
+- Regression: positive exact owner upgrade plus six negative controls;126 focused and1,312 full Python tests pass (31 skips). No manual state/claim/counter reset or cap increase.
+- Status: IMPLEMENTED and locally validated. Actual owner marker and new live run are recorded on318 after push. All PRs remain draft; no merge/deploy/release.
+
+## P3-099 — queue upgrades conflate original claim, supervisor and actual coder identity
+
+- Evidence: upgraded supervisor40818187464 at913f45e stopped before spawning a coder with Immutable queue reservation/base moved. The original immutable claim still correctly identifiesbc464f4, while the most recent actual coder was40816365254 at02fce53. The failed supervisor incorrectly expected its immediate predecessor's engine SHA in that original claim. It then advanced its control checkpoint identity despite no new task checkpoint existing.
+- Patch: retain reservationSha and last actual coder run independently from supervisor run/source. For legacy records, establish the original claim from an authenticated owner queue run of the identical manifest; never move or recreate it. Read the unique actual task checkpoint, verify its own owner run/grant/termination and unchanged candidate, and require an exact owner upgrade for a deliberately cancelled coder. Failed pre-launch supervisors grant no fictitious task progress. Attempts and original model/edit/fix counters remain.
+- Regression: two consecutive upgrades with a pre-launch supervisor failure preserve an older original claim and last coder while advancing only the supervisor. Missing owner provenance or a moved recorded claim is refused without checkpoint/claim writes.113 focused queue/runtime/recovery tests and1,314 full Python discovery pass (31 skips); ten structural rules plus policy/map checks pass.
+- Status: PATCHED locally; fresh exact owner upgrade and live trial follow. The failed pre-launch supervisor spent no additional task model calls; retained task counters55/13/4 and queue attempts2. No manual state/claim edit, cap increase or merge/deployment.
+
+## P3-100 — native keyboard test asserts before asynchronous geometry has settled
+
+- Evidence:40788587109 failed the geometry assertion; unchanged native code passed later40818157083/40818835008. Source sends keyboard frames through an asynchronous WebKit round trip, but the test waited only for keyboard existence. No deterministic production-overlap claim is made.
+- Correction: bounded predicate wait for the original below-header/above-keyboard invariant, followed by unchanged45/14 strict assertions. Applied on initial/repeated focus and foreground return; explicit focus if iOS dismissed the keyboard in background. Persistent bad geometry still fails with actual frame diagnostics. No fixed sleep, tolerance increase or removed assertion.
+- Validation:11 Node keyboard/native-contract tests pass;1,317 full Python tests run OK with31 skips. Actual corrected-head native CI pending. See native-geometry-and-seeded-batch.md.
+- Status: IMPLEMENTED; native rerun pending. The exhausted313/318 engine history is preserved, not marked successful.
+
+## P3-101 — a fresh queue cannot start from independently validated owner source
+
+- Type: owner-requested bounded progression enhancement, not a reset of exhausted313.
+- Correction: a first new task may use the exact pinned owner engine tree only after exact-head tests.yml and required native CI succeed. Persist seed source/run evidence, create a unique immutable task base, and retain per-task authorization/expiry, original counters and3-attempt bound. Missing/failed/cancelled CI or branch movement blocks launch.
+- Regression: successful fresh-source advancement, failed/moved-source refusal and separate native-CI waiting.28 queue tests,75 focused tests and1,317 full Python tests pass (31 full-suite skips); ten structural rules and policy/map checks pass.
+- Status: locally validated. New owner control319 prepares previously unstarted314/315; original313/318 remains stopped with57/13/5 counters and3 attempts, no budget/counter reset or cap increase. Live319 must pass its initial-source gate before coding. No merge/deploy/release.
+
+## P3-102 — unpublished generation cannot resume or replace its failed plan
+
+- Evidence:314/40820493588 failed five exact-anchor proposals, published no source/PR, retained8 calls/4 edits. Existing resume required a PR and reused its wrong-location plan despite owner correction.
+- Correction: resume only when task base/candidate match and all-state PR inventory, dev branch, accepted files and pending checkpoints prove no generated work exists. A hash-bound owner instruction archives old planning before retirement; ordinary guidance preserves cached planning. All counters/claims remain.
+- Regression: unpublished safe-resume and orphan/closed-PR/base-drift refusal; exact owner planning retirement versus generated/published preservation. Local focused and full-suite outcomes below; live trial pending.
+
+## P3-103 — controller upgrades lose independently validated candidate seed
+
+- Evidence:319 already proved tests40820462881/native40820462875 at5b before314 started; resuming orchestration must not silently change that immutable task base.
+- Correction: retain seed, independently verify original owner run, base ref and actual exact-source CI receipts on resume. Controller upgrade does not substitute candidate source or claim the new engine ran native tests.
+- Regression: original-seed reuse and drift/failed-provenance refusal. Live trial pending.
+
+## P3-104 — Base controller header becomes a code requirement
+
+- Evidence:314's persisted classification R1 was `Base: fix/phase3-queue-base-314`, categorized bug_fix, also copied into generated acceptance criteria.
+- Correction: strip Base with existing controller headers, retain actual routing from original issue. Migrate saved labels only between exact legacy/current projections of the same scope-bound owner request; unrelated request/scope changes remain rejected. Generation-plan identity remains the original issue, independently protected.
+- Regression: parser routing boundary, exact persisted classification migration and unrelated-request refusal. Live trial pending.
+
+## P3-105 — no authenticated fresh-engine queue start when API dispatch is unavailable
+
+- Evidence: CLI GitHub API returned401 while connected GitHub metadata/comment/ref tools and Git transport remain available; connector exposes no workflow-dispatch action. Rerunning old code would not validate new engine fixes.
+- Correction: optional push start limited to the accumulator branch, authenticated owner actor, exact commit message, fresh owner comment bound to source SHA/control/manifest, existing finite unexpired grant and one-shot atomic start ref. Ordinary pushes, bot/stale/wrong-source proofs cannot start a coder. Existing runtime source/receipt/claim gates remain active. This does not broaden candidate scope or lifecycle authority.
+- Regression: exact fresh owner proof succeeds; bot, stale/late comment, wrong SHA/manifest and ordinary commit message fail. Full-suite/security checks and live start outcome recorded below.
+
+### Recovery validation for P3-102–105
+
+- Final combined Python discovery:1,326 run, OK,31 skipped. Focused recovery/classification/queue/routing set:164 passed. Ten structural rules passed; shipped-source scan exit0 with15 existing HTML warnings. Dependency-map, reviewed execution-policy and whitespace checks passed.
+- Read-only rehearsal against the actual314 checkpoint verified exact legacy→current19-requirement migration and exact hash-bound failed-plan archival, preserving8 model calls/4 edits. No remote journal/claim state was edited by this rehearsal.
+- Initial full run exposed an outdated workflow-test harness lacking the new event context; it was corrected to check explicit dispatch behavior and push rejection, then the full suite above passed. Status: PATCHED locally; fresh live acceptance pending. All earlier failed task attempts remain evidence.
+
+## P3-106 — sandbox repair sees cascading test symptoms after the initial failure is clipped
+
+- Evidence:314/40826673859 generated an unpublished review-ingestion patch. Its test sets recovery.CURRENT to DummyJournal without resetting the ContextVar; subsequent tests fail against that leaked journal. Four successive repairs added missing mock members (project/events/avoid_models/event/scope/loader) while retaining the leakage. The last run reported1,318 tests,18 errors,37 skips;901 Node tests passed. Controller stopped at attempt_limit=5 with35 model calls/6 generation edits retained; no candidate PR exists and candidate remains5b. Queue319 is blocked,315 unstarted, no active coder.
+- Cause: SandboxTools._summary discards all but the last1,500 output characters; controller diagnostics then retain that tail. The first failing test/traceback is lost among later errors, biasing investigation toward secondary failures. Existing full execution logs remain available; this is a repair-prompt evidence defect, not permission to ignore failed tests.
+- Reproducer: two focused regressions with an initial failing test followed by a long DummyJournal error cascade both fail before patch (missing first_failure evidence).
+- Correction: retain a separately bounded1,200-character first-failure excerpt alongside the existing1,500-character tail/counts and carry both into repair diagnostics. No budget, candidate authority, test result, attempt counter or execution boundary changes.
+- Validation: both red-before regressions now pass;40 focused sandbox/controller tests pass. Full Python discovery:1,328 run OK,31 skipped. Ten structural rules, shipped-source scan (15 existing warnings), dependency-map/execution-policy and whitespace checks pass. Status: PATCHED; no live retry after exhausted task314.
+
+## P3-107 — independent review of task314's rejected, unpublished feature proposal
+
+- Status: BLOCKED candidate work, not an accepted delivery or production regression. Saved patch adds review_ingestion.py, a runtime Record.feedback field and one test module. It fetches all three comment categories but lacks PR/repository scope binding, durable Journal persistence, complete revision/line/timestamp/resolution metadata and pagination. IDs are not qualified by repository/PR; no call site integrates ingestion. Its sole test leaks recovery.CURRENT and uses invalid dummysha without installing a Goal record. Successive sandbox repairs did not establish a passing suite.
+- Source: generation/execution checkpoint patch receipts on314, independently inspected read-only while the owner worker was active. No generated candidate code was executed on the review host. No branch or PR was published;5b remains the original validated baseline.
+- Decision: preserve failed proposal/checkpoints and every counter. Five sandbox repair attempts are exhausted even though outer queue attempts are2/3; retrying cannot replenish the inner allowance. Do not resume or create replacement authorization. Progress watch paused at owner's explicit exhaustion boundary. Further feature delivery needs owner review of this retained failure and a deliberate next scope, without pretending314 completed.
+
+## P3-108 — direct owner-requested continuation: durable scoped review inbox
+
+- Scope: implementation enhancement after owner requested resume, not an automatic retry/reset of exhausted314 or a claim that its rejected proposal passed. Work stays in312. The original failed task/queue counters and frozen candidates are unchanged.
+- Implementation: real Journal.ingest_reviews interface, live active/journal scope and exact saved candidate checks, three authenticated REST categories, complete stable bounded scans, qualified identities and supplied metadata, immutable hashed durable inbox receipts, idempotent reload, edits/tombstones/reappearance, cancellation/concurrency/API/storage refusal. Feedback remains untrusted and links are never followed; no edit or lifecycle action follows from ingestion.
+- Validation:12 behavioral tests and119 focused ingestion/journal/task-state tests pass. Full Python discovery:1,340 run OK,31 skipped; ten structural rules and shipped-source scan pass with15 existing warnings. Policy/map/whitespace checks pass. No live candidate ingestion or automatic repair integration claimed. Details/limits: review-ingestion.md.
+- Remaining: automatic consumer/wakeup integration, downstream processed decisions, richer thread resolution metadata and live scoped acceptance. The complete Phase3.2 milestone stays open pending these acceptance boundaries;314/315 stay historical, not machine-marked complete.
+
+## P3-109 — owner-authorized ten-candidate repair allowance and retained retry
+
+- Owner explicitly requested increasing the sandbox ceiling from5 to10 tested candidates and retrying314. MAX_ATTEMPTS is now10; the outer queue cap3, model-action cap20 and all existing duplicate-patch/repeated-tool/identical-error, scope, expiry and execution guards remain. Existing attempts/actions/accounting are not deleted or zeroed.
+- A fresh explicit Fix or authenticated live owner-queue binding can resume a stored attempt_limit stop only while the retained attempt/action counts fit the new ceiling. Ordinary automatic resumes and unbound queue-step requests remain terminal. The retained candidate is rerun first for fresh error evidence without adding a distinct-candidate debit; subsequent workarounds still need a different patch and tests. Failure fingerprints now include the first-failure excerpt as well as the tail, with timing noise normalized. Prompt guidance calls out test-state cascades and ContextVar cleanup rather than growing fake objects to mask symptoms.
+- Queue recovery now authenticates a saved unpublished sandbox checkpoint and patch receipts, owner scope, original immutable base and absence of any task PR/branch before resuming it. Generated work is retained; malformed/foreign/moved checkpoints remain refused. A partial generation without a reconstructible sandbox remains blocked.
+- Regression: resume from a real five-attempt journal preserves that prefix and action counts, refuses automatic/unbound starts, then succeeds with a sixth candidate under the new ceiling. Full ten-attempt/fingerprint accounting tests and bot-fragment/scope/base denial pass.82 focused sandbox/queue/recovery checks passed;16 Phase1 acceptance tests run OK with12 Docker skips. Read-only rehearsal authenticated314's actual retained patch and5 attempts/35 calls/6 edits without remote journal edits. Final full Python discovery:1,342 run OK,31 skipped. Ten structural rules, shipped-source scan (15 existing warnings), policy/map/whitespace checks pass. Fresh live retry pending.
+-314/319 remain on the same task/grant/expiry/claim, with no replacement authorization. This is the owner's requested allowance change, not an unrequested reset. Original313/318 stays stopped. No merge/deployment/release.
+
+## P3-110 — real-Docker acceptance fixture retained two five-attempt expectations
+
+- Evidence: sourcec796e68 passed ordinary Python tests but Docker CI40875648113/job123453651402 failed test_all_ten_repair_attempts_are_separately_recorded with10 !=5. The test had updated candidate expectations but still expected five model calls and UI indices1–5. Local runs explicitly skipped this GitHub-Docker-only fixture; that is not a pass of its body.
+- Correction: require ten model calls; verify bounded UI diagnostics contain6–10; separately reload the hashed durable controller and require all ten attempts1–10. No production cap, test definition, assertion removal, skip change or budget reset. Local related checks:64 run OK with12 explicit Docker skips; map/policy/whitespace pass. Fresh real-Docker CI on this correction is required; no duplicate coder trial is permitted.
+- Live queue outcome:40875727069 stopped failed/action_limit at20 cumulative actions and6 of10 candidate versions. Totals43 model calls/6 generation edits, outer queue attempts3/3, no candidate branch/PR published,315 unstarted. The focused new test finally exposed record=None in its own setup; final patch64f1f91b3ea46dba3a25a171164890fb71114f60716757abce5b8ba11e0e904d still only adds fake journal members and lacks proper Goal/context cleanup and durable ingestion/scope enforcement. Separate direct inbox implementationd3b4d0d remains in312, not attributed to314.
+- Owner boundary: progress watch paused after confirming no worker remains active. No launch4, action-cap increase, count reset or replacement grant. Phase3.2 remains incomplete. Ordinary tests/graph/native CI on c796 succeeded; its Docker failure is retained honestly, with corrected-head evidence recorded separately.
+
+## P3-111 — owner raises exhausted action/launch ceilings and requests compatible bug batches
+
+- New owner instruction authorizes raising the exhausted limits and retrying. Repair actions20→100; queue launches3→10. Tested candidate ceiling stays10. All spent actions/candidates/model calls/edits, original grant/expiry, immutable base and claim remain. This is an allowance increase, not counter reset or a replacement task.
+- Explicit fresh owner Fix/authenticated queue may reopen action_limit while retained counts fit the new ceiling. It first reruns the retained candidate without a distinct-candidate debit, then continues within remaining capacity. Automatic/unbound terminal resumes and scope/cancellation/concurrency/publication safety rules remain denied. No unrelated provider/access/workflow or lifecycle changes.
+- Batch behavior: one candidate may contain compatible evidence-backed fixes for multiple root causes in the same authorized goal. The controller now states this explicitly. There was no one-bug patch cap; this is not ten parallel workers or a promise that any ten unrelated bugs finish together. New real-Docker invoice regression batches the date and tax corrections, requires one repair action and a fresh final regression, and asserts no source-publication mutations.
+- Regressions preserve an old exhausted action prefix on owner retry and prior three queue-launch debits on launch4; full ten-candidate tests remain.101 related tests run OK,13 explicit Docker skips; ten structural rules, source/map/policy/whitespace checks pass. Full Python discovery before the final prompt clarification:1,345 run OK,32 skipped. The clarification permits correcting faulty new-test setup/cleanup while retaining assertions, requirements and command/safety gates; final focused checks cover that source. Fresh live trial pending. Source62e3aab's corrected full Docker40879161187 succeeded before this new change.
+- Target314 remains at43 model calls/6 generation edits,6 tested candidates and20 repair actions before retry; original stopped313/318 is not revived. No merge/deployment/release. More capacity is not a passed feature; actual root fixes still need tests and independent review.
+
+### P3-111 pre-dispatch investigation preflight
+
+The live314 ledger also showed33 read calls and121,764 output characters against a120,000-character output allowance: investigation was already exhausted. Before dispatch, expanded config/exploration.json to the existing validated maxima (500 reads,3,600 active tool seconds,2,000,000 output/context characters). Prior read usage is not cleared; request/prompt size, scoped local read-only tools and per-result limits remain unchanged. A regression using the actual retained amounts proves the old allowance refuses another read and the new configuration permits it while increasing the cumulative counter33→34. Final exploration/ledger checks:39 run OK (1 explicit Docker skip). Final full Python discovery:1,346 run OK,32 skipped. Map/policy/whitespace/source checks pass; new-head Docker batch acceptance remains pending. No new external endpoints or provider capacity is granted.
+
+## P3-112 — stopped worker leaves a contradictory running row in the queue report
+
+- Evidence: queue319/40888143488 correctly stopped overall as blocked, while tasks314.status remained running. The child can exit0 after recording its blocked/paused/question state; Queue.run raised before updating the pre-start running row. This is a reporting bug, not an active hidden worker or task completion.
+- Reproducer: one real-Queue regression exercises clean child exit with blocked,paused,needs_clarification checkpoints and no published PR. All three cases failed before the correction (running != recorded outcome).
+- Correction: copy the authenticated child checkpoint's stop status to the same task row before the existing stop/report path. Keep attempts/claims/candidate unchanged and never start the successor. No manual rewrite of the historical live checkpoint.
+- Validation: all three red-before cases now pass;36 queue tests pass. Map/execution-policy/whitespace checks pass. No new worker dispatch or cap change.
+- Latest independent trial review:314 exhausted10 candidate versions at30/100 actions,55 model calls/6 generation edits and4/10 launches. Candidate source/PR remains unpublished,315 unstarted. Python errors fell18→1 because the test now crashes earlier at recovery.CURRENT.get().record before leaking dummy state, not because17 distinct bugs were fixed. Ingestion module remains the original incomplete in-memory implementation, with missing scope/persistence guarantees. Final saved patch721c488efb04826609133bd2ff6373bbd9d9a538b68161f54130f04e355c6cab is retained, not accepted.
+- Engineb1a8264 unit/web/Worker/structure40888046606, real Docker40888046745, native40888046788 and graph40888046753 succeeded. Inspected Docker job123496948639 logs confirm both the ten-attempt accounting and two-root single-batch tests passed;17 Phase1 tests ran. These fixture successes do not establish314 success. Watch paused per the explicit exhaustion rule; no duplicate run, reset, replacement authorization or merge/deploy/release.
+
+## P3-113 — deleted review authors block the entire evidence inventory
+
+- Evidence: review_ingestion._inventory rejected an explicit GitHub user:null even when the source ID/body remained valid. One deleted account could block ingestion of all other comments. The real-Journal regression test_deleted_authors_remain_evidence_without_blocking_other_feedback failed before the patch with ValueError: Review source identity is missing.
+- Correction: accept explicit null authors as unknown ID/login/type, retaining the stable comment identity, body and evidence-only flag. This does not mean the comment is deleted or provide owner authority. Missing user fields and malformed non-null author objects still fail closed. Cover all three source categories, reload and subsequent edits.
+- Immediate validation:120 ingestion/journal/task-state tests passed. Additional malformed-author cases preserve the existing committed inbox. Broader rerun:1,348 full Python tests run OK (32 skipped);10 structural rules, shipped-source scan (15 existing warnings), dependency-map, execution-policy and whitespace checks pass. The same source correction is carried into the independently reviewable draft320; engine fixes remain in312.
+- Status: PATCHED locally; remote corrected-head verification pending. No task counter/checkpoint or grant changes.
+
+## P3-114 — latest native UI verification has two unresolved failures
+
+- Evidence: engine0964f14 run40896030489/job123525251554 built simulator and unsigned iPhone applications, but executed5 UI tests with4 assertion failures. Three are keyboard non-dismissal at LaunchTests.swift:97 in the repeat loop; one is missing persisted recovery acknowledgment after restart at line177. These are not the earlier composer-geometry assertion and must not be described as a passed native check.
+- Prior b1a8264 native40888046788 passed. The newer source change only updates queue reporting, so the latest failure does not establish a native source regression or prove the failures harmless. No speculative app/test patch, relaxed assertion or repeated CI retry was made to hide the evidence.
+- Status: OPEN for native-specific reproduction and artifact inspection. The narrow review-ingestion slice has separate successful remote evidence: PR320/94da2aa tests40899169255 (Python1329 run OK,32 skipped), web, Worker and structure; graph40899169240 passed. No automatic queue continuation is inferred from those checks.
+
+## P3-115 — connect scoped evidence ingestion to the existing owner Fix entry point
+
+- Gap: the durable API in312/320 had behavioral coverage but no runtime caller. Reviews added between authorized Fix requests were not collected. Two real-Journal entry-point regressions failed before wiring: no durable inbox was produced, and a moved saved candidate was not rejected before check polling.
+- Change: fix_pull_request calls Journal.ingest_reviews only when its current journal already binds a PR. The API independently authenticates the exact task/PR/repository/head before every read and persistence. This call precedes task-state rebinding, check polling, model generation and repair accounting. Feedback remains evidence, not owner guidance or a trigger for repair. Unbound legacy journals are not adopted; no-journal behavior is preserved.
+- Regression: four runtime tests cover durable collection with pending checks and no inference/sandbox/budget charge, moved-head refusal before planning or mutations, rate-limit failure retaining the prior inbox, and legacy non-adoption. Related runtime/ingestion/Fix/journal/task-state checks:135 run OK. Final broader validation after the fixture isolation fix:1,352 Python tests run OK (32 skips);10 structural rules, source scan, dependency-map, reviewed execution-policy and whitespace checks pass. No worker dispatch, task completion/adoption, counter reset or lifecycle actions.
+- Status: IMPLEMENTED locally; remote exact-head verification pending. Live owner-scoped acceptance, review-triggered wakeups and Phase3.3 source-repair consumption remain unclaimed.
+
+### P3-113 / P3-114 remote evidence follow-up
+
+Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker and structure in40902062899; its new regression passed in job123546732223. Engine ac74407 passed1348 Python tests (33 skips), web, Worker and structure40902043840 and full Docker40902043850. Native40902044077/job123546667861 ran five UI tests with zero failures, including both previously failing tests. Native application/test sources were not changed to address the earlier failures; this is evidence of intermittent failures, not a permanent root-cause repair. P3-114 remains OPEN for stability investigation. No merge/deployment/release or readiness change.
+
+## P3-116 — recovery fixture inherits a stale progress reporter in a focused test order
+
+- Reproducer: with PYTHONPATH=.:tests, run unittest tests.test_immediate_retry followed by tests.test_reliability.DurableRecoveryTests.test_routing_cooldown_survives_both_generation_error_wrappers. Four tests ran with one error before the correction: the cooldown test's routing retry reached a stale Progress.latest left by the previous module and failed authorization during error reporting. The cooldown test passed alone and normal full discovery passed, demonstrating the order-dependent fixture leak rather than a verified product regression.
+- Correction: DurableRecoveryTests.setUp saves/clears Progress.latest and restores it with addCleanup, matching other real-Journal fixtures. No production authorization, assertion, routing limit or test command is weakened.
+- Immediate rerun: the same four-test sequence now passes. The broader intentionally ordered unlimited-cycle/audit/immediate-retry/reliability selection runs56 tests OK. Final full discovery after this fixture cleanup:1,352 tests run OK (32 skips), separate from the earlier pre-cleanup1352-test pass.
+- Status: PATCHED locally; remote current-head verification pending.
+
+## P3-117 — candidate fingerprints did not establish different repair mechanisms
+
+- Owner requested more useful capacity and distinct error-driven ideas. The ten314 candidates were distinct patch bytes, mostly extending a fake journal or moving invalid test setup; they were not ten separate bugs or ten independently reasoned mechanisms. The last patch crashed before installing recovery.CURRENT. Its lower error count was not proof of fixed behavior.
+- Change: offer record_repair_plan with cause, intervention, citations to actually read path/line ranges at the current candidate, expected test outcome and comparison with earlier approaches. Store plans and outcomes in the durable controller/attempt record and include them in subsequent prompts. Exact normalized strategy repeats, punctuation/attempt-number relabeling, stale/invented citations and new patches without a fresh plan after repeated named-test failures are refused. Same named test is tracked despite changing exception text/cascade counts. A distinct evidence-bound plan may be tried against identical failure output; an unplanned identical-error replay still stops. Passing full/final tests remain required.
+- Limits: owner-authorized candidate ceiling10→20 total, not20 fresh. All10 spent314 candidates,30 actions,55 calls/6 generation edits and4 launches remain. Actions stay100; queue launches stay10; scope/expiry/provider/access/exploration ceilings and duplicate-worker protections are unchanged. New recovery regression reconstructs ten spent attempts then validates candidate11 without clearing the old prefix or actions; automatic/unbound terminal-resume checks remain.
+- Evidence: a controller regression runs a wrong evidence-bound initialization, records its failed outcome, then succeeds with a different contract-based intervention despite identical intermediate error text. Others reject changing exception details as proof of a new named test, invented/stale citations and cosmetic strategy labels. A real-Journal interruption regression preserves the first failed hypothesis/attempt across runner loss and resumes a new plan with cumulative actions intact. Focused controller/queue/recovery/Phase1 checks initially106 run OK (13 real-Docker skips); the subsequent new interruption/strategy selection ran4 OK. Final full Python discovery:1,357 tests run OK (32 skipped); final strategy/interruption/ten-spent-prefix selection5 tests passed. Ten structural rules, source scan, dependency-map, execution-policy and whitespace checks pass.
+- Real-Docker capacity acceptance now uses21 independently failing named value contracts, fixes20 in separate tested candidates and requires the21st to remain failed when capacity exhausts. This replaces the old wrong-offset scenario, which would itself constitute the repeated-single-test approach now requiring a new mechanism. It retains full attempt, UI-latest-five and durable-history assertions. This body is not claimed as locally run; exact-head remote Docker CI is required.
+- Limits of this mechanism: causal explanations are untrusted model claims, not proof of semantic novelty or correctness. Source citations and normalized exact repeats are mechanically checked; synonymous bad ideas can still require independent review. The guard does not promise20 different bugs fixed. Tests and honest outcome history decide success.
+- Status: IMPLEMENTED locally; exact-head CI pending. No worker was dispatched against the old failed proposal. The manual PR320/source handoff is still unadopted; increasing capacity does not authorize bypassing its journal/source mismatch or changing completion markers.
+
+## P3-118 — real-Docker scripted agents still used the pre-strategy patch protocol
+
+- Evidence: source023be10 real Docker40927316618/job123636174370 failed five Phase1 assertions. The scripted targeted repair fixed due dates first while the same tax test remained first in the failure inventory. The new recurrence guard then correctly required a plan; the old script kept sending unplanned patches and stopped repeated_tool_call. Unit/native CI passed, but this Docker fixture body was skipped locally and was not a verified pass.
+- Correction: successful targeted/interruption scripts now read current source and supply causal plans before their patches; repair counts still count actual patch proposals separately from planning tool calls. The negative unplanned-repeat case now requires refusal before a second candidate, with the guard message recorded. The back-and-forth test supplies distinct plans and retains repeated-patch detection. Existing test-command, isolation, exact-source, full/final regression and persisted-history assertions remain enforced.
+- Local real-controller regression with simulated invoice execution proves the two targeted fixes use two distinct source-cited plans and pass with the original patch/attempt counts. The related57-test selection passed (13 explicit real-Docker skips); the new scripted-protocol regression passed separately. Exact-source real Docker rerun is required before a coding restart.
+- Status: PATCHED locally; remote verification pending. No coder dispatch or machine marker/count/grant rewrite.
+
+## P3-119 — explicit owner handoff from the stopped proposal to the reviewed draft
+
+- Restart blocker:314's authentic journal still points to original5b/unpublished failed proposal4c149eb4f2c2961bb90db438898cb0480de09c9198105fc941c0737fd6005929 while the separately reviewed manual PR320 is at d561a8a. The existing drift guard correctly refuses a silent restart. Raising the candidate ceiling does not itself adopt source.
+- Change: a fresh exact-source owner receipt on the existing control issue can bind the original task/digest/manifest, stopped run/base/execution hash, existing draft PR/head and selected engine SHA. Both queue loading and the child Fix independently verify it against current owner-run, task/control expiry, stopped worker, immutable base, bounded fast-forward/file inventory and successful exact-source PR checks. Foreign/stale/duplicate approval, moved/closed PRs, active workers, changed authority and exhausted repair capacity are refused.
+- Before adoption, archive the complete failed proposal and old generation material; store a separate hashed controller history. Do not label old generation plans as published. Preserve all10 failed candidate versions,30 actions,55 model calls/6 edits, original grants/expiry and immutable claims. The next sandbox repair carries the original attempts/actions forward and records candidate11; later verified publication updates that carried usage for subsequent fixes. No budget prefix is cleared.
+- Reauthorize every archival/checkpoint write. Revocation, withdrawal, source movement or a stopped parent during archival leave the original journal state intact. The handoff is consumed only by an authenticated queue Fix; it cannot be invoked by an automatic/unbound continuation. It approves source identity, not implementation. The first normal Fix forces a fresh original-task review; a no-code review dispatches exact-source checks, and a failed test dispatch keeps review retryable.315 still waits for ordinary complete review plus trusted validation.
+- Regressions cover every receipt binding/freshness, foreign/revoked/expired/moved sources, active workers, successful adoption plus exact counter transfer, exhausted-capacity denial, archive failure/withdrawal rollback, real Journal.begin with new/previous engine receipts, queue launch4→5, subsequent publication carry and preserving old generation material without a false published marker. The91 related handoff/runtime/execution/queue tests pass; full Python discovery ran1,372 tests OK (32 skipped). A final display-only binding clears old-source diagnostics to pending for the adopted source while retaining cumulative attempt10 and archive references;54 final handoff/runtime/queue checks pass after that adjustment. Structural/map/policy/source/whitespace checks pass. Exact-head remote CI remains required. Live read-only checkpoint authentication confirmed10 attempts,30 actions,55 calls/6 edits; frozen controller154,628 bytes and107 existing comments. No source or machine marker was edited during that inspection.
+- Status: IMPLEMENTED locally; source-specific CI and authenticated owner restart receipt are required before launch. No new task/grant, renewal, provider/access change, merge, deployment, release or readiness change. Scheduled watch remains disabled.
+
+## P3-120 — sandbox repair inherited the caller's lightweight routing role
+
+- Run40937595380 (engine e2bfbe2) completed with failure after314 validation and315 sandbox repair. Repair calls used role light and a2000-token structured-action ceiling; that ceiling was not proof of output truncation. The controller invoked tool_loop outside its own repair action, inheriting the caller's role (normally light).
+- Patch: bind each controller tool/model step to task_state.action('repair'), selecting the existing code ranking and restoring action/routing contexts on success or failure. No provider configuration, quota, output ceiling, task budget or authority is changed.
+- Red-before regression observed review/reviewer instead of code/repair from an actual controller callback. After the patch, all15 controller tests and118 focused controller/strategy/ingestion/recovery/handoff/queue tests passed. FakeDocker simulations execute no generated repository code locally.
+- Full Python discovery after both patches:1,375 tests run OK (32 skipped). Ten structural rules pass; source scan has15 existing warnings, no errors; dependency-map, reviewed execution-policy and whitespace checks pass. Status: PATCHED locally; exact-source remote CI is separate. This does not assert a stronger route will necessarily solve315.
+
+## P3-121 — repair-plan rejection did not name the missing contrast field
+
+- Authentic315 checkpoint f8f2415f22c02e9565e6c7254a7dbfcf01a26d5878fd9f860a557166b2cf6a19 stopped repeated_tool_call with2 tested candidates and19 spent actions. Its final rejected plans explained the previous failure in cause while omitting differs_from. The error requested an explanation without naming the required argument. This was not candidate/action/queue limit exhaustion.
+- Patch: rejection and repair prompt explicitly require differs_from (12–1200 characters) for a previously tried failure family. Evidence, distinct-strategy and recurrence guards remain enforced. A red-before regression verifies the missing field is named and the invalid plan remains rejected.
+- Independent315 source review: hashed patch eff3e269d9211dda2d696e0f3cdc94c5c57006732fd8e4794613da628ad5a1b2 changes production behavior only by adding redundant parentheses. Its concurrent-update fixture counts all target reads and appends comment ID2 on every matching read after the first call, yielding IDs1,2,2. The inventory correctly raises ValueError for duplicate identity, rather than CheckpointMismatch for different valid snapshots. The generated proposal does not establish incremental-sync delivery.
+- Added regressions reproduce that malformed fixture and exercise a real addition exactly between conversation scans. The latter preserves the old pointer, makes no writes on an unstable scan, then reloads/retries and ingests both identities once with one revision increment. Duplicate checks and behavioral expectations remain. All118 focused tests pass. Corrections live in312;315's unpublished checkpoint/history and frozen candidate are not rewritten or declared complete.
+- Status: PATCHED protocol feedback and regression coverage;315 delivery remains blocked pending a corrected proposal and original-requirement validation. No worker restart is implied.
+
+## P3-122 — skipped/neutral and no-tests execution looked like passing tests
+
+- Inspection: external testState accepted every neutral/skipped check-run conclusion as passed. A successful project workflow with its explicit No tests detected step also kept tests.state=passed. Neither establishes executed passing tests.
+- Correction: skipped/neutral-only external checks report none; mixed non-success checks cannot pass. A successful no-tests workflow keeps workflowState=passed but tests.state=none and the existing explicit-owner manual-review warning/policy. No-tests workflow completion is not a fabricated test result.
+- Regression: review-evidence.test.mjs rejects a skipped external receipt, and intelligence.test.mjs retains the successful tested-project case plus the no-tests manual-review case while asserting distinct workflow/test states. New source verification is recorded in the direct-delivery report.
+- Status: PATCHED locally; no live owner merge was performed.
+
+## P3-123 — app merge gates omitted browser failure
+
+- The existing merge helper checked the trusted sandbox and native build but not the app candidate's browser job. A visual regression could therefore coexist with an enabled owner merge action.
+- Correction: app merge requires the exact source/branch browser job to pass before any readiness/merge request. Failed, skipped, missing or unavailable browser evidence cannot satisfy it. GitHub's reviewed-head binding and all owner consent/free-execution gates remain. Browser execution explicitly checks out the PR head; artifacts record its source/workspace identity.
+- Regression: merge-browser-gate.test.mjs simulates passing sandbox/native checks with failed or skipped browser execution and asserts409 plus zero lifecycle writes. The existing positive owner-merge fixture now supplies a real-shaped passing browser receipt; its original assertions remain.
+- Status: PATCHED locally; all lifecycle calls in tests use injected transport.
+
+## P3-124 — Reviews page bypassed the detailed development-PR card
+
+- Reproducer: the desktop browser reached the Reviews page with draft fixture900 present, but no data-reviewcard control existed; the browser timed out after30 seconds. The Dashboard had the detailed card while Reviews rendered only a plain link.
+- Correction: both entry points render developmentReviewItem, including the same safe evidence, feedback, refresh and owner controls. No new automatic mutation or merge action is introduced.
+- Immediate rerun: desktop and390px phone Chromium regression matrix passed, including opening the actual review control, escaped script-like feedback, physical-device not-run wording, no merge button for an unready candidate and no horizontal overflow. Screenshots were visually inspected. Remote WebKit/native results remain separate.
+- Status: PATCHED locally; delivery CI pending.
+
+## P3-125 — saved review authority did not bind the PR base ref
+
+- Reproducer: keep the same saved draft PR/head/repository, retarget its base from main to release, then ingest again. The new regression failed because ingestion accepted that retargeting.
+- Correction: when the journal has a saved base, the observed PR base ref must match it before collection, decisions or publication. A changed base cannot reuse the original saved authority. The prior inbox is retained on denial.
+- Immediate rerun: the review ingestion/thread/decision/runtime/acceptance selection passes after correction. No actual PR was retargeted by the test.
+- Status: PATCHED locally; source-specific remote verification pending.
+
+## P3-126 — deprecated GraphQL comment identities lose64-bit IDs
+
+- Independent API schema inspection confirmed PullRequestReviewComment.databaseId is deprecated Int and fullDatabaseId is BigInt. The old query cannot safely represent modern64-bit comment identities. A regression using2**55+7 failed before correction.
+- Correction: query fullDatabaseId and accept an exact positive signed64-bit integer or canonical decimal string; reject bool/float/malformed/duplicate IDs. REST joins retain the full integer without rounding. The corrected query was validated against the live GitHub schema using a read-only312 query; that PR had zero inline threads, so no live task ingestion is claimed.
+- Immediate rerun:39 review-focused tests run OK (one real-Docker skip), including the preserved64-bit identity. Original failed task histories and grants are untouched.
+- Status: PATCHED locally; source-specific remote verification pending.
+
 ## Finding template
 
 ### P3-NNN — short defect title

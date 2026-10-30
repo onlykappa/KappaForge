@@ -46,6 +46,34 @@ def tearDownModule():
 
 
 class DeveloperValidationTests(unittest.TestCase):
+    def test_xctest_bundle_counts_as_changed_test_and_as_requirement_evidence(self):
+        from engine import requirements, verify
+        source = 'ios/App/Layout.swift'
+        test = 'ios/AppUITests/LayoutTests.swift'
+        before = 'struct Layout { static func clear(_ bottom: Double, _ top: Double) -> Bool { bottom <= top + 100 } }\n'
+        after = before.replace('top + 100', 'top + 14')
+        check = 'XCTAssertFalse(Layout.clear(50, 20))'
+        test_source = 'import XCTest\n@testable import App\nfinal class LayoutTests: XCTestCase { func testOverlap() { ' + check + ' } }\n'
+        proposal = json.dumps({'files': [
+            {'path': source, 'reason': 'Preserve the required keyboard clearance', 'edits': [{'find': 'top + 100', 'replace': 'top + 14'}]},
+            {'path': test, 'reason': 'Reject overlapping geometry that the previous implementation accepted', 'content': test_source}]})
+        with patch.object(developer, 'run_model', return_value=('scripted', proposal)):
+            _, _, changes, _ = developer.generate('key', 'Correct layout and add XCTest coverage', developer.ROOT,
+                                                  {source: before}, {source: len(before)}, require_test=True)
+        self.assertEqual(changes[source], after)
+        self.assertEqual(changes[test], test_source)
+        self.assertIs(developer.TEST_RE, verify.TEST_RE, 'Generation and evidence must use the same path policy')
+        self.assertEqual(requirements.test_evidence({'test': {'path': test, 'quote': check}}, changes.get),
+                         {'path': test, 'quote': check})
+        self.assertIsNone(requirements.test_evidence({'test': {'path': test, 'quote': 'XCTAssertTrue(false)'}}, changes.get))
+        for path in ('ios/AppTests/Geometry.swift', 'ios/AppUITests/LayoutTests.swift', 'Tests/AppTests/Nested/Geometry.swift'):
+            self.assertTrue(developer.has_tests([path]), path)
+            self.assertFalse(developer.needs_test([path]), path)
+        for path in ('ios/App/KappaWebView.swift', 'ios/App/TestHelper.swift', 'Sources/TestSupport/Geometry.swift'):
+            self.assertFalse(developer.has_tests([path]), path)
+            self.assertTrue(developer.needs_test([path]), path)
+            self.assertIsNone(requirements.test_evidence({'test': {'path': path, 'quote': check}}, lambda _: check))
+
     def setUp(self):
         # A checklist another test left behind must not receive this test's activity (it posts once its
         # four-second write throttle has passed, which a slow runner reaches).

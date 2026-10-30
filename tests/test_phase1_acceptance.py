@@ -14,7 +14,7 @@ import re
 import unittest
 from unittest.mock import patch
 
-from engine import developer, infrastructure, intent_guard, recovery, sandbox, sandbox_repair_controller, sandbox_tools, tool_loop
+from engine import developer, execution, infrastructure, intent_guard, recovery, sandbox, sandbox_repair_controller, sandbox_tools, tool_loop
 from tests.test_recovery_journal import GitHub
 from tests.test_sandbox import FakeDocker
 
@@ -45,11 +45,14 @@ def evidence(prompt):
 
 class Agent:
     """A deterministic stand-in for the repair model. plan(failing, call) returns (reason, args) or None for done."""
-    def __init__(self, plan, tool='apply_patch'):
+    def __init__(self, plan, tool='apply_patch', planned=False):
         self.plan, self.tool, self.seen, self.prompts, self.actions = plan, tool, [], [], []
+        self.planned, self.protocol = planned, []
 
     def __call__(self, _api_key, prompt, **_kwargs):
         self.prompts.append(prompt)
+        if self.protocol:
+            return 'scripted:acceptance', json.dumps(self.protocol.pop(0))
         _text, failing = evidence(prompt)
         self.seen.append(failing)
         step = self.plan(failing, len(self.seen))
@@ -57,7 +60,17 @@ class Agent:
             return 'scripted:acceptance', json.dumps({'done': True, 'summary': 'The agent believes the work is done.'})
         reason, tool, args = step if len(step) == 3 else (step[0], self.tool, step[1])
         self.actions.append((tool, args))
-        return 'scripted:acceptance', json.dumps({'tool': tool, 'args': args, 'reason': reason})
+        reply = {'tool': tool, 'args': args, 'reason': reason}
+        if self.planned and tool == 'apply_patch':
+            path = args['edits'][0]['path']
+            self.protocol = [dict(tool='record_repair_plan', reason=reason, args=dict(
+                cause='The original failing assertion exposes this contract defect: ' + reason,
+                strategy='Apply this intervention: ' + reason, evidence=[dict(path=path, line=1)],
+                expected_result='The named original failing test passes without weakening its assertion',
+                differs_from='The previous intervention left a failing assertion; address this remaining mechanism')),
+                reply]
+            reply = dict(tool='read_file', args=dict(path=path, start_line=1, end_line=80), reason='Read current evidence before planning')
+        return 'scripted:acceptance', json.dumps(reply)
 
 
 def targeted(failing, _call):
@@ -88,12 +101,48 @@ class Scenario:
         return [row for row in self.commands if row.get('result', {}).get('profile') == 'test']
 
 
+class ScriptedProtocolTests(unittest.TestCase):
+    def test_targeted_script_supplies_current_evidence_and_distinct_plans(self):
+        import io
+        import tarfile
+        from tests.test_sandbox_repair_controller import FakeDocker
+        from engine import task_goal
+        class InvoiceDocker(FakeDocker):
+            def call(self, args, stdin=b'', **kwargs):
+                if args[:1] != ['run']:
+                    return super().call(args, stdin=stdin, **kwargs)
+                with tarfile.open(fileobj=io.BytesIO(stdin), mode='r:*') as archive:
+                    files = {m.name: archive.extractfile(m).read() for m in archive if m.isfile()}
+                failures = []
+                if b'.quantize(Decimal(1), rounding=ROUND_HALF_UP)' not in files['invoice/money.py']:
+                    failures.append('FAIL: test_invoice_total_includes_rounded_tax (test_invoice.MoneyTests)')
+                if b'timedelta(days=net_days)' not in files['invoice/terms.py']:
+                    failures.append('FAIL: test_net_terms_count_calendar_days (test_invoice.TermsTests)')
+                output = '\n'.join(failures) + '\nRan 8 tests in 0.001s\n' + ('FAILED (failures=1)\n' if failures else 'OK\n')
+                return sandbox.Exec(1 if failures else 0, output, '')
+        for variable in (intent_guard.ACTIVE, recovery.CURRENT, task_goal.CURRENT):
+            token = variable.set(None)
+            self.addCleanup(variable.reset, token)
+        world = GitHub()
+        journal = world.journal()
+        work = sandbox.Session(sandbox.Tree(recovery.ROOT, 'a' * 40, fixture_files()), docker=InvoiceDocker())
+        agent = Agent(targeted, planned=True)
+        control = sandbox_repair_controller.SandboxRepairController(work, journal=journal)
+        result = control.run_repair(TASK, agent, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        self.assertEqual(len(agent.seen), 2)
+        self.assertEqual(len(agent.actions), 2)
+        self.assertEqual(len(control.state['repair_plans']), 2)
+        self.assertNotEqual(control.state['repair_plans'][0]['strategy'], control.state['repair_plans'][1]['strategy'])
+        self.assertEqual([a['status'] for a in result['attempts']], ['failed', 'passed'])
+
+
 @unittest.skipUnless(REAL_DOCKER, 'requires the GitHub-hosted Docker runner (KAPPA_SANDBOX_INTEGRATION=1)')
 class RealSandboxAcceptance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # The successful targeted repair is shared by the tests that inspect its record.
-        cls.repaired = Scenario(Agent(targeted))
+        cls.repaired = Scenario(Agent(targeted, planned=True))
 
     def tearDown(self):
         intent_guard.ACTIVE.set(None)
@@ -155,6 +204,18 @@ class RealSandboxAcceptance(unittest.TestCase):
         self.assertEqual(sorted(second['changed_paths']), ['invoice/money.py', 'invoice/terms.py'])
         self.assertEqual(second['status'], 'passed')
 
+    def test_compatible_root_causes_can_be_repaired_in_one_batch(self):
+        def together(failing, call):
+            self.assertTrue(failing, 'the batch follows actual failing test evidence')
+            return 'Fix both known invoice root causes together', {'edits': [TERMS_FIX, MONEY_FIX]}
+        run = Scenario(Agent(together))
+        self.assertEqual(run.result['status'], 'success', run.result['summary'])
+        self.assertEqual(len(run.agent.actions), 1)
+        self.assertEqual(set(run.result['candidate_changes']), {'invoice/terms.py', 'invoice/money.py'})
+        self.assertEqual([r['result']['status'] for r in run.tests_run()], ['failed', 'passed', 'passed'])
+        self.assertTrue(all(not any(word in path for word in CODE_WRITES)
+                            for path, _payload, _method in run.world.calls))
+
     def test_no_commit_is_created_during_ordinary_candidate_repair(self):
         run = self.repaired
         mutations = [path for path, _payload, _method in run.world.calls]
@@ -163,25 +224,36 @@ class RealSandboxAcceptance(unittest.TestCase):
         self.assertTrue(all(p.endswith('/comments') or '/issues/comments/' in p for p in mutations), mutations)
         self.assertEqual(run.world.files, {'value.py': 'value = 1\n'}, 'repository files are untouched')
 
-    def test_all_five_repair_attempts_are_separately_recorded(self):
-        def wrong(failing, call):
-            # Five distinct wrong offsets, each failing differently, so neither repeat rule stops them.
-            previous = 'net_days - 1' if call == 1 else f'net_days - {call}'
-            return f'Attempt {call}: try a {call + 1}-day offset', {'edits': [
-                dict(path='invoice/terms.py', find=f'timedelta(days={previous})', replace=f'timedelta(days=net_days - {call + 1})')]}
-        run = Scenario(Agent(wrong))
+    def test_all_budgeted_repair_attempts_are_separately_recorded(self):
+        # Independent named failures exercise capacity without pretending many
+        # wrong offsets for one assertion are different repair mechanisms.
+        total = sandbox_repair_controller.MAX_ATTEMPTS + 1
+        source = ''.join(f'def value_{n}():\n    return 0\n\n' for n in range(1, total + 1))
+        tests = 'import unittest\nimport values\nclass Values(unittest.TestCase):\n' + ''.join(
+            f'    def test_value_{n}(self): self.assertEqual(values.value_{n}(), {n})\n' for n in range(1, total + 1))
+        selected = []
+        def repair(failing, call):
+            name = sorted(failing)[0]
+            n = int(name.rsplit('_', 1)[1])
+            selected.append(n)
+            return f'Attempt {call}: implement independently failing value {n}', {'edits': [
+                dict(path='values.py', find=f'def value_{n}():\n    return 0', replace=f'def value_{n}():\n    return {n}')]}
+        run = Scenario(Agent(repair), files={'values.py': source.encode(), 'tests/test_values.py': tests.encode()})
         self.assertEqual((run.result['status'], run.result['stop_reason']), ('failed', 'attempt_limit'))
+        limit = sandbox_repair_controller.MAX_ATTEMPTS
         attempts = run.result['attempts']
-        self.assertEqual([a['index'] for a in attempts], [1, 2, 3, 4, 5])
-        self.assertEqual(len({a['fingerprint'] for a in attempts}), 5)
-        for n, attempt in enumerate(attempts, 1):
-            self.assertIn(f'net_days - {n + 1}', attempt['diff'])
-            self.assertIn(f'Attempt {n}:', attempt['rationale'])
+        self.assertEqual([a['index'] for a in attempts], list(range(1, limit + 1)))
+        self.assertEqual(len({a['fingerprint'] for a in attempts}), limit)
+        self.assertEqual(len(set(selected)), limit)
+        for call, attempt in enumerate(attempts, 1):
+            self.assertIn(f'Attempt {call}:', attempt['rationale'])
             self.assertEqual(attempt['status'], 'failed')
             self.assertTrue(attempt['test_results'] and attempt['diagnostics'])
-        self.assertEqual(len(run.agent.seen), 5, 'after the fifth failed attempt no further change is requested')
+        self.assertEqual(len(run.agent.seen), limit, 'no change is requested beyond the ceiling')
         saved = run.journal.state['executionDiagnostics']
-        self.assertEqual([a['index'] for a in saved['attempts']], [1, 2, 3, 4, 5], 'persisted, not only in memory')
+        self.assertEqual([a['index'] for a in saved['attempts']], list(range(limit - 4, limit + 1)))
+        persisted = execution.pending(run.journal)['controller']['attempts']
+        self.assertEqual([a['index'] for a in persisted], list(range(1, limit + 1)))
         self.assertNotEqual(saved['finalValidation'], 'passed')
 
     def test_identical_failed_approaches_are_detected(self):
@@ -193,14 +265,15 @@ class RealSandboxAcceptance(unittest.TestCase):
             return 'Shift by two days (reworded)', {'edits': [dict(path='invoice/terms.py', find='    if net_days < 0:',
                                                                     replace='    # Net terms.\n    if net_days < 0:')]}
         same_error = Scenario(Agent(cosmetic))
-        self.assertEqual((same_error.result['status'], same_error.result['stop_reason']), ('failed', 'identical_error'))
-        self.assertEqual(len(same_error.result['attempts']), 2)
+        self.assertEqual((same_error.result['status'], same_error.result['stop_reason']), ('failed', 'repeated_tool_call'))
+        self.assertEqual(len(same_error.result['attempts']), 1, 'the recurring unplanned approach is refused before another candidate')
+        self.assertTrue(any('new evidence-backed repair plan' in row for row in same_error.controller.state['history']))
 
         def back_and_forth(failing, call):
             first, second = 'timedelta(days=net_days - 2)', 'timedelta(days=net_days - 3)'
             find, replace = [('timedelta(days=net_days - 1)', first), (first, second), (second, first)][call - 1]
-            return f'Variant {call}', {'edits': [dict(path='invoice/terms.py', find=find, replace=replace)]}
-        repeated = Scenario(Agent(back_and_forth))
+            return ['Try subtracting two days', 'Try subtracting three days', 'Restore the earlier two-day approach'][call - 1], {'edits': [dict(path='invoice/terms.py', find=find, replace=replace)]}
+        repeated = Scenario(Agent(back_and_forth, planned=True))
         self.assertEqual((repeated.result['status'], repeated.result['stop_reason']), ('failed', 'repeated_patch'))
         self.assertEqual(len(repeated.result['attempts']), 2, 'returning to a tried patch is not a new attempt')
 
@@ -288,11 +361,11 @@ class RealSandboxAcceptance(unittest.TestCase):
             if call == 2:
                 raise RuntimeError('runner lost after the first repair was tested')
             return targeted(failing, call)
-        first = Scenario(Agent(interrupted), world=world)
+        first = Scenario(Agent(interrupted, planned=True), world=world)
         self.assertIsInstance(first.error, RuntimeError)
         saved_attempt = first.controller.attempts[0]
         # A new runner: a new session and controller restored only from the persisted journal.
-        resumed = Scenario(Agent(targeted), world=world)
+        resumed = Scenario(Agent(targeted, planned=True), world=world)
         self.assertEqual((resumed.result['status'], resumed.result['stop_reason']), ('success', 'validated'))
         self.assertEqual(resumed.result['attempts'][0]['fingerprint'], saved_attempt['fingerprint'])
         self.assertEqual(resumed.result['attempts'][0]['changed_paths'], ['invoice/terms.py'])
@@ -417,6 +490,42 @@ class PolicyAcceptance(unittest.TestCase):
         body = posted[0][1]['body']
         self.assertIn('`attempt_limit`', body)
         self.assertEqual(len(re.findall(r'^Attempt \d: patch \d$', body, re.M)), 5, 'every attempt is reported')
+
+
+class ScriptedProtocolTests(unittest.TestCase):
+    def test_targeted_script_supplies_current_evidence_and_distinct_plans(self):
+        import io
+        import tarfile
+        from tests.test_sandbox_repair_controller import FakeDocker
+        from engine import task_goal
+        class InvoiceDocker(FakeDocker):
+            def call(self, args, stdin=b'', **kwargs):
+                if args[:1] != ['run']:
+                    return super().call(args, stdin=stdin, **kwargs)
+                with tarfile.open(fileobj=io.BytesIO(stdin), mode='r:*') as archive:
+                    files = {m.name: archive.extractfile(m).read() for m in archive if m.isfile()}
+                failures = []
+                if b'.quantize(Decimal(1), rounding=ROUND_HALF_UP)' not in files['invoice/money.py']:
+                    failures.append('FAIL: test_invoice_total_includes_rounded_tax (test_invoice.MoneyTests)')
+                if b'timedelta(days=net_days)' not in files['invoice/terms.py']:
+                    failures.append('FAIL: test_net_terms_count_calendar_days (test_invoice.TermsTests)')
+                output = '\n'.join(failures) + '\nRan 8 tests in 0.001s\n' + ('FAILED (failures=1)\n' if failures else 'OK\n')
+                return sandbox.Exec(1 if failures else 0, output, '')
+        for variable in (intent_guard.ACTIVE, recovery.CURRENT, task_goal.CURRENT):
+            token = variable.set(None)
+            self.addCleanup(variable.reset, token)
+        world = GitHub()
+        journal = world.journal()
+        work = sandbox.Session(sandbox.Tree(recovery.ROOT, 'a' * 40, fixture_files()), docker=InvoiceDocker())
+        agent = Agent(targeted, planned=True)
+        control = sandbox_repair_controller.SandboxRepairController(work, journal=journal)
+        result = control.run_repair(TASK, agent, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        self.assertEqual(len(agent.seen), 2)
+        self.assertEqual(len(agent.actions), 2)
+        self.assertEqual(len(control.state['repair_plans']), 2)
+        self.assertNotEqual(control.state['repair_plans'][0]['strategy'], control.state['repair_plans'][1]['strategy'])
+        self.assertEqual([a['status'] for a in result['attempts']], ['failed', 'passed'])
 
 
 @unittest.skipUnless(REAL_DOCKER, 'requires the GitHub-hosted Docker runner (KAPPA_SANDBOX_INTEGRATION=1)')

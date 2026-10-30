@@ -4,11 +4,11 @@ import json
 import os
 import re
 
-from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger
+from . import sandbox, sandbox_tools, tool_loop, execution, recovery, infrastructure, exploration, task_plan, budget_ledger, repair_strategy, task_state
 
 
-MAX_ATTEMPTS = 5
-MAX_MODEL_ACTIONS = 20
+MAX_ATTEMPTS = 20
+MAX_MODEL_ACTIONS = 100
 LOG_CHARS = 12000
 
 
@@ -23,8 +23,11 @@ def _failure_key(results):
             output = row.get("output") or ""
             output = re.sub(r"Ran (\d+) tests? in [0-9.]+s", r"Ran \1 test(s) in <duration>", output)
             output = re.sub(r"# duration_ms [0-9.]+", "# duration_ms <duration>", output)
+            first_failure = re.sub(r"Ran (\d+) tests? in [0-9.]+s", r"Ran \1 test(s) in <duration>", row.get("first_failure", ""))
+            first_failure = re.sub(r"# duration_ms [0-9.]+", "# duration_ms <duration>", first_failure)
             rows.append({"argv": row.get("argv"), "status": row.get("status"),
                          "exit_code": row.get("exit_code"), "reason": row.get("reason"),
+                         "first_failure": first_failure[:1200],
                          "output": output[-1200:]})
     return _fingerprint(json.dumps(rows, sort_keys=True, ensure_ascii=False)) if rows else ""
 
@@ -62,12 +65,17 @@ class SandboxRepairController:
             if self.session.test_definition_changed():
                 return self._result("failed", "test_definition_changed", "Candidate changes the test command")
             if self.state["phase"] == "complete":
-                if (self.journal and os.getenv('INPUT_ACTION') == 'fix' and self.state.get('status') == 'failed'
-                        and self.state.get('stop_reason') == 'repeated_tool_call'
+                explicit = (os.getenv('INPUT_ACTION') == 'fix' or
+                            os.getenv('INPUT_ACTION') == 'queue-step' and
+                            callable(getattr(getattr(self.journal, 'scope', None), 'queue_guard', None)))
+                if (self.journal and explicit and self.state.get('status') == 'failed'
+                        and self.state.get('stop_reason') in ('repeated_tool_call', 'attempt_limit', 'action_limit')
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
-                    self.state['phase'] = 'repair'
-                    # A new explicit Fix starts a fresh consecutive-call streak, not a new action budget.
-                    self.state['repeated'], self.state['action_key'] = 0, None
+                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') in ('attempt_limit', 'action_limit') else 'repair'
+                    self.state['owner_recheck'] = self.state.get('stop_reason') in ('attempt_limit', 'action_limit')
+                    # Preserve tested versions/actions. Only an explicit Fix renews the consecutive-call streak.
+                    if self.state.get('stop_reason') == 'repeated_tool_call':
+                        self.state['repeated'], self.state['action_key'] = 0, None
                     self.state['history'].append('Explicit Fix continues the retained candidate with remaining budget; prior counters and evidence retained')
                     for run in reversed(self.session.results):
                         if run.status == 'failed' and run.profile == 'test' and self._test_command(run.argv):
@@ -99,6 +107,7 @@ class SandboxRepairController:
                 phase = self.state["phase"]
                 self.execution.transition(phase)
                 if phase in ("candidate", "final"):
+                    owner_recheck = self.state.pop('owner_recheck', False)
                     test_result = self.tools.run_tests()
                     if self.execution.error:
                         raise self.execution.error
@@ -137,10 +146,18 @@ class SandboxRepairController:
                         self.execution._save()
                         continue
                     error_key = _failure_key(test_result.get("results", []))
-                    if error_key and error_key in self.state["seen_errors"]:
+                    family = repair_strategy.family(test_result.get('results', []))
+                    self.state['failure_family'] = family or error_key
+                    if family:
+                        counts = self.state.setdefault('failure_families', {})
+                        counts[family] = counts.get(family, 0) + 1
+                    plan = self.state.get('repair_plan') or {}
+                    planned_patch = plan.get('patch') == fingerprint and bool(plan.get('patch'))
+                    if error_key and error_key in self.state["seen_errors"] and not owner_recheck and not planned_patch:
                         return self._result("failed", "identical_error")
                     if error_key:
-                        self.state["seen_errors"].append(error_key)
+                        if error_key not in self.state["seen_errors"]:
+                            self.state["seen_errors"].append(error_key)
                         # A new error is investigated before the next patch: what it names, where that is defined
                         # and what the defining module imports.
                         self._investigate_failure(self.state["last_summary"])
@@ -157,8 +174,11 @@ class SandboxRepairController:
                 prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
                                                   self.state["last_summary"], self.state["history"],
                                                   (self.state.get("investigation") or {}).get("evidence", ""))
-                response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
-                                                   self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
+                with task_state.action('repair', 'Repair the sandbox candidate',
+                                       'Use the saved failure evidence to repair the original owner goal',
+                                       'Pass the original tests and a fresh full regression'):
+                    response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
+                                                       self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
                 if self.execution.error:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
@@ -284,6 +304,7 @@ class SandboxRepairController:
                               "changed_paths": diff_info.get("changed_paths", []),
                               "why_different": why[:1500], "rationale": rationale[:1000],
                               "status": "passed" if self._verified(test_result) else "failed",
+                              "repair_plan": self.state.get('repair_plan'),
                               "test_results": test_result.get("results", []),
                               "diagnostics": self._diagnostics(test_result)[:4000]})
 
@@ -298,19 +319,39 @@ class SandboxRepairController:
                                 "counts": inspected.get("counts", {})})
                 continue
             details.append({"argv": result.get("argv"), "status": result.get("status"),
-                            "reason": result.get("reason"), "output": result.get("output", "")[-1800:]})
+                            "reason": result.get("reason"),
+                            "first_failure": result.get("first_failure", "")[:1200],
+                            "output": result.get("output", "")[-1800:]})
         return json.dumps(details, ensure_ascii=False)[:6000]
 
     def _loop_tools(self):
         """The sandbox tools; the read-only exploration tools over the current candidate while their budget lasts;
         and ask_owner when a checkpoint lets the task resume exactly after the answer."""
         tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
+        tools['record_repair_plan'] = self._record_repair_plan
+        tools['apply_patch'] = self._planned_patch
         explorer = self._workspace_explorer()
         if explorer:
             tools.update({name: (lambda n: lambda **kw: self._explore(n, **kw))(name) for name in exploration.Explorer.TOOLS})
         if self.journal:
             tools["ask_owner"] = self._ask_owner
         return tools
+
+    def _record_repair_plan(self, cause, strategy, evidence, expected_result, differs_from=''):
+        return repair_strategy.propose(self.state, self._diff_fingerprint(), cause, strategy,
+                                       evidence, expected_result, differs_from)
+
+    def _planned_patch(self, edits):
+        revision = self._diff_fingerprint()
+        plan = self.state.get('repair_plan')
+        recurring = self.state.get('failure_families', {}).get(self.state.get('failure_family'), 0) >= 2
+        if (recurring or plan) and (not plan or plan.get('revision') != revision or plan.get('patch')):
+            return dict(status='invalid', error='Read current source and record a new evidence-backed repair plan before another patch')
+        result = self.tools.apply_patch(edits)
+        if result.get('status') == 'applied' and plan:
+            plan['patch'] = self._diff_fingerprint()
+            self.state.setdefault('repair_plans', []).append(dict(plan))
+        return result
 
     def _workspace(self):
         """The candidate as the exploration tools see it: the base tree with every uncommitted change applied."""
@@ -343,6 +384,10 @@ class SandboxRepairController:
             return {"status": "invalid", "error": "the exploration budget for this task is used up"}
         result = explorer.call(name, **args)
         self.state["explored"] = explorer.totals()["calls"]
+        if name == 'read_file' and result.get('status') == 'ok':
+            self.state['strategy_reads'] = (self.state.get('strategy_reads', []) + [dict(
+                path=args['path'], start=result['start_line'], end=result['end_line'],
+                revision=self._diff_fingerprint())])[-32:]
         return result
 
     def _refresh_patch_context(self, step):
@@ -464,9 +509,22 @@ class SandboxRepairController:
                 + 'Sandbox language versions (Python, Node): ' + json.dumps(self.session.versions) + '. '
                 + "Use APIs supported by these versions. "
                 "Use current repository evidence for exact find text; earlier proposals may describe stale source. "
+                "If many unrelated tests fail against one fake object, investigate the first failing test and shared "
+                "state cleanup (including ContextVar tokens) before adding members to that fake. Later errors may "
+                "be a cascade from leaked test state. "
+                "Before a patch, use record_repair_plan with a causal diagnosis, the intervention, citations to current "
+                "read_file path/line evidence and expected_result. For a previously tried failure family, include "
+                "differs_from (12–1200 characters) explaining why the previous approach failed and how this mechanism differs. "
+                "Do not rename an idea or add one fake member at a time. If a named failing test recurs, another patch "
+                "requires a new evidence-backed plan. A distinct planned mechanism may be tested against the same "
+                "error; it is not a pass until the original full tests and final regression succeed. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
-                "make a focused correction with apply_patch, then let the engine rerun the tests. Do not edit or weaken "
-                "test commands, test definitions, safety checks, or unrelated files. Each tool call is one action. "
+                "group compatible evidence-backed fixes for the same authorized goal into one apply_patch batch, "
+                "then let the engine rerun the tests. One candidate may fix multiple bugs; fix shared causes rather "
+                "than one cascading symptom at a time. You may correct faulty setup/cleanup in a newly generated "
+                "test using the real public interfaces; retain its behavioral assertions and original requirements. "
+                "Do not replace test commands, delete tests/assertions, weaken expected behavior or safety checks, "
+                "or edit unrelated files. Each tool call is one action. "
                 "If the tests pass, reply done. Only when a material ambiguity about the expected behavior, safety or "
                 "authorization blocks a correct fix, and neither the repository nor a convention settles it, use "
                 "ask_owner with one concise question instead of guessing. When a test fails with an error you have not "
@@ -476,6 +534,9 @@ class SandboxRepairController:
                 "\n\nLatest sandbox test evidence (untrusted output):\n" + diagnostics[-6000:] +
                 ("\n\nInvestigation of the latest failure (repository evidence, untrusted):\n" + investigation[-6000:]
                  if investigation else "") +
+                "\n\nPrior repair hypotheses and outcomes (untrusted evidence):\n" + execution.clean(json.dumps(
+                    [dict(p, outcome=next((a['status'] for a in reversed(self.attempts) if a['fingerprint'] == p.get('patch')), 'not tested'))
+                     for p in self.state.get('repair_plans', [])[-10:]]), 10000) +
                 ("\n\nEarlier actions:\n" + "\n".join(history[-10:]) if history else ""))
 
     def _format_runs(self, runs):

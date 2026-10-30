@@ -1,5 +1,7 @@
 # Phase 3.1 combined delivery checkpoint
 
+**Current closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.
+
 Prepared 2026-10-28. This branch combines the frozen #279 source (`f5501afe417a63c4ebc089954d99968ef4e55bb0`) with the engine/audit accumulator through #309 (`a1e705072f3eb70bfd4acc8098105627de5333c0`) and #310's publication regressions (`75811f8510b4d02a8cd165c4ec081e3c032d998f`). None of those PRs was merged; #279 and #310 source branches remain unchanged.
 
 ## Integration decisions

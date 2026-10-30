@@ -204,6 +204,11 @@ class Journal:
                          and isinstance(state['continuations'], int) and 0 <= state['continuations'] <= MAX_CONTINUATIONS + MAX_QUOTA_RESUMES
                          and 0 <= state.get('quotaResumes', 0) <= min(state['continuations'], MAX_QUOTA_RESUMES))
                 if valid:
+                    if state.get('engine') and state['engine'].get('digest') != self.scope.digest:
+                        from engine.runtime_engine import renew_receipt
+                        # Covers both fresh renewals and checkpoints already migrated by an
+                        # older controller that left the nested engine receipt unchanged.
+                        state = dict(state, engine=renew_receipt(state['engine'], self.scope, self.read))
                     if renewed_scope:
                         state = dict(state, digest=self.scope.digest, authorization=self.scope.identity, expiresAt=int(self.scope.expires*1000))
                         self.renewed_scope = True
@@ -577,6 +582,11 @@ class Journal:
         self.write(f'repos/{ROOT}/issues/{self.scope.number}/comments',
                    {'body': '### KappaForge is working on it\n\n<!-- KAPPA_PROGRESS_V1 ' + wire + ' -->\n' + message}, 'POST')
 
+    def ingest_reviews(self, pr):
+        """Read review evidence only for this journal's authenticated saved draft."""
+        from engine.review_ingestion import sync
+        return sync(self, pr)
+
     def target_read(self, path):
         if self.scope.repo == ROOT:
             return self.read(path)
@@ -656,6 +666,7 @@ class Journal:
 
     def begin(self, action=''):
         """Consume a dispatch exactly once, on the same authorization and candidate."""
+        previous_engine = self.state.get('engine')
         if self.state.get('engine') or os.getenv('KAPPA_ENGINE_CHECK') == 'true':
             from engine.runtime_engine import attest
             previous_engine = self.state.get('engine')
@@ -672,6 +683,16 @@ class Journal:
                                f"{os.getenv('GITHUB_SHA', '')} in run {os.getenv('GITHUB_RUN_ID', '')}",
                                strategy='reviewed_main_engine_migration', outcome=self.state['status'])
             print('Engine verified before task work: ' + os.getenv('GITHUB_SHA', ''), flush=True)
+        from engine import candidate_handoff
+        if os.getenv(candidate_handoff.ENV):
+            if not re.fullmatch(r'[1-9][0-9]*', os.environ[candidate_handoff.ENV]):
+                raise PermissionError('Invalid owner candidate handoff identity')
+            prior_resuming = getattr(self, '_resuming', False)
+            self._resuming = True
+            try:
+                candidate_handoff.adopt(self, int(os.environ[candidate_handoff.ENV]), previous_engine=previous_engine)
+            finally:
+                self._resuming = prior_resuming
         if action.startswith('resume:'):
             expected = f"resume:{self.state['continuations']}:{self.scope.digest[:12]}"
             if action != expected or self.state['status'] != 'dispatching':
@@ -722,6 +743,8 @@ class Journal:
 
     def queue(self, handoff=False):
         """Atomic ref reservation plus durable dispatch state prevents competing scanners."""
+        if (self.state.get('engine') or {}).get('queueRun'):
+            return False  # The owner queue supervises this task; never dispatch a second worker.
         if self.state['status'] != 'waiting' or self.clock() < self.state['nextAt']:
             return False
         # An acknowledgement can be delayed while the previous runner is still
@@ -794,6 +817,8 @@ class Journal:
 
     def handoff_engine(self, sleep=time.sleep):
         """Queue the attested trial engine before exiting; legacy main scanners cannot resume this protocol."""
+        if (self.state.get('engine') or {}).get('queueRun'):
+            return False
         if not self.state.get('engine'):
             return False
         from engine.runner import TASK_DEADLINE

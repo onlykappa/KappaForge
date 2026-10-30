@@ -72,6 +72,22 @@ class ExplorerResumeTests(unittest.TestCase):
     def explorer(self, journal, budget, clock=None, **kwargs):
         return Explorer(repo(), budget, clock=clock or Clock(), ledger=budget_ledger.Ledger(journal, 'investigation'), **kwargs)
 
+    def test_owner_expanded_investigation_reads_again_without_resetting_retained_spend(self):
+        spent = dict(calls=33, seconds=6.119, output_chars=121764, context_chars=97365)
+        journal = Journal({'budgetSpent': {'repairExploration': dict(spent)}})
+        def restored(budget):
+            return Explorer(repo(), budget, clock=Clock(), active_time=True,
+                            ledger=budget_ledger.Ledger(journal, 'repairExploration'))
+        denied = restored(Budget())
+        self.assertEqual(denied.call('read_file', path='a.py')['status'], 'budget_exhausted')
+        expanded = restored(Budget.configured())
+        self.assertEqual(expanded.call('read_file', path='a.py')['status'], 'ok')
+        expanded.finish()
+        retained = journal.state['budgetSpent']['repairExploration']
+        self.assertEqual(retained['calls'], 34)
+        self.assertGreater(retained['output_chars'], spent['output_chars'])
+        self.assertGreaterEqual(retained['context_chars'], spent['context_chars'])
+
     def test_every_budget_continues_from_the_earlier_runs(self):
         cases = {'calls': (Budget(calls=4), 2), 'output_chars': (Budget(output_chars=700), 1),
                  'context_chars': (Budget(context_chars=700), 1)}
@@ -220,7 +236,9 @@ class RepairExplorationTests(unittest.TestCase):
 
     def test_older_checkpoints_that_saved_only_calls_still_count(self):
         controller = self.controller(Journal(), state={'explored': 40})
-        self.assertIsNone(controller._workspace_explorer())
+        self.assertEqual(controller._workspace_explorer().totals()['calls'], 40)
+        exhausted = self.controller(Journal(), state={'explored': Budget.configured().calls})
+        self.assertIsNone(exhausted._workspace_explorer())
 
 
 if __name__ == '__main__':

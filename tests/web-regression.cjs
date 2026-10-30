@@ -1,6 +1,7 @@
 // Service workers are blocked because WebKit bypasses Playwright route fixtures for worker-controlled requests. Production sw.js is separately network-only for navigations and never caches APIs.
 // Executes the real shared interface. APIs are deterministic fixtures, never live paid calls.
 const {chromium,webkit}=require('playwright');
+const {recorder}=require('../tools/visual-evidence.cjs');
 const {default:AxeBuilder}=require('@axe-core/playwright');
 // Wait for every finite animation on the page (a theme change fades the header too), then audit settled colours.
 async function auditAccessibility(page){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming?.().endTime)).map(a=>a.finished.catch(()=>{})))});return new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()}
@@ -28,7 +29,7 @@ const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
-let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={};
+let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={},reviewPulls=[];
 const apiServer=createServer(async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -58,14 +59,24 @@ const apiServer=createServer(async(req,res)=>{
  else if(req.url==='/authorize')result={state:'authorized'};
  else if(req.url==='/jobs'){issuedJob++;result={issueNumber:issuedJob,issueUrl:'https://github.com/onlykappa/KappaForge/issues/'+issuedJob,status:'dispatched'};}
  else if(req.url==='/plan')result={isTask:false};
+ else if(req.url==='/github'){
+  const url=String(data.path||''),task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);
+  result=task?(task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}):
+   url.includes('/pulls')?reviewPulls:url.includes('/actions/runs')?{workflow_runs:[]}:url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:[];
+ }
+ else if(req.url==='/review')result={repo:'KappaForge',number:900,title:'Draft: review fixture',url:'https://github.com/onlykappa/KappaForge/pull/900',
+  tests:{state:'passed'},canFix:true,canMerge:false,files:[],risks:[],evidence:{candidate:'a'.repeat(40),browser:{state:'passed'},
+   visualComparison:{state:'not_run',reason:'No approved comparison reference'},simulator:{state:'not_run'},device:{state:'not_run'},
+   artifacts:[{url:'https://github.com/onlykappa/KappaForge/actions/runs/10/artifacts/50'}],feedback:[{source:'inline',author:'Reviewer',body:'<script>untrusted feedback</script>',url:'https://github.com/onlykappa/KappaForge/pull/900#discussion_r7'}]}};
  else {res.writeHead(404).end(JSON.stringify({error:'Unknown fixture endpoint'}));return;}
  res.end(JSON.stringify(result));
 });
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='http://127.0.0.1:'+apiServer.address().port;
- let runs=0;let activeBrowser;let activePage;let activeName;
- try{for(const [name,engine,viewport] of [['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]]){
- issuedJob=22;taskReports={};const browser=await engine.launch();activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block'});const page=await context.newPage();activePage=page;activeName=name;page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ let runs=0;let activeBrowser;let activePage;let activeName;let activeEvidence;
+ const profiles=process.env.KAPPA_WEB_BROWSER==='chromium'?[['desktop',chromium,{width:1440,height:1000}],['mobile-chromium',chromium,{width:390,height:844}]]:[['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]];
+ try{for(const [name,engine,viewport] of profiles){
+ issuedJob=22;taskReports={};const browser=await engine.launch(engine===chromium&&process.env.KAPPA_CHROMIUM_EXECUTABLE?{executablePath:process.env.KAPPA_CHROMIUM_EXECUTABLE}:{});activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block',locale:'en-US',timezoneId:'UTC',reducedMotion:'reduce',deviceScaleFactor:1});const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-29T12:00:00Z'));activePage=page;activeName=name;activeEvidence=await recorder(context,page,name,{identity:require('./visual-identity.cjs')(resolve(__dirname,'..')),baseline:process.env.KAPPA_VISUAL_BASELINE||null});page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
  await page.addInitScript(({credentials,backendURL})=>{
   if(!localStorage.getItem('fixture-seeded')){
@@ -74,9 +85,9 @@ const apiServer=createServer(async(req,res)=>{
    localStorage.setItem('kappaforge.memory.notes.v1',JSON.stringify(['Prefers precise responses','Project KappaForge']));
   }
  },{credentials,backendURL});
- await page.route('https://api.github.com/**',route=>{const url=route.request().url();const task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);if(task)return route.fulfill({headers:{'access-control-allow-origin':'*'},json:task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}});const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
+ await page.route('https://api.github.com/**',route=>{const url=route.request().url();const task=url.match(/\/issues\/(23|24)(\/comments)?(?:\?|$)/);if(task)return route.fulfill({headers:{'access-control-allow-origin':'*'},json:task[2]?(taskReports[task[1]]||[]):{state:'open',updated_at:'2026-10-16'}});const body=url.includes('/releases')?[{tag_name:'v2.0.0',body:'Test release notes',assets:[{name:'KappaForge-unsigned.ipa',browser_download_url:'https://github.com/onlykappa/KappaForge/releases/download/v2.0.0/KappaForge-unsigned.ipa'}]}]:url.includes('/pulls')?reviewPulls:url.includes('/actions/runs')?{workflow_runs:[]}:url.match(/\/repos\/onlykappa\/[A-Za-z-]+$/)?{name:'KappaForge',html_url:'https://github.com/onlykappa/KappaForge'}:[];return route.fulfill({headers:{'access-control-allow-origin':'*','access-control-allow-headers':'Content-Type, Authorization, X-Memory-Method, X-Integration-Action','access-control-allow-methods':'GET, POST, OPTIONS'},json:body})});
  page.on('dialog',async dialog=>{if(dialog.type()==='confirm')await dialog.accept();else if(dialog.type()==='prompt')await dialog.accept(dialog.message()==='Conversation name'?'Renamed from control':'recovery-passphrase-123');else await dialog.accept()});
- await page.goto(base);console.log(name+': loaded interface');assert.equal(await page.locator('.top #settingsbtn').count(),0);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');if(name==='mobile-safari'){
+ await page.goto(base);console.log(name+': loaded interface');assert.equal(await page.locator('.top #settingsbtn').count(),0);assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');if(name!=='desktop'){
   // Phones open on Home; open the chat to check the pushed view below.
   assert.equal(await page.evaluate(()=>view),'start');assert.equal(await page.locator('.mobile-nav [aria-current=page]').getAttribute('data-page'),'start');await page.evaluate(()=>navigate('chat'));
   await page.evaluate(()=>document.documentElement.style.setProperty('--kappa-safe-top','59px'));
@@ -134,12 +145,30 @@ const apiServer=createServer(async(req,res)=>{
  else{await openNavigation(page);await page.locator('#conversation-search').fill('Keep this chat');assert.equal(await page.locator('#history .history').count(),1);await page.locator('#conversation-search').fill('does-not-exist');assert.equal(await page.locator('#history .history').count(),0);await page.locator('#conversation-search').fill('');}
  await go(page,'profile');await page.locator('#profile-name').fill('Test workspace');await page.locator('#profile-save').click();assert.equal(await page.locator('#profilelabel').innerText(),'Test workspace');
  await go(page,'help');assert.match(await page.locator('.help-copy').innerText(),/Keyboard shortcuts/);
- for(const target of ['home','projects','tasks','reviews','chat']){await go(page,target);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,target+' fits viewport');if(target==='home'){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-dashboard.png',fullPage:true,animations:'disabled'});}}
+ for(const target of ['home','projects','tasks','reviews','chat']){await go(page,target);await activeEvidence.capture(target);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,target+' fits viewport');if(target==='home'){await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-dashboard.png',fullPage:true,animations:'disabled'});}}
+ reviewPulls=[{repo:'KappaForge',number:900,title:'Draft: review fixture',draft:true,head:{ref:'kappa/dev-130'},html_url:'https://github.com/onlykappa/KappaForge/pull/900'}];
+ const previousPulls=await page.evaluate(()=>{const prior=data.prs;data.prs=[{repo:'KappaForge',number:900,title:'Draft: review fixture',draft:true,head:{ref:'kappa/dev-130'},html_url:'https://github.com/onlykappa/KappaForge/pull/900'}];return prior});
+ await go(page,'reviews');await page.locator('[data-reviewcard="KappaForge#900"]').click();
+ await page.getByText('Validation evidence',{exact:true}).waitFor();
+ assert.match(await page.locator('.review-evidence').innerText(),/Physical iPhone: not run/);
+ await page.locator('.review-evidence summary').click();assert.equal(await page.locator('.review-evidence script').count(),0);
+ assert.equal(await page.locator('[data-merge="KappaForge#900"]').count(),0);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'review evidence fits viewport');
+ await activeEvidence.capture('review-evidence');
+ await activeEvidence.capture('review-evidence-control');
+ const controlledDefect=await page.addStyleTag({content:'.review-evidence { opacity: .4 !important; }'});
+ await activeEvidence.capture('review-evidence-defect');
+ await activeEvidence.experiment('review-evidence-control','review-evidence-defect','failed');
+ await controlledDefect.evaluate(el=>el.remove());
+ await activeEvidence.capture('review-evidence-restored');
+ await activeEvidence.experiment('review-evidence-control','review-evidence-restored','passed');
+ await page.evaluate(prior=>{data.prs=prior;delete reviewCards['KappaForge#900'];render()},previousPulls);reviewPulls=[];await go(page,'chat');
  // Stop and interrupted connections preserve partial output; old JSON responses remain usable.
  await page.locator('#message').fill('Stop streaming fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.locator('.bubble.streaming').filter({hasText:'Partial response'}).waitFor();await page.getByRole('button',{name:'Stop response',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Response stopped/);assert.doesNotMatch(await page.locator('.from-assistant').last().innerText(),/should not appear/);
  await page.locator('#message').fill('Interrupted fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Preserved partial reply/);assert.match(await page.locator('.from-assistant').last().innerText(),/Response interrupted/);
  await page.locator('#message').fill('Buffered fixture');await page.getByRole('button',{name:'Send message',exact:true}).click();await page.waitForFunction(()=>!sending);assert.match(await page.locator('.from-assistant').last().innerText(),/Live request fixture passed/);
  console.log(name+': progressive streaming, stop, interrupted response preservation and JSON fallback passed');
+ await require('./task-feed-browser.cjs')(page,backendURL,name);await go(page,'chat');
  // Use the actual approval, dispatch, retrieval and persistence flow. No real GitHub writes.
  const firstChat=await page.evaluate(()=>current);
  await page.evaluate(()=>{pendingJob={title:'Audit fixture project',instructions:'Inspect fixture source for bugs',repo:'onlykappa/KappaForge',mode:'audit'};render()});await page.locator('#approvejob').click();await page.waitForFunction(()=>trackedJobs.length===1&&!jobTrackingBusy);
@@ -258,14 +287,14 @@ const apiServer=createServer(async(req,res)=>{
  const a11y=await auditAccessibility(page);assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' chat accessibility');
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'});
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'-chat.png',fullPage:true,animations:'disabled'});
- await openSettings(page);await openSection(page,'usage');await page.locator('#usage-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();const settingsA11y=await auditAccessibility(page);assert.deepEqual(settingsA11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' settings accessibility');if(name==='mobile-safari'){
+ await openSettings(page);await openSection(page,'usage');await page.locator('#usage-refresh').click();await page.getByText('Backend connection verified just now.',{exact:true}).waitFor();const settingsA11y=await auditAccessibility(page);assert.deepEqual(settingsA11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,reason:n.failureSummary}))})),[],name+' settings accessibility');if(name!=='desktop'){
   await page.evaluate(()=>{document.documentElement.style.setProperty('--kappa-safe-top','59px');scrollTo(0,450)});
   const menu=await page.locator('#menubtn').boundingBox();assert.ok(menu.y>=59&&menu.y<85,'Sticky menu stays below the status bar while scrolling');
   assert.equal(await page.locator('#menubtn').evaluate(e=>{const b=e.getBoundingClientRect();return !!document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('#menubtn')}),true);
   await page.evaluate(()=>document.documentElement.style.removeProperty('--kappa-safe-top'));
  }await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true,animations:'disabled'});
- assert.deepEqual(errors,[]);await browser.close();runs++;console.log('PASS '+name+': settings persistence, usage, deletion, recovery crypto, releases, search, responsive sections, preserved data');
+ assert.deepEqual(errors,[]);await activeEvidence.capture('settings-usage');await activeEvidence.finish('passed');activeEvidence=null;await browser.close();runs++;console.log('PASS '+name+': settings persistence, usage, deletion, recovery crypto, releases, search, responsive sections, preserved data');
  }
- }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText({timeout:1000}).catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close();apiServer.close()}
+ }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText({timeout:1000}).catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}if(activeEvidence)await activeEvidence.finish('failed').catch(()=>{});throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close();apiServer.close()}
  assert.equal(runs,2);
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();apiServer.close()});

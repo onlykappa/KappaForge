@@ -69,7 +69,7 @@ function app(){
  const box={KappaIntent:I,KappaCore:globalThis.KappaCore,TextEncoder,crypto:webcrypto,chats:[chat],recentJob:null,key,preferences:{appearance:'dark'},preferencesAt:0,
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   save(){store.set(key,JSON.stringify(box.chats))},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},render(){},backend:'https://worker.test',access:'owner',
-  acceptTaskRetry:(task,result,id)=>calls.push({task,result,id}),userAuthorizedFetch:async(path,payload,text,source)=>{calls.push({path,payload,text,source});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
+  acceptTaskRetry:(task,result,id)=>calls.push({task,result,id}),userAuthorizedFetch:async(path,payload,text,source)=>{calls.push({path,payload,text,source});return Response.json(path==='/cancel'?{id:'fresh-cancel',conversationId:'chat',state:'cancelled'}:{message:'Dispatch requested.',status:'dispatch_requested'})},
   fetch:async(url,init)=>{if(url.endsWith('/operation-capabilities'))return Response.json({contract:C.contract,rollout:{mode:'active',percent:100}});calls.push({url,body:JSON.parse(init.body)});return Response.json({state:'cancelled'})}};
  vm.createContext(box);const source=read('app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
  const run=async text=>{chat.messages.push({role:'user',text});const result=await box.runAppOperation(text,chat,{requestId:crypto.randomUUID()});chat.messages.push({role:'assistant',text:result});return result;};
@@ -91,12 +91,12 @@ test('chat and controls share rename, ordinary settings and cleanup handlers',as
 });
 
 test('retry and cancellation use existing backend boundaries and cannot change task IDs',async()=>{
- const h=app();h.seed([{number:198,authorization:{id:'original-auth',conversationId:'chat'},message:'failed'}]);
+ const h=app();h.seed([{number:198,adopted:true,message:'failed'}]);
  assert.match(await h.run('retry task #198 please'),/Dispatch requested/);assert.equal(h.calls[0].path,'/retry');assert.deepEqual(JSON.parse(JSON.stringify(h.calls[0].payload)),{task:198});
  await h.box.executeAppCapability({id:'tasks.retry',params:{task:198}},{source:'user-control',chatId:'chat'});assert.equal(h.calls.filter(c=>c.path==='/retry').length,1,'a repeated control returns the receipt without redispatch');
  await assert.rejects(h.run('retry task #198, no tests'),/existing task scope/);
- await h.run('cancel task #198');assert.ok(h.calls.at(-1).url.endsWith('/cancel'));assert.equal(h.calls.at(-1).body.id,'original-auth');assert.equal(h.state()[0].message,'cancellation-requested');
- await assert.rejects(h.run('cancel task #999'),/no cancellation authorization/);
+ await h.run('cancel task #198');assert.equal(h.calls.at(-1).path,'/cancel');assert.deepEqual(JSON.parse(JSON.stringify(h.calls.at(-1).payload)),{task:198,confirmed:true});assert.equal(h.state()[0].message,'cancellation-requested');
+ await assert.rejects(h.run('cancel task #999'),/Refresh tasks/);
  await assert.rejects(h.box.executeAppCapability({id:'tasks.cancel',params:{task:199}},{source:'user-request',userText:'cancel task #198'}),/target or value/);
  await assert.rejects(h.box.executeAppCapability({id:'settings.update',params:{key:'appearance',value:'light'}},{source:'model'}),/direct user request/);
 });
@@ -159,7 +159,7 @@ test('cancellation distinguishes stop request from trusted terminal runner evide
  globalThis.fetch=async(url,options={})=>{calls.push({url,options});if(url.endsWith('/issues/198')&&!options.method)return Response.json({number:198,user:{login:'onlykappa'},body:'',state:'open'});if(url.includes('/actions/runs?'))return Response.json({workflow_runs:[{id:10,path:'.github/workflows/agent.yml',display_title:'Agent task #198 develop',created_at:new Date(1000).toISOString(),status:completed?'completed':'in_progress',conclusion:completed?'cancelled':null},{id:11,path:'.github/workflows/agent.yml',display_title:'Agent task #1980 develop',created_at:new Date(1000).toISOString(),status:'in_progress'},{id:12,display_title:'Scheduled agent',created_at:new Date(1000).toISOString(),status:'in_progress'}]});return new Response(null,{status:202});};
  try{
   const pending=await cancellationEvidence({},record,{requestStop:true});assert.equal(pending.terminatedAt,null);assert.equal(pending.runnerAcknowledgedAt,null);assert.ok(pending.runs[0].cancelRequestedAt);assert.equal(pending.runs.length,1);assert.ok(calls.some(c=>c.url.endsWith('/10/cancel')));assert.ok(!calls.some(c=>c.url.endsWith('/11/cancel')));
-  completed=true;calls.length=0;const terminal=await cancellationEvidence({},record);assert.ok(terminal.runnerAcknowledgedAt);assert.ok(terminal.terminatedAt);assert.equal(terminal.terminationScope,'observed runners only');assert.ok(calls.every(c=>!c.options.method),'status read performs no writes');
+  record.cancellation=pending;completed=true;calls.length=0;const terminal=await cancellationEvidence({},record);assert.ok(terminal.runnerAcknowledgedAt);assert.ok(terminal.terminatedAt);assert.equal(terminal.terminationScope,'observed runners only');assert.ok(calls.every(c=>!c.options.method),'status read performs no writes');
   globalThis.fetch=async()=>new Response('',{status:503});const unknown=await cancellationEvidence({},record);assert.equal(unknown.terminatedAt,null);assert.ok(unknown.errors.length);
  }finally{globalThis.fetch=original}
 });
@@ -188,7 +188,7 @@ test('a fresh retry grant cancels older runners of the same task without reporti
   assert.deepEqual(pending.runs.map(row=>row.id),[10,11]);
   assert.ok(calls.some(call=>call.url.endsWith('/10/cancel')));
   assert.ok(!calls.some(call=>/\/(?:12|13)\/cancel$/.test(call.url)));
-  olderFinished=true;calls.length=0;
+  record.cancellation=pending;olderFinished=true;calls.length=0;
   const stopped=await cancellationEvidence({},record);
   assert.ok(stopped.terminatedAt);
   assert.equal(stopped.terminationScope,'observed runners only');

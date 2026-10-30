@@ -1048,7 +1048,10 @@ def main():
         print("Self-repair draft pull request created: " + url)
         return
     if re.search(r"^Mode:\s*develop\s*$", body_text, re.I | re.M):
-        if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch":
+        owner_queue_push = (os.getenv('GITHUB_EVENT_NAME') == 'push'
+                            and re.fullmatch(r'[1-9][0-9]*', os.getenv('KAPPA_QUEUE_RUN', ''))
+                            and os.getenv('KAPPA_QUEUE_RUN') == os.getenv('GITHUB_RUN_ID'))
+        if os.getenv("GITHUB_EVENT_NAME") != "workflow_dispatch" and not owner_queue_push:
             print("Development mode requires explicit manual workflow dispatch; task remains queued.")
             return
         from engine.developer import Progress, fix_pull_request, produce_development_pr, GenerationFailure

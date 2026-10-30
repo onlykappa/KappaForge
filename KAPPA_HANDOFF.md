@@ -1,3 +1,56 @@
+# Fresh Phase 3.2 seed gate — 2026-10-29
+
+Current control is319 for originally prepared, unstarted314→315. The exhausted313/318 is preserved, not replayed/reset/marked successful:57 calls/13 edits/5 fix cycles,3 queue attempts, candidate317 stilld2785c2. Independent native test synchronization100 is delivered in312 with unchanged geometry assertions/tolerances and bounded actual-layout waiting. Fresh-source gate101 starts314 only after exact-head tests and required native CI pass; seed SHA/run IDs are persisted.1,317 full Python tests pass (31 skips),75 focused/28 queue tests and11 Node native-contract checks pass; ten structural rules and policy/map checks pass. Corrected-head native CI remains pending. Read docs/phase3/native-geometry-and-seeded-batch.md and current319 state before intervention. Owner has authorized3.2 after honest3.1 closeout; no merge/deploy/release/ready action. Do not dispatch a duplicate queue or change live source while its initial seed gate is waiting.
+
+# Reservation identity repair — 2026-10-29
+
+099 corrects the pre-launch failure of supervisor40818187464: original claimbc464f4 must remain separate from actual coder02fce53/run40816365254 and the latest supervisor913f45e. Legacy claim provenance is established through a real owner workflow with the identical grant; reservationSha and coder run are retained independently.113 focused,1,314 full Python tests pass (31 skips); ten structural rules and policy/map checks pass. Model/edit/fix counters remain55/13/4, queue attempt2; no coder was spawned by40818187464. New owner upgrade must reference actual cancelled coder40816365254, exact unchanged candidate d2785c2 and the newly selected engine SHA. Do not manually rewrite queue/checkpoint/claim, reset counters, increase caps, merge/deploy/release. Control318 is authoritative; inspect it before dispatch.
+
+# Monitoring repair — 2026-10-29
+
+097 fixes omitted XCTest paths in generation and evidence, using a shared TEST_RE with before/after native proposal coverage.126 focused and1,312 full Python tests pass (31 skips); ten structural rules pass. Known-broken run40816365254 was explicitly cancelled after repeated No test was added rejection; retained counters55 calls/13 edits/4 fix cycles and candidate317 atd2785c2.098 requires a fresh onlykappa-authored exact engine-upgrade marker after cancellation plus a new owner workflow before resuming a different pinned SHA. Original queue attempt2/claim are retained, third attempt remains the existing cap. Control318 is authoritative for marker/run/live state. No generic cancellation bypass, counter reset, cap increase, merge/deploy/release. Native defect092 remains open pending actual source correction and native validation.
+
+# Blocked queue repair — 2026-10-29
+
+Queue40814839754 failed before a source patch: native task313 received the small-document policy because candidate317 contained only its plan.095 corrects policy classification;096 adds verified owner resumption of that known failed queue. Original counters24 calls/5 edits/3 fix cycles and queue attempt1 are retained, with the original atomic claim. No manual state/counter/claim changes. New selected engine/run and current status live on control318; inspect it before any dispatch. Source drift, cancelled/active/ambiguous prior work and exhausted attempts remain stops.151 focused,1,309 full Python run OK (31 skips), ten structural rules and27 final queue/efficiency regressions pass. Native finding092 remains open until actually validated. Nothing merged/deployed/released.
+
+# Automatic queue handoff — 2026-10-29
+
+Owner requested and authorized automatic advancement. The earlier supervised-only limitation below is superseded by engine/task_queue.py and queue_authority.py, dispatched as the owner-only `queue` job in agent.yml. Manifest/control318 pin exactly313→314→315.19 dedicated tests,145 focused and1,306 full Python tests passed (31 skips); ten structural rules passed. Current queue state/results live on https://github.com/onlykappa/KappaForge/issues/318. Read docs/phase3/execution-queue.md before any dispatch or intervention; inspect current Actions/checkpoint before retrying. No duplicate queue/task run, manual state/counter reset, merge/deploy/release/ready action.
+
+The queue uses a pinned312 engine and unique immutable successor bases. It retains task counters, waits for exact-source independent checks, stops on cancelled/expired/changed authority or exhausted recovery, and ends awaiting owner review. Existing six-hour job allocation and task expiries are unchanged. Closing318 stops it. The first313 run failed without source edits; the queue retries with actual source-focused guidance. Native finding092 remains OPEN until independently verified;3.2 is not delivered merely by launching the queue.
+
+# Latest queue handoff — 2026-10-29
+
+Current accumulator remains open draft #312 on `fix/308-phase3-followups`, source6c8b138. Task308 now has27/27 requirements, zero problems and fresh successful sandbox validation; candidate758 remains unchanged. Engine Docker succeeded. Native run40788587109 failed one keyboard geometry assertion; log finding P3-092, investigate before closeout. No merge/deployment.
+
+Owner requested faster queued Phase3 coding with a broad final review. [Execution queue](docs/phase3/execution-queue.md): #313 dispatched in run40793251944 with frozen task-bound engine snapshot #316, source exactly6c8b138. Draft candidate #317 contains only the owner-prepared investigation plan initially. #314 ingestion and #315 sync/recovery are prepared and deliberately not executable until dependencies pass. This is supervised; automatic cross-task dependency scheduling is not implemented. Do not relaunch308 or duplicate313. All new bug fixes ultimately remain in312. Source/receipt/budget boundaries stay unchanged.
+
+Prior handoff sections below are historical snapshots; pending308 renewal/live-trial statements have been superseded by closeout-current.md.
+
+# Active Phase3 follow-up — draft PR312
+
+Baseline main: a76561abbbe9aa88c44e75c6394afda63ac4736f, containing owner-approved merges309/311. Current repair accumulator: https://github.com/onlykappa/KappaForge/pull/312, branch fix/308-phase3-followups. New bugs/fixes remain in this draft; do not merge it without a new owner instruction. The owner authorized progressing to3.2 after honest3.1 closeout.
+
+Phase3.1 source/inventory/policy/regression evidence is on main. The remaining defect loop is using task308 and frozen candidate75811f8510b4d02a8cd165c4ec081e3c032d998f (#310). Do not edit279's frozen branch, reset budgets, weaken source/test gates, or start duplicate task workers.
+
+312 fixes079/080 (local execution reporting and stale proof after edits). Trial40736533794 used312 engine8d06b8f and retained counters:93 model calls,2 edits,19 fix cycles. Its fresh matrix was17 tested,2 checked on GitHub,4 done,1 untested, while the old85-problem backlog stayed active. Finding081 corrects only historical review diagnostics resolved by current validated evidence; the current missing test, manual validation blockers and unrelated source findings stay open. Next serial trial must inspect current missing-citation IDs rather than repeat unchanged work.
+
+Validation and before/after regressions are in docs/phase3/issue-log.md and local-execution-reporting.md. Current owner-review records are preserved in owner-review-followups.md. Live model success is not inferred from a successful Actions job. Use the current PR head for the next explicit Fix after checking no active308 worker; confirm the saved engine receipt identifies312 and that head. Keep all counters/deadlines/provider limits unchanged.
+
+Latest closeout (2026-10-28): trial40739723033 on496902a reduced85 historical blockers to5; fresh matrix still has the operational branch-hold R21 misclassified and reporting-domain mismatch.082/083 now reproduce and fix those causes;95 focused and1,272 full Python tests pass (31 full-suite skips), plus structural/policy/map checks. Candidate75811f8 is unchanged and independently passes51 focused/1,140 full tests (31 full-suite skips). Task308's retained counters are96 model calls,2 edits,20 fix cycles. Its authorization expired2026-10-28T19:20:15Z; do not dispatch an expired task or edit its deadline/counters. Authenticated KappaForge Retry must renew the existing scope with resumeFrom before a serial312-engine trial. Current completion checklist is docs/phase3/closeout-current.md. Phase3.1 remains open;3.2 begins after honest closeout.
+
+Current UI/control follow-up: owner reported308 missing and unreliable Cancel/Delete, explicitly requested repairs without merging. Findings084–087 and docs/phase3/task-feed-controls.md cover independent paginated discovery, manual Refresh, fresh owner cancellation of adopted tasks, active-run inventory and confirmed-stop history deletion. Desktop and phone Chromium exercise the actual flow; the full web regression includes the same check for Chromium/WebKit. Source and native bundle are synchronized. No task was cancelled/deleted in production, and no app authorization was fabricated. Task308 renewal still needs an authenticated KappaForge app request/session; a feed row is not required for the chat command retry task #308.
+
+Owner retried308 in KappaForge chat: fresh app renewal succeeded and retains candidate75811f8/counters96/2/20. Main retry40783400962 failed before task work because the nested engine receipt retained the old scope digest. P3-088 now migrates that receipt only after strict old-provenance and renewal-link verification. Scope/owner/SHA checks remain strict;103 focused and1,276 full Python tests pass (31 full-suite skips). See docs/phase3/renewed-engine-receipts.md. After publishing, check no active308 worker and run one explicit Fix using312's exact current head. Do not merge or reset counters. The former need for user renewal is resolved.
+
+Latest live trial40784333199 verified312 engine06c16a9 under the renewed scope, then stopped before fresh whole-task review on stale R21 test evidence. Candidate75811f8 remains unchanged; counters98/2/21. Findings089/090 now route exact operational test diagnostics to review-only verification and rebind revalidated cached labels across identical-task renewals.68 focused/1,280 full Python tests pass (31 full-suite skips). Next: publish to312, check no active308 worker, run one explicit Fix at the exact new head and inspect actual fresh requirement outcome. No merges or counter/deadline resets.
+
+Latest trial40785639666:6041ec1 ran a fresh review,27/27 decisions met, five blockers became two (independent validation and R2's file restriction incorrectly requiring a code test). No source change; counters100/2/22.091 now verifies complete actual candidate/proposal paths and enforces the owned list before editing.90 focused/1,287 full Python tests pass (31 skips). Publish then one serial updated-engine trial after a no-active308 check; refresh independent75811f8 validation. Keep the validation gate open until actual fresh evidence. Do not merge.
+
+<details>
+<summary>Historical handoff at c6258f2 (superseded; pinned source excerpts are not the current engine)</summary>
+
 # Active Phase 3 handoff — PR #279
 
 Context snapshot: `c6258f2406e84cd872334a8bc4545a613f1e4365`. Active branch: `claude/phase3-intelligent-reviews`; active PR: https://github.com/onlykappa/KappaForge/pull/279.
@@ -145,3 +198,5 @@ def require_valid(repo, changes, read):
     if failures:
         raise CommitReferenceError('; '.join(failures))
 ```
+
+</details>
