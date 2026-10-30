@@ -476,9 +476,11 @@ class PolicyAcceptance(unittest.TestCase):
         # Deployment and release workflows start only from main or the owner's manual dispatch, never a task branch.
         workflows = engine.parent / '.github' / 'workflows'
         deploy = (workflows / 'deploy-chat.yml').read_text()
-        self.assertRegex(deploy, r"'on':\n  push:\n    branches:\n    - main\n")
+        self.assertNotIn('\n  push:', deploy.split("'on':", 1)[1])
+        self.assertIn("github.event_name == 'workflow_dispatch' && github.actor == 'onlykappa'", deploy)
         release = re.search(r'^  release:\n    if: (.+)$', (workflows / 'ios-build.yml').read_text(), re.M)[1]
-        self.assertEqual(release, "github.event_name == 'push' && github.ref == 'refs/heads/main'")
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.publish == true", release)
+        self.assertIn("github.ref == 'refs/heads/main'", release)
 
     def test_a_failed_sandbox_run_is_never_published_or_reported_as_validated(self):
         failure = {'status': 'failed', 'stop_reason': 'attempt_limit', 'summary': 'Tests still fail',

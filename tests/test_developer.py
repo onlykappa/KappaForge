@@ -701,8 +701,8 @@ class PrFirstTests(unittest.TestCase):
         self.assertIn('Requirement review unavailable', final['body'])
         self.assertIn('ScopeReviewUnavailable', final['body'])
 
-    def test_task_221_stops_after_the_requested_comment_and_uses_the_real_pr_receipt(self):
-        path = '.github/workflows/free-llm-drift.yml'
+    def test_comment_task_stops_after_the_requested_comment_and_uses_the_real_pr_receipt(self):
+        path = 'docs/free-llm-drift.yml'
         comment = '# Weekly check of the free model list; maintained by KappaForge.'
         before = 'name: Free LLM list drift\njobs: {}\n'
         goal = f'Add a single comment line {comment} as the first line of {path}. Open a draft PR for this change and do not merge it.'

@@ -193,7 +193,10 @@ After modifying the engine
 
 Run:
 
-python engine/validate_change.py
+python -m unittest discover -s tests
+python scripts/check-web.py
+python scripts/dependency-map.py --check
+python scripts/execution-policy.py --check
 
 The validator must verify, where applicable:
 

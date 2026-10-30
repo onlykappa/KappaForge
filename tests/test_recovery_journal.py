@@ -874,7 +874,7 @@ class RecoveryJournalTests(unittest.TestCase):
                 patch.object(runner, 'github', side_effect=lambda path, token=None, payload=None: self.world.read(path) if payload is None else self.world.write(path, payload, 'POST')), \
                 patch.object(developer, 'gh', side_effect=lambda path, token, payload=None, method=None: self.world.read(path) if payload is None else self.world.write(path, payload, method or 'POST')), \
                 patch.object(runner, 'request', side_effect=lambda url, payload=None, token=None, method=None: self.world.write(url.removeprefix('https://api.github.com/'), payload, method)), \
-                patch.object(developer, 'fix_pull_request', return_value=self.world.prs[0]['html_url']) as fix:
+                patch.object(developer, 'fix_pull_request', side_effect=lambda *args: (recovery.CURRENT.get().checkpoint(self.world.prs[0]['head']['sha']) or self.world.prs[0]['html_url'])) as fix:
             runner.main()
             runner.main()
         self.assertEqual(fix.call_count, 1)

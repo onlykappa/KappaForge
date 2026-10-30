@@ -279,6 +279,13 @@ def test_binding_problems(read, changes, all_paths):
                     continue
                 binding = call.get('binding')
                 if binding and binding['kind'] == 'local':
+                    production_calls = [c.get('binding') for c in parsed['calls']
+                                        if c.get('scope') == call.get('scope')
+                                        and (c.get('binding') or {}).get('kind') == 'import']
+                    if not any(resolve_module(path, b['target'], known) in introduced[name] for b in production_calls):
+                        problems.append(f'{path}: the new test calls its local copy of {name}, not the changed production '
+                                        'module; a passing copied implementation is not behavioral coverage. Call the '
+                                        'real exported entry point and add an independent negative control.')
                     continue
                 if binding and binding['kind'] == 'import':
                     target = resolve_module(path, binding['target'], known)
