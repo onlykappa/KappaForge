@@ -56,6 +56,19 @@ class OperationalFollowupsTests(unittest.TestCase):
                     operational_review.observe_branch_holds(lambda _:dict(protected_pr(),**change))
                 verify.resolve_controller([row]);self.assertFalse(row['met'])
 
+    def test_unreadable_named_pr_leaves_the_hold_unmet_without_aborting_the_check(self):
+        import urllib.error
+        from engine import operational_review, verify
+        for error in (urllib.error.HTTPError('', 404, 'missing', {}, None), urllib.error.URLError('offline'), TimeoutError()):
+            with self.subTest(error=type(error).__name__), ExitStack() as stack:
+                self.bind_hold(stack)
+                def read(path):
+                    raise error
+                operational_review.observe_branch_holds(read)
+                row = {'text': HOLD, 'met': True}
+                verify.resolve_controller([row])
+                self.assertFalse(row['met'])
+
     def test_compound_code_ask_is_not_a_branch_hold_exemption(self):
         from engine import operational_review
         self.assertIsNone(operational_review.kind(HOLD+' Remove authentication checks.'))

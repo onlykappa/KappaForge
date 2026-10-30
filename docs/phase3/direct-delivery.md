@@ -60,3 +60,22 @@ Next agent: fetch this branch, inspect the native CI result and exact summary sc
 ## Native CI result for 1ecd2f6 and follow-up
 
 Native run 41064105732 failed: four of five simulator UI tests passed and `testComposerRemainsBelowHeaderWhenKeyboardOpens` failed its keyboard-geometry assertions, the intermittent failure already tracked as P3-092 (still open; the preceding head b0e6827 passed native). The new `xcresulttool`/receipt step never ran because the test command aborted the shell first, so no `native-validation-evidence` artifact exists for that run and the real summary schema is still unobserved. The workflow now records the test exit status, writes the receipt and uploads it even when tests fail, then exits with the test failure (or with a non-passing receipt). The count check also accepts Xcode's separate `expectedFailures` bucket. These changes are validated only locally (1,399 Python tests OK, 38 skipped here; manifest and dependency-map checks pass); the real summary format and receipt are not confirmed until native CI runs this commit. P3-092 is not fixed by this change.
+
+## Independent review of PR #312 at d9b1e2e (2026-10-30)
+
+A read-only high-effort review reported ten findings. Each was checked against the code; none were run on the real simulator.
+
+| Finding | Disposition |
+| --- | --- |
+| `review_repair.report` replied to controller (`internal`), deleted, resolved and stale rows, so every Fix added more bot comments that became new rows | **Fixed** with a regression that fails before the change (three cycles produced 7 comments, now 2). |
+| `observe_branch_holds` raised on an unreadable named PR and aborted verification | **Fixed**; an unreadable PR now yields no hold receipt and the requirement stays unmet. Regression added. |
+| Cancel row shown for finished tasks | **Not a defect.** An existing test requires it so a closed/merged card with uncertain progress can request a stop before Delete is allowed. A change was tried and reverted. |
+| `ingest_reviews` failure aborts a CI-failure repair | **Design choice kept.** `test_rate_limited_sync_preserves_inbox_and_stops_before_any_repair_work` requires Fix to stop. Owner may prefer to degrade to a CI-only repair. |
+| Dead `attempt_limit`/`action_limit` resume branches | **Intended**: they resume checkpoints saved under the old 5/20 limits. |
+| Worker reads `isResolved` from REST, which never supplies it, so any human comment keeps `canFix` true | **Open.** The engine safely reports nothing to fix, but the button is misleading. Needs a GraphQL thread query in the Worker. |
+| Push-triggered queue runs share the `kappaforge-agent-scheduled` concurrency group with scheduled runs | **Open, not changed.** Matters only while the autonomous queue is in use (currently off); touching the owner-pinned `agent.yml` was deferred. |
+| Exploration and repair budgets raised globally (calls 40→500, attempts 5→20, actions 20→100, 2M context chars) | **Open, owner decision.** |
+| `Base` added to `CONTROL_LINE_RE` changes task-text hashes for tasks that already have a `Base:` line | **Open, low impact:** affects only in-flight tasks started before this change. |
+| `_authorize` re-reads task state on every request, risking rate limits | **Open**, performance trade-off of the authorization design. |
+
+Not a merge recommendation: see the PR thread for the current CI state and the remaining Phase 3 items.

@@ -170,6 +170,11 @@ def fresh(journal, pr, batch):
             raise execution.CheckpointMismatch('Review feedback changed during repair; proposal retained without publication')
 
 
+# Historical or controller-authored rows get no reply: answering our own comments grows the PR on every Fix, and
+# resolved or outdated discussion is never reopened by a bot.
+NO_REPLY = frozenset({'internal', 'deleted', 'resolved', 'stale'})
+
+
 def report(journal, pr):
     """Recover an ambiguous comment POST by finding its stable bot-owned receipt."""
     from engine import recovery
@@ -188,6 +193,8 @@ def report(journal, pr):
         raise execution.CheckpointUnavailable('Review reply inventory is incomplete')
     reported = 0
     for row in ledger['decisions'].values():
+        if row['status'] in NO_REPLY:
+            continue
         publication = (row.get('publication') or {}).get('candidate')
         if row['candidate'] != journal.state['candidate'] and publication != journal.state['candidate']:
             continue

@@ -82,7 +82,10 @@ def observe_branch_holds(read):
         if not match:
             continue
         number = int(match[1])
-        pr = read(f'repos/{scope.repo}/pulls/{number}')
+        try:
+            pr = read(f'repos/{scope.repo}/pulls/{number}')
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            continue  # An unreadable named PR yields no hold receipt; the requirement stays unmet.
         if not isinstance(pr, dict) or not isinstance(pr.get('head'), dict):
             continue
         head = pr['head']

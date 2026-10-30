@@ -94,6 +94,30 @@ class ReviewRepairTests(unittest.TestCase):
             reviews.published(self.journal, self.world.pr, batch, fixture.SHA, 'b' * 40,
                               dict(status='failed', stop_reason='identical_error', test_results=[]))
 
+    def test_controller_comments_never_receive_replies_across_repeated_fixes(self):
+        self.world.feedback['conversation'].append(dict(
+            fixture.comment(900), user=dict(id=1, login=recovery.BOT, type='Bot'), body='### KappaForge fix ready\n\nDetails'))
+        self.journal.ingest_reviews(133)
+        self.prepare()
+        self.journal.scope.own_prs.add(133)
+        from engine import intent_guard
+        intent_guard.ACTIVE.get().own_prs.add(133)
+        writes = self.journal.write
+        def post(path, payload, method):
+            result = writes(path, payload, method)
+            if path.endswith('/issues/133/comments'):
+                self.world.feedback['conversation'].append(deepcopy(result))
+            return result
+        with patch.object(self.journal, 'write', side_effect=post):
+            for _ in range(3):
+                reviews.report(self.journal, self.world.pr)
+                self.journal.ingest_reviews(133)
+                self.prepare(Mock(side_effect=AssertionError('controller comments are never investigated')))
+            bodies = [c['body'] for c in self.world.feedback['conversation']]
+        # Only the original controller comment plus one decision reply for the human's inline feedback.
+        self.assertEqual(len(bodies), 2, bodies)
+        self.assertFalse(any('Controller report' in body for body in bodies))
+
     def test_reply_uses_a_stable_receipt_and_never_resolves_thread(self):
         batch = self.prepare()
         self.journal.scope.own_prs.add(133)
