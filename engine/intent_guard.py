@@ -143,6 +143,31 @@ class ExecutionScope:
         if getattr(self, 'queue_guard', None):
             self.queue_guard()
 
+    def denied_operations(self, operations):
+        """Read-only policy probes, never HTTP requests or execution grants.
+
+        Keep prohibited API shapes in the authority service so verifiers can
+        attest its decision without gaining any publication capability.
+        """
+        base = f'https://api.github.com/repos/{self.repo}/'
+        probes = {
+            'merge': (base + 'pulls/1/merge', {}, 'PUT'),
+            'deploy': (base + 'actions/workflows/deploy-chat.yml/dispatches', {'ref': 'main'}, 'POST'),
+            'release': (base + 'releases', {'tag_name': 'v0.0.0'}, 'POST'),
+            'mark ready': ('https://api.github.com/graphql', {'query': 'mutation { markPullRequestReadyForReview(input:{pullRequestId:"untrusted"}){clientMutationId} }'}, 'POST'),
+            'change permissions': (base + 'actions/permissions/workflow', {'default_workflow_permissions': 'write'}, 'PUT'),
+            'advance phases': ('https://api.github.com/projects/columns/1/cards', {'note': 'advance'}, 'POST'),
+        }
+        denied = []
+        for action in operations:
+            if action not in probes:
+                continue  # Unknown operations can never be certified as denied.
+            try:
+                self.permit(*probes[action])
+            except PermissionError:
+                denied.append(action)
+        return denied
+
     def permit(self, path, payload, method):
         parsed = urlparse(path)
         if parsed.netloc != "api.github.com":

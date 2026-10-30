@@ -293,22 +293,7 @@ def resolve(reqs, changes):
         elif category == 'authorization_boundary':
             from engine.evidence_contract import authorization_actions
             operations = authorization_actions(req['text'])
-            base = f'https://api.github.com/repos/{scope.repo}/'
-            probes = {
-                'merge': (base + 'pulls/1/merge', {}, 'PUT'),
-                'deploy': (base + 'actions/workflows/deploy-chat.yml/dispatches', {'ref': 'main'}, 'POST'),
-                'release': (base + 'releases', {'tag_name': 'v0.0.0'}, 'POST'),
-                'mark ready': ('https://api.github.com/graphql', {'query': 'mutation { markPullRequestReadyForReview(input:{pullRequestId:"untrusted"}){clientMutationId} }'}, 'POST'),
-                'change permissions': (base + 'actions/permissions/workflow', {'default_workflow_permissions': 'write'}, 'PUT'),
-                'advance phases': ('https://api.github.com/projects/columns/1/cards', {'note': 'advance'}, 'POST'),
-            }
-            denied = []
-            for action in operations:
-                url, payload, method = probes[action]
-                try:
-                    scope.permit(url, payload, method)
-                except PermissionError:
-                    denied.append(action)
+            denied = scope.denied_operations(operations)
             if (len(denied) == len(operations) and scope.release_pr is None
                     and ('advance phases' not in operations or not getattr(scope, 'queue_guard', None))):
                 proof = dict(deniedOperations=denied, guard='active task denies these operations; external actors are not asserted')
