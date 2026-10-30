@@ -31,6 +31,9 @@ def file_scope_paths(text):
 def kind(text):
     from engine import requirements
     text = ' '.join(str(text or '').split())
+    from engine.evidence_contract import authorization_actions
+    if authorization_actions(text):
+        return 'authorization_boundary'
     from engine import report_claims
     if report_claims.constraint(text):
         return 'reporting'
@@ -287,6 +290,13 @@ def resolve(reqs, changes):
                     and receipt.get('digest') == scope.digest
                     and scope_satisfied(constraint, set(receipt.get('paths', ())) | paths)):
                 proof = dict(paths=sorted(set(receipt['paths']) | paths), guard='observed candidate and proposal stay within owned file restriction')
+        elif category == 'authorization_boundary':
+            from engine.evidence_contract import authorization_actions
+            operations = authorization_actions(req['text'])
+            denied = scope.denied_operations(operations)
+            if (len(denied) == len(operations) and scope.release_pr is None
+                    and ('advance phases' not in operations or not getattr(scope, 'queue_guard', None))):
+                proof = dict(deniedOperations=denied, guard='active task denies these operations; external actors are not asserted')
         elif category == 'branch_hold':
             number = int(BRANCH_HOLD_RE.fullmatch(' '.join(req['text'].split()))[1])
             hold = record.control.get('branch_holds', {}).get(number)

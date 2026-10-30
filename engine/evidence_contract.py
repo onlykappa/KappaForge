@@ -51,3 +51,13 @@ def source_evidence(value):
     return (isinstance(value, dict) and value.get('type', EvidenceType.SOURCE.value) == EvidenceType.SOURCE.value
             and isinstance(value.get('path'), str) and bool(value['path'].strip())
             and isinstance(value.get('quote'), str) and bool(value['quote'].strip()))
+
+
+def authorization_actions(text):
+    """Exact task-operation prohibitions; conditional product behavior is never exempted."""
+    text = ' '.join(str(text or '').split()).rstrip('.')
+    action = r'(?:merge|deploy|release|mark ready|change permissions|advance phases)'
+    match = re.fullmatch(r'(?:Do not|Never) (' + action + r'(?:(?:,\s*|\s+or\s+)' + action + r')*)', text, re.I)
+    if not match:
+        return None
+    return tuple(re.split(r',\s*|\s+or\s+', match[1].lower()))

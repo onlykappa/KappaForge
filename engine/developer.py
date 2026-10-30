@@ -3786,6 +3786,12 @@ def fix_pull_request(issue, api_key, token):
     branch = f"kappa/dev-{number}"
     journal = recovery.CURRENT.get()
     request = task_goal.CURRENT.get().original
+    prs = [p for p in gh(f"repos/{repo}/pulls?state=open&head={OWNER}:{branch}", repo_token)
+           if p.get("head", {}).get("ref") == branch and (p.get("head", {}).get("repo") or {}).get("full_name") == repo]
+    if not prs and recovery.reconcile_closed_draft(journal, repo, branch, lambda path: gh(path, repo_token)):
+        return None
+    if len(prs) != 1:
+        raise PermissionError('No unique open task draft for ' + branch + '; owner review required before repair')
     # Check the saved question before check polling, proposal generation or sandbox execution. A duplicate wake
     # cannot consume a repair cycle while the owner has not answered.
     try:
@@ -3793,10 +3799,6 @@ def fix_pull_request(issue, api_key, token):
             question_replies(number, token, journal, repo, request), OWNER)
     except clarification.NeedsClarification:
         return None
-    prs = [p for p in gh(f"repos/{repo}/pulls?state=open&head={OWNER}:{branch}", repo_token)
-           if p.get("head", {}).get("ref") == branch and (p.get("head", {}).get("repo") or {}).get("full_name") == repo]
-    if len(prs) != 1:
-        raise ValueError("No open pull request for " + branch)
     pr = prs[0]
     head = pr["head"]["sha"]
     # Existing saved PRs may accumulate feedback between owner Fix requests.

@@ -466,6 +466,7 @@ class Session:
     closed: bool = False
     observer: object = field(default=None, repr=False)
     infrastructure: dict = field(default_factory=dict)
+    required_commands: list = field(default_factory=list)
 
     def __post_init__(self):
         self.versions = self.versions or image_versions(self.base)
@@ -545,9 +546,13 @@ class Session:
     def test_commands(self):
         """Validation commands from the base revision: KAPPA.md, then each toolchain's own layout."""
         named = kappa_test_command(self.base)
-        if named:
-            return [('KAPPA.md', self.policy.check(named, self.base))]
-        return [(t.name, argv) for t in self.toolchains for argv in t.tests(self.base)]
+        commands = ([('KAPPA.md', self.policy.check(named, self.base))] if named else
+                    [(t.name, argv) for t in self.toolchains for argv in t.tests(self.base)])
+        for command in self.required_commands:
+            argv = self.policy.check(command, self.candidate())
+            if not any(existing == argv for _, existing in commands):
+                commands.append(('owner validation', argv))
+        return commands
 
     # Execution.
     def _name(self):

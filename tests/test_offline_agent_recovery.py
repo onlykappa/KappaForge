@@ -16,7 +16,8 @@ import unittest
 from engine import sandbox, sandbox_repair_controller
 from tests.test_sandbox_repair_controller import FakeDocker
 
-# stand-in: container transport is unavailable locally; only these trusted static Node fixtures run in a temp directory.
+# Controlled transport: only these trusted static Node fixtures run in a temp directory.
+# Real Docker isolation is validated separately on the supported GitHub-hosted runtime.
 class FixtureNodeTransport(FakeDocker):
     def __init__(self):
         super().__init__(); self.actual_test_runs = []
@@ -55,7 +56,7 @@ class OfflineRecoveryTests(unittest.TestCase):
                 try: history.append(json.loads(row))
                 except ValueError: pass
             if not calls:
-                calls.append('malformed');return 'scripted-free','not JSON'
+                calls.append('malformed');return 'scripted-free','{"tool":"apply_patch","args":'
             symbols=next((x['result'] for x in reversed(history) if x.get('tool')=='inspect_symbols'),None)
             reading=next((x['result'] for x in reversed(history) if x.get('tool')=='read_file'),None)
             if not symbols:
@@ -68,7 +69,11 @@ class OfflineRecoveryTests(unittest.TestCase):
                 tool,args='apply_line_patch',{'path':reading['path'],'sha256':reading['sha256'],
                     'edits':[{'start_line':3,'end_line':3,'replace':"import {reviewPR} from '../review.mjs';\n"}]}
             calls.append(tool)
-            return 'scripted-free',json.dumps({'tool':tool,'args':args,'reason':'Use fresh export and file-version evidence to repair the failed import'})
+            reply = {'tool':tool,'args':args,'reason':'Use fresh export and file-version evidence to repair the failed import'}
+            # Exercise all three Task322 parser failure classes against a real
+            # failing Node import, preserving production code and assertions.
+            encoded = json.dumps([reply] if tool == 'read_file' else reply)
+            return 'scripted-free', '```json\n'+encoded+'\n```' if tool == 'inspect_symbols' else encoded
         result=agent.run_repair('Repair the incorrect test import; do not change production code or weaken assertions',model,'fixture')
         self.assertEqual(result['status'],'success',result.get('summary'))
         self.assertEqual(calls,['malformed','inspect_symbols','read_file','apply_line_patch'])

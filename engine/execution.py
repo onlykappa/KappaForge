@@ -351,8 +351,16 @@ class Execution:
         # JSON normalizes tuples to lists. Compare that canonical form on every restart.
         identity = json.loads(json.dumps(identity))
         if saved:
+            # Pre-contract engines omitted exact owner validation commands. Only
+            # the current mandatory suite plus newly required owner commands is
+            # eligible for migration; never accept a changed base test command.
+            old_commands = saved['identity'].get('commands')
+            mandatory = [row for row in identity['commands'] if row[0] != 'owner validation']
+            command_upgrade = (bool(session.required_commands) and old_commands == mandatory
+                               and old_commands != identity['commands'])
             if any(saved['identity'].get(k) != identity[k] for k in ('repo', 'base', 'taskHash')) or any(
                     saved['identity'].get(k) is not None and saved['identity'][k] != identity[k]
+                    and not (k == 'commands' and command_upgrade)
                     for k in ('tree', 'versions', 'commands')):
                 raise CheckpointMismatch('Saved workspace, base revision, task or execution contract changed; no command ran')
             session.apply(saved['changes'])

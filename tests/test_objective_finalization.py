@@ -48,3 +48,14 @@ class ObjectiveFinalizationTests(unittest.TestCase):
         j = journal(status='needs_clarification'); recovery.finalize_attempt(j, None)
         j.persist.assert_not_called()
         self.assertEqual(j.state['status'], 'needs_clarification')
+
+    def test_published_blocked_attempt_preserves_measured_start_and_finish(self):
+        j=journal();j.clock=lambda:2
+        j.scope.expires=100
+        j.state.update(attemptStartedAtMs=1000,events=[],continuations=0,nextAt=0,executionState='paused')
+        j.write=Mock()
+        recovery.Journal.publish(j,'blocked','Requirement verification unavailable')
+        body=j.write.call_args.args[1]['body']
+        data=json.loads(body.split('<!-- KAPPA_PROGRESS_V1 ',1)[1].split(' -->',1)[0])
+        self.assertEqual((data['startedAt'],data['finishedAt']),(1000,2000))
+        self.assertEqual(data['status'],'blocked')

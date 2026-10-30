@@ -77,6 +77,43 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(execution.pending(self.reload())['controller']['actions'], 3)
 
+    def test_explicit_fix_recovers_malformed_output_without_replenishing_lifetime_budget(self):
+        malformed = lambda *a, **kw: ('scripted', '{"tool": "apply_patch", "args":')
+        failed = self.controller().run_repair(TASK, malformed, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(failed['stop_reason'], 'invalid_limit')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(before['invalid'], 3)
+        with patch.dict(os.environ, {'INPUT_ACTION': 'resume:1:fixture'}):
+            blocked = self.controller(journal=self.reload()).run_repair(TASK,
+                Mock(side_effect=AssertionError('automatic continuation cannot renew invalid-output streak')), 'fixture')
+        self.assertEqual(blocked['stop_reason'], 'invalid_limit')
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}):
+            result = self.controller(journal=self.reload()).run_repair(TASK, fixed, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['actions'], before['actions'] + 1)
+        self.assertEqual(after['attempts'][:len(before['attempts'])], before['attempts'])
+        self.assertTrue(all(entry in after['history'] for entry in before['history']))
+
+    def test_success_from_old_command_contract_gets_fresh_owner_validation_on_resume(self):
+        task = 'Run `python -m unittest tests.test_app` and report exact counts.'
+        no_model = Mock(side_effect=AssertionError('Passing candidate does not need inference'))
+        old = self.controller().run_repair(task, no_model, 'fixture', {'app.py': 'value=2\n'})
+        self.assertEqual(old['status'], 'success')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        token = task_goal.CURRENT.set(task_goal.from_request(task))
+        try:
+            resumed = session()
+            result = self.controller(work=resumed, journal=self.reload()).run_repair(task, no_model, 'fixture')
+        finally:
+            task_goal.CURRENT.reset(token)
+        self.assertEqual(result['status'], 'success', result['summary'])
+        exact = ['python', '-m', 'unittest', 'tests.test_app']
+        self.assertEqual(sum(run.argv == exact for run in resumed.results), 2)
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['actions'], before['actions'])
+        self.assertNotEqual(after['command_contract'], before['command_contract'])
+
     def test_explicit_retry_uses_raised_ceiling_without_resetting_five_saved_attempts(self):
         work = session(FakeDocker(always_fail=True, vary_failure=True))
         count = 0
