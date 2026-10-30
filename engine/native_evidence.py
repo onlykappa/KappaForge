@@ -11,7 +11,10 @@ def summarize(value, candidate):
     if any(type(value.get(key)) is not int or value[key] < 0 for key in keys):
         raise ValueError('Xcode test counts are missing or malformed')
     total, passed, failed, skipped = (value[key] for key in keys)
-    if total != passed + failed + skipped:
+    expected = value.get('expectedFailures', 0)  # Xcode reports these as a separate bucket in the total.
+    if type(expected) is not int or expected < 0:
+        raise ValueError('Xcode test counts are missing or malformed')
+    if total != passed + failed + skipped + expected:
         raise ValueError('Xcode test counts do not reconcile')
     if not passed and not failed:
         state, reason = 'not_run', 'No native simulator tests executed; empty/skipped discovery is not a pass'

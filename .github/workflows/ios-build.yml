@@ -129,9 +129,17 @@ jobs:
         xcrun simctl install "$DEVICE" ios/simulator-build/Build/Products/Debug-iphonesimulator/KappaForge.app
         APP_ID=$(python3 scripts/config-value.py iosBundleIdentifier)
         xcrun simctl launch "$DEVICE" "$APP_ID"
-        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build -resultBundlePath /tmp/kappaforge-ui-tests.xcresult CODE_SIGNING_ALLOWED=NO test
-        xcrun xcresulttool get test-results summary --path /tmp/kappaforge-ui-tests.xcresult > /tmp/kappaforge-native-summary.json
-        python3 scripts/native-evidence.py /tmp/kappaforge-native-summary.json --candidate "$(git rev-parse HEAD)" --output /tmp/kappaforge-native-evidence.json
+        TEST_STATUS=0
+        xcodebuild -project ios/KappaForge.xcodeproj -scheme KappaForge -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath ios/simulator-build -resultBundlePath /tmp/kappaforge-ui-tests.xcresult CODE_SIGNING_ALLOWED=NO test || TEST_STATUS=$?
+        # Record counts for failed runs too; a failing suite must report what ran, not leave no receipt.
+        EVIDENCE_STATUS=0
+        if xcrun xcresulttool get test-results summary --path /tmp/kappaforge-ui-tests.xcresult > /tmp/kappaforge-native-summary.json; then
+          python3 scripts/native-evidence.py /tmp/kappaforge-native-summary.json --candidate "$(git rev-parse HEAD)" --output /tmp/kappaforge-native-evidence.json || EVIDENCE_STATUS=$?
+        else
+          echo "::warning::xcresulttool could not read the simulator test result bundle; no native count receipt was written"
+        fi
+        [ "$TEST_STATUS" -eq 0 ] || exit "$TEST_STATUS"
+        [ "$EVIDENCE_STATUS" -eq 0 ] || exit "$EVIDENCE_STATUS"
         # XCTest may terminate the app. Relaunch, then reject empty/white captures.
         xcrun simctl terminate "$DEVICE" "$APP_ID" || true
         xcrun simctl launch "$DEVICE" "$APP_ID"

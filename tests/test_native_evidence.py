@@ -19,6 +19,12 @@ class NativeEvidenceTests(unittest.TestCase):
     def test_failures_cannot_be_hidden_by_a_success_label(self):
         self.assertEqual(summarize(self.result(5, 4, 1), 'a' * 40)['state'], 'failed')
 
+    def test_expected_failures_reconcile_with_the_total_without_counting_as_passes(self):
+        value = dict(self.result(6, 5, 0), expectedFailures=1)
+        record = summarize(value, 'a' * 40)
+        self.assertEqual((record['state'], record['counts']['passed']), ('passed', 5))
+        with self.assertRaises(ValueError): summarize(dict(self.result(5), expectedFailures=-1), 'a' * 40)
+
     def test_unknown_malformed_or_mismatched_counts_are_unverified(self):
         for value in ({}, self.result(passed=True), self.result(total=6), self.result(result='Unknown')):
             with self.subTest(value=value), self.assertRaises(ValueError): summarize(value, 'a' * 40)
