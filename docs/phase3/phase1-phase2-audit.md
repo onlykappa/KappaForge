@@ -1,5 +1,7 @@
 # Phase 1 and Phase 2 audit — Phase 3.1
 
+**Closeout — 2026-10-30 (supersedes the dated notes below):** Phase 3.1 is closed. 3.1a–3.1f are recorded in [closeout.md](closeout.md); the full ledger is reconciled in [finding-reconciliation.md](finding-reconciliation.md). The 3.1c lifecycle review is in [lifecycle-workflow-audit.md](lifecycle-workflow-audit.md). P3-092 was a test tap target, fixed, with native 5/5 green. Live acceptance of the automated review path (P3-061) and physical-device execution were not run.
+
 **2026-10-29 update:** Task308 live acceptance is now27/27 with zero problems; fresh candidate sandbox and current engine Docker passed. Phase3.1 remains open for native keyboard finding P3-092 and reconciliation. Updated-engine task313 is dispatched; dependent3.2 tasks314/315 are prepared. [Current closeout](closeout-current.md) and [execution queue](execution-queue.md) supersede historical pending renewal/trial claims below. No merge/deployment.
 
 **Historical closeout:** [closeout-current.md](closeout-current.md) supersedes dated pending-CI/merge summaries below. Owner-approved #309/#311 are merged and their final CI succeeded. New findings079–083 remain in draft #312; latest local validation passes, but the updated-engine trial is pending task308 authorization renewal. Phase3.1 remains open.

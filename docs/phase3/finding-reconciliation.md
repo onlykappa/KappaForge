@@ -139,3 +139,38 @@ Latest full discovery:1,272 run, OK,31 skipped. The95-test focused selection and
 084–087 are patched locally in312; before/after tests, authority boundaries and browser evidence are recorded in [task-feed-controls.md](task-feed-controls.md). Task308 is confirmed present in GitHub, but the screenshot device's storage was not inspected. The actual refresh/cancel/delete flow is covered with fake transport; no production cancellation/deletion or app deployment was performed. Exact-head CI and task308 renewal/acceptance remain separate.
 
 </details>
+
+## Addendum 2026-10-30: remaining ledger IDs
+
+The sections above end at P3-087. These IDs were not yet accounted for. "Green on fc5fdaa" means the regression tests for the finding ran in the unit job of PR #312's final head and passed; the same job and the real-Docker sandbox and native jobs were all green. Entries that touch live queue behavior are not live-accepted, because the owner is not running KappaForge.
+
+| Finding | Current disposition | Evidence / limit |
+| --- | --- | --- |
+| [P3-088](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Renewed task rebinds a fully verified linked receipt; `verify_receipt` stays strict. |
+| [P3-091](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | File-scope restrictions are no longer classified as behavioral test requirements. |
+| [P3-092](issue-log.md) | PATCHED (test-side root cause); native 5/5 on fc5fdaa | The recurring failure was the test tapping a point that could land on a suggestion chip; it now taps blank space. Both failing runs' screenshots show the chip pressed. Receipt for fc5fdaa: 5 passed, 0 failed. |
+| [P3-100](issue-log.md) | PATCHED; native 5/5 on fc5fdaa | Bounded wait for the geometry invariant with unchanged strict assertions; the native rerun that was pending now passes. |
+| [P3-101](issue-log.md) | IMPLEMENTED; live acceptance not run | Fresh queue start from validated owner source. The autonomous queue is off by owner choice, so no live run is claimed. |
+| [P3-106](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | First-failure excerpt retained beside the clipped tail. |
+| [P3-107](issue-log.md) | BLOCKED candidate work, not accepted; superseded by direct delivery | The failed task-314 proposal was never adopted. Equivalent review ingestion was delivered independently and directly in #312 with its own tests. |
+| [P3-108](issue-log.md) | IMPLEMENTED; live acceptance not run | Durable scoped review inbox. Later pieces it listed as remaining (decisions, repair consumption, thread metadata) are in #312; review-triggered wakeups and live scoped acceptance are NOT claimed. |
+| [P3-109](issue-log.md) | IMPLEMENTED (owner-requested allowance) | Queue resume from an authenticated unpublished checkpoint; counters and claims retained. |
+| [P3-110](issue-log.md) | PATCHED test fixture; real-Docker sandbox job green on fc5fdaa | Expectations now match the ten-attempt allowance; no production cap or assertion changed. |
+| [P3-111](issue-log.md) | OWNER DECISION APPLIED | Raised repair and exploration caps are intentional; the owner reconfirmed on 2026-10-30 that KappaForge should keep working through errors autonomously. |
+| [P3-112](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Stopped-worker row in the queue report. |
+| [P3-113](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Explicit null review authors accepted as unknown; malformed author objects still fail closed. |
+| [P3-114](issue-log.md) | PATCHED (shared root cause with P3-092); recovery acknowledgement NOT REPRODUCED | The keyboard non-dismissal failures are the same assertion traced to the suggestion-chip tap; that exact screenshot was verified for the two later failing runs, not for run 40896030489 itself. `testRecoveryEligibilityAndReopenInNativeSimulator` passed in all four later native runs. |
+| [P3-115](issue-log.md) | IMPLEMENTED; green on fc5fdaa, live acceptance not run | Review-triggered wakeups and live owner-scoped acceptance remain unclaimed. |
+| [P3-116](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Recovery fixture restores `Progress.latest`. |
+| [P3-117](issue-log.md) | IMPLEMENTED; green on fc5fdaa | Candidate fingerprints now distinguish repair mechanisms. |
+| [P3-118](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Real-Docker scripted agents use the strategy patch protocol. |
+| [P3-119](issue-log.md) | IMPLEMENTED; no restart performed | Authenticated engine restart path. No worker was restarted because KappaForge is not in use. |
+| [P3-120](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Sandbox repair no longer inherits the caller's lightweight routing role. |
+| [P3-121](issue-log.md) | PATCHED protocol feedback; task 315 delivery unaccepted | Historical task 315 is not marked complete. |
+| [P3-122](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Skipped, neutral and no-tests checks never present as passing tests. |
+| [P3-123](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | App merges require the exact candidate's browser job to pass before any lifecycle write. |
+| [P3-124](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Dashboard and Reviews share one detailed review card. |
+| [P3-125](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | Saved review authority binds the PR base ref. |
+| [P3-126](issue-log.md) | PATCHED; delivered in #312, regression runs in the unit job, green on fc5fdaa | GraphQL comment identities use `fullDatabaseId` (64-bit safe). No live task ingestion is claimed. |
+
+After this addendum all 107 ledger entries are accounted for. Still open at closeout: live acceptance of the automated review path (P3-061), live queue and wakeup acceptance, physical-iPhone execution, and Phase 3.9. See [closeout.md](closeout.md).

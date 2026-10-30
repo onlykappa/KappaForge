@@ -1,5 +1,8 @@
 # Expanded trial outcome — 2026-10-29
 
+> **Superseded 2026-10-30 by [closeout.md](closeout.md).** Phase 3 was merged in #312 and Phase 3.1 is closed. Everything below is dated history, including its claims that 3.1 remained open and that results were pending.
+
+
 40888143488 stopped failed/attempt_limit:10/10 tested candidates,30/100 actions,55 model calls/6 generation edits and4/10 launches. No PR/source publication,315 never started; watcher paused at the explicit candidate-exhaustion boundary. The final test crashes earlier in setup at recovery.CURRENT.get().record;18→1 Python errors is not17 confirmed fixes. The incomplete ingestion module itself is unchanged. Original failed state/counters and5b base/claim remain preserved.
 
 Engineb1a8264 passed all recorded unit/web/Worker/structure, real Docker, graph and native CI. Inspected Docker logs confirm the two-root batch and ten-attempt accounting fixtures passed. New P3-112 fixes only contradictory task-row status reporting after a child exits0 with a blocked checkpoint; historical checkpoints are not manually rewritten. Direct scoped inbox implementation in312 remains separate from this failed generated proposal. No new launch, higher cap, replacement task/grant, merge/deploy/release.
