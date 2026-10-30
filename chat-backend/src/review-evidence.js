@@ -72,6 +72,9 @@ export async function reviewEvidence(env,repo,pr){
    const jobs=(await read(env,`repos/${ROOT}/actions/runs/${native.id}/jobs?per_page=100`)).jobs;
    const step=(jobs||[]).flatMap(j=>j.steps||[]).find(s=>s.name==='Boot simulator and verify bundled launch');
    if(step)result.simulator={state:state(step),url:native.html_url,candidate:sha,source:'Xcode simulator UI tests; not a physical device'};
+   const artifacts=(await read(env,`repos/${ROOT}/actions/runs/${native.id}/artifacts?per_page=100`)).artifacts;
+   if(Array.isArray(artifacts))result.artifacts.push(...artifacts.filter(a=>!a.expired&&a.name==='native-validation-evidence').map(a=>({
+    kind:'native',name:a.name,url:`https://github.com/${ROOT}/actions/runs/${native.id}/artifacts/${a.id}`,candidate:sha})));
   }
  }catch(error){result.limitations.push(error.message);}
  return result;

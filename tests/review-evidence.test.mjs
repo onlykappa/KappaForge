@@ -15,6 +15,7 @@ async function fixture(fn,overrides={}){
   if(String(url).includes('/runs/10/artifacts?'))return Response.json({artifacts:[{id:50,name:'browser-regression-evidence',expired:false}]});
   if(String(url).includes('/actions/workflows/ios-build.yml/runs?'))return Response.json({workflow_runs:[{id:20,display_title:`iOS build ${pr.head.ref} @ ${sha}`,head_branch:'main',event:'workflow_dispatch',html_url:'https://github.com/onlykappa/KappaForge/actions/runs/20'}]});
   if(String(url).includes('/runs/20/jobs?'))return Response.json({jobs:[{steps:[{name:'Boot simulator and verify bundled launch',status:'completed',conclusion:overrides.native||'skipped'}]}]});
+  if(String(url).includes('/runs/20/artifacts?'))return Response.json({artifacts:[]});
   assert.fail('Unexpected evidence read '+url);
  };
  try{await fn(await reviewEvidence({GITHUB_JOB_TOKEN:'fixture'},'KappaForge',pr),calls);}finally{globalThis.fetch=original;}
@@ -34,6 +35,17 @@ test('failed or skipped browser execution is never a passing receipt',async()=>{
 });
 test('native simulator success never upgrades physical-device or baseline approval',async()=>{
  await fixture(r=>{assert.equal(r.simulator.state,'passed');assert.equal(r.device.state,'not_run');assert.equal(r.visualComparison.state,'not_run');},{native:'success'});
+});
+test('native count artifacts link to the candidate without claiming physical-device execution',async()=>{
+ await fixture(r=>{
+  const artifact=r.artifacts.find(a=>a.kind==='native');
+  assert.equal(artifact.candidate,sha);
+  assert.equal(artifact.url,'https://github.com/onlykappa/KappaForge/actions/runs/20/artifacts/51');
+  assert.equal(r.device.state,'not_run');
+ },{reply:url=>url.includes('/runs/20/artifacts?')?{artifacts:[
+  {id:51,name:'native-validation-evidence',expired:false},
+  {id:52,name:'native-validation-evidence',expired:true},
+  {id:53,name:'unrelated',expired:false}]}:null});
 });
 test('foreign source workflow cannot supply browser evidence',async()=>{
  await fixture(r=>assert.equal(r.browser.state,'not_run'),{reply:url=>url.includes('/actions/runs?head_sha=')?{workflow_runs:[{id:10,head_sha:'b'.repeat(40),event:'pull_request',path:'.github/workflows/tests.yml'}]}:null});

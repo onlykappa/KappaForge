@@ -187,7 +187,7 @@ function reviewCardHTML(key){
  const evidenceHTML=evidence?'<div class="review-evidence"><strong>Validation evidence</strong>'+['browser','visualComparison','simulator','device'].map(kind=>{
   const item=evidence[kind]||{},label=({browser:'Browser interactions',visualComparison:'Pixel comparison',simulator:'iOS simulator',device:'Physical iPhone'})[kind];
   return '<p>'+esc(label)+': '+esc(({passed:'passed',failed:'failed',running:'running',not_run:'not run'})[item.state]||'unknown')+(item.reason?' · '+esc(item.reason):'')+(item.url?' · '+evidenceLink(item.url,'Logs'):'')+'</p>';
- }).join('')+(evidence.artifacts||[]).map(a=>'<p>'+evidenceLink(a.url,a.kind==='acceptance'?'Readiness report and acceptance evidence':'Screenshots, traces and source manifest')+'</p>').join('')+
+ }).join('')+(evidence.artifacts||[]).map(a=>'<p>'+evidenceLink(a.url,a.kind==='acceptance'?'Readiness report and acceptance evidence':a.kind==='native'?'Native test counts and simulator evidence':'Screenshots, traces and source manifest')+'</p>').join('')+
  '<details><summary>Review feedback ('+esc((evidence.feedback||[]).length)+')</summary>'+(evidence.feedback||[]).map(r=>'<p>'+evidenceLink(r.url,r.author+' · '+r.source)+(r.outdated?' · earlier revision':'')+(r.resolved===true?' · resolved':'')+'<br>'+esc(r.body)+(r.truncated?' … Open the full discussion.':'')+'</p>').join('')+'</details>'+
  (evidence.limitations||[]).map(text=>'<p class="worksmall">'+esc(text)+'</p>').join('')+'<p class="worksmall">Evidence supports your review. It does not approve a baseline, merge, release or deployment.</p></div>':'';
  return '<div class="review-card"><p><strong>What this does</strong>'+esc(d.explanation?.what||"No summary was written for this change.")+'</p>'+
