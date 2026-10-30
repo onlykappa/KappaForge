@@ -14,6 +14,10 @@ LIMITS = 'Keep model requests small and retain existing request/provider limits 
 
 
 def file_scope_paths(text):
+    from engine.evidence_contract import scope_constraint
+    constraint = scope_constraint(text)
+    if constraint and constraint[0] == 'allow':
+        return constraint[1]
     match = re.fullmatch(r'Keep this task to (.+?)[.]?', ' '.join(str(text or '').split()), re.I)
     if not match:
         return None
@@ -36,7 +40,8 @@ def kind(text):
         return 'foreign'
     if BRANCH_HOLD_RE.fullmatch(text):
         return 'branch_hold'
-    if file_scope_paths(text):
+    from engine.evidence_contract import scope_constraint
+    if scope_constraint(text):
         return 'file_scope'
     if requirements.SCOPE_RESTRICTION_RE.fullmatch(text):
         return 'scope'
@@ -106,7 +111,8 @@ def observe_file_scope(read):
     goal, record, journal, scope = observed
     record.control.pop('file_scope', None)
     from engine import requirements
-    if not any(file_scope_paths(r['text']) for r in requirements.split(goal.request)):
+    from engine.evidence_contract import scope_constraint
+    if not any(scope_constraint(r['text']) for r in requirements.split(goal.request)):
         return
     candidate = record.identity['candidate']
     def paths(rows):
@@ -274,10 +280,12 @@ def resolve(reqs, changes):
         _, record, journal, scope = observed
         proof = None
         if category == 'file_scope':
-            allowed_paths = set(file_scope_paths(req['text']))
+            from engine.evidence_contract import scope_constraint, scope_satisfied
+            constraint = scope_constraint(req['text'])
             receipt = record.control.get('file_scope', {})
             if (receipt.get('identity') == record.identity and receipt.get('authorization') == scope.identity
-                    and receipt.get('digest') == scope.digest and set(receipt.get('paths', ())) | paths <= allowed_paths):
+                    and receipt.get('digest') == scope.digest
+                    and scope_satisfied(constraint, set(receipt.get('paths', ())) | paths)):
                 proof = dict(paths=sorted(set(receipt['paths']) | paths), guard='observed candidate and proposal stay within owned file restriction')
         elif category == 'branch_hold':
             number = int(BRANCH_HOLD_RE.fullmatch(' '.join(req['text'].split()))[1])
@@ -337,5 +345,9 @@ def resolve(reqs, changes):
                     proof = dict(paths=sorted(paths), boundedRequests=stats['calls'], maxPromptChars=stats['maxChars'],
                                  guard='unchanged gateway/provider gates; documentation-only diff')
         if proof:
-            req.update(met=True, evidence={'controller_receipt': dict(record.identity, proof=proof)})
+            from engine.evidence_contract import EvidenceType
+            evidence_type = (EvidenceType.DIFF if category == 'file_scope' else
+                             EvidenceType.RUNTIME if category == 'reporting' else EvidenceType.AUTHORIZATION)
+            req.update(met=True, evidence={'type': evidence_type.value,
+                                          'controller_receipt': dict(record.identity, proof=proof)})
     return reqs

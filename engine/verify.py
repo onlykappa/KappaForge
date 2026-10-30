@@ -971,9 +971,8 @@ def parse_review(output):
         controller = controller_requirement(requirement['text']) or operational_review.kind(requirement['text'])
         if requirement['met'] and not controller:
             evidence = requirement.get('evidence')
-            if (not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str)
-                    or not evidence['path'].strip() or not isinstance(evidence.get('quote'), str)
-                    or not evidence['quote'].strip()):
+            from engine.evidence_contract import source_evidence
+            if not source_evidence(evidence):
                 raise ValueError(field + '.evidence ' + ('lines_not_shown: cite at most eight contiguous displayed source lines'
                     if isinstance(evidence, dict) and evidence.get('issue') == 'lines_not_shown' else
                     'citation_unknown: choose an id from the current source catalog'
