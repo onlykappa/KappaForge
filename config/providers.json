@@ -363,6 +363,7 @@
         "llama-3.3-70b"
       ],
       "strong": true,
+      "firstByteMs": 45000,
       "context": 1000000,
       "maxOutput": 65536,
       "accountPool": "nvidia",

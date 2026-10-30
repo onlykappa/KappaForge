@@ -11,6 +11,7 @@ import {OutputLimitError} from "./output-limit.js";
 const MAX_BODY_CHARS=registry.routing.defaults.maxRequestBytes,MAX_MESSAGES=64,MAX_MESSAGE_CHARS=registry.routing.defaults.maxPromptChars;
 // Coding answers stream so a model that never starts answering is left after FIRST_BYTE_MS, while a slow model that
 // keeps writing may finish (it is cut off only after IDLE_MS of silence, or at the attempt's overall limit).
+// A provider whose strong models start slowly (NVIDIA's measured over 25s) sets its own firstByteMs in the registry.
 const FIRST_BYTE_MS=20000,IDLE_MS=30000;
 
 // A streamed provider answer, collected into the same Gemini-shaped result a whole answer gives. Throws on a bad chunk.
@@ -175,7 +176,7 @@ export async function inferenceRouter(env,input,callerSignal=null,{paidRescue=fa
   const stop=()=>controller.abort();callerSignal?.addEventListener("abort",stop,{once:true});if(callerSignal?.aborted)controller.abort();
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},Math.max(1,Math.min(registry.routing.defaults.attemptTimeoutMs,deadline-Date.now())));let response,data,usage=null;
   // Nothing within FIRST_BYTE_MS means the model is not answering; once it writes, only IDLE_MS of silence stops it.
-  let quiet=setTimeout(()=>{timedOut=true;controller.abort()},FIRST_BYTE_MS);
+  let quiet=setTimeout(()=>{timedOut=true;controller.abort()},Math.min(Number(p.firstByteMs)||FIRST_BYTE_MS,registry.routing.defaults.attemptTimeoutMs));
   const heard=()=>{clearTimeout(quiet);quiet=setTimeout(()=>{timedOut=true;controller.abort()},IDLE_MS)};
   const jsonFormat=input.responseFormat==="json_object"&&p.capabilities?.structuredOutput?{type:"json_object"}:null;
   const send=stream=>route.provider==="gemini"
