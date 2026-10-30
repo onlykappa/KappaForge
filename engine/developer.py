@@ -184,6 +184,7 @@ def repair_history(result):
 
 def publish_candidate(repo, parent, changes, modes, message, writer, branch, create=False, base=''):
     """Reuse a recorded commit after interruption; never force-push or adopt concurrent work."""
+    workflow_publish_guard(changes)
     if not changes:
         raise ValueError('Empty publication requires a nonempty candidate patch')
     from engine import execution
@@ -1836,15 +1837,21 @@ def change_flags(repo, sources, changes, body):
 
 
 def push_token(repo, token, paths):
-    """Actions' GITHUB_TOKEN can never create or change workflow files, so KappaForge commits that do are pushed with
-    KAPPA_CODER_TOKEN (which needs the workflow scope). Other commits and repositories keep their usual token."""
-    if repo != ROOT or not any(WORKFLOW_PATH.match(p) for p in paths):
-        return token
-    workflow_token = os.getenv("KAPPA_CODER_TOKEN", "")
-    if not workflow_token:
-        raise PermissionError("This change edits a GitHub workflow, which the built-in Actions token cannot push. "
-                              "Add a KAPPA_CODER_TOKEN secret with the repo and workflow scopes.")
-    return workflow_token
+    """Never escalate to a workflow-capable PAT for model-generated changes."""
+    workflow_publish_guard(paths)
+    return token
+
+
+def workflow_publish_guard(paths):
+    """A draft is not a workflow sandbox: publishing can execute before merge.
+
+    Keep the tested candidate in its execution checkpoint. An owner can export and
+    independently publish the workflow after review, outside this autonomous write
+    path. Neither a PAT nor task prose is an execution approval receipt.
+    """
+    if any(WORKFLOW_PATH.match(path) for path in paths):
+        raise PermissionError('Workflow publication requires independent owner review before execution; '
+                              'the saved candidate is retained. A draft PR or KAPPA_CODER_TOKEN cannot authorize it.')
 
 
 def move_branch(repo, token, branch, sha, create=False):
@@ -1879,6 +1886,7 @@ def stop_for_flags(repo, number, flags, token):
 
 
 def commit_changes(repo, parent, changes, modes, message, token):
+    workflow_publish_guard(changes)
     if not changes:
         return {'sha': parent}  # An already-saved stage must not create an empty tree/duplicate commit.
     base_tree = gh(f"repos/{repo}/git/commits/{parent}", token)["tree"]["sha"]

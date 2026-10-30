@@ -64,6 +64,7 @@ jobs:
         npm run build:check
       shell: bash
   deploy:
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'onlykappa' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
     environment: cloudflare-production
@@ -225,19 +226,6 @@ jobs:
         echo "One-shot live inference passed on $route; usage=$usage; fallback=false."
       shell: bash
 'on':
-  push:
-    branches:
-    - main
-    paths:
-    - chat-backend/**
-    - config/providers.json
-    - config/app.json
-    - config/execution-infrastructure.json
-    - preview/stream.js
-    - preview/actions-core.js
-    - preview/limits-core.js
-    - .github/workflows/deploy-chat.yml
-    - tests/intelligence.test.mjs
   workflow_dispatch:
     inputs:
       operation:

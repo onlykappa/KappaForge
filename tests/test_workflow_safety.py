@@ -205,7 +205,9 @@ class NativeBuildWorkflowTests(unittest.TestCase):
             self.assertIn("if: ${{ !cancelled() && steps.simulator_build.outcome == 'success' }}", self.step(marker), marker)
         self.assertIn('id: simulator_build', self.step('name: Build simulator application'))
         # A failed test still fails the job, so it can never reach the release.
-        self.assertIn('\n  release:\n    if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'\n    needs: native\n', self.text)
+        release = self.text.split('\n  release:\n', 1)[1]
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.publish == true", release)
+        self.assertIn('    needs: native\n', release)
 
     def test_native_receipt_is_written_before_a_failed_suite_fails_the_job(self):
         body = self.step('name: Boot simulator and verify bundled launch')

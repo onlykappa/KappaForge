@@ -1034,13 +1034,12 @@ class WorkflowAccessTests(unittest.TestCase):
         self.assertTrue(notice.startswith("## ⚠️ Workflow changes to review first"))
         self.assertIn("can use your repository secrets: `.github/workflows/x.yml`", notice)
 
-    def test_workflow_commits_use_the_workflow_capable_token(self):
+    def test_workflow_publication_cannot_escalate_with_a_pat(self):
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}):
-            self.assertEqual(developer.push_token(developer.ROOT, "actions", [".github/workflows/x.yml", "a.py"]), "pat")
-            self.assertEqual(developer.push_token(developer.ROOT, "actions", ["a.py", ".github/dependabot.yml"]), "actions")
-            self.assertEqual(developer.push_token("onlykappa/OmniPC", "owner", [".github/workflows/x.yml"]), "owner")
-        with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": ""}), self.assertRaisesRegex(PermissionError, "workflow scope"):
-            developer.push_token(developer.ROOT, "actions", [".github/workflows/x.yml"])
+            for repo in (developer.ROOT, "onlykappa/OmniPC"):
+                with self.assertRaisesRegex(PermissionError, "independent owner review"):
+                    developer.push_token(repo, "actions", [".github/workflows/x.yml", "a.py"])
+            self.assertEqual(developer.push_token(developer.ROOT, "actions", ["a.py"]), "actions")
 
     def test_a_refused_workflow_push_says_which_token_needs_the_scope(self):
         import io
@@ -1070,33 +1069,18 @@ class WorkflowAccessTests(unittest.TestCase):
         issue["body"] += body_extra
         with patch.dict(os.environ, {"KAPPA_CODER_TOKEN": "pat"}), patch.object(developer, "gh", side_effect=fake_gh), \
                 patch.object(developer, "run_model", side_effect=answers), patch.object(developer, "notify"):
-            result = produce_development_pr(issue, "key", "token")
-        return result, calls, tokens
+            with self.assertRaisesRegex(PermissionError, "independent owner review"):
+                produce_development_pr(issue, "key", "token")
+        return None, calls, tokens
 
-    def test_an_everyday_workflow_change_is_pushed_with_the_workflow_token(self):
-        result, calls, tokens = self.run_task(self.PLAIN_WF)
-        self.assertTrue(result)
-        trees = [c for c in calls if c[0].endswith("/git/trees")]
-        self.assertEqual(len(trees), 1)
-        self.assertIn(".github/workflows/ci.yml", [e["path"] for e in trees[0][1]["tree"]])
-        writes = [(p, t) for p, t, m in tokens if p.endswith(("/git/trees", "/git/refs/heads/kappa/dev-9"))]
-        self.assertTrue(writes and all(t == "pat" for _, t in writes), writes)
-        self.assertTrue(any(p.endswith("/git/refs") for p, _, _ in tokens),
-                        "the validated task branch is created after code commit")
-
-    def test_a_secret_workflow_change_is_written_to_the_draft_and_called_out_for_review(self):
-        result, calls, tokens = self.run_task(self.SECRET_WF)
-        self.assertTrue(result, "the task finishes its code instead of pausing")
-        self.assertTrue(any(c[0].endswith("/git/trees") for c in calls))
-        self.assertFalse(any("Stopped before changing" in str(c[1]) for c in calls), "no stop comment")
-        final = [c[1] for c in calls if c[0] == PrFirstTests.ROOT_ + "/pulls" and c[1]][-1]
-        self.assertTrue(final["body"].startswith("## ⚠️ Workflow changes to review first"))
-        self.assertIn("`.github/workflows/ci.yml`", final["body"].split("\n\n## ", 1)[0] + final["body"][:400])
-        self.assertTrue(final["title"].startswith("Draft"), "it stays a draft for the owner")
-        self.assertFalse(any(c[0].endswith("/merge") for c in calls), "never merged")
-        _, plain_calls, _ = self.run_task(self.PLAIN_WF)
-        plain = [c[1] for c in plain_calls if c[0] == PrFirstTests.ROOT_ + "/pulls" and c[1]][-1]
-        self.assertNotIn("Workflow changes to review first", plain["body"])
+    def test_workflow_candidate_cannot_publish_before_owner_review(self):
+        for source in (self.PLAIN_WF, self.SECRET_WF):
+            with self.subTest(source=source):
+                result, calls, tokens = self.run_task(source)
+                self.assertIsNone(result)
+                self.assertFalse(any(c[0].endswith("/git/trees") for c in calls))
+                self.assertFalse(any(p.endswith("/merge") for p, _, _ in tokens))
+                self.assertFalse(any(t == "pat" for _, t, _ in tokens))
 
 
 class ProgressTests(unittest.TestCase):

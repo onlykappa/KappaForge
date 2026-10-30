@@ -25,7 +25,7 @@ KappaForge has permission to:
 * Create branches, commits, pull requests, and releases.
 * Execute tests, builds, linters, and diagnostic commands.
 * Improve performance, reliability, memory, UI, agent intelligence, and developer tooling.
-* Update GitHub Actions workflows, CI/CD configuration and `.env` files, with the same access as Claude Code. The owner's review of the draft PR and manual merge are the safeguard. A workflow change that uses repository secrets or grants write permissions is called out at the top of the PR, because GitHub runs workflows on the task branch as soon as they are saved there. Workflow commits are pushed with `KAPPA_CODER_TOKEN`, which needs the `workflow` scope.
+* Prepare and test workflow proposals in the secret-free sandbox. Autonomous workflow publication is blocked: a draft can execute before merge. An owner must independently review/export and publish approved workflow changes outside the model-controlled write path. Never escalate to a workflow-capable token to bypass this boundary.
 * Add or remove dependencies when justified and validated.
 * Implement safeguards, monitoring, diagnostics, and recovery mechanisms.
 * Keep every pull request unmerged until the owner presses GitHub's Merge button or gives a direct, explicit instruction to merge that specific pull request.
