@@ -569,7 +569,9 @@ class DeveloperAuthorizationTests(unittest.TestCase):
             self.assertFalse(any(path.endswith(("/git/commits", "/git/refs", "/pulls")) for path, _ in calls),
                              "no commit, ref or PR exists before sandbox validation")
             return {"status": "success", "stop_reason": "validated", "summary": "scripted sandbox pass",
-                    "candidate_changes": dict(changes), "test_results": [{"status": "passed"}],
+                    "candidate_changes": dict(changes),
+                    "test_results": [{"argv": ["python", "-m", "unittest"], "status": "passed", "exit_code": 0, "duration_s": 0.2,
+                                      "output": "Ran 3 tests in 0.1s\n\nOK (skipped=1)\n"}],
                     "attempts": [], "logs": ""}
         with patch.object(developer, "gh", side_effect=fake_gh), patch.object(developer, "run_model", side_effect=answers), \
                 patch.object(developer, "run_sandbox_repair", side_effect=validate_before_publish):
@@ -611,6 +613,9 @@ class DeveloperAuthorizationTests(unittest.TestCase):
         self.assertNotIn("Repository:", plan["body"].split("## Goal")[1], "task metadata is not part of the goal")
         self.assertEqual(developer.requirements_open(plan), [])
         self.assertIn("Pre-commit sandbox validation", plan["body"])
+        # The report answers "report exact commands, counts and skips" from the sandbox receipt itself.
+        self.assertIn("**Commands the sandbox ran**", plan["body"])
+        self.assertIn("`python -m unittest`: passed, exit 0, 0.2 s; ran 3, skipped 1, failed 0", plan["body"])
         code_commit = next(payload for p, payload in calls if p == "repos/onlykappa/KappaForge/git/commits")
         self.assertEqual(code_commit["tree"], "t" * 40, "the one commit contains validated candidate code")
         final = plan

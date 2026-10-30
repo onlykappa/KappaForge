@@ -31,6 +31,7 @@ from engine import repo_map as repo_maps
 from engine import exploration
 from engine import task_plan
 from engine import requirements
+from engine import validation_report
 from engine import research
 from engine import clarification
 from engine import budget_ledger
@@ -3130,6 +3131,8 @@ def produce_development_pr(issue, api_key, token, adopt=None):
         "body": (workflow_notice(sources, changes) + review_body(number, model, explanation, summary, changes, design, open_problems, layout)
                  + "\n\n## Pre-commit sandbox validation\nPassed on the exact candidate before its first commit. "
                  + f"{len(validation_result.get('test_results', []))} test command(s) passed with tests discovered."
+                 + ("\n\n" + validation_report.render(validation_result.get('test_results', []))
+                    if validation_report.render(validation_result.get('test_results', [])) else "")
                  + ("\n\n" + requirements.render(requirements.ROWS.get(), sandbox_passed=True) if requirements.ROWS.get() else "")
                  + ("\n\n" + research.CURRENT.get().render() if research.CURRENT.get() and research.CURRENT.get().render() else "")
                  + ("\n\n" + task_plan.CURRENT.get().render(goal=False) if task_plan.CURRENT.get() else ""))}
@@ -3976,7 +3979,8 @@ def fix_pull_request(issue, api_key, token):
             return None
         summary = verdict
         explanation = verdict + '\n\n' + review_record([])
-    summary = (summary + "\n\nSandbox validation: " + validation["summary"] +
+    commands = validation_report.render(validation.get("test_results", []))
+    summary = (summary + "\n\nSandbox validation: " + validation["summary"] + ("\n\n" + commands if commands else "") +
                "\n\nRepair attempts:\n" + repair_history(validation))[:8000]
     if not changes:
         raise ValueError("The sandbox-validated repair contains no source changes")

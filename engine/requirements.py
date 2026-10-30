@@ -54,6 +54,10 @@ FRESH_BRANCH_RE = re.compile(r'^\s*Start (?:fresh|a fresh branch) from (?:the )?
 PROCESS_RE = re.compile(r'^\s*Start from (?:the )?current (?:main|default branch)(?: and inspect the actual '
                         r'(?:code|source) before (?:editing|making changes))?[.!]?\s*$', re.I)
 HEADING_RE = re.compile(r'^\s*[A-Za-z][A-Za-z -]{0,40}:\s*$')
+# "Do not change the engine's reply format": a limit on this change, kept by the existing tests passing. The determiner is
+# required so program behavior such as "Do not delete user data when the account closes" stays behavioral.
+PRESERVE_RE = re.compile(r"^\s*(?:Do not|Don't|Never)\s+(?:change|alter|touch|modify|rewrite|rename|remove|weaken|skip|disable|"
+                         r"reset|raise|lower|widen)\s+(?:the|any|existing|this|these|those|its|other|every)\b", re.I)
 # Paragraph labels the owner already writes. A paragraph runs to the next blank line.
 BOUNDARY_HEAD_RE = re.compile(r'^\s*(?:constraints?|boundaries|non-goals|out of scope)\s*[.:]', re.I)
 BACKGROUND_HEAD_RE = re.compile(r'^\s*(?:verified problem|problem|background|context|verified baseline(?: behaviou?r)?|'
@@ -61,7 +65,7 @@ BACKGROUND_HEAD_RE = re.compile(r'^\s*(?:verified problem|problem|background|con
 
 
 def process_line(text):
-    if FRESH_BRANCH_RE.fullmatch(text) or PROCESS_RE.fullmatch(text):
+    if FRESH_BRANCH_RE.fullmatch(text) or PROCESS_RE.fullmatch(text) or PRESERVE_RE.match(text):
         return True
     if len(text.split()) > 4 or not HEADING_RE.fullmatch(text):
         return False
