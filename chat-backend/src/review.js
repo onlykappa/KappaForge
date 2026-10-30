@@ -90,7 +90,8 @@ export async function reviewPR(env,repo,number,options={}){
  const native=repo===ROOT&&dev&&files.some(f=>NATIVE_PATHS.some(p=>String(f.filename).startsWith(p)))?await nativeState(env,pr.head.ref,pr.head.sha):null;
  const evidence=options.includeEvidence===true?reviewEvidence:null;
  const evidenceData=evidence?await evidence(env,repo,{...pr,number}):null;
- const reviewFeedback=evidenceData?.feedback.some(r=>r.author!=='github-actions[bot]'&&r.resolved!==true&&r.outdated!==true);
+ const isAnswered=(item,all)=>all.some(b=>b.author==='github-actions[bot]'&&b.body.includes('Source: `'+item.id+'`')&&new Date(b.createdAt)>=new Date(item.updatedAt||item.createdAt));
+ const reviewFeedback=evidenceData?.feedback.some(r=>r.author!=='github-actions[bot]'&&r.resolved!==true&&r.outdated!==true&&!isAnswered(r,evidenceData.feedback));
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
   ...(evidenceData?{evidence:evidenceData}:{}),
   explanation:explanation(pr.body),tests,native,

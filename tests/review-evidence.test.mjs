@@ -55,3 +55,10 @@ test('neutral or skipped external check runs cannot satisfy the merge test gate'
  globalThis.fetch=async url=>Response.json(String(url).includes('/check-runs?')?{check_runs:[{status:'completed',conclusion:'skipped'}]}:{workflow_runs:[]});
  try{assert.equal((await testState({},'Other',pr)).state,'none');}finally{globalThis.fetch=original;}
 });
+test('review feedback is filtered by bot answers',async()=>{
+ const feedback=[{id:'id1',author:'human',updatedAt:'2023-01-01T00:00:00Z',resolved:null,outdated:null},{id:'id1',author:'github-actions[bot]',body:'Source: `id1`',createdAt:'2023-01-02T00:00:00Z'}];
+ const isAnswered=(item,all)=>all.some(b=>b.author==='github-actions[bot]'&&b.body.includes('Source: `'+item.id+'`')&&new Date(b.createdAt)>=new Date(item.updatedAt||item.createdAt));
+ assert.equal(isAnswered(feedback[0],feedback),true);
+ const feedback2=[{id:'id1',author:'human',updatedAt:'2023-01-03T00:00:00Z',resolved:null,outdated:null},{id:'id1',author:'github-actions[bot]',body:'Source: `id1`',createdAt:'2023-01-02T00:00:00Z'}];
+ assert.equal(isAnswered(feedback2[0],feedback2),false);
+});

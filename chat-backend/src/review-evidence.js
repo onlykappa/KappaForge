@@ -37,6 +37,7 @@ export async function reviewEvidence(env,repo,pr){
      const id=full+'#'+pr.number+':'+source+':'+row.id;if(seen.has(id))throw Error('Review feedback contains duplicate identities');seen.add(id);
      result.feedback.push({id,source,author:row.user?.login||'Deleted account',
       body:String(row.body||'').slice(0,2000),truncated:String(row.body||'').length>2000,path:row.path||null,line:row.line||null,
+      createdAt:row.created_at||null,updatedAt:row.updated_at||null,
       revision:row.commit_id||null,outdated:row.commit_id?row.commit_id!==sha:null,
       resolved:typeof row.isResolved==='boolean'?row.isResolved:null,
       url:`https://github.com/${full}/pull/${pr.number}#${source==='inline'?'discussion_r':source==='review'?'pullrequestreview-':'issuecomment-'}${row.id}`});
