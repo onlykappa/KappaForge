@@ -945,7 +945,28 @@ Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker
 - **Regression:** `tests/test_report_requirements.py` (12 cases) and additions to `tests/test_requirement_sections.py`; `tests/test_developer.py` now asserts the published body carries the commands block from a realistic receipt (the old stub had none). Replaying PR #323's stored problem list: 9 of 12 now resolve as controller-answered or review-process notes.
 - **Known trade-off:** "Do not remove the user's data when ..." style sentences with a determiner would be read as constraints. The requirement review still judges them; only the mandatory test-citation gate is skipped.
 - **Immediate rerun:** 1,434 Python tests OK, 38 skipped locally; dependency map regenerated for the new module.
-- **Status:** PATCHED locally; live confirmation pending a rerun of the explicit Fix on #322.
+- **Status:** PATCHED; live-confirmed in part. The third run (Fix run 41097698325, engine fd9eebd) verified findings on free models, was no longer blocked by the report asks, and reached sandbox repair. It then stopped at P3-133.
+
+## P3-131 — KappaForge accepted a test that exercised a copy of the code (observed, not patched)
+
+- **Evidence:** draft PR #323 (task #322, run 41087383549). Its only test defines `isAnswered` inline and asserts on that copy; it never calls `reviewPR` or `reviewEvidence`. The requirement table still marked the test requirements "tested (ran: full suite passed)", because a passing suite was taken as proof that the cited test reaches the changed code.
+- **Impact:** a requirement can read "tested" with no test of the real production behavior, so the "Fix it" button change would have shipped unverified. An independent human-style review caught it; the engine did not.
+- **Status:** OPEN, roadmap input. A cited test should be required to import or call a changed production module or export, and a test that defines the function it asserts should be flagged. No engine change made yet.
+
+## P3-132 — generated production code treated an unreadable timestamp as "answered" (fail-open)
+
+- **Evidence:** #323's `isAnswered` compared `new Date(null)` with `new Date(null)`, which is true, so an item with no usable time counted as answered and the Fix button was hidden. Found by running real tests against it, not by KappaForge's own review.
+- **Permanent patch:** the shipped implementation (#326, merged as `e4f22b4`) never trusts a missing or unreadable time: the item stays pending and Fix stays available.
+- **Regression:** `tests/review-feedback-answered.test.mjs` (10 real tests, mutation-checked against five wrong implementations).
+- **Status:** PATCHED in the code that shipped; KappaForge's own draft was closed unmerged.
+
+## P3-133 — the repair loop ended on `invalid_limit` after three unusable replies
+
+- **Evidence:** Fix run 41097698325 (engine fd9eebd), task #322. The coder wrote `tests/review-canfix.test.mjs`, which imports `{review}` from `chat-backend/src/review.js`; that module has no such export (it is `reviewPR`), so `npm test` failed at that file and the sandbox stopped the candidate before publication (the safety net worked; Python passed, 1,404 run). The repair loop then read `review-evidence.js` and `review.js` and produced three consecutive replies that were not one JSON object, so `invalid_limit` ended it. The model's raw replies are not logged, so the cause is inferred from the checkpoint (`invalid JSON reply: expected an object` three times in a row, immediately after the largest edit was due): most likely a reply cut off at the loop's 2,000-token cap while rewriting a 150-line test file.
+- **Permanent patch (`engine/tool_loop.py`):** the reply cap is now `TOOL_REPLY_TOKENS = 16384` (the gateway's shared coding ceiling; every route still clamps it to its own provider maximum, 4,096 to 65,536); one JSON object in a single code fence, or as the only item of a list, is read as the same call (several calls in one reply are not guessed at; text around JSON is still refused); an invalid reply now says what kind of failure it was (`not JSON (cut off or malformed)`, `JSON list of N items`, `JSON string`…) plus the reply length, never any of its text, and tells the model to reply with exactly one object and to split large edits; an unknown tool is told which tools exist. The hint reaches the model on its next call through the recorded step history.
+- **Regression:** `tests/test_tool_loop_replies.py` (11 cases, red before the change); the existing `tests/test_tool_loop.py` still passes unchanged.
+- **Open, roadmap input:** the coder invented an export name because the generation prompt does not give it the real exports of the modules a new test imports.
+- **Status:** PATCHED locally; live confirmation pending a rerun.
 
 ## Finding template
 
