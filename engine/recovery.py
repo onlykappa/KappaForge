@@ -559,12 +559,15 @@ class Journal:
 
     def publish(self, status, message):
         at = int(self.clock() * 1000)
+        started = self.state.get('attemptStartedAtMs')
+        if type(started) is not int or not 0 < started <= at:
+            started = at
         last = self.state['events'][-1] if self.state['events'] else {}
         execution = self.state.get('executionState', status)
         status = {'paused':'blocked','blocked_authorization':'blocked','needs_clarification':'blocked','failed_terminal':'failed','waiting_for_provider':'waiting','validating':'testing'}.get(status, status)
         finished = at if status in ('ready', 'blocked', 'failed', 'cancelled') else 0
         snapshot = dict(version=1, taskId=str(self.scope.number), attemptId=f"recovery:{self.state['continuations']}:{at}",
-                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=at, finishedAt=finished,
+                        attemptAt=at, revision=1, status=status, updatedAt=at, startedAt=started, finishedAt=finished,
                         objective=self.state.get('objectiveReceipt'),
                         steps=[dict(id='recovery', title=message, detail=last.get('error', ''), status='completed' if status == 'ready' else status,
                                     startedAt=at, finishedAt=finished)], activity=[], findings=[], units=None,
@@ -731,7 +734,8 @@ class Journal:
             # token, cooldown or recovery budget. Explicit Retry joins the queue.
             notify_wake(self.scope.number)
             return False
-        self.state.update(status='running', run=os.getenv('GITHUB_RUN_ID', ''), nextAt=0)
+        self.state.update(status='running', run=os.getenv('GITHUB_RUN_ID', ''), nextAt=0,
+                          attemptStartedAtMs=int(self.clock() * 1000))
         self._resuming = True
         try:
             self.persist()
@@ -856,6 +860,10 @@ def finalize_attempt(journal, url):
     from engine.verify import open_problems
     if journal.state['status'] == 'needs_clarification':
         return
+    prior = journal.state.get('objectiveReceipt', {})
+    if (not url and prior.get('candidate') == journal.state['candidate']
+            and prior.get('state') == 'blocked_closed_draft'):
+        return  # The reconciler already persisted and published the precise stop reason.
     candidate = journal.state['candidate']
     problems = []
     if url:
@@ -881,6 +889,28 @@ def finalize_attempt(journal, url):
                     'Objective awaits independent checks; draft delivery is not completion.' if status == 'testing' else
                     'Objective verified; owner merge approval is still required.' if status == 'ready' else
                     'Execution stopped without a verified delivery.')
+
+
+def reconcile_closed_draft(journal, repo, branch, read):
+    """Check a saved draft before model calls, repair debit, tests or source publication."""
+    if not journal:
+        return False
+    saved = journal.state.get('pr', '')
+    match = re.fullmatch(r'https://github.com/' + re.escape(repo) + r'/pull/([1-9][0-9]*)', saved)
+    if not match:
+        return False
+    pr = read(f'repos/{repo}/pulls/{match[1]}')
+    if (pr.get('state') != 'closed' or pr.get('head', {}).get('ref') != branch
+            or pr.get('head', {}).get('repo', {}).get('full_name') != repo):
+        return False
+    journal.state.update(status='blocked', nextAt=0, objectiveReceipt=dict(version=1,
+        candidate=journal.state['candidate'], state='blocked_closed_draft', delivery='closed',
+        reason='The saved draft was closed; it may be superseded. Owner review is required before further work.',
+        pr=saved, updatedAt=int(journal.clock() * 1000)))
+    journal.persist()
+    journal.publish('blocked', 'Saved draft is closed. No inference, tests or source publication were started; '
+                    'review whether the objective is superseded before authorizing another task.')
+    return True
 
 
 def verify_saved_candidate(journal, token):

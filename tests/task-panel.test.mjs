@@ -285,3 +285,18 @@ test('a recovery-eligible card offers explicit retry and the local timer reveals
  assert.doesNotMatch(html,/WAITING FOR RECOVERY/);assert.match(html,/data-task-retry="171"/);
  job.finished=true;assert.doesNotMatch(card(),/data-task-retry/);
 });
+
+test('task330 blocked objective stays blocked after green checks and its elapsed timer stops',async()=>{
+ await import('../preview/task-progress.js');const P=globalThis.KappaProgress;
+ let tick=200000;const clock=class extends Date{static now(){return tick}};
+ const box={taskFeedRefreshing:false,esc,KappaJobs:{...J,verifiedTask:()=>true},KappaActions:K,KappaProgress:P,Date:clock,Math,Number,String,Object,Array,
+  plain:t=>String(t||''),clip:(t,n)=>String(t).slice(0,n),taskValidation:()=>[],uiIcon:()=>'',heroRing:()=>'',findingsCard:()=>'',activityFeed:()=>'',feedItems:()=>[]};
+ vm.createContext(box);vm.runInContext(slice(read('ui.js'),'function executionDiagnostics(','\nconst ACTIVITY_KINDS'),box);
+ const p=P.normalize({version:1,taskId:'330',attemptId:'recovery:330',attemptAt:1000,revision:1,status:'blocked',
+  updatedAt:3500,startedAt:1000,finishedAt:3500,steps:[{id:'verification',title:'Requirement review unavailable',status:'blocked',startedAt:1000,finishedAt:3500}]},330);
+ const job={number:330,title:'Ledger tests',message:'tests-passed',progress:p,queuedAt:1000};
+ const render=()=>box.renderExecutionActivity({text:''},job);
+ const first=render();assert.match(first,/BLOCKED/);assert.doesNotMatch(first,/>READY FOR REVIEW<|>DONE<|>TESTING</);
+ const timing=first.match(/<div class="task-timing">.*?<\/div>/)[0];assert.doesNotMatch(timing,/data-since/);
+ tick+=60000;assert.equal(render().match(/<div class="task-timing">.*?<\/div>/)[0],timing);
+});
