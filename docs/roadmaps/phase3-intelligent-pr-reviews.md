@@ -1,7 +1,7 @@
 # Phase 3 roadmap: intelligent PR reviews, visual testing and owner approval
 
 **Repository:** `onlykappa/KappaForge`
-**Tracking:** draft [#312](https://github.com/onlykappa/KappaForge/pull/312) is the current bug/engine accumulator, based on merged309/311 in maina76561a. The owner requested keeping new fixes in312 and KappaForge using that engine. PR #279 preserves this roadmap and supporting review work. Small Phase 3.1 audit outputs are tracked separately: provenance #284, corrected architecture inventory merged through #300 (superseding #299), and partial policy review #304. Historical audit PR #275 is retained until its unique evidence is reconciled.
+**Tracking:** delivered to `main` by [#312](https://github.com/onlykappa/KappaForge/pull/312) (merge `30977f3`) after #309 and #311. See [closeout.md](../phase3/closeout.md) for what was delivered, what was verified and what was not done. Phase 3.9 is not done. PR #279 and the earlier audit PRs are historical; their unique evidence is reconciled in the Phase 3 ledger.
 **Starting point:** latest `main` verified at `ce7a5645cee806ddc4d0df523cbcb68f4be1117f` (2026-10-25).
 **Dependencies:** merged Phase 1 sandbox/execution and Phase 2 dynamic exploration, task planning, classification, research and clarification.
 **Owner boundary:** no automatic merge, release, deployment, access change, branch-protection change or production configuration change. A successful test, positive review or readiness recommendation is never merge authorization. Only the authenticated owner may perform an explicit merge action.
@@ -18,15 +18,15 @@ Phase3.1 closed at5b462fa77b6bd9971ebeb2403135f0bef653ca9a after tests4082046288
 
 ## Progress and run discipline
 
-- [x] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered
-- [ ] Phase 3.2 — authenticated, scoped PR review ingestion
-- [ ] Phase 3.3 — review-driven repair and safe PR updates
-- [ ] Phase 3.4 — browser visual verification and evidence
-- [ ] Phase 3.5 — accurately report web and native iOS validation
-- [ ] Phase 3.6 — iPhone task and PR review experience
-- [ ] Phase 3.7 — backend-enforced owner-controlled lifecycle actions
-- [ ] Phase 3.8 — acceptance, regression suite and controlled end-to-end demonstration
-- [ ] Phase 3.9 — cross-phase integration audit and final report
+- [x] Phase 3.1 — verify Phase 1 and Phase 2, then fix and rerun every in-scope issue discovered (closed 2026-10-30; live acceptance of the automated review path remains open, see closeout)
+- [x] Phase 3.2 — authenticated, scoped PR review ingestion (delivered in #312; no live production ingestion run)
+- [x] Phase 3.3 — review-driven repair and safe PR updates (delivered in #312; fixture-driven, not a live task)
+- [x] Phase 3.4 — browser visual verification and evidence (delivered in #312)
+- [x] Phase 3.5 — accurately report web and native iOS validation (delivered; physical iPhone never run and reported as not run)
+- [x] Phase 3.6 — iPhone task and PR review experience (delivered in #312; not exercised on a physical device)
+- [x] Phase 3.7 — backend-enforced owner-controlled lifecycle actions (delivered; separate merge/release grants not implemented, owner-accepted limitation 2026-10-30)
+- [x] Phase 3.8 — acceptance, regression suite and controlled end-to-end demonstration (deterministic fixture; no live production task)
+- [ ] Phase 3.9 — cross-phase integration audit and final report (NOT done: needs a live end-to-end run, device test and measured comparisons)
 
 Every newly encountered issue gets an ID in [issue-log.md](../phase3/issue-log.md), with source evidence, impact, reproducer, patch status, commit/PR location, regression test and immediate rerun result. Mark it **patched** only after the rerun passes. If it cannot be fixed within the authorized scope, record **blocked** with the reason and stop dependent work for owner input. Separate checks that ran from checks inspected and checks not run.
 

@@ -1,3 +1,12 @@
+# Phase 3 delivered — 2026-10-30 (read this first)
+
+Phase 3 (review ingestion, review-driven repair, visual evidence, native receipts, lifecycle audit) is merged to `main` by PR #312 (`30977f3`). Everything below this section is **historical** queue and handoff notes from before that merge; do not act on it.
+
+- The owner is **not using KappaForge yet**. Do not start tasks, dispatch the agent, enable scheduled monitoring or run the autonomous queue.
+- Owner decisions: raised repair and exploration caps are intentional; a push to `main` also releases the iPhone app and deploys the chat Worker (accepted limitation).
+- Not done: Phase 3.9 (live end-to-end integration audit), physical-iPhone execution, live acceptance of automated review and queue behavior.
+- Facts and open risks: `docs/phase3/closeout.md`. Never claim a check ran that the ledger or CI does not show.
+
 # Fresh Phase 3.2 seed gate — 2026-10-29
 
 Current control is319 for originally prepared, unstarted314→315. The exhausted313/318 is preserved, not replayed/reset/marked successful:57 calls/13 edits/5 fix cycles,3 queue attempts, candidate317 stilld2785c2. Independent native test synchronization100 is delivered in312 with unchanged geometry assertions/tolerances and bounded actual-layout waiting. Fresh-source gate101 starts314 only after exact-head tests and required native CI pass; seed SHA/run IDs are persisted.1,317 full Python tests pass (31 skips),75 focused/28 queue tests and11 Node native-contract checks pass; ten structural rules and policy/map checks pass. Corrected-head native CI remains pending. Read docs/phase3/native-geometry-and-seeded-batch.md and current319 state before intervention. Owner has authorized3.2 after honest3.1 closeout; no merge/deploy/release/ready action. Do not dispatch a duplicate queue or change live source while its initial seed gate is waiting.
