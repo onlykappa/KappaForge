@@ -12,7 +12,7 @@ Phase 3 was delivered to `main` by PR #312 (merge commit `30977f3db1a9e6650f59f4
 | Native iOS simulator UI tests | 5 of 5 passed. Receipt `native-validation-evidence`: state `passed`, candidate = PR head, physical device `not_run` |
 | Independent code review of #312 | 10 findings; two fixed with regressions, the rest dispositioned in [direct-delivery.md](direct-delivery.md) |
 
-Checks run after the merge, on `main`: the test workflow and the chat Worker deploy both succeeded. The iOS release result is recorded at the end of this file.
+Checks run after the merge, on `main` (commit `30977f3`): the test workflow, the chat Worker deploy and the iOS build and release workflow all succeeded. See "Post-merge results" below.
 
 ## Status by phase
 
@@ -49,3 +49,13 @@ A push to `main` also publishes an iPhone release and deploys the chat Worker to
 ## Next owner action
 
 Start Phase 4 work, or run a live KappaForge task to close 3.9. Do not turn the autonomous queue on without reading the open risks above.
+
+## Post-merge results (main, commit 30977f3)
+
+| Workflow | Result |
+| --- | --- |
+| KappaForge tests (run 41078196102) | success |
+| Deploy KappaForge Chat (run 41078196084) | success; the Worker deploy ran under the owner-accepted coupling above |
+| iOS build and release (run 41078196206) | success; published **release v2.2.43** (2026-10-30T15:20:30Z). The release asset itself was not downloaded or installed |
+
+No rollback, retry or re-dispatch was needed. The released app has not been run on a physical iPhone as part of this closeout.
