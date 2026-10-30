@@ -219,14 +219,14 @@ class VerifierFallbackTests(GuardCase):
         self.assertEqual(calls, [(), ('ollama:gpt-oss:120b',), ('ollama:gpt-oss:120b', 'mistral:codestral-latest')])
 
     def test_three_invalid_answers_stop_with_each_route_and_problem_named(self):
-        answers = iter([('ollama:gpt-oss:120b', 'not json'), ('mistral:codestral-latest', '[]'),
+        answers = iter([('ollama:gpt-oss:120b', 'not json'), ('mistral:codestral-latest', '7'),
                         ('groq:qwen', '{"findings": [{"id": "foreign", "verdict": "confirmed", "in_goal": true, "reason": "x"}]}')])
         model = Mock(side_effect=lambda key, prompt, **kw: next(answers))
         with self.assertRaises(repair_guard.RepairReviewRequired) as stopped:
             repair_guard.verify_findings(model, 'key', self.goal.request, ['Plan PR opens before validation'], self.SOURCE)
         message = str(stopped.exception)
         self.assertIn('invalid from 3 free models', message)
-        for part in ('ollama:gpt-oss:120b: malformed_json', 'mistral:codestral-latest: not_an_object', 'groq:qwen: missing_or_foreign_ids'):
+        for part in ('ollama:gpt-oss:120b: malformed_json', 'mistral:codestral-latest: not_an_object:int', 'groq:qwen: missing_or_foreign_ids:0/1'):
             self.assertIn(part, message)
         self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
         self.assertNotIn('foreign', message.replace('missing_or_foreign_ids', ''), 'answer text is never echoed')
@@ -274,7 +274,7 @@ class VerifierFallbackTests(GuardCase):
             return 'bad' if len(calls) == 1 else 'good', json.dumps(result)
         rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, self.SOURCE)
         self.assertEqual(len(calls), 2)
-        self.assertEqual([r['id'] for r in calls[1][0]], [repair_guard.digest(claims[0])])
+        self.assertEqual([r['claim'] for r in calls[1][0]], [claims[0]])
         self.assertEqual(calls[1][1], ('bad',))
         self.assertEqual([r['verdict'] for r in rows], ['confirmed', 'needs_validation'])
 

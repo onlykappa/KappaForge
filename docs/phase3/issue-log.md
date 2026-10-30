@@ -914,6 +914,29 @@ Deleted-author candidate d561a8a passed1330 Python tests (32 skips), web, Worker
 - Immediate rerun:39 review-focused tests run OK (one real-Docker skip), including the preserved64-bit identity. Original failed task histories and grants are untouched.
 - Status: PATCHED locally; source-specific remote verification pending.
 
+## P3-127 — free verifier models cannot answer with 64-character finding ids
+
+- **Checkpoint and date:** Phase 3.9 live run, 2026-10-30, task #322 (run 41087383549, draft PR #323).
+- **Evidence:** the repair stopped with "Finding verification was invalid from 3 free models (gemini:gemini-3.1-flash-lite: not_an_object; ollama:gpt-oss:120b: missing_or_foreign_ids; mistral:codestral-latest: missing_or_foreign_ids); no speculative edits authorized". Observation: the findings sent to the verifier were identified by `digest(claim)`, a 64-character SHA-256 hex string that the model must copy back exactly; three different providers all failed the envelope check. Inference, not observation: raw answers are never logged by design, so the exact malformed replies were not seen. The likely causes are a garbled long id (two providers) and a bare JSON list instead of an object (one provider).
+- **Impact:** with no usable decision the review is not completed and no repair is authorized, so the task ended as an incomplete draft after a successful sandbox run.
+- **Permanent patch:** the model is shown short ids (F1, F2, ...) mapped back to the engine's digests (a digest is still accepted); a bare JSON list is read as the same `findings` array, every decision passing the unchanged checks; a failure now reports only the JSON type (`not_an_object:list`) or two counts (`missing_or_foreign_ids:0/2`), never answer text. Foreign and duplicate ids still fail closed.
+- **Regression:** `tests/test_verifier_envelope.py` (nine cases, red before the change). Existing tests that compared prompt ids to digests now compare claim text; one resource-fit fixture was enlarged so the same budget still forces a split.
+- **Immediate rerun:** 1,421 Python tests OK, 38 skipped locally.
+- **Status:** PATCHED locally; live confirmation pending a rerun of task #322.
+
+## P3-128 — boundaries, background and headings were demanded as tested behavior
+
+- **Checkpoint and date:** same run. The rules fallback labelled "Start from current main and inspect the actual code before editing.", the background paragraph, the heading "Required behavior:" and the prohibitions in the Constraints paragraph as code or bug-fix work. Each then appeared as "Requirement untested ... add or cite a test" on PR #323, 12 problems in total, none of which any code can satisfy. Observation: classification had fallen back to rules because the model's answer did not name every requirement id exactly once (a deliberate strict contract).
+- **Permanent patch:** a paragraph the owner opens with "Constraints." (or boundaries, non-goals, out of scope) or with a background label ("Verified problem.", "Background.", "Context.") is housekeeping, as are the sentence "Start from current main and inspect the actual code before editing." and a short heading ending in a colon with no work verb. Security and owner-decision labels, requirement ids and offsets are unchanged, a blank line ends a paragraph, and an ask such as "Fix the login bug:" stays behavioral.
+- **Regression:** `tests/test_requirement_sections.py` (nine cases, six red before the change).
+- **Status:** PATCHED locally; live confirmation pending.
+
+## P3-129 — strongest free models were unusable for this task (observation, not patched)
+
+- **Evidence:** run 41087383549 router results. NVIDIA models timed out at transport (status 0) and were then rested with a coordination 429; Groq gpt-oss-120b was refused by the gateway context guard (413, prompts of 22,000 to 68,000 characters); mistral-small was rested as request-too-large. Nearly every call (classification, code, review, verify) was served by rank 4 or 5: gemini-3.1-flash-lite, ollama gpt-oss:120b or codestral.
+- **Impact:** code was written and verified by the weakest available free tier, which makes malformed envelopes and inexact edit anchors likely (the first edit attempt failed with an anchor that matched zero times and recovered on the retry).
+- **Status:** OPEN, roadmap input. No limit or provider setting was changed. Needs a measured routing study rather than a guess.
+
 ## Finding template
 
 ### P3-NNN — short defect title

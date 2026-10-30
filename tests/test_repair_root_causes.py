@@ -124,8 +124,7 @@ class PartialAnswerTests(Base):
         rows, model = self.verify(respond, self.CLAIMS)
         self.assertEqual(model.call_count, repair_guard.VERIFIER_ATTEMPTS)
         for call in model.call_args_list[1:]:
-            self.assertEqual([row['id'] for row in review_input(call.args[1])['findings']],
-                             [repair_guard.digest(self.CLAIMS[1])])
+            self.assertEqual([row['claim'] for row in review_input(call.args[1])['findings']], [self.CLAIMS[1]])
         verdicts = {row['claim']: (row['verdict'], row['gate']) for row in rows}
         self.assertEqual(verdicts[self.CLAIMS[0]], ('confirmed', []))
         self.assertEqual(verdicts[self.CLAIMS[1]], ('needs_validation', ['not_answered']), 'unanswered authorizes nothing')

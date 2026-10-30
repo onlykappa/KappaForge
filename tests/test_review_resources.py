@@ -77,7 +77,7 @@ class ReviewResourceTests(unittest.TestCase):
                 reason='Source lacks the requested conversion', owner_ref='R1',
                 evidence=[dict(path='app.py', lines=[1, 1])]) for r in data['findings']]})
         try:
-            claims = ['app.py: preserve owner condition ' + str(i) + ' x' * 100 for i in range(4)]
+            claims = ['app.py: preserve owner condition ' + str(i) + ' x' * 160 for i in range(4)]
             rows = repair_guard.verify_all_findings(model, 'key', task, claims, {'app.py': 'return a + b\n'})
             self.assertEqual([r['claim'] for r in rows], claims)
             self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
