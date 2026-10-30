@@ -1,0 +1,68 @@
+=== audit-python.log ===
+No owner-authorized continuous/watch issues pending
+KAPPA_ROUTER_RESULT {"attempts": [], "maxTokens": 16384, "promptChars": 6, "rank": null, "requestId": "d91601ed-1caa-407e-828f-cd0784ec0ecb", "role": "light", "route": "groq:x", "status": 200, "usage": null}
+KAPPA_ROUTER_RESULT {"attempts": [], "maxTokens": 3500, "promptChars": 6, "rank": null, "requestId": "d9d659bc-9d9b-4513-9112-d1c63a2f11da", "role": "light", "route": "groq:x", "status": 200, "usage": null}
+KAPPA_ROUTER_RESULT {"attempts": [], "maxTokens": 16384, "promptChars": 6, "rank": null, "requestId": "fa4e040a-69d8-40d6-80ad-0b6d8336af88", "role": "light", "route": "groq:x", "status": 200, "usage": null}
+......
+----------------------------------------------------------------------
+Ran 1452 tests in 108.432s
+
+OK (skipped=36)
+
+=== audit-node.log ===
+✔ bad device coordinates are refused before any upstream call; missing feels-like is left out (2.857341ms)
+✔ a city typed after the app reports location is off still answers the weather (2.055624ms)
+ℹ tests 924
+ℹ suites 0
+ℹ pass 924
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 33796.964604
+
+=== audit-331.log ===
+test_identical_record_persists_only_once (tests.test_budget_ledger.TestBudgetLedger.test_identical_record_persists_only_once) ... ok
+test_ignores_invalid_saved_values (tests.test_budget_ledger.TestBudgetLedger.test_ignores_invalid_saved_values) ... ok
+test_invalid_kind_raises_value_error (tests.test_budget_ledger.TestBudgetLedger.test_invalid_kind_raises_value_error) ... ok
+test_kinds_do_not_overwrite (tests.test_budget_ledger.TestBudgetLedger.test_kinds_do_not_overwrite) ... ok
+test_no_saved_state_starts_at_zero (tests.test_budget_ledger.TestBudgetLedger.test_no_saved_state_starts_at_zero) ... ok
+test_none_journal_records_in_memory (tests.test_budget_ledger.TestBudgetLedger.test_none_journal_records_in_memory) ... ok
+test_reads_saved_state (tests.test_budget_ledger.TestBudgetLedger.test_reads_saved_state) ... ok
+test_record_never_lowers_total (tests.test_budget_ledger.TestBudgetLedger.test_record_never_lowers_total) ... ok
+test_record_persists_and_rounds (tests.test_budget_ledger.TestBudgetLedger.test_record_persists_and_rounds) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.000s
+
+OK
+
+=== audit-checkweb.log ===
+Build settings verified from config/app.json
+Bundled 26 shared files, v2.2.9
+Web and backend syntax, versions, shared bundle: passed
+
+=== audit-policy.log ===
+Free execution workflow manifest matches reviewed sources; every workflow uses standard runners
+
+=== audit-depmap.log ===
+dependency_map.json matches the code
+
+=== audit-worker.log ===
+
+
+
+ ⛅️ wrangler 4.151.1
+────────────────────
+Total Upload: 492.10 KiB / gzip: 126.73 KiB
+Your Worker has access to the following bindings:
+Binding                                                Resource                  
+env.MEMORY (KappaMemory)                               Durable Object            
+env.AI                                                 AI                        
+env.ROUTING_POLICY_VERSION ("v1")                      Environment Variable      
+env.KAPPA_ROUTER_MAX_DAILY_REQUESTS ("0")              Environment Variable      
+env.KAPPA_ROUTER_MAX_PER_MINUTE ("0")                  Environment Variable      
+
+--dry-run: exiting now.
+
+Cloudflare collects anonymous telemetry about your usage of Wrangler. Learn more at https://github.com/cloudflare/workers-sdk/tree/main/packages/wrangler/telemetry.md

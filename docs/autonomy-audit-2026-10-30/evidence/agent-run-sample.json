@@ -1,0 +1,1002 @@
+[
+  {
+    "id": 41115534131,
+    "display_title": "Agent task #330 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-30T19:28:28Z",
+    "updated_at": "2026-10-30T19:36:15Z",
+    "head_sha": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41115534131"
+  },
+  {
+    "id": 41114997477,
+    "display_title": "Agent task #322 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-30T19:24:27Z",
+    "updated_at": "2026-10-30T19:25:00Z",
+    "head_sha": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41114997477"
+  },
+  {
+    "id": 41097698325,
+    "display_title": "Agent task #322 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-30T17:18:42Z",
+    "updated_at": "2026-10-30T17:33:35Z",
+    "head_sha": "fd9eebd611ebf156f53ff74e864b412e3a735c45",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41097698325"
+  },
+  {
+    "id": 41092627409,
+    "display_title": "Agent task #322 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-30T16:44:34Z",
+    "updated_at": "2026-10-30T16:47:11Z",
+    "head_sha": "f9dc895070cce881e9ec485a01b49010278bc48f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41092627409"
+  },
+  {
+    "id": 41087383549,
+    "display_title": "Agent task #322 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-30T16:10:03Z",
+    "updated_at": "2026-10-30T16:18:57Z",
+    "head_sha": "faf250e310ad9afe0e6e640c5b6bd4c6d59c0c87",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41087383549"
+  },
+  {
+    "id": 41075417009,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:51:52Z",
+    "updated_at": "2026-10-30T14:52:00Z",
+    "head_sha": "fc5fdaa3b617d69358600822d4072eb5f541c482",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41075417009"
+  },
+  {
+    "id": 41074661455,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:46:51Z",
+    "updated_at": "2026-10-30T14:46:52Z",
+    "head_sha": "652043aedee9cd19c676f2a8105a18973539187c",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41074661455"
+  },
+  {
+    "id": 41072126294,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:30:29Z",
+    "updated_at": "2026-10-30T14:30:31Z",
+    "head_sha": "192c567795343c500b40159276af17530584d74f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41072126294"
+  },
+  {
+    "id": 41070659294,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:18:06Z",
+    "updated_at": "2026-10-30T14:18:07Z",
+    "head_sha": "d9b1e2e6698b9ad8a883a14785ceac2fc5d9d822",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41070659294"
+  },
+  {
+    "id": 41069891091,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:13:01Z",
+    "updated_at": "2026-10-30T14:13:10Z",
+    "head_sha": "957dac8c813623d3c98809fd534faa9c6cfd1361",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41069891091"
+  },
+  {
+    "id": 41068104860,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T14:01:00Z",
+    "updated_at": "2026-10-30T14:01:01Z",
+    "head_sha": "acb0329fc815536aeea64db54aae5c2c25967495",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41068104860"
+  },
+  {
+    "id": 41064094877,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-30T13:32:30Z",
+    "updated_at": "2026-10-30T13:32:37Z",
+    "head_sha": "1ecd2f699a7b5b9005a19892d61942835689beb2",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41064094877"
+  },
+  {
+    "id": 41060616035,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-30T13:07:22Z",
+    "updated_at": "2026-10-30T13:07:44Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41060616035"
+  },
+  {
+    "id": 41011360402,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-30T05:58:16Z",
+    "updated_at": "2026-10-30T05:58:31Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/41011360402"
+  },
+  {
+    "id": 40976667626,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T23:58:30Z",
+    "updated_at": "2026-10-29T23:58:38Z",
+    "head_sha": "b0e6827cb5c13161707ca581eb8d10e1742642dd",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40976667626"
+  },
+  {
+    "id": 40970125368,
+    "display_title": "Agent task #319 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "cancelled",
+    "created_at": "2026-10-29T23:00:58Z",
+    "updated_at": "2026-10-29T23:06:35Z",
+    "head_sha": "784b638cce88a82b640441e9a51027c120c29d93",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40970125368"
+  },
+  {
+    "id": 40968922391,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-29T22:50:49Z",
+    "updated_at": "2026-10-29T22:51:06Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40968922391"
+  },
+  {
+    "id": 40945944007,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T20:05:46Z",
+    "updated_at": "2026-10-29T20:05:47Z",
+    "head_sha": "784b638cce88a82b640441e9a51027c120c29d93",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40945944007"
+  },
+  {
+    "id": 40937595380,
+    "display_title": "Agent task #319 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T19:10:06Z",
+    "updated_at": "2026-10-29T19:46:50Z",
+    "head_sha": "e2bfbe2f6504a94a28054e76f1a77245175d173c",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40937595380"
+  },
+  {
+    "id": 40936586938,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T19:03:33Z",
+    "updated_at": "2026-10-29T19:03:35Z",
+    "head_sha": "e2bfbe2f6504a94a28054e76f1a77245175d173c",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40936586938"
+  },
+  {
+    "id": 40932501652,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T18:37:07Z",
+    "updated_at": "2026-10-29T18:37:16Z",
+    "head_sha": "6fd4b83b36d78d31a9d4ae7399408016f95dbe54",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40932501652"
+  },
+  {
+    "id": 40927301535,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T18:04:16Z",
+    "updated_at": "2026-10-29T18:04:17Z",
+    "head_sha": "023be1043e0c69bc87a633a42202826a11bd7eea",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40927301535"
+  },
+  {
+    "id": 40923831906,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T17:42:08Z",
+    "updated_at": "2026-10-29T17:42:09Z",
+    "head_sha": "8b61033b182dfec76e19f912180e0c182f84751c",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40923831906"
+  },
+  {
+    "id": 40902033099,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T15:29:08Z",
+    "updated_at": "2026-10-29T15:29:09Z",
+    "head_sha": "ac744072556581e93b56da7782693c8be2b55058",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40902033099"
+  },
+  {
+    "id": 40896016798,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T14:53:35Z",
+    "updated_at": "2026-10-29T14:53:36Z",
+    "head_sha": "0964f14db0e9370ba93b5c78c76e7e31bab22bc1",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40896016798"
+  },
+  {
+    "id": 40888143488,
+    "display_title": "Agent task #319 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T14:06:04Z",
+    "updated_at": "2026-10-29T14:42:47Z",
+    "head_sha": "b1a826453c5d308538c6514fe54cb999e100c985",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40888143488"
+  },
+  {
+    "id": 40888035677,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T14:05:24Z",
+    "updated_at": "2026-10-29T14:05:33Z",
+    "head_sha": "b1a826453c5d308538c6514fe54cb999e100c985",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40888035677"
+  },
+  {
+    "id": 40886956965,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T13:58:47Z",
+    "updated_at": "2026-10-29T13:58:55Z",
+    "head_sha": "881e16cebb1cdd9c20984ac7f35c6a6449ae7e81",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40886956965"
+  },
+  {
+    "id": 40880243341,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-29T13:15:16Z",
+    "updated_at": "2026-10-29T13:15:38Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40880243341"
+  },
+  {
+    "id": 40879152504,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T13:08:01Z",
+    "updated_at": "2026-10-29T13:08:09Z",
+    "head_sha": "62e3aab80020ed5f295e4cf13446517889df80fe",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40879152504"
+  },
+  {
+    "id": 40875727069,
+    "display_title": "Agent task #319 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T12:44:12Z",
+    "updated_at": "2026-10-29T13:01:44Z",
+    "head_sha": "c796e686c8e9601b4459ec5e2ae81cfd8a93dc95",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40875727069"
+  },
+  {
+    "id": 40875640585,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T12:43:34Z",
+    "updated_at": "2026-10-29T12:43:35Z",
+    "head_sha": "c796e686c8e9601b4459ec5e2ae81cfd8a93dc95",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40875640585"
+  },
+  {
+    "id": 40870695474,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T12:07:23Z",
+    "updated_at": "2026-10-29T12:07:25Z",
+    "head_sha": "d3b4d0d978a7600285442e190f2378213fe1df97",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40870695474"
+  },
+  {
+    "id": 40849496440,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "skipped",
+    "created_at": "2026-10-29T09:25:20Z",
+    "updated_at": "2026-10-29T09:25:28Z",
+    "head_sha": "2dc8258c2de52848c2cad80819b51b1e12eb12ac",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40849496440"
+  },
+  {
+    "id": 40826673859,
+    "display_title": "Owner-authorized coding queue",
+    "event": "push",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T06:00:56Z",
+    "updated_at": "2026-10-29T06:34:27Z",
+    "head_sha": "255bbee08ad15a4c99d2dbd29503e9b79146f3ed",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40826673859"
+  },
+  {
+    "id": 40826375647,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-29T05:57:49Z",
+    "updated_at": "2026-10-29T05:58:09Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40826375647"
+  },
+  {
+    "id": 40820493588,
+    "display_title": "Agent task #319 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T04:56:07Z",
+    "updated_at": "2026-10-29T05:11:03Z",
+    "head_sha": "5b462fa77b6bd9971ebeb2403135f0bef653ca9a",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40820493588"
+  },
+  {
+    "id": 40818848936,
+    "display_title": "Agent task #318 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T04:38:07Z",
+    "updated_at": "2026-10-29T04:40:10Z",
+    "head_sha": "924c6d0030f8eda37a46725d81a514c69b9e2287",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40818848936"
+  },
+  {
+    "id": 40818187464,
+    "display_title": "Agent task #318 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T04:31:03Z",
+    "updated_at": "2026-10-29T04:31:27Z",
+    "head_sha": "913f45e5f84af5323bd29c2ffe7067adf35c05eb",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40818187464"
+  },
+  {
+    "id": 40816365254,
+    "display_title": "Agent task #318 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "cancelled",
+    "created_at": "2026-10-29T04:11:41Z",
+    "updated_at": "2026-10-29T04:25:20Z",
+    "head_sha": "02fce53d561dadb045ad44da52f5dc554f5083de",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40816365254"
+  },
+  {
+    "id": 40814839754,
+    "display_title": "Agent task #318 queue",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T03:55:25Z",
+    "updated_at": "2026-10-29T04:02:06Z",
+    "head_sha": "bc464f4926fe72ce548d6ba1be2505bc5ed111de",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40814839754"
+  },
+  {
+    "id": 40793251944,
+    "display_title": "Agent task #313 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-29T00:19:03Z",
+    "updated_at": "2026-10-29T00:23:01Z",
+    "head_sha": "6c8b1389b23be8790b81f4a55f10cc6ae2b7364d",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40793251944"
+  },
+  {
+    "id": 40788699260,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T23:37:56Z",
+    "updated_at": "2026-10-28T23:39:48Z",
+    "head_sha": "6c8b1389b23be8790b81f4a55f10cc6ae2b7364d",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40788699260"
+  },
+  {
+    "id": 40785639666,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T23:12:04Z",
+    "updated_at": "2026-10-28T23:15:25Z",
+    "head_sha": "6041ec1ec77fb2d802b7a4562e74fdb09abe255b",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40785639666"
+  },
+  {
+    "id": 40784333199,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-28T23:01:27Z",
+    "updated_at": "2026-10-28T23:04:20Z",
+    "head_sha": "06c16a93710a090ccb60bec0feee428a42bd46f0",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40784333199"
+  },
+  {
+    "id": 40783400962,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-28T22:53:47Z",
+    "updated_at": "2026-10-28T22:54:23Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40783400962"
+  },
+  {
+    "id": 40781787624,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-28T22:40:38Z",
+    "updated_at": "2026-10-28T22:40:55Z",
+    "head_sha": "a76561abbbe9aa88c44e75c6394afda63ac4736f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40781787624"
+  },
+  {
+    "id": 40739723033,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T17:51:50Z",
+    "updated_at": "2026-10-28T17:54:22Z",
+    "head_sha": "496902ae3d3838b2eff4afbf6d5b060e43222dda",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40739723033"
+  },
+  {
+    "id": 40736533794,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T17:31:30Z",
+    "updated_at": "2026-10-28T17:34:44Z",
+    "head_sha": "8d06b8ff343e8d1561ba62b8a22e7e8daa16a0d7",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40736533794"
+  },
+  {
+    "id": 40704315507,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T14:16:29Z",
+    "updated_at": "2026-10-28T14:20:11Z",
+    "head_sha": "6ac2b1e9f249c0750b89c1813ebff6aa6e473f9a",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40704315507"
+  },
+  {
+    "id": 40693825870,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-28T13:09:05Z",
+    "updated_at": "2026-10-28T13:09:21Z",
+    "head_sha": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40693825870"
+  },
+  {
+    "id": 40684862539,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T12:04:28Z",
+    "updated_at": "2026-10-28T12:06:24Z",
+    "head_sha": "3afae3ddbcd2c2e6e8334efc403c5a749d708e6d",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40684862539"
+  },
+  {
+    "id": 40682534799,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T11:46:23Z",
+    "updated_at": "2026-10-28T11:48:53Z",
+    "head_sha": "8323534f1287d57e7c646b1687003463e6394f83",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40682534799"
+  },
+  {
+    "id": 40680156936,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T11:27:54Z",
+    "updated_at": "2026-10-28T11:29:19Z",
+    "head_sha": "62399c62397ba90a02cc4d8874ea0081a225e5b3",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40680156936"
+  },
+  {
+    "id": 40679225234,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T11:20:45Z",
+    "updated_at": "2026-10-28T11:22:51Z",
+    "head_sha": "1e4ca146b4b197ef69396033eac2f1a8c7b0d448",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40679225234"
+  },
+  {
+    "id": 40678099430,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T11:12:08Z",
+    "updated_at": "2026-10-28T11:14:00Z",
+    "head_sha": "3e245a760c1332dbd22492d39149b4a625f15135",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40678099430"
+  },
+  {
+    "id": 40677156989,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T11:04:56Z",
+    "updated_at": "2026-10-28T11:07:27Z",
+    "head_sha": "a1e705072f3eb70bfd4acc8098105627de5333c0",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40677156989"
+  },
+  {
+    "id": 40640533750,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-28T05:52:50Z",
+    "updated_at": "2026-10-28T05:53:08Z",
+    "head_sha": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40640533750"
+  },
+  {
+    "id": 40621255382,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T02:29:43Z",
+    "updated_at": "2026-10-28T02:32:20Z",
+    "head_sha": "b3a9ba087be3c07382f76afae685e90fdd3b517b",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40621255382"
+  },
+  {
+    "id": 40620760124,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T02:24:38Z",
+    "updated_at": "2026-10-28T02:26:29Z",
+    "head_sha": "94f1f44c4e9d8a840ebd9eb36e73916e11599707",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40620760124"
+  },
+  {
+    "id": 40619713311,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T02:14:04Z",
+    "updated_at": "2026-10-28T02:16:28Z",
+    "head_sha": "15ed9de19c368338950943b3a6d75044ebfab9f8",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40619713311"
+  },
+  {
+    "id": 40619160667,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T02:08:24Z",
+    "updated_at": "2026-10-28T02:10:09Z",
+    "head_sha": "230249b21b553f3cb5b2ff0601cf29f06b2783ac",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40619160667"
+  },
+  {
+    "id": 40618403882,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-28T02:00:48Z",
+    "updated_at": "2026-10-28T02:03:08Z",
+    "head_sha": "a308c8de5cd3caff439773a457a4068a37e27ec4",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40618403882"
+  },
+  {
+    "id": 40617555270,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T01:51:57Z",
+    "updated_at": "2026-10-28T01:57:02Z",
+    "head_sha": "263d56ef1a815329bbd87413fdc6bae4cea6484f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40617555270"
+  },
+  {
+    "id": 40615218736,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-28T01:28:02Z",
+    "updated_at": "2026-10-28T01:32:49Z",
+    "head_sha": "06a415e1e50588a25cd17ab392869fa447c3eab1",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40615218736"
+  },
+  {
+    "id": 40594338555,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-27T22:22:38Z",
+    "updated_at": "2026-10-27T22:22:58Z",
+    "head_sha": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40594338555"
+  },
+  {
+    "id": 40584278635,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T21:08:50Z",
+    "updated_at": "2026-10-27T21:30:54Z",
+    "head_sha": "a7dc1abb0fa1cdf0cc5b1156d744323270022003",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40584278635"
+  },
+  {
+    "id": 40583387625,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T21:02:49Z",
+    "updated_at": "2026-10-27T21:05:18Z",
+    "head_sha": "a7dc1abb0fa1cdf0cc5b1156d744323270022003",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40583387625"
+  },
+  {
+    "id": 40582150889,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T20:54:18Z",
+    "updated_at": "2026-10-27T21:01:27Z",
+    "head_sha": "0aaf485476e4244d9599c7a79abfa2c8c1879ee3",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40582150889"
+  },
+  {
+    "id": 40580674315,
+    "display_title": "Agent task #308 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T20:44:10Z",
+    "updated_at": "2026-10-27T20:46:04Z",
+    "head_sha": "b7a7f01f463a32b65f50602acacc371ddcc545a3",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40580674315"
+  },
+  {
+    "id": 40579315924,
+    "display_title": "Agent task #308 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T20:34:51Z",
+    "updated_at": "2026-10-27T20:42:56Z",
+    "head_sha": "b7a7f01f463a32b65f50602acacc371ddcc545a3",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40579315924"
+  },
+  {
+    "id": 40578884006,
+    "display_title": "Agent task #308 ",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T20:31:59Z",
+    "updated_at": "2026-10-27T20:32:49Z",
+    "head_sha": "816842dbbe6eb781e5fe257adc5ebac280379db5",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40578884006"
+  },
+  {
+    "id": 40568688584,
+    "display_title": "Agent task #308 ",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T19:23:36Z",
+    "updated_at": "2026-10-27T20:15:37Z",
+    "head_sha": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40568688584"
+  },
+  {
+    "id": 40567124646,
+    "display_title": "Agent task #307 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T19:13:19Z",
+    "updated_at": "2026-10-27T19:13:49Z",
+    "head_sha": "c6258f2406e84cd872334a8bc4545a613f1e4365",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40567124646"
+  },
+  {
+    "id": 40553444997,
+    "display_title": "Agent task #301 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T17:44:39Z",
+    "updated_at": "2026-10-27T17:51:09Z",
+    "head_sha": "3263e4306ff4f0618e0e4e42fddb0259928d617b",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40553444997"
+  },
+  {
+    "id": 40550305377,
+    "display_title": "Agent task #301 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T17:24:34Z",
+    "updated_at": "2026-10-27T17:33:27Z",
+    "head_sha": "9d19959257986fb3a4c63f06c356bf3f0b8685aa",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40550305377"
+  },
+  {
+    "id": 40549699801,
+    "display_title": "Agent task #301 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T17:20:48Z",
+    "updated_at": "2026-10-27T17:21:30Z",
+    "head_sha": "9d19959257986fb3a4c63f06c356bf3f0b8685aa",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40549699801"
+  },
+  {
+    "id": 40546605724,
+    "display_title": "Agent task #301 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T17:01:26Z",
+    "updated_at": "2026-10-27T17:12:09Z",
+    "head_sha": "731431e4bb1cf0cd92866d6942060f832022da1f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40546605724"
+  },
+  {
+    "id": 40534090256,
+    "display_title": "Agent task #301 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T15:45:10Z",
+    "updated_at": "2026-10-27T15:59:33Z",
+    "head_sha": "95898a7cbce9ad1c649fb157f1425ae56613de0e",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40534090256"
+  },
+  {
+    "id": 40531690613,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T15:30:40Z",
+    "updated_at": "2026-10-27T15:31:37Z",
+    "head_sha": "c1e959914ea1a9fbcb6f3fb0a09a71b45e4e930d",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40531690613"
+  },
+  {
+    "id": 40531333457,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T15:28:31Z",
+    "updated_at": "2026-10-27T15:28:43Z",
+    "head_sha": "e6fa0fd3677db237d3338e5936bea05699e4c0b1",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40531333457"
+  },
+  {
+    "id": 40528961952,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T15:14:14Z",
+    "updated_at": "2026-10-27T15:15:31Z",
+    "head_sha": "443fa19210b04b2606df2bc7d3a6a1372254d3f4",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40528961952"
+  },
+  {
+    "id": 40528160553,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T15:09:23Z",
+    "updated_at": "2026-10-27T15:09:33Z",
+    "head_sha": "4af4e0469949a5e6926e6c97461605d759ef95c9",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40528160553"
+  },
+  {
+    "id": 40525808816,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T14:55:14Z",
+    "updated_at": "2026-10-27T14:56:36Z",
+    "head_sha": "b3d99cf594037a4b37a5547d35d411847cf64037",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40525808816"
+  },
+  {
+    "id": 40525297042,
+    "display_title": "Scheduled agent",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T14:52:10Z",
+    "updated_at": "2026-10-27T14:54:34Z",
+    "head_sha": "f3a62526c01f4121129f6cbaf170f54961118a3a",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40525297042"
+  },
+  {
+    "id": 40519604491,
+    "display_title": "Agent task #301 ",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T14:16:51Z",
+    "updated_at": "2026-10-27T14:21:08Z",
+    "head_sha": "d1a0f35ff0a169c05e52b0ea397053f74c43e795",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40519604491"
+  },
+  {
+    "id": 40503296271,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-27T12:22:53Z",
+    "updated_at": "2026-10-27T12:23:09Z",
+    "head_sha": "42272f41b30b7d59b5b891ad083f6fccb321c46f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40503296271"
+  },
+  {
+    "id": 40502982224,
+    "display_title": "Agent task #298 ",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T12:20:27Z",
+    "updated_at": "2026-10-27T12:28:56Z",
+    "head_sha": "42272f41b30b7d59b5b891ad083f6fccb321c46f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40502982224"
+  },
+  {
+    "id": 40475318526,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T08:41:57Z",
+    "updated_at": "2026-10-27T08:44:40Z",
+    "head_sha": "42272f41b30b7d59b5b891ad083f6fccb321c46f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40475318526"
+  },
+  {
+    "id": 40468208341,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T07:37:12Z",
+    "updated_at": "2026-10-27T07:44:44Z",
+    "head_sha": "bea4888df10e8d49dab58d71b532bcd92afb532f",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40468208341"
+  },
+  {
+    "id": 40462378246,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T06:39:13Z",
+    "updated_at": "2026-10-27T06:45:20Z",
+    "head_sha": "b4c66e767ab80c35cd14c6b7dc54363ba5c7d0bb",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40462378246"
+  },
+  {
+    "id": 40456364028,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T05:37:22Z",
+    "updated_at": "2026-10-27T05:43:22Z",
+    "head_sha": "37e8a92cd518be570f6351acf08c94ff99827e9b",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40456364028"
+  },
+  {
+    "id": 40454200562,
+    "display_title": "Scheduled agent",
+    "event": "schedule",
+    "conclusion": "success",
+    "created_at": "2026-10-27T05:14:40Z",
+    "updated_at": "2026-10-27T05:15:05Z",
+    "head_sha": "e91ca129120ce564233c5e9c93267cf5fea95797",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40454200562"
+  },
+  {
+    "id": 40450360894,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T04:33:12Z",
+    "updated_at": "2026-10-27T04:33:58Z",
+    "head_sha": "e91ca129120ce564233c5e9c93267cf5fea95797",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40450360894"
+  },
+  {
+    "id": 40443685291,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T03:21:09Z",
+    "updated_at": "2026-10-27T03:39:56Z",
+    "head_sha": "920e8bdeaa415a40c10f08e546b2590039af059a",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40443685291"
+  },
+  {
+    "id": 40439475656,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T02:37:08Z",
+    "updated_at": "2026-10-27T02:39:21Z",
+    "head_sha": "ca85674837098d9a27979248fbe87456de2bc29c",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40439475656"
+  },
+  {
+    "id": 40434016084,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T01:41:03Z",
+    "updated_at": "2026-10-27T02:02:24Z",
+    "head_sha": "5a5bea21f98af041b6ad966598fed5f612d6e042",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40434016084"
+  },
+  {
+    "id": 40429178776,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "created_at": "2026-10-27T00:52:56Z",
+    "updated_at": "2026-10-27T01:19:04Z",
+    "head_sha": "5a5bea21f98af041b6ad966598fed5f612d6e042",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40429178776"
+  },
+  {
+    "id": 40427882750,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "cancelled",
+    "created_at": "2026-10-27T00:40:22Z",
+    "updated_at": "2026-10-27T00:42:06Z",
+    "head_sha": "f6401c5e6e2bf144ce5fda2fc65bd3cfa8e1ddae",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40427882750"
+  },
+  {
+    "id": 40426295136,
+    "display_title": "Agent task #282 fix",
+    "event": "workflow_dispatch",
+    "conclusion": "failure",
+    "created_at": "2026-10-27T00:25:25Z",
+    "updated_at": "2026-10-27T00:27:52Z",
+    "head_sha": "f6401c5e6e2bf144ce5fda2fc65bd3cfa8e1ddae",
+    "html_url": "https://github.com/onlykappa/KappaForge/actions/runs/40426295136"
+  }
+]

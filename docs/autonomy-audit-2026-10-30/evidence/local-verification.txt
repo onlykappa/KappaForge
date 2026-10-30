@@ -1,0 +1,10 @@
+Local verification (audit-owned execution, no model API requests):
+Baseline main19c95923d12156688487fd8d4e1f6dd1c16eefa6:
+python -B -m unittest discover -s tests: Ran1452, OK(skipped36),108.432s.
+npm test:924 tests/pass924/fail0/skipped0,33796.964604ms.
+python scripts/check-web.py: syntax, version and generated web bundle passed.
+python scripts/execution-policy.py --check: manifest matches reviewed sources.
+python scripts/dependency-map.py --check: map matches source.
+chat-backend npm run build:check: Wrangler dry-run success, no deployment.
+Detached candidate331271b901: python -B -m unittest tests.test_budget_ledger -v:9 passed,0 skips.
+Not executed here: Playwright browser suite, Docker runtime/selftest, workerd check, native simulator/device suite, live inference benchmark, paid calls.

@@ -1,0 +1,326 @@
+{
+  "task": 330,
+  "repo": "onlykappa/KappaForge",
+  "candidate": "271b9018688e9867983190ac0f8a8c5d277f5d18",
+  "status": "testing",
+  "run": "41115534131",
+  "continuations": 0,
+  "updatedAt": 1793388970.966186,
+  "boundedRequests": {
+    "authorization": "github-task:330",
+    "digest": "a7f19212c0828e8e59ba5dc3c61951ccd89e67f62dea854dc8378b95b2504641",
+    "calls": 4,
+    "maxChars": 29200
+  },
+  "providerUsage": {
+    "gemini:gemini-3.1-flash-lite": {
+      "responses": 3,
+      "failures": 0,
+      "measuredResponses": 3,
+      "tokens": {
+        "input": 20485,
+        "output": 3251,
+        "total": 23736
+      }
+    },
+    "ollama:gpt-oss:120b": {
+      "responses": 1,
+      "failures": 0,
+      "measuredResponses": 1,
+      "tokens": {
+        "input": 6809,
+        "output": 3912,
+        "total": 10721
+      }
+    }
+  },
+  "gatewayEvidence": [
+    {
+      "requestId": "a64e67d6-7bb4-444f-9478-2e757547c2ec",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 21238,
+      "maxTokens": 8000,
+      "usage": {
+        "promptTokenCount": 5719,
+        "candidatesTokenCount": 1164,
+        "totalTokenCount": 6883
+      },
+      "role": "diagnose",
+      "rank": 3,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "diagnose",
+          "rank": 1,
+          "attempted": true,
+          "status": 502,
+          "source": "normalization",
+          "category": "empty_response",
+          "upstreamStatus": 200
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "diagnose",
+          "rank": 2,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "diagnose",
+          "rank": 3,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "6e574673-00db-4da2-8a48-1c04d38c8436",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 29200,
+      "maxTokens": 16384,
+      "usage": {
+        "promptTokenCount": 7557,
+        "candidatesTokenCount": 1031,
+        "totalTokenCount": 8588
+      },
+      "role": "code",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "deepseek-ai/deepseek-v4.1-flash",
+          "role": "code",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "empty_response",
+          "upstreamStatus": 502
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "code",
+          "rank": 2,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "code",
+          "rank": 3,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "code",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "05c526b8-b23c-498b-914b-653b82795afc",
+      "route": "gemini:gemini-3.1-flash-lite",
+      "status": 200,
+      "promptChars": 24423,
+      "maxTokens": 6000,
+      "usage": {
+        "promptTokenCount": 7209,
+        "candidatesTokenCount": 1056,
+        "totalTokenCount": 8265
+      },
+      "role": "review",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "nvidia/nemotron-3-ultra-550b-a55b",
+          "role": "review",
+          "rank": 1,
+          "attempted": true,
+          "status": 0,
+          "source": "transport",
+          "category": "timeout"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "review",
+          "rank": 2,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "review",
+          "rank": 3,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "review",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    },
+    {
+      "requestId": "0e4e19f7-6087-46e0-92f0-5754a2cd5ad3",
+      "route": "ollama:gpt-oss:120b",
+      "status": 200,
+      "promptChars": 25694,
+      "maxTokens": 6000,
+      "usage": {
+        "promptTokenCount": 6809,
+        "candidatesTokenCount": 3912,
+        "totalTokenCount": 10721
+      },
+      "role": "review",
+      "rank": 4,
+      "attempts": [
+        {
+          "provider": "nvidia",
+          "model": "nvidia/nemotron-3-ultra-550b-a55b",
+          "role": "review",
+          "rank": 1,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "timeout"
+        },
+        {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "role": "review",
+          "rank": 2,
+          "attempted": false,
+          "status": 413,
+          "source": "gateway_guard",
+          "category": "context_limit"
+        },
+        {
+          "provider": "mistral",
+          "model": "mistral-small-latest",
+          "role": "review",
+          "rank": 3,
+          "attempted": false,
+          "status": 429,
+          "source": "coordination",
+          "category": "request_too_large"
+        },
+        {
+          "provider": "ollama",
+          "model": "gpt-oss:120b",
+          "role": "review",
+          "rank": 4,
+          "attempted": true
+        }
+      ]
+    }
+  ],
+  "controller": {
+    "phase": "complete",
+    "status": "success",
+    "stop_reason": "validated",
+    "actions": 0,
+    "invalid": 0,
+    "repeated": 0
+  },
+  "commands": [
+    {
+      "argv": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "status": "passed",
+      "startedAt": 1793388761207,
+      "finishedAt": 1793388767371,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "status": "passed",
+      "startedAt": 1793388776110,
+      "finishedAt": 1793388823075,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "status": "passed",
+      "startedAt": 1793388828207,
+      "finishedAt": 1793388843298,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "status": "passed",
+      "startedAt": 1793388860775,
+      "finishedAt": 1793388908323,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "status": "passed",
+      "startedAt": 1793388915625,
+      "finishedAt": 1793388932922,
+      "duration": null,
+      "exit_code": null,
+      "counts": null
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "weights": [
+    8,
+    10,
+    12,
+    15,
+    12,
+    8,
+    7,
+    7,
+    5,
+    6,
+    4,
+    6
+  ],
+  "scores": [
+    45,
+    32,
+    38,
+    42,
+    35,
+    52,
+    38,
+    50,
+    25,
+    48,
+    55,
+    52
+  ],
+  "categories": [
+    "Task understanding and planning",
+    "Agent reasoning and adaptive strategy",
+    "Tool use and environmental interaction",
+    "Autonomous execution and validation",
+    "Error recovery and self-correction",
+    "Model routing and provider resilience",
+    "Memory and context management",
+    "Long-running task persistence",
+    "Research and external information",
+    "Security and permission enforcement",
+    "User experience and progress transparency",
+    "Testing, observability and reliability"
+  ],
+  "total": 41.63,
+  "range": [
+    32,
+    54
+  ]
+}
