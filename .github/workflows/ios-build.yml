@@ -118,6 +118,8 @@ jobs:
         xcodebuild -project KappaForge.xcodeproj -scheme KappaForge -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simulator-build CODE_SIGNING_ALLOWED=NO build
       shell: bash
     - name: Boot simulator and verify bundled launch
+      env:
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         set -Eeuo pipefail
         trap 'printf "Error: [workflow] step failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
@@ -134,7 +136,8 @@ jobs:
         # Record counts for failed runs too; a failing suite must report what ran, not leave no receipt.
         EVIDENCE_STATUS=0
         if xcrun xcresulttool get test-results summary --path /tmp/kappaforge-ui-tests.xcresult > /tmp/kappaforge-native-summary.json; then
-          python3 scripts/native-evidence.py /tmp/kappaforge-native-summary.json --candidate "$(git rev-parse HEAD)" --output /tmp/kappaforge-native-evidence.json || EVIDENCE_STATUS=$?
+          # A pull_request run checks out GitHub's synthetic merge commit; the receipt must name the reviewed PR head.
+          python3 scripts/native-evidence.py /tmp/kappaforge-native-summary.json --candidate "${PR_HEAD_SHA:-$(git rev-parse HEAD)}" --output /tmp/kappaforge-native-evidence.json || EVIDENCE_STATUS=$?
         else
           echo "::warning::xcresulttool could not read the simulator test result bundle; no native count receipt was written"
         fi

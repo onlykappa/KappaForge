@@ -213,6 +213,11 @@ class NativeBuildWorkflowTests(unittest.TestCase):
         self.assertLess(body.index('scripts/native-evidence.py'), body.index('exit "$TEST_STATUS"'))
         self.assertLess(body.index('exit "$TEST_STATUS"'), body.index('xcrun simctl terminate'))
 
+    def test_native_receipt_names_the_pull_request_head_not_the_merge_commit(self):
+        body = self.step('name: Boot simulator and verify bundled launch')
+        self.assertIn('PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}', body)
+        self.assertIn('--candidate "${PR_HEAD_SHA:-$(git rev-parse HEAD)}"', body)
+
     def test_every_shared_web_file_is_verified_in_the_ipa(self):
         self.assertIn('for SRC in ../preview/*', self.step('name: Verify bundle, icon and package unsigned IPA'))
 
