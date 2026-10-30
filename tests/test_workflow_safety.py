@@ -207,6 +207,12 @@ class NativeBuildWorkflowTests(unittest.TestCase):
         # A failed test still fails the job, so it can never reach the release.
         self.assertIn('\n  release:\n    if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'\n    needs: native\n', self.text)
 
+    def test_native_receipt_is_written_before_a_failed_suite_fails_the_job(self):
+        body = self.step('name: Boot simulator and verify bundled launch')
+        self.assertIn('|| TEST_STATUS=$?', body)
+        self.assertLess(body.index('scripts/native-evidence.py'), body.index('exit "$TEST_STATUS"'))
+        self.assertLess(body.index('exit "$TEST_STATUS"'), body.index('xcrun simctl terminate'))
+
     def test_every_shared_web_file_is_verified_in_the_ipa(self):
         self.assertIn('for SRC in ../preview/*', self.step('name: Verify bundle, icon and package unsigned IPA'))
 
@@ -214,3 +220,14 @@ class NativeBuildWorkflowTests(unittest.TestCase):
         self.assertIn("format('iOS build {0} @ {1}', inputs.branch, inputs.candidate_sha)", self.text.split('\npermissions:')[0])
         self.assertIn("startsWith(inputs.branch, 'kappa/dev-')", self.report)
         self.assertLess(self.report.index('if [ "$head" != "$SHA" ]'), self.report.index('gh workflow run agent.yml'))
+
+
+class AuthorizedCompletionIsReadOnlyTests(unittest.TestCase):
+    def test_verification_never_writes_and_holds_no_write_permission(self):
+        workflow = (ROOT / '.github/workflows/authorized-completion.yml').read_text()
+        job = workflow.split('\njobs:\n', 1)[1]
+        self.assertNotIn(': write', job)
+        source = (ROOT / 'engine/authorized_completion.py').read_text()
+        for verb in ("'POST'", "'PUT'", "'PATCH'", "'DELETE'", 'payload=', 'method='):
+            self.assertNotIn(verb, source.split('def main():', 1)[0], verb)
+        self.assertIn("return 'owner_merge_required'", source)
