@@ -80,6 +80,18 @@ export async function nativeState(env,branch,sha){
  return {state:run.status!=="completed"?"running":run.conclusion==="success"?"passed":"failed",url:run.html_url};
 }
 
+// Reviewer feedback KappaForge has not answered. A reply answers an item only when it is KappaForge's own comment citing the
+// item's exact source id (the closing backtick stops id 7 matching id 70) and was posted at or after the item's last edit.
+// A time that is missing or unreadable is never trusted, so the item stays pending and Fix stays available.
+const instant=value=>{const time=Date.parse(value);return Number.isNaN(time)?null:time};
+export function unansweredFeedback(items){
+ const replies=items.filter(r=>r.author==='github-actions[bot]'&&typeof r.body==='string');
+ return items.filter(r=>{
+  if(r.author==='github-actions[bot]'||r.resolved===true||r.outdated===true)return false;
+  const edited=instant(r.updatedAt)??instant(r.createdAt);
+  return edited===null||!replies.some(b=>{const posted=instant(b.createdAt);return posted!==null&&posted>=edited&&b.body.includes('Source: `'+r.id+'`')});
+ });
+}
 export async function reviewPR(env,repo,number,options={}){
  const pr=await read(env,"repos/onlykappa/"+repo+"/pulls/"+number);
  if(pr.state!=="open"||!agentBranch(repo,pr.head?.ref)||pr.head?.repo?.full_name!==pr.base?.repo?.full_name)
@@ -90,7 +102,7 @@ export async function reviewPR(env,repo,number,options={}){
  const native=repo===ROOT&&dev&&files.some(f=>NATIVE_PATHS.some(p=>String(f.filename).startsWith(p)))?await nativeState(env,pr.head.ref,pr.head.sha):null;
  const evidence=options.includeEvidence===true?reviewEvidence:null;
  const evidenceData=evidence?await evidence(env,repo,{...pr,number}):null;
- const reviewFeedback=evidenceData?.feedback.some(r=>r.author!=='github-actions[bot]'&&r.resolved!==true&&r.outdated!==true);
+ const reviewFeedback=evidenceData?unansweredFeedback(evidenceData.feedback).length>0:undefined;
  return {repo,number,title:pr.title,url:pr.html_url,branch:pr.head.ref,draft:pr.draft,mergeable:pr.mergeable,restore,
   ...(evidenceData?{evidence:evidenceData}:{}),
   explanation:explanation(pr.body),tests,native,
