@@ -23,7 +23,7 @@ class GitHub:
                           created_at=datetime.fromtimestamp(self.now - 60, timezone.utc).isoformat(),
                           body='Repository: onlykappa/KappaForge\nMode: develop\nChange value to 2 and test it.')
         self.rows, self.calls, self.refs = [], [], {'main': 'a' * 40, 'kappa/dev-130': 'b' * 40}
-        self.prs = [dict(number=133, html_url='https://github.com/onlykappa/KappaForge/pull/133',
+        self.prs = [dict(number=133, state='open', draft=True, html_url='https://github.com/onlykappa/KappaForge/pull/133',
                          head={'sha': 'b' * 40, 'ref': 'kappa/dev-130', 'repo': {'full_name': recovery.ROOT}}, body=developer.review_record(['Implement value 2']))]
         self.run = dict(status='completed', conclusion='failure')
         self.lose_ack = False
@@ -34,6 +34,8 @@ class GitHub:
         intent_guard.activate(self.issue)
 
     def read(self, path):
+        if path == 'repos/onlykappa/KappaForge/pulls/133':
+            return copy.deepcopy(self.prs[0])
         if path == 'repos/onlykappa/KappaForge':
             return {'private': False}
         if path.endswith('/issues/130'):

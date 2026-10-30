@@ -151,9 +151,8 @@ def split(request):
     if len(found) > MAX_REQUIREMENTS:
         raise ValueError(f'Request has {len(found)} requirements; maximum {MAX_REQUIREMENTS}; '
                          'split the request into smaller dependent tasks. No requirements were discarded.')
-    if any(b - a > MAX_TEXT for a, b in found):
-        raise ValueError(f'A requirement exceeds {MAX_TEXT} characters; split it into explicit smaller asks. '
-                         'No owner wording was truncated.')
+    # Preserve complete owner wording. Request/context admission owns the byte
+    # limit; shortening one row here can drop its final safety constraint.
     return [dict(id='R' + str(i), text=request[a:b], start=a, end=b)
             for i, (a, b) in enumerate(found, 1)]
 

@@ -10,8 +10,9 @@ class RequirementLimitTests(unittest.TestCase):
 
     def test_long_ask_never_loses_its_final_constraint(self):
         request = 'Implement ' + 'long wording ' * 45 + 'without deleting user files'
-        with self.assertRaisesRegex(ValueError, r'characters.*split'):
-            requirements.split(request)
+        rows = requirements.split(request)
+        self.assertEqual(rows[0]['text'], request)
+        self.assertTrue(rows[0]['text'].endswith('without deleting user files'))
 
     def test_exact_boundary_preserves_original_spans(self):
         request = '\n'.join(f'- Keep requirement {i} unchanged' for i in range(requirements.MAX_REQUIREMENTS))
