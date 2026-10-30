@@ -41,8 +41,8 @@ class SplitTests(unittest.TestCase):
             self.assertEqual(request[row['start']:row['end']], row['text'], 'the original wording is traceable')
 
     def test_requests_are_bounded(self):
-        rows = requirements.split('\n'.join(f'- Change item {i}' for i in range(100)))
-        self.assertEqual(len(rows), requirements.MAX_REQUIREMENTS)
+        with self.assertRaisesRegex(ValueError, '100 requirements.*split'):
+            requirements.split('\n'.join(f'- Change item {i}' for i in range(100)))
 
 
 class PhrasingTests(unittest.TestCase):
