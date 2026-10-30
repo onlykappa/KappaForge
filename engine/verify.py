@@ -517,8 +517,32 @@ LIFECYCLE_CONTINUATION_RE = re.compile(r"(?:do\s+not|don't|never)\s+merge\b|(?:k
                                        r"(?:I|we)(?:'ll|\s+will)\s+(?:review|check|look|test)\b|wait\s+for\s+(?:my|me)\b", re.I)
 
 
+_CODE_SPAN_RE = re.compile(r'`[^`]*`')
+_REPORT_OBJECT_RE = re.compile(r"\b(?:results?|commands?|counts?|skips?|skipped|outcomes?|patch(?:es)?|limitations?|"
+                               r"findings?|status|validation|verification|what)\b", re.I)
+# A report aimed at an app surface is a product feature, not the task's own report.
+_REPORT_SURFACE_RE = re.compile(r"\b(?:dashboard|page|screen|app|ui|view|tab|endpoint|api|email|slack|discord|notifications?|"
+                                r"export|csv|chart|widget|banner)\b", re.I)
+_VALIDATION_RUN_RE = re.compile(r"\b(?:tests?|test suites?|suite|checks?|CMD|lint|validation)\b", re.I)
+
+
+def report_ask(text):
+    """A pure ask for the task's own report: "Stop after reporting ...", "Report exact commands and counts" or "Run the
+    tests; report the results". KappaForge's controller writes that report from sandbox receipts, so no source edit can
+    satisfy or fail it. "Run" must name a test or check, and work that merely mentions a report is still work."""
+    text = _CODE_SPAN_RE.sub('CMD', ' '.join(str(text or '').replace('\u2019', "'").split()))
+    if not _REPORT_OBJECT_RE.search(text) or _REPORT_SURFACE_RE.search(text):
+        return False
+    if re.match(r"^\W*(?:stop|finish|end)\s+after\s+report(?:ing)?\b", text, re.I) or re.match(r"^\W*report(?:ing)?\b", text, re.I):
+        return True
+    run = re.match(r"^\W*(?:run|execute)\b(.*?)(?:[;,]|\band\b)\s*(?:then\s+)?report(?:ing)?\b", text, re.I)
+    return bool(run and _VALIDATION_RUN_RE.search(run.group(1)))
+
+
 def lifecycle_requirement(text):
     """A requirement only KappaForge's own orchestration can satisfy, such as "Open a fresh draft PR"."""
+    if report_ask(text):
+        return True
     text = str(text or "").replace("\u2019", "'")
     # "for this change" refers to the existing task; it does not ask for another source edit (#221).
     text = re.sub(r"\b(?:for|with)\s+(?:this\s+change|these\s+changes)\b", "", text, flags=re.I)
@@ -640,9 +664,27 @@ PROCESS_PROBLEM_RE = re.compile(
     r"evidence)|Repair checkpoint awaiting|Repair (?:loop|verification)|Requirement not reviewed)", re.I)
 
 
+UNTESTED_NOTE_RE = re.compile(r'^Requirement untested: R[1-9][0-9]* (.+?) \(add or cite a test that exercises it\)$', re.S)
+
+
+def stale_untested(problem):
+    """A stored "Requirement untested" note for a requirement the current rules no longer treat as behavior to prove
+    (a process line, background, a heading or a constraint). An older classification wrote it; a fresh review replaces
+    it, so it is a review gap and no source edit can satisfy it. A real behavioral requirement stays a source problem."""
+    match = UNTESTED_NOTE_RE.match(str(problem or '').strip())
+    if not match or len(match[1].strip()) < 12:
+        return False
+    from engine import requirements, task_goal
+    goal = task_goal.CURRENT.get()
+    ask = match[1].strip()
+    # The stored text is cut at a fixed length, so it is a prefix of the owner's sentence.
+    rows = [row for row in requirements.classify(getattr(goal, 'request', '')) if row.text.startswith(ask)]
+    return bool(rows) and not any(row.behavioral for row in rows)
+
+
 def process_problem(problem):
     """Whether an open problem is about the review itself rather than the source."""
-    return bool(PROCESS_PROBLEM_RE.match(str(problem or '').strip()))
+    return bool(PROCESS_PROBLEM_RE.match(str(problem or '').strip())) or stale_untested(problem)
 
 
 def lifecycle_problem(problem):

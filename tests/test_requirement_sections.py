@@ -63,6 +63,17 @@ class SectionTests(unittest.TestCase):
             with self.subTest(ask=ask):
                 self.assertTrue(requirements.classify(ask)[0].behavioral, ask)
 
+    def test_preservation_constraints_are_not_behavior_but_program_behavior_is(self):
+        for text in ("Do not change the engine's reply format, the evidence shape or the pagination limits.",
+                     'Never remove the existing exports.', "Don't touch any workflow or deploy path.",
+                     'Do not weaken those tests.'):
+            with self.subTest(text=text):
+                self.assertFalse(requirements.classify(text)[0].behavioral, text)
+        for text in ('Do not crash when the input is empty.', 'Never return null for missing values.',
+                     'Do not delete user data when the account closes.'):
+            with self.subTest(text=text):
+                self.assertTrue(requirements.classify(text)[0].behavioral, text)
+
     def test_a_blank_line_ends_the_section(self):
         rows = requirements.classify('Constraints. Do not touch engine/.\n\nThe export must keep the header row.')
         by = by_text(rows)
