@@ -52,3 +52,19 @@ class ScopeEvidenceTests(unittest.TestCase):
         self.assertIsNone(scope_constraint("Do not change the engine's reply format."))
         self.assertIsNone(scope_constraint('Create only ../secret.py.'))
         self.assertFalse(scope_satisfied(scope_constraint('Change only tests/.'), ['tests-evil/x.py']))
+
+    def test_task330_authorization_boundary_is_proved_by_the_active_guard(self):
+        restriction='Do not merge, deploy, release, mark ready, change permissions or advance phases.'
+        with ExitStack() as stack:
+            stack.enter_context(patch('tests.test_operational_review.TASK',ALLOW+'\n'+restriction))
+            context(stack)
+            rows,_,_=verify.parse_review(json.dumps({'requirements':[dict(text=restriction,met=True)]}))
+            operational_review.resolve(rows,{PATH:'test source'})
+            self.assertTrue(rows[0]['met'])
+            self.assertEqual(rows[0]['evidence']['type'],'authorization')
+            self.assertEqual(len(rows[0]['evidence']['controller_receipt']['proof']['deniedOperations']),6)
+
+    def test_product_behavior_is_not_reclassified_as_a_task_authorization_receipt(self):
+        from engine.evidence_contract import authorization_actions
+        for text in ['Do not release user data.','Do not merge files when the user clicks save.','Do not change permissions on user documents.']:
+            self.assertIsNone(authorization_actions(text))

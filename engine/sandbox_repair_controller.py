@@ -46,6 +46,9 @@ class SandboxRepairController:
         self.models = []
 
     def run_repair(self, task_description, run_model, api_key, initial_changes=None, allowed=None):
+        from engine import task_goal, command_contract
+        goal = task_goal.CURRENT.get()
+        self.session.required_commands = command_contract.requested_tests(goal.original) if goal else []
         self.state = dict(phase="candidate", attempts=[], models=[], seen_patches=[], seen_errors=[], history=[],
                           actions=0, invalid=0, repeated=0, action_key=None, fingerprint="", last_diff="",
                           last_summary="", rationale="Generated candidate; first sandbox test run")
@@ -56,6 +59,13 @@ class SandboxRepairController:
             self.execution = execution.Execution(self.session, task_description, self.state, self.journal,
                                                   self.context, self.progress)
             self.attempts, self.models = self.state["attempts"], self.state["models"]
+            # Old success checkpoints can lack the exact command the owner asked
+            # for. Revalidate without resetting any model/action/attempt budget.
+            contract = execution.digest(self.session.required_commands)
+            if (self.state['phase'] == 'complete' and self.state.get('status') == 'success'
+                    and self.session.required_commands and self.state.get('command_contract') != contract):
+                self.state['phase'] = 'candidate'
+            self.state['command_contract'] = contract
             if self.state.get("question"):
                 # Resumed after the owner answered; the answer is in the task text this run was given.
                 self.state["history"] = (self.state["history"] + ["Asked the owner: " + self.state["question"]["question"]
@@ -69,13 +79,13 @@ class SandboxRepairController:
                             os.getenv('INPUT_ACTION') == 'queue-step' and
                             callable(getattr(getattr(self.journal, 'scope', None), 'queue_guard', None)))
                 if (self.journal and explicit and self.state.get('status') == 'failed'
-                        and self.state.get('stop_reason') in ('repeated_tool_call', 'attempt_limit', 'action_limit')
+                        and self.state.get('stop_reason') in ('invalid_limit', 'repeated_tool_call', 'attempt_limit', 'action_limit')
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
                     self.state['phase'] = 'candidate' if self.state.get('stop_reason') in ('attempt_limit', 'action_limit') else 'repair'
                     self.state['owner_recheck'] = self.state.get('stop_reason') in ('attempt_limit', 'action_limit')
                     # Preserve tested versions/actions. Only an explicit Fix renews the consecutive-call streak.
-                    if self.state.get('stop_reason') == 'repeated_tool_call':
-                        self.state['repeated'], self.state['action_key'] = 0, None
+                    if self.state.get('stop_reason') in ('repeated_tool_call', 'invalid_limit'):
+                        self.state['invalid'], self.state['repeated'], self.state['action_key'] = 0, 0, None
                     self.state['history'].append('Explicit Fix continues the retained candidate with remaining budget; prior counters and evidence retained')
                     for run in reversed(self.session.results):
                         if run.status == 'failed' and run.profile == 'test' and self._test_command(run.argv):
