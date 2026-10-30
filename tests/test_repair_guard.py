@@ -110,14 +110,14 @@ class RepairGuardTests(unittest.TestCase):
         calls = []
         def model(key, prompt, **kwargs):
             data = json.JSONDecoder().raw_decode(prompt.split('REVIEW_INPUT\n', 1)[1])[0]
-            calls.append(([r['id'] for r in data['findings']], kwargs))
+            calls.append(([r['claim'] for r in data['findings']], kwargs))
             _, output = finding_response(prompt)
             result = json.loads(output)
             if len(calls) == 1:
                 result['findings'] = result['findings'][:1]
             return 'first' if len(calls) == 1 else 'second', json.dumps(result)
         rows = repair_guard.verify_findings(model, 'key', self.goal.request, claims, SOURCES)
-        self.assertEqual(calls[1][0], [repair_guard.digest(claims[1])])
+        self.assertEqual(calls[1][0], [claims[1]])
         self.assertEqual(calls[1][1]['skip'], ('first',))
         self.assertEqual([r['verdict'] for r in rows], ['confirmed', 'confirmed'])
 
@@ -150,11 +150,11 @@ class RepairGuardTests(unittest.TestCase):
         seen = []
         def model(key, prompt, **kwargs):
             data = json.loads(prompt.split('REVIEW_INPUT\n')[1])
-            seen.extend(row['id'] for row in data['findings'])
+            seen.extend(row['claim'] for row in data['findings'])
             self.assertLessEqual(len(data['findings']), repair_guard.MAX_FINDINGS)
             return finding_response(prompt)
         rows = repair_guard.verify_all_findings(model, 'key', self.goal.request, claims + claims[:1], SOURCES)
-        self.assertEqual(seen, [repair_guard.digest(c) for c in claims])
+        self.assertEqual(seen, claims)
         self.assertEqual(len(rows), 39)
         self.assertTrue(all(r['verdict'] == 'confirmed' for r in rows))
 
@@ -368,8 +368,10 @@ class RepairGuardTests(unittest.TestCase):
         def respond(key, prompt, **kw):
             model, output = finding_response(prompt)
             data = json.loads(output)
+            asked = json.loads(prompt.split('REVIEW_INPUT\n')[1])['findings']
+            readme = {row['id'] for row in asked if row['claim'] == 'Add an unrelated README feature'}
             for row in data['findings']:
-                if row['id'] == repair_guard.digest('Add an unrelated README feature'):
+                if row['id'] in readme:
                     row['verdict'] = 'needs_validation'
             return model, json.dumps(data)
         with patch.object(verify, 'model_review', side_effect=[primary, final]), \

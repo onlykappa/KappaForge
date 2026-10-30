@@ -180,8 +180,15 @@ def numbered(shown, source):
 
 
 def public(data):
-    """The payload as a model may see it: without the engine-only copies used to check evidence."""
-    return {k: v for k, v in data.items() if k not in ('shown', 'shown_lines')}
+    """The payload as a model may see it: without the engine-only copies used to check evidence.
+
+    Findings carry short ids (F1, F2, ...). A 64-character digest is the engine's identity, but small free models copy
+    it back wrongly, which voided otherwise valid answers; the aliases map back to the digests in `review_shape`."""
+    shown = {k: v for k, v in data.items() if k not in ('shown', 'shown_lines', 'aliases')}
+    by_digest = {digest_id: alias for alias, digest_id in (data.get('aliases') or {}).items()}
+    if by_digest:
+        shown['findings'] = [dict(row, id=by_digest.get(row['id'], row['id'])) for row in data['findings']]
+    return shown
 
 
 def payload(sources, claims, max_chars=MAX_SOURCE_CHARS, requested_lines=None):
@@ -209,7 +216,9 @@ def payload(sources, claims, max_chars=MAX_SOURCE_CHARS, requested_lines=None):
             files[path]['traceback_lines'] = [n + 1 for n in frames]
         used += len(shown) + len(path) + 80
     # `shown` and `shown_lines` stay with the engine for checking evidence; only the rest is sent to the verifier.
-    return dict(findings=[dict(id=digest(claim), claim=shown_claim(claim)) for claim in claims],
+    rows = [dict(id=digest(claim), claim=shown_claim(claim)) for claim in claims]
+    aliases = {f'F{number}': row['id'] for number, row in enumerate(rows, 1)}
+    return dict(findings=rows, aliases=aliases,
                 sources=files, omittedFiles=len(sources) - len(files), shown=raw, shown_lines=shown_lines)
 
 
@@ -332,21 +341,33 @@ def source_span(item, sources):
             and span[-1] - span[0] < MAX_CITED_LINES)
 
 
-def review_shape(output, ids):
+def review_shape(output, ids, aliases=None):
     """The verifier's well-formed decisions, or ValueError naming what is wrong with the envelope. Never repairs an
     answer: a malformed or missing decision is only ever 'not answered' (needs_validation), which authorizes nothing,
     so one skipped id no longer voids the decisions the verifier did make (#232). Foreign ids are ignored, a
-    duplicated id voids the answer, and an answer with no usable decision is invalid."""
-    decisions = parse(output).get('findings')
+    duplicated id voids the answer, and an answer with no usable decision is invalid. `aliases` maps the short ids the
+    model was shown to the engine's digests; a digest is still accepted. A bare list is the same `findings` array
+    without its wrapper: every decision in it passes the identical checks."""
+    parsed = json.loads(output)
+    if isinstance(parsed, list):
+        decisions = parsed
+    elif isinstance(parsed, dict):
+        decisions = parsed.get('findings')
+    else:
+        raise ValueError('not_an_object:' + json_type(parsed))
+    aliases = aliases or {}
     if not isinstance(decisions, list):
-        raise ValueError('missing_or_foreign_ids')
-    named = [row.get('id') for row in decisions if isinstance(row, dict) and isinstance(row.get('id'), str)]
+        raise ValueError(f'missing_or_foreign_ids:0/{len(ids)}')
+    def resolve(row):
+        return aliases.get(row.get('id'), row.get('id')) if isinstance(row, dict) and isinstance(row.get('id'), str) else None
+    named = [resolve(row) for row in decisions if resolve(row) is not None]
     if len(named) != len(set(named)):
-        raise ValueError('missing_or_foreign_ids')
+        raise ValueError(f'missing_or_foreign_ids:{len(set(named) & ids)}/{len(ids)}')
     usable, malformed = [], False
     for row in decisions:
-        if not isinstance(row, dict) or row.get('id') not in ids:
+        if not isinstance(row, dict) or resolve(row) not in ids:
             continue
+        row = dict(row, id=resolve(row))
         reason = row.get('reason')
         if row.get('verdict') not in ('confirmed', 'rejected', 'needs_validation') or type(row.get('in_goal')) is not bool \
                 or not isinstance(reason, str) or not reason.strip():
@@ -354,7 +375,7 @@ def review_shape(output, ids):
             continue
         usable.append(row)
     if not usable:
-        raise ValueError('invalid_verdict_fields' if malformed else 'missing_or_foreign_ids')
+        raise ValueError('invalid_verdict_fields' if malformed else f'missing_or_foreign_ids:{len(set(named) & ids)}/{len(ids)}')
     answered = {row['id'] for row in usable}
     return usable + [dict(id=i, verdict='needs_validation', in_goal=True, reason='The verifier gave no usable decision',
                           unanswered=True) for i in sorted(ids - answered)]
@@ -365,7 +386,15 @@ def invalid_code(error):
     if isinstance(error, json.JSONDecodeError):
         return 'malformed_json'
     text = str(error)
-    return text if text in ('missing_or_foreign_ids', 'invalid_verdict_fields', 'not_an_object') else 'invalid'
+    if text in ('missing_or_foreign_ids', 'invalid_verdict_fields', 'not_an_object'):
+        return text
+    # A JSON type name or two counts only, never any part of the answer.
+    return text if re.fullmatch(r'not_an_object:(?:str|int|null|bool|float)|missing_or_foreign_ids:\d{1,3}/\d{1,3}', text) else 'invalid'
+
+
+def json_type(value):
+    return 'null' if value is None else 'bool' if isinstance(value, bool) else 'int' if isinstance(value, int) else \
+        'float' if isinstance(value, float) else 'str' if isinstance(value, str) else 'other'
 
 
 def parse(output):
@@ -508,7 +537,7 @@ def verify_findings(run_model, api_key, task, claims, sources, allowed=None, _re
             fresh(stamp, sources)
             attempts += 1
             try:
-                rows = review_shape(output, {row['id'] for row in data['findings']})
+                rows = review_shape(output, {row['id'] for row in data['findings']}, data.get('aliases'))
                 for row in rows:
                     if not row.get('unanswered'):
                         answered[row['id']] = row
