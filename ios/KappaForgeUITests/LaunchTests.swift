@@ -36,6 +36,13 @@ final class LaunchTests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard", file: file, line: line)
     }
 
+    // Tapping outside the composer must dismiss the keyboard, so the tap has to land on blank page. At 30% height it can
+    // hit the "Plan a project" suggestion chip on a phone layout, which correctly fills and refocuses the composer.
+    // 45% is the empty band between the chips and the composer on the welcome screen, with the keyboard open or closed.
+    private func tapBlankWebArea(_ web: XCUIElement) {
+        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+    }
+
     func testBundledInterfaceLaunchAndSettings() {
         let app = XCUIApplication()
         app.launch()
@@ -97,7 +104,7 @@ final class LaunchTests: XCTestCase {
         waitForComposerGeometry(editor, keyboard: keyboard, web: web)
         assertComposerAboveKeyboard(app, editor, keyboard, web: web)
         // Public bridge dismisses when tapping outside the composer.
-        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        tapBlankWebArea(web)
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
         let closed = XCTAttachment(screenshot: app.screenshot())
         closed.name = "PR98 keyboard closed layout"
@@ -109,7 +116,7 @@ final class LaunchTests: XCTestCase {
             waitForComposerGeometry(editor, keyboard: keyboard, web: web)
             XCTAssertFalse(app.toolbars.buttons["Done"].exists)
             assertComposerAboveKeyboard(app, editor, keyboard, web: web, belowHeader: false)
-            web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            tapBlankWebArea(web)
             XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
         }
     }

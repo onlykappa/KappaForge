@@ -74,8 +74,12 @@ A read-only high-effort review reported ten findings. Each was checked against t
 | Dead `attempt_limit`/`action_limit` resume branches | **Intended**: they resume checkpoints saved under the old 5/20 limits. |
 | Worker reads `isResolved` from REST, which never supplies it, so any human comment keeps `canFix` true | **Open.** The engine safely reports nothing to fix, but the button is misleading. Needs a GraphQL thread query in the Worker. |
 | Push-triggered queue runs share the `kappaforge-agent-scheduled` concurrency group with scheduled runs | **Open, not changed.** Matters only while the autonomous queue is in use (currently off); touching the owner-pinned `agent.yml` was deferred. |
-| Exploration and repair budgets raised globally (calls 40→500, attempts 5→20, actions 20→100, 2M context chars) | **Open, owner decision.** |
+| Exploration and repair budgets raised globally (calls 40→500, attempts 5→20, actions 20→100, 2M context chars) | **Intended (owner decision 2026-10-30):** the owner wants KappaForge to keep working through errors autonomously, so the higher caps stay. |
 | `Base` added to `CONTROL_LINE_RE` changes task-text hashes for tasks that already have a `Base:` line | **Open, low impact:** affects only in-flight tasks started before this change. |
 | `_authorize` re-reads task state on every request, risking rate limits | **Open**, performance trade-off of the authorization design. |
 
 Not a merge recommendation: see the PR thread for the current CI state and the remaining Phase 3 items.
+
+## Native receipt validated on real Xcode output (2026-10-30)
+
+On run 41072136988 (head 192c567) the receipt step ran against the real `xcresulttool get test-results summary` output of a failing suite and wrote `native-validation-evidence` (state `failed`, message "Native simulator tests failed"), so the assumed summary fields parsed and reconciled. The job still failed because the keyboard UI test failed; see P3-092 in the issue ledger for the root cause (a test tap that landed on a suggestion chip) and its test-side fix.
