@@ -25,7 +25,8 @@
     340,
     341,
     342,
-    343
+    343,
+    344
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -54,11 +55,11 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/a-device-sessions",
-    "base": "1ff8f7a0c32546c38a9f998373c62ae9b86400cd",
-    "scope": "037 server session foundation; client migration remains open",
-    "localVerification": "Python1512 OK(skip34), Node945 passed, twelve targeted sessions and actual workerd/SQLite persistent revocation passed",
-    "next": "Publish draft server candidate, continue client transport/native migration with focused checks, collect broad phase evidence on composed candidates."
+    "branch": "remediation/a-auth-transport",
+    "base": "3ddb7f4362c04b9b7ea9923a5a524f6c75885842",
+    "scope": "037 centralized client transport; secure native enrollment/long-lived credential removal still required",
+    "focusedEvidence": "135 affected tests passed and real workerd client restart/revocation passed",
+    "next": "Publish transport draft, collect composed CI once, implement native secure enrollment and bridge without long-lived page credentials."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }

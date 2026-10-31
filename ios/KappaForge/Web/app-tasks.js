@@ -239,7 +239,7 @@ function operationPolicy(){
 }
 async function refreshOperationContract(){
  if(!backend||!access)throw Error('Connect AI before using remote actions.');
- const response=await fetch(backend+'/operation-capabilities',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({contract:KappaIntent.capabilities.contract,device:taskHistoryDevice})});
+ const response=await backendFetch('/operation-capabilities',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contract:KappaIntent.capabilities.contract,device:taskHistoryDevice})});
  const data=await response.json();
  localStorage.setItem('kappaforge.operationContract.v1',JSON.stringify({backend,contract:data.contract,rollout:data.rollout}));
  if(!KappaIntent.capabilities.negotiate(data.contract))throw Error(data.error||'Update the app and Worker to matching operation capabilities.');
@@ -305,7 +305,7 @@ async function executeRecordedCapability(proposal,context={}){
   if(duplicate)persistOperationReceipt(id,{...existing,originalId});
   if(existing.state!=='complete'&&scoped.id==='tasks.retry'&&backend&&access){
    // Read the original durable receipt; never resend a mutation to resolve an uncertain outcome.
-   const response=await fetch(backend+'/operation-status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify({id:originalId,conversationId:context.chatId||current||'controls'})});
+   const response=await backendFetch('/operation-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:originalId,conversationId:context.chatId||current||'controls'})});
    const status=await response.json();
    if(response.ok&&status.receipt&&status.receipt.status<400){
     const result=JSON.parse(status.receipt.body);context.receipt.outcome=['dispatch_requested','fix_started'].includes(result.status)?'dispatched':'requested';
@@ -452,10 +452,10 @@ async function userAuthorizedFetch(path,payload,userText,source='user-control',r
  await refreshOperationContract();
  const authorization={id:requestId,requestId,conversationId};
  const body={...payload,authorization,contract:KappaIntent.capabilities.contract,device:taskHistoryDevice};
- const options=value=>({method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(value)});
- const issued=await fetch(backend+'/authorize',options({path,payload:body,userText,source}));
+ const options=value=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+ const issued=await backendFetch('/authorize',options({path,payload:body,userText,source}));
  if(!issued.ok)return issued;
- return fetch(backend+path,options(body));
+ return backendFetch(path,options(body));
 }
 // Guidance or a retry restarted the task: follow it again, ignoring reports from before now.
 function resumeJob(number,chatId){
@@ -648,7 +648,7 @@ async function checkJobResult(force=false){
   for(const job of jobs){
    try{
    if(job.cancellation){
-    const response=await fetch(backend+'/cancel/status',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(job.cancelAuthorization||job.authorization)});
+    const response=await backendFetch('/cancel/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(job.cancelAuthorization||job.authorization)});
     const receipt=await response.json();if(!response.ok)throw Error(receipt.error||'Cancellation status unavailable');
     job.cancellation={...job.cancellation,...receipt.cancellation};job.message=job.cancellation.terminatedAt?'cancelled':'cancellation-requested';job.finished=!!(job.cancellation.terminatedAt&&job.cancellation.issueClosedAt&&!job.cancellation.errors?.length);job.message=job.finished?'cancelled':'cancellation-requested';job.pollError='';job.lastCheckedAt=Date.now();job.pollAfter=Date.now()+15000;observeJobRoute(job);changed=true;continue;
    }
@@ -764,7 +764,7 @@ function confirmTaskChoices(){
  if(mode==="repair"&&!/^Repair files:\s*.+$/im.test(text)){
    error.textContent="Repair mode needs a line such as: Repair files: chat-backend/src/index.js";return
  }
- if(mode==="continuous-code"&&!/^Step 1:\s*.{15,}$/im.test(text)){
+ if(mode==="continuous-code"&&!/^Step 1:\s*.{15}$/im.test(text)){
    error.textContent="Continuous coding needs numbered lines starting with Step 1: (15+ characters).";return
  }
  pendingJob={title:text.split("\n")[0].slice(0,105)||"KappaForge task",

@@ -3,6 +3,16 @@ const key="kappaforge.preview.chats.v1", esc=s=>String(s??"").replace(/[&<>"']/g
 let personality=localStorage.getItem("kappaforge.personality")||"auto";if(!["auto","friendly","professional","developer"].includes(personality))personality="auto";
 let chatAbort=null;
 let backend=localStorage.getItem("kappaforge.backend")||sessionStorage.getItem("kappaforge.backend")||"", access=localStorage.getItem("kappaforge.access")||sessionStorage.getItem("kappaforge.access")||"", sending=false;let activity={runs:[],last:null,error:"",busy:false};let queuedAttachments=[];let pendingJob=null;let reviewDecisions={};let reviewHidden=new Set();try{reviewDecisions=JSON.parse(localStorage.getItem("kappaforge.review.decisions")||"{}");reviewHidden=new Set(JSON.parse(localStorage.getItem("kappaforge.review.hidden")||"[]"))}catch(e){}let recentJob=null;let diffOpen=null;let diffCache={};let jobTrackingBusy=false;try{recentJob=JSON.parse(localStorage.getItem("kappaforge.latest.job")||"null")}catch(e){}
+// One transport owns credential selection and the native renewal boundary. No
+// automatic retry/replay of mutating requests after an authentication failure.
+let backendTransport=null;
+function backendFetch(path,options){
+ if(!backendTransport)backendTransport=KappaTransport.create({
+  connection:()=>({backend,access,mode:window.KappaNativeSession?'device':'legacy',sessionId:window.KappaNativeSession?.id}),
+  renew:origin=>{if(typeof window.KappaNativeSession?.renew!=='function')throw Error('Secure session renewal is unavailable. Reconnect this device.');return window.KappaNativeSession.renew(origin);}
+ });
+ return backendTransport.fetch(path,options);
+}
 let verificationOnly=sessionStorage.getItem("kappaforge.verifyOnly")==="true";
 let lockedCommit=null;
 try{lockedCommit=JSON.parse(sessionStorage.getItem("kappaforge.lockedCommit")||"null")}catch(e){}
@@ -12,7 +22,7 @@ function repoOptions(selected,prefix=""){return knownRepos.map(n=>'<option value
 async function refreshRepos(){
  if(!backend||!access)return;
  try{
-  const r=await fetch(backend+"/repos",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:"{}"});
+  const r=await backendFetch("/repos",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
   const names=(await r.json()).repos;
   if(!r.ok||!Array.isArray(names)||!names.length)return;
   knownRepos=names;try{localStorage.setItem("kappaforge.repos",JSON.stringify(names))}catch(e){}
@@ -94,7 +104,7 @@ async function decryptVault(payload,pass){
 }
 async function vaultRequest(method,body){
  if(!backend||!access)throw Error("Connect AI on this device before syncing.");
- const r=await fetch(backend+"/memory",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access,"X-Memory-Method":method},body:body?JSON.stringify(body):"{}"});
+ const r=await backendFetch("/memory",{method:"POST",headers:{"Content-Type":"application/json","X-Memory-Method":method},body:body?JSON.stringify(body):"{}"});
  const result=await r.json().catch(()=>({}));
  if(!r.ok)throw Error(result.error||("Cloud sync HTTP "+r.status)+(r.status===409?" (cloud backup changed; restore first)":""));
  return result;
@@ -276,7 +286,7 @@ function refreshActiveDetails(){
  // In chat only the tasks' own runs are drawn, so only theirs need steps.
  for(const r of m.runs.filter(r=>KappaActions.isActive(r)&&(!chat||/ kappa\/dev-\d+ @ /.test(r.title||""))).slice(0,3)){const e=m.details[r.id];if(e?.loading||e?.data&&e.data.run?.updatedAt===r.updatedAt&&Date.now()-e.at<30000)continue;monitorRunDetail(r.id)}
 }
-function actionsFetch(body,signal){return fetch(backend+"/actions",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({repo:workflowMonitor.repo,...body}),signal})}
+function actionsFetch(body,signal){return backendFetch("/actions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({repo:workflowMonitor.repo,...body}),signal})}
 // Without the Worker route (not connected, or an older Worker), read the public API through githubFetch.
 async function monitorPoll(){
  const m=workflowMonitor;

@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -71,7 +72,7 @@ function app(){
   save(){store.set(key,JSON.stringify(box.chats))},savePreferences(){store.set('kappaforge.settings.v2',JSON.stringify(box.preferences))},render(){},backend:'https://worker.test',access:'owner',
   acceptTaskRetry:(task,result,id)=>calls.push({task,result,id}),userAuthorizedFetch:async(path,payload,text,source)=>{calls.push({path,payload,text,source});return Response.json(path==='/cancel'?{id:'fresh-cancel',conversationId:'chat',state:'cancelled'}:{message:'Dispatch requested.',status:'dispatch_requested'})},
   fetch:async(url,init)=>{if(url.endsWith('/operation-capabilities'))return Response.json({contract:C.contract,rollout:{mode:'active',percent:100}});calls.push({url,body:JSON.parse(init.body)});return Response.json({state:'cancelled'})}};
- vm.createContext(box);const source=read('app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
+ installTransport(box);vm.createContext(box);const source=read('app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
  const run=async text=>{chat.messages.push({role:'user',text});const result=await box.runAppOperation(text,chat,{requestId:crypto.randomUUID()});chat.messages.push({role:'assistant',text:result});return result;};
  return {box,store,calls,chat,run,state:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box)),seed:jobs=>vm.runInContext('trackedJobs='+JSON.stringify(jobs),box)};
 }

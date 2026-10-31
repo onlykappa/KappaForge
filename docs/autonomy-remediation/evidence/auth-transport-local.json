@@ -1,0 +1,64 @@
+{
+  "branch": "remediation/a-auth-transport",
+  "base": "3ddb7f4362c04b9b7ea9923a5a524f6c75885842",
+  "production": false,
+  "inference": false,
+  "focused": {
+    "transport": 10,
+    "affected": 135,
+    "passed": 135,
+    "failed": 0,
+    "skipped": 0
+  },
+  "initialAffected": {
+    "total": 135,
+    "passed": 121,
+    "failed": 14,
+    "cause": "Classic-script component harnesses did not load new transport dependency; assertions retained, production transport installed."
+  },
+  "workerd": {
+    "runtime": "workerd",
+    "storage": "SQLite",
+    "deviceAccess": true,
+    "restartPersistence": true,
+    "revocationPersisted": true,
+    "renewalDeniedAfterRevocation": true,
+    "rootSeparated": true,
+    "privilegeBoundaries": true,
+    "unexpectedNetwork": 0,
+    "production": false,
+    "inference": false,
+    "frontendTransport": true,
+    "clientRevocationDenied": true,
+    "nativeEnrollment": "not_implemented",
+    "frontendCredentialCleanup": "not_implemented"
+  },
+  "fullSuite": "Pending composed CI, not rerun locally for the incremental patch batch.",
+  "logs": {
+    "auth-transport-targeted.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/auth-transport-targeted.log",
+      "sha256": "3e2481c7b823bcdf64f78749f91e0e7f151149479029ab93c98cba2bca35030f",
+      "bytes": 1143
+    },
+    "auth-transport-affected.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/auth-transport-affected.log",
+      "sha256": "021c81ef6128f86bd5dd4db29214ec90b49472b755cea226f57a9a5683e1e2ff",
+      "bytes": 13447
+    },
+    "auth-transport-affected-initial-failure.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/auth-transport-affected-initial-failure.log",
+      "sha256": "06e4b2bf74838b01952a7be6c113b49197c96d8aa30d1ad51cfa2b998e6f8494",
+      "bytes": 22069
+    },
+    "auth-transport-workerd.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/auth-transport-workerd.log",
+      "sha256": "84555474e83cfb488fa6f0b53fe1cef0aca5ad542260070895f2b1cca9ce30bb",
+      "bytes": 395
+    },
+    "auth-transport-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/auth-transport-security.log",
+      "sha256": "655dbf183da3c10bf22ed158f093ac3affc12956aa95d207cdf557be0fc1f2dc",
+      "bytes": 23130
+    }
+  }
+}

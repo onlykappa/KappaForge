@@ -958,17 +958,17 @@ Required implementation: Use short-lived session credentials and secure native s
 
 Dependencies: Foundation contracts
 
-Branch: remediation/a-device-sessions; PR: not yet created.
+Branch: remediation/a-device-sessions; PR: [#344](https://github.com/onlykappa/KappaForge/pull/344).
 
 Latest-state reconciliation: Backend implementation advances original acceptance without closing it. Exact revoked-device tests pass; long-lived privileged page-credential acceptance remains unmet.
 
-Implementation: Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented.
+Implementation: Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented. Central frontend backend transport now preserves streaming/uploads/cancellation with bounded single-flight renewal, exact HTTPS origin, no redirects, no mutation replay and no device-to-root fallback. Native bridge/enrollment/credential cleanup remains open.
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.
 
-Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs
+Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved
 
 Final verification evidence: Not yet collected.
 

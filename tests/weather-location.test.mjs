@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -80,7 +81,7 @@ function chatHarness({text,preferences,location}){
   AbortController,uiIcon:()=>'',navigator:{language:'en-US'},
   fetch:async(_url,init)=>{sent.push(JSON.parse(init.body));return {ok:true}},
   receiveAssistant:async(_r,c,prefix)=>{c.messages.push({role:'assistant',text:prefix+'Which city should I check?'});return {reply:'x'}}};
- vm.runInNewContext(registration,box);
+ installTransport(box);vm.runInNewContext(registration,box);
  return {run:()=>submit({preventDefault(){}}),box,chat,sent,activity,stored};
 }
 

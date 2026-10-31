@@ -7,6 +7,7 @@ import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import '../../preview/auth-transport.js';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const directory=await mkdtemp(join(tmpdir(),'kappa-device-session-'));
@@ -24,6 +25,16 @@ try{
  await start();
  const enrolled=await call('/sessions',owner,{op:'enroll',label:'Isolated runtime fixture'});
  assert.equal(enrolled.status,201);const device=await enrolled.json();
+ let clientSends=0,clientRenewals=0;
+ const client=globalThis.KappaTransport.create({
+  connection:()=>({backend:'https://worker.test',mode:'device',sessionId:device.device.id}),
+  renew:async()=>{
+   clientRenewals++;const response=await call('/sessions',device.refreshToken,{op:'renew'});
+   assert.equal(response.status,200);return response.json();
+  },
+  fetch:(url,options)=>{clientSends++;return mf.dispatchFetch(url,{...options,headers:new Headers({...Object.fromEntries(options.headers),Origin:'null'})});}
+ });
+ assert.equal((await client.fetch('/diagnostics')).status,200,'Production client transport uses actual workerd session authentication');
  assert.equal((await call('/diagnostics',device.accessToken)).status,200);
  assert.equal((await call('/diagnostics',owner)).status,401);
  assert.equal((await call('/premium',device.accessToken,{op:'enable'})).status,403);
@@ -31,6 +42,7 @@ try{
  assert.equal((await call('/authorize',device.accessToken,{path:'/review',payload:{decision:'merge'}})).status,403);
  await mf.dispose();mf=undefined;await start();
  assert.equal((await call('/diagnostics',device.accessToken)).status,200,'Actual SQLite session survives workerd reconstruction');
+ assert.equal((await client.fetch('/diagnostics')).status,200,'Client access remains valid across actual workerd restart');
  const renewal=await call('/sessions',device.refreshToken,{op:'renew'});assert.equal(renewal.status,200);
  const renewed=await renewal.json();assert.equal((await call('/diagnostics',renewed.accessToken)).status,200);
  const listed=await(await call('/sessions',owner,{op:'list'})).text();
@@ -40,10 +52,15 @@ try{
  assert.equal((await call('/diagnostics',device.accessToken)).status,401);
  assert.equal((await call('/diagnostics',renewed.accessToken)).status,401);
  assert.equal((await call('/sessions',device.refreshToken,{op:'renew'})).status,401);
+ const before=clientSends;
+ assert.equal((await client.fetch('/diagnostics')).status,401,'Revoked client receives the real denial');
+ assert.equal(clientSends,before+1,'Authentication failure never silently replays a request');
+ assert.equal(clientRenewals,1,'Revoked request is not automatically renewed');
  assert.equal(unexpected,0,'No provider/network requests may occur');
  console.log(JSON.stringify({runtime:'workerd',storage:'SQLite',deviceAccess:true,restartPersistence:true,
   revocationPersisted:true,renewalDeniedAfterRevocation:true,rootSeparated:true,privilegeBoundaries:true,
-  unexpectedNetwork:unexpected,production:false,inference:false,frontendMigration:'not_implemented'}));
+  unexpectedNetwork:unexpected,production:false,inference:false,frontendTransport:true,clientRevocationDenied:true,
+  nativeEnrollment:'not_implemented',frontendCredentialCleanup:'not_implemented'}));
 }finally{
  await mf?.dispose();await rm(directory,{recursive:true,force:true});
 }

@@ -1070,15 +1070,17 @@
     "current_classification": "PARTIAL",
     "status": "IMPLEMENTING",
     "assigned_branch": "remediation/a-device-sessions",
-    "pr": null,
-    "implementation": "Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented.",
+    "pr": 344,
+    "implementation": "Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented. Central frontend backend transport now preserves streaming/uploads/cancellation with bounded single-flight renewal, exact HTTPS origin, no redirects, no mutation replay and no device-to-root fallback. Native bridge/enrollment/credential cleanup remains open.",
     "required_tests": "Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.",
     "actual_results": [
-      "Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests."
+      "Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.",
+      "Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport\u2192actual workerd restart/revocation passed."
     ],
     "regression_coverage": [
       "tests/device-sessions.test.mjs",
-      "chat-backend/tools/device-session-runtime-check.mjs"
+      "chat-backend/tools/device-session-runtime-check.mjs",
+      "tests/auth-transport.test.mjs; existing component assertions preserved"
     ],
     "final_evidence": [],
     "remaining_limitations": "Root still injected into existing native WebKit/browser storage. Secure client enrollment/renewal, transport migration, injection acceptance and owner-approved legacy-disable rollout remain open. No production authentication change.",

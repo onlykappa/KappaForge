@@ -19,7 +19,7 @@ function deleteMemory(note){noteEdits[note]={deleted:true,at:Date.now()};removed
 function restoreMemory(note){noteEdits[note]={deleted:false,at:Date.now()};removedNotes=removedNotes.filter(n=>n!==note);if(!savedMemories.includes(note))savedMemories.push(note);persistMemoryMetadata();persistMemories();}
 async function settingsAPI(path,body={},timeout=20000){
  if(!backend||!access)throw Error('Connect your private AI backend on this device first.');
- const r=await fetch(backend+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});
+ const r=await backendFetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});
  const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(Error(d.error||'Backend HTTP '+r.status),{status:r.status});return d;
 }
 function logDiagnostic(message,ok=false){diagnostics.unshift({at:Date.now(),ok,message:String(message).replace(/Bearer\s+\S+/gi,'Bearer [redacted]').split(access||'\u0000').join('[redacted]').slice(0,500)});diagnostics=diagnostics.slice(0,30);}

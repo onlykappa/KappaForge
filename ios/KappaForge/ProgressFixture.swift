@@ -19,6 +19,12 @@ enum ProgressFixture {
           jobPollAfter = Number.MAX_SAFE_INTEGER;
           if (scenario === 'recovery') {
             backend='https://fixture.invalid';access='simulator-only';
+            // Exercise the production device transport without native Keychain,
+            // server enrollment or live network. Debug simulator fixture only.
+            globalThis.KappaNativeSession=Object.freeze({id:'00000000-0000-4000-8000-000000000103',backend,renew:async origin=>{
+              if(origin!=='https://fixture.invalid')throw Error('Unexpected session origin');
+              return {accessToken:'kfa_00000000-0000-4000-8000-000000000103.'+'S'.repeat(43),accessExpiresAt:Date.now()+300000};
+            }});
             // Intercept the real authorization + retry HTTP boundary. Reject all
             // destinations other than this isolated fake origin; never use keys.
             globalThis.fetch=async(url,options)=>{
