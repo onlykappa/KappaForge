@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, INVESTIGATING=20, NOT STARTED=13, TESTING=8, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=19, NOT STARTED=13, TESTING=8, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -950,7 +950,7 @@ Remaining limitations: General runtime diagnostics for conflicting stored histor
 
 ## KF-AUDIT-037 — Shared bearer credential persists in browser localStorage
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: A; priority: P1.
+Classification: PARTIAL; status: **IMPLEMENTING**; phase: A; priority: P1.
 
 Root cause: Single-owner simplicity increases impact of browser script compromise/device extraction.
 
@@ -958,21 +958,21 @@ Required implementation: Use short-lived session credentials and secure native s
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/a-device-sessions; PR: not yet created.
 
-Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
+Latest-state reconciliation: Backend implementation advances original acceptance without closing it. Exact revoked-device tests pass; long-lived privileged page-credential acceptance remains unmet.
 
-Implementation: No fix claimed yet.
+Implementation: Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented.
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Not measured for this remediation.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Root still injected into existing native WebKit/browser storage. Secure client enrollment/renewal, transport migration, injection acceptance and owner-approved legacy-disable rollout remain open. No production authentication change.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 

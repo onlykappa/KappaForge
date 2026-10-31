@@ -24,3 +24,7 @@ Following eventual approved integration, commission an independent audit using t
 ## Additional stacked candidates
 
 After #337, review #338 (required real-integration gates), #339 (native composer sibling host), #340 (persistent failed-anchor admission), then #341 (exact repair-history retrieval). Their heads are0bba923,64a9ac3,d526ddd,bc04800 respectively. The second documentation checkpoint is based onbc04800 and records the newer evidence. Main is still unchanged; owner approval and actual final integration-head validation remain mandatory. Native64a9ac3 now passes its supported suite, but physical-device and intermittent-race limits remain open. Security/production gates are not waived.
+
+## Session backend and current cost candidate
+
+After checkpoint #342, review #343 (`remediation/a-free-cost-boundary`,1ff8f7a), then the device-session backend branch `remediation/a-device-sessions`. The latter is a server-only incremental foundation for037, with the native/browser acceptance explicitly open. Review DEVICE-SESSION-CONTRACT.md before any authentication rollout. No production policy is activated; undefined/false SESSION_AUTH_REQUIRED retains old clients. Actual disabling of legacy access requires migrated clients, all acceptance tests and separate owner rollout authorization.

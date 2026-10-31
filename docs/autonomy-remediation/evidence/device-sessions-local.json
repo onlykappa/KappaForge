@@ -1,0 +1,97 @@
+{
+  "branch": "remediation/a-device-sessions",
+  "baseline": "1ff8f7a0c32546c38a9f998373c62ae9b86400cd",
+  "production": false,
+  "inference": false,
+  "gap037": "PARTIAL; frontend/native migration remains open",
+  "results": {
+    "python": {
+      "total": 1512,
+      "passed": 1478,
+      "skipped": 34,
+      "failed": 0,
+      "seconds": 102.736
+    },
+    "node": {
+      "passed": 945,
+      "failed": 0,
+      "skipped": 0
+    },
+    "targetedDeviceSessions": {
+      "passed": 12,
+      "failed": 0
+    },
+    "workerd": {
+      "runtime": "workerd",
+      "storage": "SQLite",
+      "deviceAccess": true,
+      "restartPersistence": true,
+      "revocationPersisted": true,
+      "renewalDeniedAfterRevocation": true,
+      "rootSeparated": true,
+      "privilegeBoundaries": true,
+      "unexpectedNetwork": 0,
+      "production": false,
+      "inference": false,
+      "frontendMigration": "not_implemented"
+    },
+    "recovery": {
+      "runtime": "workerd",
+      "storage": "SQLite",
+      "restartPersistence": true,
+      "automaticAlarm": true,
+      "cooldownHonored": true,
+      "scannerDispatches": 1,
+      "agentDispatches": 1,
+      "runnerAcknowledged": true,
+      "candidatePreserved": true,
+      "closedTaskRejected": true,
+      "production": false,
+      "inference": false
+    },
+    "workerDryBuild": "passed",
+    "mapPolicyWeb": "passed",
+    "structuralRules": {
+      "passed": 10,
+      "failed": 0
+    },
+    "structuralScan": "passed with existing HTML-injection warnings"
+  },
+  "logs": {
+    "device-sessions-python.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-python.log",
+      "sha256": "b17f8ce80b9a717ce5fd9c505f0276402325b2b15e06ae8467b3d8aab6af9291",
+      "bytes": 310808
+    },
+    "device-sessions-node.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-node.log",
+      "sha256": "88dbe5afa705f3896670989ba9e4668ce0a1877b71b1f3e1f522bceacef350e3",
+      "bytes": 89762
+    },
+    "device-sessions-targeted.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-targeted.log",
+      "sha256": "b685a494e616f76937645f0eba0a2fa3ba80b6fea50bbd6183e7d0b6fa1cc3b2",
+      "bytes": 1306
+    },
+    "device-sessions-workerd.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-workerd.log",
+      "sha256": "662f8c1d5791940825e265953714bc14ceafbfca5c5c1e9977e96c63606727f2",
+      "bytes": 295
+    },
+    "device-sessions-recovery.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-recovery.log",
+      "sha256": "8f4eee7756ea945d31aa7e33931839f80c359e42c2cef79b1a9bf6a21469783a",
+      "bytes": 269
+    },
+    "device-sessions-build.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-build.log",
+      "sha256": "0894a18b3c8b046c9159c20aaeef32debb643822d297c70e9388cb9a7c4c33fc",
+      "bytes": 1043
+    },
+    "device-sessions-security.log": {
+      "localPath": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/device-sessions-security.log",
+      "sha256": "46d048bf9562e0c402f933c6bbd6a7b498e21dfeea16797e434b5b3f548d7026",
+      "bytes": 23232
+    }
+  }
+}

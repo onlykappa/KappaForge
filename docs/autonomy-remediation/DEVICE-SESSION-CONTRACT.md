@@ -1,0 +1,27 @@
+# Device-session backend contract — KF-AUDIT-037 remains partial
+
+Candidate branch: `remediation/a-device-sessions`, stacked on the reviewed-free-cost candidate #343. This implements the server foundation of AUTHENTICATION-MIGRATION-PLAN.md. It does not migrate the native/browser client or change production configuration.
+
+The existing MEMORY Durable Object binding stores a separate `device-sessions-v1` object. `/sessions` accepts POST JSON with an exact operation schema and a 4096-byte streaming limit. Enrollment, listing, revocation and forgetting require the existing owner credential. Renewal requires its own opaque `kfr_` credential and cannot call ordinary APIs. Enrollment issues random 256-bit access/renewal secrets; storage contains their SHA-256 digests, a device UUID, label, scopes and server timestamps. Responses are no-store; list responses contain metadata only. Credentials must not be logged or put in page storage.
+
+Access expires after at most five minutes; enrollment/renewal expires absolutely after thirty days. Up to four still-valid access tokens support concurrent requests. Renewal is limited to six requests per minute per device. The thirty-two-record device cap requires explicit revoke/forget to reclaim capacity. These conservative isolated defaults are proposals for owner review before rollout, not deployed policy.
+
+Each authenticated request consults serialized durable state. Revoking a device clears access and denies renewal, including after runtime restart. Renewal cannot undo revocation. Current owner-key hashing binds admission to the configured owner credential; rotating that credential invalidates old device tokens while the new key is configured. Restoring an old key is not permanent revocation: use explicit device revocation. Owner administration can list/revoke old records after rotation. Forgetting is allowed only after revocation.
+
+Scopes are a fixed assistant/tasks route matrix; neither scope can administer sessions, enable Premium, control workflow publication, merge or deploy. Task authorization can target only task intake, retry and cancellation and must still pass existing signed task-authority checks. A device session authenticates a device; it does not independently authorize a consequential task. Private store flags are supplied only by the gateway. Malformed bodies, missing/failed storage, invalid authentication policy and unknown scopes fail closed. Root `/sessions` recovery stays available even when a normal-route policy is invalid.
+
+`SESSION_AUTH_REQUIRED=true` rejects the shared owner credential on ordinary routes and requires a device session. Undefined/`false` preserves old-client compatibility. No production flag is set here. Unknown flag values return 503. This migration mode is intentionally not proof that shared-credential exposure is resolved.
+
+## Executed evidence
+
+- Twelve direct gateway/store regressions: enrollment, hashed storage, absolute expiry, copied/forged identity, revocation, renewal limits/concurrency, scope and authorization denials, root rotation/recovery, malformed/oversized bodies, bounded inventory, storage failure and explicit legacy policy.
+- Actual isolated workerd/SQLite: enroll/use, destroy/reconstruct runtime with persistent storage, renew, revoke, destroy/reconstruct again, deny both access tokens and renewal. Privileged endpoints reject device credentials. Outbound service refuses external I/O; zero external requests observed. No model credentials or production access.
+- The new runtime check is a mandatory Worker CI step alongside existing recovery integration. Full-suite results and exact candidate CI belong in TEST-EVIDENCE.md; a targeted pass cannot close the whole gap.
+
+## Remaining acceptance and migration
+
+Root credentials still reach existing native WebKit/bootstrap and browser storage. Secure native enrollment/Keychain renewal, centralized frontend transport, exact-origin/redirect bridge validation, client cleanup, browser injection acceptance, independent macOS tests and a separately authorized rollout disabling legacy admission are required. Protected owner operations also need a reviewed native step-up flow before a migrated client can perform them. No catch-all owner authority is granted to device tokens to hide that missing client work.
+
+An authenticated request already admitted just before revocation may finish; cancellation of independently authorized running tasks is a separate operation. Do not claim revocation rolls back past requests or deletes task progress. Privacy/deletion policy and physical-device coverage remain open.
+
+Rollback: withdraw the unmerged candidate; after a separately approved rollout, preserve device state and use an explicitly reviewed compatibility rollback. Never silently re-enable root admission or erase chats/vault/task state.
