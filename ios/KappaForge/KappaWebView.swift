@@ -8,8 +8,10 @@ import UniformTypeIdentifiers
 // and its navigation accessory are never used for the composer.
 final class KappaChatWebView: WKWebView, UITextViewDelegate {
     let composerEditor = UITextView()
+    weak var composerHost: UIView?
     private var keyboardObservers: [NSObjectProtocol] = []
     private var editorRevision = 0
+    private var composerFrame: CGRect?
 
     func configureComposer() {
         composerEditor.delegate = self
@@ -25,7 +27,8 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
         composerEditor.inputAssistantItem.leadingBarButtonGroups = []
         composerEditor.inputAssistantItem.trailingBarButtonGroups = []
         composerEditor.isHidden = true
-        addSubview(composerEditor)
+        // The text editor belongs to the sibling UIKit overlay, not WKWebView's
+        // managed subview tree. WebKit scroll/focus layout must not move it.
         for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
             keyboardObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 guard let self else { return }
@@ -56,7 +59,8 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
               let frame = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
               let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"],
               [x,y,width,height].allSatisfy({ $0.isFinite }), width > 0, height > 0 else { return }
-        composerEditor.frame = CGRect(x: x, y: y, width: width, height: height)
+        composerFrame = CGRect(x: x, y: y, width: width, height: height)
+        positionComposer()
         if let hex = body["color"]?.replacingOccurrences(of: "#", with: ""), hex.count == 6, let rgb = UInt32(hex, radix: 16) {
             composerEditor.textColor = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
         }
@@ -68,6 +72,10 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
             composerEditor.text = text
         }
         composerEditor.accessibilityValue = composerEditor.text.isEmpty ? "Message KappaForge…" : composerEditor.text
+    }
+    func positionComposer() {
+        guard let host = composerHost, let frame = composerFrame else { return }
+        composerEditor.frame = convert(frame, to: host)
     }
     func textViewDidChange(_ textView: UITextView) {
         editorRevision += 1
@@ -83,10 +91,33 @@ final class KappaChatWebView: WKWebView, UITextViewDelegate {
     }
 }
 
+// Own the WebKit view and public text editor as siblings. Keeping an independent
+// UIKit first responder inside WKWebView lets WebKit's focus/scroll machinery
+// treat it as web content and can leave the focused editor offscreen after a
+// keyboard or app-lifecycle transition. This host has a single layout owner.
+final class KappaChatContainer: UIView {
+    let webView: KappaChatWebView
+
+    init(webView: KappaChatWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        webView.composerHost = self
+        addSubview(webView)
+        addSubview(webView.composerEditor)
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(webView:)") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        webView.frame = bounds
+        webView.positionComposer()
+    }
+}
+
 struct KappaWebView: UIViewRepresentable {
     var showSecurity: () -> Void
     var showUpdates: () -> Void
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> KappaChatContainer {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.userContentController.add(context.coordinator, name: "kappa")
@@ -109,6 +140,7 @@ struct KappaWebView: UIViewRepresentable {
         view.isOpaque = false
         view.backgroundColor = UIColor.systemBackground
         view.scrollView.contentInsetAdjustmentBehavior = .never
+        let container = KappaChatContainer(webView: view)
 
         let htmlURL = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Web")
             ?? Bundle.main.url(forResource: "index", withExtension: "html")
@@ -119,10 +151,10 @@ struct KappaWebView: UIViewRepresentable {
                 <h2>KappaForge could not start</h2><p>The bundled interface is missing from this build.</p>
                 </body></html>
                 """, baseURL: nil)
-            return view
+            return container
         }
         view.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
-        return view
+        return container
     }
 
     static func reduceTransparencySource() -> String {
@@ -137,7 +169,7 @@ struct KappaWebView: UIViewRepresentable {
         return WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
+    func updateUIView(_ container: KappaChatContainer, context: Context) {
         // DOM geometry messages keep the native composer aligned with its web controls.
     }
     func makeCoordinator() -> Coordinator { Coordinator(showSecurity: showSecurity, showUpdates: showUpdates) }
