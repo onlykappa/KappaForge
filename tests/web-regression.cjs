@@ -24,13 +24,23 @@ async function openSettings(page){if(await isPhone(page)){await go(page,'setting
 async function settingsHome(page){if(await page.locator('#settings-back').isVisible())await page.locator('#settings-back').click();else if(await page.evaluate(()=>view==='settings'&&!!settingsSection))await page.locator('#menubtn').click();}
 async function openSection(page,id){await settingsHome(page);await page.locator('[data-section='+id+']').click();await page.waitForFunction(id=>settingsSection===id,id);}
 const {createServer}=require('node:http');
+const {createServer:createSecureServer}=require('node:https');
+const {mkdtempSync,readFileSync,rmSync}=require('node:fs');
+const {tmpdir}=require('node:os');
+const {execFileSync}=require('node:child_process');
 const {readFile}=require('node:fs/promises');
 const {join,extname,resolve,sep}=require('node:path');
 const assert=require('node:assert/strict');
 const root=resolve(__dirname,'../preview');
 const server=createServer(async(req,res)=>{try{const path=join(root,new URL(req.url,'http://localhost').pathname.replace(/^\//,'')||'index.html');if(!path.startsWith(root+sep)){res.writeHead(403).end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(path)]||'text/plain');res.end(await readFile(path))}catch{res.writeHead(404).end()}});
 let lastChatPreferences,issuedJob=22,premiumEnabled=false,premiumLimits={taskCapUsd:1,dailyCapUsd:5,monthCapUsd:5};let taskReports={},reviewPulls=[];
-const apiServer=createServer(async(req,res)=>{
+// A real isolated HTTPS server preserves streaming and cancellation while the
+// production transport continues to reject HTTP. The ephemeral self-signed
+// certificate is trusted only by this test context; no production TLS bypass.
+const tlsDirectory=mkdtempSync(join(tmpdir(),'kappa-web-tls-'));
+const tlsKey=join(tlsDirectory,'key.pem'),tlsCert=join(tlsDirectory,'cert.pem');
+execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',tlsKey,'-out',tlsCert,'-subj','/CN=localhost','-days','1'],{stdio:'ignore'});
+const apiServer=createSecureServer({key:readFileSync(tlsKey),cert:readFileSync(tlsCert)},async(req,res)=>{
  res.setHeader('Access-Control-Allow-Origin',req.headers.origin||'*');res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization, X-Memory-Method, X-Integration-Action');
  if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
  res.setHeader('Content-Type','application/json');
@@ -72,11 +82,11 @@ const apiServer=createServer(async(req,res)=>{
  res.end(JSON.stringify(result));
 });
 (async()=>{
- await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='http://127.0.0.1:'+apiServer.address().port;
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;await new Promise(r=>apiServer.listen(0,'127.0.0.1',r));const backendURL='https://127.0.0.1:'+apiServer.address().port;
  let runs=0;let activeBrowser;let activePage;let activeName;let activeEvidence;
  const profiles=process.env.KAPPA_WEB_BROWSER==='chromium'?[['desktop',chromium,{width:1440,height:1000}],['mobile-chromium',chromium,{width:390,height:844}]]:[['desktop',chromium,{width:1440,height:1000}],['mobile-safari',webkit,{width:390,height:844}]];
  try{for(const [name,engine,viewport] of profiles){
- issuedJob=22;taskReports={};const browser=await engine.launch(engine===chromium&&process.env.KAPPA_CHROMIUM_EXECUTABLE?{executablePath:process.env.KAPPA_CHROMIUM_EXECUTABLE}:{});activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,serviceWorkers:'block',locale:'en-US',timezoneId:'UTC',reducedMotion:'reduce',deviceScaleFactor:1});const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-29T12:00:00Z'));activePage=page;activeName=name;activeEvidence=await recorder(context,page,name,{identity:require('./visual-identity.cjs')(resolve(__dirname,'..')),baseline:process.env.KAPPA_VISUAL_BASELINE||null});page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ issuedJob=22;taskReports={};const browser=await engine.launch(engine===chromium&&process.env.KAPPA_CHROMIUM_EXECUTABLE?{executablePath:process.env.KAPPA_CHROMIUM_EXECUTABLE}:{});activeBrowser=browser;const context=await browser.newContext({viewport,acceptDownloads:true,ignoreHTTPSErrors:true,serviceWorkers:'block',locale:'en-US',timezoneId:'UTC',reducedMotion:'reduce',deviceScaleFactor:1});const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-29T12:00:00Z'));activePage=page;activeName=name;activeEvidence=await recorder(context,page,name,{identity:require('./visual-identity.cjs')(resolve(__dirname,'..')),baseline:process.env.KAPPA_VISUAL_BASELINE||null});page.on('requestfailed',r=>console.log(name+': request failed '+r.url()+' '+r.failure()?.errorText));page.on('console',m=>{if(m.type()==='error')console.log(name+': browser '+m.text())});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const credentials='fixture-private-token';
  await page.addInitScript(({credentials,backendURL})=>{
   if(!localStorage.getItem('fixture-seeded')){
@@ -295,6 +305,6 @@ const apiServer=createServer(async(req,res)=>{
  }await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/kappaforge-'+name+'.png',fullPage:true,animations:'disabled'});
  assert.deepEqual(errors,[]);await activeEvidence.capture('settings-usage');await activeEvidence.finish('passed');activeEvidence=null;await browser.close();runs++;console.log('PASS '+name+': settings persistence, usage, deletion, recovery crypto, releases, search, responsive sections, preserved data');
  }
- }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText({timeout:1000}).catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}if(activeEvidence)await activeEvidence.finish('failed').catch(()=>{});throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close();apiServer.close()}
+ }catch(error){if(activePage){console.log('Failure notice:',await activePage.locator('.s-notice').allTextContents());console.log('Page errors:',await activePage.locator('.s-detail').innerText({timeout:1000}).catch(()=>''));await activePage.screenshot({path:'/tmp/kappaforge-'+activeName+'-failure.png',fullPage:true,animations:'disabled'}).catch(()=>{});}if(activeEvidence)await activeEvidence.finish('failed').catch(()=>{});throw error;}finally{if(activeBrowser)await activeBrowser.close();server.close();apiServer.close();rmSync(tlsDirectory,{recursive:true,force:true})}
  assert.equal(runs,2);
-})().catch(error=>{console.error(error);process.exitCode=1;server.close();apiServer.close()});
+})().catch(error=>{console.error(error);process.exitCode=1;server.close();apiServer.close();rmSync(tlsDirectory,{recursive:true,force:true})});
