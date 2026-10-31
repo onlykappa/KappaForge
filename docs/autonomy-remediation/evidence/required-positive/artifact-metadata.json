@@ -1,0 +1,19 @@
+{
+  "id": 13044265001,
+  "name": "required-integration-receipts",
+  "size_in_bytes": 2901,
+  "url": "https://api.github.com/repos/onlykappa/KappaForge/actions/artifacts/13044265001",
+  "archive_download_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/artifacts/13044265001/zip",
+  "expired": false,
+  "created_at": "2026-10-31T13:01:21Z",
+  "expires_at": "2027-01-29T12:56:14Z",
+  "updated_at": "2026-10-31T13:01:21Z",
+  "digest": "sha256:7a4229452a7652d5b20ea3089b2722cb326cb81cfd933f79c886561d2cd797aa",
+  "workflow_run": {
+    "id": 41203292992,
+    "repository_id": 1421128053,
+    "head_repository_id": 1421128053,
+    "head_branch": "remediation/h-required-integration-gates",
+    "head_sha": "0bba923cec0de8ed07da688a57a2f8de3c657216"
+  }
+}

@@ -217,15 +217,21 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
-    "pr": null,
-    "implementation": "",
+    "status": "TESTING",
+    "assigned_branch": "remediation/d-rejected-edit-memory",
+    "pr": 340,
+    "implementation": "Persist deterministic rejected-anchor identity using exact target bytes, find and preceding same-file edits. Block redispatch before patching, including after journal restore; allow corrected arguments or changed actual source.",
     "required_tests": "Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.",
+      "Full Python1505 OK(skip36) on d526ddd."
+    ],
+    "regression_coverage": [
+      "tests/test_rejected_edit_memory.py",
+      "tests/test_execution_recovery.py:test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Runtime repair admission fixed; initial generation rejection protocol and live Task322 replay remain separate. Category-specific five-strategy recovery not complete.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
@@ -668,15 +674,22 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
-    "pr": null,
-    "implementation": "",
+    "status": "TESTING",
+    "assigned_branch": "remediation/c-repair-history-retrieval",
+    "pr": 341,
+    "implementation": "Bounded repair-history index and exact SHA256/paged JSON retrieval through existing tools/journal; replace full recent-plan prompt dump with small index and mark history non-authoritative.",
     "required_tests": "Old failed hypothesis remains retrievable after rotation and restart without entering every prompt.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "28 targeted retrieval/strategy/tool/restart tests passed with >30k historical fixture and independently reconstructed full hash.",
+      "Full Python1509 OK(skip36) on bc04800.",
+      "bc04800 supported unit/browser/Worker/structure and strict real sandbox CI passed; broader generation/archive acceptance remains open."
+    ],
+    "regression_coverage": [
+      "tests/test_repair_history_retrieval.py",
+      "tests/test_execution_recovery.py:test_old_hypothesis_can_be_retrieved_after_large_history_and_runner_restart"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Repair-plan retrieval implemented and supported CI passed; generation-stage events/raw observations across actual archive rotation and general semantic compaction still need acceptance evidence.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
@@ -1224,19 +1237,26 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
-    "pr": null,
-    "implementation": "No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.",
+    "current_classification": "PARTIAL",
+    "status": "TESTING",
+    "assigned_branch": "remediation/f-native-composer-host",
+    "pr": 339,
+    "implementation": "Move native UITextView out of WebKit-managed hierarchy into a sibling UIKit host, convert DOM coordinates to host and reapply retained frame on host layout.",
     "required_tests": "Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.",
     "actual_results": [
       "Native run41136935766/job124341580014:five UI tests passed; release skipped.",
-      "Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained."
+      "Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.",
+      "14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.",
+      "Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified."
     ],
-    "regression_coverage": [],
+    "regression_coverage": [
+      "Unchanged native five-test UI suite",
+      "tests/ios-keyboard-layout.test.mjs",
+      "tests/test_native_build.py",
+      "tests/test_native_evidence.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Fresh supported native run41141346449 reproduces a focused composer with null/offscreen accessibility frame. Four of five UI tests passed; composer case failed two assertions. Device/orientation closure and root fix remain open.",
+    "remaining_limitations": "Supported simulator candidate passes; previous unmodified host also passed on0bba923, confirming intermittency. Do not infer elimination of all races or physical-device closure from one successful candidate. Device/orientation acceptance remains unmeasured.",
     "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
@@ -1359,18 +1379,27 @@
     "deps": "",
     "effort": "M",
     "priority": "P2",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/h-required-integration-gates",
+    "pr": 338,
+    "implementation": "Strict required-integration inventory and observed pass receipts; CI rejects any missing/skipped required Docker/repair/Phase1-3 test and preserves failed receipts.",
     "required_tests": "Critical integration gate cannot pass when all real runtime tests are skipped.",
     "actual_results": [
-      "Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen."
+      "Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen.",
+      "Five negative/positive gate tests and31 policy/infrastructure tests passed. Actual local sandbox module:19 passed/6 required skipped; new gate correctly exits1 despite unittestOK. Full Python1500 OK(skip36) on0bba923.",
+      "Actual supported run41203292992 passed all five strict integration gates; independently downloaded candidate-bound JSON receipts match artifact SHA256. All55 tests passed,0 skipped; required groups include all six real Docker tests."
     ],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "regression_coverage": [
+      "tests/test_required_integration_gate.py"
+    ],
+    "final_evidence": [
+      "evidence/required-positive/artifact-metadata.json",
+      "evidence/required-positive/kappaforge-integration-sandbox.json",
+      "evidence/local-required-sandbox-negative.json",
+      "tests/test_required_integration_gate.py"
+    ],
+    "remaining_limitations": "Verified mandatory integration gates on0bba923; unrelated live/native/device/benchmark coverage remains separately open. No integration/production claim.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {

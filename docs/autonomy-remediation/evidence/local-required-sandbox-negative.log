@@ -1,0 +1,31 @@
+test_fetch_needs_an_allowed_repository_and_a_full_sha_and_keeps_the_token_out (tests.test_sandbox.ArchiveTests.test_fetch_needs_an_allowed_repository_and_a_full_sha_and_keeps_the_token_out) ... ok
+test_only_regular_files_of_the_requested_revision_are_kept (tests.test_sandbox.ArchiveTests.test_only_regular_files_of_the_requested_revision_are_kept) ... ok
+test_unsafe_candidate_paths_and_oversized_files_are_refused (tests.test_sandbox.ArchiveTests.test_unsafe_candidate_paths_and_oversized_files_are_refused) ... ok
+test_close_removes_every_labelled_container_and_volume (tests.test_sandbox.ContainerIsolationTests.test_close_removes_every_labelled_container_and_volume) ... ok
+test_each_command_gets_a_fresh_copy_of_the_uncommitted_candidate (tests.test_sandbox.ContainerIsolationTests.test_each_command_gets_a_fresh_copy_of_the_uncommitted_candidate) ... ok
+test_test_commands_run_without_network_secrets_root_or_writable_system (tests.test_sandbox.ContainerIsolationTests.test_test_commands_run_without_network_secrets_root_or_writable_system) ... ok
+test_the_docker_cli_itself_gets_no_secret_environment (tests.test_sandbox.ContainerIsolationTests.test_the_docker_cli_itself_gets_no_secret_environment) ... ok
+test_without_docker_nothing_runs_and_the_task_is_told_why (tests.test_sandbox.ContainerIsolationTests.test_without_docker_nothing_runs_and_the_task_is_told_why) ... ok
+test_kappa_md_names_the_command_and_must_pass_the_policy (tests.test_sandbox.DetectionTests.test_kappa_md_names_the_command_and_must_pass_the_policy) ... ok
+test_pytest_and_versions_and_no_tests (tests.test_sandbox.DetectionTests.test_pytest_and_versions_and_no_tests) ... ok
+test_tests_are_found_from_the_project_layout (tests.test_sandbox.DetectionTests.test_tests_are_found_from_the_project_layout) ... ok
+test_validation_commands_come_from_the_base_and_a_changed_definition_is_flagged (tests.test_sandbox.DetectionTests.test_validation_commands_come_from_the_base_and_a_changed_definition_is_flagged) ... ok
+test_installs_need_a_lockfile_and_pip_never_builds_from_source (tests.test_sandbox.InstallTests.test_installs_need_a_lockfile_and_pip_never_builds_from_source) ... ok
+test_npm_ci_gets_only_the_manifests_with_network_and_never_runs_lifecycle_scripts (tests.test_sandbox.InstallTests.test_npm_ci_gets_only_the_manifests_with_network_and_never_runs_lifecycle_scripts) ... ok
+test_output_is_bounded_and_redacted (tests.test_sandbox.OutputTests.test_output_is_bounded_and_redacted) ... ok
+test_status_names_what_happened (tests.test_sandbox.OutputTests.test_status_names_what_happened) ... ok
+test_commands_never_get_the_install_profile_or_its_network (tests.test_sandbox.PolicyTests.test_commands_never_get_the_install_profile_or_its_network) ... ok
+test_project_commands_are_allowed (tests.test_sandbox.PolicyTests.test_project_commands_are_allowed) ... ok
+test_unsupported_commands_are_blocked_before_any_container_starts (tests.test_sandbox.PolicyTests.test_unsupported_commands_are_blocked_before_any_container_starts) ... ok
+test_a_full_workspace_disk_fails_the_command_not_the_runner (tests.test_sandbox.RealDockerTests.test_a_full_workspace_disk_fails_the_command_not_the_runner) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+test_faulty_code_fails_then_passes_after_an_uncommitted_fix (tests.test_sandbox.RealDockerTests.test_faulty_code_fails_then_passes_after_an_uncommitted_fix) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+test_npm_ci_installs_the_locked_dependency_for_a_networkless_test_run (tests.test_sandbox.RealDockerTests.test_npm_ci_installs_the_locked_dependency_for_a_networkless_test_run) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+test_pip_installs_wheels_from_requirements_for_a_networkless_test_run (tests.test_sandbox.RealDockerTests.test_pip_installs_wheels_from_requirements_for_a_networkless_test_run) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+test_secrets_network_and_system_files_are_out_of_reach (tests.test_sandbox.RealDockerTests.test_secrets_network_and_system_files_are_out_of_reach) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+test_timeouts_memory_and_output_floods_are_contained (tests.test_sandbox.RealDockerTests.test_timeouts_memory_and_output_floods_are_contained) ... skipped 'real Docker sandbox tests need KAPPA_SANDBOX_INTEGRATION=1 and Docker'
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.030s
+
+OK (skipped=6)
+Required integration: failed — A required test was skipped/not passed, or the suite failed

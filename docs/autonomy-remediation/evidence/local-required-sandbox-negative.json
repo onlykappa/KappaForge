@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "kind": "required_integration",
+  "candidate": "0bba923cec0de8ed07da688a57a2f8de3c657216",
+  "state": "failed",
+  "discovered": 25,
+  "required": {
+    "tests.test_sandbox.RealDockerTests": [
+      "tests.test_sandbox.RealDockerTests.test_a_full_workspace_disk_fails_the_command_not_the_runner",
+      "tests.test_sandbox.RealDockerTests.test_faulty_code_fails_then_passes_after_an_uncommitted_fix",
+      "tests.test_sandbox.RealDockerTests.test_npm_ci_installs_the_locked_dependency_for_a_networkless_test_run",
+      "tests.test_sandbox.RealDockerTests.test_pip_installs_wheels_from_requirements_for_a_networkless_test_run",
+      "tests.test_sandbox.RealDockerTests.test_secrets_network_and_system_files_are_out_of_reach",
+      "tests.test_sandbox.RealDockerTests.test_timeouts_memory_and_output_floods_are_contained"
+    ]
+  },
+  "counts": {
+    "total": 25,
+    "passed": 19,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 6,
+    "expectedFailures": 0,
+    "unexpectedSuccesses": 0
+  },
+  "requiredPassed": 0,
+  "requiredNotPassed": [
+    "tests.test_sandbox.RealDockerTests.test_a_full_workspace_disk_fails_the_command_not_the_runner",
+    "tests.test_sandbox.RealDockerTests.test_faulty_code_fails_then_passes_after_an_uncommitted_fix",
+    "tests.test_sandbox.RealDockerTests.test_npm_ci_installs_the_locked_dependency_for_a_networkless_test_run",
+    "tests.test_sandbox.RealDockerTests.test_pip_installs_wheels_from_requirements_for_a_networkless_test_run",
+    "tests.test_sandbox.RealDockerTests.test_secrets_network_and_system_files_are_out_of_reach",
+    "tests.test_sandbox.RealDockerTests.test_timeouts_memory_and_output_floods_are_contained"
+  ],
+  "reason": "A required test was skipped/not passed, or the suite failed"
+}

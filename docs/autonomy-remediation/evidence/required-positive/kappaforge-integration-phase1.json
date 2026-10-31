@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "kind": "required_integration",
+  "candidate": "0bba923cec0de8ed07da688a57a2f8de3c657216",
+  "state": "passed",
+  "discovered": 18,
+  "required": {
+    "tests.test_phase1_acceptance.RealSandboxAcceptance": [
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_a_repair_cannot_swap_the_failing_npm_script_for_a_passing_one",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_all_budgeted_repair_attempts_are_separately_recorded",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_candidate_code_executes_in_the_sandbox_before_any_publication",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_checkpoints_survive_interruption",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_compatible_root_causes_can_be_repaired_in_one_batch",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_failed_work_never_reports_successful_validation",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_identical_failed_approaches_are_detected",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_no_commit_is_created_during_ordinary_candidate_repair",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_secrets_are_inaccessible_to_candidate_execution",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_test_failures_trigger_targeted_code_changes",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_the_fixture_fails_initially_and_passes_only_after_an_agent_driven_repair",
+      "tests.test_phase1_acceptance.RealSandboxAcceptance.test_untrusted_repositories_cannot_escalate_permissions"
+    ]
+  },
+  "counts": {
+    "total": 18,
+    "passed": 18,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "expectedFailures": 0,
+    "unexpectedSuccesses": 0
+  },
+  "requiredPassed": 12,
+  "requiredNotPassed": [],
+  "reason": "Every required test actually passed"
+}
