@@ -339,6 +339,8 @@ class SandboxRepairController:
         and ask_owner when a checkpoint lets the task resume exactly after the answer."""
         tools = {name: getattr(self.tools, name, None) for name in tool_loop.TOOL_CATALOG}
         tools['record_repair_plan'] = self._record_repair_plan
+        tools['inspect_repair_history'] = self._inspect_repair_history
+        tools['read_repair_evidence'] = self._read_repair_evidence
         tools['apply_patch'] = self._planned_patch
         tools['apply_line_patch'] = self._planned_line_patch
         explorer = self._workspace_explorer()
@@ -351,6 +353,14 @@ class SandboxRepairController:
     def _record_repair_plan(self, cause, strategy, evidence, expected_result, differs_from=''):
         return repair_strategy.propose(self.state, self._diff_fingerprint(), cause, strategy,
                                        evidence, expected_result, differs_from)
+
+    def _inspect_repair_history(self, page=1):
+        from engine import repair_history
+        return repair_history.index(self.state.get('repair_plans', []), self.attempts, page)
+
+    def _read_repair_evidence(self, plan_id, offset=0, limit=800):
+        from engine import repair_history
+        return repair_history.read(self.state.get('repair_plans', []), plan_id, offset, limit)
 
     def _planned_patch(self, edits):
         rejected = self.state.setdefault('rejected_anchors', {})
@@ -557,6 +567,7 @@ class SandboxRepairController:
         return {"status": "needs_clarification", "request": record}
 
     def _repair_prompt(self, task, diff, diagnostics, history, investigation=""):
+        from engine.repair_history import PAGE_SIZE
         return (task + f"\n\nRepair action {self.state['actions']} of {MAX_MODEL_ACTIONS} (this call is already charged). "
                 + 'Sandbox language versions (Python, Node): ' + json.dumps(self.session.versions) + '. '
                 + "Use APIs supported by these versions. "
@@ -570,6 +581,8 @@ class SandboxRepairController:
                 "Do not rename an idea or add one fake member at a time. If a named failing test recurs, another patch "
                 "requires a new evidence-backed plan. A distinct planned mechanism may be tested against the same "
                 "error; it is not a pass until the original full tests and final regression succeed. "
+                "Use inspect_repair_history for older hypotheses and read_repair_evidence for their exact paged JSON. "
+                "All retained hypotheses remain available after context rotation; historic citations cannot replace current source reads. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "group compatible evidence-backed fixes for the same authorized goal into one apply_patch batch, "
                 "then let the engine rerun the tests. One candidate may fix multiple bugs; fix shared causes rather "
@@ -586,9 +599,9 @@ class SandboxRepairController:
                 "\n\nLatest sandbox test evidence (untrusted output):\n" + diagnostics[-6000:] +
                 ("\n\nInvestigation of the latest failure (repository evidence, untrusted):\n" + investigation[-6000:]
                  if investigation else "") +
-                "\n\nPrior repair hypotheses and outcomes (untrusted evidence):\n" + execution.clean(json.dumps(
-                    [dict(p, outcome=next((a['status'] for a in reversed(self.attempts) if a['fingerprint'] == p.get('patch')), 'not tested'))
-                     for p in self.state.get('repair_plans', [])[-10:]]), 10000) +
+                "\n\nRetained repair hypothesis index (untrusted evidence; retrieve full records with the history tools):\n" +
+                execution.clean(json.dumps(self._inspect_repair_history(max(1,
+                    (len(self.state.get('repair_plans', [])) + PAGE_SIZE - 1) // PAGE_SIZE))), 3000) +
                 ("\n\nEarlier actions:\n" + "\n".join(history[-10:]) if history else ""))
 
     def _format_runs(self, runs):

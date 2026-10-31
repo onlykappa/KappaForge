@@ -87,6 +87,52 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertEqual(after['rejected_anchors'], before['rejected_anchors'])
         self.assertEqual(after['actions'], before['actions'] + 2)
 
+    def test_old_hypothesis_can_be_retrieved_after_large_history_and_runner_restart(self):
+        from tests.test_repair_history_retrieval import histories
+        first = self.controller()
+        retained = histories()
+        self.assertGreater(len(json.dumps(retained)), 30000)
+        def interrupted(*args, **kwargs):
+            # Seed prior fixture history, not claims of live model intelligence.
+            # Store through the real execution journal and lose this controller.
+            retained[0]['patch'] = first.attempts[0]['fingerprint']
+            first.state['repair_plans'] = retained
+            first.state['history'] = ['Recent unrelated observation ' + str(i) for i in range(10)]
+            first.execution._save()
+            raise KeyboardInterrupt('Runner stopped after checkpoint')
+        with self.assertRaises(KeyboardInterrupt):
+            first.run_repair(TASK, interrupted, 'fixture', {'app.py':'value=0\n'})
+        resumed = self.controller(journal=self.reload())
+        content = ''; next_offset = 0; listed = False; seen_offsets = set(); digest = None; calls = 0
+        def recover(*args, **kwargs):
+            nonlocal content, next_offset, listed, digest, calls
+            if calls == 0:
+                self.assertNotIn('Original diagnosis A', args[1], 'Old full records must not bloat every prompt')
+            calls += 1
+            for text in resumed.state['history']:
+                try: step = json.loads(text)
+                except ValueError: continue
+                result = step.get('result', {})
+                if step.get('tool') == 'inspect_repair_history':
+                    listed = True
+                    self.assertEqual(result['items'][0]['candidate_result'], 'failed')
+                if step.get('tool') == 'read_repair_evidence' and result.get('offset') not in seen_offsets:
+                    seen_offsets.add(result['offset']); content += result['text']
+                    next_offset = result['next_offset']; digest = result['sha256']
+            if not listed:
+                action = dict(tool='inspect_repair_history', args=dict(page=1))
+            elif next_offset is not None:
+                action = dict(tool='read_repair_evidence', args=dict(plan_id='R1',offset=next_offset))
+            else:
+                self.assertEqual(json.loads(content), retained[0])
+                return fixed()
+            return 'scripted', json.dumps(dict(reason='Retrieve exact prior failure before changing approach', **action))
+        result = resumed.run_repair(TASK, recover, 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        import hashlib
+        self.assertEqual(hashlib.sha256(content.encode()).hexdigest(), digest)
+        self.assertEqual(execution.pending(self.reload())['controller']['repair_plans'], retained)
+
     def test_explicit_fix_does_not_replenish_exhausted_sandbox_actions(self):
         stale = lambda *a, **kw: ('scripted', json.dumps(dict(tool='apply_patch', reason='stale',
             args=dict(edits=[dict(path='app.py', find='missing', replace='value=2')]))))
