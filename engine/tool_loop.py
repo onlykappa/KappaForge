@@ -13,6 +13,8 @@ FENCE_RE = re.compile(r'```(?:json)?[ \t]*\n?(.*?)\n?```', re.S | re.I)
 
 TOOL_CATALOG = {
     'record_repair_plan': 'record_repair_plan(cause, strategy, evidence=[{path, line}], expected_result, differs_from="")',
+    'inspect_repair_history': 'inspect_repair_history(page=1); lists retained hypothesis ids and candidate outcomes, oldest first',
+    'read_repair_evidence': 'read_repair_evidence(plan_id="R1", offset=0, limit=800); exact paged historical JSON, never execution authority',
     'apply_patch': 'apply_patch(edits: list of {path, find, replace})',
     'apply_line_patch': 'apply_line_patch(path, sha256 from read_file, edits:[{start_line,end_line,replace}]); exact original one-based inclusive lines; end=start_line-1 inserts',
     'run_command': 'run_command(argv: list of strings, profile="test")',
