@@ -31,13 +31,13 @@ test('the Mistral classifier decides when the message is not obvious, and rules 
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CHAT_PROVIDERS:'gemini,mistral',KAPPA_ALL_MODEL_PROVIDERS:'*',MISTRAL_API_KEY:'k',MEMORY:memory()};
  let answer='complex';
  globalThis.fetch=async(url,init)=>{const u=String(url);seen.push(u);
-  if(u.endsWith('/models'))return Response.json({data:[{id:'ministral-3b-latest',capabilities:{completion_chat:true}},{id:'codestral-latest',capabilities:{completion_chat:true}}]});
-  if(u.endsWith('/chat/completions')){const body=JSON.parse(init.body);assert.equal(body.model,'ministral-3b-latest');assert.equal(body.max_tokens,4);return Response.json({choices:[{message:{content:answer},finish_reason:'stop'}],usage:{prompt_tokens:60,completion_tokens:1,total_tokens:61}});}
+  if(u.endsWith('/models'))return Response.json({data:[{id:'mistral-small-latest',capabilities:{completion_chat:true}},{id:'codestral-latest',capabilities:{completion_chat:true}}]});
+  if(u.endsWith('/chat/completions')){const body=JSON.parse(init.body);assert.equal(body.model,'mistral-small-latest');assert.equal(body.max_tokens,4);return Response.json({choices:[{message:{content:answer},finish_reason:'stop'}],usage:{prompt_tokens:60,completion_tokens:1,total_tokens:61}});}
   return new Response('{}',{status:404});};
  try{
   assert.deepEqual(await chooseTier(env,'hi'),{tier:'simple',by:'rules'});
   assert.equal(seen.length,0,'a greeting costs no classifier call');
-  assert.deepEqual(await chooseTier(env,'How should I think about the long-term plan for my app and its users?'),{tier:'complex',by:'mistral',model:'mistral:ministral-3b-latest'});
+  assert.deepEqual(await chooseTier(env,'How should I think about the long-term plan for my app and its users?'),{tier:'complex',by:'mistral',model:'mistral:mistral-small-latest'});
   answer='banana';
   assert.equal((await chooseTier(env,'Tell me about the history of the Roman empire and its roads')).by,'rules','an unusable answer falls back to rules');
   assert.equal((await chooseTier(env,'Tell me about the history of the Roman empire and its roads',{disabled:new Set(['mistral'])})).by,'rules','a device that turned Mistral off never sends it the message');
@@ -46,20 +46,20 @@ test('the Mistral classifier decides when the message is not obvious, and rules 
 
 test('one chat message reaches at most three models that start answering',async()=>{
  const {default:worker}=await import('../chat-backend/src/index.js');
- let instant=false;const real=globalThis.fetch,sent=[],models=['ministral-14b-latest','ministral-8b-latest','codestral-latest','voxtral-small-latest','mistral-code-latest'];
+ let instant=false;const real=globalThis.fetch,sent=[],models=['fixture/ministral-14b:free','fixture/ministral-8b:free','fixture/codestral:free','fixture/mistral-slow:free','fixture/mistral-code:free'];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
   if(u.endsWith('/models'))return Response.json({data:models.map(id=>({id,capabilities:{completion_chat:true}}))});
   if(init.method==='POST'&&u.endsWith('/chat/completions')){sent.push(JSON.parse(init.body).model);return instant?new Response('{}',{status:500}):new Response('not json',{status:200});}
   return new Response('{}',{status:404});};
  try{
-  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CHAT_PROVIDERS:'mistral',CHAT_ACCESS_TOKEN:'owner-token',MISTRAL_API_KEY:'k-send-cap',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory()};
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'kilo',KAPPA_CHAT_PROVIDERS:'kilo',CHAT_ACCESS_TOKEN:'owner-token',KILO_API_KEY:'k-send-cap',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory()};
   const r=await worker.fetch(new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify({messages:[{role:'user',text:'hi'}],preferences:{fallback:true}})}),env);
   assert.ok(r.status>=500);
   assert.equal(sent.length,3,'five failing models, three tries: '+sent.join(', '));
-  assert.equal(sent[0],'ministral-8b-latest','a greeting goes to the simple tier first');
+  assert.equal(sent[0],'fixture/ministral-8b:free','a greeting goes to the simple tier first');
   // Instant refusals (needs payment, busy) never started a reply, so they do not use up the three sends.
   instant=true;sent.length=0;
-  const again=await worker.fetch(new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify({messages:[{role:'user',text:'hello there'}],preferences:{fallback:true}})}),{...env,MISTRAL_API_KEY:'k-send-cap-2',MEMORY:memory()});
+  const again=await worker.fetch(new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify({messages:[{role:'user',text:'hello there'}],preferences:{fallback:true}})}),{...env,KILO_API_KEY:'k-send-cap-2',MEMORY:memory()});
   assert.ok(again.status>=500);
   assert.equal(sent.length,5,'every model that refused at once was still tried: '+sent.join(', '));
  }finally{globalThis.fetch=real;}

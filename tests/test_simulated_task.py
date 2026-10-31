@@ -198,7 +198,10 @@ class SimulatedTask(unittest.TestCase):
             "status": "success", "stop_reason": "validated", "summary": "simulated tests passed",
             "candidate_changes": dict(changes), "test_results": [{"status": "passed", "ran": 1}],
             "attempts": [], "models": [], "logs": "simulated test pass"}
-        with patch.dict(os.environ, env), patch.object(developer, "gh", side_effect=world.gh), \
+        # Simulated free eligibility for this fault-injection account, not a
+        # production claim that an unreviewed Ollama catalog is free.
+        with patch.dict(runner.PROVIDERS['providers']['ollama'],{'freeModels':['deepseek-v4-pro']}), \
+                patch.dict(os.environ, env), patch.object(developer, "gh", side_effect=world.gh), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=world.urlopen), patch("engine.runner.time.sleep"), \
                 patch("engine.native_build.dispatch"), patch.object(developer, "run_sandbox_repair", side_effect=sandbox_success):
             url = developer.produce_development_pr(TASK, "sim-gemini", "sim-token")

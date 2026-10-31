@@ -1,3 +1,4 @@
+import {reviewedProviderFixture} from './reviewed-provider-fixture.mjs';
 import './weather.test.mjs';
 import './recovery-wake.test.mjs';
 import './cloud.mjs';
@@ -242,6 +243,7 @@ test('free providers take over when Gemini is rate limited, with live model disc
 });
 
 test('fallback providers stream through the same reply protocol, including Workers AI without finish reasons',async()=>{
+ const restore=reviewedProviderFixture('workers-ai',['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast']);
  const original=globalThis.fetch,state=memoryState(),vault=new KappaMemory(state),work=[];
  const sse=frames=>new ReadableStream({start(c){for(const f of frames)c.enqueue(new TextEncoder().encode('data: '+f+'\n\n'));c.close()}});
  const ai={run:async(model,body)=>{assert.equal(body.stream,true);assert.equal(body.messages[0].role,'system');return sse([JSON.stringify({response:'Edge '}),JSON.stringify({response:'answer',usage:{prompt_tokens:5,completion_tokens:2,total_tokens:7}}),'[DONE]'])}};
@@ -254,7 +256,7 @@ test('fallback providers stream through the same reply protocol, including Worke
   const r=await worker.fetch(req('/chat',{stream:true,messages:[{role:'user',text:'hello'}]}),env,{waitUntil:p=>work.push(p)});
   const packets=(await r.text()).trim().split('\n').map(JSON.parse);await Promise.all(work);
   assert.equal(packets.at(-1).type,'done');assert.equal(packets.at(-1).reply,'Edge answer');assert.match(packets.at(-1).model,/^workers-ai:@cf\//);assert.equal(packets.at(-1).usage.total,7);
- }finally{globalThis.fetch=original}
+ }finally{globalThis.fetch=original;restore()}
 });
 
 test('keyless providers answer anonymously, fixed free lists skip discovery, and the summary links key signup',async()=>{

@@ -24,11 +24,11 @@ test('text that would break a PDF string is escaped and long reasons wrap',()=>{
 test('the models-list endpoint groups models in use, tools and removed models with reasons',async()=>{
  const {modelCatalog}=await import('../chat-backend/src/model-probe.js');
  const original=globalThis.fetch;
- globalThis.fetch=async()=>Response.json({data:['codestral-latest','voxtral-mini-latest'].map(id=>({id,capabilities:{completion_chat:true}}))});
+ globalThis.fetch=async()=>Response.json({data:['mistral-small-latest','voxtral-mini-latest'].map(id=>({id,capabilities:{completion_chat:true}}))});
  try{
   const list=await modelCatalog({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CHAT_PROVIDERS:'mistral',MISTRAL_API_KEY:'list-'+Math.random()});
   const mistral=list.providers.find(p=>p.id==='mistral');
-  assert.ok(mistral.models.includes('codestral-latest'));assert.ok(!mistral.models.includes('voxtral-mini-latest'),'a tool is not in use for chat');
+  assert.ok(mistral.models.includes('mistral-small-latest'));assert.ok(!mistral.models.includes('voxtral-mini-latest'),'a tool is not in use for chat');
   assert.ok(mistral.tools.some(t=>t.model==='voxtral-mini-latest'&&t.kind==='Audio'));
   const nvidia=list.providers.find(p=>p.id==='nvidia');
   assert.ok(nvidia.removed.length>40&&nvidia.removed.every(r=>r.reason),'removed models carry their reason even when the provider is not checked');

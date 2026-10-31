@@ -306,7 +306,8 @@ class ProviderHealthTests(unittest.TestCase):
         self.env=patch.dict(os.environ,{'FIXTURE_KEY':'test-key'});self.env.start();self.addCleanup(self.env.stop)
 
     def test_discovery_403_does_not_repeat_and_other_provider_remains_healthy(self):
-        with patch.object(runner.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('fixture',403,'denied',{},None)) as call:
+        with patch.dict(runner.PROVIDERS['providers']['fixture'],{'freeModels':['fixture-free-model']}), \
+                patch.object(runner.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('fixture',403,'denied',{},None)) as call:
             self.assertEqual(runner.provider_models('fixture'),[])
             self.now += 86400
             self.assertEqual(runner.provider_models('fixture'),[])
