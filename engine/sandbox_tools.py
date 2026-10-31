@@ -101,7 +101,7 @@ class SandboxTools:
         new_contents: Dict[str, str] = {}
         changed_paths: List[str] = []
         current_files = self.session.current()
-        for edit in edits:
+        for index, edit in enumerate(edits):
             if not isinstance(edit, dict):
                 return {"ok": False, "status": "invalid", "error": "Each edit must be an object"}
             path = edit.get("path")
@@ -130,7 +130,8 @@ class SandboxTools:
                 return {"ok": False, "status": "invalid", "error": f"Empty find string for existing file {path}"}
             count = cur.count(find)
             if count != 1:
-                result = {"ok": False, "status": "invalid", "error": f"Find text occurs {count} times in {path}"}
+                result = {"ok": False, "status": "invalid", "category": "edit_anchor", "path": path,
+                          "edit_index": index, "matches": count, "error": f"Find text occurs {count} times in {path}"}
                 # A stale multi-line edit often still names the current definition.
                 # Supply a read lead, never a fuzzy replacement or source authority.
                 hint = patch_read_hint(path, find, cur)
