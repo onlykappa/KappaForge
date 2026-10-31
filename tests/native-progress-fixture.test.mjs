@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -61,7 +62,7 @@ test('native fixture exercises the production Retry control and exact authorizat
   localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},backend:'',access:'',trackedJobs:[],chats:[],current:'',view:'',jobPollAfter:0,
   checkJobResult(){throw Error('No live issue polling')},recordRoute(){},operationContext:()=>({}),writeHistoryRecord:(number,state)=>proofs.push({history:{number,state}}),mergeTaskHistory(){},ensureTaskCard(){},persistJobs(){},save(){},render(){},scrollTo(){},confirm:()=>true,toast(){},alert:m=>{throw Error(m)},
   document:{createElement:()=>({style:{},remove(){}}),body:{append:b=>proofs.push(b)}}};
- vm.createContext(box);vm.runInContext(source,box);
+ installTransport(box);vm.createContext(box);vm.runInContext(source,box);
  const app=read('preview/app-tasks.js');
  vm.runInContext(app.slice(app.indexOf('const operationQueue='),app.indexOf('// What the app does')),box);
  vm.runInContext(app.slice(app.indexOf('async function userAuthorizedFetch('),app.indexOf('// Guidance or a retry')),box);

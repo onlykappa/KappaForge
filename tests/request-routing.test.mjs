@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -24,7 +25,7 @@ function app(jobs=[],savedStore){
   acceptTaskRetry(){},KappaJobs:{...globalThis.KappaJobs,conversationContext:()=>''},userAuthorizedFetch:async(path,payload,text)=>{calls.push({path,payload:JSON.parse(JSON.stringify(payload)),text});return Response.json({message:'Dispatch requested.',status:'dispatch_requested'})},
   proposeTaskAutomatically:async(text,_notify,_context,id,_chat,options)=>{calls.push({text,id,options:JSON.parse(JSON.stringify(options))});Object.assign(options.receipt,{status:'dispatched'});return true;},
   fetch:async()=>{throw Error('No arbitrary network or model calls')}};
- vm.createContext(box);const source=read('preview/app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
+ installTransport(box);vm.createContext(box);const source=read('preview/app-tasks.js');vm.runInContext(source.slice(0,source.indexOf('// What the app does')),box);
  vm.runInContext(source.slice(source.indexOf('function requestHasTask('),source.indexOf('async function userAuthorizedFetch(')),box);
  const send=async text=>{chat.messages.push({role:'user',text});const plan=box.chatTaskPlan(text,chat);await box.runChatAction(plan,text,chat);return chat.messages.at(-1);};
  return {box,chat,store,calls,send,jobs:()=>JSON.parse(vm.runInContext('JSON.stringify(trackedJobs)',box))};
