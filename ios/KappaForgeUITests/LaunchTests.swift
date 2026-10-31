@@ -68,6 +68,28 @@ final class LaunchTests: XCTestCase {
         }
         XCTAssertTrue(web.staticTexts["KappaForge could not start"].exists == false, "App should remain running after opening Settings")
     }
+    func testConnectionEnrollmentUsesNativeSecureInputAndRejectsUnsafeURL() {
+        let app = XCUIApplication(); app.launch()
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 60))
+        let more = web.buttons["More"]; XCTAssertTrue(more.waitForExistence(timeout: 60)); more.tap()
+        let settings = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings")).firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 15)); settings.tap()
+        let connect = web.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Connect AI")).firstMatch
+        XCTAssertTrue(connect.waitForExistence(timeout: 30)); connect.tap()
+        let dialog = app.alerts["Secure AI connection"]
+        XCTAssertTrue(dialog.waitForExistence(timeout: 10), "Owner enrollment must use native controls")
+        let secure = dialog.secureTextFields["Owner credential"]
+        XCTAssertTrue(secure.exists)
+        let backend = dialog.textFields.firstMatch; backend.tap(); backend.typeText("http://unsafe.workers.dev")
+        secure.tap(); secure.typeText("isolated-owner-fixture")
+        dialog.buttons["Enroll device"].tap()
+        let rejected = app.alerts["Connection not changed"]
+        XCTAssertTrue(rejected.waitForExistence(timeout: 10), "Unsafe origin must fail before network use")
+        rejected.buttons["OK"].tap()
+        XCTAssertFalse(web.staticTexts["KappaForge could not start"].exists)
+    }
+
     func testComposerRemainsBelowHeaderWhenKeyboardOpens() {
         let app = XCUIApplication()
         app.launch()

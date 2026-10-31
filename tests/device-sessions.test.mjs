@@ -152,3 +152,29 @@ test('copied device identity and failed atomic storage never grant authenticatio
  assert.equal((await w.call('/sessions',device.refreshToken,{op:'renew'})).status,503);
  assert.equal((await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,{op:'enroll',label:'new'})).status,503);
 });
+
+test('renewal credential can disconnect only its own device without owner authority',async()=>{
+ const w=world(),first=await w.enroll(),second=await w.enroll();
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'disconnect',deviceId:second.device.id})).status,400);
+ assert.equal((await w.call('/sessions',first.accessToken,{op:'disconnect'})).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'disconnect'})).status,200);
+ w.objects.clear();
+ assert.equal((await w.call('/diagnostics',first.accessToken)).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'renew'})).status,401);
+ assert.equal((await w.call('/diagnostics',second.accessToken)).status,200);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'enroll',label:'forbidden'})).status,403);
+});
+
+test('explicit owner reenrollment atomically replaces credentials without reviving old access',async()=>{
+ const w=world(),first=await w.enroll();
+ await w.call('/sessions',first.refreshToken,{op:'disconnect'});
+ const body={op:'reenroll',deviceId:first.device.id,label:'Recovered phone'};
+ assert.equal((await w.call('/sessions',first.refreshToken,body)).status,403);
+ const response=await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,body);assert.equal(response.status,201);
+ const next=await response.json();assert.equal(next.device.id,first.device.id);assert.notEqual(next.refreshToken,first.refreshToken);
+ w.objects.clear();
+ assert.equal((await w.call('/diagnostics',first.accessToken)).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'renew'})).status,401);
+ assert.equal((await w.call('/diagnostics',next.accessToken)).status,200);
+ const list=await(await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,{op:'list'})).json();assert.equal(list.devices.length,1);
+});

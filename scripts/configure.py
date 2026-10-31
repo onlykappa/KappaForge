@@ -22,7 +22,8 @@ def generated(config):
     project=ROOT/'ios/project.yml'
     text=project.read_text()
     text=re.sub(r"MARKETING_VERSION: '[^']+'", "MARKETING_VERSION: '"+config['version']+"'",text)
-    text=re.sub(r'PRODUCT_BUNDLE_IDENTIFIER: [^\n]+',lambda m:'PRODUCT_BUNDLE_IDENTIFIER: '+config['iosBundleIdentifier']+('.UITests' if m[0].endswith('.UITests') else ''),text)
+    text=re.sub(r'PRODUCT_BUNDLE_IDENTIFIER: [^\n]+',lambda m:'PRODUCT_BUNDLE_IDENTIFIER: '+config['iosBundleIdentifier']+
+                next((suffix for suffix in ('.UITests','.SessionTests') if m[0].endswith(suffix)),''),text)
     files[project]=text
     for name in ['package.json','chat-backend/package.json']:
         path=ROOT/name;data=json.loads(path.read_text());data['version']=config['version'];files[path]=json.dumps(data,indent=2)+'\n'

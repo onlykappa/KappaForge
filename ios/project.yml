@@ -36,6 +36,7 @@ targets:
     scheme:
       testTargets:
         - KappaForgeUITests
+        - KappaForgeSessionTests
   KappaForgeUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -46,6 +47,20 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge.UITests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.9'
+        CODE_SIGNING_ALLOWED: NO
+
+  KappaForgeSessionTests:
+    type: bundle.unit-testing
+    platform: iOS
+    sources:
+      - path: KappaForgeSessionTests
+    dependencies:
+      - target: KappaForge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge.SessionTests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: '5.9'
         CODE_SIGNING_ALLOWED: NO

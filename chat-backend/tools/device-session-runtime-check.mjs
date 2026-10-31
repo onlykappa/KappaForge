@@ -56,11 +56,20 @@ try{
  assert.equal((await client.fetch('/diagnostics')).status,401,'Revoked client receives the real denial');
  assert.equal(clientSends,before+1,'Authentication failure never silently replays a request');
  assert.equal(clientRenewals,1,'Revoked request is not automatically renewed');
+ const reEnrollment=await call('/sessions',owner,{op:'reenroll',deviceId:device.device.id,label:'Recovered isolated fixture'});
+ assert.equal(reEnrollment.status,201);const recovered=await reEnrollment.json();
+ assert.equal((await call('/diagnostics',device.accessToken)).status,401);
+ assert.equal((await call('/sessions',device.refreshToken,{op:'renew'})).status,401);
+ assert.equal((await call('/diagnostics',recovered.accessToken)).status,200);
+ assert.equal((await call('/sessions',recovered.refreshToken,{op:'disconnect'})).status,200);
+ await mf.dispose();mf=undefined;await start();
+ assert.equal((await call('/diagnostics',recovered.accessToken)).status,401);
+ assert.equal((await call('/sessions',recovered.refreshToken,{op:'renew'})).status,401);
  assert.equal(unexpected,0,'No provider/network requests may occur');
  console.log(JSON.stringify({runtime:'workerd',storage:'SQLite',deviceAccess:true,restartPersistence:true,
   revocationPersisted:true,renewalDeniedAfterRevocation:true,rootSeparated:true,privilegeBoundaries:true,
   unexpectedNetwork:unexpected,production:false,inference:false,frontendTransport:true,clientRevocationDenied:true,
-  nativeEnrollment:'not_implemented',frontendCredentialCleanup:'not_implemented'}));
+  selfDisconnectPersisted:true,ownerReenrollmentRotatedSecrets:true,nativeRuntime:'not_executed_by_this_check'}));
 }finally{
  await mf?.dispose();await rm(directory,{recursive:true,force:true});
 }

@@ -1,0 +1,63 @@
+{
+  "branch": "remediation/a-native-device-auth",
+  "production": false,
+  "inference": false,
+  "node": {
+    "passed": 962,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 22.174
+  },
+  "focused": {
+    "passed": 48,
+    "failed": 0,
+    "skipped": 0
+  },
+  "nativeXcode": {
+    "executedLocally": false,
+    "reason": "No Swift/Xcode in managed Linux; supported macOS CI required",
+    "addedSwiftTests": 5,
+    "addedUITests": 1,
+    "existingUITestsRetained": 5
+  },
+  "logs": {
+    "native-device-auth-node.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/native-device-auth-node.log",
+      "sha256": "154729f223ba875b5a5414bcb24ee22f1cefae114d1bc3ae57f71263d266a46f",
+      "bytes": 91510
+    },
+    "native-device-auth-targeted.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/native-device-auth-targeted.log",
+      "sha256": "9edeea0497cc41b279616142310aff42b504a176c3dd25cc2d4a4210c6eca446",
+      "bytes": 4800
+    },
+    "native-device-auth-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/native-device-auth-security.log",
+      "sha256": "655dbf183da3c10bf22ed158f093ac3affc12956aa95d207cdf557be0fc1f2dc",
+      "bytes": 23130
+    },
+    "native-device-auth-workerd.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/native-device-auth-workerd.log",
+      "sha256": "7849a5989daf318f18921a5206a9cc66c1ca32a35b88ff24d859c7e6ba7772f5",
+      "bytes": 427
+    }
+  },
+  "workerd": {
+    "runtime": "workerd",
+    "storage": "SQLite",
+    "deviceAccess": true,
+    "restartPersistence": true,
+    "revocationPersisted": true,
+    "renewalDeniedAfterRevocation": true,
+    "rootSeparated": true,
+    "privilegeBoundaries": true,
+    "unexpectedNetwork": 0,
+    "production": false,
+    "inference": false,
+    "frontendTransport": true,
+    "clientRevocationDenied": true,
+    "selfDisconnectPersisted": true,
+    "ownerReenrollmentRotatedSecrets": true,
+    "nativeRuntime": "not_executed_by_this_check"
+  }
+}

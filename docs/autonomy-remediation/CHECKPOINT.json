@@ -26,7 +26,8 @@
     341,
     342,
     343,
-    344
+    344,
+    345
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -55,11 +56,11 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/a-auth-transport",
-    "base": "3ddb7f4362c04b9b7ea9923a5a524f6c75885842",
-    "scope": "037 centralized client transport; secure native enrollment/long-lived credential removal still required",
-    "focusedEvidence": "135 affected tests passed and real workerd client restart/revocation passed",
-    "next": "Publish transport draft, collect composed CI once, implement native secure enrollment and bridge without long-lived page credentials."
+    "branch": "remediation/a-native-device-auth",
+    "base": "835c0a38ca67d9f888f67be47717d4795879cc9e",
+    "scope": "037 secure native enrollment/Keychain renewal/bridge; candidate only, no rollout",
+    "localVerification": "Node962,48 focused tests, security and web/config/map/policy passed; actual workerd/SQLite client restart, owner re-enrollment and self-disconnect persisted with zero external traffic.",
+    "next": "Publish native draft, require actual macOS compilation/Keychain/UI checks, repair observed failures, then implement protected-owner/browser migration and continue original phase dependencies."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }
