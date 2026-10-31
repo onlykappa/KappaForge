@@ -71,6 +71,8 @@ jobs:
       working-directory: chat-backend
     - name: Verify persistent automatic recovery alarms in isolated workerd
       run: node chat-backend/tools/recovery-runtime-check.mjs
+    - name: Verify revocable device sessions in isolated workerd
+      run: node chat-backend/tools/device-session-runtime-check.mjs
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

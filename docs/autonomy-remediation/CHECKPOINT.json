@@ -7,9 +7,10 @@
   "statuses": {
     "VERIFIED": 14,
     "TESTING": 8,
-    "INVESTIGATING": 20,
+    "INVESTIGATING": 19,
     "NOT STARTED": 13,
-    "BLOCKED": 6
+    "BLOCKED": 6,
+    "IMPLEMENTING": 1
   },
   "mergedPRs": [],
   "draftPRs": [
@@ -22,7 +23,9 @@
     338,
     339,
     340,
-    341
+    341,
+    342,
+    343
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -41,12 +44,21 @@
     "evidence/ci-2026-10-31.json",
     "evidence/latest-test-excerpts.json",
     "evidence/native-failed-receipt.json",
-    "evidence/native-failed-hierarchy.txt"
+    "evidence/native-failed-hierarchy.txt",
+    "evidence/device-sessions-local.json"
   ],
   "environments": {
     "local": "managed Linux; real GitHub-hosted admission intentionally unavailable; no Xcode",
     "supportedCI": "actual Linux Docker, workerd, browser and macOS simulator executed"
   },
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
-  "mergePolicy": "Specific final owner approval required after validated actual integration state"
+  "mergePolicy": "Specific final owner approval required after validated actual integration state",
+  "activeWorkInProgress": {
+    "branch": "remediation/a-device-sessions",
+    "base": "1ff8f7a0c32546c38a9f998373c62ae9b86400cd",
+    "scope": "037 server session foundation; client migration remains open",
+    "localVerification": "Python1512 OK(skip34), Node945 passed, twelve targeted sessions and actual workerd/SQLite persistent revocation passed",
+    "next": "Publish draft server candidate, continue client transport/native migration with focused checks, collect broad phase evidence on composed candidates."
+  },
+  "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }

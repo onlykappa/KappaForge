@@ -34,6 +34,7 @@ import {recoveryWakeStore,recoveryAlarm,scheduleRecovery,RECOVERY_KEY} from "./r
 import {transcribe,speak} from "./voice.js";
 import {admitDispatch,ExecutionBlocked} from "./free-execution.js";
 import {diagnostics} from './diagnostics.js';
+import {deviceSessionStore,manageDeviceSessions,authenticateDeviceRequest} from './device-sessions.js';
 
 // Persistent account-scoped storage. Authenticated by the existing private Worker token.
 // Browser uploads are encrypted on the device before storage; the Worker cannot decrypt them.
@@ -49,6 +50,7 @@ export class KappaMemory {
   }
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname==='/device-session')return deviceSessionStore(this.state,request);
     if(url.pathname==="/recovery/schedule")return recoveryWakeStore(this.state,this.env,request);
     if(url.pathname.startsWith("/authorization/"))return authorizationStore(this.state,request);
     if(url.pathname.startsWith("/usage"))return usageStore(this.state,request);
@@ -233,13 +235,22 @@ const workerImplementation = {
     const cors = corsHeaders(request);
     if (!cors) return json({ error: "Origin not allowed" }, 403);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST" || !["/diagnostics", "/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium", "/voice/transcribe", "/voice/speak"].includes(new URL(request.url).pathname))
+    if (request.method !== "POST" || !["/sessions", "/diagnostics", "/operation-status", "/operation-capabilities", "/authorize", "/cancel", "/cancel/status", "/chat", "/jobs", "/plan", "/decisions", "/memory", "/integrations/discord", "/index", "/capabilities", "/usage", "/usage/google", "/providers/probe", "/providers/models-list", "/projects/health", "/memory/search", "/github", "/actions", "/actions/control", "/repos", "/review", "/undo", "/guidance", "/retry", "/premium", "/voice/transcribe", "/voice/speak"].includes(new URL(request.url).pathname))
       return json({ error: "Not found" }, 404, cors);
     if (!env.CHAT_ACCESS_TOKEN || (new URL(request.url).pathname==="/plan" && !env.GEMINI_API_KEY && !routePolicy(env).chatProviders.length))
       return json({ error: "Server not configured" }, 503, cors);
     const auth = request.headers.get("Authorization") || "";
-    if (!auth.startsWith("Bearer ") || !safeEqual(auth.slice(7), env.CHAT_ACCESS_TOKEN))
-      return json({ error: "Unauthorized" }, 401, cors);
+    const token=auth.startsWith('Bearer ')?auth.slice(7):'',owner=safeEqual(token,env.CHAT_ACCESS_TOKEN);
+    if(pathname==='/sessions'){
+      const response=await manageDeviceSessions(request,env,token,owner);
+      return new Response(response.body,{status:response.status,headers:{...cors,'Content-Type':'application/json','Cache-Control':'no-store'}});
+    }
+    if(env.SESSION_AUTH_REQUIRED!==undefined&&!['true','false'].includes(env.SESSION_AUTH_REQUIRED))
+      return json({error:'Session authentication policy is not configured correctly'},503,cors);
+    if(!owner||env.SESSION_AUTH_REQUIRED==='true'){
+      const session=await authenticateDeviceRequest(request,env,token);
+      if(session.status!==200)return json({error:session.error},session.status,cors);
+    }
     if(pathname==='/diagnostics')return json(await diagnostics(env),200,{...cors,'Cache-Control':'no-store'});
     if(pathname==='/operation-capabilities'){
       const input=await request.json().catch(()=>null);if(!input)return json({error:'Invalid contract request'},400,cors);
