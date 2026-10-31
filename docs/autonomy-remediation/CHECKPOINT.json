@@ -57,10 +57,14 @@
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
     "branch": "remediation/a-native-device-auth",
-    "base": "835c0a38ca67d9f888f67be47717d4795879cc9e",
+    "base": "fc6fdcf (parent transport HTTPS fixture correction)",
     "scope": "037 secure native enrollment/Keychain renewal/bridge; candidate only, no rollout",
-    "localVerification": "Node962,48 focused tests, security and web/config/map/policy passed; actual workerd/SQLite client restart, owner re-enrollment and self-disconnect persisted with zero external traffic.",
-    "next": "Publish native draft, require actual macOS compilation/Keychain/UI checks, repair observed failures, then implement protected-owner/browser migration and continue original phase dependencies."
+    "localVerification": "Node962,48 focused tests, security and web/config/map/policy passed; actual workerd/SQLite client restart, owner re-enrollment and self-disconnect persisted with zero external traffic. Parent desktop/mobile Chromium HTTPS profiles passed; native XcodeGen declaration corrected, actual native tests still pending.",
+    "next": "Publish corrected native target declaration and collect actual macOS compilation/Keychain/UI results. All61 original acceptance gates retained; no merge approval request yet.",
+    "observedFailures": [
+      "d84cebb native41229597634: XcodeGen unknown bundle.unit-testing; corrected to bundle.unit-test, pending rerun",
+      "835c0a3 browser41229300914: HTTP fixture rejected by HTTPS production transport; parent fixture correction in progress; no policy bypass"
+    ]
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }

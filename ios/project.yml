@@ -52,7 +52,7 @@ targets:
         CODE_SIGNING_ALLOWED: NO
 
   KappaForgeSessionTests:
-    type: bundle.unit-testing
+    type: bundle.unit-test
     platform: iOS
     sources:
       - path: KappaForgeSessionTests
