@@ -9,13 +9,13 @@ import {providerAllowed} from '../chat-backend/src/routing-policy.js';
 const L=globalThis.KappaLimits;
 const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'huggingface',KAPPA_CHAT_PROVIDERS:'huggingface',
  KAPPA_CODE_PROVIDERS:'huggingface',KAPPA_PRIVATE_CODE_PROVIDERS:'huggingface',HUGGINGFACE_API_KEY:'fixture'};
-test('metered Hugging Face requires named paid opt-in, including legacy deployments',async()=>{
+test('metered Hugging Face cannot bypass capped Premium through a legacy opt-in',async()=>{
  for(const policy of ['v1',undefined])for(const opt of ['', '*'])
   assert.equal(providerAllowed({...env,ROUTING_POLICY_VERSION:policy,KAPPA_ALL_MODEL_PROVIDERS:opt},'chat','huggingface'),false);
  assert.deepEqual(await fallbackRoutes(env,[],{},false),[]);
  const opted={...env,KAPPA_ALL_MODEL_PROVIDERS:'huggingface'};
  const routes=await fallbackRoutes(opted,[],{},false);
- assert.deepEqual(routes.map(r=>r.model),registry.providers.huggingface.models);
+ assert.deepEqual(routes,[],'only the capped OpenRouter Premium path may admit paid inference');
  for(const privateCode of [false,true])
   assert.deepEqual(await fallbackRoutes(opted,[],{},false,{channel:'coding',privateCode}),[]);
  assert.equal(registry.providers.huggingface.metered,true);

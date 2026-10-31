@@ -1,5 +1,5 @@
 import registry from '../../config/providers.json' with {type:'json'};
-import {fullCatalog} from './routing-policy.js';
+import {everyFreeModel} from './routing-policy.js';
 export const MODELS=registry.routing?.primary?.freeModels||[];
 export const FLASH=/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-\d{4})?|-latest)?$/;
 const MAX_GEMINI=8,MAX_GEMINI_PAGES=50;
@@ -18,7 +18,7 @@ let discovered={key:'',at:0,models:null};
 const limits=new Map();
 export function geminiLimits(model){return limits.get(model)||{};}
 export async function discover(env){
- const key=env.GEMINI_API_KEY+':'+(fullCatalog(env,'gemini')?'all':env.ROUTING_POLICY_VERSION||'legacy');
+ const key=env.GEMINI_API_KEY+':'+(everyFreeModel(env,'gemini')?'expanded-free-flash':env.ROUTING_POLICY_VERSION||'legacy');
  if(discovered.models&&discovered.key===key&&Date.now()-discovered.at<600000)return discovered.models;
  const available=new Set();let pageToken='';
  for(let page=0;page<MAX_GEMINI_PAGES;page++){
@@ -31,12 +31,10 @@ export async function discover(env){
   }
   pageToken=data.nextPageToken||'';if(!pageToken)break;
  }
- // Discovery confirms the model is currently available. With KAPPA_ALL_MODEL_PROVIDERS including gemini,
- // every chat model this key lists is routed; otherwise the static freeModels allowlist keeps a newly
- // discovered paid or preview model out of automatic fallback.
+ // Discovery confirms availability, never billing eligibility. The reviewed free
+ // allowlist always excludes unreviewed paid/preview models from automatic fallback.
  const sorted=[...available].filter(m=>!REMOVED.has(m)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
- const models=fullCatalog(env,'gemini')?sorted.filter(m=>!EXCLUDE.test(m)):
-  sorted.filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=="v1"||MODELS.includes(m))).slice(0,MAX_GEMINI);
+ const models=sorted.filter(m=>FLASH.test(m)&&(env.ROUTING_POLICY_VERSION!=='v1'||everyFreeModel(env,'gemini')||MODELS.includes(m))).slice(0,MAX_GEMINI);
  if(models.length)discovered={key,at:Date.now(),models};
  return models;
 }

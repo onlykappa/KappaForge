@@ -251,24 +251,21 @@ FLASH_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview(?:-\d{2}-
 
 
 def full_catalog(pid):
-    """Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model a provider account lists, paid ones included.
-
-    "*" excludes free-model gateways (freeOnly) and metered providers, whose paid catalogs require a named opt-in."""
-    listed = {name.strip() for name in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",") if name.strip()}
-    return pid in listed or "*" in listed and not PROVIDERS.get("providers", {}).get(pid, {}).get("freeOnly") and not PROVIDERS.get("providers", {}).get(pid, {}).get("metered")
+    """Legacy full catalogs cannot authorize paid inference outside capped Premium."""
+    return False
 
 def select_models(available):
     """Discovered Gemini models, strongest first: full Flash before Lite, newer before older, stable before preview.
 
-    Only Flash models unless KAPPA_ALL_MODEL_PROVIDERS includes gemini; then every listed chat model, Flash first."""
+    Only the existing free-eligible Flash family; legacy flags never add Pro/paid catalogs.
+    Account billing/quota eligibility still needs an independent operator snapshot."""
     def rank(name):
         m = FLASH_RE.match(name)
         if m:
             return (0, bool(m.group(2)), -float(m.group(1)), bool(m.group(3)), name)
         return (1, False, 0, False, name)
-    everything = full_catalog("gemini")
     return sorted((name for name in available if isinstance(name, str) and name
-                   and (FLASH_RE.match(name) or everything and not re.search(PROVIDERS["exclude"], name, re.I))), key=rank)
+                   and FLASH_RE.match(name)), key=rank)
 
 def provider_headers(p):
     """Bearer auth when a key is set; providers without a key field (or keyOptional) also answer anonymously."""
@@ -278,15 +275,16 @@ def provider_headers(p):
 def provider_models(pid):
     """Chat models for a usable fallback provider, preferred families first: its fixed list, else live discovery.
 
-    Capped at maxModelsPerProvider, and free-only routes for freeOnly providers, unless KAPPA_ALL_MODEL_PROVIDERS lists it."""
+    Reviewed free IDs/routes only. Legacy catalog flags can lift only a free-pool cap."""
     p = PROVIDERS["providers"][pid]
     if provider_paused(provider_identity(pid)):
         return []
     keyed = bool(p.get("key")) and not p.get("keyOptional")
-    if p.get("kind") != "openai" or p.get("agent") is False or (keyed and not os.getenv(p["key"], "")):
+    if (p.get("kind") != "openai" or p.get("agent") is False or p.get('metered')
+            or not (p.get('freeOnly') or p.get('freeModels')) or (keyed and not os.getenv(p["key"], ""))):
         return []
     if p.get("models"):
-        return p["models"] if full_catalog(pid) else p["models"][:PROVIDERS["maxModelsPerProvider"]]
+        return [m for m in p['models'] if m in p.get('freeModels', ())][:PROVIDERS['maxModelsPerProvider']]
     return cached(("provider", pid, os.getenv(p["key"], "") if p.get("key") else ""), lambda: list_provider_models(pid, p))
 
 
@@ -296,7 +294,12 @@ def list_provider_models(pid, p):
     req = urllib.request.Request(p["base"] + "/models", headers=provider_headers(p))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
-            ids = [m['id'] for m in response_models(response_json(response))]
+            rows = response_models(response_json(response))
+            if pid == 'openrouter':
+                ids = [m['id'] for m in rows if isinstance(m.get('pricing'), dict)
+                       and {'prompt', 'completion'} <= m['pricing'].keys() and free_prices(m['pricing'])]
+            else:
+                ids = [m['id'] for m in rows if 'pricing' not in m or free_prices(m['pricing'])]
         provider_success(pid)
     except urllib.error.HTTPError as exc:
         provider_failure(pid, code=exc.code, headers=exc.headers)
@@ -304,15 +307,31 @@ def list_provider_models(pid, p):
     except (urllib.error.URLError, TimeoutError, ValueError, ProviderResponseError, http.client.HTTPException, ConnectionError) as exc:
         provider_failure(pid, error=exc)
         return []
-    everything = full_catalog(pid)
-    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I) and (everything or not p.get("freeOnly") or re.search(r"[:/]free$", m))]
+    ids = [m for m in ids if not re.search(PROVIDERS["exclude"], m, re.I)
+           and (bool(re.search(r"[:/]free$", m)) if p.get('freeOnly') else m in p.get('freeModels', ()))]
     def rank(m):
         found = [i for i, f in enumerate(p.get("prefer", [])) if f in m.lower()]
         return (found[0] if found else 99, m)
     ranked = sorted(ids, key=rank)
-    # "*" uses every free route of a free-model gateway; naming the gateway also admits its paid models.
-    every_free = p.get("freeOnly") and "*" in {n.strip() for n in os.getenv("KAPPA_ALL_MODEL_PROVIDERS", "").split(",")}
-    return ranked if everything or every_free else ranked[:PROVIDERS["maxModelsPerProvider"]]
+    # Both wildcard and named settings expand only the reviewed free pool.
+    listed = {n.strip() for n in os.getenv('KAPPA_ALL_MODEL_PROVIDERS', '').split(',')}
+    every_free = p.get('freeOnly') and ('*' in listed or pid in listed)
+    return ranked if every_free else ranked[:PROVIDERS['maxModelsPerProvider']]
+
+
+def free_prices(pricing):
+    """Malformed/boolean/negative/positive prices are never a free-price receipt."""
+    if not isinstance(pricing, dict) or not pricing:
+        return False
+    for value in pricing.values():
+        if type(value) not in (str, int, float) or isinstance(value, str) and not value.strip():
+            return False
+        try:
+            if float(value) != 0:
+                return False
+        except (ValueError, OverflowError):
+            return False
+    return True
 
 def code_providers(private=False):
     """Fallback providers allowed to receive source code (Gemini, the primary, always is).

@@ -37,6 +37,8 @@ def check_provider(pid):
         return [(pid, "-", "chat only", "used by chat in the app, not by the agent")]
     if p.get("key") and not p.get("keyOptional") and not os.getenv(p["key"], ""):
         return [(pid, "-", "no key", f"add the {p['key']} secret to use it")]
+    if p.get('metered') or not (p.get('freeOnly') or p.get('freeModels')):
+        return [(pid, '-', 'excluded', 'No reviewed free route; catalog flags cannot authorize paid inference')]
     models = runner.provider_models(pid)
     if not models:
         return [(pid, "-", "failed", "the key was refused or no free model was listed")]
@@ -66,7 +68,7 @@ def report(rows):
     lines = [f"## AI providers the agent can use: {ok} model{'s' if ok != 1 else ''} answered", "",
              "| Provider | Model | Status | Detail |", "|---|---|---|---|"]
     for pid, model, status, detail in rows:
-        mark = {"ok": "✅", "failed": "❌", "no key": "➖", "chat only": "➖", "error": "❌"}.get(status, "")
+        mark = {"ok": "✅", "failed": "❌", "no key": "➖", "chat only": "➖", 'excluded':'➖', "error": "❌"}.get(status, "")
         lines.append(f"| {pid}{' (strong)' if pid in strong else ''} | `{model}` | {mark} {status} | {detail} |")
     return "\n".join(lines) + "\n"
 

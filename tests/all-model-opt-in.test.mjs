@@ -13,7 +13,7 @@ const memory=(reservations=[])=>{const vault=new KappaMemory(memoryState());retu
 const chat=body=>new Request('https://worker.test/chat',{method:'POST',headers:{Origin:'https://onlykappa.github.io','Content-Type':'application/json',Authorization:'Bearer owner-token'},body:JSON.stringify(body)});
 const catalog=ids=>Response.json({data:ids.map(id=>({id}))});
 
-test('only providers in KAPPA_ALL_MODEL_PROVIDERS route their full account catalog',async()=>{
+test('legacy catalog flags cannot broaden routing beyond reviewed free pools',async()=>{
  const original=globalThis.fetch,requests=[];
  globalThis.fetch=async url=>{const u=String(url);requests.push(u);
   if(u.startsWith('https://api.groq.com/'))return catalog(['openai/gpt-oss-120b','qwen/qwen3.8-27b','moonshotai/kimi-k2-instruct','openai/gpt-oss-20b','flux-image-gen']);
@@ -21,80 +21,72 @@ test('only providers in KAPPA_ALL_MODEL_PROVIDERS route their full account catal
  };
  try{
   const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq,ollama',GROQ_API_KEY:'opt-in-groq',NVIDIA_API_KEY:'opt-in-nvidia',OLLAMA_API_KEY:'opt-in-ollama'};
-  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','moonshotai/kimi-k2-instruct','openai/gpt-oss-20b'],'no per-provider cap; image models excluded');
+  assert.deepEqual(await providerModels(env,'groq'),['openai/gpt-oss-120b','qwen/qwen3.8-27b','openai/gpt-oss-20b'],'unreviewed and image models excluded');
   assert.deepEqual(await providerModels(env,'nvidia'),['deepseek-ai/deepseek-v4.1-flash'],'providers not opted in keep their reviewed free models');
-  assert.deepEqual(await providerModels(env,'ollama'),['deepseek-ai/deepseek-v4.1-flash','paid/large-model'],'an opted-in provider needs no free review');
+  assert.deepEqual(await providerModels(env,'ollama'),[],'a legacy flag cannot authorize an unreviewed provider');
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',OLLAMA_API_KEY:'opt-out-ollama'},'ollama'),[]);
-  assert.equal(requests.length,3,'an unreviewed provider without opt-in is never discovered');
+  assert.equal(requests.length,2,'unreviewed providers are not discovered even with legacy opt-in');
  }finally{globalThis.fetch=original}
 });
 
-test('"*" opts every provider into its full catalog',async()=>{
+test('"*" cannot turn an unreviewed provider into a free route',async()=>{
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
- assert.equal(providerPolicyStatus(env,'chat','ollama').enabled,true);
+ assert.equal(providerPolicyStatus(env,'chat','ollama').enabled,false);
  assert.equal(providerPolicyStatus(env,'chat','groq').reason,'free_provider_permission','"*" never grants provider permission');
 });
 
-test('the full-catalog opt-in admits an unreviewed provider but never bypasses channel permissions',()=>{
+test('full-catalog flags cannot bypass a missing free-model review',()=>{
  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_FREE_PROVIDERS:'ollama',KAPPA_CHAT_PROVIDERS:'ollama'};
  assert.equal(providerPolicyStatus(env,'chat','ollama').reason,'free_models_unreviewed');
- assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'chat','ollama').enabled,true);
- assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'coding','ollama').reason,'channel_permission');
+ assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'chat','ollama').enabled,false);
+ assert.equal(providerPolicyStatus({...env,KAPPA_ALL_MODEL_PROVIDERS:'ollama'},'coding','ollama').reason,'free_models_unreviewed');
 });
 
-test('Workers AI catalog discovery needs the opt-in and rests a failed lookup on the binding list',async()=>{
- const original=globalThis.fetch,requests=[];let fail=false;
- globalThis.fetch=async(url,init)=>{requests.push({target:new URL(String(url)),auth:init.headers.Authorization});
-  if(fail)return new Response('{}',{status:503});
-  return Response.json({success:true,result:[{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',task:{name:'Text Generation'}},{name:'@cf/zai-org/glm-4.7-flash',task:{name:'Text Generation'}},{name:'@cf/openai/whisper-large-v3-turbo'},{name:'@cf/black-forest-labs/flux-1-schnell'},{name:'@cf/baai/bge-m3',task:{name:'Text Embeddings'}}]});
- };
+test('legacy Workers AI catalog flags cannot grant free eligibility or send an upstream probe',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;throw Error('No unreviewed catalog call is allowed');};
  try{
-  const env={AI:{},KAPPA_ALL_MODEL_PROVIDERS:'workers-ai',CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'};
-  assert.deepEqual(await providerModels(env,'workers-ai'),['@cf/meta/llama-3.3-70b-instruct-fp8-fast','@cf/zai-org/glm-4.7-flash']);
-  assert.equal(requests[0].target.searchParams.get('task'),null,'filtered by each row\'s task, not a query spelling');assert.equal(requests[0].auth,'Bearer read-token-fixture');
-  assert.deepEqual(await providerModels({AI:{},CLOUDFLARE_ACCOUNT_ID:'account-fixture',CLOUDFLARE_API_TOKEN:'read-token-fixture'},'workers-ai'),
-   ['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast'],'without opt-in the binding list is used');
-  assert.equal(requests.length,1);
-  fail=true;const broken={...env,CLOUDFLARE_API_TOKEN:'other-token-fixture'};
-  assert.deepEqual(await providerModels(broken,'workers-ai'),['@cf/zai-org/glm-4.7-flash','@cf/meta/llama-3.3-70b-instruct-fp8-fast']);
-  await providerModels(broken,'workers-ai');
-  assert.equal(requests.length,2,'a failed catalog lookup is not repeated on every request');
+  for(const flag of ['','*','workers-ai']){
+   const env={AI:{},KAPPA_ALL_MODEL_PROVIDERS:flag,CLOUDFLARE_ACCOUNT_ID:'fixture',CLOUDFLARE_API_TOKEN:'fixture'};
+   assert.deepEqual(await providerModels(env,'workers-ai'),[]);
+  }
+  assert.equal(calls,0);
  }finally{globalThis.fetch=original}
 });
 
-test('Gemini full catalog skips non-chat models and uses each model\'s own context limit',async()=>{
+test('Gemini free-Flash expansion skips Pro/non-chat models and respects each free model context',async()=>{
  const original=globalThis.fetch;
- const models=[['gemini-3.8-flash',1048576],['gemini-3-pro',1048576],['gemma-4-27b-it',8192],['gemini-2.5-flash-image',32768],['gemini-2.5-flash-preview-tts',8192],['gemini-2.5-computer-use-preview',131072]];
+ const models=[['gemini-3.8-flash',1048576],['gemini-3-pro',1048576],['gemini-3.6-flash-lite',8192],['gemini-2.5-flash-image',32768],['gemini-2.5-flash-preview-tts',8192],['gemini-2.5-computer-use-preview',131072]];
  globalThis.fetch=async()=>Response.json({models:models.map(([n,limit])=>({name:'models/'+n,supportedGenerationMethods:['generateContent'],inputTokenLimit:limit,outputTokenLimit:8192}))});
  try{
   const env={ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'gemini-all-fixture',KAPPA_ALL_MODEL_PROVIDERS:'gemini',KAPPA_FREE_PROVIDERS:'gemini',KAPPA_CHAT_PROVIDERS:'gemini'};
   const found=await discover(env);
-  assert.deepEqual(found,['gemini-3.8-flash','gemini-3-pro','gemma-4-27b-it']);
+  assert.deepEqual(found,['gemini-3.6-flash-lite','gemini-3.8-flash'],'retain the existing discovery preference; request admission still enforces each model context');
   const large=await fallbackRoutes(env,found,{fallback:false},false,{channel:'chat',promptChars:35000,maxOutputTokens:1000});
   assert.equal(large[0].model,'gemini-3.8-flash');
   const routes=await fallbackRoutes(env,found,{},false,{channel:'chat',promptChars:35000,maxOutputTokens:1000});
-  assert.equal(routes.some(r=>r.model==='gemma-4-27b-it'),false,'a small-context model is not offered a prompt it cannot hold');
+  assert.equal(routes.some(r=>r.model==='gemini-3.6-flash-lite'),false,'a small-context model is not offered a prompt it cannot hold');
   assert.deepEqual(await discover({ROUTING_POLICY_VERSION:'v1',GEMINI_API_KEY:'gemini-all-fixture'}),[],'without opt-in only the reviewed free list routes');
  }finally{globalThis.fetch=original}
 });
 
 test('chat stops after the attempt cap and skips a provider whose account rejects the key',async()=>{
  const original=globalThis.fetch,calls=[],reservations=[];
- const groq=Array.from({length:80},(_,i)=>'groq-model-'+i),nvidia=['nvidia-a','nvidia-b','nvidia-c'];
+ const groq=Array.from({length:80},(_,i)=>'fixture-model-'+i+':free'),nvidia=['deepseek-ai/deepseek-v4.1-flash','nvidia/nemotron-3-ultra-550b-a55b'];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u==='https://api.groq.com/openai/v1/models')return catalog(groq);
+  if(u==='https://api.kilo.ai/api/gateway/models')return catalog(groq);
   if(u==='https://integrate.api.nvidia.com/v1/models')return catalog(nvidia);
   if(init.method==='POST'&&u.endsWith('/chat/completions')){const body=JSON.parse(init.body);calls.push(body.model);
    return new Response('{}',{status:u.includes('nvidia')?401:500});}
   return new Response('{}',{status:404});
  };
  try{
-  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq,nvidia',KAPPA_FREE_PROVIDERS:'groq,nvidia',KAPPA_CHAT_PROVIDERS:'groq,nvidia',
-   CHAT_ACCESS_TOKEN:'owner-token',GROQ_API_KEY:'cap-groq',NVIDIA_API_KEY:'cap-nvidia',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'kilo,nvidia',KAPPA_FREE_PROVIDERS:'kilo,nvidia',KAPPA_CHAT_PROVIDERS:'kilo,nvidia',
+   CHAT_ACCESS_TOKEN:'owner-token',KILO_API_KEY:'cap-groq',NVIDIA_API_KEY:'cap-nvidia',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
   const r=await worker.fetch(chat({messages:[{role:'user',text:'hello'}],preferences:{fallback:true}}),env);
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes the Python gateway classifies are unchanged');
-  assert.equal(calls.filter(m=>m.startsWith('nvidia-')).length,1,'one 401 skips the rest of that provider');
+  assert.equal(calls.filter(m=>nvidia.includes(m)).length,1,'one 401 skips the rest of that provider');
   assert.equal(calls.length,64,'each failing Groq model hands off to the next until the attempt cap');
  }finally{globalThis.fetch=original}
 });
@@ -102,14 +94,14 @@ test('chat stops after the attempt cap and skips a provider whose account reject
 test('the coding gateway applies the same cap and keeps its existing failure codes',async()=>{
  const original=globalThis.fetch,calls=[],reservations=[];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u==='https://api.groq.com/openai/v1/models')return catalog(Array.from({length:80},(_,i)=>'groq-code-'+i));
+  if(u==='https://api.kilo.ai/api/gateway/models')return catalog(Array.from({length:80},(_,i)=>'fixture-code-'+i+':free'));
   if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
   return new Response('{}',{status:404});
  };
  try{
-  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'groq',KAPPA_FREE_PROVIDERS:'groq',KAPPA_CODE_PROVIDERS:'groq',KAPPA_PRIVATE_CODE_PROVIDERS:'groq',
-   GROQ_API_KEY:'cap-code-groq',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
-  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['groq']});
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'kilo',KAPPA_FREE_PROVIDERS:'kilo',KAPPA_CODE_PROVIDERS:'kilo',KAPPA_PRIVATE_CODE_PROVIDERS:'kilo',
+   KILO_API_KEY:'cap-code-groq',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['kilo']});
   assert.ok([429,503].includes(r.status));
   assert.ok(['free_route_unavailable','free_capacity_cooldown'].includes((await r.json()).code),'codes engine/gateway.py classifies are unchanged');
   assert.equal(calls.length,64,'each failing model hands off to the next until the attempt cap');
@@ -119,14 +111,14 @@ test('the coding gateway applies the same cap and keeps its existing failure cod
 test('the coding gateway still stops at the attempt cap when each model fails on its own',async()=>{
  const original=globalThis.fetch,calls=[],reservations=[];
  globalThis.fetch=async(url,init={})=>{const u=String(url);
-  if(u.endsWith('/v1/models'))return Response.json({data:Array.from({length:80},(_,i)=>({id:'mistral-code-'+i,capabilities:{completion_chat:true}}))});
+  if(u.endsWith('/v1/models'))return Response.json({data:Array.from({length:80},(_,i)=>({id:'fixture-pool-'+i+':free',capabilities:{completion_chat:true}}))});
   if(init.method==='POST'&&u.endsWith('/chat/completions')){calls.push(JSON.parse(init.body).model);return new Response('{}',{status:500});}
   return new Response('{}',{status:404});
  };
  try{
-  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'mistral',KAPPA_FREE_PROVIDERS:'mistral',KAPPA_CODE_PROVIDERS:'mistral',KAPPA_PRIVATE_CODE_PROVIDERS:'mistral',
-   MISTRAL_API_KEY:'cap-code-mistral',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
-  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['mistral']});
+  const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'unorouter',KAPPA_FREE_PROVIDERS:'unorouter',KAPPA_CODE_PROVIDERS:'unorouter',KAPPA_PRIVATE_CODE_PROVIDERS:'unorouter',
+   UNOROUTER_API_KEY:'cap-code-mistral',KAPPA_ROUTER_MAX_PER_MINUTE:'100',MEMORY:memory(reservations)};
+  const r=await inferenceRouter(env,{version:1,channel:'coding',privateCode:true,repo:'onlykappa/KappaForge',messages:[{role:'user',content:'Fix the bug'}],maxTokens:1024,providers:['unorouter']});
   assert.ok([429,503].includes(r.status));
   assert.equal(calls.length,64,'80 models failing one by one stop at maxRouteAttempts');
  }finally{globalThis.fetch=original}
@@ -173,13 +165,13 @@ test('a 402 on one paid gateway model never blocks the account, and legacy 402 a
  assert.equal(keyed.allowed,false,'a rejected key still blocks the account');
 });
 
-test('"*" keeps free-model gateways on free routes unless named, and unroutable model ids are dropped',async()=>{
+test('wildcard and named catalog flags keep free pools free and reject unroutable model ids',async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'}]});
  try{
   globalThis.fetch=async()=>Response.json({data:[{id:'qwen/qwen3-coder:free'},{id:'openai/gpt-5'},{id:'~anthropic/claude-sonnet-latest'},{id:'kilo-auto/free'},{id:'vendor/third:free'}]});
   assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free','vendor/third:free'],'"*" uses every free route, beyond the two-per-provider cap');
-  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','openai/gpt-5','qwen/qwen3-coder:free','vendor/third:free'],'naming the gateway opts into its paid models; "~" aliases are never routed');
+  assert.deepEqual(await providerModels({ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'*,kilo'},'kilo'),['kilo-auto/free','qwen/qwen3-coder:free','vendor/third:free'],'naming the gateway cannot authorize paid models; aliases remain excluded');
  }finally{globalThis.fetch=original}
 });
 
@@ -260,7 +252,7 @@ test('models the owner removed for needing payment are never routed, even when t
  globalThis.fetch=async()=>catalog(['gpt-oss:120b','kimi-k3','glm-5.3','gemma4:31b','muse-spark-open']);
  try{
   const env={ROUTING_POLICY_VERSION:'v1',KAPPA_ALL_MODEL_PROVIDERS:'ollama',OLLAMA_API_KEY:'removed-models-ollama'};
-  assert.deepEqual(await providerModels(env,'ollama'),['gpt-oss:120b','gemma4:31b']);
+  assert.deepEqual(await providerModels(env,'ollama'),[],'an unreviewed pool cannot route any model merely because a key exists');
  }finally{globalThis.fetch=original}
 });
 
