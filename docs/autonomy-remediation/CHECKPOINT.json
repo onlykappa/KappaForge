@@ -6,8 +6,8 @@
   "composedCode": "bc048002adbe799e47f0ac68638257f1d5af417f",
   "statuses": {
     "VERIFIED": 14,
-    "TESTING": 8,
-    "INVESTIGATING": 19,
+    "TESTING": 9,
+    "INVESTIGATING": 18,
     "NOT STARTED": 13,
     "BLOCKED": 6,
     "IMPLEMENTING": 1
@@ -56,15 +56,13 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/a-native-device-auth",
-    "base": "fc6fdcf (parent transport HTTPS fixture correction)",
-    "scope": "037 secure native enrollment/Keychain renewal/bridge; candidate only, no rollout",
-    "localVerification": "Node962,48 focused tests, security and web/config/map/policy passed; actual workerd/SQLite client restart, owner re-enrollment and self-disconnect persisted with zero external traffic. Parent desktop/mobile Chromium HTTPS profiles passed; native XcodeGen declaration corrected, actual native tests still pending.",
-    "next": "Publish corrected native target declaration and collect actual macOS compilation/Keychain/UI results. All61 original acceptance gates retained; no merge approval request yet.",
-    "observedFailures": [
-      "d84cebb native41229597634: XcodeGen unknown bundle.unit-testing; corrected to bundle.unit-test, pending rerun",
-      "835c0a3 browser41229300914: HTTP fixture rejected by HTTPS production transport; parent fixture correction in progress; no policy bypass"
-    ]
+    "branch": "remediation/b-paged-path-discovery",
+    "worktree": "/workspace/KappaForge-path-discovery",
+    "scope": "014 complete inventory path paging; partial until broader gates/subgoal expansion",
+    "base": "7207a552cf783815cd55b3ae96fd8519a215b843",
+    "next": "Complete composed Python/security, publish draft, collect CI; native #346 still requires actual Xcode results. Continue original dependency roadmap; no score changes or merge/deploy.",
+    "localVerification": "Python1517 OK(skip34);130 focused total/129 pass/1 Docker-dependent skip; security/map/policy/syntax passed.",
+    "relatedCI": "Native7207a55 main tests41230157825 passed; actual iOS41230157892 remains in progress. Transportfc6fdcf main tests41229904417 passed; iOS41229904216 in progress."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }

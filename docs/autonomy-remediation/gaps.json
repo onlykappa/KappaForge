@@ -428,15 +428,20 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
+    "status": "TESTING",
+    "assigned_branch": "remediation/b-paged-path-discovery",
     "pr": null,
-    "implementation": "",
+    "implementation": "Existing exploration gains paged complete-inventory filename/path discovery without source downloads; planner reports omitted coverage and supports readless discovery-first inquiries, while the same tool is available in repair. No budget/context limits raised.",
     "required_tests": "Target past path 700 and dependency past initial source list are found without raising all context caps.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "130 focused tests total,129 passed,1 real-Docker-dependent skip. Target past700 and actual unplanned import dependency found/read through real tool observations with exactly two source downloads; restart exhausts the existing ledger.",
+      "Composed Python1517 total,1483 passed,34 skipped,0 failures/errors in95.441s. Security/map/policy/syntax passed. Supported CI pending."
+    ],
+    "regression_coverage": [
+      "tests/test_paged_path_discovery.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Five-stage subgoal expansion and unified durable generation/repair observations remain open; composed CI/deployed/live-model evidence pending. Original canonical acceptance retained.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {

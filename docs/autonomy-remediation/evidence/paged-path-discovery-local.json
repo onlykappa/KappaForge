@@ -1,0 +1,37 @@
+{
+  "branch": "remediation/b-paged-path-discovery",
+  "production": false,
+  "inference": false,
+  "python": {
+    "total": 1517,
+    "passed": 1483,
+    "skipped": 34,
+    "failed": 0,
+    "seconds": 95.441
+  },
+  "focused": {
+    "total": 130,
+    "passed": 129,
+    "skipped": 1,
+    "failed": 0
+  },
+  "acceptance": "Offline actual planning/investigation/tool result discovery beyond path700 and import dependency; unchanged configured context/call limits; no intelligence/model quality benchmark.",
+  "security": "structural scan passed with existing HTML warnings; map/execution-policy/syntax passed",
+  "logs": {
+    "paged-path-discovery-targeted.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/paged-path-discovery-targeted.log",
+      "sha256": "98ca5e48f1e276a103634531a85c1b918472a70a34c031d86c2edf1fb5d02376",
+      "bytes": 10192
+    },
+    "paged-path-discovery-python.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/paged-path-discovery-python.log",
+      "sha256": "d8491bfdbcbfa3e233d409259f4bd0c35af260296261bc85c49f67f16ae77f4c",
+      "bytes": 311839
+    },
+    "paged-path-discovery-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/paged-path-discovery-security.log",
+      "sha256": "655dbf183da3c10bf22ed158f093ac3affc12956aa95d207cdf557be0fc1f2dc",
+      "bytes": 23130
+    }
+  }
+}
