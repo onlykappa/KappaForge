@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -9,8 +10,8 @@ import '../preview/actions-core.js';
 import '../preview/intent-guard.js';
 function setup(){
  const chats=[{id:'chat',messages:[]}],storage=new Map(),element={addEventListener(){}};
- const c={KappaIntent:globalThis.KappaIntent,KappaActions:globalThis.KappaActions,Date,console,AbortController,setTimeout,clearTimeout,TextEncoder,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'fixture',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async url=>url.endsWith('/operation-capabilities')?Response.json({contract:globalThis.KappaCapabilities.contract,rollout:{mode:'active',percent:100}}):({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
- vm.createContext(c);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),c);return {c,chats,run:code=>vm.runInContext(code,c)};
+ const c={KappaIntent:globalThis.KappaIntent,KappaActions:globalThis.KappaActions,Date,console,AbortController,setTimeout,clearTimeout,TextEncoder,crypto:webcrypto,KappaJobs:globalThis.KappaJobs,KappaProgress:globalThis.KappaProgress,chats,recentJob:null,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},save(){},render(){},taskCheckpoint(){},setInterval(){},document:{hidden:false,getElementById:()=>element,addEventListener(){}},jobTrackingBusy:false,current:'elsewhere',backend:'https://fixture.workers.dev',access:'fixture',pendingJob:{title:'Fix progress',mode:'develop',instructions:'Fix task progress',conversationId:'chat'},userAuthorizedFetch:async()=>({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),fetch:async url=>url.endsWith('/operation-capabilities')?Response.json({contract:globalThis.KappaCapabilities.contract,rollout:{mode:'active',percent:100}}):({ok:true,json:async()=>({issueNumber:9,issueUrl:'https://github.com/onlykappa/KappaForge/issues/9'})}),githubFetch:async()=>({ok:true,json:async()=>({state:"open"})})};
+ installTransport(c);vm.createContext(c);vm.runInContext(readFileSync(new URL('../preview/app-tasks.js',import.meta.url),'utf8'),c);return {c,chats,run:code=>vm.runInContext(code,c)};
 }
 test('confirmed launch immediately adds one queued card to its original chat',async()=>{
  const {c,chats,run}=setup();await run('launchJob()');

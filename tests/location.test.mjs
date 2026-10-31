@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -88,7 +89,7 @@ function chatHarness({text,preferences,location}){
   refreshAttachList(){},chatCommand:()=>null,active:()=>chat,save(){},render(){},rememberFromMessage:()=>false,setActivity(){},savePreferences(){},
   chatTaskPlan:()=>({kind:'none'}),runChatAction:async()=>{},checkWorkClaims(){},logDiagnostic(){},AbortController,uiIcon:()=>'',navigator:{language:'en-US'},
   fetch:async(_u,init)=>{sent.push(JSON.parse(init.body));return {ok:true}},receiveAssistant:async(_r,c,prefix)=>{c.messages.push({role:'assistant',text:prefix+'ok'});return {reply:'ok'}}};
- vm.runInNewContext(registration,box);
+ installTransport(box);vm.runInNewContext(registration,box);
  return {run:()=>submit({preventDefault(){}}),box,sent,asked};
 }
 

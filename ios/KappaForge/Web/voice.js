@@ -75,7 +75,7 @@ const KappaVoice=(()=>{
   if(!backend||!access)throw Error('Connect AI in Settings first.');
   if(!blob?.size)return '';
   const lang=(navigator.language||'en').slice(0,2).toLowerCase();
-  const r=await fetch(backend+'/voice/transcribe',{method:'POST',headers:{Authorization:'Bearer '+access,'Content-Type':blob.type||'audio/mp4','X-Voice-Language':/^[a-z]{2}$/.test(lang)?lang:'en'},body:blob});
+  const r=await backendFetch('/voice/transcribe',{method:'POST',headers:{'Content-Type':blob.type||'audio/mp4','X-Voice-Language':/^[a-z]{2}$/.test(lang)?lang:'en'},body:blob});
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw Error(data.error||'Speech to text failed.');
   return String(data.text||'').trim();
@@ -108,7 +108,7 @@ const KappaVoice=(()=>{
   try{speechSynthesis.speak(new SpeechSynthesisUtterance(''))}catch{}
  }
  async function cloudClip(text){
-  const r=await fetch(backend+'/voice/speak',{method:'POST',headers:{Authorization:'Bearer '+access,'Content-Type':'application/json'},body:JSON.stringify({text,voice:preferences.voice})});
+  const r=await backendFetch('/voice/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice:preferences.voice})});
   if(r.ok){const notice=r.headers.get('X-Voice-Notice');if(notice&&!state.noticeShown){state.noticeShown=true;toast(notice)}return r.blob()}
   const data=await r.json().catch(()=>({}));const e=Error(data.error||'Text to speech failed.');e.code=data.code;throw e;
  }

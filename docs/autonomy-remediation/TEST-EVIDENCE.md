@@ -62,3 +62,9 @@ Latest exact-code CI bc048002adbe799e47f0ac68638257f1d5af417f is now complete: t
 The free-cost candidate #343 at1ff8f7a also passed actual secret-free manual sandbox run[41207259155](https://github.com/onlykappa/KappaForge/actions/runs/41207259155). Its automatic tests41206904310 and review graph41206904332 passed. These are isolated developer checks, not production/model evidence.
 
 Owner sequencing preference: batch coherent related fixes with focused regression checks during implementation; run broad suites on composed phase candidates. Keep mandatory security checks before publication. Large held-out autonomy evaluation follows foundational implementation, independently graded. Do not rerun a full suite after every small edit or confuse targeted coverage with phase acceptance.
+
+## Central authenticated client transport — focused patch-batch evidence
+
+New client transport10 tests passed;135 affected chat/task/weather/location/voice/sync/dashboard/diagnostic tests passed, zero skips/failures. Initial135-test run had121 passes/14 failures from component harnesses not loading the new transport; the exact failure log is retained. Harnesses now use the actual production transport and their existing network fakes; assertions unchanged. Actual client transport → workerd/SQLite enrollment/use/restart/revocation passed; no external traffic and no silent replay after401. Web bundle/syntax, map, execution-policy and structural scan passed. No full local suite was repeated for this incremental patch; composed CI will supply the broader candidate gate.
+
+Backend3ddb7f4/#344 now has successful actual tests[41228025480](https://github.com/onlykappa/KappaForge/actions/runs/41228025480): unit, Worker including real persistent sessions, web and structure all success. Review graph41228025482 succeeded. This validates the stated checks, not complete037 or live autonomy.

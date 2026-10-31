@@ -25,3 +25,11 @@ Root credentials still reach existing native WebKit/bootstrap and browser storag
 An authenticated request already admitted just before revocation may finish; cancellation of independently authorized running tasks is a separate operation. Do not claim revocation rolls back past requests or deletes task progress. Privacy/deletion policy and physical-device coverage remain open.
 
 Rollback: withdraw the unmerged candidate; after a separately approved rollout, preserve device state and use an explicitly reviewed compatibility rollback. Never silently re-enable root admission or erase chats/vault/task state.
+
+## Central client transport slice
+
+`remediation/a-auth-transport` replaces every direct backend fetch/header construction in chat, task authorization/status, dashboard, settings, memory sync and voice with one transport. It pins the configured exact HTTPS origin, denies URL/path redirection, forces credential omission and no-store, preserves original bodies/AbortSignal and streaming responses, shares bounded concurrent renewal, validates short-session format/lifetime and notices connection changes before dispatch. A401 invalidates cached access for a later explicit request and never silently replays the failed action. Device mode cannot fall back to the legacy owner credential if renewal fails.
+
+The current client deliberately remains in its existing legacy mode until a native session bridge is implemented. Existing shared page storage and credential injection are still exposed. The `KappaNativeSession` interface is an incremental transport boundary, not a claim that secure native enrollment exists. Unsupported protected owner routes remain denied by device scope until reviewed native step-up support exists.
+
+Focused evidence: ten new transport tests;135 affected component/transport tests passed after their isolated classic-script harnesses were connected to the production transport. Fourteen initial failures were retained: the harnesses omitted the new dependency, so requests never dispatched. No existing assertion was removed or weakened. Actual workerd/SQLite now exercises the production client transport across restart and revocation, with zero outbound traffic and no mutation replay. Full composed CI/native acceptance is pending publication.

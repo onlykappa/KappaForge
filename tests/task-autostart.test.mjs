@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -30,7 +31,7 @@ async function attempt({autoStart=true,mode='develop',isTask=true,text='Fix navi
   fetch:async(url,init)=>{sent=JSON.parse(init.body);if(fetchError)throw Error(fetchError);return {ok:status===200,status,json:async()=>status!==200?{error:'Planner returned invalid JSON.'}:isTask?{isTask:true,proposal:pending}:{isTask:false}}},
   KappaIntent:globalThis.KappaIntent,crypto:webcrypto,Intl,Date,alert:()=>{throw Error('unexpected alert')}
  };
- vm.runInNewContext(planner,sandbox);
+ installTransport(sandbox);vm.runInNewContext(planner,sandbox);
  const ok=await sandbox.proposeTaskAutomatically(text,false,'recent conversation',undefined,undefined,options);
  return {ok,launched,rendered,pending:sandbox.pendingJob,sent};
 }

@@ -5,7 +5,7 @@ const requestCache=new Map();
 // Browser GitHub calls share a 60/hour anonymous limit. When connected, read through the Worker's token instead.
 async function githubFetch(p,signal){
  if(backend&&access){
-  const r=await fetch(backend+"/github",{method:"POST",headers:{"Authorization":"Bearer "+access,"Content-Type":"application/json"},body:JSON.stringify({path:p}),signal});
+  const r=await backendFetch("/github",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:p}),signal});
   // 404/503: older Worker or no GITHUB_JOB_TOKEN configured; use the browser's own quota.
   if(![404,503].includes(r.status))return r;
  }
@@ -153,7 +153,7 @@ async function submitReviewDecision(number,decision){
 let reviewCards={};
 const isDevPR=p=>/^kappa\/(?:dev|revert)-[0-9]+$/.test(p.head?.ref||"");
 async function reviewAction(path,body){
- const response=path==="/review"?await fetch(backend+path,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify(body)}):await userAuthorizedFetch(path,body,"Confirmed "+(body.decision||"undo")+" control");
+ const response=path==="/review"?await backendFetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}):await userAuthorizedFetch(path,body,"Confirmed "+(body.decision||"undo")+" control");
  const result=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(result.error||"Request failed (HTTP "+response.status+")");
  return result;
@@ -567,7 +567,7 @@ function openTaskInChat(number){
 }
 async function discordRequest(action,payload={}){
  if(!backend||!access)throw Error("Connect AI before setting up Discord.");
- const response=await fetch(backend+"/integrations/discord",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access,"X-Integration-Action":action},body:JSON.stringify(payload)});
+ const response=await backendFetch("/integrations/discord",{method:"POST",headers:{"Content-Type":"application/json","X-Integration-Action":action},body:JSON.stringify(payload)});
  const result=await response.json();if(!response.ok)throw Error(result.error||"Discord integration failed");return result;
 }
 async function manageDiscord(){
@@ -662,7 +662,7 @@ document.getElementById("monitorexport")?.addEventListener("click",async()=>{try
 document.querySelectorAll("[data-choice]").forEach(b=>b.addEventListener("click",()=>{navigate("chat");document.getElementById("message").value=b.dataset.choice;focusMessageInput()}));
 document.querySelectorAll("[data-copy-message]").forEach(b=>b.addEventListener("click",async()=>{const m=active()?.messages[Number(b.dataset.copyMessage)];if(m)try{await copyInterfaceText(m.text);toast("Message copied")}catch(e){toast(e.message)}}));
 document.querySelectorAll("[data-repeat-message]").forEach(b=>b.addEventListener("click",()=>{const m=active()?.messages[Number(b.dataset.repeatMessage)];if(m){navigate("chat");document.getElementById("message").value="Explain your last answer in plain English with short, actionable steps.";resizeComposer();focusMessageInput();}}));
-document.querySelectorAll("#indexstatus,#indexrefresh").forEach(b=>b.addEventListener("click",async()=>{const report=document.getElementById("indexreport"),repo=document.getElementById("indexrepo").value;if(!backend||!access){report.textContent="Connect the AI backend first.";return;}const refresh=b.id==="indexrefresh";report.textContent=refresh?"Building repository vectors (may take a while)…":"Checking index status…";b.disabled=true;try{const r=await fetch(backend+"/index",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({repo,action:refresh?"refresh":"status"})});const d=await r.json();if(!r.ok)throw Error(d.error||"Index request failed");report.textContent=repo+": "+(d.status||"unknown")+" · "+(d.count||0)+" chunks · "+(d.sha||"no commit indexed").slice(0,12);}catch(e){report.textContent="Index: "+e.message;}finally{b.disabled=false}}));
+document.querySelectorAll("#indexstatus,#indexrefresh").forEach(b=>b.addEventListener("click",async()=>{const report=document.getElementById("indexreport"),repo=document.getElementById("indexrepo").value;if(!backend||!access){report.textContent="Connect the AI backend first.";return;}const refresh=b.id==="indexrefresh";report.textContent=refresh?"Building repository vectors (may take a while)…":"Checking index status…";b.disabled=true;try{const r=await backendFetch("/index",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({repo,action:refresh?"refresh":"status"})});const d=await r.json();if(!r.ok)throw Error(d.error||"Index request failed");report.textContent=repo+": "+(d.status||"unknown")+" · "+(d.count||0)+" chunks · "+(d.sha||"no commit indexed").slice(0,12);}catch(e){report.textContent="Index: "+e.message;}finally{b.disabled=false}}));
 document.getElementById("pluginsearch")?.addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll(".plugin-item").forEach(x=>x.hidden=!x.textContent.toLowerCase().includes(q));});
 document.querySelectorAll("[data-review]").forEach(b=>b.addEventListener("click",()=>submitReviewDecision(Number(b.dataset.review),b.dataset.decision)));
 document.querySelectorAll("[data-hide]").forEach(b=>b.addEventListener("click",()=>hideReview(Number(b.dataset.hide))));
@@ -717,7 +717,7 @@ async function proposeTaskAutomatically(text,notify=true,context="",requestId=cr
   // A direct request ("Add …", "Fix …") is the owner's decision; the planner only picks the repository and mode,
   // so its "not a task", bad output or an outage falls back to a develop task instead of dropping the request.
   const fallback=reason=>{if(intent!=="execution"&&!explicit)throw Error(reason);return {repo:"onlykappa/"+(mentionedRepository(text)||"KappaForge"),mode:"develop"}};
-  const resp=await fetch(backend+"/plan",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+access},body:JSON.stringify({request:String(text),context,preferences,explicit:explicit||approval,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
+  const resp=await backendFetch("/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({request:String(text),context,preferences,explicit:explicit||approval,clientTime:new Date().toISOString(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})}).catch(e=>({ok:false,status:0,json:async()=>({error:"the planner could not be reached ("+e.message+")"})}));
   const data=await resp.json().catch(()=>({}));
   let p=data.proposal;
   if(!resp.ok)p=fallback(data.error||"Could not plan task (HTTP "+resp.status+")");

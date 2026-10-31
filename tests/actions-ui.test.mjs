@@ -1,3 +1,4 @@
+import {installTransport} from './backend-transport-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -76,7 +77,7 @@ function monitor({fetch,githubFetch,saved=null}={}){
   localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)},view:'home',dashboardState:{mode:'overview'},backend:'https://worker.test',access:'secret',
   RUN_STATE_LABEL:{success:'Success',failure:'Failure',running:'In progress'},toast:t=>toasts.push(t),render:()=>renders.push(1),requestAnimationFrame:f=>{f();return 0},
   setTimeout:(f,ms)=>{timers.push({f,ms});return timers.length},clearTimeout:()=>{},fetch:fetch||(async()=>new Response('{}',{status:404})),githubFetch:githubFetch||(async()=>Response.json({workflow_runs:[]}))};
- vm.createContext(box);vm.runInContext(code+'\n;globalThis.m=workflowMonitor;',box);
+ installTransport(box);vm.createContext(box);vm.runInContext(code+'\n;globalThis.m=workflowMonitor;',box);
  return {box,toasts,renders,timers,store};
 }
 const ids=list=>JSON.parse(JSON.stringify(list.map(r=>r.id)));
