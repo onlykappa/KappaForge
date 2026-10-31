@@ -3,11 +3,11 @@
   "date": "2026-10-31",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
-  "composedCode": "c3d6606aabd54d9886f1cbac3025df9c93ca52ce",
+  "composedCode": "bc048002adbe799e47f0ac68638257f1d5af417f",
   "statuses": {
-    "VERIFIED": 13,
-    "INVESTIGATING": 24,
-    "TESTING": 5,
+    "VERIFIED": 14,
+    "TESTING": 8,
+    "INVESTIGATING": 20,
     "NOT STARTED": 13,
     "BLOCKED": 6
   },
@@ -17,17 +17,24 @@
     333,
     334,
     335,
-    336
+    336,
+    337,
+    338,
+    339,
+    340,
+    341
   ],
   "productionChanges": false,
   "paidInference": false,
   "scoresChanged": false,
-  "unresolvedMandatoryGate": "Native composer125a099:5 total,4 passed,1 failed; run41141346449",
+  "unresolvedMandatoryGate": "Critical actual credential/environment review and037 session migration remain open. Native64a9ac3 passes5/5 simulator tests; physical-device/race acceptance remains partial. bc04800 unit/browser/Worker/structure and strict real sandbox passed.",
   "nextActions": [
-    "Keep all candidates draft; investigate native focused null frame using saved hierarchy/screenshots without weakening assertions.",
-    "Strengthen mandatory real-integration checks so required skipped suites cannot be green (048).",
-    "Continue foundation037 auth/session migration,016 provider replay and actual-config evidence blockers; then runtime011/012/014/020/060.",
-    "Preserve outputs under docs rather than ephemeral /tmp; update all61 records only against original acceptance."
+    "Latestbc04800 CI41204467206 and strict sandbox41204467210 passed; retain receipts and test the actual later integration candidate after any source change.",
+    "Continue root authentication/session migration037; browser/shared key is still exposed to script and injected into native WebKit. Preserve owner authentication and design native/browser rollout before deployment.",
+    "Consolidate runtime011/014/020/060, retain original constraints and independently validate tools/context/routing rather than adding duplicate loops.",
+    "Extend023 repair-history retrieval to generation observations and actual archive rotation; implement recovery-category/five-strategy budgets010 without resetting lifetime budgets.",
+    "Run full20-point interruption/pin/cancellation matrix022/024/040, then real supported general tools and remaining E-G capabilities.",
+    "Normal live inference and50-task benchmark remain unrun; no paid calls or unverified cost setting may be assumed. Collect production snapshots only after separately approved rollout."
   ],
   "evidence": [
     "TEST-EVIDENCE.md",
@@ -40,6 +47,6 @@
     "local": "managed Linux; real GitHub-hosted admission intentionally unavailable; no Xcode",
     "supportedCI": "actual Linux Docker, workerd, browser and macOS simulator executed"
   },
-  "remainingPhases": "A incomplete; B partial; C-H not complete",
+  "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state"
 }

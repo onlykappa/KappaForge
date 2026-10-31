@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, INVESTIGATING=24, NOT STARTED=13, TESTING=5, VERIFIED=13
+Counts: BLOCKED=6, INVESTIGATING=20, NOT STARTED=13, TESTING=8, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -170,7 +170,7 @@ Remaining limitations: Verified candidate only; owner approval and exact integra
 
 ## KF-AUDIT-007 — Patch mismatch and unchanged proposals recur across nominally distinct strategies
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: D; priority: P1.
+Classification: PARTIAL; status: **TESTING**; phase: D; priority: P1.
 
 Root cause: Strategy labels do not demonstrate changed causal conditions.
 
@@ -178,21 +178,21 @@ Required implementation: Persist normalized failure family, source version, atte
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/d-rejected-edit-memory; PR: [#340](https://github.com/onlykappa/KappaForge/pull/340).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Persist deterministic rejected-anchor identity using exact target bytes, find and preceding same-file edits. Block redispatch before patching, including after journal restore; allow corrected arguments or changed actual source.
 
 Required acceptance/tests: Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.
 
-Actual results: Not measured for this remediation.
+Actual results: 87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.; Full Python1505 OK(skip36) on d526ddd.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_rejected_edit_memory.py; tests/test_execution_recovery.py:test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Runtime repair admission fixed; initial generation rejection protocol and live Task322 replay remain separate. Category-specific five-strategy recovery not complete.
 
 ## KF-AUDIT-008 — Latest malformed-tool recovery lacks live acceptance evidence
 
@@ -586,7 +586,7 @@ Remaining limitations: Original acceptance gate remains open; implement after de
 
 ## KF-AUDIT-023 — Recent execution context is deliberately bounded and can lose causal history
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: C; priority: P2.
+Classification: PARTIAL; status: **TESTING**; phase: C; priority: P2.
 
 Root cause: Compact active state is not a permanent evidence ledger.
 
@@ -594,21 +594,21 @@ Required implementation: Separate bounded prompt view from complete retained eve
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/c-repair-history-retrieval; PR: [#341](https://github.com/onlykappa/KappaForge/pull/341).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Bounded repair-history index and exact SHA256/paged JSON retrieval through existing tools/journal; replace full recent-plan prompt dump with small index and mark history non-authoritative.
 
 Required acceptance/tests: Old failed hypothesis remains retrievable after rotation and restart without entering every prompt.
 
-Actual results: Not measured for this remediation.
+Actual results: 28 targeted retrieval/strategy/tool/restart tests passed with >30k historical fixture and independently reconstructed full hash.; Full Python1509 OK(skip36) on bc04800.; bc04800 supported unit/browser/Worker/structure and strict real sandbox CI passed; broader generation/archive acceptance remains open.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_repair_history_retrieval.py; tests/test_execution_recovery.py:test_old_hypothesis_can_be_retrieved_after_large_history_and_runner_restart
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Repair-plan retrieval implemented and supported CI passed; generation-stage events/raw observations across actual archive rotation and general semantic compaction still need acceptance evidence.
 
 ## KF-AUDIT-024 — Current engine-pin restart behavior not fault-tested end to end here
 
@@ -1106,7 +1106,7 @@ Remaining limitations: Current production remains unchanged; polling freshness a
 
 ## KF-AUDIT-043 — Native composer keyboard failure remains open
 
-Classification: BROKEN; status: **INVESTIGATING**; phase: F; priority: P1.
+Classification: PARTIAL; status: **TESTING**; phase: F; priority: P1.
 
 Root cause: Existing layout test failed; no root cause confirmed in this audit.
 
@@ -1114,21 +1114,21 @@ Required implementation: Inspect native simulator artifact and bridge/layout geo
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/f-native-composer-host; PR: [#339](https://github.com/onlykappa/KappaForge/pull/339).
 
 Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.
+Implementation: Move native UITextView out of WebKit-managed hierarchy into a sibling UIKit host, convert DOM coordinates to host and reapply retained frame on host layout.
 
 Required acceptance/tests: Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.
 
-Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.
 
-Regression coverage: Not yet added.
+Regression coverage: Unchanged native five-test UI suite; tests/ios-keyboard-layout.test.mjs; tests/test_native_build.py; tests/test_native_evidence.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Fresh supported native run41141346449 reproduces a focused composer with null/offscreen accessibility frame. Four of five UI tests passed; composer case failed two assertions. Device/orientation closure and root fix remain open.
+Remaining limitations: Supported simulator candidate passes; previous unmodified host also passed on0bba923, confirming intermittency. Do not infer elimination of all races or physical-device closure from one successful candidate. Device/orientation acceptance remains unmeasured.
 
 ## KF-AUDIT-044 — Task progress is polling-based with freshness limits
 
@@ -1236,7 +1236,7 @@ Remaining limitations: Original acceptance gate remains open; implement after de
 
 ## KF-AUDIT-048 — Local passing suites leave important integrations skipped
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: H; priority: P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: H; priority: P2.
 
 Root cause: Optional infrastructure checks are not exercised by the local suite.
 
@@ -1244,21 +1244,21 @@ Required implementation: Report skips by capability; require dedicated integrati
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/h-required-integration-gates; PR: [#338](https://github.com/onlykappa/KappaForge/pull/338).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Strict required-integration inventory and observed pass receipts; CI rejects any missing/skipped required Docker/repair/Phase1-3 test and preserves failed receipts.
 
 Required acceptance/tests: Critical integration gate cannot pass when all real runtime tests are skipped.
 
-Actual results: Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen.
+Actual results: Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen.; Five negative/positive gate tests and31 policy/infrastructure tests passed. Actual local sandbox module:19 passed/6 required skipped; new gate correctly exits1 despite unittestOK. Full Python1500 OK(skip36) on0bba923.; Actual supported run41203292992 passed all five strict integration gates; independently downloaded candidate-bound JSON receipts match artifact SHA256. All55 tests passed,0 skipped; required groups include all six real Docker tests.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_required_integration_gate.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: evidence/required-positive/artifact-metadata.json; evidence/required-positive/kappaforge-integration-sandbox.json; evidence/local-required-sandbox-negative.json; tests/test_required_integration_gate.py
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Verified mandatory integration gates on0bba923; unrelated live/native/device/benchmark coverage remains separately open. No integration/production claim.
 
 ## KF-AUDIT-049 — Dependency-map freshness is warning-only in CI
 

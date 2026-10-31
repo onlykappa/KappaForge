@@ -1,0 +1,22 @@
+✔ native chat uses a public UIKit editor with no accessory (1.062424ms)
+✔ mobile focus uses visual viewport inset and compact keyboard composer (1.097645ms)
+✔ browser keyboard: the visual viewport shrink becomes the composer inset (3.661973ms)
+✔ browser keyboard: toolbars and unfocused resizes never open keyboard mode (1.952622ms)
+✔ native keyboard: the composer is lifted to sit just above the UIKit keyboard (1.352173ms)
+✔ native keyboard: the chat scrolls up by what the keyboard newly covers, once (1.210523ms)
+✔ the + sheet tiles open the iOS photo library and camera, not Files (0.91816ms)
+✔ iOS build questions are recognised, unrelated ones are not (1.20169ms)
+✔ chat sees previous and current iOS builds with failing steps and whether an IPA exists (34.468903ms)
+✔ a GitHub outage is reported instead of guessed (0.40553ms)
+✔ bundled update button calls native updater instead of website (1.137435ms)
+✔ iOS updater fetches GitHub Releases, downloads a local IPA and shares the file (0.45227ms)
+✔ native bridge exposes update action and keeps local app entry point (1.78884ms)
+✔ bundle ID and persistent web data store remain stable across updates (0.26343ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 281.659675

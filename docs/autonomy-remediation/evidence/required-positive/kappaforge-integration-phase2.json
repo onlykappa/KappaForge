@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "kind": "required_integration",
+  "candidate": "0bba923cec0de8ed07da688a57a2f8de3c657216",
+  "state": "passed",
+  "discovered": 8,
+  "required": {
+    "tests.test_phase2_exploration_repair.RealSandboxExplorationRepair": [
+      "tests.test_phase2_exploration_repair.RealSandboxExplorationRepair.test_the_unknown_dependency_is_discovered_and_fixed_in_the_real_sandbox"
+    ]
+  },
+  "counts": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "expectedFailures": 0,
+    "unexpectedSuccesses": 0
+  },
+  "requiredPassed": 1,
+  "requiredNotPassed": [],
+  "reason": "Every required test actually passed"
+}

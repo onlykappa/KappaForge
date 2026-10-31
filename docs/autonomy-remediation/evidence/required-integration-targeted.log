@@ -1,0 +1,10 @@
+test_cli_persists_failed_skip_receipt_and_exits_nonzero (tests.test_required_integration_gate.RequiredIntegrationGateTests.test_cli_persists_failed_skip_receipt_and_exits_nonzero) ... ok
+test_exact_required_passes_produce_a_positive_receipt (tests.test_required_integration_gate.RequiredIntegrationGateTests.test_exact_required_passes_produce_a_positive_receipt) ... ok
+test_green_unittest_with_all_skips_is_rejected (tests.test_required_integration_gate.RequiredIntegrationGateTests.test_green_unittest_with_all_skips_is_rejected) ... ok
+test_missing_or_duplicate_inventory_cannot_run_or_pass (tests.test_required_integration_gate.RequiredIntegrationGateTests.test_missing_or_duplicate_inventory_cannot_run_or_pass) ... ok
+test_one_success_cannot_hide_another_required_skip_failure_or_error (tests.test_required_integration_gate.RequiredIntegrationGateTests.test_one_success_cannot_hide_another_required_skip_failure_or_error) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.067s
+
+OK

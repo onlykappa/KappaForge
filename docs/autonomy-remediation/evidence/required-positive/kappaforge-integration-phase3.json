@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "kind": "required_integration",
+  "candidate": "0bba923cec0de8ed07da688a57a2f8de3c657216",
+  "state": "passed",
+  "discovered": 2,
+  "required": {
+    "tests.test_phase3_acceptance.RealDockerReviewAcceptance": [
+      "tests.test_phase3_acceptance.RealDockerReviewAcceptance.test_scoped_review_is_repaired_tested_and_published_without_lifecycle_actions"
+    ]
+  },
+  "counts": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "expectedFailures": 0,
+    "unexpectedSuccesses": 0
+  },
+  "requiredPassed": 1,
+  "requiredNotPassed": [],
+  "reason": "Every required test actually passed"
+}

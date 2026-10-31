@@ -1,0 +1,19 @@
+{
+  "id": 13044335641,
+  "name": "native-validation-evidence",
+  "size_in_bytes": 996,
+  "url": "https://api.github.com/repos/onlykappa/KappaForge/actions/artifacts/13044335641",
+  "archive_download_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/artifacts/13044335641/zip",
+  "expired": false,
+  "created_at": "2026-10-31T13:08:17Z",
+  "expires_at": "2027-01-29T12:58:37Z",
+  "updated_at": "2026-10-31T13:08:17Z",
+  "digest": "sha256:fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7",
+  "workflow_run": {
+    "id": 41203455958,
+    "repository_id": 1421128053,
+    "head_repository_id": 1421128053,
+    "head_branch": "remediation/f-native-composer-host",
+    "head_sha": "64a9ac38078271082bc5e1334df1374606b10446"
+  }
+}

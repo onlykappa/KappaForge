@@ -1,6 +1,6 @@
 # Integration plan — not ready for merge
 
-All candidates are drafts. No merge is authorized. Native composer acceptance currently fails on lifecycle125a099, and the critical security finding has a code-tested mitigation while actual credential/protection evidence remains unavailable. Do not request merge approval until the concrete relevant gates and actual integration candidate pass.
+All candidates are drafts. No merge is authorized. Native composer failed on lifecycle125a099; the later host candidate64a9ac3 passes the unchanged simulator suite, with original device/race acceptance still partial. The critical security finding has a code-tested mitigation while actual credential/protection evidence remains unavailable. Do not request merge approval until the concrete relevant gates and actual integration candidate pass.
 
 | Order | PR | Head (base is the preceding row) | Purpose |
 |---|---|---|---|
@@ -20,3 +20,7 @@ After engine reliability and trust are established, use normal authorized intake
 Rollback: withdraw/revise an unmerged candidate while retaining journals/evidence. Following a separately approved merge, revert its dependency cluster or pin the prior validated engine; never erase spend/cancellation or replay side effects. Production rollout and rollback require separate exact authorization. Application version remains2.2.9.
 
 Following eventual approved integration, commission an independent audit using the original score weights. Focus on real task completion, recovery, regressions and missing tools. Do not preassign improved scores or equate coverage with intelligence.
+
+## Additional stacked candidates
+
+After #337, review #338 (required real-integration gates), #339 (native composer sibling host), #340 (persistent failed-anchor admission), then #341 (exact repair-history retrieval). Their heads are0bba923,64a9ac3,d526ddd,bc04800 respectively. The second documentation checkpoint is based onbc04800 and records the newer evidence. Main is still unchanged; owner approval and actual final integration-head validation remain mandatory. Native64a9ac3 now passes its supported suite, but physical-device and intermittent-race limits remain open. Security/production gates are not waived.
