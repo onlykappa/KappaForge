@@ -65,6 +65,28 @@ class ExecutionRecoveryTests(unittest.TestCase):
         self.assertGreaterEqual(len(after['history']), len(before['history']))
         self.assertEqual(len(after['attempts']), len(before['attempts']) + 1)
 
+    def test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch(self):
+        stale = lambda *a, **kw: ('scripted', json.dumps(dict(tool='apply_patch', reason='stale',
+            args=dict(edits=[dict(path='app.py', find='missing', replace='value=2')]))))
+        first = self.controller()
+        with patch.object(first.tools, 'apply_patch', wraps=first.tools.apply_patch) as dispatch:
+            failed = first.run_repair(TASK, stale, 'fixture', {'app.py': 'value=0\n'})
+        self.assertEqual(failed['stop_reason'], 'repeated_tool_call')
+        self.assertEqual(dispatch.call_count, 1, 'Only the first deterministic failure may invoke the patcher')
+        before = copy.deepcopy(execution.pending(self.reload())['controller'])
+        self.assertEqual(len(before['rejected_anchors']), 1)
+        continued = self.controller(journal=self.reload())
+        replies = iter([stale(), fixed()])
+        with patch.dict(os.environ, {'INPUT_ACTION': 'fix'}), \
+                patch.object(continued.tools, 'apply_patch', wraps=continued.tools.apply_patch) as dispatch:
+            result = continued.run_repair(TASK, lambda *a, **kw: next(replies), 'fixture')
+        self.assertEqual(result['status'], 'success', result['summary'])
+        self.assertEqual(dispatch.call_count, 1, 'Restored failed anchor is blocked; only corrected edit dispatches')
+        self.assertEqual(dispatch.call_args.args[0][0]['find'], 'value=0')
+        after = execution.pending(self.reload())['controller']
+        self.assertEqual(after['rejected_anchors'], before['rejected_anchors'])
+        self.assertEqual(after['actions'], before['actions'] + 2)
+
     def test_explicit_fix_does_not_replenish_exhausted_sandbox_actions(self):
         stale = lambda *a, **kw: ('scripted', json.dumps(dict(tool='apply_patch', reason='stale',
             args=dict(edits=[dict(path='app.py', find='missing', replace='value=2')]))))

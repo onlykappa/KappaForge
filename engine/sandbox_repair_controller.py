@@ -353,7 +353,42 @@ class SandboxRepairController:
                                        evidence, expected_result, differs_from)
 
     def _planned_patch(self, edits):
-        return self._apply_planned(lambda: self.tools.apply_patch(edits))
+        rejected = self.state.setdefault('rejected_anchors', {})
+        files = self.session.current()
+        if isinstance(edits, list):
+            for index in range(len(edits)):
+                key = self._anchor_key(edits, index, files)
+                if key and key in rejected:
+                    return dict(rejected[key], status='invalid', ok=False, repeated=True,
+                        error='This anchor already failed against this file version and preceding edits. '
+                              'Reread the source and correct the anchor or use versioned line edits; '
+                              'changing only the replacement cannot repair an absent/ambiguous anchor.')
+        result = self._apply_planned(lambda: self.tools.apply_patch(edits))
+        if result.get('category') == 'edit_anchor':
+            key = self._anchor_key(edits, result['edit_index'], files)
+            if key:
+                rejected[key] = {name: value for name, value in result.items()
+                                 if name in ('category', 'path', 'matches', 'read_hint')}
+        return result
+
+    @staticmethod
+    def _anchor_key(edits, index, files):
+        """A failed input is deterministic for the exact file and same-file prefix.
+
+        An unrelated edit or a different replacement cannot make a missing find
+        match. Earlier edits to this file can, so include that prefix without
+        duplicating the patch implementation or guessing a fuzzy replacement.
+        """
+        edit = edits[index]
+        if (not isinstance(edit, dict) or not sandbox.safe_path(edit.get('path'))
+                or not isinstance(edit.get('find'), str) or not isinstance(edit.get('replace'), str)):
+            return None
+        preceding = [row for row in edits[:index] if isinstance(row, dict) and row.get('path') == edit['path']]
+        if any(not isinstance(row.get('find'), str) or not isinstance(row.get('replace'), str) for row in preceding):
+            return None
+        raw = files.get(edit['path'])
+        return execution.digest(dict(path=edit['path'], source=hashlib.sha256(raw).hexdigest() if raw is not None else None,
+            find=edit['find'], preceding=[dict(find=row['find'], replace=row['replace']) for row in preceding]))
 
     def _planned_line_patch(self, path, sha256, edits):
         return self._apply_planned(lambda: self.tools.apply_line_patch(path, sha256, edits))
