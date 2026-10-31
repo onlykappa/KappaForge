@@ -202,7 +202,7 @@ struct KappaWebView: UIViewRepresentable {
             else request.resolve({accessToken:result.accessToken,accessExpiresAt:result.accessExpiresAt});
           };
         })();
-        """
+        """#
         return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 

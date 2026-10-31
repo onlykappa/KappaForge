@@ -8,7 +8,7 @@ const state=readFileSync(new URL('../preview/app-state.js',import.meta.url),'utf
 const id='12345678-1234-1234-1234-123456789abc',origin='https://fixture.workers.dev';
 const access='kfa_'+id+'.'+'A'.repeat(43),owner='fixture-long-lived-owner',renewal='fixture-long-lived-renewal';
 function bootstrap(connection={id,backend:origin}){
- const source=swift.match(/let source = #"""\n([\s\S]*?)\n        """/)[1]
+ const source=swift.match(/let source = #"""\n([\s\S]*?)\n        """#/)[1]
   .replaceAll('\\#(versionJSON)',JSON.stringify(['fixture'])).replaceAll('\\#(metadata)',JSON.stringify(connection));
  const local=new Map([['kappaforge.access',owner],['chats','preserved'],['vault','preserved']]),session=new Map([['kappaforge.access',owner]]),calls=[];
  const storage=map=>({getItem:key=>map.get(key)??null,removeItem:key=>map.delete(key)});
