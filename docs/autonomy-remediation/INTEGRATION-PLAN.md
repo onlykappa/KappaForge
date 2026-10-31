@@ -1,7 +1,22 @@
-# Integration plan
+# Integration plan — not ready for merge
 
-Isolated program worktree: /workspace/KappaForge-remediation, branch remediation/program from origin/main19c9592. Keep original audit worktree untouched. Create coherent subsystem candidate branches/PRs after local validation. Stack dependencies explicitly, test the actual composed integration head, and keep every PR draft until all applicable gates pass. Owner approval required for every merge; none authorized yet. No production dispatch, deployment or release as a test side effect.
+All candidates are drafts. No merge is authorized. Native composer acceptance currently fails on lifecycle125a099, and the critical security finding has a code-tested mitigation while actual credential/protection evidence remains unavailable. Do not request merge approval until the concrete relevant gates and actual integration candidate pass.
 
-Proposed clusters: (1) budgets/requirements; (2) typed evidence/terminal state; (3) workflow privilege and explicit deployment boundary; (4) tool observations/versioned edits; subsequent runtime/recovery/context/tools clusters only after dependency tests. Each PR records gap IDs, root cause, changed files, tests/results, limitations, security implications and rollback. Do not mark an entire phase complete when its production/device gates remain blocked.
+| Order | PR | Head (base is the preceding row) | Purpose |
+|---|---|---|---|
+| 1 | [#332](https://github.com/onlykappa/KappaForge/pull/332) | remediation/tracking, from main | Original canonical audit and61-gap scaffold |
+| 2 | [#333](https://github.com/onlykappa/KappaForge/pull/333) | remediation/a-foundation-security | Budgets, complete requirements, typed evidence, copied-test guard, publication/deployment boundary, mandatory map and policy docs |
+| 3 | [#334](https://github.com/onlykappa/KappaForge/pull/334) | remediation/b-versioned-tools | Existing-loop versioned line edits and independent real-oracle recovery |
+| 4 | [#335](https://github.com/onlykappa/KappaForge/pull/335) | remediation/c-lifecycle-reconciliation | Objective state, closed drafts, truthful UI, owner validation and explicit malformed-output Fix |
+| 5 | [#336](https://github.com/onlykappa/KappaForge/pull/336) | remediation/a-effective-diagnostics | Authenticated policy/version snapshot; deployed acceptance remains blocked |
+| 6 | remediation/progress-checkpoint | from diagnostics | Evidence, full reconciliation and durable resume instructions |
 
-Rollback: revert a candidate PR before merge, preserve all journal history/spend/cancellation evidence and pin prior trusted engine. A rollback must not replay side effects or reset budgets.
+Current composed code:c3d6606aabd54d9886f1cbac3025df9c93ca52ce. Main remains19c95923d12156688487fd8d4e1f6dd1c16eefa6 at latest fetch. Owner PR331 and older branches remain untouched. No blind cherry-picks. Do not merge a child before its tested dependencies.
+
+Each PR describes gap IDs, root cause, changed components, tests/results, limitations, security implications and rollback. Reconcile with the actual integration base, regenerate the map on that exact tree, and rerun relevant full suites, mandatory security and supported integrations before a final merge request. Earlier green heads are not interchangeable with a new merge candidate. Independently verify GitHub protections. Owner approval must identify specific PRs and operations.
+
+After engine reliability and trust are established, use normal authorized intake for Task330/322, multi-file, tool failure, free-provider outage, interruption, permission and artifact scenarios. Grade with independent artifacts/tests. Do not dispatch an old production engine and credit unmerged remediation for the result.
+
+Rollback: withdraw/revise an unmerged candidate while retaining journals/evidence. Following a separately approved merge, revert its dependency cluster or pin the prior validated engine; never erase spend/cancellation or replay side effects. Production rollout and rollback require separate exact authorization. Application version remains2.2.9.
+
+Following eventual approved integration, commission an independent audit using the original score weights. Focus on real task completion, recovery, regressions and missing tools. Do not preassign improved scores or equate coverage with intelligence.

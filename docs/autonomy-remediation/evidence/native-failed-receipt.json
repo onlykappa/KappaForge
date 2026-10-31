@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "candidate": "125a0991ed69b40ef604fa10626cbf2cdce745f2",
+  "kind": "native_simulator",
+  "state": "failed",
+  "reason": "Native simulator tests failed",
+  "counts": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "skipped": 0
+  },
+  "physicalDevice": {
+    "state": "not_run",
+    "reason": "Simulator tests do not establish physical iPhone execution"
+  }
+}

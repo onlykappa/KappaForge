@@ -13,17 +13,26 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/c-lifecycle-reconciliation",
+    "pr": 335,
+    "implementation": "Typed source/diff/test/authorization/publication/runtime evidence. Scope receipts require active authority, exact candidate and complete published/proposed paths including rename origins. Exact operation prohibitions use read-only authority probes; requested test commands supplement mandatory regression.",
     "required_tests": "Replay #330: one allowed file passes scope proof; adding any second file fails; no model quote needed.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Task330 one-file scope positive, extra/forbidden/stale/forged receipt negatives and exact command receipts passed in isolated regressions."
+    ],
+    "regression_coverage": [
+      "tests/test_typed_scope_evidence.py",
+      "tests/test_operational_review.py",
+      "tests/test_owner_validation_commands.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Normal live Task330 intake/model/publication replay has not been rerun; verified contract behavior is independent controlled evidence.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-002",
@@ -39,17 +48,25 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Scope-aware JavaScript call analysis rejects tests of locally copied production helpers; an import in another callback cannot certify the copy.",
     "required_tests": "Original #323 inline-copy test is rejected; a wrong production implementation makes the replacement test fail.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Original PR323 base faf250e310ad9afe0e6e640c5b6bd4c6d59c0c87/head534633c2a1db73bc7616015fcd3848770af9effc replay now reports copied isAnswered behavior.",
+      "Real Node independent mutation: correct production passes; constant-true production fails."
+    ],
+    "regression_coverage": [
+      "tests/test_copied_logic_evidence.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Binding analysis is a targeted semantic safeguard, not proof that arbitrary tests are sufficient.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-003",
@@ -65,17 +82,26 @@
     "deps": "KF-AUDIT-001",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/c-lifecycle-reconciliation",
+    "pr": 335,
+    "implementation": "Finalize against the exact open draft head and unresolved requirements. Separate objectiveReceipt from controller/check conclusions. Blocked backend state overrides green tests in UI and persists measured start/finished times; stopped tasks have no live elapsed timer.",
     "required_tests": "Green workflow plus blocked review renders blocked, never completed, in API and UI.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Blocked-after-green validation and stable timer regression passed; no READY/DONE or running data-since for blocked work."
+    ],
+    "regression_coverage": [
+      "tests/test_objective_finalization.py",
+      "tests/task-panel.test.mjs",
+      "tests/test_closed_draft_reconciliation.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Current production remains unchanged; polling freshness and cancellation race gates belong to044/040.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-004",
@@ -91,17 +117,24 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Retain complete owner wording and original spans. More than30 extracted requirements produces an explicit actionable limit error, never a silently truncated list.",
     "required_tests": "40 explicit requirements produce 40 tracked IDs or a visible nonterminal overflow; none disappear.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "40-input regression rejects explicitly; boundary30 preserves all rows and long final constraint is retained."
+    ],
+    "regression_coverage": [
+      "tests/test_requirement_limits.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Verified candidate only; owner approval and exact integration-head validation remain mandatory.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-005",
@@ -117,17 +150,24 @@
     "deps": "",
     "effort": "S",
     "priority": "P1",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Merge sparse cumulative counters monotonically and atomically validate all input. Preserve independent kinds and persisted totals across restart; exclude boolean/nonfinite/negative/string values and non-string keys.",
     "required_tests": "Persist calls=10 bytes=100 then calls=11; restart retains bytes=100 and calls=11.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Direct real-Ledger restart retains calls11/bytes100 and other-kind spend. Invalid updates cannot mutate memory or persisted spend."
+    ],
+    "regression_coverage": [
+      "tests/test_budget_ledger_integrity.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Verified candidate only; owner approval and exact integration-head validation remain mandatory.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-006",
@@ -143,17 +183,24 @@
     "deps": "",
     "effort": "S",
     "priority": "P2",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Merge sparse cumulative counters monotonically and atomically validate all input. Preserve independent kinds and persisted totals across restart; exclude boolean/nonfinite/negative/string values and non-string keys.",
     "required_tests": "Reject booleans, strings, NaN, infinity, negative values and non-string keys without corrupting prior spend.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Direct real-Ledger restart retains calls11/bytes100 and other-kind spend. Invalid updates cannot mutate memory or persisted spend."
+    ],
+    "regression_coverage": [
+      "tests/test_budget_ledger_integrity.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Verified candidate only; owner approval and exact integration-head validation remain mandatory.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-007",
@@ -171,15 +218,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-008",
@@ -195,17 +242,23 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "PARTIAL",
+    "status": "TESTING",
+    "assigned_branch": "remediation/c-lifecycle-reconciliation",
+    "pr": 335,
+    "implementation": "Real controller recovers truncated/fenced/singleton tool responses using dynamic export/file observations, exact digest edits and independently executed Node assertions. Explicit Fix can renew invalid-output streak without replenishing lifetime budgets.",
     "required_tests": "A truncated reply, fenced object and singleton list recover and finish a genuine failing-import repair without changing task scope.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Controlled wrong-import repair fails real Node first, then passes candidate plus fresh regression; production/assertions unchanged.",
+      "Automatic continuation does not renew invalid_limit; explicit Fix retains actions, attempts and history."
+    ],
+    "regression_coverage": [
+      "tests/test_offline_agent_recovery.py",
+      "tests/test_execution_recovery.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Scripted free-provider transport; no current live NVIDIA/model canary or normal authorized intake replay. Do not treat this as general live recovery proof.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-009",
@@ -221,17 +274,24 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/c-lifecycle-reconciliation",
+    "pr": 335,
+    "implementation": "Reconcile saved output PR before model/tool work. Closed task-bound drafts emit blocked_closed_draft/objective receipt and stop; finalizer retains that specific outcome.",
     "required_tests": "Closed #323 produces zero model/tool writes and a precise superseded or owner-decision receipt.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Closed-draft regression performs zero model/test/publication calls and refuses foreign repo/branch association."
+    ],
+    "regression_coverage": [
+      "tests/test_closed_draft_reconciliation.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Verified candidate only; owner approval and exact integration-head validation remain mandatory.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-010",
@@ -249,15 +309,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Exhaustion across restart preserves all budgets; 429 waits do not consume repair strategies; no repeated side effects.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-011",
@@ -275,15 +335,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "A task discovers an unplanned dependency, reads it, edits, tests and replans through one durable event contract.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-012",
@@ -301,15 +361,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "After >30k history the next action still respects first failure and can retrieve omitted output.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-013",
@@ -325,17 +385,27 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/b-versioned-tools",
+    "pr": 334,
+    "implementation": "Add apply_line_patch to the existing controller/catalog, requiring exact full-file SHA256, bounded nonoverlapping original line ranges and atomic replacement. Conflicts return current digest and reread guidance; no fuzzy fallback.",
     "required_tests": "Formatting and stale-source fault fixtures trigger reread/rebase, never repeated blind replacement or silent wrong-file writes.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Stale digest, bad range/overlap/path, formatting and atomicity fixtures passed.",
+      "Real Node import repair uses dynamically observed hash and exact file.",
+      "Supported real sandbox CI run41137357086 passed."
+    ],
+    "regression_coverage": [
+      "tests/test_versioned_line_patch.py",
+      "tests/test_offline_agent_recovery.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Legacy exact find/replace remains supported;007 repeated-strategy policy and011 protocol consolidation remain open.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-014",
@@ -353,15 +423,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Target past path 700 and dependency past initial source list are found without raising all context caps.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-015",
@@ -378,16 +448,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "One supported task combines research, a file artifact and authorized application operation with verified receipts.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-016",
@@ -405,15 +475,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Replay 200-empty, reasoning-only and first-byte timeout; fallback completes, attribution and cooldown reasons remain correct.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "No authorized live provider credentials/canary used. Empty/reasoning-only/first-byte timeout replay and attribution/cooldown/fallback acceptance remain open.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-017",
@@ -431,15 +501,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "#330-shaped request admits an eligible compact Groq/Mistral route when within its real limits; oversized requests still fail safely.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-018",
@@ -457,15 +527,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Held-out routing evaluation beats static ordering on completion or latency without paid spend or quality regression.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-019",
@@ -481,17 +551,23 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
+    "current_classification": "PARTIAL",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "assigned_branch": "remediation/a-effective-diagnostics",
+    "pr": 336,
+    "implementation": "Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.",
     "required_tests": "Owner supplies read-only capabilities/health snapshot covering every provider and policy/version fingerprint.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.",
+      "Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request."
+    ],
+    "regression_coverage": [
+      "tests/deployment-diagnostics.test.mjs",
+      "tests/premium*.test.mjs"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Production provider permission/configuration snapshot inaccessible.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-020",
@@ -509,15 +585,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Both adapters pass identical validation/error/cancellation fixtures; unsupported route cannot receive native tool fields.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-021",
@@ -533,17 +609,23 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
+    "current_classification": "PARTIAL",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "assigned_branch": "remediation/a-effective-diagnostics",
+    "pr": 336,
+    "implementation": "Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.",
     "required_tests": "Fresh store is OFF; free exhaustion alone cannot charge when OFF; explicit ON obeys task/day caps.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.",
+      "Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request."
+    ],
+    "regression_coverage": [
+      "tests/deployment-diagnostics.test.mjs",
+      "tests/premium*.test.mjs"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Persisted production Premium setting inaccessible; defaults can be tested offline.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-022",
@@ -561,15 +643,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Kill between each multipart write and pointer update: recover exact validated candidate or explicit incomplete state, never stale success.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-023",
@@ -587,15 +669,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Old failed hypothesis remains retrievable after rotation and restart without entering every prompt.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-024",
@@ -613,15 +695,17 @@
     "priority": "P1",
     "current_classification": "UNVERIFIED",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "20 injected interruption points resume on authorized engine/candidate with no budget reset or duplicate PR.",
-    "actual_results": [],
+    "actual_results": [
+      "Existing real supported CI passed interruption/provider-outage recovery fixtures; the original20-point fault-injection matrix is not complete."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-025",
@@ -638,16 +722,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Yesterday task resumes with cited decisions and failed approaches; changed source invalidates stale facts.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-026",
@@ -664,16 +748,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "UNVERIFIED",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Two devices offline/online do not resurrect deleted chat; export and erase prove server/local removal within declared retention.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-027",
@@ -690,16 +774,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Long task exceeds context size then resumes with every constraint intact and no repeated failed strategy.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-028",
@@ -716,16 +800,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Five held-out research tasks cite fetched sources and distinguish inaccessible or conflicting evidence.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-029",
@@ -742,16 +826,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Navigate dynamic fixture, log in with delegated test credentials, extract data, stop before unauthorized external submit.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-030",
@@ -768,16 +852,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Round-trip fixtures preserve formulas, sheets, document structure and produce downloadable artifacts.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-031",
@@ -794,16 +878,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "One local fake MCP server supports discovery/call/cancel with denied tools never invoked.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-032",
@@ -820,16 +904,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Local test workspace read/edit works; access outside approved root is refused and logged.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-033",
@@ -847,15 +931,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Unsupported ecosystem identified before generation; supported pinned fixtures restore and test offline.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-034",
@@ -871,17 +955,27 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
-    "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/b-versioned-tools",
+    "pr": 334,
+    "implementation": "Collected missing actual supported-runtime evidence without weakening infrastructure admission. Existing sandbox retained.",
     "required_tests": "No secrets, Docker socket, host files or network visible to test commands; time/memory/process limits enforced.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "Docker CLI/daemon unavailable in this environment; real isolation test must run on supported disposable runner.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "GitHub-hosted Docker run41137357086/job124342988292:25 sandbox tests,2 repair integrations,18 Phase1,8 Phase2,2 Phase3 passed.",
+      "Secrets/network/system-file denial and timeout/memory/output containment executed.",
+      "Local Docker admission correctly refused unsupported non-GitHub environment; it was not spoofed."
+    ],
+    "regression_coverage": [
+      "tests/test_sandbox.py:RealDockerTests",
+      "tests/test_phase1_acceptance.py:RealSandboxAcceptance"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Evidence applies to supported GitHub-hosted Linux runner and pinned profiles, not arbitrary remote/local hosts or unknown languages.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-035",
@@ -898,16 +992,22 @@
     "effort": "L",
     "priority": "P0",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "status": "TESTING",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Block model-controlled .github/workflows and .github/actions publication before GitHub mutation. Never select workflow-capable PAT for generated changes; preserve unpublished checkpoint. Require explicit owner dispatch for deploy/release, with release OFF by default and exact-main candidate.",
     "required_tests": "Malicious draft workflow attempting secret exfiltration never receives secrets or privileged token before explicit gate.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Malicious workflow/action proposal denied even with PAT/task prose; GitHub mutation mock remains untouched.",
+      "Actual deploy/release guards evaluated for owner/event/ref/candidate/opt-in; PR native release job skipped."
+    ],
+    "regression_coverage": [
+      "tests/test_privileged_publication.py",
+      "tests/test_phase1_acceptance.py:PolicyAcceptance"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Critical mitigation is code-tested, not a declaration of full security readiness. Actions permissions and main protection reads returned403; production-release environment was absent, cloudflare-production had no protection types. Owner verification of actual credentials, forks and independent approval settings remains required.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-036",
@@ -924,16 +1024,21 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "status": "TESTING",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Remove historical auto-merge preference; align KAPPA/README with task-scoped authority, owner merges and separately approved deployment. Existing authority service remains final guard.",
     "required_tests": "Historical auto-merge text cannot authorize a new task; policy contradictions surface as diagnostics.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Authority and policy regressions passed; repository preferences cannot expand execution scope."
+    ],
+    "regression_coverage": [
+      "tests/test_intent_guard.py",
+      "tests/test_privileged_publication.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "General runtime diagnostics for conflicting stored historical preferences still need implementation/acceptance evidence.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-037",
@@ -951,15 +1056,15 @@
     "priority": "P1",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-038",
@@ -976,16 +1081,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "UNVERIFIED",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Zero unauthorized writes, paid calls, merge/deploy or secret disclosures in the security benchmark and fuzz cases.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-039",
@@ -1003,15 +1108,18 @@
     "priority": "P1",
     "current_classification": "UNVERIFIED",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Read-only settings inventory recorded with no secret values; no permissions or protections modified.",
     "required_tests": "Owner verifies least privileges and deployment gate rejects unapproved release; audit record contains no values.",
-    "actual_results": [],
+    "actual_results": [
+      "Actions workflow permissions and main branch protection returned403.",
+      "Environment metadata readable:cloudflare-production has no listed protections; production-release not present."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "Current GitHub environment protections and actual credential scopes require read-only access evidence.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Owner must independently verify least-privilege tokens and required environment reviewers. No grant may be bypassed.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-040",
@@ -1029,15 +1137,15 @@
     "priority": "P2",
     "current_classification": "UNVERIFIED",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Cancel at model wait, patch, test, push and dispatch boundaries; no later consequential action starts.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-041",
@@ -1055,15 +1163,17 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Privacy fixtures verify secret redaction and correct private-code provider restrictions; deletion procedure covers every store.",
-    "actual_results": [],
+    "actual_results": [
+      "Existing engine/execution.py require_storage already blocks private candidate checkpoints in a public task tracker. General retention/deletion/provider privacy acceptance remains open."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-042",
@@ -1079,17 +1189,26 @@
     "deps": "KF-AUDIT-003",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/c-lifecycle-reconciliation",
+    "pr": 335,
+    "implementation": "Finalize against the exact open draft head and unresolved requirements. Separate objectiveReceipt from controller/check conclusions. Blocked backend state overrides green tests in UI and persists measured start/finished times; stopped tasks have no live elapsed timer.",
     "required_tests": "#330 replay ends blocked_verification with accurate finished time and resume action; no indefinite active timer.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Blocked-after-green validation and stable timer regression passed; no READY/DONE or running data-since for blocked work."
+    ],
+    "regression_coverage": [
+      "tests/test_objective_finalization.py",
+      "tests/task-panel.test.mjs",
+      "tests/test_closed_draft_reconciliation.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Current production remains unchanged; polling freshness and cancellation race gates belong to044/040.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-043",
@@ -1105,17 +1224,20 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "PARTIAL",
-    "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
+    "current_classification": "BROKEN",
+    "status": "INVESTIGATING",
+    "assigned_branch": "unassigned",
     "pr": null,
-    "implementation": "",
+    "implementation": "No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.",
     "required_tests": "Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.",
-    "actual_results": [],
+    "actual_results": [
+      "Native run41136935766/job124341580014:five UI tests passed; release skipped.",
+      "Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "macOS simulator/physical iPhone unavailable; fixture/source repair requires actual geometry evidence.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Fresh supported native run41141346449 reproduces a focused composer with null/offscreen accessibility frame. Four of five UI tests passed; composer case failed two assertions. Device/orientation closure and root fix remain open.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-044",
@@ -1133,15 +1255,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Out-of-order/duplicate events never regress state; offline reconnect reflects terminal backend state within 15 seconds.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-045",
@@ -1158,16 +1280,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Web/iOS generated assets match; initialization-order and restored-session tests pass after each module migration.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-046",
@@ -1185,15 +1307,17 @@
     "priority": "P3",
     "current_classification": "UNVERIFIED",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
-    "implementation": "",
+    "implementation": "No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.",
     "required_tests": "Document screenshots and accessibility results for agreed device sizes with no critical interaction blockers.",
-    "actual_results": [],
+    "actual_results": [
+      "Native run41136935766/job124341580014:five UI tests passed; release skipped."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "Real-device visual/accessibility session unavailable.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Historical device/orientation reproducer, physical-device screenshots and accessibility acceptance unavailable. Existing simulator success does not establish closure of the original report.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-047",
@@ -1210,16 +1334,16 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "MISSING",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "All tasks have actual results or unsupported outcomes; aggregate metrics computed from raw records.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-048",
@@ -1237,15 +1361,17 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Critical integration gate cannot pass when all real runtime tests are skipped.",
-    "actual_results": [],
+    "actual_results": [
+      "Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-049",
@@ -1261,17 +1387,25 @@
     "deps": "",
     "effort": "S",
     "priority": "P2",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Dependency-map freshness is a mandatory CI failure. Regenerate from each exact standalone/composed candidate rather than a different worktree.",
     "required_tests": "Import change without regenerated index fails check; index carries matching SHA.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Old standalone641a7e9 CI failed map freshness; regenerated38aca4d CI passed.",
+      "Composeda62f949 CI required freshness check passed."
+    ],
+    "regression_coverage": [
+      "scripts/dependency-map.py --check"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Map changes must be regenerated on every later source candidate; one branch map does not certify another.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-050",
@@ -1289,15 +1423,15 @@
     "priority": "P1",
     "current_classification": "UNVERIFIED",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
-    "implementation": "",
+    "implementation": "No sustained production SLO result fabricated.",
     "required_tests": "30-day report has denominators, exclusions and incident causes; objective success is separately reported from run success.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "30-day production SLO data unavailable; instrumentation can be implemented.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Needs30-day objective-level denominators, exclusions, incidents and operational evidence after approved rollout.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-051",
@@ -1313,17 +1447,21 @@
     "deps": "",
     "effort": "M",
     "priority": "P2",
-    "current_classification": "UNVERIFIED",
-    "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "PARTIAL",
+    "status": "TESTING",
+    "assigned_branch": "remediation/b-versioned-tools",
+    "pr": 334,
+    "implementation": "Collected exact-candidate supported CI browser, isolated Worker recovery and foundation native evidence. Local runtime/browser limitations recorded separately.",
     "required_tests": "Exact-head receipts include browser, runtime and native results with artifact hashes and skips.",
-    "actual_results": [],
+    "actual_results": [
+      "a62f949 CI unit/web/structure/Worker and real sandbox passed.",
+      "38aca4d CI native five UI tests/build passed; no release.",
+      "Latest125a099 native check FAILED in composer case despite successful simulator/unsigned build. c3d6606 unit/web/Worker/structure passed. No integration-ready claim."
+    ],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "Browser/workerd/native runtime coverage must be collected separately.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Newest composed head needs its own checks/artifact hashes. Local WebKit cannot launch without listed system libraries; no Xcode locally. Physical-device gates remain separate.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-052",
@@ -1339,17 +1477,23 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
+    "current_classification": "PARTIAL",
     "status": "BLOCKED",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "assigned_branch": "remediation/a-effective-diagnostics",
+    "pr": 336,
+    "implementation": "Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.",
     "required_tests": "A task receipt identifies engine, Worker, policy and candidate versions end to end.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.",
+      "Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request."
+    ],
+    "regression_coverage": [
+      "tests/deployment-diagnostics.test.mjs",
+      "tests/premium*.test.mjs"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Deployed Worker SHA and policy fingerprint unavailable.",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-053",
@@ -1366,16 +1510,21 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "status": "TESTING",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Remove push-to-main deployment trigger. Deploy requires owner workflow_dispatch/main. Release additionally requires publish=true(defaultfalse), branchmain and empty/exact candidate SHA; builds remain independently available.",
     "required_tests": "Merge alone cannot deploy/release under current owner policy; approved exact build can roll back to prior version.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Executable guard negatives pass for push,PR,wrong actor/ref/branch/candidate and publishfalse.",
+      "Actual PR native build ran while release job skipped."
+    ],
+    "regression_coverage": [
+      "tests/test_privileged_publication.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "No production deployment/rollback executed. Actual protected approval environment configuration and approved rollback drill remain owner-gated.",
+    "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {
     "id": "KF-AUDIT-054",
@@ -1393,15 +1542,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "A scheduled test job survives coordinator restart; expired authorization blocks side effects and asks renewal once.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-055",
@@ -1419,15 +1568,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Parallel independent fixtures reconcile cleanly; overlapping edits serialize; one child failure cannot corrupt parent state.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-056",
@@ -1443,17 +1592,26 @@
     "deps": "",
     "effort": "S",
     "priority": "P2",
-    "current_classification": "BROKEN",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "README leads with current implementation/limitations and explicitly marks obsolete milestone prose historical. KAPPA commands name actual checks; application version remains2.2.9 until separately authorized release.",
     "required_tests": "Every current capability links to implementation and exact validation; unsupported claims are visibly labeled.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Current capabilities reference source/test evidence and missing production/general tools; nonexistent validate_change instruction removed."
+    ],
+    "regression_coverage": [
+      "README.md",
+      "KAPPA.md",
+      "scripts/check-web.py"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Historical setup remains visibly preserved; documentation is not live functionality proof.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-057",
@@ -1471,15 +1629,15 @@
     "priority": "P2",
     "current_classification": "UNVERIFIED",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Every active divergent branch has owner/status, changed components and effect on audit; stale branches clearly excluded.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-058",
@@ -1495,17 +1653,24 @@
     "deps": "",
     "effort": "S",
     "priority": "P2",
-    "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
-    "pr": null,
-    "implementation": "",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
+    "assigned_branch": "remediation/a-foundation-security",
+    "pr": 333,
+    "implementation": "Direct real-Ledger input regression explicitly covers non-string key123 and asserts atomic rejection, preserved spend and write count.",
     "required_tests": "Mutation that accepts non-string keys makes the new test fail while real implementation passes.",
-    "actual_results": [],
-    "regression_coverage": [],
-    "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "actual_results": [
+      "Independent runtime mutation that admits non-string keys makes exactly that key123 subtest fail; real implementation passes. No product file modified."
+    ],
+    "regression_coverage": [
+      "tests/test_budget_ledger_integrity.py:test_invalid_record_is_rejected_atomically"
+    ],
+    "final_evidence": [
+      "TEST-EVIDENCE.md",
+      "evidence/ci-receipts.json"
+    ],
+    "remaining_limitations": "Verified candidate only; owner approval and exact integration-head validation remain mandatory.",
+    "reconciliation": "Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated."
   },
   {
     "id": "KF-AUDIT-059",
@@ -1522,16 +1687,16 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "UNVERIFIED",
-    "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "status": "NOT STARTED",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Image/audio fixtures yield verified grounded outputs on allowed models or explicit unsupported state without fabricated inspection.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-060",
@@ -1549,15 +1714,15 @@
     "priority": "P2",
     "current_classification": "PARTIAL",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Same adversarial and transition corpus yields equivalent decisions in Python, Worker and frontend.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
     "id": "KF-AUDIT-061",
@@ -1575,14 +1740,14 @@
     "priority": "P2",
     "current_classification": "UNVERIFIED",
     "status": "INVESTIGATING",
-    "assigned_branch": "remediation/program",
+    "assigned_branch": "unassigned",
     "pr": null,
     "implementation": "",
     "required_tests": "Random task sample reports first-attempt/recovery/human intervention with task denominator and missing-evidence count.",
     "actual_results": [],
     "regression_coverage": [],
     "final_evidence": [],
-    "remaining_limitations": "",
-    "reconciliation": "Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged."
+    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   }
 ]

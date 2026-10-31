@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "date": "2026-10-31",
+  "programComplete": false,
+  "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
+  "composedCode": "c3d6606aabd54d9886f1cbac3025df9c93ca52ce",
+  "statuses": {
+    "VERIFIED": 13,
+    "INVESTIGATING": 24,
+    "TESTING": 5,
+    "NOT STARTED": 13,
+    "BLOCKED": 6
+  },
+  "mergedPRs": [],
+  "draftPRs": [
+    332,
+    333,
+    334,
+    335,
+    336
+  ],
+  "productionChanges": false,
+  "paidInference": false,
+  "scoresChanged": false,
+  "unresolvedMandatoryGate": "Native composer125a099:5 total,4 passed,1 failed; run41141346449",
+  "nextActions": [
+    "Keep all candidates draft; investigate native focused null frame using saved hierarchy/screenshots without weakening assertions.",
+    "Strengthen mandatory real-integration checks so required skipped suites cannot be green (048).",
+    "Continue foundation037 auth/session migration,016 provider replay and actual-config evidence blockers; then runtime011/012/014/020/060.",
+    "Preserve outputs under docs rather than ephemeral /tmp; update all61 records only against original acceptance."
+  ],
+  "evidence": [
+    "TEST-EVIDENCE.md",
+    "evidence/ci-2026-10-31.json",
+    "evidence/latest-test-excerpts.json",
+    "evidence/native-failed-receipt.json",
+    "evidence/native-failed-hierarchy.txt"
+  ],
+  "environments": {
+    "local": "managed Linux; real GitHub-hosted admission intentionally unavailable; no Xcode",
+    "supportedCI": "actual Linux Docker, workerd, browser and macOS simulator executed"
+  },
+  "remainingPhases": "A incomplete; B partial; C-H not complete",
+  "mergePolicy": "Specific final owner approval required after validated actual integration state"
+}

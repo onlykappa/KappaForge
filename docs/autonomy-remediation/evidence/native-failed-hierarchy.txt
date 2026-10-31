@@ -1,0 +1,120 @@
+exists=true keyboardExists=true frame=(inf, inf, 0.0, 0.0) keyboard=(0.0, 451.0, 375.0, 216.0) web=(0.0, 20.0, 375.0, 647.0)
+Attributes: Application, 0x102f88110, pid: 11199, label: 'KappaForge'
+Element subtree:
+ →Application, 0x102f88110, pid: 11199, label: 'KappaForge'
+    Window (Main), 0x102f84830, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x102f89a40, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x102f89b60, {{0.0, 0.0}, {375.0, 667.0}}
+          Other, 0x102f2d950, {{0.0, 0.0}, {375.0, 667.0}}
+            Other, 0x102f86bf0, {{0.0, 0.0}, {375.0, 667.0}}
+              WebView, 0x102f89c80, {{0.0, 20.0}, {375.0, 647.0}}
+                TextView, 0x102f89da0, {{0.0, 0.0}, {0.0, 0.0}}, identifier: 'native-composer', label: 'Message', value: Message KappaForge…, Keyboard Focused
+                  Other, 0x102f89ec0, {{246.0, -285.0}, {30.0, 36.0}}, label: 'Vertical scroll bar, 1 page', value: 0%
+                    Other, 0x102f89fe0, {{273.0, -276.0}, {3.0, 24.0}}
+                  Other, 0x102f8a100, {{78.0, -270.0}, {201.0, 18.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                    Other, 0x102f8a220, {{81.0, -255.0}, {191.0, 3.0}}
+                WebView, 0x102f8a340, {{0.0, 20.0}, {375.0, 647.0}}
+                  WebView, 0x102f8a460, {{0.0, 20.0}, {375.0, 647.0}}
+                    Other, 0x102f8a580, {{0.0, 0.0}, {375.0, 647.0}}
+                      Other, 0x102f8a6a0, {{0.0, 0.0}, {375.0, 647.0}}
+                        Other, 0x102f8a7c0, {{0.0, -137.0}, {375.0, 647.0}}
+                          Other, 0x102f8a8e0, {{0.0, -137.0}, {375.0, 804.0}}, label: 'KappaForge', Focused
+                            Button, 0x102f8aa00, {{12.0, 20.0}, {44.0, 44.0}}, label: 'Back to Chats', Focused
+                            Other, 0x102f8ab20, {{66.0, 29.0}, {243.0, 26.0}}, Focused
+                              StaticText, 0x102f8ac40, {{66.0, 30.0}, {140.0, 23.0}}, label: 'New conversation', value: New conversation, Focused
+                            Button, 0x102f8ad60, {{319.0, 20.0}, {44.0, 44.0}}, label: 'New chat', Focused
+                            Other, 0x102f8ae80, {{0.0, -85.0}, {375.0, 753.0}}, label: 'main', Focused
+                              Other, 0x102f8afa0, {{16.0, 87.0}, {343.0, 74.0}}, label: 'A little clarity.
+A lot of possibility.', value: 1, Focused
+                                StaticText, 0x102f8b0c0, {{104.0, 87.0}, {167.0, 38.0}}, label: 'A little clarity.', value: A little clarity., Focused
+                                StaticText, 0x102f8b1e0, {{74.0, 123.0}, {227.0, 38.0}}, label: 'A lot of possibility.', value: A lot of possibili..., Focused
+                              Other, 0x102f8b300, {{16.0, 175.0}, {343.0, 21.0}}, Focused
+                                StaticText, 0x102f8b420, {{18.0, 176.0}, {339.0, 18.0}}, label: 'Think it through, make a plan, or build what comes next.', value: Think it through, ..., Focused
+                              Button, 0x102f8b540, {{16.0, 217.0}, {116.0, 39.0}}, label: 'Explore an idea', Focused
+                              Button, 0x102f8b660, {{138.0, 217.0}, {107.0, 39.0}}, label: 'Plan a project', Focused
+                              Button, 0x102f8b780, {{252.0, 217.0}, {107.0, 39.0}}, label: 'Work on code', Focused
+                            Other, 0x102f8b8a0, {{78.0, 362.0}, {1.0, 1.0}}, label: 'Message KappaForge', Focused
+                              StaticText, 0x102f8b9c0, {{78.0, 363.0}, {83.0, 41.0}}, label: 'Message KappaForge', value: Message KappaForge, Focused
+                            Other, 0x102f8bae0, {{8.0, 357.0}, {46.0, 46.0}}, Focused
+                              Button, 0x102f8bc00, {{8.0, 357.0}, {46.0, 46.0}}, label: 'Attach files or folder', Focused
+                            Button, 0x102f8bd20, {{285.0, 361.0}, {38.0, 38.0}}, label: 'Dictate message', Focused
+                            Button, 0x102f8be40, {{325.0, 361.0}, {38.0, 38.0}}, label: 'Talk to KappaForge', Focused
+                  Other, 0x102f8bf60, {{342.0, 20.0}, {30.0, 647.0}}, label: 'Vertical scroll bar, 2 pages', value: 100%
+                    Other, 0x102f8c080, {{369.0, 148.0}, {3.0, 516.0}}
+                  Other, 0x102f8c1a0, {{0.0, 634.0}, {375.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                    Other, 0x102f8c2c0, {{3.0, 661.0}, {366.0, 3.0}}
+                  Other, 0x102f8c3e0, {{342.0, 20.0}, {30.0, 647.0}}, label: 'Vertical scroll bar, 2 pages', value: 100%
+                    Other, 0x102f8c500, {{369.0, 148.0}, {3.0, 516.0}}
+                  Other, 0x102f8c620, {{0.0, 634.0}, {375.0, 30.0}}, label: 'Horizontal scroll bar, 1 page', value: 0%
+                    Other, 0x102f8c740, {{3.0, 661.0}, {366.0, 3.0}}
+    Window, 0x102f8c860, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x102f8c980, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x102f8caa0, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x102f8cbc0, {{0.0, 407.0}, {375.0, 260.0}}
+          Other, 0x102f8cce0, {{0.0, 407.0}, {375.0, 260.0}}
+    Window, 0x102f8ce00, {{0.0, 0.0}, {375.0, 667.0}}
+      Other, 0x102f8cf20, {{0.0, 0.0}, {375.0, 667.0}}
+        Other, 0x102f8d040, {{0.0, 407.0}, {375.0, 260.0}}
+          Other, 0x102f8d160, {{0.0, 407.0}, {375.0, 44.0}}
+            Other, 0x102f8d280, {{0.0, 407.0}, {375.0, 44.0}}
+              Other, 0x102f8d3a0, {{0.0, 407.0}, {375.0, 44.0}}
+          Other, 0x103869850, {{0.0, 407.0}, {375.0, 44.0}}, identifier: 'SystemInputAssistantView'
+            Other, 0x10386a630, {{0.0, 407.0}, {375.0, 44.0}}
+              Other, 0x10386b4b0, {{0.0, 407.0}, {375.0, 44.0}}, identifier: 'CenterPageView'
+                Other, 0x10386a210, {{0.0, -193.0}, {375.0, 1244.0}}
+                  ScrollView, 0x10386d950, {{0.0, 407.0}, {375.0, 44.0}}
+                Other, 0x10386da70, {{0.0, 407.0}, {375.0, 44.0}}
+                  Other, 0x10386dbb0, {{0.0, 407.0}, {375.0, 44.0}}, label: 'Typing Predictions'
+                    Other, 0x10386dcd0, {{0.0, 407.0}, {375.0, 44.0}}
+                      Other, 0x10386ddf0, {{0.0, 407.0}, {375.0, 44.0}}
+                        Other, 0x10386df10, {{0.0, 407.0}, {125.0, 44.0}}
+                        Other, 0x10386e030, {{125.0, 407.0}, {125.0, 44.0}}
+                        Other, 0x10386e150, {{250.0, 407.0}, {125.0, 44.0}}
+          Other, 0x10386e270, {{0.0, 451.0}, {375.0, 216.0}}
+            Other, 0x10386e390, {{0.0, 451.0}, {375.0, 216.0}}
+              Other, 0x10386e4b0, {{0.0, 451.0}, {375.0, 216.0}}
+                Other, 0x10386e5d0, {{0.0, 451.0}, {375.0, 216.0}}
+          Other, 0x10386e6f0, {{0.0, 451.0}, {375.0, 216.0}}
+            Keyboard, 0x10386e810, {{0.0, 451.0}, {375.0, 216.0}}
+              Other, 0x10386e930, {{0.0, 451.0}, {375.0, 216.0}}
+                Other, 0x10386ea50, {{0.0, 451.0}, {375.0, 216.0}}, identifier: 'UIKeyboardLayoutStar Preview'
+                  Key, 0x10386eb70, {{0.0, 458.0}, {37.5, 46.0}}, label: 'Q'
+                  Key, 0x10386ec90, {{37.5, 458.0}, {37.5, 46.0}}, label: 'W'
+                  Key, 0x10386edb0, {{75.0, 458.0}, {37.5, 46.0}}, label: 'E'
+                  Key, 0x10386eed0, {{112.5, 458.0}, {37.5, 46.0}}, label: 'R'
+                  Key, 0x10386eff0, {{150.0, 458.0}, {37.5, 46.0}}, label: 'T'
+                  Key, 0x10386f110, {{187.5, 458.0}, {37.5, 46.0}}, label: 'Y'
+                  Key, 0x10386f230, {{225.0, 458.0}, {37.5, 46.0}}, label: 'U'
+                  Key, 0x10386f350, {{262.5, 458.0}, {37.5, 46.0}}, label: 'I'
+                  Key, 0x10386f470, {{300.0, 458.0}, {37.5, 46.0}}, label: 'O'
+                  Key, 0x10386f590, {{337.5, 458.0}, {37.5, 46.0}}, label: 'P'
+                  Key, 0x10386f6b0, {{18.5, 512.0}, {37.5, 46.0}}, label: 'A'
+                  Key, 0x10386f7d0, {{56.0, 512.0}, {37.5, 46.0}}, label: 'S'
+                  Key, 0x10386f8f0, {{93.5, 512.0}, {37.5, 46.0}}, label: 'D'
+                  Key, 0x10386fa10, {{131.0, 512.0}, {37.5, 46.0}}, label: 'F'
+                  Key, 0x10386fb30, {{169.0, 512.0}, {37.5, 46.0}}, label: 'G'
+                  Key, 0x10386fc50, {{206.5, 512.0}, {37.5, 46.0}}, label: 'H'
+                  Key, 0x10386fd70, {{244.0, 512.0}, {37.5, 46.0}}, label: 'J'
+                  Key, 0x10386fe90, {{281.5, 512.0}, {37.5, 46.0}}, label: 'K'
+                  Key, 0x10386ffb0, {{319.0, 512.0}, {37.5, 46.0}}, label: 'L'
+                  Button, 0x1038700d0, {{0.0, 566.0}, {48.0, 46.0}}, identifier: 'shift', label: 'shift', Selected
+                  Key, 0x1038701f0, {{56.0, 566.0}, {37.5, 46.0}}, label: 'Z'
+                  Key, 0x103870310, {{93.5, 566.0}, {37.5, 46.0}}, label: 'X'
+                  Key, 0x103870430, {{131.0, 566.0}, {37.5, 46.0}}, label: 'C'
+                  Key, 0x103870550, {{169.0, 566.0}, {37.5, 46.0}}, label: 'V'
+                  Key, 0x103870670, {{206.5, 566.0}, {37.5, 46.0}}, label: 'B'
+                  Key, 0x103870790, {{244.0, 566.0}, {37.5, 46.0}}, label: 'N'
+                  Key, 0x1038708b0, {{281.5, 566.0}, {37.5, 46.0}}, label: 'M'
+                  Key, 0x103870b20, {{327.0, 566.0}, {48.0, 46.0}}, identifier: 'delete', label: 'delete'
+                  Key, 0x103870c40, {{0.0, 620.0}, {46.5, 46.0}}, identifier: 'more', label: 'numbers'
+                  Button, 0x103870d60, {{46.5, 620.0}, {47.0, 46.0}}, identifier: 'emoji', label: 'Emoji'
+                  Button, 0x103870e80, {{93.5, 620.0}, {37.5, 46.0}}, identifier: 'dictation', label: 'Dictate'
+                  Key, 0x103870fa0, {{131.0, 620.0}, {150.5, 46.0}}, identifier: 'space', label: 'space'
+                  Button, 0x1038710c0, {{281.5, 620.0}, {93.5, 46.0}}, identifier: 'Return', label: 'return'
+Path to element:
+ →Application, 0x102f88110, pid: 11199, label: 'KappaForge'
+Query chain:
+ →Find: Target Application 'com.onlykappa.KappaForge'
+  Output: {
+    Application, 0x1038c7a40, pid: 11199, label: 'KappaForge'
+  }

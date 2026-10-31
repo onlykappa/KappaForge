@@ -6,13 +6,13 @@ The application version remains2.2.9. This branch prepares3.0 remediation; no re
 
 | Surface | Implemented behavior | Verification / limitations |
 |---|---|---|
-| Coding agent | Owner issue intake, dynamic source tools, bounded iterative repair, sandbox tests and draft PRs | Real implementation; broad task completion remains unmeasured |
-| Verification | Exact task/candidate-bound path-scope receipts; copied-helper test detection; distinct objective outcome | New regressions are in tests/test_typed_scope_evidence.py and tests/test_copied_logic_evidence.py; not production-validated |
-| Budgets/requirements | Monotonic durable counters; complete wording; explicit overflow instead of silent truncation | Direct restart and invalid-input regression tests |
-| Tools | Existing exact patches plus version-bound line edits and conflict observations | Existing Docker compute is on Actions, never an unrestricted Worker shell |
-| Model policy | Approved free routes first; PremiumOFF by default, no automatic paid escalation | Actual deployed provider/Premium state remains unverified |
-| Consequential operations | Autonomous workflow publication blocked; deploy/release require explicit owner dispatch | GitHub environment protections and actual token scopes still require owner verification |
-| General assistance | Chat, notes/vault, curated docs research and bespoke API integrations | Broad browser, office and local-device execution are not implemented/verified general tools |
+| Coding agent | [Owner task execution](engine/developer.py), [iterative source/tool repair](engine/sandbox_repair_controller.py), sandbox validation and draft PRs | [Actual supported-runtime receipts](docs/autonomy-remediation/TEST-EVIDENCE.md); broad live task completion remains unmeasured |
+| Verification | [Candidate-bound typed evidence](engine/evidence_contract.py), [operational receipts](engine/operational_review.py), [copied-helper detection](engine/verify.py) and [objective outcome](engine/recovery.py) | [Scope regressions](tests/test_typed_scope_evidence.py), [independent copied-logic controls](tests/test_copied_logic_evidence.py); not deployed |
+| Budgets/requirements | [Monotonic counters](engine/budget_ledger.py), [complete wording/explicit overflow](engine/requirements.py) | [Restart/invalid-input tests](tests/test_budget_ledger_integrity.py), [40-requirement regression](tests/test_requirement_limits.py) |
+| Tools | [Existing exact/versioned edits](engine/sandbox_tools.py) and [isolated executor](engine/sandbox.py) | [Version conflicts](tests/test_versioned_line_patch.py), [real Docker receipts](docs/autonomy-remediation/TEST-EVIDENCE.md); compute is on Actions, not a Worker shell |
+| Model policy | [Approved route policy](chat-backend/src/routing-policy.js), [PremiumOFF/free-first](chat-backend/src/premium.js) | [Premium regressions](tests/premium.test.mjs); actual deployed provider/Premium state remains unverified |
+| Consequential operations | [Workflow publication guard](engine/developer.py); [explicit deploy](.github/workflows/deploy-chat.yml) and [release](.github/workflows/ios-build.yml) | [Negative security tests](tests/test_privileged_publication.py); actual token/environment protection review remains open |
+| General assistance | [Chat/notes](preview/app-main.js), [saved preferences/vault](preview/app-state.js), [curated research](engine/research.py) and bespoke API integrations | Broad browser, office and local-device execution are not implemented/verified general tools; see [all61 acceptance gates](docs/autonomy-remediation/MASTER-REMEDIATION-TRACKER.md) |
 
 No task is complete merely because a workflow is green, a draft exists or a model says done. Merging requires exact owner approval; deployment/release are separate operations. Run the baseline and per-gap tests listed in [TEST-EVIDENCE.md](docs/autonomy-remediation/TEST-EVIDENCE.md).
 
