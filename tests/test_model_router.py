@@ -36,25 +36,25 @@ class ModelRoutingTests(unittest.TestCase):
     def test_no_unapproved_fallback(self):
         self.assertEqual(runner.select_models({"gemini-2.5-pro"}), [])
 
-    def test_gemini_full_catalog_opt_in_routes_other_chat_models_after_flash(self):
+    def test_gemini_catalog_flag_never_authorizes_pro_or_other_unreviewed_classes(self):
         available = {"gemini-2.5-pro", "gemini-3-flash", "gemini-2.5-flash-image", "gemini-2.5-flash-preview-tts", "other"}
         with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "gemini"}):
-            self.assertEqual(runner.select_models(available), ["gemini-3-flash", "gemini-2.5-pro", "other"])
+            self.assertEqual(runner.select_models(available), ["gemini-3-flash"])
 
-    def test_star_opts_every_provider_into_its_full_catalog(self):
+    def test_legacy_catalog_flags_never_authorize_paid_routes(self):
         with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*"}):
-            self.assertTrue(runner.full_catalog("groq"))
+            self.assertFalse(runner.full_catalog("groq"))
             self.assertFalse(runner.full_catalog("kilo"), "free-model gateways keep free routes unless named")
         with patch.dict(os.environ, {"KAPPA_ALL_MODEL_PROVIDERS": "*,kilo"}):
-            self.assertTrue(runner.full_catalog("kilo"))
-            self.assertEqual(runner.select_models({"gemini-2.5-pro", "gemini-3-flash"}), ["gemini-3-flash", "gemini-2.5-pro"])
+            self.assertFalse(runner.full_catalog("kilo"))
+            self.assertEqual(runner.select_models({"gemini-2.5-pro", "gemini-3-flash"}), ["gemini-3-flash"])
 
-    def test_provider_full_catalog_opt_in_lifts_free_filter_and_cap(self):
+    def test_provider_catalog_flag_expands_only_free_pool(self):
         def urlopen(req, timeout=None):
             return response({"data": [{"id": "paid/model"}, {"id": "kilo-auto/free"}, {"id": "poolside/laguna-s-2.1:free"}, {"id": "other/free"}]})
         with patch.dict(os.environ, {**{k: "" for k in KEYS}, "KAPPA_ALL_MODEL_PROVIDERS": "kilo"}), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free", "other/free", "paid/model"])
+            self.assertEqual(runner.provider_models("kilo"), ["poolside/laguna-s-2.1:free", "kilo-auto/free", "other/free"])
 
     @patch("engine.runner.urllib.request.urlopen")
     def test_discovery_filters_methods_and_paginates(self, urlopen):
@@ -89,7 +89,7 @@ class ModelRoutingTests(unittest.TestCase):
             if "generativelanguage" in url:
                 raise urllib.error.HTTPError(url, 429, "quota", {}, io.BytesIO(b""))
             if url == "https://api.groq.com/openai/v1/models":
-                return response({"data": [{"id": "whisper-large-v3"}, {"id": "llama-3.3-70b-versatile"}]})
+                return response({"data": [{"id": "whisper-large-v3"}, {"id": "openai/gpt-oss-120b"}]})
             if url == "https://api.groq.com/openai/v1/chat/completions":
                 return response({"choices": [{"message": {"content": "fallback answer"}}]})
             raise urllib.error.HTTPError(url, 404, "missing", {}, io.BytesIO(b""))
@@ -97,7 +97,7 @@ class ModelRoutingTests(unittest.TestCase):
         with patch.dict(os.environ, {"GROQ_API_KEY": "groq-key", **keys}), \
                 patch("engine.runner.urllib.request.urlopen", side_effect=urlopen), patch("engine.runner.time.sleep"):
             model, output = runner.run_model("gemini-key", "Write code")
-        self.assertEqual((model, output), ("groq:llama-3.3-70b-versatile", "fallback answer"))
+        self.assertEqual((model, output), ("groq:openai/gpt-oss-120b", "fallback answer"))
         self.assertIn(("https://api.groq.com/openai/v1/chat/completions", "Bearer groq-key"), requests)
 
     def test_without_provider_keys_gemini_errors_are_reported(self):
@@ -149,12 +149,12 @@ class ModelRoutingTests(unittest.TestCase):
     def test_fixed_free_list_and_optional_keys(self):
         with patch.dict(os.environ, {"ZAI_API_KEY": "zai-key", "LLM7_API_KEY": "llm7-key"}), \
                 patch("engine.runner.urllib.request.urlopen") as urlopen:
-            self.assertEqual(runner.provider_models("zai"), ["glm-4.7-flash"])
+            self.assertEqual(runner.provider_models("zai"), [], 'A fixed catalog without free eligibility cannot authorize billing')
             urlopen.assert_not_called()
             self.assertEqual(runner.provider_headers(runner.PROVIDERS["providers"]["llm7"])["Authorization"], "Bearer llm7-key")
     def test_metered_chat_provider_needs_named_opt_in_and_never_runs_coding_probes(self):
         from engine import provider_check
-        for opt, expected in [('', False), ('*', False), ('huggingface', True)]:
+        for opt, expected in [('', False), ('*', False), ('huggingface', False)]:
             with patch.dict(os.environ, {'KAPPA_ALL_MODEL_PROVIDERS': opt, 'HUGGINGFACE_API_KEY': 'fixture'}):
                 self.assertEqual(runner.full_catalog('huggingface'), expected)
                 with patch.object(runner.urllib.request, 'urlopen') as upstream:
@@ -189,7 +189,7 @@ class ModelRoutingTests(unittest.TestCase):
         def urlopen(req, timeout=None):
             url = req.full_url
             if url.endswith("/models"):
-                return response({"data": [{"id": "llama-3.3-70b-versatile"}]})
+                return response({"data": [{"id": "openai/gpt-oss-120b"}]})
             body = json.loads(req.data)
             sent.append((url, body["max_tokens"]))
             if body["max_tokens"] > runner.FALLBACK_MAX_TOKENS:
@@ -199,7 +199,7 @@ class ModelRoutingTests(unittest.TestCase):
                 patch.dict(runner.PROVIDERS["providers"]["groq"], {"maxOutput": 65536}):
             self.assertIsNone(runner.run_fallback_providers("x", 16384, [], allowed=set()))
             self.assertEqual(sent, [])
-            self.assertEqual(runner.run_fallback_providers("x", 16384, [], allowed={"groq"}), ("groq:llama-3.3-70b-versatile", "ok"))
+            self.assertEqual(runner.run_fallback_providers("x", 16384, [], allowed={"groq"}), ("groq:openai/gpt-oss-120b", "ok"))
         self.assertEqual([limit for _, limit in sent], [16384, runner.FALLBACK_MAX_TOKENS])
 
 if __name__ == "__main__":
@@ -317,8 +317,8 @@ class StrongModelsBeforeLite(unittest.TestCase):
 
     CONFIG = {"order": ["strongp", "weakp"], "maxModelsPerProvider": 1, "exclude": "embed", "providers": {
         "strongp": {"kind": "openai", "base": "https://strong.example/v1", "strong": True, "context": 1000, "maxOutput": 200,
-                    "models": ["coder-1"]},
-        "weakp": {"kind": "openai", "base": "https://weak.example/v1", "context": 100000, "models": ["small-1"]}}}
+                    "models": ["coder-1"], "freeModels": ["coder-1"]},
+        "weakp": {"kind": "openai", "base": "https://weak.example/v1", "context": 100000, "models": ["small-1"], "freeModels": ["small-1"]}}}
 
     def setUp(self):
         runner._lists.clear()
@@ -390,17 +390,19 @@ class ProviderCheck(unittest.TestCase):
 
         def urlopen(req, timeout=None):
             if req.full_url.endswith("/models"):
-                return response({"data": [{"id": "deepseek-v4-pro"}]})
-            if "ollama" in req.full_url:
+                model='deepseek-ai/deepseek-v4.1-flash' if 'nvidia' in req.full_url else 'mistral-small-latest'
+                return response({"data": [{"id": model}]})
+            if "nvidia" in req.full_url:
                 return response({"choices": [{"message": {"content": "OK"}}]})
             raise urllib.error.HTTPError(req.full_url, 429, "quota", {}, io.BytesIO(b""))
         env = {k: "" for k in KEYS}
-        env.update({"OLLAMA_API_KEY": "secret-ollama", "NVIDIA_API_KEY": "secret-nvidia"})
+        env.update({"OLLAMA_API_KEY": "secret-ollama", "NVIDIA_API_KEY": "secret-nvidia",'MISTRAL_API_KEY':'secret-mistral'})
         with patch.dict(os.environ, env), patch("engine.runner.urllib.request.urlopen", side_effect=urlopen):
-            rows = provider_check.check_provider("ollama") + provider_check.check_provider("nvidia") + provider_check.check_provider("groq")
+            rows = provider_check.check_provider("ollama") + provider_check.check_provider("nvidia") + provider_check.check_provider('mistral') + provider_check.check_provider("groq")
             text = provider_check.report(rows + provider_check.check_gemini(""))
-        self.assertIn("| ollama (strong) | `deepseek-v4-pro` | ✅ ok |", text)
-        self.assertIn("| nvidia (strong) | `deepseek-v4-pro` | ❌ failed | HTTP 429 (rate-limited) |", text)
+        self.assertIn('| ollama (strong) | `-` | ➖ excluded | No reviewed free route',text)
+        self.assertIn("| nvidia (strong) | `deepseek-ai/deepseek-v4.1-flash` | ✅ ok |", text)
+        self.assertIn("| mistral | `mistral-small-latest` | ❌ failed | HTTP 429 (rate-limited) |", text)
         self.assertIn("add the GROQ_API_KEY secret", text)
         self.assertIn("GEMINI_API_KEY is not set", text)
         self.assertIn("1 model answered", text)

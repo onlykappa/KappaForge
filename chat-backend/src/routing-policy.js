@@ -3,6 +3,8 @@ import registry from "../../config/providers.json" with {type:"json"};
 const list=value=>new Set(typeof value==="string"?value.split(",").map(x=>x.trim()).filter(Boolean):[]);
 const providers=new Set(["gemini",...registry.order]);
 export const ROUTING_POLICY_VERSION="v1";
+export const COST_POLICY=Object.freeze({version:'reviewed-free-v2',legacyPaidCatalogs:false,
+ paidProvider:'openrouter',paidAuthorization:'capped_premium_after_free_exhaustion'});
 // Match the bounded coding runner's owner-authored route field. This selects a
 // route for the current request only; it grants no provider or task permission.
 export function requestRoutingPreferences(text,preferences={}){
@@ -14,26 +16,24 @@ export function requestRoutingPreferences(text,preferences={}){
 }
 const noCostReviewed=id=>id==="gemini"?Array.isArray(registry.routing?.primary?.freeModels):
  Array.isArray(registry.providers[id]?.freeModels)||registry.providers[id]?.freeOnly===true;
-// Owner opt-in (KAPPA_ALL_MODEL_PROVIDERS) to route every chat model the provider account lists, including paid
-// ones. Without it a provider keeps its reviewed free models and per-provider cap. "*" covers every provider except
-// free-model gateways (freeOnly) and metered providers: their paid catalogs require a named opt-in.
-// "*" still lifts the per-provider cap on a free-model gateway: every free route it lists is used.
-export function everyFreeModel(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return (all.has("*")||all.has(id))&&registry.providers[id]?.freeOnly===true;}
-// OpenRouter credit is spendable only through the capped Premium path. An old full-catalog environment setting cannot
-// make chat, free coding, probes or audits select a paid OpenRouter model.
-export function fullCatalog(env,id){if(id==="openrouter")return false;const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return all.has(id)||all.has("*")&&registry.providers[id]?.freeOnly!==true&&registry.providers[id]?.metered!==true;}
+// Legacy catalog settings may expand a reviewed FREE pool; they cannot authorize
+// paid inference. Paid OpenRouter is available only through the capped Premium
+// coordinator after eligible free routes are exhausted and explicit opt-in.
+export function everyFreeModel(env,id){const all=list(env.KAPPA_ALL_MODEL_PROVIDERS);return (all.has("*")||all.has(id))&&(id==='gemini'||registry.providers[id]?.freeOnly===true);}
+// Retain the exported interface for existing adapters, never the old paid bypass.
+export function fullCatalog(_env,_id){return false;}
 
 // The deployed Worker opts into fail-closed routing via wrangler.toml. Legacy test/preview
 // environments without that version retain their existing behavior until explicitly upgraded.
 export function providerPolicyStatus(env,channel,id,{privateCode=false,requested=null}={}){
  const excluded=reason=>({enabled:false,reason});
  if(!providers.has(id))return excluded("unknown_provider");
- if(registry.providers[id]?.metered===true&&!list(env.KAPPA_ALL_MODEL_PROVIDERS).has(id))return excluded("metered_provider_opt_in");
+ if(registry.providers[id]?.metered===true)return excluded("paid_route_requires_premium");
  if(channel==="coding"&&registry.providers[id]?.capabilities?.coding===false)return excluded("coding_unsupported");
  // Keep legacy preview/test deployments compatible. The production Worker opts into the
  // provider permissions explicitly through ROUTING_POLICY_VERSION=v1.
+ if(!noCostReviewed(id))return excluded("free_models_unreviewed");
  if(env.ROUTING_POLICY_VERSION!==ROUTING_POLICY_VERSION)return {enabled:true,reason:"legacy_policy"};
- if(!noCostReviewed(id)&&!fullCatalog(env,id))return excluded("free_models_unreviewed");
  const permitted=list(env.KAPPA_FREE_PROVIDERS),channelName=channel==="coding"?"KAPPA_CODE_PROVIDERS":"KAPPA_CHAT_PROVIDERS";
  const allowed=list(env[channelName]);
  if(!permitted.has(id))return excluded("free_provider_permission");
@@ -47,7 +47,7 @@ export function providerAllowed(env,channel,id,options={}){return providerPolicy
 
 export function routePolicy(env){
  const active=env.ROUTING_POLICY_VERSION===ROUTING_POLICY_VERSION;
- return {version:active?ROUTING_POLICY_VERSION:"legacy",failClosed:active,
+ return {version:active?ROUTING_POLICY_VERSION:"legacy",failClosed:active,costPolicy:COST_POLICY,
   freeAllowlistConfigured:typeof env.KAPPA_FREE_PROVIDERS==="string"&&env.KAPPA_FREE_PROVIDERS.trim().length>0,
   chatProviders:[...providers].filter(id=>providerAllowed(env,"chat",id)),
   codingProviders:[...providers].filter(id=>providerAllowed(env,"coding",id)),

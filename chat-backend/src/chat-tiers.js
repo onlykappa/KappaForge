@@ -30,6 +30,10 @@ async function routerModel(env,disabled){
  if(disabled.has("mistral")||!configured(env,"mistral")||!providerAllowed(env,"chat","mistral"))return null;
  const models=await providerModels(env,"mistral").catch(()=>[]);
  for(const want of registry.routing?.chatRouterModels||[])if(models.includes(want))return {provider:"mistral",model:want,label:"mistral:"+want};
+ // The tiny classifier models may lack a reviewed free route. Preserve model
+ // classification using an already admitted Small route, never a paid catalog.
+ const fallback=models.find(model=>/^mistral-small(?:-|$)/.test(model));
+ if(fallback)return {provider:'mistral',model:fallback,label:'mistral:'+fallback};
  return null;
 }
 

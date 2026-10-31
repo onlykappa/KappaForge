@@ -1,3 +1,4 @@
+import {reviewedProviderFixture} from './reviewed-provider-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {stripThinking,thinkingFilter,normalizeResult,chunkNormalizer,fallbackRoutes,REASONING_MODEL} from '../chat-backend/src/providers.js';
@@ -25,6 +26,7 @@ test('streamed thinking is held back, however the tags are split across chunks',
 test('chat tries reasoning models last; DeepSeek chat models stay first',async()=>{
  for(const id of ['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b','deepseek-reasoner','qwq-32b','magistral-small-latest'])assert.equal(REASONING_MODEL.test(id),true,id);
  for(const id of ['deepseek-v4-pro','gemini-3.8-flash','gpt-oss-120b','kimi-k3'])assert.equal(REASONING_MODEL.test(id),false,id);
+ const restore=reviewedProviderFixture('workers-ai',['@cf/deepseek-ai/deepseek-r1-distill-qwen-32b','@cf/meta/llama-3.3-70b-instruct-fp8-fast']);
  const real=globalThis.fetch;
  globalThis.fetch=async()=>Response.json({result:[{name:'@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',task:{name:'Text Generation'}},{name:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',task:{name:'Text Generation'}}],result_info:{total_pages:1}});
  try{
@@ -33,7 +35,7 @@ test('chat tries reasoning models last; DeepSeek chat models stay first',async()
   const order=routes.map(r=>r.label);
   assert.equal(order.at(-1),'workers-ai:@cf/deepseek-ai/deepseek-r1-distill-qwen-32b','the reasoning distill goes last for chat');
   assert.ok(order.indexOf('gemini-3.8-flash')<order.indexOf('workers-ai:@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'));
- }finally{globalThis.fetch=real;}
+ }finally{globalThis.fetch=real;restore();}
 });
 
 test('the coding gateway streams answers, and asks once without streaming when a provider refuses JSON while streaming',async()=>{

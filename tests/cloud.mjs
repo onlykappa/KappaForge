@@ -91,7 +91,7 @@ function aiMock(t,answer){
  const asked=[];
  mockFetch(t,async(url,init={})=>{
   const u=String(url);
-  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'llama-3.3-70b-versatile'}]});
+  if(u==='https://api.groq.com/openai/v1/models')return Response.json({data:[{id:'openai/gpt-oss-120b'}]});
   if(u==='https://api.groq.com/openai/v1/chat/completions'){
    asked.push(u);const recovered=await answer(asked.length,init);const data=await recovered.json().catch(()=>({}));
    const text=data.candidates?.[0]?.content?.parts?.map(part=>part.text||'').join('\\n')||'recovered';
