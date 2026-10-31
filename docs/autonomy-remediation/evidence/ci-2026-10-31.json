@@ -1,0 +1,964 @@
+{
+  "schema": 1,
+  "repository": "onlykappa/KappaForge",
+  "observedDate": "2026-10-31",
+  "heads": [
+    {
+      "pr": 335,
+      "sha": "125a0991ed69b40ef604fa10626cbf2cdce745f2",
+      "workflow_runs": [
+        {
+          "id": 41141346456,
+          "name": "Sandbox self-test",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 129,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346456/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346456/logs",
+          "workflow_id": 395187192
+        },
+        {
+          "id": 41141346372,
+          "name": "Review graph KappaForge remediation/c-lifecycle-reconciliation",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 515,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346372/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346372/logs",
+          "workflow_id": 392352649
+        },
+        {
+          "id": 41141346461,
+          "name": "KappaForge tests",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1260,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346461/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346461/logs",
+          "workflow_id": 385839705
+        },
+        {
+          "id": 41141346449,
+          "name": "iOS build and release",
+          "status": "completed",
+          "conclusion": "failure",
+          "run_number": 516,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346449/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141346449/logs",
+          "workflow_id": 385957293
+        }
+      ]
+    },
+    {
+      "pr": 336,
+      "sha": "c3d6606aabd54d9886f1cbac3025df9c93ca52ce",
+      "workflow_runs": [
+        {
+          "id": 41141422705,
+          "name": "Review graph KappaForge remediation/a-effective-diagnostics",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 516,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141422705/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141422705/logs",
+          "workflow_id": 392352649
+        },
+        {
+          "id": 41141422656,
+          "name": "KappaForge tests",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1261,
+          "jobs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141422656/jobs",
+          "logs_url": "https://api.github.com/repos/onlykappa/KappaForge/actions/runs/41141422656/logs",
+          "workflow_id": 385839705
+        }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "run_id": 41141346449,
+      "jobs": [
+        {
+          "id": 124356078574,
+          "name": "native",
+          "status": "completed",
+          "conclusion": "failure",
+          "run_id": 41141346449,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Verify candidate checkout",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 3
+            },
+            {
+              "name": "Choose the release version (next patch when the configured one is already published)",
+              "status": "completed",
+              "conclusion": "skipped",
+              "number": 4
+            },
+            {
+              "name": "Install XcodeGen",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Preflight native tools and build settings",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Verify native update contract",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Verify shared source and bundle latest interface",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Generate KappaForge app icon",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Generate native project",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10
+            },
+            {
+              "name": "Build simulator application",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Boot simulator and verify bundled launch",
+              "status": "completed",
+              "conclusion": "failure",
+              "number": 12
+            },
+            {
+              "name": "Export keyboard screenshots for inspection",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            },
+            {
+              "name": "Preserve keyboard screenshots",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14
+            },
+            {
+              "name": "Preserve native test counts and device limitations",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15
+            },
+            {
+              "name": "Preserve iOS simulator UI test results",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16
+            },
+            {
+              "name": "Build unsigned iPhone application",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            },
+            {
+              "name": "Verify bundle, icon and package unsigned IPA",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 20
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 40
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 41
+            }
+          ]
+        },
+        {
+          "id": 124356080399,
+          "name": "sandbox",
+          "status": "completed",
+          "conclusion": "skipped",
+          "run_id": 41141346449,
+          "logs_url": null,
+          "steps": null
+        },
+        {
+          "id": 124362039536,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped",
+          "run_id": 41141346449,
+          "logs_url": null,
+          "steps": null
+        },
+        {
+          "id": 124362039834,
+          "name": "agent-report",
+          "status": "completed",
+          "conclusion": "skipped",
+          "run_id": 41141346449,
+          "logs_url": null,
+          "steps": null
+        }
+      ]
+    },
+    {
+      "run_id": 41141346461,
+      "jobs": [
+        {
+          "id": 124356078318,
+          "name": "worker",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141346461,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Run npm ci",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Build Worker without deployment or production credentials",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Verify persistent automatic recovery alarms in isolated workerd",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            }
+          ]
+        },
+        {
+          "id": 124356078545,
+          "name": "unit",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141346461,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Install ast-grep so the structural scan tests run for real",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Preflight agent tools and build settings",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Run set -Eeuo pipefail",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Check the dependency map the chat reads is current",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Verify the reviewed free execution workflow manifest",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            }
+          ]
+        },
+        {
+          "id": 124356078555,
+          "name": "structure",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141346461,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Install ast-grep",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Test the structural security rules",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Scan the shipped code",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            }
+          ]
+        },
+        {
+          "id": 124356078621,
+          "name": "web",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141346461,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Run npm ci",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Run npm test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Use the Ubuntu archive for browser dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Run npx playwright install --with-deps chromium webkit",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Run npm run test:web",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": 41141346456,
+      "jobs": [
+        {
+          "id": 124356078435,
+          "name": "sandbox",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141346456,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Verify free execution permissions and resource availability",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Real-Docker sandbox tests",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Faulty project repaired through the agent tool loop",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Phase 1 acceptance requirements on the faulty invoice fixture",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Phase 2 exploration inside sandbox repair on the shop fixture",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Phase 3 scoped review and draft publication acceptance",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Phase 3 source-bound browser demonstration dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10
+            },
+            {
+              "name": "Phase 3 controlled review-to-visual acceptance",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Preserve controlled Phase 3 acceptance evidence",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "KappaForge's own suites inside the sandbox",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            },
+            {
+              "name": "Nothing left behind",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 14
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 27
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 28
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 29
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": 41141422656,
+      "jobs": [
+        {
+          "id": 124356332685,
+          "name": "structure",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141422656,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Install ast-grep",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Test the structural security rules",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Scan the shipped code",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            }
+          ]
+        },
+        {
+          "id": 124356332978,
+          "name": "unit",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141422656,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Install ast-grep so the structural scan tests run for real",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Preflight agent tools and build settings",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Run set -Eeuo pipefail",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Check the dependency map the chat reads is current",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Verify the reviewed free execution workflow manifest",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Post Run actions/setup-python@v5",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 15
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 16
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            }
+          ]
+        },
+        {
+          "id": 124356332995,
+          "name": "worker",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141422656,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Run npm ci",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Build Worker without deployment or production credentials",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Verify persistent automatic recovery alarms in isolated workerd",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 12
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 13
+            }
+          ]
+        },
+        {
+          "id": 124356333086,
+          "name": "web",
+          "status": "completed",
+          "conclusion": "success",
+          "run_id": 41141422656,
+          "logs_url": null,
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2
+            },
+            {
+              "name": "Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3
+            },
+            {
+              "name": "Run npm ci",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4
+            },
+            {
+              "name": "Run npm test",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5
+            },
+            {
+              "name": "Use the Ubuntu archive for browser dependencies",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6
+            },
+            {
+              "name": "Run npx playwright install --with-deps chromium webkit",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7
+            },
+            {
+              "name": "Run npm run test:web",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8
+            },
+            {
+              "name": "Run actions/upload-artifact@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9
+            },
+            {
+              "name": "Post Run actions/setup-node@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 17
+            },
+            {
+              "name": "Post Run actions/checkout@v4",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nativeFailure": [
+    "2026-10-30T23:06:49.2309150Z /Users/runner/work/KappaForge/KappaForge/ios/KappaForgeUITests/LaunchTests.swift:88: error: -[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens] : XCTAssertEqual failed: (\"XCTWaiterResult(rawValue: 2)\") is not equal to (\"XCTWaiterResult(rawValue: 1)\") - Composer geometry did not settle: editor=(inf, inf, 0.0, 0.0), keyboard=(0.0, 451.0, 375.0, 216.0), web=(0.0, 20.0, 375.0, 647.0)",
+    "2026-10-30T23:06:50.2438460Z /Users/runner/work/KappaForge/KappaForge/ios/KappaForgeUITests/LaunchTests.swift:89: error: -[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens] : failed - Composer has no usable accessibility frame ((inf, inf, 0.0, 0.0)); it is hidden or detached, not mispositioned",
+    "2026-10-30T23:07:18.6195290Z Test Case '-[KappaForgeUITests.LaunchTests testComposerRemainsBelowHeaderWhenKeyboardOpens]' failed (60.566 seconds).",
+    "2026-10-30T23:10:12.3845150Z \t Executed 5 tests, with 2 failures (0 unexpected) in 256.587 (256.593) seconds",
+    "2026-10-30T23:10:12.4050820Z \t Executed 5 tests, with 2 failures (0 unexpected) in 256.587 (256.595) seconds",
+    "2026-10-30T23:10:12.4257150Z \t Executed 5 tests, with 2 failures (0 unexpected) in 256.587 (256.597) seconds",
+    "2026-10-30T23:11:14.9661190Z ** TEST FAILED **",
+    "2026-10-30T23:11:31.3440410Z Native simulator evidence: failed — Native simulator tests failed"
+  ]
+}

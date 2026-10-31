@@ -1,10 +1,10 @@
 # Master remediation tracker
 
-Baseline main:19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified against all eleven reports and61 unique canonical gaps. No improved autonomy score is assigned. No merge/deploy/release authorized.
+Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified against all eleven reports and 61 unique canonical gaps. No improved autonomy score is assigned. No merge/deploy/release authorized.
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=9, INVESTIGATING=52
+Counts: BLOCKED=6, INVESTIGATING=24, NOT STARTED=13, TESTING=5, VERIFIED=13
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -14,7 +14,7 @@ Read TEST-EVIDENCE.md and INTEGRATION-PLAN.md, fetch latest main/open PRs, inspe
 
 ## KF-AUDIT-001 — File-scope constraint blocks an otherwise passing candidate
 
-Classification: BROKEN; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Source-quote schema is applied to a constraint whose proof is the changed-file inventory.
 
@@ -22,25 +22,25 @@ Required implementation: Type evidence as source, diff_scope, command, authority
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/c-lifecycle-reconciliation; PR: [#335](https://github.com/onlykappa/KappaForge/pull/335).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Typed source/diff/test/authorization/publication/runtime evidence. Scope receipts require active authority, exact candidate and complete published/proposed paths including rename origins. Exact operation prohibitions use read-only authority probes; requested test commands supplement mandatory regression.
 
 Required acceptance/tests: Replay #330: one allowed file passes scope proof; adding any second file fails; no model quote needed.
 
-Actual results: Not measured for this remediation.
+Actual results: Task330 one-file scope positive, extra/forbidden/stale/forged receipt negatives and exact command receipts passed in isolated regressions.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_typed_scope_evidence.py; tests/test_operational_review.py; tests/test_owner_validation_commands.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Normal live Task330 intake/model/publication replay has not been rerun; verified contract behavior is independent controlled evidence.
 
 ## KF-AUDIT-002 — Passing suite can certify tests of copied logic
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Test citation and suite success do not establish execution of the production behavior.
 
@@ -48,25 +48,25 @@ Required implementation: Require production imports/calls plus independent negat
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Scope-aware JavaScript call analysis rejects tests of locally copied production helpers; an import in another callback cannot certify the copy.
 
 Required acceptance/tests: Original #323 inline-copy test is rejected; a wrong production implementation makes the replacement test fail.
 
-Actual results: Not measured for this remediation.
+Actual results: Original PR323 base faf250e310ad9afe0e6e640c5b6bd4c6d59c0c87/head534633c2a1db73bc7616015fcd3848770af9effc replay now reports copied isAnswered behavior.; Real Node independent mutation: correct production passes; constant-true production fails.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_copied_logic_evidence.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Binding analysis is a targeted semantic safeguard, not proof that arbitrary tests are sufficient.
 
 ## KF-AUDIT-003 — Workflow success differs from objective completion
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Workflow exit code reports controller execution rather than delivered objective state.
 
@@ -74,25 +74,25 @@ Required implementation: Emit separate controller, validation and objective conc
 
 Dependencies: KF-AUDIT-001
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/c-lifecycle-reconciliation; PR: [#335](https://github.com/onlykappa/KappaForge/pull/335).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Finalize against the exact open draft head and unresolved requirements. Separate objectiveReceipt from controller/check conclusions. Blocked backend state overrides green tests in UI and persists measured start/finished times; stopped tasks have no live elapsed timer.
 
 Required acceptance/tests: Green workflow plus blocked review renders blocked, never completed, in API and UI.
 
-Actual results: Not measured for this remediation.
+Actual results: Blocked-after-green validation and stable timer regression passed; no READY/DONE or running data-since for blocked work.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_objective_finalization.py; tests/task-panel.test.mjs; tests/test_closed_draft_reconciliation.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Current production remains unchanged; polling freshness and cancellation race gates belong to044/040.
 
 ## KF-AUDIT-004 — Requirement extraction silently drops work after 30 entries
 
-Classification: BROKEN; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Fixed prefix cap has no overflow failure or decomposition receipt.
 
@@ -100,25 +100,25 @@ Required implementation: Detect overflow, preserve all original requirements and
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Retain complete owner wording and original spans. More than30 extracted requirements produces an explicit actionable limit error, never a silently truncated list.
 
 Required acceptance/tests: 40 explicit requirements produce 40 tracked IDs or a visible nonterminal overflow; none disappear.
 
-Actual results: Not measured for this remediation.
+Actual results: 40-input regression rejects explicitly; boundary30 preserves all rows and long final constraint is retained.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_requirement_limits.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Verified candidate only; owner approval and exact integration-head validation remain mandatory.
 
 ## KF-AUDIT-005 — Sparse budget updates discard previously spent counters
 
-Classification: BROKEN; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Dictionary rebuilt only from incoming keys.
 
@@ -126,25 +126,25 @@ Required implementation: Merge into prior totals monotonically, preserving omitt
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Merge sparse cumulative counters monotonically and atomically validate all input. Preserve independent kinds and persisted totals across restart; exclude boolean/nonfinite/negative/string values and non-string keys.
 
 Required acceptance/tests: Persist calls=10 bytes=100 then calls=11; restart retains bytes=100 and calls=11.
 
-Actual results: Not measured for this remediation.
+Actual results: Direct real-Ledger restart retains calls11/bytes100 and other-kind spend. Invalid updates cannot mutate memory or persisted spend.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_budget_ledger_integrity.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Verified candidate only; owner approval and exact integration-head validation remain mandatory.
 
 ## KF-AUDIT-006 — Budget record input is not sanitized like saved input
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P2.
 
 Root cause: Only loaded values filter types and nonnegative values; record accepts arbitrary mapping values.
 
@@ -152,25 +152,25 @@ Required implementation: Validate finite numeric nonnegative counters and string
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Merge sparse cumulative counters monotonically and atomically validate all input. Preserve independent kinds and persisted totals across restart; exclude boolean/nonfinite/negative/string values and non-string keys.
 
 Required acceptance/tests: Reject booleans, strings, NaN, infinity, negative values and non-string keys without corrupting prior spend.
 
-Actual results: Not measured for this remediation.
+Actual results: Direct real-Ledger restart retains calls11/bytes100 and other-kind spend. Invalid updates cannot mutate memory or persisted spend.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_budget_ledger_integrity.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Verified candidate only; owner approval and exact integration-head validation remain mandatory.
 
 ## KF-AUDIT-007 — Patch mismatch and unchanged proposals recur across nominally distinct strategies
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:D; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: D; priority: P1.
 
 Root cause: Strategy labels do not demonstrate changed causal conditions.
 
@@ -178,9 +178,9 @@ Required implementation: Persist normalized failure family, source version, atte
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -192,11 +192,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-008 — Latest malformed-tool recovery lacks live acceptance evidence
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:D; priority:P1.
+Classification: PARTIAL; status: **TESTING**; phase: D; priority: P1.
 
 Root cause: Parser/cap improvement tested locally but the historical failed workflow was not repeated on current runtime.
 
@@ -204,25 +204,25 @@ Required implementation: Run isolated recorded-response replay and later an expl
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/c-lifecycle-reconciliation; PR: [#335](https://github.com/onlykappa/KappaForge/pull/335).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Real controller recovers truncated/fenced/singleton tool responses using dynamic export/file observations, exact digest edits and independently executed Node assertions. Explicit Fix can renew invalid-output streak without replenishing lifetime budgets.
 
 Required acceptance/tests: A truncated reply, fenced object and singleton list recover and finish a genuine failing-import repair without changing task scope.
 
-Actual results: Not measured for this remediation.
+Actual results: Controlled wrong-import repair fails real Node first, then passes candidate plus fresh regression; production/assertions unchanged.; Automatic continuation does not renew invalid_limit; explicit Fix retains actions, attempts and history.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_offline_agent_recovery.py; tests/test_execution_recovery.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Scripted free-provider transport; no current live NVIDIA/model canary or normal authorized intake replay. Do not treat this as general live recovery proof.
 
 ## KF-AUDIT-009 — Recovery must reconcile closed drafts and obsolete goals before inference
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: Saved authority/candidate state can outlive the actionable draft.
 
@@ -230,25 +230,25 @@ Required implementation: Reconcile issue, PR state, branch, candidate and alread
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/c-lifecycle-reconciliation; PR: [#335](https://github.com/onlykappa/KappaForge/pull/335).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Reconcile saved output PR before model/tool work. Closed task-bound drafts emit blocked_closed_draft/objective receipt and stop; finalizer retains that specific outcome.
 
 Required acceptance/tests: Closed #323 produces zero model/tool writes and a precise superseded or owner-decision receipt.
 
-Actual results: Not measured for this remediation.
+Actual results: Closed-draft regression performs zero model/test/publication calls and refuses foreign repo/branch association.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_closed_draft_reconciliation.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Verified candidate only; owner approval and exact integration-head validation remain mandatory.
 
 ## KF-AUDIT-010 — Multiple retry ceilings do not encode five meaningful strategies
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:D; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: D; priority: P2.
 
 Root cause: Proposal retries, sandbox attempts and continuations have different semantics and budgets.
 
@@ -256,9 +256,9 @@ Required implementation: Unify lifetime budget accounting; default at most five 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -270,11 +270,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-011 — Initial generation and sandbox repair remain separate execution protocols
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P1.
 
 Root cause: Initial code is proposed from assembled context; dynamic tools exist in investigation and repair rather than one uniform loop.
 
@@ -282,9 +282,9 @@ Required implementation: Introduce typed action/observation runtime shared by pl
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -296,11 +296,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-012 — Tool history is clipped rather than semantically compacted
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
 
 Root cause: Text tails can omit the original cause and prior ineffective strategies.
 
@@ -308,9 +308,9 @@ Required implementation: Keep immutable receipts externally; construct context f
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -322,11 +322,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-013 — String find/replace is a fragile edit interface
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: B; priority: P1.
 
 Root cause: Model must reproduce exact text from excerpts; no generalized semantic patch transaction.
 
@@ -334,25 +334,25 @@ Required implementation: Provide versioned line/unified-diff patches with expect
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/b-versioned-tools; PR: [#334](https://github.com/onlykappa/KappaForge/pull/334).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Add apply_line_patch to the existing controller/catalog, requiring exact full-file SHA256, bounded nonoverlapping original line ranges and atomic replacement. Conflicts return current digest and reread guidance; no fuzzy fallback.
 
 Required acceptance/tests: Formatting and stale-source fault fixtures trigger reread/rebase, never repeated blind replacement or silent wrong-file writes.
 
-Actual results: Not measured for this remediation.
+Actual results: Stale digest, bad range/overlap/path, formatting and atomicity fixtures passed.; Real Node import repair uses dynamically observed hash and exact file.; Supported real sandbox CI run41137357086 passed.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_versioned_line_patch.py; tests/test_offline_agent_recovery.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Legacy exact find/replace remains supported;007 repeated-strategy policy and011 protocol consolidation remain open.
 
 ## KF-AUDIT-014 — Static planning limits narrow large-project reach
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
 
 Root cause: Bounded windows are necessary but coverage is not an exhaustive repository investigation.
 
@@ -360,9 +360,9 @@ Required implementation: Page file/symbol inventory and expose explicit coverage
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -374,11 +374,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-015 — General-purpose executor is not exposed through the development-only tool catalog
 
-Classification: MISSING; status: **INVESTIGATING**; phase:F; priority:P1.
+Classification: MISSING; status: **NOT STARTED**; phase: F; priority: P1.
 
 Root cause: Tools center on sandbox coding, curated docs and app/GitHub operations.
 
@@ -386,9 +386,9 @@ Required implementation: Add permission-scoped capability registry with shared e
 
 Dependencies: KF-AUDIT-011
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -400,11 +400,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-016 — NVIDIA priority routes fail in latest live task
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: A; priority: P1.
 
 Root cause: Eligibility and static strong tier do not guarantee useful compatible output.
 
@@ -412,9 +412,9 @@ Required implementation: Add fixture-backed normalization/parameter contracts, r
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -426,11 +426,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: No authorized live provider credentials/canary used. Empty/reasoning-only/first-byte timeout replay and attribution/cooldown/fallback acceptance remain open.
 
 ## KF-AUDIT-017 — Conservative admission makes strong fallback routes unusable for ordinary prompts
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:E; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: E; priority: P1.
 
 Root cause: Input/output reservations and conservative token estimates exceed route limits.
 
@@ -438,9 +438,9 @@ Required implementation: Keep safe upper bounds but create route-specific compac
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -452,11 +452,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-018 — Model routing is role-ranked policy, not measured task-quality optimization
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:E; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: E; priority: P2.
 
 Root cause: Strong/light metadata and route order lack independent task success calibration.
 
@@ -464,9 +464,9 @@ Required implementation: Track verified outcome by model/role/task class with un
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -478,11 +478,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-019 — Full deployed provider activation and quota state unavailable
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:A; priority:P1.
+Classification: PARTIAL; status: **BLOCKED**; phase: A; priority: P1.
 
 Root cause: Repo configuration cannot establish deployed permission, credentials or remaining quotas.
 
@@ -490,25 +490,25 @@ Required implementation: Publish authenticated sanitized effective-config and de
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-effective-diagnostics; PR: [#336](https://github.com/onlykappa/KappaForge/pull/336).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.
 
 Required acceptance/tests: Owner supplies read-only capabilities/health snapshot covering every provider and policy/version fingerprint.
 
-Actual results: Not measured for this remediation.
+Actual results: Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.; Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/deployment-diagnostics.test.mjs; tests/premium*.test.mjs
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Production provider permission/configuration snapshot inaccessible.
+Remaining limitations: Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.
 
 ## KF-AUDIT-020 — Native tool calling is not the active coding protocol
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
 
 Root cause: Application emulates tools with text JSON; native function schemas are not used here.
 
@@ -516,9 +516,9 @@ Required implementation: Retain portable JSON adapter; add tested native-tool ad
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -530,11 +530,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-021 — Paid-off default is implemented but current production setting is not audited
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:A; priority:P1.
+Classification: PARTIAL; status: **BLOCKED**; phase: A; priority: P1.
 
 Root cause: Persisted owner settings and current account state are not accessible.
 
@@ -542,25 +542,25 @@ Required implementation: Expose sanitized premium enabled flag and reservations;
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-effective-diagnostics; PR: [#336](https://github.com/onlykappa/KappaForge/pull/336).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.
 
 Required acceptance/tests: Fresh store is OFF; free exhaustion alone cannot charge when OFF; explicit ON obeys task/day caps.
 
-Actual results: Not measured for this remediation.
+Actual results: Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.; Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/deployment-diagnostics.test.mjs; tests/premium*.test.mjs
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Persisted production Premium setting inaccessible; defaults can be tested offline.
+Remaining limitations: Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.
 
 ## KF-AUDIT-022 — Mutable issue comments are the durable control-plane storage
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:C; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: C; priority: P1.
 
 Root cause: Checkpoint writes, progress and archive rotation span GitHub API operations without a single atomic transaction.
 
@@ -568,9 +568,9 @@ Required implementation: Add append-only sequence/hash-linked event journal plus
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -582,11 +582,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-023 — Recent execution context is deliberately bounded and can lose causal history
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:C; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: C; priority: P2.
 
 Root cause: Compact active state is not a permanent evidence ledger.
 
@@ -594,9 +594,9 @@ Required implementation: Separate bounded prompt view from complete retained eve
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -608,11 +608,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-024 — Current engine-pin restart behavior not fault-tested end to end here
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:C; priority:P1.
+Classification: UNVERIFIED; status: **INVESTIGATING**; phase: C; priority: P1.
 
 Root cause: Many receipts/renewals guard runtime identity; local unit evidence is insufficient for real interruption coverage.
 
@@ -620,25 +620,25 @@ Required implementation: Create process-kill replay around engine renewal, sandb
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
 Required acceptance/tests: 20 injected interruption points resume on authorized engine/candidate with no budget reset or duplicate PR.
 
-Actual results: Not measured for this remediation.
+Actual results: Existing real supported CI passed interruption/provider-outage recovery fixtures; the original20-point fault-injection matrix is not complete.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-025 — Project memory is a bounded index snapshot rather than durable project understanding
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:E; priority:P2.
+Classification: PARTIAL; status: **NOT STARTED**; phase: E; priority: P2.
 
 Root cause: Paths/top files and commit IDs do not preserve validated decisions and failure causality as retrievable knowledge.
 
@@ -646,9 +646,9 @@ Required implementation: Separate project facts, decisions and source citations 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -660,11 +660,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-026 — Cross-device sync, deletion and conflict handling lack live device evidence
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:E; priority:P1.
+Classification: UNVERIFIED; status: **NOT STARTED**; phase: E; priority: P1.
 
 Root cause: Browser crypto/storage code and tests do not establish device retention or long-term deletion guarantees.
 
@@ -672,9 +672,9 @@ Required implementation: Specify retention and tombstone expiry; test concurrent
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -686,11 +686,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-027 — No general semantic task-context compaction service
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:E; priority:P2.
+Classification: PARTIAL; status: **NOT STARTED**; phase: E; priority: P2.
 
 Root cause: Context assembly is distributed across code paths with size limits.
 
@@ -698,9 +698,9 @@ Required implementation: Use evidence-aware summarization retaining goal, constr
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -712,11 +712,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-028 — General web search and research are absent beyond curated documentation
 
-Classification: MISSING; status: **INVESTIGATING**; phase:F; priority:P1.
+Classification: MISSING; status: **NOT STARTED**; phase: F; priority: P1.
 
 Root cause: Allowed search APIs are MDN, npm and ReadTheDocs, not broad current-information research.
 
@@ -724,9 +724,9 @@ Required implementation: Add optional free-first search adapter with dated citat
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -738,11 +738,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-029 — No agent-controlled browser session tools
 
-Classification: MISSING; status: **INVESTIGATING**; phase:F; priority:P1.
+Classification: MISSING; status: **NOT STARTED**; phase: F; priority: P1.
 
 Root cause: HTTP docs fetch and UI Playwright tests are not an autonomous browser capability.
 
@@ -750,9 +750,9 @@ Required implementation: Optional isolated Playwright/browser worker with per-do
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -764,11 +764,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-030 — Document and spreadsheet workflows lack purpose-built adapters
 
-Classification: MISSING; status: **INVESTIGATING**; phase:F; priority:P1.
+Classification: MISSING; status: **NOT STARTED**; phase: F; priority: P1.
 
 Root cause: Attachments and generated source are not tested PDF/DOCX/XLSX operations.
 
@@ -776,9 +776,9 @@ Required implementation: Add sandbox file/artifact adapters, table parsing and d
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -790,11 +790,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-031 — General MCP/external connector runtime not found
 
-Classification: MISSING; status: **INVESTIGATING**; phase:F; priority:P2.
+Classification: MISSING; status: **NOT STARTED**; phase: F; priority: P2.
 
 Root cause: Integrations are bespoke; no discovered MCP lifecycle or permission registry.
 
@@ -802,9 +802,9 @@ Required implementation: Implement optional connector adapter with scoped grants
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -816,11 +816,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-032 — Desktop/local-device execution is not an implemented agent surface
 
-Classification: MISSING; status: **INVESTIGATING**; phase:G; priority:P2.
+Classification: MISSING; status: **NOT STARTED**; phase: G; priority: P2.
 
 Root cause: Native app bridge is not a general desktop automation or local shell agent.
 
@@ -828,9 +828,9 @@ Required implementation: Optional signed local companion with explicit workspace
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -842,11 +842,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-033 — Sandbox language/dependency profiles are narrower than arbitrary projects
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:C; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: C; priority: P2.
 
 Root cause: Constrained Python/Node-oriented runners deliberately reject unsupported commands and installs.
 
@@ -854,9 +854,9 @@ Required implementation: Declare supported runtimes; add versioned image/profile
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -868,11 +868,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-034 — Real Docker isolation was not executed in this audit environment
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:C; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: C; priority: P1.
 
 Root cause: No local Docker daemon/client evidence; existing production receipts prove tests ran but not hostile escape resistance.
 
@@ -880,25 +880,25 @@ Required implementation: Run sandbox-selftest in disposable approved runner and 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/b-versioned-tools; PR: [#334](https://github.com/onlykappa/KappaForge/pull/334).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Collected missing actual supported-runtime evidence without weakening infrastructure admission. Existing sandbox retained.
 
 Required acceptance/tests: No secrets, Docker socket, host files or network visible to test commands; time/memory/process limits enforced.
 
-Actual results: Not measured for this remediation.
+Actual results: GitHub-hosted Docker run41137357086/job124342988292:25 sandbox tests,2 repair integrations,18 Phase1,8 Phase2,2 Phase3 passed.; Secrets/network/system-file denial and timeout/memory/output containment executed.; Local Docker admission correctly refused unsupported non-GitHub environment; it was not spoofed.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_sandbox.py:RealDockerTests; tests/test_phase1_acceptance.py:RealSandboxAcceptance
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Docker CLI/daemon unavailable in this environment; real isolation test must run on supported disposable runner.
+Remaining limitations: Evidence applies to supported GitHub-hosted Linux runner and pinned profiles, not arbitrary remote/local hosts or unknown languages.
 
 ## KF-AUDIT-035 — Generated workflow proposals can execute before owner merge review
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P0.
+Classification: PARTIAL; status: **TESTING**; phase: A; priority: P0.
 
 Root cause: Draft status and no-auto-merge do not stop branch/workflow_dispatch execution with repository secrets.
 
@@ -906,25 +906,25 @@ Required implementation: Separate trusted orchestrator from candidate workflows;
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Block model-controlled .github/workflows and .github/actions publication before GitHub mutation. Never select workflow-capable PAT for generated changes; preserve unpublished checkpoint. Require explicit owner dispatch for deploy/release, with release OFF by default and exact-main candidate.
 
 Required acceptance/tests: Malicious draft workflow attempting secret exfiltration never receives secrets or privileged token before explicit gate.
 
-Actual results: Not measured for this remediation.
+Actual results: Malicious workflow/action proposal denied even with PAT/task prose; GitHub mutation mock remains untouched.; Actual deploy/release guards evaluated for owner/event/ref/candidate/opt-in; PR native release job skipped.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_privileged_publication.py; tests/test_phase1_acceptance.py:PolicyAcceptance
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Critical mitigation is code-tested, not a declaration of full security readiness. Actions permissions and main protection reads returned403; production-release environment was absent, cloudflare-production had no protection types. Owner verification of actual credentials, forks and independent approval settings remains required.
 
 ## KF-AUDIT-036 — Persisted preferences contain historical authority broader than current owner policy
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: PARTIAL; status: **TESTING**; phase: A; priority: P1.
 
 Root cause: Versioned natural-language instructions can outlive task-specific authorization.
 
@@ -932,25 +932,25 @@ Required implementation: Treat repository prose as untrusted preferences only; e
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Remove historical auto-merge preference; align KAPPA/README with task-scoped authority, owner merges and separately approved deployment. Existing authority service remains final guard.
 
 Required acceptance/tests: Historical auto-merge text cannot authorize a new task; policy contradictions surface as diagnostics.
 
-Actual results: Not measured for this remediation.
+Actual results: Authority and policy regressions passed; repository preferences cannot expand execution scope.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_intent_guard.py; tests/test_privileged_publication.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: General runtime diagnostics for conflicting stored historical preferences still need implementation/acceptance evidence.
 
 ## KF-AUDIT-037 — Shared bearer credential persists in browser localStorage
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: A; priority: P1.
 
 Root cause: Single-owner simplicity increases impact of browser script compromise/device extraction.
 
@@ -958,9 +958,9 @@ Required implementation: Use short-lived session credentials and secure native s
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -972,11 +972,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:H; priority:P1.
+Classification: UNVERIFIED; status: **NOT STARTED**; phase: H; priority: P1.
 
 Root cause: Prompt warnings plus path guards do not demonstrate resistance across model output and privileged GitHub operations.
 
@@ -984,9 +984,9 @@ Required implementation: Add adversarial fixture corpus for repo docs, comments,
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -998,11 +998,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-039 — Deployed secret scopes, branch protections and environment gates unavailable
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:A; priority:P1.
+Classification: UNVERIFIED; status: **BLOCKED**; phase: A; priority: P1.
 
 Root cause: Workflow declarations do not establish actual PAT scope or production environment approval settings.
 
@@ -1010,25 +1010,25 @@ Required implementation: Collect read-only sanitized permission inventory and en
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Read-only settings inventory recorded with no secret values; no permissions or protections modified.
 
 Required acceptance/tests: Owner verifies least privileges and deployment gate rejects unapproved release; audit record contains no values.
 
-Actual results: Not measured for this remediation.
+Actual results: Actions workflow permissions and main branch protection returned403.; Environment metadata readable:cloudflare-production has no listed protections; production-release not present.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Current GitHub environment protections and actual credential scopes require read-only access evidence.
+Remaining limitations: Owner must independently verify least-privilege tokens and required environment reviewers. No grant may be bypassed.
 
 ## KF-AUDIT-040 — Cancellation races across running tools and publication need proof
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:C; priority:P2.
+Classification: UNVERIFIED; status: **INVESTIGATING**; phase: C; priority: P2.
 
 Root cause: Checks exist but end-to-end cancellation during each side effect was not executed.
 
@@ -1036,9 +1036,9 @@ Required implementation: Use cancellation epoch on every tool/publish claim and 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1050,11 +1050,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-041 — Retention and privacy boundaries differ across vault, issue journals and provider prompts
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:E; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: E; priority: P2.
 
 Root cause: Encrypted chat backup does not encrypt GitHub task evidence or provider-bound source.
 
@@ -1062,25 +1062,25 @@ Required implementation: Publish data-flow policy and per-tool redaction/retenti
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
 Required acceptance/tests: Privacy fixtures verify secret redaction and correct private-code provider restrictions; deletion procedure covers every store.
 
-Actual results: Not measured for this remediation.
+Actual results: Existing engine/execution.py require_storage already blocks private candidate checkpoints in a public task tracker. General retention/deletion/provider privacy acceptance remains open.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-042 — Task state can remain testing after runner has finished with incomplete review
 
-Classification: BROKEN; status: **INVESTIGATING**; phase:A; priority:P1.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P1.
 
 Root cause: No canonical terminal reconciliation updates every projection.
 
@@ -1088,25 +1088,25 @@ Required implementation: Finalize durable objective state even on review block, 
 
 Dependencies: KF-AUDIT-003
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/c-lifecycle-reconciliation; PR: [#335](https://github.com/onlykappa/KappaForge/pull/335).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Finalize against the exact open draft head and unresolved requirements. Separate objectiveReceipt from controller/check conclusions. Blocked backend state overrides green tests in UI and persists measured start/finished times; stopped tasks have no live elapsed timer.
 
 Required acceptance/tests: #330 replay ends blocked_verification with accurate finished time and resume action; no indefinite active timer.
 
-Actual results: Not measured for this remediation.
+Actual results: Blocked-after-green validation and stable timer regression passed; no READY/DONE or running data-since for blocked work.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_objective_finalization.py; tests/task-panel.test.mjs; tests/test_closed_draft_reconciliation.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Current production remains unchanged; polling freshness and cancellation race gates belong to044/040.
 
 ## KF-AUDIT-043 — Native composer keyboard failure remains open
 
-Classification: PARTIAL; status: **BLOCKED**; phase:F; priority:P1.
+Classification: BROKEN; status: **INVESTIGATING**; phase: F; priority: P1.
 
 Root cause: Existing layout test failed; no root cause confirmed in this audit.
 
@@ -1114,25 +1114,25 @@ Required implementation: Inspect native simulator artifact and bridge/layout geo
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.
 
 Required acceptance/tests: Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.
 
-Actual results: Not measured for this remediation.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: macOS simulator/physical iPhone unavailable; fixture/source repair requires actual geometry evidence.
+Remaining limitations: Fresh supported native run41141346449 reproduces a focused composer with null/offscreen accessibility frame. Four of five UI tests passed; composer case failed two assertions. Device/orientation closure and root fix remain open.
 
 ## KF-AUDIT-044 — Task progress is polling-based with freshness limits
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:C; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: C; priority: P2.
 
 Root cause: Progress comments and frontend timing can diverge after delays/offline periods.
 
@@ -1140,9 +1140,9 @@ Required implementation: Backend event sequence, heartbeat and terminal reconcil
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1154,11 +1154,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-045 — UI implementation relies on classic-script shared globals and mirrored bundles
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:G; priority:P2.
+Classification: PARTIAL; status: **NOT STARTED**; phase: G; priority: P2.
 
 Root cause: Load-order dependencies and generated copies increase integration risk.
 
@@ -1166,9 +1166,9 @@ Required implementation: Gradually introduce explicit modules/state contracts wh
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1180,11 +1180,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-046 — Apple-style refinement and real-device accessibility not assessed
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:H; priority:P3.
+Classification: UNVERIFIED; status: **BLOCKED**; phase: H; priority: P3.
 
 Root cause: No interactive device session or visual/accessibility execution in this audit.
 
@@ -1192,25 +1192,25 @@ Required implementation: Run existing browser suite and targeted real-device key
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: No native composer layout fix claimed. Foundation macOS CI built simulator/unsigned iPhone app and passed five simulator UI tests, collected separately from physical-device acceptance.
 
 Required acceptance/tests: Document screenshots and accessibility results for agreed device sizes with no critical interaction blockers.
 
-Actual results: Not measured for this remediation.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Real-device visual/accessibility session unavailable.
+Remaining limitations: Historical device/orientation reproducer, physical-device screenshots and accessibility acceptance unavailable. Existing simulator success does not establish closure of the original report.
 
 ## KF-AUDIT-047 — No measured general-purpose 50-task autonomy benchmark
 
-Classification: MISSING; status: **INVESTIGATING**; phase:H; priority:P1.
+Classification: MISSING; status: **NOT STARTED**; phase: H; priority: P1.
 
 Root cause: Unit counts and prior simulation passes are not independent broad workload outcomes.
 
@@ -1218,9 +1218,9 @@ Required implementation: Implement the 50-task protocol in report 08 with hidden
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1232,11 +1232,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-048 — Local passing suites leave important integrations skipped
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:H; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: H; priority: P2.
 
 Root cause: Optional infrastructure checks are not exercised by the local suite.
 
@@ -1244,25 +1244,25 @@ Required implementation: Report skips by capability; require dedicated integrati
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
 Required acceptance/tests: Critical integration gate cannot pass when all real runtime tests are skipped.
 
-Actual results: Not measured for this remediation.
+Actual results: Supported real Docker CI executed; local full suite still legitimately skips live/native/integration gates. Critical-all-skipped CI enforcement remains to strengthen.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-049 — Dependency-map freshness is warning-only in CI
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P2.
 
 Root cause: Stale context index may ship even when code imports change.
 
@@ -1270,25 +1270,25 @@ Required implementation: Generate deterministically and make freshness a require
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Dependency-map freshness is a mandatory CI failure. Regenerate from each exact standalone/composed candidate rather than a different worktree.
 
 Required acceptance/tests: Import change without regenerated index fails check; index carries matching SHA.
 
-Actual results: Not measured for this remediation.
+Actual results: Old standalone641a7e9 CI failed map freshness; regenerated38aca4d CI passed.; Composeda62f949 CI required freshness check passed.
 
-Regression coverage: Not yet added.
+Regression coverage: scripts/dependency-map.py --check
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Map changes must be regenerated on every later source candidate; one branch map does not certify another.
 
 ## KF-AUDIT-050 — Production SLOs, incidents and long-window objective success unavailable
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:H; priority:P1.
+Classification: UNVERIFIED; status: **BLOCKED**; phase: H; priority: P1.
 
 Root cause: Workflow status cannot measure task completion, latency, availability or false success.
 
@@ -1296,11 +1296,11 @@ Required implementation: Instrument task objective outcomes, route health, queue
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: No sustained production SLO result fabricated.
 
 Required acceptance/tests: 30-day report has denominators, exclusions and incident causes; objective success is separately reported from run success.
 
@@ -1310,11 +1310,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: 30-day production SLO data unavailable; instrumentation can be implemented.
+Remaining limitations: Needs30-day objective-level denominators, exclusions, incidents and operational evidence after approved rollout.
 
 ## KF-AUDIT-051 — Current browser/Worker runtime and native build not fully executed locally
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:H; priority:P2.
+Classification: PARTIAL; status: **TESTING**; phase: H; priority: P2.
 
 Root cause: Syntax and dry-run do not establish interactive or runtime behavior.
 
@@ -1322,25 +1322,25 @@ Required implementation: Execute existing workerd recovery check, Chromium/WebKi
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/b-versioned-tools; PR: [#334](https://github.com/onlykappa/KappaForge/pull/334).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Collected exact-candidate supported CI browser, isolated Worker recovery and foundation native evidence. Local runtime/browser limitations recorded separately.
 
 Required acceptance/tests: Exact-head receipts include browser, runtime and native results with artifact hashes and skips.
 
-Actual results: Not measured for this remediation.
+Actual results: a62f949 CI unit/web/structure/Worker and real sandbox passed.; 38aca4d CI native five UI tests/build passed; no release.; Latest125a099 native check FAILED in composer case despite successful simulator/unsigned build. c3d6606 unit/web/Worker/structure passed. No integration-ready claim.
 
 Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Browser/workerd/native runtime coverage must be collected separately.
+Remaining limitations: Newest composed head needs its own checks/artifact hashes. Local WebKit cannot launch without listed system libraries; no Xcode locally. Physical-device gates remain separate.
 
 ## KF-AUDIT-052 — Deployed Worker SHA and dashboard-managed policy not independently matched
 
-Classification: UNVERIFIED; status: **BLOCKED**; phase:A; priority:P1.
+Classification: PARTIAL; status: **BLOCKED**; phase: A; priority: P1.
 
 Root cause: Engine main SHA is known, deployed Worker version/config fingerprint is not.
 
@@ -1348,25 +1348,25 @@ Required implementation: Return build SHA and redacted effective policy hash in 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-effective-diagnostics; PR: [#336](https://github.com/onlykappa/KappaForge/pull/336).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Add authenticated no-store effective configuration diagnostics: configured credential presence only, channel/private-code policy, durable Premium enabled/unknown, Worker/build identity, stable policy fingerprint and explicit unprobed quota/availability. Deployment proposal stamps exact SHA; no deployment executed.
 
 Required acceptance/tests: A task receipt identifies engine, Worker, policy and candidate versions end to end.
 
-Actual results: Not measured for this remediation.
+Actual results: Controlled Worker auth/method/origin, no-external-fetch, secret exclusion, unknown-store and fingerprint tests passed.; Existing premium free-first/off/no-charge-under-OFF tests run; no actual paid request.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/deployment-diagnostics.test.mjs; tests/premium*.test.mjs
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Deployed Worker SHA and policy fingerprint unavailable.
+Remaining limitations: Current production snapshot and upstream account cost/quota state unavailable. Endpoint is an unmerged proposal; owner-authorized integration/deployment plus read-only snapshot needed for full acceptance.
 
 ## KF-AUDIT-053 — Push-to-main deployment couples code acceptance to production rollout
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P2.
+Classification: PARTIAL; status: **TESTING**; phase: A; priority: P2.
 
 Root cause: Main merges can deploy Worker without an independently confirmed owner deployment decision unless environment gates enforce it.
 
@@ -1374,25 +1374,25 @@ Required implementation: Require explicit release authorization or protected env
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
-Implementation: No fix claimed yet.
+Implementation: Remove push-to-main deployment trigger. Deploy requires owner workflow_dispatch/main. Release additionally requires publish=true(defaultfalse), branchmain and empty/exact candidate SHA; builds remain independently available.
 
 Required acceptance/tests: Merge alone cannot deploy/release under current owner policy; approved exact build can roll back to prior version.
 
-Actual results: Not measured for this remediation.
+Actual results: Executable guard negatives pass for push,PR,wrong actor/ref/branch/candidate and publishfalse.; Actual PR native build ran while release job skipped.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_privileged_publication.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: No production deployment/rollback executed. Actual protected approval environment configuration and approved rollback drill remain owner-gated.
 
 ## KF-AUDIT-054 — Background autonomy is constrained by Actions and expiring task authority
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:G; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: G; priority: P2.
 
 Root cause: Actions scheduling and finite grants are not a general durable calendar/reminder service.
 
@@ -1400,9 +1400,9 @@ Required implementation: Expose supported schedules and expiry; optional DO alar
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1414,11 +1414,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-055 — Limited stage parallelism is not independent multi-agent execution
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:G; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: G; priority: P2.
 
 Root cause: Disjoint-file waves alone do not prove workspace isolation, semantic conflict resolution or aggregate budget safety.
 
@@ -1426,9 +1426,9 @@ Required implementation: Keep serial default; permit optional isolated researche
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1440,11 +1440,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-056 — README presents obsolete capability and permission restrictions as current
 
-Classification: BROKEN; status: **INVESTIGATING**; phase:A; priority:P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P2.
 
 Root cause: Append-only milestone documentation contains mutually incompatible descriptions.
 
@@ -1452,25 +1452,25 @@ Required implementation: Publish one versioned current capability table and move
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: README leads with current implementation/limitations and explicitly marks obsolete milestone prose historical. KAPPA commands name actual checks; application version remains2.2.9 until separately authorized release.
 
 Required acceptance/tests: Every current capability links to implementation and exact validation; unsupported claims are visibly labeled.
 
-Actual results: Not measured for this remediation.
+Actual results: Current capabilities reference source/test evidence and missing production/general tools; nonexistent validate_change instruction removed.
 
-Regression coverage: Not yet added.
+Regression coverage: README.md; KAPPA.md; scripts/check-web.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Historical setup remains visibly preserved; documentation is not live functionality proof.
 
 ## KF-AUDIT-057 — All historical branches and PR descriptions not exhaustively inspected
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:H; priority:P2.
+Classification: UNVERIFIED; status: **INVESTIGATING**; phase: H; priority: P2.
 
 Root cause: Large retained development history exceeds the inspected active surfaces; unassociated branches may contain material work.
 
@@ -1478,9 +1478,9 @@ Required implementation: Triage branch ancestry and last commit date, classify o
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1492,11 +1492,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-058 — Task #330 test omits assertion for a required invalid key type
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:A; priority:P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: A; priority: P2.
 
 Root cause: Fixture includes key 123 but assertions only check string keys.
 
@@ -1504,25 +1504,25 @@ Required implementation: Add direct assertion against retained prior/totals keys
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: remediation/a-foundation-security; PR: [#333](https://github.com/onlykappa/KappaForge/pull/333).
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Original acceptance checked against the candidate implementation and independent evidence listed below. Verified candidate only; not merged or production-validated.
 
-Implementation: No fix claimed yet.
+Implementation: Direct real-Ledger input regression explicitly covers non-string key123 and asserts atomic rejection, preserved spend and write count.
 
 Required acceptance/tests: Mutation that accepts non-string keys makes the new test fail while real implementation passes.
 
-Actual results: Not measured for this remediation.
+Actual results: Independent runtime mutation that admits non-string keys makes exactly that key123 subtest fail; real implementation passes. No product file modified.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_budget_ledger_integrity.py:test_invalid_record_is_rejected_atomically
 
-Final verification evidence: Not yet collected.
+Final verification evidence: TEST-EVIDENCE.md; evidence/ci-receipts.json
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Verified candidate only; owner approval and exact integration-head validation remain mandatory.
 
 ## KF-AUDIT-059 — Multimodal understanding/output coverage is not demonstrated
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:F; priority:P2.
+Classification: UNVERIFIED; status: **NOT STARTED**; phase: F; priority: P2.
 
 Root cause: Voice/media transport is not evidence of document/image reasoning across active free models.
 
@@ -1530,9 +1530,9 @@ Required implementation: Define supported MIME/capability routes and fixture-bas
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1544,11 +1544,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-060 — Duplicated recovery and authority surfaces increase change risk
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase:B; priority:P2.
+Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
 
 Root cause: Cross-language twins and legacy/current paths require synchronized contracts.
 
@@ -1556,9 +1556,9 @@ Required implementation: Keep platform adapters but share schemas, conformance f
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1570,11 +1570,11 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
 
 ## KF-AUDIT-061 — Sample contains failed/cancelled runs but broad recovered outcomes are not independently graded
 
-Classification: UNVERIFIED; status: **INVESTIGATING**; phase:H; priority:P2.
+Classification: UNVERIFIED; status: **INVESTIGATING**; phase: H; priority: P2.
 
 Root cause: Survivorship avoided in selection, but status-only records cannot prove task-level recovery or intervention counts.
 
@@ -1582,9 +1582,9 @@ Required implementation: Grade sampled objectives against immutable requests/art
 
 Dependencies: Foundation contracts
 
-Branch: remediation/program; PR: not yet created.
+Branch: unassigned; PR: not yet created.
 
-Latest-state reconciliation: Current origin/main matches audit baseline 19c9592. No post-audit product fix is present; pending331 is test-only and unmerged.
+Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
 Implementation: No fix claimed yet.
 
@@ -1596,4 +1596,4 @@ Regression coverage: Not yet added.
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Acceptance and integration remain pending.
+Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.

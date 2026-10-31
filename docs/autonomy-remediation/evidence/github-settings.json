@@ -1,0 +1,27 @@
+{
+  "workflow_permissions": {
+    "status": "unavailable",
+    "error": "gh: Resource not accessible by integration (HTTP 403)\n"
+  },
+  "branch_protection": {
+    "status": "unavailable",
+    "error": "gh: Resource not accessible by integration (HTTP 403)\n"
+  },
+  "environments": [
+    {
+      "name": "cloudflare-production",
+      "protection_types": [],
+      "custom_branch_policies": null
+    },
+    {
+      "name": "github-pages",
+      "protection_types": [
+        "branch_policy"
+      ],
+      "custom_branch_policies": {
+        "protected_branches": false,
+        "custom_branch_policies": true
+      }
+    }
+  ]
+}
