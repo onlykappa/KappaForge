@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=15, NOT STARTED=13, TESTING=12, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=15, NOT STARTED=12, TESTING=12, VERIFIED=15
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -300,7 +300,7 @@ Remaining limitations: Original acceptance gate remains open; implement after de
 
 ## KF-AUDIT-012 — Tool history is clipped rather than semantically compacted
 
-Classification: PARTIAL; status: **TESTING**; phase: B; priority: P2.
+Classification: VERIFIED; status: **VERIFIED**; phase: B; priority: P2.
 
 Root cause: Text tails can omit the original cause and prior ineffective strategies.
 
@@ -308,7 +308,7 @@ Required implementation: Keep immutable receipts externally; construct context f
 
 Dependencies: Foundation contracts
 
-Branch: remediation/b-durable-tool-observations; PR: not yet created.
+Branch: remediation/b-durable-tool-observations; PR: [#351](https://github.com/onlykappa/KappaForge/pull/351).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
@@ -316,13 +316,13 @@ Implementation: Existing investigation and repair use a shared versioned observa
 
 Required acceptance/tests: After >30k history the next action still respects first failure and can retrieve omitted output.
 
-Actual results: Eight new tests:>30k context preserves first failure and retrieves exact omitted tail, escaped Unicode JSON/hash transport, first failed suite/latest revision summary, real Journal rotation/restart and scope/private storage denial, investigation-to-repair/provider429 restart, overflow/no further dispatch, interrupted persist preserves last durable receipt, and untrusted archive cannot register tools. Full initial Python1536/1502 passed/34 skipped; Node964 passed. Final Python rerun includes additional security case and defensive type guards; result pending.; Final composed Python1537/1503 passed/34 skipped in120.157s,zero failures/errors, including8 new regressions; Node964 passed. Exact supported gates pending.
+Actual results: Eight new tests:>30k context preserves first failure and retrieves exact omitted tail, escaped Unicode JSON/hash transport, first failed suite/latest revision summary, real Journal rotation/restart and scope/private storage denial, investigation-to-repair/provider429 restart, overflow/no further dispatch, interrupted persist preserves last durable receipt, and untrusted archive cannot register tools. Full initial Python1536/1502 passed/34 skipped; Node964 passed. Final Python rerun includes additional security case and defensive type guards; result pending.; Final composed Python1537/1503 passed/34 skipped in120.157s,zero failures/errors, including8 new regressions; Node964 passed. Exact supported gates pending.; Exact composedba6a9ea passed CI42290343059, actual sandbox42290343038 and native42290342842. Eight independent regressions satisfy the original>30k first-failure/retrievable-output acceptance. This verifies bounded tool observation retention, not general semantic memory or production functionality.
 
 Regression coverage: tests/test_tool_observation_history.py; tests/test_tool_loop.py
 
-Final verification evidence: Not yet collected.
+Final verification evidence: PR351 exact composedba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02; https://github.com/onlykappa/KappaForge/actions/runs/42290343059; https://github.com/onlykappa/KappaForge/actions/runs/42290343038; https://github.com/onlykappa/KappaForge/actions/runs/42290342842; tests/test_tool_observation_history.py; evidence/durable-tool-observations-local.json
 
-Remaining limitations: Local regression acceptance passed; exact supported CI and actual sandbox for this candidate remain pending. This is deterministic evidence selection, not general semantic project memory. Existing command logs remain separate; observations retain exact tool-facing results, which can themselves be summaries. Public GitHub checkpoint storage is redacted, not encrypted; general retention/deletion and native UI acceptance remain open.
+Remaining limitations: Original bounded tool-history acceptance is met on the isolated candidate. No production integration yet. General semantic task/project context027, retention/deletion041 and live model maturity remain separate open gaps; logical receipt bounds are explicit and fail closed.
 
 ## KF-AUDIT-013 — String find/replace is a fragile edit interface
 
@@ -438,7 +438,7 @@ Required implementation: Keep safe upper bounds but create route-specific compac
 
 Dependencies: Foundation contracts
 
-Branch: remediation/e-request-size-recovery; PR: not yet created.
+Branch: remediation/e-request-size-recovery; PR: [#352](https://github.com/onlykappa/KappaForge/pull/352).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
@@ -446,7 +446,7 @@ Implementation: Partial: confirmed aggregate pre-inference gateway413/context ad
 
 Required acceptance/tests: #330-shaped request admits an eligible compact Groq/Mistral route when within its real limits; oversized requests still fail safely.
 
-Actual results: Two new reproduction tests error on previousba6a9ea because the size refusal remains GatewayUnavailable;38 focused tests pass with the correction. Six new regressions cover real router exception provenance, source-rebuilt generation, review rebuilding without false platform evidence, bounded adaptation, immutable unshrinkable owner scope and mixed/upstream negative cases. Final composed Python pending. Offline registry calculation confirms Groq8192 reserve requires8529 tokens for a one-byte prompt against8000; explicit3000 reserve requires3337 and fits, without asserting active caller compatibility.; Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending.
+Actual results: Two new reproduction tests error on previousba6a9ea because the size refusal remains GatewayUnavailable;38 focused tests pass with the correction. Six new regressions cover real router exception provenance, source-rebuilt generation, review rebuilding without false platform evidence, bounded adaptation, immutable unshrinkable owner scope and mixed/upstream negative cases. Final composed Python pending. Offline registry calculation confirms Groq8192 reserve requires8529 tokens for a one-byte prompt against8000; explicit3000 reserve requires3337 and fits, without asserting active caller compatibility.; Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending.; Exact6ea6c46 CI42291259094 and explicitly selected secret-free real sandbox42291431938 passed. The configured Groq output-reserve/compact-packet blocker remains open; no live provider calls.
 
 Regression coverage: tests/test_remote_request_size_recovery.py; tests/test_gateway_request_budget.py
 
@@ -664,7 +664,7 @@ Remaining limitations: Original acceptance gate remains open; implement after de
 
 ## KF-AUDIT-026 — Cross-device sync, deletion and conflict handling lack live device evidence
 
-Classification: UNVERIFIED; status: **NOT STARTED**; phase: E; priority: P1.
+Classification: PARTIAL; status: **TESTING**; phase: E; priority: P1.
 
 Root cause: Browser crypto/storage code and tests do not establish device retention or long-term deletion guarantees.
 
@@ -672,21 +672,21 @@ Required implementation: Specify retention and tombstone expiry; test concurrent
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/e-vault-deletion-retention; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Reproduced silent500-id tombstone eviction and swallowed deletion persistence errors. New clients retain all deletion receipts, filter stale local payloads before offline startup/export, refuse non-durable local deletion and stop sync before cloud overwrite on incoming-receipt persistence failure. New encrypted snapshots use authenticated v2 framing so the actual baseline v1 reader stops before it can clip history; v1 backups remain readable. No actual cloud/user migration performed.
 
 Required acceptance/tests: Two devices offline/online do not resurrect deleted chat; export and erase prove server/local removal within declared retention.
 
-Actual results: Not measured for this remediation.
+Actual results: Four initial negative cases fail on the prior code:501 deletions, disjoint400+400 merge, failed local deletion persistence and oversized history. Final9 new cases plus5 existing delete/sync cases pass. Actual composed npm975 passed,zero failures/skips in23.468s; bundle/config/map/execution policy and structural scan passed. Real AES-GCM/PBKDF2, actual frontend functions, Worker/memory API and KappaMemory class run with isolated in-memory storage/auth fixtures; no external network or real owner data.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/vault-deletion-retention.test.mjs; tests/fixtures/vault-v1.json; tests/fixtures/vault-legacy-v1-codec.js; tests/chat-delete.test.mjs; tests/vault-sync.test.mjs
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Partial026:9 deterministic crypto/client/API/DO-replica tests and full Node passed, but supported candidate native/CI and physical two-device tests remain pending. Requires an explicitly approved coordinated client rollout before v2 writes on owner data. Old previously evicted receipts cannot be reconstructed. Physical erase/export/every-store retention and real storage failure recovery remain unverified; no full026 closure.
 
 ## KF-AUDIT-027 — No general semantic task-context compaction service
 
@@ -966,13 +966,13 @@ Implementation: Server foundation: short opaque hashed device credentials, fixed
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.; Native350/64e4a8d actual42289413007 passed6/6 UI and5/5 real Keychain/session tests,zero failures/skips. Composed351/ba6a9ea native42290342842 also passed; no physical-device claim.
 
 Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved; tests/native-device-auth.test.mjs; ios/KappaForgeSessionTests/DeviceSessionTests.swift (pending execution); ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
+Remaining limitations: Supported native session/Keychain/UI candidate gates passed at64e4a8d and composedba6a9ea. Physical-device/orientation and broader intermittent-race acceptance remain unmeasured; browser migration/protected owner step-up, final compatibility and separately approved rollout remain open.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 
@@ -1122,13 +1122,13 @@ Implementation: Move native UITextView out of WebKit-managed hierarchy into a si
 
 Required acceptance/tests: Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.
 
-Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.; Native350/64e4a8d actual42289413007 passed6/6 UI and5/5 real Keychain/session tests,zero failures/skips. Composed351/ba6a9ea native42290342842 also passed; no physical-device claim.
 
 Regression coverage: Unchanged native five-test UI suite; tests/ios-keyboard-layout.test.mjs; tests/test_native_build.py; tests/test_native_evidence.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
+Remaining limitations: Supported native session/Keychain/UI candidate gates passed at64e4a8d and composedba6a9ea. Physical-device/orientation and broader intermittent-race acceptance remain unmeasured; browser migration/protected owner step-up, final compatibility and separately approved rollout remain open.
 
 ## KF-AUDIT-044 — Task progress is polling-based with freshness limits
 

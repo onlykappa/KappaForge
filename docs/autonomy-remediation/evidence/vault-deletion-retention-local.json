@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/e-vault-deletion-retention",
+  "production": false,
+  "inference": false,
+  "ownerDataMigration": false,
+  "newRegressions": 9,
+  "focused": {
+    "passed": 14,
+    "failed": 0
+  },
+  "node": {
+    "passed": 975,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 23.468
+  },
+  "initialNegative": {
+    "tests": 4,
+    "failed": 4
+  },
+  "exactCI": "pending",
+  "physicalDevices": "not_run",
+  "logs": {
+    "2026-11-06-vault-retention-before.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-vault-retention-before.log",
+      "sha256": "4fd966e7bbd1a1e68a470de21865e34fd04c4474eb6689025b8ffb50dbca8e3a",
+      "bytes": 3622
+    },
+    "2026-11-06-vault-retention-focused-final.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-vault-retention-focused-final.log",
+      "sha256": "7e1c484a263e660ecd419b76f3eddefd0aee8f4c635556bbce80966d7c621664",
+      "bytes": 1507
+    },
+    "2026-11-06-vault-retention-final-npm.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-vault-retention-final-npm.log",
+      "sha256": "955c58fb854b5683a6640217b13c3a106b5005ccdefcff44d8d28cbc8f7e4c55",
+      "bytes": 92895
+    },
+    "2026-11-06-vault-retention-final-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-vault-retention-final-security.log",
+      "sha256": "7ef9968fa4c689d3df314695f7bc66dd266a938ed018584eed6e2acaf8efe55d",
+      "bytes": 23130
+    },
+    "2026-11-06-native-64e4a8d-job.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-64e4a8d-job.log",
+      "sha256": "6c22c9ec701c35c3e13ca3f1d4b0860d456c8af58c4ad844bd41eec9e4b8f876",
+      "bytes": 459960
+    }
+  }
+}

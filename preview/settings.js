@@ -583,7 +583,14 @@ function vaultSnapshot(allChats=false){return {chats:allChats?chats:chats.slice(
 function mergeVaultExtras(restored){
  mergeTaskHistory(restored.dismissedTasks,restored.taskHistory);
  // A conversation deleted on any device stays deleted everywhere.
- if(Array.isArray(restored.deletedChats)){deletedChats=[...new Set([...deletedChats,...restored.deletedChats.filter(x=>typeof x==="string")])].slice(-500);try{localStorage.setItem("kappaforge.deletedChats.v1",JSON.stringify(deletedChats))}catch(e){}}
+ if(Array.isArray(restored.deletedChats)){
+  const next=[...new Set([...deletedChats,...restored.deletedChats.filter(x=>typeof x==="string")])];
+  try{persistChatDeletions(next)}catch(e){
+   // Hide deleted data in this session, but do not overwrite the cloud or claim
+   // durable local synchronization when the deletion receipt cannot be saved.
+   deletedChats=next;forgetDeletedChats();throw Error("Deletion history could not be saved on this device; cloud sync was not saved. Free storage and retry.");
+  }
+ }
  forgetDeletedChats();
  removedNotes=[...new Set([...removedNotes,...(Array.isArray(restored.deletedNotes)?restored.deletedNotes.filter(n=>typeof n==='string'):[])])];
  if(restored.noteEdits&&typeof restored.noteEdits==='object')for(const [note,edit] of Object.entries(restored.noteEdits))if(typeof edit?.deleted==='boolean'&&Number.isFinite(edit.at)&&edit.at>(noteEdits[note]?.at||0))noteEdits[note]=edit;

@@ -19,3 +19,7 @@ Retain existing controllers and candidate-bound receipts, independent validation
 The50-task benchmark and Phases B–H remain incomplete. Semantic compaction, wider journal/pin/cancellation fault matrices, routing, memory deletion/sync, research/browser/document/connectors/local execution, scheduling/parallel coordination and independent evaluations retain their original IDs/acceptance in the tracker. Adjacent successes do not close them.
 
 Update: native host candidate64a9ac3 passed5/5 unchanged simulator tests;043 remains partial for original physical-device/race acceptance. Required strict integration gates0bba923 have actual supported zero-skip positive receipts plus a failing all-required-skipped negative. See AUTHENTICATION-MIGRATION-PLAN.md for the next concrete037 security cluster; it is not already implemented. NEXT-INDEPENDENT-AUDIT-REQUEST.md is a conditional post-integration request, not an audit outcome.
+
+## Encrypted vaultv2 proposal —026
+
+New candidate writes authenticatedv2 snapshots to prevent legacy clients from clipping deletion receipts. Updated readers acceptv1; old clients stop onv2 before upload. Owner must approve the coordinated client rollout and ensure all devices that need sync can upgrade before activation. No real owner vault was migrated. Safe rollback retainsv2 decoding and receipt retention; a v1-only downgrade cannot read new snapshots. This is an implementation-ready proposal for review, not authorization to release or mutate production data. Physical-device/erasure acceptance remains unverified.

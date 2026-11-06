@@ -375,22 +375,30 @@
     "deps": "",
     "effort": "M",
     "priority": "P2",
-    "current_classification": "PARTIAL",
-    "status": "TESTING",
+    "current_classification": "VERIFIED",
+    "status": "VERIFIED",
     "assigned_branch": "remediation/b-durable-tool-observations",
-    "pr": null,
+    "pr": 351,
     "implementation": "Existing investigation and repair use a shared versioned observation envelope with immutable logical O-ids, redacted exact tool results, revision/hash references and bounded paged retrieval. Compact context retains the first failed suite/tool and latest source read revisions plus whole recent entries; exact output is separate from prompt views. Existing authorized bot-comment checkpoint storage is reused with explicit1MB/512-record bounds, scope/privacy admission and fail-closed overflow; no silent history eviction.",
     "required_tests": "After >30k history the next action still respects first failure and can retrieve omitted output.",
     "actual_results": [
       "Eight new tests:>30k context preserves first failure and retrieves exact omitted tail, escaped Unicode JSON/hash transport, first failed suite/latest revision summary, real Journal rotation/restart and scope/private storage denial, investigation-to-repair/provider429 restart, overflow/no further dispatch, interrupted persist preserves last durable receipt, and untrusted archive cannot register tools. Full initial Python1536/1502 passed/34 skipped; Node964 passed. Final Python rerun includes additional security case and defensive type guards; result pending.",
-      "Final composed Python1537/1503 passed/34 skipped in120.157s,zero failures/errors, including8 new regressions; Node964 passed. Exact supported gates pending."
+      "Final composed Python1537/1503 passed/34 skipped in120.157s,zero failures/errors, including8 new regressions; Node964 passed. Exact supported gates pending.",
+      "Exact composedba6a9ea passed CI42290343059, actual sandbox42290343038 and native42290342842. Eight independent regressions satisfy the original>30k first-failure/retrievable-output acceptance. This verifies bounded tool observation retention, not general semantic memory or production functionality."
     ],
     "regression_coverage": [
       "tests/test_tool_observation_history.py",
       "tests/test_tool_loop.py"
     ],
-    "final_evidence": [],
-    "remaining_limitations": "Local regression acceptance passed; exact supported CI and actual sandbox for this candidate remain pending. This is deterministic evidence selection, not general semantic project memory. Existing command logs remain separate; observations retain exact tool-facing results, which can themselves be summaries. Public GitHub checkpoint storage is redacted, not encrypted; general retention/deletion and native UI acceptance remain open.",
+    "final_evidence": [
+      "PR351 exact composedba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02",
+      "https://github.com/onlykappa/KappaForge/actions/runs/42290343059",
+      "https://github.com/onlykappa/KappaForge/actions/runs/42290343038",
+      "https://github.com/onlykappa/KappaForge/actions/runs/42290342842",
+      "tests/test_tool_observation_history.py",
+      "evidence/durable-tool-observations-local.json"
+    ],
+    "remaining_limitations": "Original bounded tool-history acceptance is met on the isolated candidate. No production integration yet. General semantic task/project context027, retention/deletion041 and live model maturity remain separate open gaps; logical receipt bounds are explicit and fail closed.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
@@ -529,12 +537,13 @@
     "current_classification": "PARTIAL",
     "status": "TESTING",
     "assigned_branch": "remediation/e-request-size-recovery",
-    "pr": null,
+    "pr": 352,
     "implementation": "Partial: confirmed aggregate pre-inference gateway413/context admission refusals now retain the GatewayRequestTooLarge type through the real router adapter, enabling existing source-context reconstruction instead of terminal provider-outage handling. Review builders use at most three strictly smaller local adaptations; unchanged full owner scope is never truncated. Mixed or upstream failures retain dispatch uncertainty and existing real cooldowns.",
     "required_tests": "#330-shaped request admits an eligible compact Groq/Mistral route when within its real limits; oversized requests still fail safely.",
     "actual_results": [
       "Two new reproduction tests error on previousba6a9ea because the size refusal remains GatewayUnavailable;38 focused tests pass with the correction. Six new regressions cover real router exception provenance, source-rebuilt generation, review rebuilding without false platform evidence, bounded adaptation, immutable unshrinkable owner scope and mixed/upstream negative cases. Final composed Python pending. Offline registry calculation confirms Groq8192 reserve requires8529 tokens for a one-byte prompt against8000; explicit3000 reserve requires3337 and fits, without asserting active caller compatibility.",
-      "Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending."
+      "Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending.",
+      "Exact6ea6c46 CI42291259094 and explicitly selected secret-free real sandbox42291431938 passed. The configured Groq output-reserve/compact-packet blocker remains open; no live provider calls."
     ],
     "regression_coverage": [
       "tests/test_remote_request_size_recovery.py",
@@ -789,16 +798,24 @@
     "deps": "",
     "effort": "M",
     "priority": "P1",
-    "current_classification": "UNVERIFIED",
-    "status": "NOT STARTED",
-    "assigned_branch": "unassigned",
+    "current_classification": "PARTIAL",
+    "status": "TESTING",
+    "assigned_branch": "remediation/e-vault-deletion-retention",
     "pr": null,
-    "implementation": "",
+    "implementation": "Reproduced silent500-id tombstone eviction and swallowed deletion persistence errors. New clients retain all deletion receipts, filter stale local payloads before offline startup/export, refuse non-durable local deletion and stop sync before cloud overwrite on incoming-receipt persistence failure. New encrypted snapshots use authenticated v2 framing so the actual baseline v1 reader stops before it can clip history; v1 backups remain readable. No actual cloud/user migration performed.",
     "required_tests": "Two devices offline/online do not resurrect deleted chat; export and erase prove server/local removal within declared retention.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Four initial negative cases fail on the prior code:501 deletions, disjoint400+400 merge, failed local deletion persistence and oversized history. Final9 new cases plus5 existing delete/sync cases pass. Actual composed npm975 passed,zero failures/skips in23.468s; bundle/config/map/execution policy and structural scan passed. Real AES-GCM/PBKDF2, actual frontend functions, Worker/memory API and KappaMemory class run with isolated in-memory storage/auth fixtures; no external network or real owner data."
+    ],
+    "regression_coverage": [
+      "tests/vault-deletion-retention.test.mjs",
+      "tests/fixtures/vault-v1.json",
+      "tests/fixtures/vault-legacy-v1-codec.js",
+      "tests/chat-delete.test.mjs",
+      "tests/vault-sync.test.mjs"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Partial026:9 deterministic crypto/client/API/DO-replica tests and full Node passed, but supported candidate native/CI and physical two-device tests remain pending. Requires an explicitly approved coordinated client rollout before v2 writes on owner data. Old previously evicted receipts cannot be reconstructed. Physical erase/export/every-store retention and real storage failure recovery remain unverified; no full026 closure.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
@@ -1107,7 +1124,8 @@
       "Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport\u2192actual workerd restart/revocation passed.",
       "Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.",
       "Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.",
-      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation."
+      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.",
+      "Native350/64e4a8d actual42289413007 passed6/6 UI and5/5 real Keychain/session tests,zero failures/skips. Composed351/ba6a9ea native42290342842 also passed; no physical-device claim."
     ],
     "regression_coverage": [
       "tests/device-sessions.test.mjs",
@@ -1118,7 +1136,7 @@
       "ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.",
+    "remaining_limitations": "Supported native session/Keychain/UI candidate gates passed at64e4a8d and composedba6a9ea. Physical-device/orientation and broader intermittent-race acceptance remain unmeasured; browser migration/protected owner step-up, final compatibility and separately approved rollout remain open.",
     "reconciliation": "Backend implementation advances original acceptance without closing it. Exact revoked-device tests pass; long-lived privileged page-credential acceptance remains unmet."
   },
   {
@@ -1291,7 +1309,8 @@
       "14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.",
       "Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.",
       "Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.",
-      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation."
+      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.",
+      "Native350/64e4a8d actual42289413007 passed6/6 UI and5/5 real Keychain/session tests,zero failures/skips. Composed351/ba6a9ea native42290342842 also passed; no physical-device claim."
     ],
     "regression_coverage": [
       "Unchanged native five-test UI suite",
@@ -1300,7 +1319,7 @@
       "tests/test_native_evidence.py"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.",
+    "remaining_limitations": "Supported native session/Keychain/UI candidate gates passed at64e4a8d and composedba6a9ea. Physical-device/orientation and broader intermittent-race acceptance remain unmeasured; browser migration/protected owner step-up, final compatibility and separately approved rollout remain open.",
     "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {

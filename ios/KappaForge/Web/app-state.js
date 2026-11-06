@@ -56,14 +56,19 @@ function chatCommand(input){
  return null;
 }
 let chats=[];try{const stored=JSON.parse(localStorage.getItem(key)||"[]");if(Array.isArray(stored))chats=stored.filter(x=>x&&Array.isArray(x.messages));for(const c of chats)for(const m of c.messages)if(m.streaming){delete m.streaming;m.text=(m.text||"")+"\n\nThis reply was unfinished when the page loaded. You can retry from the message menu."}}catch(e){}
-// Conversations the owner deleted (newest 500). Synced with the vault so another device's copy can't bring one back.
+// Retain deletion receipts for this vault's lifetime. Evicting old ids lets an
+// offline device resurrect deleted conversations; storage limits must be explicit.
 let deletedChats=[];try{const d=JSON.parse(localStorage.getItem("kappaforge.deletedChats.v1")||"[]");if(Array.isArray(d))deletedChats=d.filter(x=>typeof x==="string")}catch(e){}
+// The receipt can commit before saving the reduced chat list. Suppress any
+// stale local payload on restart even while encrypted cloud sync is offline.
+chats=chats.filter(c=>!deletedChats.includes(c.id));
 function forgetDeletedChats(){chats=chats.filter(c=>!deletedChats.includes(c.id));if(current&&!chats.some(c=>c.id===current))current=chats[0]?.id||null}
+function persistChatDeletions(next){localStorage.setItem("kappaforge.deletedChats.v1",JSON.stringify(next));deletedChats=next;}
 function deleteChat(id){
  const c=chats.find(x=>x.id===id);if(!c)return false;
  if(!confirm("Delete \u201c"+c.title+"\u201d? It is removed from this device and your synced devices. Tasks it started keep running on GitHub."))return false;
- deletedChats=[...deletedChats.filter(x=>x!==id),id].slice(-500);
- try{localStorage.setItem("kappaforge.deletedChats.v1",JSON.stringify(deletedChats))}catch(e){}
+ try{persistChatDeletions([...new Set([...deletedChats,id])])}
+ catch(e){alert("Conversation could not be deleted because its deletion history could not be saved on this device. Free storage and try again.");return false;}
  forgetDeletedChats();save();return true;
 }
 
@@ -90,14 +95,19 @@ async function encryptVault(data,pass){
  const key=await deriveVaultKey(pass,salt);
  const raw=new TextEncoder().encode(JSON.stringify(data));
  if(raw.length>280000)throw Error("Backup exceeds 280 KB. Trim older conversations before syncing.");
- const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,raw));
- return JSON.stringify({v:1,salt:encode64(salt),iv:encode64(iv),data:encode64(ciphertext)});
+ // Legacy clients silently keep only500 deletion receipts, including during
+ // their next deletion. All new snapshots fence those writers, while readers
+ // below still accept existing v1 backups. Release requires a client rollout.
+ const v=2;
+ const algorithm={name:"AES-GCM",iv,additionalData:new TextEncoder().encode("KappaForge vault v2 deletion retention")};
+ const ciphertext=new Uint8Array(await crypto.subtle.encrypt(algorithm,key,raw));
+ return JSON.stringify({v,salt:encode64(salt),iv:encode64(iv),data:encode64(ciphertext)});
 }
 async function decryptVault(payload,pass){
  const o=JSON.parse(payload);
- if(o.v!==1)throw Error("Unsupported cloud backup version");
+ if(o.v!==1&&o.v!==2)throw Error("Unsupported cloud backup version. Update KappaForge before syncing.");
  const key=await deriveVaultKey(pass,decode64(o.salt));
- const raw=await crypto.subtle.decrypt({name:"AES-GCM",iv:decode64(o.iv)},key,decode64(o.data));
+ const raw=await crypto.subtle.decrypt({name:"AES-GCM",iv:decode64(o.iv),...(o.v===2?{additionalData:new TextEncoder().encode("KappaForge vault v2 deletion retention")}: {})},key,decode64(o.data));
  const result=JSON.parse(new TextDecoder().decode(raw));
  if(!result||!Array.isArray(result.chats)||!Array.isArray(result.notes)||result.notes.some(n=>typeof n!=="string"||n.length>400)||result.chats.some(c=>!c||typeof c.id!=="string"||!Array.isArray(c.messages)||c.messages.some(m=>!m||!["assistant","user"].includes(m.role)||typeof m.text!=="string")))throw Error("Backup format invalid");
  return result;
