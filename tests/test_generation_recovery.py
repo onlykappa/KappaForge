@@ -57,7 +57,7 @@ class GenerationRecoveryTests(unittest.TestCase):
 
     def test_recovery_stops_with_evidence_after_both_bounded_strategies(self):
         with patch.object(developer, 'run_model', return_value=('writer', BAD)) as model:
-            with self.assertRaisesRegex(ValueError, '5 distinct attempts'):
+            with self.assertRaisesRegex(ValueError, '5 bounded proposal attempts'):
                 developer.generate('key', 'change value', developer.ROOT, SOURCE, EXISTING)
         self.assertEqual(model.call_count, 5)
 

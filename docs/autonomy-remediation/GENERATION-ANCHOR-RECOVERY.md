@@ -1,0 +1,17 @@
+# Source-bound generation recovery — KF-AUDIT-007, partial010/060
+
+Initial generation and sandbox repair now use the same stable anchor identity: exact target-file bytes, find text and preceding edits to that file. The replacement and unrelated files are excluded because changing them cannot make the find match. Existing sandbox checkpoint fingerprints are preserved byte for byte.
+
+Initial generation records a typed failure receipt only after the real edit validator observes a missing/ambiguous anchor. Before subsequent dispatch it rejects that input against identical source/prefix conditions, even when a model changes the replacement, touches an unrelated file or changes proposal formatting. Corrected anchors, real source changes and changed same-file prefixes remain eligible. The original task/path/authorization, size, syntax, test-requirement and publication gates remain authoritative. No fuzzy patching or automatic source modification is introduced.
+
+Receipts survive large-to-compact generation through the typed GenerationFailure and survive process interruption/event rotation through the existing authorized failure ledger. Durable receipts contain hashes and bounded metadata rather than raw source/find strings. They do not add a second model failure or consume an extra edit-strategy counter; actual model requests retain existing lifetime accounting. A valid subsequent corrected retry consumes its existing edit debit. Ordinary whole-proposal rejection history remains intact.
+
+The compact-recovery counter previously added an already cumulative attempt_offset twice after a transport failure. It now preserves the absolute proposal total. A failed transport does not become a newly generated proposal, while actual request accounting remains separate. Failure messages now say bounded proposal attempts rather than asserting that five repeated malformed replies were five meaningfully different strategies. The full category-specific five-strategy recovery coordinator remains unfinished; this slice does not close010.
+
+## Executed acceptance
+
+Seven regressions run real validators and the real Journal through an isolated GitHub API fixture. They prove: a new replacement/unrelated edit cannot redispatch the bad anchor; compact fallback retains the receipt; changed source/prefix can succeed; original counters survive journal rotation/restart; only the corrected retry invokes the patcher after restart; final exhaustion retains evidence; transport failure does not double-count offsets; old runtime fingerprints remain compatible. Model transport is scripted, no live inference or production operation.
+
+Focused107 tests passed. Composed Python1524 total/1490 passed/34 skipped, zero failures/errors; standard Node279 passed with zero failures/skips. Ten structural-rule tests and scan passed with existing HTML warnings; map/execution-policy passed. Supported CI and real sandbox for this exact candidate are pending; live Task322 remains unrun. Existing malformed-output/import repair evidence is separate and is not substituted for a new live-model task outcome.
+
+Remaining: unified typed generation/action/observation runtime, category-specific meaningful strategy budgets and broader context/retrieval/cancellation matrices. No score improvement or full-gap closure is assigned from this patch alone. Rollback requires reverting the shared helper and both adapters together while retaining journals; never reset owner spend/authorization or force-publish a candidate.

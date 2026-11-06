@@ -906,7 +906,7 @@ class RecoveryJournalTests(unittest.TestCase):
         saved = []
         self.journal.stage_checkpoint = lambda model, summary, changes, explanation: saved.append(dict(changes))
         with patch.object(developer, 'run_model', side_effect=[('writer', bad)] * 10) as model:
-            with self.assertRaisesRegex(ValueError, '5 distinct attempts'):
+            with self.assertRaisesRegex(ValueError, '5 bounded proposal attempts'):
                 developer.generate('key', 'Change value and add a ready helper', recovery.ROOT,
                                    {'value.py': 'value = 1\n'}, {'value.py': 10}, require_test=True)
         self.assertEqual(model.call_count, 5)

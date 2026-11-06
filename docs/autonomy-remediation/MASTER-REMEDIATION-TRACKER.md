@@ -178,21 +178,21 @@ Required implementation: Persist normalized failure family, source version, atte
 
 Dependencies: Foundation contracts
 
-Branch: remediation/d-rejected-edit-memory; PR: [#340](https://github.com/onlykappa/KappaForge/pull/340).
+Branch: remediation/d-generation-anchor-recovery (extends #340); PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: Persist deterministic rejected-anchor identity using exact target bytes, find and preceding same-file edits. Block redispatch before patching, including after journal restore; allow corrected arguments or changed actual source.
+Implementation: Persist deterministic rejected-anchor identity using exact target bytes, find and preceding same-file edits. Block redispatch before patching, including after journal restore; allow corrected arguments or changed actual source. Initial generation now shares stable source/prefix identity, persists hash-only receipts through existing failure ledger, blocks redispatch across changed replacements/unrelated edits and retains local receipts across compact fallback.
 
 Required acceptance/tests: Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.
 
-Actual results: 87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.; Full Python1505 OK(skip36) on d526ddd.
+Actual results: 87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.; Full Python1505 OK(skip36) on d526ddd.; Seven new generation/Journal/legacy-key regressions;107 focused passed. Composed Python1524 OK(skip34), Node279 passed. Exact new candidate CI pending; no live Task322 replay.
 
-Regression coverage: tests/test_rejected_edit_memory.py; tests/test_execution_recovery.py:test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch
+Regression coverage: tests/test_rejected_edit_memory.py; tests/test_execution_recovery.py:test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch; tests/test_generation_anchor_recovery.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Runtime repair admission fixed; initial generation rejection protocol and live Task322 replay remain separate. Category-specific five-strategy recovery not complete.
+Remaining limitations: Initial generation/runtime identity now consolidated and locally tested. Supported CI/new actual sandbox and live Task322 evidence remain pending; full category-specific strategy coordinator remains open.
 
 ## KF-AUDIT-008 — Latest malformed-tool recovery lacks live acceptance evidence
 
@@ -260,13 +260,13 @@ Branch: unassigned; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Partial: compact generation now treats attempt_offset as cumulative instead of charging it twice after failed transport; final exceptions retain exact counters and rejection receipts. Messages no longer call repeated malformed replies distinct strategies. Category-specific five meaningful strategies not yet implemented.
 
 Required acceptance/tests: Exhaustion across restart preserves all budgets; 429 waits do not consume repair strategies; no repeated side effects.
 
-Actual results: Not measured for this remediation.
+Actual results: Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_generation_anchor_recovery.py
 
 Final verification evidence: Not yet collected.
 

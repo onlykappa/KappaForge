@@ -397,8 +397,8 @@ class SandboxRepairController:
         if any(not isinstance(row.get('find'), str) or not isinstance(row.get('replace'), str) for row in preceding):
             return None
         raw = files.get(edit['path'])
-        return execution.digest(dict(path=edit['path'], source=hashlib.sha256(raw).hexdigest() if raw is not None else None,
-            find=edit['find'], preceding=[dict(find=row['find'], replace=row['replace']) for row in preceding]))
+        from engine.edit_identity import anchor_key
+        return anchor_key(edit['path'], raw, edit['find'], preceding)
 
     def _planned_line_patch(self, path, sha256, edits):
         return self._apply_planned(lambda: self.tools.apply_line_patch(path, sha256, edits))
