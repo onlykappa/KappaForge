@@ -23,16 +23,17 @@ enum DeviceSessionVault {
         let attributes: [String: Any] = [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            guard SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) == errSecSuccess else { throw DeviceSessionError.storage }
-        } else if status != errSecSuccess { throw DeviceSessionError.storage }
+            let added = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
+            guard added == errSecSuccess else { throw DeviceSessionError.storage(added) }
+        } else if status != errSecSuccess { throw DeviceSessionError.storage(status) }
     }
     static func delete() throws {
         let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw DeviceSessionError.storage }
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw DeviceSessionError.storage(status) }
     }
 }
 
-enum DeviceSessionError: Error { case configuration, response, storage, changed }
+enum DeviceSessionError: Error { case configuration, response, storage(OSStatus), changed }
 
 // Do not follow even a same-origin redirect carrying a credential. Cookies and
 // shared caches are also disabled; the only admitted path is /sessions.

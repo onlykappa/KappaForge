@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "date": "2026-10-31",
+  "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
   "composedCode": "bc048002adbe799e47f0ac68638257f1d5af417f",
@@ -27,7 +27,9 @@
     342,
     343,
     344,
-    345
+    345,
+    346,
+    347
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -57,14 +59,12 @@
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
     "branch": "remediation/a-native-device-auth",
-    "base": "fc6fdcf (parent transport HTTPS fixture correction)",
-    "scope": "037 secure native enrollment/Keychain renewal/bridge; candidate only, no rollout",
-    "localVerification": "Node962,48 focused tests, security and web/config/map/policy passed; actual workerd/SQLite client restart, owner re-enrollment and self-disconnect persisted with zero external traffic. Parent desktop/mobile Chromium HTTPS profiles passed; native XcodeGen declaration corrected, actual native tests still pending.",
-    "next": "Publish corrected native target declaration and collect actual macOS compilation/Keychain/UI results. All61 original acceptance gates retained; no merge approval request yet.",
-    "observedFailures": [
-      "d84cebb native41229597634: XcodeGen unknown bundle.unit-testing; corrected to bundle.unit-test, pending rerun",
-      "835c0a3 browser41229300914: HTTP fixture rejected by HTTPS production transport; parent fixture correction in progress; no policy bypass"
-    ]
+    "worktree": "/workspace/KappaForge-native-device-auth",
+    "pr": 346,
+    "scope": "Fix actual Keychain setup failure with simulator-only ad-hoc signing and exact-app entitlement; restore read-only monitoring scopes",
+    "previousGate": "7207a55 actual main tests passed; native41230157892 failed, UI6 passed, five Keychain test bodies blocked during setup",
+    "local": "48 Node/33 Python focused tests passed; real Keychain rerun pending",
+    "next": "Collect supported macOS rerun, diagnose numeric Security.framework status if needed; then continue runtime/recovery phase dependencies. No merge/deploy/paid calls."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }
