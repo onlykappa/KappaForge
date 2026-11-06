@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/d-generation-anchor-recovery",
+  "production": false,
+  "inference": false,
+  "python": {
+    "total": 1524,
+    "passed": 1490,
+    "skipped": 34,
+    "failed": 0,
+    "seconds": 109.929
+  },
+  "node": {
+    "passed": 279,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focused": {
+    "passed": 107,
+    "failed": 0,
+    "skipped": 0
+  },
+  "structuralRules": {
+    "passed": 10,
+    "failed": 0
+  },
+  "scan": "passed with existing HTML warnings",
+  "exactCandidateCI": "pending",
+  "liveTask322": "not_run",
+  "logs": {
+    "2026-11-06-generation-anchors-targeted.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-generation-anchors-targeted.log",
+      "sha256": "dd11a963de0bb9aff6b2fb00221b611daefc77df13b8d5767b279630800c5267",
+      "bytes": 11173
+    },
+    "2026-11-06-generation-anchors-python.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-generation-anchors-python.log",
+      "sha256": "611b4a1701029d84f29acf0d18b0a9de07beb334021f55ad5a88ff41efc0f06a",
+      "bytes": 317101
+    },
+    "2026-11-06-generation-anchors-node.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-generation-anchors-node.log",
+      "sha256": "03a338afa5bd9ca9189d8b55102acd43ad10c3588af49f7ef713a1b5c0ddb015",
+      "bytes": 26244
+    },
+    "2026-11-06-generation-anchors-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-generation-anchors-security.log",
+      "sha256": "4288b37b55c48c273dc31798af3b36f60c8ba25d42efc383ad08c7454cdd4782",
+      "bytes": 23130
+    },
+    "2026-11-06-generation-anchors-rules.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-generation-anchors-rules.log",
+      "sha256": "cd084743abb397b7b9e3e81ae0bbd89af254dc65bc206ad21a0bff1dca4b50b1",
+      "bytes": 413
+    }
+  }
+}

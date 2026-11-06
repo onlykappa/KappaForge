@@ -58,13 +58,12 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/b-paged-path-discovery",
-    "worktree": "/workspace/KappaForge-path-discovery",
-    "pr": 347,
-    "scope": "Update composed dependency state; engine discovery passed CI and real sandbox; native Keychain signing correction pending",
-    "validatedEngine": "1af5f0b5f2ba82d60ddf1c49ff08e207cd86a21c",
-    "pendingNative": "63db3b9",
-    "next": "Collect native actual Keychain results and continue generation/recovery root fixes. Preserve source-version rejection evidence and lifetime budgets. No main/PR merges, release, deployment or paid calls."
+    "branch": "remediation/d-generation-anchor-recovery",
+    "worktree": "/workspace/KappaForge-generation-recovery",
+    "scope": "007 initial generation/runtime shared identity and durable rejection;010 cumulative offset truthfulness",
+    "base": "b5c561d",
+    "local": "Python1524 OK(skip34),107 focused and Node279 passed; rule tests/security/map/policy passed",
+    "next": "Publish draft; collect exact candidate CI/real sandbox. Check native63db3b9 actual Keychain/simulator run42281885269; then continue category-specific recovery and original dependency roadmap. No main/PR merge, deploy/release or paid call."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {

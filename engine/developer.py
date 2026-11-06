@@ -26,7 +26,8 @@ import urllib.parse
 import urllib.request
 import warnings
 from engine import recovery
-from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
+from engine.edit_errors import EditMismatch, RepeatedEditAnchor, SourceNotRead, GenerationFailure
+from engine.edit_identity import anchor_key, proposal_anchors
 from engine import repo_map as repo_maps
 from engine import export_index
 from engine import exploration
@@ -860,7 +861,7 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
             edits = entry["edits"]
             if not isinstance(edits, list) or not edits:
                 raise ValueError("Empty edit list: " + path)
-            for edit in edits:
+            for index, edit in enumerate(edits):
                 if not isinstance(edit, dict):
                     raise ValueError("Each edit needs find and replace text: " + path)
                 find, replace = (edit or {}).get("find"), (edit or {}).get("replace")
@@ -868,7 +869,8 @@ def apply_changes(sources, existing, proposal, budget=SMALL):
                     raise ValueError("Each edit needs find and replace text: " + path)
                 count = text.count(find)
                 if count != 1:
-                    raise EditMismatch(path, find, text, count)
+                    raise EditMismatch(path, find, text, count,
+                                       anchor_key(path, sources[path].encode(), find, edits[:index]))
                 text = text.replace(find, replace)
         elif isinstance(entry.get("content"), str):
             # Whole-file writes are for new files, or files the model has actually read in full.
@@ -1190,8 +1192,10 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                   else COMPACT if isinstance(exc, GenerationFailure) else SMALL)
         budget = repair_budget(budget)
         if not remaining_attempts:
-            raise GenerationFailure("No validated proposal after 5 distinct attempts. " + reason, attempts=attempts_used) from exc
-        note("fix", "Large proposal could not be validated; reducing context and output for the remaining distinct attempts")
+            raise GenerationFailure("No validated proposal after 5 bounded proposal attempts. " + reason, attempts=attempts_used,
+                errors=getattr(exc, 'errors', ()), rejected_proposals=getattr(exc, 'rejected_proposals', ()),
+                rejected_anchors=getattr(exc, 'rejected_anchors', ())) from exc
+        note("fix", "Large proposal could not be validated; reducing context and output for the remaining bounded proposal attempts")
         print("Retrying with compact generation: " + reason)
         ordered = list(dict.fromkeys(source_priorities(sources, existing, task, journal) + list(sources)))
         small = {p: sources[p] for p in ordered if p in sources}
@@ -1204,15 +1208,21 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
                                                                  guide, allowed, budget, design, require_test, allow_empty,
                                                                  max_attempts=remaining_attempts, attempt_offset=attempts_used,
                                                                  prior_errors=getattr(exc, 'errors', ()),
-                                                                 prior_proposals=getattr(exc, 'rejected_proposals', ()))
+                                                                 prior_proposals=getattr(exc, 'rejected_proposals', ()),
+                                                                 prior_anchors=getattr(exc, 'rejected_anchors', ()))
         except (RuntimeError, GenerationFailure) as last:
             from engine.reliability import RecoveryBudgetExceeded
             if isinstance(last, RecoveryBudgetExceeded) or getattr(last, 'terminal', False) or getattr(last, 'gateway_failure', False):
                 raise
-            attempts_used += min(remaining_attempts, max(0, getattr(last, 'attempts', 0)))
+            # generate_with reports the cumulative total including attempt_offset.
+            # Transport failures without a proposal cannot consume that offset again.
+            if isinstance(last, GenerationFailure):
+                attempts_used = min(5, max(attempts_used, last.attempts))
             if attempts_used >= 5:
-                raise GenerationFailure("No validated proposal after 5 distinct attempts. " + str(last)[:1800],
-                                        attempts=attempts_used, blocked=getattr(last, 'blocked', False)) from last
+                raise GenerationFailure("No validated proposal after 5 bounded proposal attempts. " + str(last)[:1800],
+                    attempts=attempts_used, blocked=getattr(last, 'blocked', False), errors=getattr(last, 'errors', ()),
+                    rejected_proposals=getattr(last, 'rejected_proposals', ()),
+                    rejected_anchors=getattr(last, 'rejected_anchors', ())) from last
             journal = recovery.CURRENT.get()
             if (journal and not recovery.SPLITTING.get() and not getattr(journal, 'split_used', False)
                     and not (isinstance(last, GenerationFailure) and not last.compact)):
@@ -1256,7 +1266,10 @@ def generate(api_key, task, repo, sources, existing, guide="", allowed=None, des
             raise GenerationFailure("No validated proposal after large and compact recovery. Compact: " + str(last)[:1800] +
                                     " | Earlier large attempt: " + reason,
                                     provider_routes=getattr(last, 'provider_routes', False), blocked=getattr(last, 'blocked', False),
-                                    retry_at=getattr(last, 'retry_at', 0), terminal=getattr(last, 'terminal', False)) from last
+                                    retry_at=getattr(last, 'retry_at', 0), terminal=getattr(last, 'terminal', False),
+                                    attempts=attempts_used, errors=getattr(last, 'errors', ()),
+                                    rejected_proposals=getattr(last, 'rejected_proposals', ()),
+                                    rejected_anchors=getattr(last, 'rejected_anchors', ())) from last
     return model, summary, mirror_ios_copies(repo, changes, existing), explanation
 
 
@@ -1329,6 +1342,11 @@ def repair_evidence(exc):
                 "The last response was not applied. Return the complete corrected proposal, keeping edits small. "
                 "Escape quotes, backslashes and newlines inside JSON strings. Do not truncate or continue the JSON. "
                 "Response near the error (JSON-escaped): " + json.dumps(snippet))
+    if isinstance(exc, RepeatedEditAnchor):
+        return ('A retained validator receipt proves this anchor already failed in ' + exc.path +
+                ' at the same source and preceding-edit version. It was not dispatched again. '
+                'Reread the exact immutable source; change the find or its same-file preceding edits, '
+                'or use a full rewrite only when the complete file was read. A new replacement or unrelated edit is not new evidence.')
     if not isinstance(exc, EditMismatch):
         return ""
     # Search the entire file, not only task-keyword excerpts. Minified JS often has one enormous line;
@@ -1377,7 +1395,7 @@ def source_priorities(sources, existing, task, journal=None):
 
 @task_state.role('coder', 'Propose source edits for the current stage of the owner goal',
                  'Edits match current source, preserve scope and pass syntax; independent validation is still required')
-def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=()):
+def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget, design="", require_test=False, allow_empty=False, max_attempts=5, attempt_offset=0, prior_errors=(), prior_proposals=(), prior_anchors=()):
     goal = task_goal.CURRENT.get()
     validation_budget = budget  # Prompt compaction must not redefine allowed output growth.
     retry_lines = {p: list(lines) for p, lines in REPAIR_SOURCE_LINES.get().items()}
@@ -1539,6 +1557,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     anchor_retry = False
     anchor_count = 0
     rejected_signatures = set()
+    rejected_anchors = set(prior_anchors)
     round_id = next(GENERATION_ROUNDS)  # The intent guard's retry budget is counted per round, not per task.
     context_key = hashlib.sha256((json.dumps(shown_sources, sort_keys=True) + str(budget)).encode()).hexdigest()
     if journal:
@@ -1660,6 +1679,10 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
             if signature in rejected_signatures or (journal and journal.rejected(signature)):
                 avoid.add(model)
                 raise ValueError("Repeated rejected proposal: no source changes since previous validation")
+            for anchor, path in proposal_anchors(proposal, shown_sources):
+                if anchor in rejected_anchors or (journal and journal.rejected('edit-anchor:' + anchor)):
+                    avoid.add(model)
+                    raise RepeatedEditAnchor(path, anchor)
             from engine.intent_guard import ACTIVE
             scope = ACTIVE.get()
             if scope is not None and attempt_number:
@@ -1693,6 +1716,11 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
                 raise
             evidence = repair_evidence(exc)
             kind, strategy = recovery.diagnose(exc)
+            failed_anchor = getattr(exc, 'anchor_key', '')
+            if failed_anchor:
+                rejected_anchors.add(failed_anchor)
+                if journal:
+                    journal.remember_anchor(failed_anchor, exc.path)
             if journal:
                 journal.event(exc, model=model, strategy=strategy,
                               outcome='blocked' if strategy == 'stop' else 'recovering',
@@ -1771,7 +1799,7 @@ def generate_with(api_key, task, repo, sources, existing, guide, allowed, budget
     raise GenerationFailure(detail, compact=not hard_stop, blocked=hard_stop, provider_routes=getattr(route_error, 'provider_routes', False),
                             retry_at=getattr(route_error, 'retry_at', 0), terminal=getattr(route_error, 'terminal', False),
                             attempts=attempt_offset + attempts_made, errors=errors,
-                            rejected_proposals=rejected_proposals)
+                            rejected_proposals=rejected_proposals, rejected_anchors=rejected_anchors)
 
 
 # Another repository's own CI runs a pushed branch with that repository's secrets, so changes that could

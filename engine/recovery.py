@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from contextvars import ContextVar
-from engine.edit_errors import EditMismatch, SourceNotRead, GenerationFailure
+from engine.edit_errors import EditMismatch, RepeatedEditAnchor, SourceNotRead, GenerationFailure
 
 CURRENT = ContextVar('recovery_journal', default=None)
 SPLITTING = ContextVar('recovery_split_active', default=False)
@@ -101,7 +101,7 @@ def diagnose(error):
         return 'request_size', 'reduce_source_context'
     # Source snippets and filenames are evidence, not authorization decisions.
     # Task #191's missing anchor included the literal route "/authorization".
-    if isinstance(error, EditMismatch):
+    if isinstance(error, (EditMismatch, RepeatedEditAnchor)):
         return 'edit_anchor', 'reread_source'
     if isinstance(error, SourceNotRead):
         return 'missing_context', 'read_dependencies'
@@ -438,6 +438,18 @@ class Journal:
     def rejected(self, signature):
         key = hashlib.sha256((self.state['candidate'] + signature).encode('utf-8', 'backslashreplace')).hexdigest()
         return key in self.state['rejected'] or key in self.ledger
+
+    def remember_anchor(self, anchor, path):
+        """Persist a deterministic input failure without charging another model/strategy attempt."""
+        if not isinstance(anchor, str) or not re.fullmatch(r'[a-f0-9]{64}', anchor):
+            raise ValueError('Invalid failed-anchor fingerprint')
+        signature = 'edit-anchor:' + anchor
+        key = hashlib.sha256((self.state['candidate'] + signature).encode('utf-8', 'backslashreplace')).hexdigest()
+        if key not in self.ledger:
+            self.remember(dict(at=self.clock(), candidate=self.state['candidate'], kind='edit_anchor',
+                operation='anchor_receipt', model='', strategy='reread_exact_source', outcome='recovering',
+                error='Anchor failed at this exact source and preceding-edit version', files=[clean(path, 300)],
+                next='Change the anchor or actual source conditions; do not redispatch the known failed edit'), key)
 
     def checkpoint(self, sha, base='', pr='', files=()):
         if not SHA.fullmatch(sha):
