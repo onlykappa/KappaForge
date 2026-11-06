@@ -57,7 +57,12 @@ final class DeviceSessionTests: XCTestCase {
         XCTAssertEqual(DeviceSessionVault.load(), expected)
         let script = KappaWebView.credentialScript().source
         XCTAssertFalse(script.contains(expected.renewal)); XCTAssertFalse(script.contains("isolated-owner-fixture"))
-        XCTAssertTrue(script.contains(expected.id)); XCTAssertTrue(script.contains(expected.backend))
+        // JSONSerialization may escape slashes. Verify the actual metadata the
+        // JavaScript consumer decodes, rather than its incidental wire spelling.
+        let start = try XCTUnwrap(script.range(of: "const connection = ")).upperBound
+        let end = try XCTUnwrap(script.range(of: ", pending = new Map();", range: start..<script.endIndex)).lowerBound
+        let metadata = try JSONSerialization.jsonObject(with: Data(script[start..<end].utf8)) as? [String: String]
+        XCTAssertEqual(metadata, ["id": expected.id, "backend": expected.backend])
         XCTAssertTrue(script.contains("localStorage.removeItem('kappaforge.access')"))
     }
     @MainActor func testRenewalReturnsOnlyShortAccessAndDisconnectDeletesAfterServerReceipt() async throws {
