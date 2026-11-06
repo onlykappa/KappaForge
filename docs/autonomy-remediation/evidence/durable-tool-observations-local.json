@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/b-durable-tool-observations",
+  "production": false,
+  "inference": false,
+  "python": {
+    "total": 1537,
+    "passed": 1503,
+    "skipped": 34,
+    "failed": 0,
+    "seconds": 120.157
+  },
+  "node": {
+    "passed": 964,
+    "failed": 0,
+    "skipped": 0
+  },
+  "newRegressions": 8,
+  "rules": {
+    "passed": 10,
+    "failed": 0
+  },
+  "scan": "passed with existing HTML warnings",
+  "exactCandidateCI": "pending",
+  "liveTask322": "not_run",
+  "logs": {
+    "2026-11-06-tool-observations-final-python.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-final-python.log",
+      "sha256": "3d2afa193b5ecd219136522930d514f37124411e4a7e0b3166ffc95e4a401dc0",
+      "bytes": 319466
+    },
+    "2026-11-06-tool-observations-npm.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-npm.log",
+      "sha256": "238329224525abdf06fc366b07b29abed6fce63811ca8149d897fd9e72376619",
+      "bytes": 91780
+    },
+    "2026-11-06-tool-observations-focused.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-focused.log",
+      "sha256": "fcf109c6abfec10b59b0ba15f7e8b820878b355fdcb692a04d9d9e34e5a1350b",
+      "bytes": 99
+    },
+    "2026-11-06-tool-observations-new.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-new.log",
+      "sha256": "aa401290216901f98fdf1f02bbf2405c185fbeca7bb5ad68b976b17b426270fd",
+      "bytes": 1603
+    },
+    "2026-11-06-tool-observations-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-security.log",
+      "sha256": "4288b37b55c48c273dc31798af3b36f60c8ba25d42efc383ad08c7454cdd4782",
+      "bytes": 23130
+    },
+    "2026-11-06-tool-observations-rules.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-rules.log",
+      "sha256": "cd084743abb397b7b9e3e81ae0bbd89af254dc65bc206ad21a0bff1dca4b50b1",
+      "bytes": 413
+    },
+    "2026-11-06-tool-observations-node.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-node.log",
+      "sha256": "76faa279ca3cbccbfbcaff603c4f9ac3a7bf1529438500b69d4dc0aac106c3d6",
+      "bytes": 92673
+    },
+    "2026-11-06-observations-native-composed-npm.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-observations-native-composed-npm.log",
+      "sha256": "505032573689f9be246da5c7a4d60b5e36fff2247e9cf074d664de24ab50ad32",
+      "bytes": 91956
+    }
+  },
+  "sourceHashes": {
+    "engine/tool_history.py": "b0da9dc591d8670d5c27bac7956889f890e6a5924922233e77936c42951a4053",
+    "engine/tool_loop.py": "431b0f4b5b6ed5bb66715ba16cdaa0c1aabb9ef3a848b223f2aaf1be85737b0d",
+    "engine/exploration.py": "292a42dee8980a403505524883b3a5913b31a7abdbe02db8d8bc85555f3daa2e",
+    "engine/sandbox_repair_controller.py": "a1deb169994c1e0f0459583d032f609ab3eb512a35df7456b29d031fa6c70fee",
+    "tests/test_tool_observation_history.py": "d70206f117d2a07623c0d4f65f77dddbff7c7d35f7c81f5a9f170e6ae8c77eec"
+  },
+  "composedNative": "350:64e4a8d",
+  "composedNode": {
+    "passed": 966,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 22.934
+  }
+}

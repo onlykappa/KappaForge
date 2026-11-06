@@ -32,3 +32,9 @@ After checkpoint #342, review #343 (`remediation/a-free-cost-boundary`,1ff8f7a),
 ## Current tested dependency chain — November6
 
 After#344, review#345 central transport(fc6fdcf),#346 native device authentication(ff6ca5d),#347 paged discovery(b5c561d),#348 shared generation-anchor recovery(49bfb1d), then remediation/d-recovery-strategy-limits. All are drafts; zero PRs merged. Discovery and generation exact supported tests/real sandbox passed. Latest native simulator gate is pending and must be collected. Later branches still need the latest native test-only correction folded into their actual final integration tree. A local dependency merge is not authorization for any GitHub PR/main merge. See CHECKPOINT.json for the current worktree and remaining gates.
+
+## Observation and native follow-up clusters
+
+#349(strategy limits,3fda30e) passed exact CI/real sandbox. #350(native outside-tap lifecycle,64e4a8d) is based on#346 and retains mandatory supported native acceptance. The observation branch follows#349 and locally composes the nativeff6ca5d test-only correction; it does not yet contain350. Review native350 as a dependency before the final composed integration tree. All61 original acceptance criteria remain canonical; original scopes are not replaced by adjacent regression success. No GitHub PR/main merges authorized.
+
+Update: the observation branch now locally composes350 as well. Review350 separately, then351 with its declared native dependency; the final composed candidate still requires native and all mandatory gates. No main or GitHub PR merge was performed.

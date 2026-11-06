@@ -480,7 +480,10 @@ if(window.KappaNativeComposer){
  window.addEventListener('resize',syncNativeComposer);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){updateKeyboard();syncNativeComposer()}});
  window.addEventListener('pageshow',syncNativeComposer);
- document.addEventListener('pointerdown',event=>{if(!event.target.closest('#composer'))window.webkit.messageHandlers.kappa.postMessage({action:'blurComposer'});},{passive:true});
+ // Blurring on pointerdown can move/re-render the navigation target before
+ // pointerup, losing the user's tap. Capture the already-dispatched click so
+ // its target still runs, and intentional suggestion focus runs after blur.
+ document.addEventListener('click',event=>{if(!event.target.closest('#composer'))window.webkit.messageHandlers.kappa.postMessage({action:'blurComposer'});},{capture:true,passive:true});
 }
 
 function focusMessageInput(){

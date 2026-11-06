@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=17, NOT STARTED=13, TESTING=10, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=16, NOT STARTED=13, TESTING=11, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -256,7 +256,7 @@ Required implementation: Unify lifetime budget accounting; default at most five 
 
 Dependencies: Foundation contracts
 
-Branch: remediation/d-recovery-strategy-limits; PR: not yet created.
+Branch: remediation/d-recovery-strategy-limits; PR: [#349](https://github.com/onlykappa/KappaForge/pull/349).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
@@ -264,7 +264,7 @@ Implementation: Partial: compact generation now treats attempt_offset as cumulat
 
 Required acceptance/tests: Exhaustion across restart preserves all budgets; 429 waits do not consume repair strategies; no repeated side effects.
 
-Actual results: Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.; 64 focused tests passed; Python1529 total/1495 passed/34 skipped, Node279 passed. Five new regressions cover exhausted-family stop, invalid/unplanned edits, per-family and corrupt counters, real Journal/provider429 restart and explicit Fix no-reset. Exact candidate CI/sandbox pending.
+Actual results: Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.; 64 focused tests passed; Python1529 total/1495 passed/34 skipped, Node279 passed. Five new regressions cover exhausted-family stop, invalid/unplanned edits, per-family and corrupt counters, real Journal/provider429 restart and explicit Fix no-reset. Exact candidate CI/sandbox pending.; Exact3fda30e CI42286813898 and real sandbox42286813709 passed. Broader recovery/category and live model acceptance remain open.
 
 Regression coverage: tests/test_generation_anchor_recovery.py; tests/test_recovery_strategy_limits.py
 
@@ -282,11 +282,11 @@ Required implementation: Introduce typed action/observation runtime shared by pl
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/b-durable-tool-observations; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Partial migration: investigation and sandbox repair now share one versioned task-scoped observation/result retrieval contract, while preserving existing tool dispatch, sandbox validation and journal boundaries. This does not unify action controllers, provider protocols or the entire planning/execution state machine.
 
 Required acceptance/tests: A task discovers an unplanned dependency, reads it, edits, tests and replans through one durable event contract.
 
@@ -300,7 +300,7 @@ Remaining limitations: Original acceptance gate remains open; implement after de
 
 ## KF-AUDIT-012 — Tool history is clipped rather than semantically compacted
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
+Classification: PARTIAL; status: **TESTING**; phase: B; priority: P2.
 
 Root cause: Text tails can omit the original cause and prior ineffective strategies.
 
@@ -308,21 +308,21 @@ Required implementation: Keep immutable receipts externally; construct context f
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/b-durable-tool-observations; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Existing investigation and repair use a shared versioned observation envelope with immutable logical O-ids, redacted exact tool results, revision/hash references and bounded paged retrieval. Compact context retains the first failed suite/tool and latest source read revisions plus whole recent entries; exact output is separate from prompt views. Existing authorized bot-comment checkpoint storage is reused with explicit1MB/512-record bounds, scope/privacy admission and fail-closed overflow; no silent history eviction.
 
 Required acceptance/tests: After >30k history the next action still respects first failure and can retrieve omitted output.
 
-Actual results: Not measured for this remediation.
+Actual results: Eight new tests:>30k context preserves first failure and retrieves exact omitted tail, escaped Unicode JSON/hash transport, first failed suite/latest revision summary, real Journal rotation/restart and scope/private storage denial, investigation-to-repair/provider429 restart, overflow/no further dispatch, interrupted persist preserves last durable receipt, and untrusted archive cannot register tools. Full initial Python1536/1502 passed/34 skipped; Node964 passed. Final Python rerun includes additional security case and defensive type guards; result pending.; Final composed Python1537/1503 passed/34 skipped in120.157s,zero failures/errors, including8 new regressions; Node964 passed. Exact supported gates pending.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_tool_observation_history.py; tests/test_tool_loop.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Local regression acceptance passed; exact supported CI and actual sandbox for this candidate remain pending. This is deterministic evidence selection, not general semantic project memory. Existing command logs remain separate; observations retain exact tool-facing results, which can themselves be summaries. Public GitHub checkpoint storage is redacted, not encrypted; general retention/deletion and native UI acceptance remain open.
 
 ## KF-AUDIT-013 — String find/replace is a fragile edit interface
 
@@ -598,17 +598,17 @@ Branch: remediation/c-repair-history-retrieval; PR: [#341](https://github.com/on
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: Bounded repair-history index and exact SHA256/paged JSON retrieval through existing tools/journal; replace full recent-plan prompt dump with small index and mark history non-authoritative.
+Implementation: Bounded repair-history index and exact SHA256/paged JSON retrieval through existing tools/journal; replace full recent-plan prompt dump with small index and mark history non-authoritative. Shared exact tool-result observations now remain accessible across context clipping and actual Journal MAX_EVENTS rotation/restart; investigation and repair share task-scoped O-id retrieval without putting full old outputs into every prompt.
 
 Required acceptance/tests: Old failed hypothesis remains retrievable after rotation and restart without entering every prompt.
 
-Actual results: 28 targeted retrieval/strategy/tool/restart tests passed with >30k historical fixture and independently reconstructed full hash.; Full Python1509 OK(skip36) on bc04800.; bc04800 supported unit/browser/Worker/structure and strict real sandbox CI passed; broader generation/archive acceptance remains open.
+Actual results: 28 targeted retrieval/strategy/tool/restart tests passed with >30k historical fixture and independently reconstructed full hash.; Full Python1509 OK(skip36) on bc04800.; bc04800 supported unit/browser/Worker/structure and strict real sandbox CI passed; broader generation/archive acceptance remains open.; New actual Journal archive/rotation/restart fixtures retain35k original failure; real Session/provider429 interruption recovers initial investigation evidence and completes a validated candidate with scripted inference.
 
-Regression coverage: tests/test_repair_history_retrieval.py; tests/test_execution_recovery.py:test_old_hypothesis_can_be_retrieved_after_large_history_and_runner_restart
+Regression coverage: tests/test_repair_history_retrieval.py; tests/test_execution_recovery.py:test_old_hypothesis_can_be_retrieved_after_large_history_and_runner_restart; tests/test_tool_observation_history.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Repair-plan retrieval implemented and supported CI passed; generation-stage events/raw observations across actual archive rotation and general semantic compaction still need acceptance evidence.
+Remaining limitations: Repair hypotheses and tool observations have exact retrievable receipts; latest composed supported gate remains pending. Broader inference-event/project knowledge retention, general semantic memory, retention/deletion and live long-running task evidence remain open.
 
 ## KF-AUDIT-024 — Current engine-pin restart behavior not fault-tested end to end here
 
@@ -966,13 +966,13 @@ Implementation: Server foundation: short opaque hashed device credentials, fixed
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
 
 Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved; tests/native-device-auth.test.mjs; ios/KappaForgeSessionTests/DeviceSessionTests.swift (pending execution); ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Native implementation awaits Xcode/Keychain/UI verification. Unenrolled legacy browser credentials, secure browser migration, native protected-owner step-up, physical device, final compatibility/rollout and owner-approved legacy-disable deployment remain open.
+Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 
@@ -1114,7 +1114,7 @@ Required implementation: Inspect native simulator artifact and bridge/layout geo
 
 Dependencies: Foundation contracts
 
-Branch: remediation/f-native-composer-host; PR: [#339](https://github.com/onlykappa/KappaForge/pull/339).
+Branch: remediation/f-native-tap-lifecycle; PR: [#350](https://github.com/onlykappa/KappaForge/pull/350).
 
 Latest-state reconciliation: Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly.
 
@@ -1122,13 +1122,13 @@ Implementation: Move native UITextView out of WebKit-managed hierarchy into a si
 
 Required acceptance/tests: Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.
 
-Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.; Nativeff6ca5d supported42285739711:5/5 Keychain/session tests passed,4/6 UI tests passed; full native gate failed. Separate outside-tap correction PR350/64e4a8d has966 local Node tests passed and native rerun pending.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
 
 Regression coverage: Unchanged native five-test UI suite; tests/ios-keyboard-layout.test.mjs; tests/test_native_build.py; tests/test_native_evidence.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Supported simulator candidate passes; previous unmodified host also passed on0bba923, confirming intermittency. Do not infer elimination of all races or physical-device closure from one successful candidate. Device/orientation acceptance remains unmeasured.
+Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
 
 ## KF-AUDIT-044 — Task progress is polling-based with freshness limits
 

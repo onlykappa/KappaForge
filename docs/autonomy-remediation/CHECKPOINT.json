@@ -3,11 +3,11 @@
   "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
-  "composedCode": "49bfb1d5b79281f91334cb5fe3f4ddd0aadf274a",
+  "composedCode": "61cab32",
   "statuses": {
     "VERIFIED": 14,
-    "TESTING": 10,
-    "INVESTIGATING": 17,
+    "TESTING": 11,
+    "INVESTIGATING": 16,
     "NOT STARTED": 13,
     "BLOCKED": 6,
     "IMPLEMENTING": 1
@@ -30,12 +30,15 @@
     345,
     346,
     347,
-    348
+    348,
+    349,
+    350,
+    351
   ],
   "productionChanges": false,
   "paidInference": false,
   "scoresChanged": false,
-  "unresolvedMandatoryGate": "Critical actual credential/environment review and037 native/browser migration remain partial. Nativeff6ca5d simulator run42285739711 in progress; latest unit/Worker/web CI passed. Live intake322/330 and50-task benchmark unrun.",
+  "unresolvedMandatoryGate": "Critical actual credential/environment review and037 migration remain partial. Latest nativeff6ca5d full gate FAILED despite5/5 session tests; new350 simulator pending. Live intake322/330 and50-task benchmark unrun.",
   "nextActions": [
     "Latestbc04800 CI41204467206 and strict sandbox41204467210 passed; retain receipts and test the actual later integration candidate after any source change.",
     "Continue root authentication/session migration037; browser/shared key is still exposed to script and injected into native WebKit. Preserve owner authentication and design native/browser rollout before deployment.",
@@ -59,12 +62,13 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/d-recovery-strategy-limits",
-    "worktree": "/workspace/KappaForge-recovery-strategies",
-    "scope": "Partial010 five applied source-backed mechanisms per recurring failure family, preserved restart/provider-wait accounting",
-    "base": "49bfb1d",
-    "local": "Python1529:1495 passed/34 skipped; Node279 passed;64 focused and5 core passed; security/map/policy passed",
-    "next": "Publish isolated draft, collect exact CI and real sandbox. Inspect supported nativeff6ca5d simulator42285739711. Retain dependency chain; continue original roadmap without PR/main merge, deploy or paid inference."
+    "branch": "remediation/b-durable-tool-observations",
+    "worktree": "/workspace/KappaForge-tool-observations",
+    "scope": "012 shared exact observation history, partial011/023; incorporates nativeff6ca5d test correction",
+    "base": "3fda30e",
+    "local": "Python1537/1503 passed/34 skipped; source/test hashes unchanged after native350 composition. Actual composed npm966 passed,zero skips/failures. Exact supported CI/native/sandbox required.",
+    "next": "Collect exact new composed head CI/native/real sandbox. Current branch now locally composes350; no GitHub PR/main merge. Continue partial017 safe size adaptation and original dependency roadmap; no production deployment or paid inference.",
+    "pr": 351
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {
@@ -92,7 +96,27 @@
     },
     "nativeff6ca5d": {
       "run": 42285739711,
+      "conclusion": "failure",
+      "sessionPassed": 5,
+      "UIPassed": 4,
+      "UITotal": 6
+    },
+    "strategyTests": {
+      "run": 42286813898,
+      "conclusion": "success"
+    },
+    "strategySandbox": {
+      "run": 42286813709,
+      "conclusion": "success"
+    },
+    "nativeTapCorrection": {
+      "run": 42289413007,
       "conclusion": "in_progress"
     }
-  }
+  },
+  "composedDependencies": [
+    "349:3fda30e",
+    "346:ff6ca5d",
+    "350:64e4a8d"
+  ]
 }

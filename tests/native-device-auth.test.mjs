@@ -7,9 +7,9 @@ const swift=readFileSync(new URL('../ios/KappaForge/KappaWebView.swift',import.m
 const state=readFileSync(new URL('../preview/app-state.js',import.meta.url),'utf8');
 const id='12345678-1234-1234-1234-123456789abc',origin='https://fixture.workers.dev';
 const access='kfa_'+id+'.'+'A'.repeat(43),owner='fixture-long-lived-owner',renewal='fixture-long-lived-renewal';
-function bootstrap(connection={id,backend:origin}){
+function bootstrap(connection={id,backend:origin},escapedSlashes=false){
  const source=swift.match(/let source = #"""\n([\s\S]*?)\n        """#/)[1]
-  .replaceAll('\\#(versionJSON)',JSON.stringify(['fixture'])).replaceAll('\\#(metadata)',JSON.stringify(connection));
+  .replaceAll('\\#(versionJSON)',JSON.stringify(['fixture'])).replaceAll('\\#(metadata)',escapedSlashes?JSON.stringify(connection).replaceAll('/','\\/'):JSON.stringify(connection));
  const local=new Map([['kappaforge.access',owner],['chats','preserved'],['vault','preserved']]),session=new Map([['kappaforge.access',owner]]),calls=[];
  const storage=map=>({getItem:key=>map.get(key)??null,removeItem:key=>map.delete(key)});
  const box={Map,Object,Promise,Error,JSON,crypto:webcrypto,setTimeout,clearTimeout,
@@ -66,4 +66,15 @@ test('native connection control uses a native sheet without accepting page crede
  vm.runInNewContext(registration,box);connect();assert.equal(calls.length,1);assert.deepEqual(Object.keys(calls[0]),['action']);assert.equal(calls[0].action,'connection');
  assert.ok(!swift.includes('body["action"] == "credentials"'),'Untrusted page cannot replace the Keychain owner credential');
  assert.ok(swift.includes('KappaWebView.isAppPage(message.frameInfo.request.url)'));
+});
+
+test('Swift-style JSON slash escaping preserves the actual bridge origin and short credential response',async()=>{
+ const h=bootstrap({id,backend:origin},true);
+ assert.ok(h.source.includes('https:\\/\\/fixture.workers.dev'));
+ assert.equal(h.box.KappaNativeSession.backend,origin);
+ const result=h.box.KappaNativeSession.renew(origin);
+ assert.equal(h.calls[0].origin,origin);
+ h.box.receiveNativeSession({requestId:h.calls[0].requestId,accessToken:access,accessExpiresAt:Date.now()+300000});
+ assert.equal((await result).accessToken,access);
+ assert.equal(h.local.get('kappaforge.access'),undefined);
 });

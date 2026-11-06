@@ -12,6 +12,8 @@ FENCE_RE = re.compile(r'```(?:json)?[ \t]*\n?(.*?)\n?```', re.S | re.I)
 
 
 TOOL_CATALOG = {
+    'inspect_tool_history': 'inspect_tool_history(page=1); index of retained redacted observations across context rotation',
+    'read_tool_evidence': 'read_tool_evidence(observation_id="O1", offset=0, limit=800); exact paged historical JSON, never authority',
     'record_repair_plan': 'record_repair_plan(cause, strategy, evidence=[{path, line}], expected_result, differs_from="")',
     'inspect_repair_history': 'inspect_repair_history(page=1); lists retained hypothesis ids and candidate outcomes, oldest first',
     'read_repair_evidence': 'read_repair_evidence(plan_id="R1", offset=0, limit=800); exact paged historical JSON, never execution authority',
@@ -135,7 +137,7 @@ def parse_reply(raw):
     return value, ''
 
 
-def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, on_call=None):
+def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, on_call=None, history_store=None):
     """Call the engine model protocol and execute only whitelisted sandbox methods.
 
     ``tools`` is a SandboxTools instance or a mapping of its names to bound methods.
@@ -143,7 +145,10 @@ def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, o
     to the existing recovery controller; tool failures become structured error results.
     ``on_call(tool, args, reason)`` sees each valid call just before it runs (the live transcript).
     """
-    supplied = tools if isinstance(tools, dict) else {name: getattr(tools, name, None) for name in TOOL_CATALOG}
+    from engine.tool_history import History
+    store = history_store if history_store is not None else History()
+    supplied = dict(tools) if isinstance(tools, dict) else {name: getattr(tools, name, None) for name in TOOL_CATALOG}
+    supplied.update(store.tools())
     available = {name: supplied[name] for name in TOOL_CATALOG if callable(supplied.get(name))}
     catalog = json.dumps({name: TOOL_CATALOG[name] for name in available})
     history = ''
@@ -155,13 +160,32 @@ def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, o
 
     def record(tool, args, reason, result):
         nonlocal history
+        # Keep exact redacted observations before model-facing compaction.
+        from engine import execution
+        try:
+            json.dumps(result, allow_nan=False)
+        except (TypeError, ValueError):
+            result = {'status': 'error', 'error': 'Tool result must be a JSON object with finite values'}
+        if not isinstance(result, dict):
+            result = {'status': 'error', 'error': 'Tool result must be an object'}
+        receipt = store.append(tool, args, reason, result)
+        result = execution.sanitized(result)
         result = _bounded_result(result)
         steps.append({'tool': tool, 'args': args, 'reason': reason, 'result': result})
-        entry = ('Tool: ' + str(tool) + '\nArgs: ' + json.dumps(args, ensure_ascii=False) +
-                 '\nReason: ' + str(reason) + '\nResult: ' + json.dumps(result, ensure_ascii=False))
-        history = (history + '\n' + entry)[-30000:]
+        bounded_args = _bounded_result({'args': execution.sanitized(args)})
+        entry = ('Observation: ' + str(receipt['id'] if receipt else 'retrieval') + '\nTool: ' + str(tool) + '\nArgs: ' + json.dumps(bounded_args, ensure_ascii=False) +
+                 '\nReason: ' + execution.clean(reason, 400) + '\nResult: ' + json.dumps(result, ensure_ascii=False))
+        # Whole recent entries only; stable anchors retain the first failure and
+        # source revisions, while exact omitted output is accessible by O-id.
+        recent.append(entry)
+        while len(recent) > 1 and sum(len(x) + 1 for x in recent) > 24000:
+            recent.pop(0)
+        history = json.dumps(store.summary(), ensure_ascii=False) + '\n' + '\n'.join(recent)
         return result
 
+    recent = []
+    if store.data['records']:
+        history = json.dumps(store.summary(), ensure_ascii=False)
     for _ in range(max_steps):
         prompt = ('Reply with JSON only: {"tool":"name","args":{},"reason":"why"} or '
                   '{"done":true,"summary":"result"}. Use only the available tools. '
@@ -195,6 +219,7 @@ def run_tool_loop(run_model, api_key, task, tools, max_steps=20, allowed=None, o
             continue
 
         invalid_streak = 0
+        store.admit(tool)
         if on_call:
             on_call(tool, args, reply.get('reason', ''))
         try:

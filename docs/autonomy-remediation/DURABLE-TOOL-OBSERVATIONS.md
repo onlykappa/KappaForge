@@ -1,0 +1,21 @@
+# Durable tool observations — KF-AUDIT-012, partial011/023
+
+Investigation and repair now use one versioned observation envelope: task scope, stage, revision reference, O-id, tool/arguments, stated reason and exact redacted tool-facing result. Hashes bind reconstructible JSON. History is evidence, never authority or proof of current source. Both adapters expose inspect_tool_history and read_tool_evidence with bounded pages. Retrieval does not recursively archive itself.
+
+Prompt construction retains whole recent entries within24k characters plus deterministic anchors for the first failed tool/suite and latest reads of up to three files. It retains the original owner task separately. Exact omitted output remains accessible by O-id and800-character pages instead of being destroyed by3000-character result compaction or30000-character history clipping. Repair prompts retain source-backed hypothesis retrieval separately; historical citations cannot substitute for fresh current-source evidence.
+
+Existing scoped bot-comment checkpoint fragments store the observations with hash verification and two-slot crash recovery. The logical records are append-only even though physical fragment slots rotate. Scope identity must match, and private candidate data cannot be stored on a public task tracker. Values use existing credential/URL/header redaction before persistence and model-facing transport. The store is redacted, not encrypted. Bounds are1MB of serialized state and512 records; overflow explicitly stops instead of deleting early evidence. A full record-count store rejects another action before dispatch while allowing retrieval. Extremely large results can trigger an explicit storage error after a tool returns; no successful completion is asserted from that error. Existing sandbox command receipts continue to protect command/restart side effects.
+
+## Validation
+
+Eight deterministic regressions exercise actual tool loops, Explorer, Session and Journal with isolated GitHub/provider fixtures. They check>30k retained output, first-failure preservation, exact omitted-tail retrieval, Unicode/escaping and reconstructed hashes, source revision summary, real event rotation and restart, task-scope/private storage denial, cross-stage evidence preservation through provider429, bounded overflow, interrupted persistence and prompt-injection attempts against the tool allowlist. Model transport is scripted; no live reasoning or provider compatibility claim.
+
+Initial composed Python1536 total/1502 passed/34 skipped,zero failures/errors in119.457s. Full Node964 passed,zero failures/skips. Structural10 rules and scan passed, with existing HTML warnings; map, execution policy and diff checks passed. An additional security regression and defensive malformed-type guards are included in the final Python rerun; exact result is tracked in TEST-EVIDENCE.md. Exact supported CI/real sandbox pending.
+
+An initial new fixture incorrectly expected Explorer text to include prefixed line numbers; actual result carries ranges separately and plain source text. Corrected the expectation without changing production output. Initial Node invocation lacked this new worktree's jsdom dependency and failed one module load; linked existing lockfile-installed dependencies and reran the actual npm test successfully. Both failures are retained.
+
+## Limits, migration and rollback
+
+This increment does not unify the two action controllers or native provider tool calling, create general semantic memory, encrypt GitHub issue storage, solve deletion/retention or certify live Task322/330/50-task success. Initial generation tool exploration and repair share observations; direct non-tool generation/model calls retain existing separate protocols. Do not mark011/023 or overall autonomy complete from this implementation.
+
+Old checkpoints without toolHistory start an empty observation store; old repair hypotheses and exact command receipts remain intact. New task-scoped stores persist through existing journal rotation and do not reset spend, authorization, cancellation or candidate identity. Rollback both adapters with the shared store module; retain receipts and do not reset accounting or replay commands. Review after#349 and the native dependency correction#346; final actual integration candidate and specific owner merge approval remain mandatory.
