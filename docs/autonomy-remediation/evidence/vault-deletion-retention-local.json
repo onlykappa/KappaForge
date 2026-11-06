@@ -46,6 +46,18 @@
       "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-64e4a8d-job.log",
       "sha256": "6c22c9ec701c35c3e13ca3f1d4b0860d456c8af58c4ad844bd41eec9e4b8f876",
       "bytes": 459960
+    },
+    "2026-11-06-vault-retention-browser.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-vault-retention-browser.log",
+      "sha256": "615046d50077fc2be8172c5ddcdfcd984c40acb0651d9d353e2a33b2158205d6",
+      "bytes": 6805
     }
+  },
+  "candidate": "9e8dc6d362cab514e0949cd6b21cf6b44ba41af7",
+  "pr": 353,
+  "browser": {
+    "desktopChromium": "passed",
+    "mobileChromium": "passed",
+    "localWebKit": "not_run"
   }
 }

@@ -3,7 +3,7 @@
   "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
-  "composedCode": "6ea6c46712dbaadd592e9ecffb85c1ce52ae7cf9",
+  "composedCode": "9e8dc6d362cab514e0949cd6b21cf6b44ba41af7",
   "statuses": {
     "VERIFIED": 15,
     "TESTING": 12,
@@ -34,19 +34,20 @@
     349,
     350,
     351,
-    352
+    352,
+    353
   ],
   "productionChanges": false,
   "paidInference": false,
   "scoresChanged": false,
   "unresolvedMandatoryGate": "Critical actual credential/environment review and037 migration remain partial. Prior native gates passed11/11 tests, but new vault candidate native gate pending. Live intake322/330 and50-task benchmark unrun. Anyv2 owner-data activation requires separately approved rollout.",
   "nextActions": [
-    "Latestbc04800 CI41204467206 and strict sandbox41204467210 passed; retain receipts and test the actual later integration candidate after any source change.",
-    "Continue root authentication/session migration037; browser/shared key is still exposed to script and injected into native WebKit. Preserve owner authentication and design native/browser rollout before deployment.",
-    "Consolidate runtime011/014/020/060, retain original constraints and independently validate tools/context/routing rather than adding duplicate loops.",
-    "Extend023 repair-history retrieval to generation observations and actual archive rotation; implement recovery-category/five-strategy budgets010 without resetting lifetime budgets.",
-    "Run full20-point interruption/pin/cancellation matrix022/024/040, then real supported general tools and remaining E-G capabilities.",
-    "Normal live inference and50-task benchmark remain unrun; no paid calls or unverified cost setting may be assumed. Collect production snapshots only after separately approved rollout."
+    "Collect latest353 exact CI/native results; retain9e8dc6d head and source hashes. Native350 and composed351 passed11-test acceptance; do not substitute them for the changed vault candidate.",
+    "017 remains partial: fix explicit compact prompt/output contracts for real eligible Groq/Mistral limits, preserving immutable task constraints and existing safe token bounds. Current Groq8192 output reservation exceeds8000 free allowance even for tiny input; never silently squeeze it.",
+    "Continue shared action/observation runtime011/020/060, semantic/project context025/027 and the full interruption/pin/cancellation matrix022/024/040.012 bounded tool-history acceptance is met; this is narrower than those gaps.",
+    "026v2 rollout proposal requires owner-approved coordinated client upgrades; no real cloud migration performed. Verify real device/erase/privacy/retention acceptance before closing026.",
+    "Critical035 actual credential/protection review and production019/021/052 remain unavailable; retain403/unknown evidence instead of bypassing it. Owner production/merge authorization is still required at its final concrete gate.",
+    "General tools, scheduling/local execution and50-task/live-model evaluation remain unfinished. No improved autonomy/reliability/readiness score assigned before fresh independent evidence."
   ],
   "evidence": [
     "TEST-EVIDENCE.md",
@@ -65,10 +66,11 @@
   "activeWorkInProgress": {
     "branch": "remediation/e-vault-deletion-retention",
     "worktree": "/workspace/KappaForge-vault-retention",
-    "scope": "Partial026 non-evicting deletion history, persistence/restart safety and authenticatedv2 legacy-writer fence",
-    "base": "6ea6c46712dbaadd592e9ecffb85c1ce52ae7cf9",
-    "local": "9 new and5 existing focused tests pass; full Node975 pass/zero skips/failures. Bundle/config/map/policy/security passed. Parent Python1543 unchanged.",
-    "next": "Publish isolated draft, collect exact CI/native. Respectv2 owner rollout decision; no real vault migration or production changes. Continue explicit route-compatible compact packets017 and original dependency roadmap."
+    "head": "9e8dc6d362cab514e0949cd6b21cf6b44ba41af7",
+    "pr": 353,
+    "scope": "Latest implementation: partial026, authenticatedv2 client migration proposal; shared observation012 now acceptance-verified",
+    "local": "Node975 passed;14 focused passed; real desktop/mobile Chromium passed. No Python source change from6ea6c46 (1543 total/1509 passed/34 skipped). New supported CI/native pending.",
+    "next": "Inspect353 CI42293286782/native42293286489 before new changes. Fix observed failures without weakening assertions. Continue free-route compact request contracts017, original runtime/durability dependencies, then remaining phases. No merges/deployments/releases, paid inference or real owner vault migration."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {
@@ -134,11 +136,28 @@
     "requestSizeSandbox": {
       "run": 42291431938,
       "conclusion": "success"
+    },
+    "vaultTests": {
+      "run": 42293286782,
+      "conclusion": "in_progress"
+    },
+    "vaultNative": {
+      "run": 42293286489,
+      "conclusion": "in_progress"
+    },
+    "vaultReview": {
+      "run": 42293286786,
+      "conclusion": "success"
     }
   },
   "composedDependencies": [
     "349:3fda30e",
     "346:ff6ca5d",
     "350:64e4a8d"
-  ]
+  ],
+  "documentationCheckpoint": {
+    "branch": "remediation/progress-checkpoint-3",
+    "worktree": "/workspace/KappaForge-checkpoint-3",
+    "report": "ROLLING-REMEDIATION-REPORT-2026-11-06.md"
+  }
 }

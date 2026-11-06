@@ -801,11 +801,12 @@
     "current_classification": "PARTIAL",
     "status": "TESTING",
     "assigned_branch": "remediation/e-vault-deletion-retention",
-    "pr": null,
+    "pr": 353,
     "implementation": "Reproduced silent500-id tombstone eviction and swallowed deletion persistence errors. New clients retain all deletion receipts, filter stale local payloads before offline startup/export, refuse non-durable local deletion and stop sync before cloud overwrite on incoming-receipt persistence failure. New encrypted snapshots use authenticated v2 framing so the actual baseline v1 reader stops before it can clip history; v1 backups remain readable. No actual cloud/user migration performed.",
     "required_tests": "Two devices offline/online do not resurrect deleted chat; export and erase prove server/local removal within declared retention.",
     "actual_results": [
-      "Four initial negative cases fail on the prior code:501 deletions, disjoint400+400 merge, failed local deletion persistence and oversized history. Final9 new cases plus5 existing delete/sync cases pass. Actual composed npm975 passed,zero failures/skips in23.468s; bundle/config/map/execution policy and structural scan passed. Real AES-GCM/PBKDF2, actual frontend functions, Worker/memory API and KappaMemory class run with isolated in-memory storage/auth fixtures; no external network or real owner data."
+      "Four initial negative cases fail on the prior code:501 deletions, disjoint400+400 merge, failed local deletion persistence and oversized history. Final9 new cases plus5 existing delete/sync cases pass. Actual composed npm975 passed,zero failures/skips in23.468s; bundle/config/map/execution policy and structural scan passed. Real AES-GCM/PBKDF2, actual frontend functions, Worker/memory API and KappaMemory class run with isolated in-memory storage/auth fixtures; no external network or real owner data.",
+      "Actual local desktop and mobile Chromium profiles passed at9e8dc6d, including recovery crypto, deletion, cancellation, streaming and reload. Supported CI42293286782/native42293286489 remain in progress; physical-device evidence not inferred."
     ],
     "regression_coverage": [
       "tests/vault-deletion-retention.test.mjs",
