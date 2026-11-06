@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=19, NOT STARTED=13, TESTING=8, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=18, NOT STARTED=13, TESTING=9, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -352,7 +352,7 @@ Remaining limitations: Legacy exact find/replace remains supported;007 repeated-
 
 ## KF-AUDIT-014 — Static planning limits narrow large-project reach
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: B; priority: P2.
+Classification: PARTIAL; status: **TESTING**; phase: B; priority: P2.
 
 Root cause: Bounded windows are necessary but coverage is not an exhaustive repository investigation.
 
@@ -360,21 +360,21 @@ Required implementation: Page file/symbol inventory and expose explicit coverage
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/b-paged-path-discovery; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Existing exploration gains paged complete-inventory filename/path discovery without source downloads; planner reports omitted coverage and supports readless discovery-first inquiries, while the same tool is available in repair. No budget/context limits raised.
 
 Required acceptance/tests: Target past path 700 and dependency past initial source list are found without raising all context caps.
 
-Actual results: Not measured for this remediation.
+Actual results: 130 focused tests total,129 passed,1 real-Docker-dependent skip. Target past700 and actual unplanned import dependency found/read through real tool observations with exactly two source downloads; restart exhausts the existing ledger.; Composed Python1517 total,1483 passed,34 skipped,0 failures/errors in95.441s. Security/map/policy/syntax passed. Supported CI pending.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_paged_path_discovery.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Five-stage subgoal expansion and unified durable generation/repair observations remain open; composed CI/deployed/live-model evidence pending. Original canonical acceptance retained.
 
 ## KF-AUDIT-015 — General-purpose executor is not exposed through the development-only tool catalog
 

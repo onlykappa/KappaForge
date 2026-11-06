@@ -1,4 +1,4 @@
-"""Bounded model-driven calls to the seven sandbox development tools."""
+"""Bounded model-driven calls to admitted development and exploration tools."""
 import json
 import re
 
@@ -25,6 +25,7 @@ TOOL_CATALOG = {
     'revert_candidate_change': 'revert_candidate_change(paths=None)',
     # Read-only exploration (engine/exploration.py); available when the caller supplies them.
     'search_code': 'search_code(query, regex=False, path_prefix="", page=1)',
+    'find_paths': 'find_paths(query="", path_prefix="", page=1); literal filename/path search across the complete revision inventory, without reading file contents',
     'read_file': 'read_file(path, start_line=1, end_line=None)',
     'list_directory': 'list_directory(path="", page=1)',
     'find_references': 'find_references(symbol, page=1)',

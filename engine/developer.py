@@ -762,7 +762,9 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
         'Return ONLY JSON {"read":["path", ...]' + (',"stages":["what stage 1 does", ...],"stage_files":[["files stage 1 edits or creates"], ...],'
                                             '"independent":true or false,"design":"your design notes"' if with_stages else '') + ',"investigate":["open question", ...]' + (',"requirements":[...]' if asks else '') + '} with at most ' + str(limit) + " paths "
         "most important first "
-        "copied exactly from the listing. " + (
+        "copied exactly from the listing. The listing is a bounded starting view, not an exhaustive repository audit. "
+        "Use investigate questions to discover omitted paths/dependencies through find_paths, list_directory and read_file. " +
+        ("If none of the shown files is relevant, return read:[] with a specific investigate question instead of guessing a path. " if with_stages else '') + (
             "Never make a stage for bundling or syncing the iOS web copies; that happens automatically. Put each "
             "part's tests in the stage that builds it. "
             f"Give stages only when the change is too big to make at once (several separate parts or more than about "
@@ -790,6 +792,8 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
         "TASK:\n" + task + (goal.prompt() if goal else '') +
         ("\n\nREPOSITORY MAP (files ranked by how closely they relate to the task, each with what it defines; use it "
          "to find the code to change, its callers, the definitions it uses and its tests):\n" + outline if outline else "") +
+        "\n\nINVENTORY COVERAGE: " + str(len(listing_paths)) + " paths shown out of " + str(len(files)) +
+        "; " + str(max(0, len(files) - len(listing_paths))) + " omitted from this prompt; complete inventory remains available to exploration tools."
         "\n\nREPOSITORY FILES:\n" + listing)
     plan, chosen = {}, []
     for attempt in range(2):
@@ -798,7 +802,9 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
                                                            "object only." if attempt else ""), max_output_tokens=8000, allowed=allowed,
                                        json_mode=True)[1])
             chosen = plan.get("read", []) if isinstance(plan, dict) else []
-            if isinstance(chosen, list) and chosen:
+            inquiry = (with_stages and isinstance(plan, dict) and isinstance(plan.get('investigate'), list)
+                       and any(isinstance(q, str) and q.strip() for q in plan['investigate']))
+            if isinstance(chosen, list) and (chosen or inquiry):
                 break
         except (ValueError, AttributeError, json.JSONDecodeError):
             pass
@@ -811,14 +817,14 @@ def select_files(api_key, task, files, guide="", allowed=None, limit=LARGE.read_
         requirements.ANSWER.set(plan.get("requirements") if isinstance(plan, dict) and "requirements" in plan else None)
     if with_stages:
         clarification.REQUEST.set(plan.get("clarify") if isinstance(plan, dict) else None)
-    if not chosen and repo_map:
+    if not chosen and repo_map and not (with_stages and exploration.REQUEST.get()):
         # The planner gave no usable answer twice: read the files the map ranks highest instead of stopping.
         ranked = [p for p in repo_map.rank(task) if p in files and files[p] <= MAX_LARGE_FILE_CHARS and not p.startswith(IOS_WEB)]
         paths = list(dict.fromkeys(paths + ranked))[:min(limit, MAP_FALLBACK_FILES)]
         print("Planner answer unusable; reading the files the repository map ranks highest", flush=True)
     if not with_stages:
         return paths
-    if not paths:
+    if not paths and not exploration.REQUEST.get():
         raise ValueError("The planner could not choose which files to read (twice). Try again, or name the files "
                          "or feature more specifically in the task")
     raw_files = plan.get("stage_files") if isinstance(plan.get("stage_files"), list) else []

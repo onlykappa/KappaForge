@@ -216,8 +216,8 @@ def _page(items, page, size=PAGE):
 
 
 class Explorer:
-    """The six exploration tools, all spending from one Budget. Records every path it read for the plan's evidence."""
-    TOOLS = ('search_code', 'read_file', 'list_directory', 'find_references', 'inspect_symbols', 'read_project_instructions')
+    """Read-only exploration tools sharing one Budget. Records every path it read for the plan's evidence."""
+    TOOLS = ('search_code', 'find_paths', 'read_file', 'list_directory', 'find_references', 'inspect_symbols', 'read_project_instructions')
 
     def __init__(self, repository, budget=None, clock=time.monotonic, ledger=None, active_time=False):
         """`ledger` (engine/budget_ledger.py) carries what earlier runs of the task spent, so a resumed task continues
@@ -319,6 +319,24 @@ class Explorer:
         return {name: (lambda n: lambda **kw: self.call(n, **kw))(name) for name in self.TOOLS}
 
     # -- tools --------------------------------------------------------------------------------------------------
+    def _find_paths(self, query='', path_prefix='', page=1):
+        """Page the complete immutable inventory without downloading file contents."""
+        if (not isinstance(query, str) or len(query) > 200 or '\0' in query
+                or not isinstance(path_prefix, str) or len(path_prefix) > 300
+                or path_prefix and not safe_path(path_prefix.rstrip('/'))
+                or type(page) is not int or page < 1):
+            raise ValueError('Use a literal query up to200 characters, safe path_prefix and positive integer page')
+        matched = []
+        for index, path in enumerate(sorted(self.repo.files)):
+            if index % 64 == 0:
+                self._deadline_checkpoint()
+            if path.startswith(path_prefix) and query.casefold() in path.casefold():
+                matched.append({'path': path, 'bytes': self.repo.files[path]})
+        shown, info = _page(matched, page)
+        return {'paths': shown, **info, 'repository_paths': len(self.repo.files),
+                'content_read': False, 'authority': False,
+                'note': 'Complete path inventory at this revision; file contents and behavior have not been inspected.'}
+
     def _search_code(self, query, regex=False, path_prefix='', page=1):
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
             raise ValueError('query must be 1-200 characters')
@@ -568,6 +586,7 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
             label = {'search_code': 'Searched for ' + str(args.get('query', ''))[:80],
                      'read_file': 'Read ' + str(args.get('path', ''))[:120] + ' lines ' + str(result.get('start_line')) + '-' + str(result.get('end_line')),
                      'list_directory': 'Listed ' + (str(args.get('path') or '') or 'the repository root'),
+                     'find_paths': 'Found repository paths for ' + str(args.get('query', ''))[:80],
                      'find_references': 'Found references to ' + str(args.get('symbol', ''))[:80],
                      'inspect_symbols': 'Inspected symbols in ' + str(args.get('path', ''))[:120],
                      'read_project_instructions': 'Read the project instructions',
