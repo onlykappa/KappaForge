@@ -5,7 +5,7 @@ const UUID='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const TOKEN=new RegExp('^kf([ar])_('+UUID+')\\.([A-Za-z0-9_-]{43})$');
 const SCOPES=new Set(['assistant','tasks']);
 const ROUTES={assistant:new Set(['/chat','/plan','/capabilities','/diagnostics','/usage','/usage/google',
- '/memory','/memory/search','/index','/repos','/github','/projects/health','/providers/models-list','/voice/transcribe','/voice/speak']),
+ '/memory','/memory/search','/index','/repos','/github','/actions','/review','/projects/health','/providers/models-list','/voice/transcribe','/voice/speak']),
  tasks:new Set(['/jobs','/retry','/cancel','/cancel/status','/operation-status','/operation-capabilities','/authorize'])};
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 const hash=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -36,16 +36,18 @@ export async function deviceSessionStore(state,request){
  if(typeof state.storage.transaction!=='function')return json({error:'Atomic session storage unavailable'},503);
  const result=await state.storage.transaction(async store=>{
   const now=Date.now(),action=input.action;
-  if(['enroll','list','revoke','forget'].includes(action)){
+  if(['enroll','reenroll','list','revoke','forget'].includes(action)){
    if(input.admin!==true)return {status:403,body:{error:'Owner administration required'}};
-   if(action==='enroll'){
+   if(['enroll','reenroll'].includes(action)){
     const scopes=input.scopes===undefined?['assistant','tasks']:input.scopes;
     if(typeof input.label!=='string'||!input.label.trim()||input.label.length>80||!Array.isArray(scopes)||
       !scopes.length||scopes.length>2||new Set(scopes).size!==scopes.length||scopes.some(s=>!SCOPES.has(s)))
      return {status:400,body:{error:'Use a device label and known, nonempty scopes'}};
     const existing=await store.list({prefix:'device:'});
-    if(existing.size>=MAX_DEVICES)return {status:409,body:{error:'Device limit reached; explicitly forget a revoked device before enrollment'}};
-    const id=crypto.randomUUID(),refreshToken='kfr_'+id+'.'+secret();
+    if(action==='reenroll'&&(typeof input.deviceId!=='string'||!new RegExp('^'+UUID+'$').test(input.deviceId)||!existing.has('device:'+input.deviceId)))
+     return {status:404,body:{error:'Device record unavailable; explicitly enroll a new device'}};
+    if(action==='enroll'&&existing.size>=MAX_DEVICES)return {status:409,body:{error:'Device limit reached; explicitly forget a revoked device before enrollment'}};
+    const id=action==='reenroll'?input.deviceId:crypto.randomUUID(),refreshToken='kfr_'+id+'.'+secret();
     const row={id,label:input.label.trim(),scopes:[...scopes],ownerHash:input.ownerHash,createdAt:now,
      expiresAt:now+DEVICE_MS,revokedAt:null,refreshHash:await hash(refreshToken),access:[],renewals:[]};
     const issued=await issue(row,now);await store.put('device:'+id,row);
@@ -65,7 +67,7 @@ export async function deviceSessionStore(state,request){
    row.revokedAt??=now;row.access=[];await store.put(key,row);
    return {status:200,body:{device:metadata(row)}};
   }
-  const kind=action==='renew'?'r':action==='authenticate'?'a':null;
+  const kind=['renew','disconnect'].includes(action)?'r':action==='authenticate'?'a':null;
   if(!kind)return {status:400,body:{error:'Unknown session operation'}};
   const id=parse(input.token,kind);if(!id)return {status:401,body:{error:'Session credential invalid or expired'}};
   const row=await store.get('device:'+id);
@@ -74,6 +76,10 @@ export async function deviceSessionStore(state,request){
   const digest=await hash(input.token);
   if(kind==='r'){
    if(!equal(digest,row.refreshHash))return {status:401,body:{error:'Session credential invalid or expired'}};
+   if(action==='disconnect'){
+    row.revokedAt=now;row.access=[];await store.put('device:'+id,row);
+    return {status:200,body:{device:metadata(row)}};
+   }
    row.renewals=row.renewals.filter(at=>at>now-60000);
    if(row.renewals.length>=6)return {status:429,body:{error:'Renewal limit reached',retryAfter:60}};
    row.renewals.push(now);const issued=await issue(row,now);await store.put('device:'+id,row);
@@ -104,11 +110,11 @@ async function rpc(env,input){
 
 export async function manageDeviceSessions(request,env,token,owner){
  let body;try{body=await boundedSessionJSON(request);}catch(error){return json({error:'Invalid or oversized session request'},error instanceof RangeError?413:400);}
- const fields={enroll:['op','label','scopes'],list:['op'],revoke:['op','deviceId'],forget:['op','deviceId'],renew:['op']};
+ const fields={enroll:['op','label','scopes'],reenroll:['op','label','scopes','deviceId'],list:['op'],revoke:['op','deviceId'],forget:['op','deviceId'],renew:['op'],disconnect:['op']};
  if(typeof body.op!=='string'||!Object.hasOwn(fields,body.op)||Object.keys(body).some(k=>!fields[body.op].includes(k)))return json({error:'Unsupported session operation or arguments'},400);
- if(body.op==='renew'){
+ if(['renew','disconnect'].includes(body.op)){
   if(!parse(token,'r'))return json({error:'Renewal credential required'},401);
-  return rpc(env,{action:'renew',token});
+  return rpc(env,{action:body.op,token});
  }
  if(!owner)return json({error:'Owner administration required'},403);
  return rpc(env,{action:body.op,admin:true,label:body.label,scopes:body.scopes,deviceId:body.deviceId});

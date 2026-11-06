@@ -152,3 +152,41 @@ test('copied device identity and failed atomic storage never grant authenticatio
  assert.equal((await w.call('/sessions',device.refreshToken,{op:'renew'})).status,503);
  assert.equal((await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,{op:'enroll',label:'new'})).status,503);
 });
+
+test('renewal credential can disconnect only its own device without owner authority',async()=>{
+ const w=world(),first=await w.enroll(),second=await w.enroll();
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'disconnect',deviceId:second.device.id})).status,400);
+ assert.equal((await w.call('/sessions',first.accessToken,{op:'disconnect'})).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'disconnect'})).status,200);
+ w.objects.clear();
+ assert.equal((await w.call('/diagnostics',first.accessToken)).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'renew'})).status,401);
+ assert.equal((await w.call('/diagnostics',second.accessToken)).status,200);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'enroll',label:'forbidden'})).status,403);
+});
+
+test('explicit owner reenrollment atomically replaces credentials without reviving old access',async()=>{
+ const w=world(),first=await w.enroll();
+ await w.call('/sessions',first.refreshToken,{op:'disconnect'});
+ const body={op:'reenroll',deviceId:first.device.id,label:'Recovered phone'};
+ assert.equal((await w.call('/sessions',first.refreshToken,body)).status,403);
+ const response=await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,body);assert.equal(response.status,201);
+ const next=await response.json();assert.equal(next.device.id,first.device.id);assert.notEqual(next.refreshToken,first.refreshToken);
+ w.objects.clear();
+ assert.equal((await w.call('/diagnostics',first.accessToken)).status,401);
+ assert.equal((await w.call('/sessions',first.refreshToken,{op:'renew'})).status,401);
+ assert.equal((await w.call('/diagnostics',next.accessToken)).status,200);
+ const list=await(await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,{op:'list'})).json();assert.equal(list.devices.length,1);
+});
+
+test('assistant sessions admit read-only task monitoring while rejecting every owner mutation route',async()=>{
+ const w=world(),device=await w.enroll(['assistant']);
+ w.env.GITHUB_JOB_TOKEN='isolated-fixture-only';
+ // Invalid read arguments reach the existing route validator after session
+ // admission. They cannot send network requests or create GitHub effects.
+ assert.equal((await w.call('/actions',device.accessToken,{op:'delete-workflow'})).status,400);
+ assert.equal((await w.call('/review',device.accessToken,{prNumber:0,decision:'merge',confirmed:true})).status,400);
+ for(const path of ['/actions/control','/decisions','/premium','/undo','/guidance'])
+  assert.equal((await w.call(path,device.accessToken,{decision:'merge',confirmed:true})).status,403,path);
+ assert.equal((await w.call('/authorize',device.accessToken,{path:'/decisions',payload:{decision:'merge'}})).status,403);
+});

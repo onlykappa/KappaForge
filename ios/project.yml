@@ -33,9 +33,11 @@ targets:
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Used only when you ask something that needs your location, like where you are or the weather nearby. It is sent with that one question and never stored.
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
         CODE_SIGN_STYLE: Automatic
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": Simulator.entitlements
     scheme:
       testTargets:
         - KappaForgeUITests
+        - KappaForgeSessionTests
   KappaForgeUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -46,6 +48,20 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge.UITests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: '5.9'
+        CODE_SIGNING_ALLOWED: NO
+
+  KappaForgeSessionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: KappaForgeSessionTests
+    dependencies:
+      - target: KappaForge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.onlykappa.KappaForge.SessionTests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: '5.9'
         CODE_SIGNING_ALLOWED: NO

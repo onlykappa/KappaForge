@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "date": "2026-10-31",
+  "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
   "composedCode": "bc048002adbe799e47f0ac68638257f1d5af417f",
@@ -26,7 +26,10 @@
     341,
     342,
     343,
-    344
+    344,
+    345,
+    346,
+    347
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -55,11 +58,13 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/a-auth-transport",
-    "base": "3ddb7f4362c04b9b7ea9923a5a524f6c75885842",
-    "scope": "037 centralized client transport; secure native enrollment/long-lived credential removal still required",
-    "focusedEvidence": "135 affected tests passed and real workerd client restart/revocation passed",
-    "next": "Publish transport draft, collect composed CI once, implement native secure enrollment and bridge without long-lived page credentials."
+    "branch": "remediation/a-native-device-auth",
+    "worktree": "/workspace/KappaForge-native-device-auth",
+    "pr": 346,
+    "scope": "Fix actual Keychain setup failure with simulator-only ad-hoc signing and exact-app entitlement; restore read-only monitoring scopes",
+    "previousGate": "7207a55 actual main tests passed; native41230157892 failed, UI6 passed, five Keychain test bodies blocked during setup",
+    "local": "48 Node/33 Python focused tests passed; real Keychain rerun pending",
+    "next": "Collect supported macOS rerun, diagnose numeric Security.framework status if needed; then continue runtime/recovery phase dependencies. No merge/deploy/paid calls."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
 }

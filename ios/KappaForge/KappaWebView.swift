@@ -161,12 +161,49 @@ struct KappaWebView: UIViewRepresentable {
         "document.documentElement.classList.toggle('rt', \(UIAccessibility.isReduceTransparencyEnabled));"
     }
 
+    static func isAppPage(_ url: URL?) -> Bool {
+        guard let url, url.isFileURL,
+              let bundled = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Web")
+                ?? Bundle.main.url(forResource: "index", withExtension: "html") else { return false }
+        return url.standardizedFileURL.path == bundled.standardizedFileURL.path
+    }
+
     static func credentialScript() -> WKUserScript {
-        var boot = "window.KappaNativeComposer = true; window.KappaNativeVoice = true; window.KappaNativeVersion = \"\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")\";"
-        if let credentials = CredentialVault.load(), let data = try? JSONSerialization.data(withJSONObject: credentials), let value = String(data: data, encoding: .utf8) {
-            boot += "try { const c = \(value); sessionStorage.setItem('kappaforge.backend', c.backend || ''); sessionStorage.setItem('kappaforge.access', c.access || ''); } catch (_) {}"
-        }
-        return WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        // Only public device identity crosses this boundary. Never serialize either vault.
+        let record = DeviceSessionVault.load()
+        let connection = ["id": record?.id ?? "", "backend": record?.backend ?? ""]
+        let encoded = (try? JSONSerialization.data(withJSONObject: connection)) ?? Data("{}".utf8)
+        let metadata = String(data: encoded, encoding: .utf8) ?? "{}"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let versionJSON = String(data: (try? JSONSerialization.data(withJSONObject: [version])) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+        let source = #"""
+        (() => {
+          window.KappaNativeComposer = true; window.KappaNativeVoice = true;
+          window.KappaNativeVersion = (\#(versionJSON))[0];
+          const connection = \#(metadata), pending = new Map();
+          if (connection.id) {
+            try { localStorage.removeItem('kappaforge.access'); sessionStorage.removeItem('kappaforge.access'); } catch (_) {}
+          }
+          window.KappaNativeSession = Object.freeze({id:connection.id,backend:connection.backend,renew(origin) {
+            if (!connection.id || origin !== connection.backend) return Promise.reject(Error('Reconnect this device in AI connection.'));
+            if (pending.size >= 8) return Promise.reject(Error('Session renewal is already busy.'));
+            const requestId = crypto.randomUUID();
+            return new Promise((resolve,reject) => {
+              const timer = setTimeout(() => {pending.delete(requestId);reject(Error('Session renewal timed out.'));},12000);
+              pending.set(requestId,{resolve,reject,timer});
+              try { window.webkit.messageHandlers.kappa.postMessage({action:'session',requestId,origin}); }
+              catch (_) { clearTimeout(timer);pending.delete(requestId);reject(Error('Secure session bridge unavailable.')); }
+            });
+          }});
+          window.receiveNativeSession = result => {
+            const request = result && pending.get(result.requestId); if (!request) return;
+            pending.delete(result.requestId);clearTimeout(request.timer);
+            if (result.error) request.reject(Error('Session renewal failed. Open AI connection to reconnect.'));
+            else request.resolve({accessToken:result.accessToken,accessExpiresAt:result.accessExpiresAt});
+          };
+        })();
+        """#
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 
     func updateUIView(_ container: KappaChatContainer, context: Context) {
@@ -187,7 +224,7 @@ struct KappaWebView: UIViewRepresentable {
             self.showUpdates = showUpdates
         }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.isFileURL == true, let body = message.body as? [String: String] else { return }
+            guard message.frameInfo.isMainFrame, KappaWebView.isAppPage(message.frameInfo.request.url), let body = message.body as? [String: String] else { return }
             if body["action"] == "composer" { (message.webView as? KappaChatWebView)?.updateComposer(body) }
             if body["action"] == "focusComposer" { (message.webView as? KappaChatWebView)?.composerEditor.becomeFirstResponder() }
             if body["action"] == "blurComposer" { (message.webView as? KappaChatWebView)?.composerEditor.resignFirstResponder() }
@@ -211,15 +248,97 @@ struct KappaWebView: UIViewRepresentable {
                     }
                 } catch { /* Existing data remains untouched if export cannot be written. */ }
             }
-            if body["action"] == "credentials", let backend = body["backend"], let access = body["access"] {
-                guard backend.isEmpty || (URL(string: backend)?.scheme == "https" && URL(string: backend)?.host?.hasSuffix(".workers.dev") == true) else { return }
-                if CredentialVault.save(["backend": backend, "access": access]) {
-                    userContentController.removeAllUserScripts()
-                    userContentController.addUserScript(KappaWebView.credentialScript())
-                    message.webView?.evaluateJavaScript("try { localStorage.removeItem('kappaforge.backend'); localStorage.removeItem('kappaforge.access'); } catch (_) {}", completionHandler: nil)
+            if body["action"] == "connection", let webView = message.webView { showConnection(in: webView) }
+            if body["action"] == "session", let webView = message.webView,
+               let requestId = body["requestId"], UUID(uuidString: requestId) != nil, let origin = body["origin"],
+               sessionRequests.count < 8, !sessionRequests.contains(requestId) {
+                sessionRequests.insert(requestId)
+                Task { @MainActor [weak self, weak webView] in
+                    guard let self else { return }
+                    defer { self.sessionRequests.remove(requestId) }
+                    var result: [String: Any] = ["requestId": requestId]
+                    do { result.merge(try await DeviceSessions.renew(expectedOrigin: origin)) { _, new in new } }
+                    catch { result["error"] = true }
+                    guard let webView, KappaWebView.isAppPage(webView.url),
+                          let data = try? JSONSerialization.data(withJSONObject: result), let json = String(data: data, encoding: .utf8) else { return }
+                    webView.evaluateJavaScript("window.receiveNativeSession?.(\(json));", completionHandler: nil)
                 }
             }
         }
+        private var sessionRequests = Set<String>()
+        private var connecting = false
+
+        private func reloadConnection(in webView: WKWebView) {
+            let controller = webView.configuration.userContentController
+            controller.removeAllUserScripts()
+            controller.addUserScript(KappaWebView.credentialScript())
+            controller.addUserScript(WKUserScript(source: KappaWebView.reduceTransparencySource(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            #if DEBUG && targetEnvironment(simulator)
+            if let fixture = ProgressFixture.script() { controller.addUserScript(fixture) }
+            #endif
+            webView.reload()
+        }
+        private func showConnectionError(in webView: WKWebView) {
+            guard let controller = presenter(webView) else { return }
+            let alert = UIAlertController(title: "Connection not changed", message: "Check the backend session support, owner credential and network. Existing device and recovery credentials are retained. No legacy credential was sent to the page.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            controller.present(alert, animated: true)
+        }
+        private func showConnection(in webView: WKWebView, enrollment: Bool = false) {
+            guard !connecting, let controller = presenter(webView) else { return }
+            let record = DeviceSessionVault.load()
+            if record != nil && !enrollment {
+                let alert = UIAlertController(title: "AI connection", message: "This device uses a revocable session. Disconnect revokes its access and renewal on the server; running tasks retain their separate authorization.", preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                alert.addAction(UIAlertAction(title: "Reconnect with owner credential", style: .default) { [weak self, weak webView] _ in
+                    guard let self, let webView else { return }; self.showConnection(in: webView, enrollment: true)
+                })
+                alert.addAction(UIAlertAction(title: "Forget local connection only", style: .destructive) { [weak self, weak webView] _ in
+                    guard let self, let webView, let controller = self.presenter(webView) else { return }
+                    let confirm = UIAlertController(title: "Forget local connection?", message: "This does not revoke remote access. Use the owner device inventory to revoke a lost session. Chats, vault and owner recovery credentials are retained.", preferredStyle: .alert)
+                    confirm.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                    confirm.addAction(UIAlertAction(title: "Forget locally", style: .destructive) { _ in
+                        do { try DeviceSessionVault.delete(); self.reloadConnection(in: webView) }
+                        catch { self.showConnectionError(in: webView) }
+                    })
+                    controller.present(confirm, animated: true)
+                })
+                alert.addAction(UIAlertAction(title: "Disconnect device", style: .destructive) { [weak self, weak webView] _ in
+                    guard let self, let webView else { return }; self.connecting = true
+                    Task { @MainActor in
+                        defer { self.connecting = false }
+                        do { try await DeviceSessions.disconnect(); self.reloadConnection(in: webView) }
+                        catch { self.showConnectionError(in: webView) }
+                    }
+                })
+                controller.present(alert, animated: true); return
+            }
+            let alert = UIAlertController(title: "Secure AI connection", message: "Enter the HTTPS Worker URL and owner credential. Enrollment happens natively. Leave the credential empty to use an existing Keychain recovery credential. The page receives only short-lived access.", preferredStyle: .alert)
+            alert.addTextField { field in
+                field.placeholder = "https://your-worker.workers.dev"; field.keyboardType = .URL
+                field.autocapitalizationType = .none; field.autocorrectionType = .no
+                field.text = record?.backend ?? CredentialVault.load()?["backend"]
+            }
+            alert.addTextField { field in
+                field.placeholder = "Owner credential"; field.isSecureTextEntry = true
+                field.autocapitalizationType = .none; field.autocorrectionType = .no
+            }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Enroll device", style: .default) { [weak self, weak webView] _ in
+                guard let self, let webView else { return }
+                let backend = alert.textFields?[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let typed = alert.textFields?[1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let owner = typed.isEmpty ? CredentialVault.load()?["access"] ?? "" : typed
+                self.connecting = true
+                Task { @MainActor in
+                    defer { self.connecting = false }
+                    do { try await DeviceSessions.enroll(backend: backend, owner: owner); self.reloadConnection(in: webView) }
+                    catch { self.showConnectionError(in: webView) }
+                }
+            })
+            controller.present(alert, animated: true)
+        }
+
         private func presenter(_ view: WKWebView) -> UIViewController? {
             var controller = view.window?.rootViewController
             while let presented = controller?.presentedViewController { controller = presented }
@@ -255,7 +374,7 @@ struct KappaWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
-            if url.isFileURL || url.scheme == "about" {
+            if KappaWebView.isAppPage(url) || url.absoluteString == "about:blank" {
                 decisionHandler(.allow)
             } else if url.scheme == "https", action.navigationType == .linkActivated {
                 UIApplication.shared.open(url)

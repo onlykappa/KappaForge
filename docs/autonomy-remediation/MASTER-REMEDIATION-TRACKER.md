@@ -958,21 +958,21 @@ Required implementation: Use short-lived session credentials and secure native s
 
 Dependencies: Foundation contracts
 
-Branch: remediation/a-device-sessions; PR: [#344](https://github.com/onlykappa/KappaForge/pull/344).
+Branch: remediation/a-native-device-auth (stacked on #344/#345); PR: not yet created.
 
 Latest-state reconciliation: Backend implementation advances original acceptance without closing it. Exact revoked-device tests pass; long-lived privileged page-credential acceptance remains unmet.
 
-Implementation: Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented. Central frontend backend transport now preserves streaming/uploads/cancellation with bounded single-flight renewal, exact HTTPS origin, no redirects, no mutation replay and no device-to-root fallback. Native bridge/enrollment/credential cleanup remains open.
+Implementation: Server foundation: short opaque hashed device credentials, fixed scopes, serialized expiry/renewal/revocation, bounded inventory and explicit legacy migration mode using existing Durable Object. Native/browser migration not yet implemented. Central frontend backend transport now preserves streaming/uploads/cancellation with bounded single-flight renewal, exact HTTPS origin, no redirects, no mutation replay and no device-to-root fallback. Native bridge/enrollment/credential cleanup remains open. Native candidate now adds secure enrollment, Keychain-only renewal, public bootstrap, exact-bundled-page bridge, short access responses, enrolled credential cleanup and explicit disconnect/reconnect. Xcode validation pending.
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.
 
-Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved
+Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved; tests/native-device-auth.test.mjs; ios/KappaForgeSessionTests/DeviceSessionTests.swift (pending execution); ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Root still injected into existing native WebKit/browser storage. Secure client enrollment/renewal, transport migration, injection acceptance and owner-approved legacy-disable rollout remain open. No production authentication change.
+Remaining limitations: Native implementation awaits Xcode/Keychain/UI verification. Unenrolled legacy browser credentials, secure browser migration, native protected-owner step-up, physical device, final compatibility/rollout and owner-approved legacy-disable deployment remain open.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 
