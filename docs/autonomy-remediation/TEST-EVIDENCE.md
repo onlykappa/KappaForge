@@ -98,3 +98,12 @@ Correction candidate uses local ad-hoc signing only for simulator build/test and
 Also found session migration denied read-only `/actions` and `/review`, preventing normal task monitoring/draft inspection. Admit those existing read handlers while continuing to deny `/actions/control`, `/decisions`, `/premium`, `/undo`, `/guidance` and their authorization grants. Focused execution:48 Node tests and33 Python workflow/security tests passed, zero skips/failures. Web/config/map/policy checks pass. No native pass, production functionality or whole037 closure claimed.
 
 Native63db3b9 actual run42281885269: simulator signing/Keychain setup succeeded, all six UI tests passed and four of five native session tests passed. The remaining assertion at DeviceSessionTests.swift:60 compared raw JavaScript JSON wire text with an unescaped HTTPS URL. JSONSerialization legitimately emits escaped slashes. Replaced that incidental string assertion with decoding the actual emitted connection object and requiring exact id/backend dictionary equality; secret-absence checks remain. Added an executable JavaScript consumer regression with Swift-style escaped slash metadata, verifying exact bridge origin, short-token response and credential cleanup. All31 focused session/transport/bootstrap tests passed. Native overall remains failed pending the revised actual macOS run; no test removed, mocked Keychain substitution, skip or production serialization workaround.
+
+## Nativeff6ca5d result and outside-tap correction
+
+ run42285739711 compiled and passed all five real Keychain/session tests. Four of six UI tests passed. The composer test failed keyboard nonexistence after an outside tap; the log shows its text became the Plan a project suggestion. The fixed central percentage coordinate landed on an interactive chip after a lifecycle/viewport change, intentionally replacing the draft and refocusing. The secure enrollment UI test separately failed to find Settings after tapping More. The full native gate is failed;5/5 session tests are narrower evidence.
+
+
+84 focused Node checks passed. Two new interaction regressions failed against the old bridge, then passed after click-capture correction. No native simulator pass yet; see NATIVE-TAP-LIFECYCLE.md.
+
+Native outside-tap candidate full npm test:966 passed,zero failures/skips in23.215s. Bundle, config, dependency map, execution policy and diff checks passed. Supported native rerun remains required; no local Xcode pass inferred.

@@ -966,13 +966,13 @@ Implementation: Server foundation: short opaque hashed device credentials, fixed
 
 Required acceptance/tests: Revoked device token fails; injected script cannot read long-lived privileged credential in browser test.
 
-Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.
+Actual results: Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.; Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport→actual workerd restart/revocation passed.; Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
 
 Regression coverage: tests/device-sessions.test.mjs; chat-backend/tools/device-session-runtime-check.mjs; tests/auth-transport.test.mjs; existing component assertions preserved; tests/native-device-auth.test.mjs; ios/KappaForgeSessionTests/DeviceSessionTests.swift (pending execution); ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Native implementation awaits Xcode/Keychain/UI verification. Unenrolled legacy browser credentials, secure browser migration, native protected-owner step-up, physical device, final compatibility/rollout and owner-approved legacy-disable deployment remain open.
+Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
 
 ## KF-AUDIT-038 — Prompt-injection defense not independently adversarially validated
 
@@ -1122,13 +1122,13 @@ Implementation: Move native UITextView out of WebKit-managed hierarchy into a si
 
 Required acceptance/tests: Same device/orientation reproducer passes composer-above-keyboard assertion and four other existing UI tests.
 
-Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.
+Actual results: Native run41136935766/job124341580014:five UI tests passed; release skipped.; Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.; 14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.; Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.; Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation.
 
 Regression coverage: Unchanged native five-test UI suite; tests/ios-keyboard-layout.test.mjs; tests/test_native_build.py; tests/test_native_evidence.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Supported simulator candidate passes; previous unmodified host also passed on0bba923, confirming intermittency. Do not infer elimination of all races or physical-device closure from one successful candidate. Device/orientation acceptance remains unmeasured.
+Remaining limitations: Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.
 
 ## KF-AUDIT-044 — Task progress is polling-based with freshness limits
 

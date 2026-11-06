@@ -1076,7 +1076,8 @@
     "actual_results": [
       "Twelve gateway/session-store regressions passed; actual isolated workerd/SQLite restart, renewal and persistent revocation passed with zero external requests.",
       "Backend3ddb7f4 actual CI41228025480 passed unit/web/Worker/structure; focused frontend135 tests and production transport\u2192actual workerd restart/revocation passed.",
-      "Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI."
+      "Native candidate Node962 and48 focused tests passed; actual Swift and new native UI tests await macOS CI.",
+      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation."
     ],
     "regression_coverage": [
       "tests/device-sessions.test.mjs",
@@ -1087,7 +1088,7 @@
       "ios/KappaForgeUITests/LaunchTests.swift new secure enrollment case (pending execution)"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Native implementation awaits Xcode/Keychain/UI verification. Unenrolled legacy browser credentials, secure browser migration, native protected-owner step-up, physical device, final compatibility/rollout and owner-approved legacy-disable deployment remain open.",
+    "remaining_limitations": "Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.",
     "reconciliation": "Backend implementation advances original acceptance without closing it. Exact revoked-device tests pass; long-lived privileged page-credential acceptance remains unmet."
   },
   {
@@ -1258,7 +1259,8 @@
       "Native run41136935766/job124341580014:five UI tests passed; release skipped.",
       "Latest125a099 native simulator:5 tests,4 passed,1 failed,0 skipped; independently downloaded count receipt and hierarchy retained.",
       "14 local Node keyboard/native/update contracts passed; actual Swift/native simulator candidate64a9ac3 is pending.",
-      "Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified."
+      "Exact64a9ac3 native run41203455958 passed5/5 unchanged UI tests,0 skipped; build succeeded, release skipped. Artifact fb2abed2ee3942de97c2457d2590d488fc4fb7213d1f4b28d1a5c1c04f9eeec7 verified.",
+      "Nativeff6ca5d supported run42285739711:5/5 real session/Keychain tests passed;4/6 UI tests passed. Composer outside-dismissal and More-to-Settings tests failed, so native gate remains failed. Retained full job log and independent JS reproduction of pointerdown target invalidation."
     ],
     "regression_coverage": [
       "Unchanged native five-test UI suite",
@@ -1267,7 +1269,7 @@
       "tests/test_native_evidence.py"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Supported simulator candidate passes; previous unmodified host also passed on0bba923, confirming intermittency. Do not infer elimination of all races or physical-device closure from one successful candidate. Device/orientation acceptance remains unmeasured.",
+    "remaining_limitations": "Native session/Keychain5/5 passed but full native UI gate failed42285739711. Candidate moves blur from pointerdown to capture-phase click and uses blank gutter in outside-tap fixture, retaining and strengthening geometry/draft/secure-input assertions. New supported simulator gate, physical-device/orientation, browser migration/protected owner step-up and separately approved rollout remain open.",
     "reconciliation": "Original finding retained. Candidate work or newly collected evidence is partial; remaining acceptance conditions are stated explicitly."
   },
   {

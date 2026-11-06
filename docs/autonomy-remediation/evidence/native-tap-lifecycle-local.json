@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/f-native-tap-lifecycle",
+  "nativePrevious": {
+    "run": 42285739711,
+    "candidate": "ff6ca5d",
+    "gate": "failed",
+    "sessionPassed": 5,
+    "sessionTotal": 5,
+    "UIPassed": 4,
+    "UITotal": 6
+  },
+  "focused": {
+    "passed": 84,
+    "failed": 0
+  },
+  "negativeBefore": {
+    "failed": 2
+  },
+  "revisedNativeGate": "pending",
+  "production": false,
+  "paidInference": false,
+  "logs": {
+    "2026-11-06-native-ff6ca5d-job.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-ff6ca5d-job.log",
+      "sha256": "f81695f56101980e5b6bc0354cc9b928b8229caf71c1b21bf9389f74e269ba03",
+      "bytes": 499552
+    },
+    "2026-11-06-native-tap-before.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-tap-before.log",
+      "sha256": "9896ba22fbddd24c8bb657d2cf2bd078c516585de84109c68f0e4fccfb1e3a3e",
+      "bytes": 2179
+    },
+    "2026-11-06-native-tap-focused.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-tap-focused.log",
+      "sha256": "ace52b8b4b22eb1ba2e85476957a9792b1d3cfbc717602e6a17033e25b7def11",
+      "bytes": 7046
+    },
+    "2026-11-06-native-tap-npm.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-native-tap-npm.log",
+      "sha256": "6a480c9c5ff977f265f3cdc783f07bbb289e67b015bdb2fcf3cb50d68b524f04",
+      "bytes": 91959
+    }
+  },
+  "node": {
+    "passed": 966,
+    "failed": 0,
+    "skipped": 0
+  }
+}
