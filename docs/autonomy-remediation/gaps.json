@@ -219,13 +219,14 @@
     "current_classification": "PARTIAL",
     "status": "TESTING",
     "assigned_branch": "remediation/d-generation-anchor-recovery (extends #340)",
-    "pr": null,
+    "pr": 348,
     "implementation": "Persist deterministic rejected-anchor identity using exact target bytes, find and preceding same-file edits. Block redispatch before patching, including after journal restore; allow corrected arguments or changed actual source. Initial generation now shares stable source/prefix identity, persists hash-only receipts through existing failure ledger, blocks redispatch across changed replacements/unrelated edits and retains local receipts across compact fallback.",
     "required_tests": "Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.",
     "actual_results": [
       "87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.",
       "Full Python1505 OK(skip36) on d526ddd.",
-      "Seven new generation/Journal/legacy-key regressions;107 focused passed. Composed Python1524 OK(skip34), Node279 passed. Exact new candidate CI pending; no live Task322 replay."
+      "Seven new generation/Journal/legacy-key regressions;107 focused passed. Composed Python1524 OK(skip34), Node279 passed. Exact new candidate CI pending; no live Task322 replay.",
+      "Exact generation49bfb1d CI42284160952 and real sandbox42284161055 passed; no live Task322 replay."
     ],
     "regression_coverage": [
       "tests/test_rejected_edit_memory.py",
@@ -233,7 +234,7 @@
       "tests/test_generation_anchor_recovery.py"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Initial generation/runtime identity now consolidated and locally tested. Supported CI/new actual sandbox and live Task322 evidence remain pending; full category-specific strategy coordinator remains open.",
+    "remaining_limitations": "Shared initial generation/runtime anchor identity passed supported CI and real sandbox. Live Task322 outcome and full unified category-specific recovery remain unverified.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {
@@ -316,19 +317,21 @@
     "effort": "M",
     "priority": "P2",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
+    "status": "TESTING",
+    "assigned_branch": "remediation/d-recovery-strategy-limits",
     "pr": null,
-    "implementation": "Partial: compact generation now treats attempt_offset as cumulative instead of charging it twice after failed transport; final exceptions retain exact counters and rejection receipts. Messages no longer call repeated malformed replies distinct strategies. Category-specific five meaningful strategies not yet implemented.",
+    "implementation": "Partial: compact generation now treats attempt_offset as cumulative instead of charging it twice after failed transport; final exceptions retain exact counters and rejection receipts. Messages no longer call repeated malformed replies distinct strategies. Category-specific five meaningful strategies not yet implemented. Existing sandbox controller now enforces five applied source-backed mechanisms per recurring failing-test family, includes its first legacy unplanned repair, blocks a sixth model request, persists counts/plans and reports unknown legacy history explicitly. Provider capacity waits remain separate; explicit Fix may recheck but cannot reset allowance.",
     "required_tests": "Exhaustion across restart preserves all budgets; 429 waits do not consume repair strategies; no repeated side effects.",
     "actual_results": [
-      "Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit."
+      "Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.",
+      "64 focused tests passed; Python1529 total/1495 passed/34 skipped, Node279 passed. Five new regressions cover exhausted-family stop, invalid/unplanned edits, per-family and corrupt counters, real Journal/provider429 restart and explicit Fix no-reset. Exact candidate CI/sandbox pending."
     ],
     "regression_coverage": [
-      "tests/test_generation_anchor_recovery.py"
+      "tests/test_generation_anchor_recovery.py",
+      "tests/test_recovery_strategy_limits.py"
     ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Partial category-specific coordinator: live model/Task322 replay, cross-controller strategy unification and other category policies remain open. A normalized plan with current source citations is bounded evidence, not proof of semantic model intelligence. Old unattributed history is reported rather than assigned invented usage.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {

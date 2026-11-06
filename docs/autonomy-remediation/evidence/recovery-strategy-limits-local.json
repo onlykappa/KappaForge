@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/d-recovery-strategy-limits",
+  "production": false,
+  "inference": false,
+  "python": {
+    "total": 1529,
+    "passed": 1495,
+    "skipped": 34,
+    "failed": 0,
+    "seconds": 123.382
+  },
+  "node": {
+    "passed": 279,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focused": {
+    "passed": 64,
+    "failed": 0
+  },
+  "newCore": {
+    "passed": 5,
+    "failed": 0
+  },
+  "exactCandidateCI": "pending",
+  "liveTask322": "not_run",
+  "logs": {
+    "2026-11-06-strategy-limits-python.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-strategy-limits-python.log",
+      "sha256": "d88724e134ccf2d9c85017b4a0717606e4675f79f8894ead7e8bef06f036a05b",
+      "bytes": 318073
+    },
+    "2026-11-06-strategy-limits-node.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-strategy-limits-node.log",
+      "sha256": "a7dbee1d1c172cad63f08208cf19c6a209f168556b0f7730b16a7149b44fe1f4",
+      "bytes": 26236
+    },
+    "2026-11-06-strategy-limits-core.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-strategy-limits-core.log",
+      "sha256": "b15350d2d7cdacedf92aebd53b97f4b3811e18f546840087d94916d9f449b3ee",
+      "bytes": 97
+    }
+  }
+}

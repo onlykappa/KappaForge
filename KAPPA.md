@@ -354,9 +354,9 @@ Recovery order
 
 Avoid repeatedly attempting identical commands without changing the underlying conditions.
 
-For repeated failures, use a configurable retry limit with a default of three meaningful repair attempts.
+For a recurring failing-test family, allow up to five applied, evidence-backed repair strategies. Provider cooldowns, malformed output and invalid arguments have separate bounded policies; waiting is not a new repair strategy. Never mechanically repeat five requests for missing authorization or an impossible task.
 
-Each retry should be justified by a changed hypothesis or implementation.
+Each retry must use current source and failure evidence, explain what changes from the failed approach, preserve lifetime budgets through restart, and independently validate the result. Repeated labels or a different replacement for an impossible anchor are not new strategies. Legacy history without enough metadata remains explicitly unattributed; never invent its strategy count.
 
 Never hide a failing test, suppress an exception, or fabricate a successful result.
 
