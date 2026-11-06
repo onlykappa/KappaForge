@@ -5,7 +5,7 @@ const UUID='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const TOKEN=new RegExp('^kf([ar])_('+UUID+')\\.([A-Za-z0-9_-]{43})$');
 const SCOPES=new Set(['assistant','tasks']);
 const ROUTES={assistant:new Set(['/chat','/plan','/capabilities','/diagnostics','/usage','/usage/google',
- '/memory','/memory/search','/index','/repos','/github','/projects/health','/providers/models-list','/voice/transcribe','/voice/speak']),
+ '/memory','/memory/search','/index','/repos','/github','/actions','/review','/projects/health','/providers/models-list','/voice/transcribe','/voice/speak']),
  tasks:new Set(['/jobs','/retry','/cancel','/cancel/status','/operation-status','/operation-capabilities','/authorize'])};
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 const hash=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');

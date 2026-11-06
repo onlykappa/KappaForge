@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "date": "2026-10-31",
+  "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
   "composedCode": "bc048002adbe799e47f0ac68638257f1d5af417f",
@@ -27,7 +27,9 @@
     342,
     343,
     344,
-    345
+    345,
+    346,
+    347
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -58,11 +60,27 @@
   "activeWorkInProgress": {
     "branch": "remediation/b-paged-path-discovery",
     "worktree": "/workspace/KappaForge-path-discovery",
-    "scope": "014 complete inventory path paging; partial until broader gates/subgoal expansion",
-    "base": "7207a552cf783815cd55b3ae96fd8519a215b843",
-    "next": "Complete composed Python/security, publish draft, collect CI; native #346 still requires actual Xcode results. Continue original dependency roadmap; no score changes or merge/deploy.",
-    "localVerification": "Python1517 OK(skip34);130 focused total/129 pass/1 Docker-dependent skip; security/map/policy/syntax passed.",
-    "relatedCI": "Native7207a55 main tests41230157825 passed; actual iOS41230157892 remains in progress. Transportfc6fdcf main tests41229904417 passed; iOS41229904216 in progress."
+    "pr": 347,
+    "scope": "Update composed dependency state; engine discovery passed CI and real sandbox; native Keychain signing correction pending",
+    "validatedEngine": "1af5f0b5f2ba82d60ddf1c49ff08e207cd86a21c",
+    "pendingNative": "63db3b9",
+    "next": "Collect native actual Keychain results and continue generation/recovery root fixes. Preserve source-version rejection evidence and lifetime budgets. No main/PR merges, release, deployment or paid calls."
   },
-  "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived."
+  "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
+  "latestObservedRuns": {
+    "discoveryTests": {
+      "run": 41230713358,
+      "conclusion": "success"
+    },
+    "discoverySandbox": {
+      "run": 41230713354,
+      "conclusion": "success"
+    },
+    "native7207a55": {
+      "run": 41230157892,
+      "conclusion": "failure",
+      "UI": "6 passed",
+      "Keychain": "5 test bodies blocked by setup errors; actual signing correction pending"
+    }
+  }
 }

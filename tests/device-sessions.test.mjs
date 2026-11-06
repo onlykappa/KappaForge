@@ -178,3 +178,15 @@ test('explicit owner reenrollment atomically replaces credentials without revivi
  assert.equal((await w.call('/diagnostics',next.accessToken)).status,200);
  const list=await(await w.call('/sessions',w.env.CHAT_ACCESS_TOKEN,{op:'list'})).json();assert.equal(list.devices.length,1);
 });
+
+test('assistant sessions admit read-only task monitoring while rejecting every owner mutation route',async()=>{
+ const w=world(),device=await w.enroll(['assistant']);
+ w.env.GITHUB_JOB_TOKEN='isolated-fixture-only';
+ // Invalid read arguments reach the existing route validator after session
+ // admission. They cannot send network requests or create GitHub effects.
+ assert.equal((await w.call('/actions',device.accessToken,{op:'delete-workflow'})).status,400);
+ assert.equal((await w.call('/review',device.accessToken,{prNumber:0,decision:'merge',confirmed:true})).status,400);
+ for(const path of ['/actions/control','/decisions','/premium','/undo','/guidance'])
+  assert.equal((await w.call(path,device.accessToken,{decision:'merge',confirmed:true})).status,403,path);
+ assert.equal((await w.call('/authorize',device.accessToken,{path:'/decisions',payload:{decision:'merge'}})).status,403);
+});
