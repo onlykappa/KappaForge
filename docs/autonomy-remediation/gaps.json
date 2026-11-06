@@ -527,15 +527,21 @@
     "effort": "M",
     "priority": "P1",
     "current_classification": "PARTIAL",
-    "status": "INVESTIGATING",
-    "assigned_branch": "unassigned",
+    "status": "TESTING",
+    "assigned_branch": "remediation/e-request-size-recovery",
     "pr": null,
-    "implementation": "",
+    "implementation": "Partial: confirmed aggregate pre-inference gateway413/context admission refusals now retain the GatewayRequestTooLarge type through the real router adapter, enabling existing source-context reconstruction instead of terminal provider-outage handling. Review builders use at most three strictly smaller local adaptations; unchanged full owner scope is never truncated. Mixed or upstream failures retain dispatch uncertainty and existing real cooldowns.",
     "required_tests": "#330-shaped request admits an eligible compact Groq/Mistral route when within its real limits; oversized requests still fail safely.",
-    "actual_results": [],
-    "regression_coverage": [],
+    "actual_results": [
+      "Two new reproduction tests error on previousba6a9ea because the size refusal remains GatewayUnavailable;38 focused tests pass with the correction. Six new regressions cover real router exception provenance, source-rebuilt generation, review rebuilding without false platform evidence, bounded adaptation, immutable unshrinkable owner scope and mixed/upstream negative cases. Final composed Python pending. Offline registry calculation confirms Groq8192 reserve requires8529 tokens for a one-byte prompt against8000; explicit3000 reserve requires3337 and fits, without asserting active caller compatibility.",
+      "Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending."
+    ],
+    "regression_coverage": [
+      "tests/test_remote_request_size_recovery.py",
+      "tests/test_gateway_request_budget.py"
+    ],
     "final_evidence": [],
-    "remaining_limitations": "Original acceptance gate remains open; implement after dependencies, then collect independent evidence.",
+    "remaining_limitations": "Compact Groq/Mistral request packing and calibrated tokenizer/admission evidence are still open. Current Groq8000 free allowance plus8192 output reserve rejects even a one-byte prompt; this patch does not lower caps or silently squeeze responses. Actual#330-shaped Groq/Mistral free-provider acceptance and live-model behavior remain unverified; no full017 closure.",
     "reconciliation": "Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes."
   },
   {

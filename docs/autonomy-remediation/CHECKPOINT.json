@@ -3,11 +3,11 @@
   "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
-  "composedCode": "61cab32",
+  "composedCode": "ba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02",
   "statuses": {
     "VERIFIED": 14,
-    "TESTING": 11,
-    "INVESTIGATING": 16,
+    "TESTING": 12,
+    "INVESTIGATING": 15,
     "NOT STARTED": 13,
     "BLOCKED": 6,
     "IMPLEMENTING": 1
@@ -62,13 +62,12 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/b-durable-tool-observations",
-    "worktree": "/workspace/KappaForge-tool-observations",
-    "scope": "012 shared exact observation history, partial011/023; incorporates nativeff6ca5d test correction",
-    "base": "3fda30e",
-    "local": "Python1537/1503 passed/34 skipped; source/test hashes unchanged after native350 composition. Actual composed npm966 passed,zero skips/failures. Exact supported CI/native/sandbox required.",
-    "next": "Collect exact new composed head CI/native/real sandbox. Current branch now locally composes350; no GitHub PR/main merge. Continue partial017 safe size adaptation and original dependency roadmap; no production deployment or paid inference.",
-    "pr": 351
+    "branch": "remediation/e-request-size-recovery",
+    "worktree": "/workspace/KappaForge-request-size-recovery",
+    "scope": "Partial017 typed pre-inference413 source adaptation; request packing remains open",
+    "base": "ba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02",
+    "local": "Python1543/1509 passed/34 skipped;38 focused pass; two previous-tree regressions reproduced; scan/map/policy passed. Exact supported gates pending.",
+    "next": "Collect final local Python and publish isolated draft; get exact CI/real sandbox. Collect native350 run42289413007 and composed351 native42290342842. Continue explicit free-route compact request contracts, not silent quota/output changes. No PR/main merge, deploy or paid inference."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {
@@ -111,6 +110,18 @@
     },
     "nativeTapCorrection": {
       "run": 42289413007,
+      "conclusion": "in_progress"
+    },
+    "observationTests": {
+      "run": 42290343059,
+      "conclusion": "success"
+    },
+    "observationSandbox": {
+      "run": 42290343038,
+      "conclusion": "in_progress"
+    },
+    "observationNative": {
+      "run": 42290342842,
       "conclusion": "in_progress"
     }
   },

@@ -145,3 +145,9 @@ Final observation candidate Python1537 total/1503 passed/34 skipped,zero failure
 Native outside-tap candidate full npm test:966 passed,zero failures/skips in23.215s. Bundle, config, dependency map, execution policy and diff checks passed. Supported native rerun remains required; no local Xcode pass inferred.
 
 Observation candidate now locally composes native350/64e4a8d. All Python observation source/test hashes match the1537-test validated tree. Actual composed npm966 passed,zero failures/skips in22.934s; bundle/map/policy/diff checks passed. This is a local dependency merge only. Exact supported final tree CI/native/real sandbox remain mandatory.
+
+## November6 request-size control-flow correction
+
+Two regressions reproduced the previous adapter/generation failure onba6a9ea in an isolated detached worktree, then38 focused tests passed on the correction. Six new cases retain owner scope, bounded changing requests and failure provenance. Offline actual Groq admission confirms output reserve8192 exceeds its8000 free allowance before any useful input; no tokenizer/limit was relaxed and no live provider called. See REQUEST-SIZE-RECOVERY.md. Final full Python results pending.
+
+Request-size candidate full Python1543 total/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/reviewed execution policy passed. No JavaScript/native product files changed in this slice; earlier composed Node966 result remains a parent receipt, not a claimed new execution. Exact new supported CI/real sandbox pending. See evidence/request-size-recovery-local.json.

@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-06",
+  "branch": "remediation/e-request-size-recovery",
+  "production": false,
+  "inference": false,
+  "python": {
+    "total": 1543,
+    "passed": 1509,
+    "skipped": 34,
+    "failed": 0,
+    "seconds": 110.694
+  },
+  "focused": {
+    "passed": 38,
+    "failed": 0
+  },
+  "negativePreviousTree": {
+    "base": "ba6a9ea",
+    "tests": 2,
+    "errors": 2
+  },
+  "scan": "passed with existing HTML warnings",
+  "map": "passed",
+  "executionPolicy": "passed",
+  "exactCandidateCI": "pending",
+  "liveGroqMistral": "not_run",
+  "logs": {
+    "2026-11-06-request-size-focused.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-request-size-focused.log",
+      "sha256": "d6a4deb35f1e5e24b0b640b09112e208f8e1afe7a5257433aac348c486c46c2f",
+      "bytes": 4016
+    },
+    "2026-11-06-request-size-before.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-request-size-before.log",
+      "sha256": "b5fcffbe53c722dc22eccf7c141c5d0301af9c9a0c673229ad79fef4f89277a7",
+      "bytes": 3948
+    },
+    "2026-11-06-request-size-python.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-request-size-python.log",
+      "sha256": "b3cc47ba46d7666bf27a47ea0262620f13f86f4070534da3af65ef140aba9409",
+      "bytes": 322166
+    },
+    "2026-11-06-request-size-security.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-request-size-security.log",
+      "sha256": "4288b37b55c48c273dc31798af3b36f60c8ba25d42efc383ad08c7454cdd4782",
+      "bytes": 23130
+    }
+  }
+}

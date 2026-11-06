@@ -21,9 +21,13 @@ def resource_role():
 
 
 class GatewayRequestTooLarge(RuntimeError):
-    """Local request construction failure, never a provider capacity failure."""
+    """Local or confirmed pre-inference request-size rejection, never provider capacity."""
     terminal = True
     gateway_failure = True
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.retry_at, self.status, self.code, self.details, self.attempts = 0, None, 'request_too_large', {}, []
 
 
 def engine_prompt_cap():
@@ -139,6 +143,7 @@ class ReviewResources:
     """Rebuild source evidence, never truncate an assembled prompt or relax review gates."""
     def __init__(self):
         self.ceiling, self.reductions = resource_ceiling(), 0
+        self.size_limited = False
 
     def fits(self, prompt):
         from engine import recovery, task_state
@@ -148,6 +153,8 @@ class ReviewResources:
     def require(self, prompt):
         if not self.fits(prompt):
             if self.ceiling is not None:
+                if self.size_limited:
+                    raise GatewayRequestTooLarge('Owner scope or required evidence cannot fit after bounded source adaptation; no additional inference was sent')
                 raise GatewayResourceExhausted()
             require_prompt_fits(prompt)
 
@@ -165,6 +172,17 @@ class ReviewResources:
 
     def call(self, run_model, api_key, build, **kwargs):
         local_reductions = 0
+        def reduce_size(prompt):
+            nonlocal local_reductions
+            if local_reductions >= 3:
+                return False
+            chars = len(prompt.encode('utf-16-le')) // 2
+            cap = max(1024, min(engine_prompt_cap() - 1024, chars * 2 // 3))
+            self.ceiling = min(self.ceiling or cap, cap)
+            self.size_limited = True
+            local_reductions += 1
+            print('Request size limit: rebuilding with less advisory evidence; owner scope remains unchanged.', flush=True)
+            return True
         while True:
             prompt = build()
             if self.ceiling is not None or os.getenv('KAPPA_ROUTER_REQUIRED', '').strip().lower() == 'true':
@@ -173,16 +191,16 @@ class ReviewResources:
                 except GatewayRequestTooLarge:
                     # A local hard-cap rejection is safe to fix by rebuilding less source/diff
                     # context. Keep this in memory only: it is not evidence of a Cloudflare limit.
-                    if local_reductions >= 3:
+                    if not reduce_size(prompt):
                         raise
-                    chars = len(prompt.encode('utf-16-le')) // 2
-                    cap = max(1024, min(engine_prompt_cap() - 1024, chars * 2 // 3))
-                    self.ceiling = min(self.ceiling or cap, cap)
-                    local_reductions += 1
-                    print('Gateway request exceeds the engine prompt cap; rebuilding with less review evidence.', flush=True)
                     continue
             try:
                 return run_model(api_key, prompt, **kwargs)
+            except GatewayRequestTooLarge:
+                # A confirmed preflight refusal can be rebuilt within the same
+                # bounded operation. Never learn a false platform/quota cooldown.
+                if not reduce_size(prompt):
+                    raise
             except Exception as error:
                 if not self.retry(error, prompt):
                     raise
@@ -260,9 +278,18 @@ def error(status, data=None, headers=None, pinned=False):
     # attempt means the saved task can recover, even when the last model rejected it.
     exhausted = details.get('category') in permanent and retry_at <= time.time() and (
         not attempts or all(row.get('category') in permanent for row in attempts))
+    preflight_size = (status == 413 and code == 'request_too_large' and details.get('source') == 'gateway_guard'
+        and details.get('category') == 'context_limit' and details.get('attempted') is not True
+        and all(row.get('attempted') is False and row.get('category') == 'context_limit' for row in attempts))
+    if code == 'request_too_large' and not preflight_size:
+        label = 'request-size failure; provider dispatch is not ruled out by this response'
     exc = GatewayUnavailable(f'Integrated provider gateway failed (HTTP {status}, code {code}): '
                              + label + '; fallback stays within the approved gateway',
                              retry_at=retry_at, terminal=pinned or status in (400, 401, 403, 413, 422) or exhausted)
+    if preflight_size:
+        # The authenticated router emits this aggregate only when every route
+        # failed admission. Mixed/upstream failures are not proof of no dispatch.
+        exc = GatewayRequestTooLarge(str(exc))
     exc.attempts = attempts
     exc.status, exc.code, exc.details = status, code, details
     return exc
