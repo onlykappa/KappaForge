@@ -3,12 +3,12 @@
   "date": "2026-11-06",
   "programComplete": false,
   "baseline": "19c95923d12156688487fd8d4e1f6dd1c16eefa6",
-  "composedCode": "ba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02",
+  "composedCode": "6ea6c46712dbaadd592e9ecffb85c1ce52ae7cf9",
   "statuses": {
-    "VERIFIED": 14,
+    "VERIFIED": 15,
     "TESTING": 12,
     "INVESTIGATING": 15,
-    "NOT STARTED": 13,
+    "NOT STARTED": 12,
     "BLOCKED": 6,
     "IMPLEMENTING": 1
   },
@@ -33,12 +33,13 @@
     348,
     349,
     350,
-    351
+    351,
+    352
   ],
   "productionChanges": false,
   "paidInference": false,
   "scoresChanged": false,
-  "unresolvedMandatoryGate": "Critical actual credential/environment review and037 migration remain partial. Latest nativeff6ca5d full gate FAILED despite5/5 session tests; new350 simulator pending. Live intake322/330 and50-task benchmark unrun.",
+  "unresolvedMandatoryGate": "Critical actual credential/environment review and037 migration remain partial. Prior native gates passed11/11 tests, but new vault candidate native gate pending. Live intake322/330 and50-task benchmark unrun. Anyv2 owner-data activation requires separately approved rollout.",
   "nextActions": [
     "Latestbc04800 CI41204467206 and strict sandbox41204467210 passed; retain receipts and test the actual later integration candidate after any source change.",
     "Continue root authentication/session migration037; browser/shared key is still exposed to script and injected into native WebKit. Preserve owner authentication and design native/browser rollout before deployment.",
@@ -62,12 +63,12 @@
   "remainingPhases": "A incomplete; B/C/D/F/H have tested partial clusters. E/G general capabilities and all phases remain incomplete.",
   "mergePolicy": "Specific final owner approval required after validated actual integration state",
   "activeWorkInProgress": {
-    "branch": "remediation/e-request-size-recovery",
-    "worktree": "/workspace/KappaForge-request-size-recovery",
-    "scope": "Partial017 typed pre-inference413 source adaptation; request packing remains open",
-    "base": "ba6a9eaec7b2b41cfe04a512fc9ff26bbde84e02",
-    "local": "Python1543/1509 passed/34 skipped;38 focused pass; two previous-tree regressions reproduced; scan/map/policy passed. Exact supported gates pending.",
-    "next": "Collect final local Python and publish isolated draft; get exact CI/real sandbox. Collect native350 run42289413007 and composed351 native42290342842. Continue explicit free-route compact request contracts, not silent quota/output changes. No PR/main merge, deploy or paid inference."
+    "branch": "remediation/e-vault-deletion-retention",
+    "worktree": "/workspace/KappaForge-vault-retention",
+    "scope": "Partial026 non-evicting deletion history, persistence/restart safety and authenticatedv2 legacy-writer fence",
+    "base": "6ea6c46712dbaadd592e9ecffb85c1ce52ae7cf9",
+    "local": "9 new and5 existing focused tests pass; full Node975 pass/zero skips/failures. Bundle/config/map/policy/security passed. Parent Python1543 unchanged.",
+    "next": "Publish isolated draft, collect exact CI/native. Respectv2 owner rollout decision; no real vault migration or production changes. Continue explicit route-compatible compact packets017 and original dependency roadmap."
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {
@@ -110,7 +111,9 @@
     },
     "nativeTapCorrection": {
       "run": 42289413007,
-      "conclusion": "in_progress"
+      "conclusion": "success",
+      "UIPassed": 6,
+      "sessionPassed": 5
     },
     "observationTests": {
       "run": 42290343059,
@@ -118,11 +121,19 @@
     },
     "observationSandbox": {
       "run": 42290343038,
-      "conclusion": "in_progress"
+      "conclusion": "success"
     },
     "observationNative": {
       "run": 42290342842,
-      "conclusion": "in_progress"
+      "conclusion": "success"
+    },
+    "requestSizeTests": {
+      "run": 42291259094,
+      "conclusion": "success"
+    },
+    "requestSizeSandbox": {
+      "run": 42291431938,
+      "conclusion": "success"
     }
   },
   "composedDependencies": [

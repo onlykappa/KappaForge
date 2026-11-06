@@ -40,3 +40,5 @@ After#344, review#345 central transport(fc6fdcf),#346 native device authenticati
 Update: the observation branch now locally composes350 as well. Review350 separately, then351 with its declared native dependency; the final composed candidate still requires native and all mandatory gates. No main or GitHub PR merge was performed.
 
 After351, review remediation/e-request-size-recovery: partial017 preserves safe source adaptation for confirmed no-dispatch413 instead of terminal provider-outage handling. No actual route quota/output policy change or full017 closure. Keep final native/security/sandbox acceptance mandatory. Supersededf828709 native42290000159/sandbox42290000123 were cancelled afterba6a9ea composition; no pass is claimed for cancelled gates. The old unit run had already completed.
+
+Next cluster remediation/e-vault-deletion-retention follows352. Review its explicitv2 client-compatibility/rollback decision before any release, retain all deletion receipts, and test the actual native integration candidate.15/61 scoped gaps are now verified; zero integrated/merged. No score or production-readiness uplift assigned.

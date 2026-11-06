@@ -1,0 +1,21 @@
+{
+  "passphrase": "legacy isolated fixture passphrase",
+  "payload": "{\"v\":1,\"salt\":\"n99TKyoc1ySvFbypZkx3UQ==\",\"iv\":\"f9vJEfBFMecjoxCk\",\"data\":\"vdj0v6CNniDX6chL4q1SQEyhP8yvaLpmm6e1nQdwRTSS8pVFsMbe8FupiVrMLeZ8MooddG6ijEzPmSoOsdfnFFREMV0wuU7I4mqC8PPVi2wFR2tILdN2uOXAxgtO7vKbyO8BoHTFSm4NG2O4CVmG3lvr6gHkhNpzJUSH8RWZT56Vbxen7jT9voV0XgIdzLBiMrtvK/NV94EgTA==\"}",
+  "expected": {
+    "chats": [
+      {
+        "id": "legacy-chat",
+        "messages": [
+          {
+            "role": "user",
+            "text": "Legacy isolated sample"
+          }
+        ]
+      }
+    ],
+    "notes": [],
+    "deletedChats": [
+      "legacy-deleted"
+    ]
+  }
+}
