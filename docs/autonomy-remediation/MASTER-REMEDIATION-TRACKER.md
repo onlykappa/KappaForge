@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=18, NOT STARTED=13, TESTING=9, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=17, NOT STARTED=13, TESTING=10, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -178,7 +178,7 @@ Required implementation: Persist normalized failure family, source version, atte
 
 Dependencies: Foundation contracts
 
-Branch: remediation/d-generation-anchor-recovery (extends #340); PR: not yet created.
+Branch: remediation/d-generation-anchor-recovery (extends #340); PR: [#348](https://github.com/onlykappa/KappaForge/pull/348).
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
@@ -186,13 +186,13 @@ Implementation: Persist deterministic rejected-anchor identity using exact targe
 
 Required acceptance/tests: Replay #322 emits no same-anchor edit against the same source after its first failure; later action reads exact lines or changes edit method.
 
-Actual results: 87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.; Full Python1505 OK(skip36) on d526ddd.; Seven new generation/Journal/legacy-key regressions;107 focused passed. Composed Python1524 OK(skip34), Node279 passed. Exact new candidate CI pending; no live Task322 replay.
+Actual results: 87 controller/tool/strategy/recovery tests passed;6 focused actual Session/Journal and real Node tests passed.; Full Python1505 OK(skip36) on d526ddd.; Seven new generation/Journal/legacy-key regressions;107 focused passed. Composed Python1524 OK(skip34), Node279 passed. Exact new candidate CI pending; no live Task322 replay.; Exact generation49bfb1d CI42284160952 and real sandbox42284161055 passed; no live Task322 replay.
 
 Regression coverage: tests/test_rejected_edit_memory.py; tests/test_execution_recovery.py:test_rejected_anchor_receipt_survives_journal_restore_and_skips_duplicate_dispatch; tests/test_generation_anchor_recovery.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Initial generation/runtime identity now consolidated and locally tested. Supported CI/new actual sandbox and live Task322 evidence remain pending; full category-specific strategy coordinator remains open.
+Remaining limitations: Shared initial generation/runtime anchor identity passed supported CI and real sandbox. Live Task322 outcome and full unified category-specific recovery remain unverified.
 
 ## KF-AUDIT-008 — Latest malformed-tool recovery lacks live acceptance evidence
 
@@ -248,7 +248,7 @@ Remaining limitations: Verified candidate only; owner approval and exact integra
 
 ## KF-AUDIT-010 — Multiple retry ceilings do not encode five meaningful strategies
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: D; priority: P2.
+Classification: PARTIAL; status: **TESTING**; phase: D; priority: P2.
 
 Root cause: Proposal retries, sandbox attempts and continuations have different semantics and budgets.
 
@@ -256,21 +256,21 @@ Required implementation: Unify lifetime budget accounting; default at most five 
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/d-recovery-strategy-limits; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: Partial: compact generation now treats attempt_offset as cumulative instead of charging it twice after failed transport; final exceptions retain exact counters and rejection receipts. Messages no longer call repeated malformed replies distinct strategies. Category-specific five meaningful strategies not yet implemented.
+Implementation: Partial: compact generation now treats attempt_offset as cumulative instead of charging it twice after failed transport; final exceptions retain exact counters and rejection receipts. Messages no longer call repeated malformed replies distinct strategies. Category-specific five meaningful strategies not yet implemented. Existing sandbox controller now enforces five applied source-backed mechanisms per recurring failing-test family, includes its first legacy unplanned repair, blocks a sixth model request, persists counts/plans and reports unknown legacy history explicitly. Provider capacity waits remain separate; explicit Fix may recheck but cannot reset allowance.
 
 Required acceptance/tests: Exhaustion across restart preserves all budgets; 429 waits do not consume repair strategies; no repeated side effects.
 
-Actual results: Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.
+Actual results: Two proposals plus two failed transport calls remain exactly two generated proposals; actual request counters remain separate. Restart fixture retains historical4 edit/9 model debits and charges only one corrected edit.; 64 focused tests passed; Python1529 total/1495 passed/34 skipped, Node279 passed. Five new regressions cover exhausted-family stop, invalid/unplanned edits, per-family and corrupt counters, real Journal/provider429 restart and explicit Fix no-reset. Exact candidate CI/sandbox pending.
 
-Regression coverage: tests/test_generation_anchor_recovery.py
+Regression coverage: tests/test_generation_anchor_recovery.py; tests/test_recovery_strategy_limits.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Partial category-specific coordinator: live model/Task322 replay, cross-controller strategy unification and other category policies remain open. A normalized plan with current source citations is bounded evidence, not proof of semantic model intelligence. Old unattributed history is reported rather than assigned invented usage.
 
 ## KF-AUDIT-011 — Initial generation and sandbox repair remain separate execution protocols
 

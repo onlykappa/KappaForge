@@ -28,3 +28,7 @@ After #337, review #338 (required real-integration gates), #339 (native composer
 ## Session backend and current cost candidate
 
 After checkpoint #342, review #343 (`remediation/a-free-cost-boundary`,1ff8f7a), then the device-session backend branch `remediation/a-device-sessions`. The latter is a server-only incremental foundation for037, with the native/browser acceptance explicitly open. Review DEVICE-SESSION-CONTRACT.md before any authentication rollout. No production policy is activated; undefined/false SESSION_AUTH_REQUIRED retains old clients. Actual disabling of legacy access requires migrated clients, all acceptance tests and separate owner rollout authorization.
+
+## Current tested dependency chain — November6
+
+After#344, review#345 central transport(fc6fdcf),#346 native device authentication(ff6ca5d),#347 paged discovery(b5c561d),#348 shared generation-anchor recovery(49bfb1d), then remediation/d-recovery-strategy-limits. All are drafts; zero PRs merged. Discovery and generation exact supported tests/real sandbox passed. Latest native simulator gate is pending and must be collected. Later branches still need the latest native test-only correction folded into their actual final integration tree. A local dependency merge is not authorization for any GitHub PR/main merge. See CHECKPOINT.json for the current worktree and remaining gates.

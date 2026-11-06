@@ -1,6 +1,36 @@
 """Evidence-bound repair hypotheses; model explanations are never authority."""
 import re
 
+MAX_STRATEGIES = 5
+
+
+def usage(state):
+    """Count applied mechanisms for the current failing-test family, never provider waits."""
+    family = state.get('failure_family', '')
+    plans = state.get('repair_plans', [])
+    unplanned = state.get('unplanned_repairs', {})
+    invalid = (not isinstance(family, str) or not isinstance(plans, list)
+               or any(not isinstance(p, dict) or not isinstance(p.get('family'), str) for p in plans)
+               or not isinstance(unplanned, dict) or any(type(v) is not int or v < 0 for v in unplanned.values()))
+    explicit = 0 if invalid else sum(p.get('family') == family for p in plans)
+    used = None if invalid else explicit + unplanned.get(family, 0)
+    legacy = sum(not a.get('repair_plan') and a.get('why_different') != 'Initial generated candidate'
+                 for a in state.get('attempts', []))
+    tracked = 0 if invalid else sum(unplanned.values())
+    return dict(family=family, used=used, limit=MAX_STRATEGIES, remaining=0 if invalid else max(0, MAX_STRATEGIES-used),
+                legacy_unattributed=legacy > tracked, invalid_counter=invalid)
+
+
+def exhausted(state):
+    evidence = usage(state)
+    if evidence['remaining'] == 0:
+        return dict(status='budget_exhausted', budget='repair_strategies', **evidence,
+                    reason='strategy_state_invalid' if evidence['invalid_counter'] else 'strategy_limit',
+                    error='Stored strategy counters are invalid; restore a trusted checkpoint without discarding evidence.'
+                    if evidence['invalid_counter'] else 'Repair strategy allowance exhausted for this failing-test family; '
+                          'candidate and evidence retained. Provider waits do not renew this allowance.')
+    return None
+
 
 def family(results):
     """Group named failing tests despite changing exception details/cascade counts.
@@ -26,6 +56,8 @@ def normalized(text):
 
 
 def propose(state, revision, cause, strategy, evidence, expected_result, differs_from=''):
+    if stop := exhausted(state):
+        return stop
     fields = (cause, strategy, expected_result)
     if any(not isinstance(v, str) or not 12 <= len(v.strip()) <= 1200 for v in fields):
         return dict(status='invalid', error='Explain cause, strategy and expected_result (12–1200 characters each)')

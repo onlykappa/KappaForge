@@ -79,10 +79,10 @@ class SandboxRepairController:
                             os.getenv('INPUT_ACTION') == 'queue-step' and
                             callable(getattr(getattr(self.journal, 'scope', None), 'queue_guard', None)))
                 if (self.journal and explicit and self.state.get('status') == 'failed'
-                        and self.state.get('stop_reason') in ('invalid_limit', 'repeated_tool_call', 'attempt_limit', 'action_limit')
+                        and self.state.get('stop_reason') in ('invalid_limit', 'repeated_tool_call', 'attempt_limit', 'action_limit', 'strategy_limit')
                         and self.state['actions'] < MAX_MODEL_ACTIONS and len(self.attempts) < MAX_ATTEMPTS):
-                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') in ('attempt_limit', 'action_limit') else 'repair'
-                    self.state['owner_recheck'] = self.state.get('stop_reason') in ('attempt_limit', 'action_limit')
+                    self.state['phase'] = 'candidate' if self.state.get('stop_reason') in ('attempt_limit', 'action_limit', 'strategy_limit') else 'repair'
+                    self.state['owner_recheck'] = self.state.get('stop_reason') in ('attempt_limit', 'action_limit', 'strategy_limit')
                     # Preserve tested versions/actions. Only an explicit Fix renews the consecutive-call streak.
                     if self.state.get('stop_reason') in ('repeated_tool_call', 'invalid_limit'):
                         self.state['invalid'], self.state['repeated'], self.state['action_key'] = 0, 0, None
@@ -179,6 +179,8 @@ class SandboxRepairController:
                     return self._result("failed", "attempt_limit")
                 if self.state["actions"] >= MAX_MODEL_ACTIONS:
                     return self._result("failed", "action_limit")
+                if stop := repair_strategy.exhausted(self.state):
+                    return self._result('failed', stop['reason'], stop['error'], self.state['last_diff'])
                 self.state["actions"] += 1
                 self.execution._save()  # An interrupted model request cannot reset its action budget.
                 prompt_task = self._repair_prompt(task_description, self.state["last_diff"],
@@ -227,6 +229,8 @@ class SandboxRepairController:
                 self.state["action_key"] = action_key
                 self.state["history"] = (self.state["history"] + [execution.clean(json.dumps(step, ensure_ascii=False), 3000)])[-10:]
                 self.state["rationale"] = execution.clean(step.get("reason") or "No model rationale supplied", 1000)
+                if observed.get('status') == 'budget_exhausted' and observed.get('budget') == 'repair_strategies':
+                    return self._result('failed', observed['reason'], observed['error'], self.state['last_diff'])
                 if observed.get("status") == "needs_clarification":
                     # NEEDS_CLARIFICATION mid-repair: the phase, candidate, attempts and history stay saved, and the
                     # loop continues from here once the owner answers (engine/clarification.py).
@@ -404,6 +408,8 @@ class SandboxRepairController:
         return self._apply_planned(lambda: self.tools.apply_line_patch(path, sha256, edits))
 
     def _apply_planned(self, operation):
+        if stop := repair_strategy.exhausted(self.state):
+            return stop
         revision = self._diff_fingerprint()
         plan = self.state.get('repair_plan')
         recurring = self.state.get('failure_families', {}).get(self.state.get('failure_family'), 0) >= 2
@@ -413,6 +419,10 @@ class SandboxRepairController:
         if result.get('status') == 'applied' and plan:
             plan['patch'] = self._diff_fingerprint()
             self.state.setdefault('repair_plans', []).append(dict(plan))
+        elif result.get('status') == 'applied':
+            family = self.state.get('failure_family', '')
+            counts = self.state.setdefault('unplanned_repairs', {})
+            counts[family] = counts.get(family, 0) + 1
         return result
 
     def _workspace(self):
@@ -569,6 +579,8 @@ class SandboxRepairController:
     def _repair_prompt(self, task, diff, diagnostics, history, investigation=""):
         from engine.repair_history import PAGE_SIZE
         return (task + f"\n\nRepair action {self.state['actions']} of {MAX_MODEL_ACTIONS} (this call is already charged). "
+                + 'Applied recovery strategy allowance: ' + json.dumps(repair_strategy.usage(self.state)) + '. '
+                + 'At most five applied mechanisms per failing-test family; rejected edits and provider waits do not consume it. '
                 + 'Sandbox language versions (Python, Node): ' + json.dumps(self.session.versions) + '. '
                 + "Use APIs supported by these versions. "
                 "Use current repository evidence for exact find text; earlier proposals may describe stale source. "
@@ -658,6 +670,7 @@ class SandboxRepairController:
                 diagnostic = self.execution.data["diagnostics"]
                 diagnostic['errorCategory'] = diagnostic.get('errorCategory') or stop_reason
                 diagnostic['evidence'] = execution.clean(summary, 1000)
+            self.execution.data['diagnostics']['strategyBudget'] = repair_strategy.usage(self.state)
             paused = status in ("unavailable", "needs_clarification")
             self.execution.transition(self.state["phase"] if paused else "complete",
                                       "passed" if status == "success" else "blocked" if paused else "failed",
@@ -670,6 +683,7 @@ class SandboxRepairController:
                          "source": result.source, "argv": result.argv, "status": result.status,
                          "reason": result.reason, "stdout": result.stdout[-1500:], "stderr": result.stderr[-1500:]})
         return execution.sanitized({"status": status, "stop_reason": stop_reason, "summary": str(summary)[:2000],
+                "strategy_budget": repair_strategy.usage(self.state),
                 "attempts": list(self.attempts), "steps": len(self.session.results),
                 "models": list(self.models),
                 "candidate_changes": {path: (None if data is None else data.decode("utf-8", "replace"))
