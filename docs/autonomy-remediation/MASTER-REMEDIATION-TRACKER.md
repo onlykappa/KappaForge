@@ -4,7 +4,7 @@ Baseline main: 19c95923d12156688487fd8d4e1f6dd1c16eefa6. Audit archive verified 
 
 Statuses: NOT STARTED / INVESTIGATING / IMPLEMENTING / TESTING / BLOCKED / VERIFIED / INTEGRATED. VERIFIED requires the original acceptance gate; local progress alone never closes live evidence requirements.
 
-Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=16, NOT STARTED=13, TESTING=11, VERIFIED=14
+Counts: BLOCKED=6, IMPLEMENTING=1, INVESTIGATING=15, NOT STARTED=13, TESTING=12, VERIFIED=14
 
 Machine-readable record: gaps.json. Regenerate with python docs/autonomy-remediation/update_tracker.py.
 
@@ -430,7 +430,7 @@ Remaining limitations: No authorized live provider credentials/canary used. Empt
 
 ## KF-AUDIT-017 — Conservative admission makes strong fallback routes unusable for ordinary prompts
 
-Classification: PARTIAL; status: **INVESTIGATING**; phase: E; priority: P1.
+Classification: PARTIAL; status: **TESTING**; phase: E; priority: P1.
 
 Root cause: Input/output reservations and conservative token estimates exceed route limits.
 
@@ -438,21 +438,21 @@ Required implementation: Keep safe upper bounds but create route-specific compac
 
 Dependencies: Foundation contracts
 
-Branch: unassigned; PR: not yet created.
+Branch: remediation/e-request-size-recovery; PR: not yet created.
 
 Latest-state reconciliation: Canonical audit acceptance retained. Baseline main19c9592 had no post-audit fix at reconciliation. This gap is not closed by adjacent foundation changes.
 
-Implementation: No fix claimed yet.
+Implementation: Partial: confirmed aggregate pre-inference gateway413/context admission refusals now retain the GatewayRequestTooLarge type through the real router adapter, enabling existing source-context reconstruction instead of terminal provider-outage handling. Review builders use at most three strictly smaller local adaptations; unchanged full owner scope is never truncated. Mixed or upstream failures retain dispatch uncertainty and existing real cooldowns.
 
 Required acceptance/tests: #330-shaped request admits an eligible compact Groq/Mistral route when within its real limits; oversized requests still fail safely.
 
-Actual results: Not measured for this remediation.
+Actual results: Two new reproduction tests error on previousba6a9ea because the size refusal remains GatewayUnavailable;38 focused tests pass with the correction. Six new regressions cover real router exception provenance, source-rebuilt generation, review rebuilding without false platform evidence, bounded adaptation, immutable unshrinkable owner scope and mixed/upstream negative cases. Final composed Python pending. Offline registry calculation confirms Groq8192 reserve requires8529 tokens for a one-byte prompt against8000; explicit3000 reserve requires3337 and fits, without asserting active caller compatibility.; Final composed Python1543/1509 passed/34 skipped,zero failures/errors in110.694s. Structural scan/map/execution policy passed. No JS/native changes in this slice; parent-composed Node966 evidence is separate, not a new run. Exact new CI/real sandbox pending.
 
-Regression coverage: Not yet added.
+Regression coverage: tests/test_remote_request_size_recovery.py; tests/test_gateway_request_budget.py
 
 Final verification evidence: Not yet collected.
 
-Remaining limitations: Original acceptance gate remains open; implement after dependencies, then collect independent evidence.
+Remaining limitations: Compact Groq/Mistral request packing and calibrated tokenizer/admission evidence are still open. Current Groq8000 free allowance plus8192 output reserve rejects even a one-byte prompt; this patch does not lower caps or silently squeeze responses. Actual#330-shaped Groq/Mistral free-provider acceptance and live-model behavior remain unverified; no full017 closure.
 
 ## KF-AUDIT-018 — Model routing is role-ranked policy, not measured task-quality optimization
 
