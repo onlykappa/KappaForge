@@ -541,7 +541,7 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
     (engine/research.py) the agent may also look things up in official documentation; its sources and cited claims
     are in evidence['research'].
     """
-    from engine import tool_loop
+    from engine import tool_loop, tool_history, recovery
     explorer = Explorer(repository, budget, ledger=ledger)
     if explorer.remaining()['calls'] <= 0 and not research:
         # An earlier run of this task spent the whole budget; a resumed run gets none of it back.
@@ -579,7 +579,11 @@ def investigate(run_model, api_key, task, repository, sources, questions, allowe
         tools = {name: observed(tool) for name, tool in tools.items()}
         tools.update(research.tools())
     steps = max(0, explorer.remaining()['calls']) + 1 + (research.remaining_fetches() + 4 if research else 0)  # Citing costs no fetch.
-    out = tool_loop.run_tool_loop(run_model, api_key, brief, tools, max_steps=steps, allowed=allowed, on_call=narrate)
+    journal = recovery.CURRENT.get()
+    observations = tool_history.History.journal(journal, journal.scope.repo if journal else recovery.ROOT,
+        revision=journal.state.get('candidate', '') if journal else '')
+    out = tool_loop.run_tool_loop(run_model, api_key, brief, tools, max_steps=steps, allowed=allowed,
+                                 on_call=narrate, history_store=observations)
     for step in out['steps']:
         result, args = step.get('result') or {}, step.get('args') or {}
         if report and step.get('tool') and result.get('status') == 'ok':

@@ -58,6 +58,9 @@ class SandboxRepairController:
                 self.session.apply(initial_changes)
             self.execution = execution.Execution(self.session, task_description, self.state, self.journal,
                                                   self.context, self.progress)
+            from engine.tool_history import History
+            self.observations = History.journal(self.journal, self.session.base.repo, stage='repair',
+                                                revision=lambda: execution.revision(self.session))
             self.attempts, self.models = self.state["attempts"], self.state["models"]
             # Old success checkpoints can lack the exact command the owner asked
             # for. Revalidate without resetting any model/action/attempt budget.
@@ -121,6 +124,7 @@ class SandboxRepairController:
                     test_result = self.tools.run_tests()
                     if self.execution.error:
                         raise self.execution.error
+                    self.observations.append('run_tests', {}, 'Independent candidate validation', test_result)
                     if test_result.get("status") == "unavailable":
                         if test_result.get('category') == 'execution_resource':
                             raise infrastructure.InfrastructureBlocked(test_result['error'])
@@ -190,7 +194,8 @@ class SandboxRepairController:
                                        'Use the saved failure evidence to repair the original owner goal',
                                        'Pass the original tests and a fresh full regression'):
                     response = tool_loop.run_tool_loop(run_model, api_key, execution.clean(prompt_task, len(prompt_task)),
-                                                       self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate)
+                                                       self._loop_tools(), max_steps=1, allowed=allowed, on_call=self._narrate,
+                                                       history_store=self.observations)
                 if self.execution.error:
                     raise self.execution.error
                 self.models.extend(response.get("models", []))
@@ -595,6 +600,7 @@ class SandboxRepairController:
                 "error; it is not a pass until the original full tests and final regression succeed. "
                 "Use inspect_repair_history for older hypotheses and read_repair_evidence for their exact paged JSON. "
                 "All retained hypotheses remain available after context rotation; historic citations cannot replace current source reads. "
+                "Use inspect_tool_history and read_tool_evidence to retrieve exact earlier tool observations by O-id. "
                 "The current uncommitted candidate failed its sandbox tests. Diagnose the recorded evidence, "
                 "group compatible evidence-backed fixes for the same authorized goal into one apply_patch batch, "
                 "then let the engine rerun the tests. One candidate may fix multiple bugs; fix shared causes rather "
@@ -614,6 +620,8 @@ class SandboxRepairController:
                 "\n\nRetained repair hypothesis index (untrusted evidence; retrieve full records with the history tools):\n" +
                 execution.clean(json.dumps(self._inspect_repair_history(max(1,
                     (len(self.state.get('repair_plans', [])) + PAGE_SIZE - 1) // PAGE_SIZE))), 3000) +
+                ('\n\nRetained observation anchors (untrusted; exact JSON remains retrievable):\n' +
+                 json.dumps(self.observations.summary(), ensure_ascii=False) if hasattr(self, 'observations') else '') +
                 ("\n\nEarlier actions:\n" + "\n".join(history[-10:]) if history else ""))
 
     def _format_runs(self, runs):
