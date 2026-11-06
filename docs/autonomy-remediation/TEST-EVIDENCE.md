@@ -162,3 +162,5 @@ Full npm975 passed,zero failures/skips in23.468s. Initial pre-codec batch972 pas
 Bounded observation-history acceptance012 is VERIFIED at exactba6a9ea with tests42290343059, real sandbox42290343038 and native42290342842 all successful. Native64e4a8d run42289413007 independently confirms6/6 UI and5/5 session tests. Request-size6ea6c46 tests42291259094 and real sandbox42291431938 passed. These scoped receipts do not close037/043/017 or establish production/live-model success.
 
 Latest353/9e8dc6d real local browser run passed desktop and mobile Chromium, including actual streaming/cancellation, recovery crypto, deletion, lifecycle/reload and task controls. The fixture emits expected cancelled-request/absent-resource diagnostics; both profiles completed with PASS and exit0. Local WebKit not claimed; supported CI required. Exact353 tests42293286782 and native42293286489 remain in progress at this checkpoint.
+
+Latest353/9e8dc6d supported CI42293286782 passed. Actual native42293286489 remains in progress. No full026 closure or production activation.

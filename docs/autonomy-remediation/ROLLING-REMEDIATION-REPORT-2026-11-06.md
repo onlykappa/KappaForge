@@ -7,7 +7,7 @@
 - #350/64e4a8d: native click target survives keyboard dismissal; blank-gutter fixture retains and strengthens draft/geometry/secure-input checks. Actual native42289413007 passed6 UI+5 real Keychain/session tests.
 - #351/ba6a9ea: shared task-scoped exact redacted tool evidence, bounded compact anchors and hash-verified retrieval through context rotation/restart. CI42290343059, real sandbox42290343038 and native42290342842 passed. Original012 acceptance met;011/023/general semantic memory remain partial.
 - #352/6ea6c46: pre-inference size refusals retain the type needed for safe source reconstruction; bounded review adaptations preserve the owner task and dispatch uncertainty. Two baseline repros fail,38 focused pass; Python1543 total/1509 pass/34 skip. Exact CI42291259094 and sandbox42291431938 passed. Original017 compact-route acceptance remains open.
-- #353/9e8dc6d: retain all deletion receipts, persist before removal, suppress stale local payloads at startup, refuse cloud overwrite on storage failure and fence old clippers with authenticatedv2.9 new regressions,14 focused and Node975 pass; real desktop/mobile Chromium pass. Latest CI/native pending.026 remains partial; coordinated owner-approved rollout/real-device/erase acceptance required.
+- #353/9e8dc6d: retain all deletion receipts, persist before removal, suppress stale local payloads at startup, refuse cloud overwrite on storage failure and fence old clippers with authenticatedv2.9 new regressions,14 focused and Node975 pass; real desktop/mobile Chromium pass. Latest CI42293286782 passed; native42293286489 pending.026 remains partial; coordinated owner-approved rollout/real-device/erase acceptance required.
 
 ## Current statuses
 
