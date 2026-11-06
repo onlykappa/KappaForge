@@ -134,3 +134,14 @@ An initial new fixture incorrectly expected Explorer text to include prefixed li
 Exact strategy3fda30e CI42286813898/sandbox42286813709 passed. Nativeff6ca5d run42285739711 failed full UI acceptance despite5/5 Keychain tests. Separate native correction#350/64e4a8d passed966 Node checks; supported run42289413007 in progress. No production/main change, merge, paid inference or new autonomy score.
 
 Final observation candidate Python1537 total/1503 passed/34 skipped,zero failures/errors in120.157s. This includes the added archive-injection negative and malformed-state guards. Node964 passed; no product source changed after this composed Python run. See evidence/durable-tool-observations-local.json for log/source hashes and the retained initial dependency failure. Exact supported CI/real sandbox remain pending.
+
+## Nativeff6ca5d result and outside-tap correction
+
+ run42285739711 compiled and passed all five real Keychain/session tests. Four of six UI tests passed. The composer test failed keyboard nonexistence after an outside tap; the log shows its text became the Plan a project suggestion. The fixed central percentage coordinate landed on an interactive chip after a lifecycle/viewport change, intentionally replacing the draft and refocusing. The secure enrollment UI test separately failed to find Settings after tapping More. The full native gate is failed;5/5 session tests are narrower evidence.
+
+
+84 focused Node checks passed. Two new interaction regressions failed against the old bridge, then passed after click-capture correction. No native simulator pass yet; see NATIVE-TAP-LIFECYCLE.md.
+
+Native outside-tap candidate full npm test:966 passed,zero failures/skips in23.215s. Bundle, config, dependency map, execution policy and diff checks passed. Supported native rerun remains required; no local Xcode pass inferred.
+
+Observation candidate now locally composes native350/64e4a8d. All Python observation source/test hashes match the1537-test validated tree. Actual composed npm966 passed,zero failures/skips in22.934s; bundle/map/policy/diff checks passed. This is a local dependency merge only. Exact supported final tree CI/native/real sandbox remain mandatory.

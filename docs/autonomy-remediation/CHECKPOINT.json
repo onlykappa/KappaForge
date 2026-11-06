@@ -32,7 +32,8 @@
     347,
     348,
     349,
-    350
+    350,
+    351
   ],
   "productionChanges": false,
   "paidInference": false,
@@ -65,8 +66,9 @@
     "worktree": "/workspace/KappaForge-tool-observations",
     "scope": "012 shared exact observation history, partial011/023; incorporates nativeff6ca5d test correction",
     "base": "3fda30e",
-    "local": "Final Python1537/1503 passed/34 skipped; Node964 passed;8 new regressions; rules/map/policy passed. Exact supported gates pending.",
-    "next": "Collect final Python and publish isolated draft; exact CI/real sandbox required. Native350/64e4a8d is a separate branch awaiting supported run42289413007; incorporate only through local dependency integration after collecting evidence. No GitHub PR/main merge, deploy/release or paid inference."
+    "local": "Python1537/1503 passed/34 skipped; source/test hashes unchanged after native350 composition. Actual composed npm966 passed,zero skips/failures. Exact supported CI/native/sandbox required.",
+    "next": "Collect exact new composed head CI/native/real sandbox. Current branch now locally composes350; no GitHub PR/main merge. Continue partial017 safe size adaptation and original dependency roadmap; no production deployment or paid inference.",
+    "pr": 351
   },
   "sequencing": "Owner requests coherent patch batches with focused checks, then large-scale acceptance; no security or publication gates waived.",
   "latestObservedRuns": {
@@ -111,5 +113,10 @@
       "run": 42289413007,
       "conclusion": "in_progress"
     }
-  }
+  },
+  "composedDependencies": [
+    "349:3fda30e",
+    "346:ff6ca5d",
+    "350:64e4a8d"
+  ]
 }

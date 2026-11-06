@@ -36,11 +36,11 @@ final class LaunchTests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxY, keyboard.frame.minY + 14, "Composer must not overlap the keyboard", file: file, line: line)
     }
 
-    // Tapping outside the composer must dismiss the keyboard, so the tap has to land on blank page. At 30% height it can
-    // hit the "Plan a project" suggestion chip on a phone layout, which correctly fills and refocuses the composer.
-    // 45% is the empty band between the chips and the composer on the welcome screen, with the keyboard open or closed.
+    // Use the empty left gutter, also used by task-card keyboard validation.
+    // A central percentage can hit a suggestion after viewport/lifecycle changes,
+    // intentionally replacing the draft and refocusing instead of testing blur.
     private func tapBlankWebArea(_ web: XCUIElement) {
-        web.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+        web.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.2)).tap()
     }
 
     func testBundledInterfaceLaunchAndSettings() {
@@ -74,7 +74,11 @@ final class LaunchTests: XCTestCase {
         XCTAssertTrue(web.waitForExistence(timeout: 60))
         let more = web.buttons["More"]; XCTAssertTrue(more.waitForExistence(timeout: 60)); more.tap()
         let settings = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Settings")).firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 15)); settings.tap()
+        if !settings.waitForExistence(timeout: 15) {
+            add(XCTAttachment(string: app.debugDescription))
+            XCTFail("More navigation did not expose Settings after its first tap")
+        }
+        settings.tap()
         let connect = web.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Connect AI")).firstMatch
         XCTAssertTrue(connect.waitForExistence(timeout: 30)); connect.tap()
         let dialog = app.alerts["Secure AI connection"]
@@ -126,8 +130,10 @@ final class LaunchTests: XCTestCase {
         waitForComposerGeometry(editor, keyboard: keyboard, web: web)
         assertComposerAboveKeyboard(app, editor, keyboard, web: web)
         // Public bridge dismisses when tapping outside the composer.
+        let draft = editor.value as? String
         tapBlankWebArea(web)
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+        XCTAssertEqual(editor.value as? String, draft, "Outside dismissal must preserve the draft")
         let closed = XCTAttachment(screenshot: app.screenshot())
         closed.name = "PR98 keyboard closed layout"
         closed.lifetime = .keepAlways
@@ -140,6 +146,7 @@ final class LaunchTests: XCTestCase {
             assertComposerAboveKeyboard(app, editor, keyboard, web: web, belowHeader: false)
             tapBlankWebArea(web)
             XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+            XCTAssertEqual(editor.value as? String, draft, "Repeated outside dismissal must preserve the draft")
         }
     }
 

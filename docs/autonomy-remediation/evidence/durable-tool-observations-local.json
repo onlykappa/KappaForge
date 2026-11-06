@@ -58,6 +58,11 @@
       "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-tool-observations-node.log",
       "sha256": "76faa279ca3cbccbfbcaff603c4f9ac3a7bf1529438500b69d4dc0aac106c3d6",
       "bytes": 92673
+    },
+    "2026-11-06-observations-native-composed-npm.log": {
+      "path": "/workspace/KappaForge-remediation/docs/autonomy-remediation/evidence/2026-11-06-observations-native-composed-npm.log",
+      "sha256": "505032573689f9be246da5c7a4d60b5e36fff2247e9cf074d664de24ab50ad32",
+      "bytes": 91956
     }
   },
   "sourceHashes": {
@@ -66,5 +71,12 @@
     "engine/exploration.py": "292a42dee8980a403505524883b3a5913b31a7abdbe02db8d8bc85555f3daa2e",
     "engine/sandbox_repair_controller.py": "a1deb169994c1e0f0459583d032f609ab3eb512a35df7456b29d031fa6c70fee",
     "tests/test_tool_observation_history.py": "d70206f117d2a07623c0d4f65f77dddbff7c7d35f7c81f5a9f170e6ae8c77eec"
+  },
+  "composedNative": "350:64e4a8d",
+  "composedNode": {
+    "passed": 966,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 22.934
   }
 }
